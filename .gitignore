@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# local save files & databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+saves/
+
+# logs & temp
+*.log
+logs/
+tmp/
+.cache/
+
+# test / coverage
+coverage/
+.nyc_output/
+
+# editors & OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# local agent scratch
+.claude/settings.local.json
