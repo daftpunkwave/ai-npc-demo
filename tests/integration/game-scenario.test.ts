@@ -61,7 +61,7 @@ describe("剧情卡", () => {
         aggregate_type: "scenario-card",
         aggregate_id: "card-draft",
         version: 0,
-        state_json: { cardId: "card-draft", version: 1, status: "draft", triggerAtTick: 0, note: "draft" },
+        state_json: { cardId: "card-draft", version: 1, status: "draft", triggerAtTick: 0, effects: [], note: "draft" },
       });
     });
     const publish = value.authority.commands.execute(

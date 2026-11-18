@@ -3,8 +3,11 @@
  * 依赖 zod；只做状态校验与读取。
  * 禁止在这里执行卡片效果或计算触发 tick。
  */
+import { cardEffectSchema } from "@ai-npc/contracts";
 import type { WorldTx } from "@ai-npc/module-sdk";
 import { z } from "zod";
+
+const cardEffectListSchema = z.array(cardEffectSchema);
 
 export const scenarioCardStateSchema = z
   .object({
@@ -12,6 +15,7 @@ export const scenarioCardStateSchema = z
     version: z.number().int().positive(),
     status: z.enum(["draft", "published", "triggered", "withdrawn"]),
     triggerAtTick: z.number().int().nonnegative(),
+    effects: cardEffectListSchema,
     note: z.string(),
   })
   .strict();

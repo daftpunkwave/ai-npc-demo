@@ -66,6 +66,7 @@ function scheduleContentCards(context: ScenarioContext, escalating: boolean): vo
       version: card.version,
       status: "published",
       triggerAtTick,
+      effects: [...card.effects],
       note: "content",
     };
     context.tx.put("scenario-card", card.cardId, state);
@@ -78,13 +79,13 @@ function triggerCard(context: ScenarioContext, cardId: string, version: number, 
   const scenario = content.scenarios.get(content.defaultScenario);
   const card = scenario?.cards.find((candidate) => candidate.cardId === cardId && candidate.version === version);
   const state = readCardState(context.tx, cardId);
-  if (card === undefined || state === null || state.status === "triggered" || state.status === "withdrawn") {
+  if (state === null || state.status !== "published" || state.version !== version) {
     return;
   }
   const triggered: ScenarioCardState = { ...state, status: "triggered" };
   context.tx.put("scenario-card", cardId, triggered);
   context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "public" }]);
-  applyCardEffects(context, cardId, card.effects);
+  applyCardEffects(context, cardId, state.effects.length > 0 ? state.effects : (card?.effects ?? []));
   if (cardId === "card-relay-alarm") {
     const run = ensureRunState(context);
     context.tx.put("scenario-run", run.scenarioId, { ...run, alarmTriggered: true });

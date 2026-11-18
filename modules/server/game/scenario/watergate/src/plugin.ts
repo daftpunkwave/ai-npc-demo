@@ -5,10 +5,16 @@
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
+import { createScenarioContributor } from "./contributor";
 import { createScenarioPort } from "./port";
 
 /** 创建剧情模块；escalating 只影响节奏与 DayPassed 压力。 */
 export function createScenarioModule(input: ModuleCreateInput, escalating: boolean): Promise<ModuleInstance> {
-  void escalating;
-  return createStatelessModule(input, { bind: createScenarioPort });
+  const contributor = createScenarioContributor({ escalating });
+  return createStatelessModule(input, {
+    bind: (txFor: Parameters<typeof createScenarioPort>[0]) => ({
+      ...createScenarioPort(txFor, input.moduleId),
+      contributor,
+    }),
+  });
 }

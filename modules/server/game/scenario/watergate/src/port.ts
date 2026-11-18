@@ -13,9 +13,9 @@ export interface ScenarioPort {
   cards(): readonly ScenarioCardView[];
 }
 
-/** 构造绑定到当前事务的剧情查询端口。 */
-export function createScenarioPort(txFor: ScopedWorldTxFactory): ScenarioPort {
-  const tx = () => txFor(gameModuleIds.scenario);
+/** 构造绑定到当前事务的剧情查询端口；moduleId 区分标准版与升级版。 */
+export function createScenarioPort(txFor: ScopedWorldTxFactory, moduleId: string = gameModuleIds.scenario): ScenarioPort {
+  const tx = () => txFor(moduleId);
   return {
     card: (cardId) => {
       const state = readCardState(tx(), cardId);
