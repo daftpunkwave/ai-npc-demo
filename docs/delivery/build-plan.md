@@ -6,7 +6,7 @@
 
 ### 0.1 通用规则
 
-- **每一步的固定收尾**：`pnpm check` 全部通过（它的组成见 0.2 节）；本步新增的测试都在其中；没有 `TODO`、被注释掉的代码或调试输出；一步一个提交，提交信息用 Conventional Commits（例如 `feat(authority): add command gateway`）。
+- **每一步的固定收尾**：`pnpm check` 全部通过（它的组成见 0.2 节）；本步新增的测试都在其中；没有 `TODO`、被注释掉的代码或调试输出；获准提交后一步一个提交，提交授权与格式见根目录 [AGENTS.md](../../AGENTS.md)。
 - **规格优先**：本文只说“做什么、放哪里、怎么验”，规则细节以“先读”列出的章节为准。两处文档互相矛盾时，以该主题的负责文档为准（见 [文档入口](../README.md) 第 4 节），并在完成报告里写明发现的矛盾。
 - **不确定时不猜**：文档没有覆盖、又会影响结果的选择，选择最保守、最容易回退的做法，把问题与所做的选择写进完成报告的“未决问题”。
 - **确定性优先**：切片 A 之前不接真实模型；常规测试都用确定性装配 `local-slg-test-v1`、确定性模型传输与固定种子。
@@ -97,15 +97,17 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 ### S03 module-sdk 与边界检查
 
-- **先读**：[模块边界](../architecture/modules.md) 第 4、9 节、[代码目录](../architecture/code-structure.md) 第 2–4、7 节、[技术栈](tech-stack.md) 第 2 节。
+- **先读**：[模块边界](../architecture/modules.md) 第 4、9 节、[代码目录](../architecture/code-structure.md) 第 2–4、7 节、[技术栈](tech-stack.md) 第 2、7 节。
 - **产出**：`packages/module-sdk`（`defineModule()` 辅助函数，强制填写描述符字段；scoped storage、WorldTx 等端口的类型）；`packages/client-sdk`（`<Slot>` 组件、`usePort()`、`PreferencePort` 接口）；`scripts/check-boundaries.ts`。
-- `check-boundaries` 用正则提取每个 `.ts/.tsx` 文件的 import 路径（跳过 `tests/catalog/fixtures/`），按文件所在包判定：
+- `check-boundaries` 检查源码引用与包 manifest，按文件所在包及模块 realm/kind 判定（夹具目录只作为检查函数的输入，不作为生产源码扫描）：
   1. 禁止 `@ai-npc/*/src/...` 深层导入（各包 `exports` 声明的入口除外，例如模块包的 `/definition`）；import 的每个 workspace 包都必须在本包 `dependencies` 中；
   2. 模块包的依赖白名单见 [技术栈](tech-stack.md) 第 2 节，不能依赖其他 `mod-*` 包；
   3. `modules/client/**`、`modules/console/**`、`apps/client`、`apps/console`、`packages/client-sdk`、`packages/client-protocol` 不能 import `node:*`、`fs`、`path`、`fastify`、`@anthropic-ai/sdk` 或任何 server 专用包；
   4. `packages/kernel`、`packages/contracts` 不能 import 任何 `mod-*`、`apps/*`、`react`、`pixi.js`、`fastify`；
-  5. `apps/*` 中只有 `src/host/module-catalog.ts` 可以 import 模块包；`tests/**` 与 `scripts/**` 不受此限制。
-- **测试**：违规样例以 `.ts.txt` 为后缀放在 `tests/catalog/fixtures/`（不会被 tsc 编译、也不在扫描范围内），测试把它们读成字符串交给检查函数，断言每条规则都能报出。
+  5. `apps/*` 中只有 `src/host/module-catalog.ts` 可以 import 模块包；tests/scripts 可导入公开模块入口，但不豁免深层导入与循环依赖；
+  6. 检查静态 import、re-export、字面量动态 import、相对路径跨包引用及包依赖图；拒绝非字面量动态加载绕过、未许可的第三方库和循环依赖；运行时 requires 的闭包由 S02 解析器检查，远程握手按后续步骤实现；
+  7. 按技术栈第 7.1 节检查手写源码 header，保留 shebang 与无注释格式例外，不修改生成产物。
+- **测试**：违规样例以 `.ts.txt` 为后缀放在 `tests/catalog/fixtures/`（不会被 tsc 编译、也不在扫描范围内），测试把它们读成字符串交给检查函数，断言每条规则都能报出；覆盖合法 realm/kind 依赖、跨模块相对路径与 re-export、动态导入、未声明包、第三方越界、循环依赖，以及缺失/非法 header、开发文档与阶段引用、shebang、JSON 和生成文件例外。
 - **完成判据**：`pnpm check` 通过（已包含 `check:boundaries`），对仓库报告 0 个违规。
 
 ## 3. 服务端世界

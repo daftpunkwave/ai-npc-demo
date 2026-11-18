@@ -68,9 +68,20 @@ packages:
 
 - 包之间只能 import 对方 `exports` 暴露的入口（即 `@ai-npc/xxx`），禁止 `@ai-npc/xxx/src/...` 深层路径。
 - 一个包 import 的每个 workspace 包都必须写在自己的 `dependencies` 里；`check-boundaries` 同时检查源码 import 与 `package.json`。
-- 模块包只能依赖 `@ai-npc/contracts`、`@ai-npc/module-sdk`（server），或 `@ai-npc/contracts`、`@ai-npc/client-sdk`、`@ai-npc/client-protocol`（client/console），以及第三方库；不能依赖其他模块包。
+- 模块生产源码及 `dependencies` 按下表的 realm/kind 白名单检查；未列出的库不因“纯工具”或 adapter 身份自动获准。测试工具仅用于测试，构建工具仅用于源码配置，不得被生产实现引用。新增依赖先评审并更新本表，不允许跨模块实现依赖。
+
+| realm / kind | workspace 入口 | 外部依赖与环境边界 |
+|---|---|---|
+| server / service、contributor | `@ai-npc/contracts`、`@ai-npc/module-sdk` | `zod`；环境能力由 HostServices 注入 |
+| server / adapter | 同上 | `zod`；另仅按第 1 节所属适配器使用 Fastify 及其插件、`node:sqlite`、Anthropic SDK 或内置 `fetch`；不因此获得任意环境访问权限 |
+| client、console / service、contributor | `@ai-npc/contracts`、`@ai-npc/client-sdk`、`@ai-npc/client-protocol` | `zod`、UI 所需 `react`；无 Node、数据库、模型 SDK 或直接后端网络访问 |
+| client、console / adapter | 同上 | 同上；仅 `client.scene-renderer.pixi` 使用 `pixi.js`；仍只经 typed protocol 访问后端 |
+
+`react-dom` 的根挂载归浏览器宿主；YAML 解析归配置/内容加载边界，不给所有模块开放。上述技术库版本见第 1 节。适配器只封装它负责的外部技术，第三方类型不泄漏到公共 port。
+
+源码依赖包括静态 import、re-export、字面量动态 import 及相对路径跨包引用；生产模块禁止非字面量动态加载；检查脚本仅可从显式、已校验的 catalog 路径加载定义，不得扫描执行任意模块。包依赖图同时检查 `dependencies` 与实际引用，不允许借未使用的依赖声明或 devDependencies 藏入生产依赖。运行时 `requires` 是能力 port 的依赖图，浏览器 `requiresRemote` 经握手校验，不授权源码 import provider 的实现；三种检查不能互相替代。
 - 每个模块包除了 `"."` 还导出 `"./definition": "./src/definition.ts"`。`definition.ts` 只含描述符数据，**不得静态 import 实现文件、React、PixiJS、Fastify 或模型 SDK**；`create` 用动态 `import("./plugin")` 加载实现。这样三个组合根的 `module-catalog.ts` 都能在 Node 中导入，供 `check-catalog` 使用。
-- `tests` 与 `scripts` 两个包可以依赖任何 workspace 包（包括模块包），不受上面的限制。
+- `tests` 与 `scripts` 两个包可为验证依赖任意 workspace 的公开入口（包括模块包），但不豁免深层导入、循环依赖或生产源码边界；测试夹具不作为生产模块加载。
 
 ## 3. TypeScript 配置
 
@@ -134,7 +145,7 @@ packages:
 | `pnpm typecheck` | `tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json` | 两个程序都零错误 |
 | `pnpm test` | `vitest run` | 单元、契约、集成、目录、场景测试 |
 | `pnpm test:e2e` | `playwright test` | 两端口启动、玩家与控制台关键路径 |
-| `pnpm check:boundaries` | `tsx scripts/check-boundaries.ts` | import 与依赖方向、realm 边界 |
+| `pnpm check:boundaries` | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header |
 | `pnpm check:catalog` | `tsx scripts/check-catalog.ts` | 模块 ID、能力闭包、`config/assemblies/*.yaml` 全部可解析 |
 | `pnpm check:docs` | `tsx scripts/check-docs.ts` | 文档相对链接与锚点存在 |
 | `pnpm check:ports` | `tsx scripts/check-ports.ts` | 启动 `pnpm start` 后只发现 :5173 与 :3000 两个本应用监听 |
@@ -223,8 +234,24 @@ export default defineConfig({
 - 哈希统一为“规范 JSON（键按字典序、无空白）的 SHA-256 十六进制”；服务端用 `node:crypto`，浏览器用 `crypto.subtle`，由宿主注入 `hash` 函数。
 - 领域错误统一抛 `DomainError(code, safeMessage, details?)`，`code` 只能取 [公共契约](../architecture/contracts.md) 第 6 节的错误码。
 - 日志为 JSON 行，经宿主 logger 输出；模块内不写 `console.log`。
-- 面向玩家的中文文本放在 `content/` 内容包或模板里；代码注释与标识符用英文。
+- 面向玩家的中文文本放在 `content/` 内容包或模板里；代码注释默认中文并保留英文专有名词，标识符遵循语言与生态命名惯例。
 - 单个源文件建议不超过 400 行；超过时按职责拆文件，不拆模块边界。
+
+### 7.1 手写源码文件头
+
+每个手写源码文件（含测试、脚本、迁移与源码配置）使用语言原生的中文注释 header（保留英文专有名词），准确说明该文件的功能职责、依赖契约及禁止事项。按实际文件编写，不套用与实现无关的口号；所有代码注释与 header 均只解释代码本身，不引用开发文档路径、链接或构建阶段编号；脱离开发文档也应能理解职责和约束。
+
+```ts
+/**
+ * 在分发到已绑定的 authority port 前校验命令信封。
+ * 依赖命令 schema 与注入的授权契约。
+ * 禁止执行游戏规则或持久化世界状态。
+ */
+```
+
+TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 PEP 257 模块 docstring（位于可选 shebang/编码声明之后），shell 用 `#`，SQL 用 `--`，CSS 用块注释，HTML 用原生注释；有 shebang 时保留首行，header 紧随其后。JSON、锁文件、二进制、第三方代码与生成产物不插入注释；数据配置不伪装成源码。Markdown 用标题与范围说明，不强塞代码式 header。函数仅在非直观约束或原因需要解释时注释，不机械重复签名。
+
+S03 的边界检查负责 header 存在性、原生格式及禁止开发文档/阶段引用的回归检查；职责与依赖描述是否准确仍须人工复核。当前尚无检查实现，不把规范视为已通过验证。
 
 ## 8. 测试放置
 
