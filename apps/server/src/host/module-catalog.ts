@@ -3,12 +3,12 @@
  * 应用组合根只允许本文件引用模块包；其他 host 文件只经此入口取用。
  * 禁止在这里启动服务、打开存储或执行命令。
  */
-import type { ContentPack } from "@ai-npc/experiment";
 import type { GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory } from "@ai-npc/module-sdk";
 import type { GameRuleContributor } from "@ai-npc/module-sdk";
 import type { HostServices, StoragePort } from "@ai-npc/contracts";
+import { toGameContent } from "./content-adapter";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import { createClockPort, clockModuleDefinition } from "@ai-npc/mod-game-clock-controlled";
+import { clockModuleDefinition } from "@ai-npc/mod-game-clock-controlled";
 import { createMapPort, mapModuleDefinition, createMapContributor } from "@ai-npc/mod-game-map-six-nodes";
 import { createResourcesPort, resourcesModuleDefinition, createResourcesContributor } from "@ai-npc/mod-game-resources-light";
 import { createWorldPort, worldModuleDefinition, createWorldContributor } from "@ai-npc/mod-game-world-slg-light";
@@ -18,30 +18,7 @@ import { createAgreementsPort, agreementsModuleDefinition, createAgreementsContr
 import { createScenarioPort, scenarioModuleDefinition, escalatingScenarioModuleDefinition, createScenarioContributor } from "@ai-npc/mod-game-scenario-watergate";
 import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
 
-/** 把内容包收窄为规则端口视图；保留真实索引。 */
-export function toGameContent(content: ContentPack): GameContent {
-  return {
-    nodes: content.index.nodes,
-    roads: content.index.roads,
-    factions: content.index.factions,
-    characters: content.index.characters,
-    stockpiles: content.index.stockpiles,
-    teams: content.index.teams,
-    groups: content.index.groups,
-    evidence: content.index.evidence,
-    secrets: content.index.secrets,
-    starts: content.index.starts,
-    scenarios: content.index.scenarios,
-    defaultScenario: content.pack.defaultScenario,
-    migrationRoads: content.map.migrationRoads,
-    medicalFacilities: content.map.medicalFacilities,
-    playerNodeId: content.worldInit.player.nodeId,
-    playerPrincipalId: content.index.playerPrincipalId,
-    chapterId: content.lore.chapter.id,
-    initialMeters: content.worldInit.meters,
-    dutyDelegations: content.worldInit.dutyDelegations,
-  };
-}
+export { toGameContent } from "./content-adapter";
 
 /** 绑定全部游戏端口；txFor 由 authority/宿主事务提供。 */
 export function createGamePorts(txFor: ScopedWorldTxFactory, content: GameContent, host: HostServices): GameModulePorts {

@@ -19,9 +19,9 @@ function deterministicRng(seed: string): () => number {
 }
 
 const logger = {
-  info: (message: string, data?: Json): void => console.info(message, data ?? ""),
-  warn: (message: string, data?: Json): void => console.warn(message, data ?? ""),
-  error: (message: string, data?: Json): void => console.error(message, data ?? ""),
+  info: (message: string, data?: Json): void => { console.info(message, data ?? ""); },
+  warn: (message: string, data?: Json): void => { console.warn(message, data ?? ""); },
+  error: (message: string, data?: Json): void => { console.error(message, data ?? ""); },
 };
 
 const tracer = {
@@ -44,7 +44,7 @@ export function createHostServices(): HostServices {
       });
     },
     rng: (...parts) => deterministicRng(parts.join(":")),
-    hash: async (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+    hash: (value) => Promise.resolve(createHash("sha256").update(JSON.stringify(value)).digest("hex")),
     logger,
     tracer,
   };

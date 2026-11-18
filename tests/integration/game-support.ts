@@ -75,30 +75,9 @@ export interface GameHarness {
   dispose(): Promise<void>;
 }
 
-/** 把已校验内容包收窄为游戏端口视图；保留真实 Map 索引而不复制数据。 */
-export function toGameContent(content: ContentPack): GameContent {
-  return {
-    nodes: content.index.nodes,
-    roads: content.index.roads,
-    factions: content.index.factions,
-    characters: content.index.characters,
-    stockpiles: content.index.stockpiles,
-    teams: content.index.teams,
-    groups: content.index.groups,
-    evidence: content.index.evidence,
-    secrets: content.index.secrets,
-    starts: content.index.starts,
-    scenarios: content.index.scenarios,
-    defaultScenario: content.pack.defaultScenario,
-    migrationRoads: content.map.migrationRoads,
-    medicalFacilities: content.map.medicalFacilities,
-    playerNodeId: content.worldInit.player.nodeId,
-    playerPrincipalId: content.index.playerPrincipalId,
-    chapterId: content.lore.chapter.id,
-    initialMeters: content.worldInit.meters,
-    dutyDelegations: content.worldInit.dutyDelegations,
-  };
-}
+/** 把已校验内容包收窄为游戏端口视图；复用服务端宿主的唯一适配器。 */
+import { toGameContent } from "@ai-npc/app-server/content";
+export { toGameContent };
 
 function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branchId: string): void {
   storage.transact((tx) => {

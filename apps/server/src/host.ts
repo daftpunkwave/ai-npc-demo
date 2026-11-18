@@ -4,13 +4,12 @@
  * 禁止在这里绕过模块 catalog 直接引用游戏模块实现。
  */
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import type { ClockView, ModuleCreateInput, StoragePort, StorageTransaction } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { createSystemAuth, systemPrincipalId } from "@ai-npc/authority";
 import { loadContentPack } from "@ai-npc/experiment";
-import type { ClockState, GameModulePorts } from "@ai-npc/module-sdk";
+import type { ClockState } from "@ai-npc/module-sdk";
 import { createServerApp } from "./app";
 import { buildPlayerProjection } from "./projection";
 import { createHostServices } from "./host-services";
@@ -71,7 +70,7 @@ function clockView(clock: ClockState): ClockView {
 
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
 export async function startHost(options: HostOptions): Promise<RunningHost> {
-  mkdirSync(options.dataDir, { recursive: true });
+
   const host = createHostServices();
   const signal = new AbortController().signal;
   const storageInput: ModuleCreateInput = {
