@@ -26,6 +26,8 @@ function content(roads: GameContent["roads"]): GameContent {
     evidence: new Map(),
     secrets: new Map(),
     starts: new Map(),
+    scenarios: new Map(),
+    defaultScenario: "test",
     migrationRoads: [],
     medicalFacilities: [],
     playerNodeId: "a",
