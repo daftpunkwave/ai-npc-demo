@@ -57,6 +57,36 @@ function bindingFor(assembly: AssemblyDescriptor, capability: string): string {
   return binding.moduleId;
 }
 
+const expectedBindings: Readonly<Record<string, string>> = {
+  "game.world": "game.world.slg-light",
+  "game.map": "game.map.six-nodes",
+  "game.clock": "game.clock.controlled",
+  "game.resources": "game.resources.light",
+  "game.actions": "game.actions.standard",
+  "game.agreements": "game.agreements.standard",
+  "game.comms": "game.comms.standard",
+  "game.save": "game.save.sqlite",
+  "platform.storage": "platform.storage.sqlite",
+  "platform.access-policy": "platform.access-policy.roster",
+  "platform.secrets": "platform.secrets.env",
+  "platform.operations": "platform.operations.standard",
+  "transport.http-ws": "transport.http-ws.fastify",
+};
+
+/** 校验所有必需 server binding；返回已选 scenario moduleId。 */
+export function assertSupportedServerBindings(assembly: AssemblyDescriptor): string {
+  for (const [capability, moduleId] of Object.entries(expectedBindings)) {
+    if (bindingFor(assembly, capability) !== moduleId) {
+      throw new Error(`装配包含当前宿主未实现的绑定: ${capability}`);
+    }
+  }
+  const scenario = bindingFor(assembly, "game.scenario");
+  if (scenario !== "game.scenario.watergate" && scenario !== "game.scenario.watergate-escalating") {
+    throw new Error("装配包含当前宿主未实现的绑定: game.scenario");
+  }
+  return scenario;
+}
+
 /** 按装配绑定选择游戏端口实现；未支持的模块 ID 直接失败。 */
 export function createGamePortsFromAssembly(
   assembly: AssemblyDescriptor,
@@ -64,18 +94,7 @@ export function createGamePortsFromAssembly(
   content: GameContent,
   host: HostServices,
 ): GameModulePorts {
-  const map = bindingFor(assembly, "game.map");
-  const resources = bindingFor(assembly, "game.resources");
-  const world = bindingFor(assembly, "game.world");
-  const comms = bindingFor(assembly, "game.comms");
-  const actions = bindingFor(assembly, "game.actions");
-  const agreements = bindingFor(assembly, "game.agreements");
-  const scenario = bindingFor(assembly, "game.scenario");
-  if (map !== "game.map.six-nodes" || resources !== "game.resources.light" || world !== "game.world.slg-light"
-    || comms !== "game.comms.standard" || actions !== "game.actions.standard" || agreements !== "game.agreements.standard"
-    || (scenario !== "game.scenario.watergate" && scenario !== "game.scenario.watergate-escalating")) {
-    throw new Error("装配包含当前宿主未实现的游戏模块绑定");
-  }
+  const scenario = assertSupportedServerBindings(assembly);
   return {
     "game.map": createMapPort(txFor, content, (prefix) => host.ids(prefix)),
     "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
@@ -98,18 +117,7 @@ export function createSaveService(storage: StoragePort, host: HostServices): Sql
 
 /** 按装配绑定选择规则贡献；不支持的实现直接失败。 */
 export function createGameContributorsFromAssembly(assembly: AssemblyDescriptor): readonly GameRuleContributor<GameModulePorts, unknown>[] {
-  const map = bindingFor(assembly, "game.map");
-  const resources = bindingFor(assembly, "game.resources");
-  const world = bindingFor(assembly, "game.world");
-  const comms = bindingFor(assembly, "game.comms");
-  const actions = bindingFor(assembly, "game.actions");
-  const agreements = bindingFor(assembly, "game.agreements");
-  const scenario = bindingFor(assembly, "game.scenario");
-  if (map !== "game.map.six-nodes" || resources !== "game.resources.light" || world !== "game.world.slg-light"
-    || comms !== "game.comms.standard" || actions !== "game.actions.standard" || agreements !== "game.agreements.standard"
-    || (scenario !== "game.scenario.watergate" && scenario !== "game.scenario.watergate-escalating")) {
-    throw new Error("装配包含当前宿主未实现的游戏规则贡献");
-  }
+  const scenario = assertSupportedServerBindings(assembly);
   return [
     createMapContributor(),
     createResourcesContributor(),
