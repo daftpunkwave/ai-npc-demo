@@ -61,4 +61,4 @@ CI 与 CD 共用 `ci`，以 `ci(check)`、`ci(release)`、`ci(deploy)`、`ci(rol
 
 ## 本地补充
 
-共享规则以本文件及主题负责文档为准。本机可有被忽略的 `AGENTS.local.md`；它仅补充本地偏好，不能覆盖项目硬约束，如果 `AGENTS.md` 和 `AGENTS.local.md` 发生冲突, `AGENTS.md`优先。冲突须报告。
+共享规则以本文件及主题负责文档为准。本机可有被忽略的 `AGENTS.local.md`；它仅补充本地偏好，不能覆盖项目硬约束，如果 `AGENTS.md` 和 `AGENTS.local.md` 发生冲突, `AGENTS.md`优先。如果全局 `AGENTS.md` 和项目级 `AGENTS.md` 冲突，项目级 `AGENTS.md` 优先。默认优先级：`项目根目录AGENTS.md`  > `项目各级目录AGENTS.md` >`项目根目录AGENTS.local.md` > `项目各级目录AGENTS.local.md` > `全局AGENTS.md` 。同类型规范以如有冲突,以上级为准。所有冲突须报告。
