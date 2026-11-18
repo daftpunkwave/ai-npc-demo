@@ -41,7 +41,7 @@ const definition: ModuleDefinition = {
   requires: [],
   requiresRemote: [],
   configSchema: accessPolicyConfigSchema,
-  defaults: { playerCommands: [], consoleRoles: ["operator"] },
+  defaults: accessPolicyConfigSchema.parse({}),
   stateSchemaVersion: null,
   migrationPaths: [],
   create: async (input) => {

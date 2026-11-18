@@ -5,7 +5,7 @@
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
-import { accessPolicyConfigSchema } from "./definition";
+import { accessPolicyConfigSchema, type AccessPolicyConfig } from "./definition";
 
 export interface AccessRequest {
   readonly principalId: string;
@@ -19,37 +19,36 @@ export interface AccessDecision {
   readonly reason: "allowed" | "forbidden" | "unknown-role";
 }
 
-function authorizeHook(request: AccessRequest): AccessDecision {
-  return { allowed: request.role.length > 0, reason: "allowed" };
-}
+/** 名册权限端口；规则在构造时冻结。 */
+export class AccessPolicyPort {
+  private readonly playerCommands: ReadonlySet<string>;
+  private readonly consoleRoles: ReadonlySet<string>;
 
-export interface AccessPolicyPort {
-  authorize: typeof authorizeHook;
+  constructor(config: AccessPolicyConfig) {
+    this.playerCommands = new Set(config.playerCommands);
+    this.consoleRoles = new Set(config.consoleRoles);
+  }
+
+  authorize(request: AccessRequest): AccessDecision {
+    if (request.action === "console") {
+      return this.consoleRoles.has(request.role)
+        ? { allowed: true, reason: "allowed" }
+        : { allowed: false, reason: "forbidden" };
+    }
+    if (request.role === "player") {
+      return request.commandType !== undefined && this.playerCommands.has(request.commandType)
+        ? { allowed: true, reason: "allowed" }
+        : { allowed: false, reason: "forbidden" };
+    }
+    if (request.role === "operator") {
+      return { allowed: true, reason: "allowed" };
+    }
+    return { allowed: false, reason: "unknown-role" };
+  }
 }
 
 /** 按配置生成无状态权限名册。 */
 export function createAccessPolicyModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = accessPolicyConfigSchema.parse(input.config);
-  const playerCommands = new Set(config.playerCommands);
-  const consoleRoles = new Set<string>(config.consoleRoles);
-  const port: AccessPolicyPort = {
-    authorize: (request) => {
-      if (request.action === "console") {
-        return consoleRoles.has(request.role)
-          ? { allowed: true, reason: "allowed" }
-          : { allowed: false, reason: "forbidden" };
-      }
-      if (request.role === "player") {
-        if (request.commandType === undefined || !playerCommands.has(request.commandType)) {
-          return { allowed: false, reason: "forbidden" };
-        }
-        return { allowed: true, reason: "allowed" };
-      }
-      if (request.role === "operator") {
-        return { allowed: true, reason: "allowed" };
-      }
-      return { allowed: false, reason: "unknown-role" };
-    },
-  };
-  return createStatelessModule(input, port);
+  return createStatelessModule(input, new AccessPolicyPort(config));
 }
