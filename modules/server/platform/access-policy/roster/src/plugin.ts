@@ -19,12 +19,16 @@ export interface AccessDecision {
   readonly reason: "allowed" | "forbidden" | "unknown-role";
 }
 
+function authorizeHook(request: AccessRequest): AccessDecision {
+  return { allowed: request.role.length > 0, reason: "allowed" };
+}
+
 export interface AccessPolicyPort {
-  authorize(request: AccessRequest): AccessDecision;
+  authorize: typeof authorizeHook;
 }
 
 /** 按配置生成无状态权限名册。 */
-export async function createAccessPolicyModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+export function createAccessPolicyModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = accessPolicyConfigSchema.parse(input.config);
   const playerCommands = new Set(config.playerCommands);
   const consoleRoles = new Set<string>(config.consoleRoles);
