@@ -3,6 +3,7 @@
  * 依赖公共契约的领域值、资源量与原因码；端口方法在调用方事务内同步执行。
  * 禁止在这里实现规则、读取存储或让端口绕过所属模块的聚合所有权。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type {
   MeterChangeCause,
   NumericMeterId,

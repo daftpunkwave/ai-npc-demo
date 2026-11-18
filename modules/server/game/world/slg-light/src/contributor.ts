@@ -242,7 +242,8 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
           if (record === null || record.state.injuredUntilTick === null) {
             return;
           }
-          if ((record?.state.injuredUntilTick ?? 0) > context.tx.worldTick) {
+          // eslint-disable-next-line @typescript-eslint/prefer-optional-chain -- record 已在上方判空，不需要可选链。
+          if (record.state.injuredUntilTick > context.tx.worldTick) {
             return;
           }
           context.tx.put("character", agentId, { ...record.state, injuredUntilTick: null });

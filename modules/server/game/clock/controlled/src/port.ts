@@ -3,6 +3,7 @@
  * 依赖存储端口与时钟配置；runVersion 在每次模式变化时递增。
  * 禁止在 running 之外自行推进 tick、重复打开事务或绕过乐观版本校验。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 方法签名中的参数名只用于表达调用契约。 */
 import { DomainError, type StoragePort } from "@ai-npc/contracts";
 import type { ClockState, GameClockPort } from "@ai-npc/module-sdk";
 import { requireClockNumber, requireClockString, type ClockConfig } from "./state";
