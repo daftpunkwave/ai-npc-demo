@@ -301,7 +301,7 @@ class SlgWorldPort implements GameWorldPort {
     return { ok: true };
   }
 
-  setGroupStatus(groupId: string, status: GroupState["status"], taskId: string | null, injured?: number): OpSuccess | OpFailure {
+  setGroupStatus(groupId: string, status: GroupState["status"], taskId: string | null, injured?: number, nodeId?: string): OpSuccess | OpFailure {
     const record = readWorldState(this.tx(), "group", groupId, groupStateSchema);
     if (record === null) {
       return failure("invalid-params");
@@ -311,8 +311,25 @@ class SlgWorldPort implements GameWorldPort {
       status,
       currentTaskId: taskId,
       ...(injured === undefined ? {} : { injured }),
+      ...(nodeId === undefined ? {} : { nodeId }),
     });
     return { ok: true };
+  }
+
+  claimGroup(groupId: string, taskId: string): OpSuccess | OpFailure {
+    const record = readWorldState(this.tx(), "group", groupId, groupStateSchema);
+    if (record === null || record.state.status === "rescued" || record.state.currentTaskId !== null) {
+      return failure("participant-unavailable");
+    }
+    this.tx().put("group", groupId, { ...record.state, currentTaskId: taskId });
+    return { ok: true };
+  }
+
+  releaseGroup(groupId: string, taskId: string): void {
+    const record = readWorldState(this.tx(), "group", groupId, groupStateSchema);
+    if (record !== null && record.state.currentTaskId === taskId) {
+      this.tx().put("group", groupId, { ...record.state, currentTaskId: null });
+    }
   }
 
   drawDelegation(

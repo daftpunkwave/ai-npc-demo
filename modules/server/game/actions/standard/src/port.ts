@@ -10,7 +10,7 @@ import {
   type ScopedWorldTxFactory,
   type TaskView,
 } from "@ai-npc/module-sdk";
-import { readActionState, taskStateSchema, type TaskState } from "./state";
+import { readTaskState, type TaskState } from "./state";
 
 function toView(state: TaskState): TaskView {
   return {
@@ -38,7 +38,7 @@ class StandardActionsPort implements GameActionsPort {
   }
 
   task(taskId: string): TaskView | null {
-    const state = readActionState(this.tx(), "task", taskId, taskStateSchema);
+    const state = readTaskState(this.tx(), taskId);
     return state === null ? null : toView(state);
   }
 

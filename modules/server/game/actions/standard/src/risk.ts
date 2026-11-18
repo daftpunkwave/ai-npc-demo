@@ -8,7 +8,7 @@ import type { TaskState } from "./state";
 
 export interface RiskResult {
   readonly delayTicks: number;
-  readonly injuredAgentId: string | null;
+  readonly injuredAgentIds: readonly string[];
   readonly teamInjured: boolean;
 }
 
@@ -20,7 +20,7 @@ export function rollRisk(
   const content = requireGameContent(context.content);
   const participants = [...task.participants].sort((left, right) => left.localeCompare(right));
   let delayTicks = 0;
-  let injuredAgentId: string | null = null;
+  const injuredAgentIds = new Set<string>();
   let teamInjured = false;
   for (const roadId of task.route) {
     const road = content.roads.get(roadId);
@@ -38,12 +38,14 @@ export function rollRisk(
     }
     if (injured) {
       if (participants.length > 0) {
-        const victim = participants[Math.floor(rng() * participants.length)];
-        injuredAgentId = victim ?? participants[0] ?? null;
+        const victim = participants[Math.floor(rng() * participants.length)] ?? participants[0];
+        if (victim !== undefined) {
+          injuredAgentIds.add(victim);
+        }
       } else {
         teamInjured = true;
       }
     }
   }
-  return { delayTicks, injuredAgentId, teamInjured };
+  return { delayTicks, injuredAgentIds: [...injuredAgentIds], teamInjured };
 }

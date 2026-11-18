@@ -18,7 +18,8 @@ import { completeTask, failTask } from "./completion";
 import { refundDelegation, releaseReserved, consumeWorkingRepair } from "./reservations";
 import { planDispatch, type DispatchInput } from "./plan";
 import { rollRisk } from "./risk";
-import { readActionState, taskStateSchema, type InvitationState, type TaskState } from "./state";
+import { computeTaskRoute } from "./routes";
+import { readTaskState, type InvitationState, type TaskState } from "./state";
 
 type ActionContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -66,6 +67,7 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     }
     reserved.push(stockpile);
   }
+  const drawn: { readonly stockpileId: string; readonly amount: ResourceAmounts }[] = [];
   for (const stockpile of plan.plan.stockpiles) {
     const authority = asPorts(context)["game.world"].drawAuthority(
       effectivePrincipalId(context.auth),
@@ -74,12 +76,19 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     if (authority.kind !== "delegation") {
       continue;
     }
-    const drawn = asPorts(context)["game.world"].drawDelegation(
+    const result = asPorts(context)["game.world"].drawDelegation(
       effectivePrincipalId(context.auth),
       stockpile.stockpileId,
       stockpile.amount,
     );
-    if (!drawn.ok) {
+    if (!result.ok) {
+      for (const item of drawn) {
+        asPorts(context)["game.world"].refundDelegation(
+          effectivePrincipalId(context.auth),
+          item.stockpileId,
+          item.amount,
+        );
+      }
       for (const item of plan.plan.stockpiles) {
         asPorts(context)["game.resources"].release({
           stockpileId: item.stockpileId,
@@ -88,7 +97,32 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
           byId: effectivePrincipalId(context.auth),
         });
       }
-      return { kind: "rejected", reasonCode: drawn.reasonCode, safeMessage: "委托余额不足" };
+      return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "委托余额不足" };
+    }
+    drawn.push(stockpile);
+  }
+  const rescueParams = plan.plan.taskType === "rescue"
+    ? plan.plan.params as { readonly groupId: string }
+    : null;
+  if (rescueParams !== null) {
+    const claimed = asPorts(context)["game.world"].claimGroup(rescueParams.groupId, taskId);
+    if (!claimed.ok) {
+      for (const item of drawn) {
+        asPorts(context)["game.world"].refundDelegation(
+          effectivePrincipalId(context.auth),
+          item.stockpileId,
+          item.amount,
+        );
+      }
+      for (const item of plan.plan.stockpiles) {
+        asPorts(context)["game.resources"].release({
+          stockpileId: item.stockpileId,
+          delta: item.amount,
+          taskId,
+          byId: effectivePrincipalId(context.auth),
+        });
+      }
+      return { kind: "rejected", reasonCode: claimed.reasonCode, safeMessage: "救援群体已被其他任务占用" };
     }
   }
   const task: TaskState = {
@@ -155,7 +189,7 @@ function respond(context: ActionContext, payload: Json): HandlerResult {
   if (invitation === undefined) {
     return { kind: "rejected", reasonCode: "not-invited", safeMessage: "没有该任务的邀请" };
   }
-  const task = readActionState(context.tx, "task", input.taskId, taskStateSchema);
+  const task = readTaskState(context.tx, input.taskId);
   if (task === null || task.status !== "pending" || invitation.state.response !== "pending") {
     return { kind: "rejected", reasonCode: "invitation-closed", safeMessage: "邀请已关闭" };
   }
@@ -181,7 +215,7 @@ function respond(context: ActionContext, payload: Json): HandlerResult {
 
 function cancel(context: ActionContext, payload: Json): HandlerResult {
   const input = payload as unknown as { readonly taskId: string };
-  const task = readActionState(context.tx, "task", input.taskId, taskStateSchema);
+  const task = readTaskState(context.tx, input.taskId);
   if (task === null) {
     return { kind: "rejected", reasonCode: "invalid-params", safeMessage: "任务不存在" };
   }
@@ -196,6 +230,10 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
   if (task.status === "pending") {
     releaseReserved(context, task);
     refundDelegation(context, task);
+    if (task.taskType === "rescue") {
+      const params = task.params as { readonly groupId: string };
+      asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
+    }
     context.tx.cancelJobs(`task-depart:${task.taskId}`);
     asPorts(context)["game.world"].setTeamStatus(task.teamId, "idle", null, null);
     for (const invitation of context.tx.list<InvitationState>("task-invitation")) {
@@ -225,6 +263,10 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
     } else {
       consumeWorkingRepair(context, task);
     }
+    if (task.taskType === "rescue") {
+      const params = task.params as { readonly groupId: string };
+      asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
+    }
     context.tx.cancelJobs(`task-complete:${task.taskId}`);
     context.tx.cancelJobs(`task-return:${task.taskId}`);
     if (task.taskType === "transport") {
@@ -251,8 +293,40 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
   return { kind: "accepted" };
 }
 
+function failDeparture(context: ActionContext, task: TaskState, reasonCode: ReasonCode): void {
+  releaseReserved(context, task);
+  refundDelegation(context, task);
+  if (task.taskType === "rescue") {
+    const params = task.params as { readonly groupId: string };
+    asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
+  }
+  failTask(context, task, reasonCode);
+}
+
+function allowedNodesForTask(content: ReturnType<typeof requireGameContent>, task: TaskState, teamNodeId: string): readonly string[] {
+  if (task.taskType === "transport") {
+    const params = task.params as { readonly fromStockpileId: string };
+    const stockpile = content.stockpiles.get(params.fromStockpileId);
+    return stockpile === undefined ? [] : [stockpile.nodeId];
+  }
+  if (task.taskType === "escort") {
+    const params = task.params as { readonly roadId: string };
+    const road = content.roads.get(params.roadId);
+    return road === undefined ? [] : [teamNodeId, road.a, road.b];
+  }
+  if (task.taskType === "rescue") {
+    const params = task.params as { readonly groupId: string };
+    const group = content.groups.get(params.groupId);
+    return group === undefined ? [] : [teamNodeId, group.nodeId];
+  }
+  if (task.taskType === "repair") {
+    return [teamNodeId, "grayharbor"];
+  }
+  return [teamNodeId, task.workNodeId ?? teamNodeId];
+}
+
 function depart(context: ActionContext, taskId: string): void {
-  const task = readActionState(context.tx, "task", taskId, taskStateSchema);
+  const task = readTaskState(context.tx, taskId);
   if (task === null || task.status !== "pending") {
     return;
   }
@@ -276,72 +350,93 @@ function depart(context: ActionContext, taskId: string): void {
       );
     }
   }
-  const team = asPorts(context)["game.world"].team(task.teamId);
+  const ports = asPorts(context);
+  const team = ports["game.world"].team(task.teamId);
   if (team === null) {
-    failTask(context, task, "invalid-params");
+    failDeparture(context, task, "invalid-params");
     return;
+  }
+  const content = requireGameContent(context.content);
+  const allowedNodes = allowedNodesForTask(content, task, team.nodeId);
+  for (const participant of participants) {
+    const character = ports["game.world"].character(participant);
+    if (
+      character === null ||
+      character.currentTaskId !== null ||
+      (character.injuredUntilTick !== null && character.injuredUntilTick > context.tx.worldTick) ||
+      !allowedNodes.includes(character.nodeId)
+    ) {
+      failDeparture(context, task, "participant-unavailable");
+      return;
+    }
   }
   if (task.taskType === "transport") {
     const params = task.params as { readonly cargo: ResourceAmounts };
     const capacity = team.capacity + (participants.includes("npc-wenyuan") ? 5 : 0);
     if (params.cargo.supply + params.cargo.energy + params.cargo.medical > capacity) {
-      releaseReserved(context, task);
-      refundDelegation(context, task);
-      failTask(context, task, "over-capacity");
+      failDeparture(context, task, "over-capacity");
       return;
     }
   }
-  const route = asPorts(context)["game.map"].findRoute({
-    fromNodeId: team.nodeId,
-    toNodeId: task.workNodeId ?? team.nodeId,
-    factionId: team.ownerFactionId,
-    atTick: context.tx.worldTick,
-    withCargo: task.taskType === "transport",
-  });
-  if (route === null && task.workNodeId !== team.nodeId) {
-    releaseReserved(context, task);
-    refundDelegation(context, task);
-    failTask(context, task, "route-closed");
+  const departedAt = context.tx.worldTick;
+  const route = computeTaskRoute(
+    ports,
+    content,
+    { taskType: task.taskType, teamId: task.teamId, params: task.params as Record<string, unknown> },
+    team.nodeId,
+    team.ownerFactionId,
+    departedAt,
+    participants,
+  );
+  if (route === null) {
+    failDeparture(context, task, "route-closed");
     return;
   }
-  const risk = rollRisk(context, { ...task, participants, route: [...(route?.roadIds ?? task.route)] });
-  if (risk.injuredAgentId !== null) {
-    asPorts(context)["game.world"].injureCharacter(risk.injuredAgentId, context.tx.worldTick + 48, "road-risk");
+  const nominalCompletionTick = departedAt + route.duration;
+  const risk = rollRisk(context, {
+    ...task,
+    participants,
+    route: [...route.roadIds],
+    departTick: departedAt,
+  });
+  for (const injuredAgentId of risk.injuredAgentIds) {
+    ports["game.world"].injureCharacter(injuredAgentId, departedAt + 48, "road-risk");
   }
   const running: TaskState = {
     ...task,
     participants,
     status: "running",
-    route: [...(route?.roadIds ?? task.route)],
+    route: [...route.roadIds],
+    departTick: departedAt,
+    nominalCompletionTick,
+    patrolStartTick: route.patrolStartTick,
+    patrolEndTick: route.patrolEndTick,
+    workStartTick: route.workStartTick,
+    workNodeId: route.workNodeId,
     delayTicks: risk.delayTicks,
     teamInjured: risk.teamInjured,
-    phase: task.workStartTick !== null && context.tx.worldTick >= task.workStartTick ? "working" : "traveling",
+    phase: route.workStartTick !== null && departedAt >= route.workStartTick ? "working" : "traveling",
   };
   context.tx.put("task", task.taskId, running);
   for (const participant of participants) {
-    asPorts(context)["game.world"].setCharacterTask(participant, task.taskId);
+    ports["game.world"].setCharacterTask(participant, task.taskId);
   }
-  asPorts(context)["game.world"].setTeamStatus(task.teamId, "traveling", task.nominalCompletionTick, task.taskId);
+  ports["game.world"].setTeamStatus(task.teamId, "traveling", nominalCompletionTick, task.taskId);
   context.tx.emit(
     "TaskDeparted",
-    { taskId, participants: [...participants], route: [...running.route], nominalCompletionTick: task.nominalCompletionTick },
+    { taskId, participants: [...participants], route: [...running.route], nominalCompletionTick },
     [{ kind: "public" }],
   );
-  context.tx.schedule(
-    "task.complete",
-    task.nominalCompletionTick,
-    `task-complete:${taskId}:${task.nominalCompletionTick}`,
-    { taskId },
-  );
+  context.tx.schedule("task.complete", nominalCompletionTick, `task-complete:${taskId}:${nominalCompletionTick}`, { taskId });
 }
 
 function complete(context: ActionContext, taskId: string): void {
-  const task = readActionState(context.tx, "task", taskId, taskStateSchema);
+  const task = readTaskState(context.tx, taskId);
   if (task === null || task.status !== "running") {
     return;
   }
-  if (task.delayTicks > 0 && !task.delayNoticeSent) {
-    const newCompletion = task.nominalCompletionTick + task.delayTicks;
+  if ((task.delayTicks as number) > 0 && !task.delayNoticeSent) {
+    const newCompletion = (task.nominalCompletionTick as number) + (task.delayTicks as number);
     context.tx.put("task", taskId, { ...task, delayNoticeSent: true });
     context.tx.emit("TaskDelayed", { taskId, newCompletionTick: newCompletion, cause: "road-risk" }, [{ kind: "public" }]);
     context.tx.schedule("task.complete", newCompletion, `task-complete:${taskId}:${newCompletion}`, { taskId });
@@ -352,12 +447,16 @@ function complete(context: ActionContext, taskId: string): void {
   if (!result.ok) {
     releaseReserved(context, task);
     refundDelegation(context, task);
+    if (task.taskType === "rescue") {
+      const params = task.params as { readonly groupId: string };
+      asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
+    }
     failTask(context, task, result.reasonCode);
   }
 }
 
 function returnToOrigin(context: ActionContext, taskId: string): void {
-  const task = readActionState(context.tx, "task", taskId, taskStateSchema);
+  const task = readTaskState(context.tx, taskId);
   if (task === null || task.status !== "cancelled" || task.taskType !== "transport") {
     return;
   }

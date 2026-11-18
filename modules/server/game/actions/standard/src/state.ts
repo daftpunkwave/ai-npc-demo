@@ -50,6 +50,16 @@ export const invitationStateSchema = z
 export type TaskState = z.infer<typeof taskStateSchema>;
 export type InvitationState = z.infer<typeof invitationStateSchema>;
 
+/** 读取并校验任务聚合；缺失返回 null，损坏直接报错。 */
+export function readTaskState(tx: WorldTx, taskId: string): TaskState | null {
+  return readActionState(tx, "task", taskId, taskStateSchema);
+}
+
+/** 读取并校验邀请聚合；缺失返回 null。 */
+export function readInvitationState(tx: WorldTx, invitationId: string): InvitationState | null {
+  return readActionState(tx, "task-invitation", invitationId, invitationStateSchema);
+}
+
 /** 读取并校验任务或邀请聚合；缺失返回 null，损坏直接报错。 */
 export function readActionState<T>(
   tx: WorldTx,

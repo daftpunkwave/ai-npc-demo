@@ -14,16 +14,11 @@ import {
   type GameContent,
   type GameModulePorts,
   type HandlerContext,
-  type RouteResult,
 } from "@ai-npc/module-sdk";
+import type { DispatchInput } from "./plan-types";
+import { computeTaskRoute, type PlannedRoute } from "./routes";
 
-export type DispatchInput = {
-  readonly taskType: "transport" | "escort" | "rescue" | "repair" | "scout";
-  readonly teamId: string;
-  readonly invitees?: readonly string[];
-  readonly departAfterTicks?: number;
-  readonly params: Record<string, unknown>;
-};
+export type { DispatchInput } from "./plan-types";
 
 export interface DispatchPlan {
   readonly taskType: DispatchInput["taskType"];
@@ -33,7 +28,7 @@ export interface DispatchPlan {
   readonly route: readonly string[];
   readonly departTick: number;
   readonly nominalCompletionTick: number;
-  readonly phase: "pending" | "traveling" | "working";
+  readonly phase: "pending";
   readonly reserved: ResourceAmounts;
   readonly stockpiles: readonly { readonly stockpileId: string; readonly amount: ResourceAmounts }[];
   readonly fromStockpileId: string | null;
@@ -54,51 +49,27 @@ function fail(reasonCode: ReasonCode, safeMessage: string): PlanResult {
   return { ok: false, reasonCode, safeMessage };
 }
 
-function routeBetween(
-  ports: GameModulePorts,
-  fromNodeId: string,
-  toNodeId: string,
-  factionId: string,
-  atTick: number,
-  withCargo: boolean,
-): RouteResult | null {
-  if (fromNodeId === toNodeId) {
-    return { roadIds: [], travelTicks: 0 };
-  }
-  return ports["game.map"].findRoute({ fromNodeId, toNodeId, factionId, atTick, withCargo });
-}
-
-function joinRoutes(first: RouteResult | null, second: RouteResult | null): RouteResult | null {
-  if (first === null || second === null) {
-    return null;
-  }
-  return {
-    roadIds: [...first.roadIds, ...second.roadIds],
-    travelTicks: first.travelTicks + second.travelTicks,
-  };
-}
-
-function allowedWorkNodes(content: GameContent, plan: DispatchInput, teamNodeId: string): readonly string[] {
-  switch (plan.taskType) {
+function allowedWorkNodes(content: GameContent, input: DispatchInput, teamNodeId: string): readonly string[] {
+  switch (input.taskType) {
     case "transport": {
-      const params = plan.params as { readonly fromStockpileId: string };
+      const params = input.params as { readonly fromStockpileId: string };
       const stockpile = content.stockpiles.get(params.fromStockpileId);
       return stockpile === undefined ? [] : [stockpile.nodeId];
     }
     case "escort": {
-      const params = plan.params as { readonly roadId: string };
+      const params = input.params as { readonly roadId: string };
       const road = content.roads.get(params.roadId);
       return road === undefined ? [] : [teamNodeId, road.a, road.b];
     }
     case "rescue": {
-      const params = plan.params as { readonly groupId: string };
+      const params = input.params as { readonly groupId: string };
       const group = content.groups.get(params.groupId);
       return group === undefined ? [] : [teamNodeId, group.nodeId];
     }
     case "repair":
       return [teamNodeId, "grayharbor"];
     case "scout": {
-      const params = plan.params as { readonly nodeId: string };
+      const params = input.params as { readonly nodeId: string };
       return [teamNodeId, params.nodeId];
     }
   }
@@ -139,15 +110,15 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
   if (!ports["game.world"].canDispatchTeam(dispatcher, input.teamId)) {
     return fail("no-authority", "派遣者没有该队伍的有效授权");
   }
-  const invitees = [...(input.invitees ?? [])];
-  const workNodes = allowedWorkNodes(content, input, team.nodeId);
+  const invitees = [...new Set(input.invitees ?? [])];
+  const workNodes = allowedWorkNodes(content, input, teamView.nodeId);
   for (const inviteeId of invitees) {
     const character = ports["game.world"].character(inviteeId);
     if (character === null) {
       return fail("invalid-params", "受邀角色不存在");
     }
     if (
-      character.injuredUntilTick !== null && character.injuredUntilTick > context.tx.worldTick ||
+      (character.injuredUntilTick !== null && character.injuredUntilTick > context.tx.worldTick) ||
       character.currentTaskId !== null ||
       !workNodes.includes(character.nodeId)
     ) {
@@ -155,17 +126,15 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     }
   }
 
-  let route: RouteResult | null = null;
-  let duration = 0;
-  let fromStockpileId: string | null = null;
-  let toStockpileId: string | null = null;
-  let patrolStartTick: number | null = null;
-  let patrolEndTick: number | null = null;
-  let workStartTick: number | null = null;
-  let workNodeId: string | null = null;
+  const departAfter = input.departAfterTicks ?? (invitees.length > 0 ? 2 : 1);
+  if (!Number.isSafeInteger(departAfter) || departAfter < 1 || departAfter > 6) {
+    return fail("invalid-params", "出发延迟必须在 1–6 tick");
+  }
+  const departTick = context.tx.worldTick + departAfter;
   const reserved = zeroResources;
   const stockpiles: { stockpileId: string; amount: ResourceAmounts }[] = [];
-  const atTick = context.tx.worldTick;
+  let fromStockpileId: string | null = null;
+  let toStockpileId: string | null = null;
 
   if (input.taskType === "transport") {
     const params = input.params as {
@@ -188,45 +157,17 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     if (totalAmount(params.cargo) > capacity) {
       return fail("over-capacity", "货物超过队伍运力");
     }
-    route = routeBetween(ports, from.nodeId, to.nodeId, team.ownerFactionId, atTick, true);
-    if (route === null) {
-      return fail("route-unavailable", "找不到可用路线");
-    }
-    duration = route.travelTicks;
     fromStockpileId = from.stockpileId;
     toStockpileId = to.stockpileId;
     addReservation(stockpiles, from.stockpileId, params.cargo);
-    workNodeId = to.nodeId;
   } else if (input.taskType === "escort") {
     const params = input.params as { readonly roadId: string; readonly durationTicks?: number };
-    const road = content.roads.get(params.roadId);
-    if (road === undefined) {
+    if (!content.roads.has(params.roadId)) {
       return fail("invalid-params", "道路不存在");
     }
-    if (teamView.nodeId === road.a) {
-      workNodeId = road.a;
-      route = { roadIds: [], travelTicks: 0 };
-    } else if (teamView.nodeId === road.b) {
-      workNodeId = road.b;
-      route = { roadIds: [], travelTicks: 0 };
-    } else {
-      const toA = routeBetween(ports, teamView.nodeId, road.a, team.ownerFactionId, atTick, false);
-      const toB = routeBetween(ports, teamView.nodeId, road.b, team.ownerFactionId, atTick, false);
-      if (toA !== null && (toB === null || toA.travelTicks <= toB.travelTicks)) {
-        workNodeId = road.a;
-        route = toA;
-      } else {
-        workNodeId = road.b;
-        route = toB;
-      }
+    if (params.durationTicks !== undefined && (params.durationTicks < 6 || params.durationTicks > 24)) {
+      return fail("invalid-params", "护送时长必须在 6–24 tick");
     }
-    if (route === null) {
-      return fail("route-unavailable", "找不到前往护送道路的路线");
-    }
-    const patrol = params.durationTicks ?? 12;
-    patrolStartTick = atTick + route.travelTicks;
-    patrolEndTick = patrolStartTick + patrol;
-    duration = route.travelTicks + patrol;
   } else if (input.taskType === "rescue") {
     const params = input.params as {
       readonly groupId: string;
@@ -238,22 +179,16 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     if (group === undefined || to === undefined || to.nodeId !== params.toNodeId) {
       return fail("invalid-params", "救援群体或医疗库存点不合法");
     }
+    if (ports["game.world"].group(params.groupId)?.status === "rescued") {
+      return fail("invalid-params", "群体已经被救出");
+    }
     const targetNode = content.nodes.get(params.toNodeId);
     if (targetNode === undefined || !targetNode.facilities.some((facility) => content.medicalFacilities.includes(facility))) {
       return fail("invalid-params", "救援目标没有医疗设施");
     }
-    const toGroup = routeBetween(ports, teamView.nodeId, group.nodeId, team.ownerFactionId, atTick, false);
-    const toTarget = routeBetween(ports, group.nodeId, params.toNodeId, team.ownerFactionId, atTick, false);
-    route = joinRoutes(toGroup, toTarget);
-    if (route === null) {
-      return fail("route-unavailable", "找不到救援路线");
-    }
-    const helpers = invitees.includes("npc-suhui") || invitees.includes("npc-linwu");
-    duration = Math.max(1, route.travelTicks - (helpers ? 2 : 0));
     fromStockpileId = to.stockpileId;
     toStockpileId = to.stockpileId;
     addReservation(stockpiles, to.stockpileId, { supply: 0, energy: 0, medical: group.injured });
-    workNodeId = params.toNodeId;
   } else if (input.taskType === "repair") {
     const params = input.params as {
       readonly energyStockpileId: string;
@@ -270,30 +205,27 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     if (supply !== undefined && supply.nodeId !== "grayharbor" && supply.nodeId !== teamView.nodeId) {
       return fail("invalid-params", "供给库存点不在工作节点");
     }
-    route = routeBetween(ports, teamView.nodeId, "grayharbor", team.ownerFactionId, atTick, false);
-    if (route === null) {
-      return fail("route-unavailable", "找不到前往灰港的路线");
-    }
-    duration = route.travelTicks + 6;
-    workStartTick = atTick + route.travelTicks;
-    workNodeId = "grayharbor";
     fromStockpileId = energy.stockpileId;
     toStockpileId = supply?.stockpileId ?? null;
     addReservation(stockpiles, energy.stockpileId, { supply: 0, energy: 10, medical: 0 });
     if (supply !== undefined && input.teamId !== "team-star") {
       addReservation(stockpiles, supply.stockpileId, { supply: 5, energy: 0, medical: 0 });
     }
-  } else {
-    const params = input.params as { readonly nodeId: string };
-    if (!content.nodes.has(params.nodeId)) {
-      return fail("invalid-params", "侦察节点不存在");
-    }
-    route = routeBetween(ports, teamView.nodeId, params.nodeId, team.ownerFactionId, atTick, false);
-    if (route === null) {
-      return fail("route-unavailable", "找不到侦察路线");
-    }
-    duration = route.travelTicks + 2;
-    workNodeId = params.nodeId;
+  } else if (!content.nodes.has((input.params as { readonly nodeId: string }).nodeId)) {
+    return fail("invalid-params", "侦察节点不存在");
+  }
+
+  const route: PlannedRoute | null = computeTaskRoute(
+    ports,
+    content,
+    input,
+    teamView.nodeId,
+    team.ownerFactionId,
+    departTick,
+    invitees,
+  );
+  if (route === null) {
+    return fail("route-unavailable", "找不到可用路线");
   }
 
   for (const stockpile of stockpiles) {
@@ -315,12 +247,6 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     }
   }
 
-  const inviteCount = invitees.length;
-  const departAfter = input.departAfterTicks ?? (inviteCount > 0 ? 2 : 1);
-  if (!Number.isSafeInteger(departAfter) || departAfter < 1 || departAfter > 6) {
-    return fail("invalid-params", "出发延迟必须在 1–6 tick");
-  }
-  const departTick = atTick + departAfter;
   return {
     ok: true,
     plan: {
@@ -330,16 +256,16 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
       params: input.params,
       route: route.roadIds,
       departTick,
-      nominalCompletionTick: departTick + duration,
+      nominalCompletionTick: departTick + route.duration,
       phase: "pending",
       reserved: stockpiles.reduce<ResourceAmounts>((total, entry) => addAmounts(total, entry.amount), reserved),
       stockpiles,
       fromStockpileId,
       toStockpileId,
-      patrolStartTick,
-      patrolEndTick,
-      workStartTick,
-      workNodeId,
+      patrolStartTick: route.patrolStartTick,
+      patrolEndTick: route.patrolEndTick,
+      workStartTick: route.workStartTick,
+      workNodeId: route.workNodeId,
     },
   };
 }

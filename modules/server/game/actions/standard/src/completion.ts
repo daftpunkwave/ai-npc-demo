@@ -85,7 +85,7 @@ function taskAudience(task: TaskState): { kind: "principals"; ids: string[] }[] 
 export function completeTask(context: CompletionContext, task: TaskState): CompletionResult {
   const content = requireGameContent(context.content);
   const ports = context.modules;
-  const completedAt = task.nominalCompletionTick + task.delayTicks;
+  const completedAt = (task.nominalCompletionTick as number) + (task.delayTicks as number);
   const workNodeId = task.workNodeId ?? ports["game.world"].team(task.teamId)?.nodeId;
   if (workNodeId === undefined || workNodeId === null) {
     return { ok: false, reasonCode: "invalid-params", safeMessage: "任务缺少工作节点" };
@@ -119,7 +119,7 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
         return { ok: false, reasonCode: consumed.reasonCode, safeMessage: "救援医疗材料消耗失败" };
       }
     }
-    ports["game.world"].setGroupStatus(params.groupId, "rescued", null, 0);
+    ports["game.world"].setGroupStatus(params.groupId, "rescued", null, 0, workNodeId);
     ports["game.world"].changeMeter("migration.safety", 10, "task");
   } else if (task.taskType === "repair") {
     if (task.fromStockpileId !== null) {

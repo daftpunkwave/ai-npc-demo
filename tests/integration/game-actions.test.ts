@@ -93,6 +93,8 @@ describe("任务行动", () => {
     );
     expect(dispatch.commandStatus).toBe("accepted");
     const taskId = (dispatch.result as { readonly taskId: string }).taskId;
+    setGameClock(value, { worldTick: 1, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 1);
     setGameClock(value, { worldTick: 20, mode: "running" });
     value.authority.jobs.runDue(value.branchId, 20);
     expect(readGameAggregate(value, "task", taskId)).toMatchObject({ status: "completed" });
@@ -144,11 +146,11 @@ describe("任务行动", () => {
       gameCommandEnvelope("task.respond", { taskId, response: "accept" }, value.host.ids("cmd")),
     );
     expect(accept.commandStatus).toBe("accepted");
-    setGameClock(value, { worldTick: 1, mode: "running" });
-    value.authority.jobs.runDue(value.branchId, 1);
+    setGameClock(value, { worldTick: 2, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 2);
     setGameClock(value, { worldTick: 20, mode: "running" });
     value.authority.jobs.runDue(value.branchId, 20);
-    expect(readGameAggregate(value, "group", "grp-injured-migrants")).toMatchObject({ status: "rescued", injured: 0 });
+    expect(readGameAggregate(value, "group", "grp-injured-migrants")).toMatchObject({ status: "rescued", injured: 0, nodeId: "grayharbor" });
     expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ "migration.safety": 60 });
     expect(readGameAggregate(value, "stockpile", "sp-truce")).toMatchObject({ amount: { medical: 4 } });
   });

@@ -383,7 +383,10 @@ export interface GameWorldPort {
     status: "waiting" | "rescued" | "worsened",
     taskId: string | null,
     injured?: number,
+    nodeId?: string,
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  claimGroup(groupId: string, taskId: string): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  releaseGroup(groupId: string, taskId: string): void;
   drawDelegation(
     principalId: string,
     stockpileId: string,
