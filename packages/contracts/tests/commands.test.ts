@@ -1,0 +1,238 @@
+/**
+ * 验证命令目录、命令载荷判别联合、协议条款与剧情卡效果 schema。
+ * 依赖公共契约包的 commands 主题导出。
+ * 禁止在此执行命令或依赖规则实现；样例只检查契约形状与严格字段。
+ */
+import { describe, expect, it } from "vitest";
+import {
+  cardEffectSchema,
+  commandPayloadSchemas,
+  commandRequestSchema,
+  commandTypeSchema,
+  commandTypes,
+  overrideEffectSchema,
+  termSchema,
+} from "../src/index";
+import { expectInvalid, expectValid } from "./support";
+
+/** 命令类型全集，固定顺序用于目录完整性断言。 */
+const expectedCommandTypes = [
+  "campaign.start",
+  "dialogue.say",
+  "speech.commit",
+  "seat.say",
+  "information.share",
+  "agreement.propose",
+  "agreement.respond",
+  "task.dispatch",
+  "task.respond",
+  "task.cancel",
+  "policy.set",
+  "scenario.publish",
+  "scenario.withdraw",
+  "scenario.compensate",
+  "scenario.override",
+  "probe.ask",
+] as const;
+
+const agentId = "npc-cenyan";
+const taskId = "task-k3j9x0a1b2c3";
+const agreementId = "agr-k3j9x0a1b2c3";
+
+const deliverTerm = {
+  kind: "deliver",
+  obligorId: agentId,
+  resource: "supply",
+  amount: 10,
+  fromStockpileId: "sp-rubble",
+  toStockpileId: "sp-commons",
+  byTick: 48,
+};
+
+const broadcastEffect = {
+  kind: "broadcast",
+  speakerId: "npc-shenli",
+  text: "中继读数持续下降。",
+};
+
+/** 16 种命令的合法 payload，键必须与目录一一对应。 */
+const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
+  "campaign.start": { factionId: "human-neutral" },
+  "dialogue.say": { targetAgentId: agentId, text: "你好" },
+  "speech.commit": {
+    channel: "message",
+    conversationId: null,
+    audience: ["player-1"],
+    approvedSpeechArtifactRef: "art-k3j9x0a1b2c3",
+    intentKind: "inform",
+    replyToId: null,
+  },
+  "seat.say": { to: ["player-1"], text: "收到" },
+  "information.share": { evidenceId: "ev-flood-log", audience: [agentId] },
+  "agreement.propose": {
+    parties: ["player-1", "human-neutral"],
+    terms: [deliverTerm],
+    expiresInTicks: 24,
+  },
+  "agreement.respond": {
+    agreementId,
+    response: "counter",
+    counterTerms: [
+      {
+        kind: "escort",
+        obligorId: "human-neutral",
+        roadId: "r-gh-ps",
+        byTick: 48,
+      },
+    ],
+  },
+  "task.dispatch": {
+    taskType: "transport",
+    teamId: "team-commons",
+    invitees: ["npc-wenyuan"],
+    departAfterTicks: 2,
+    params: {
+      fromStockpileId: "sp-commons",
+      toStockpileId: "sp-earth",
+      cargo: { supply: 10, energy: 0, medical: 0 },
+    },
+  },
+  "task.respond": { taskId, response: "accept", reasonCode: "busy" },
+  "task.cancel": { taskId },
+  "policy.set": { key: "watergate.allocation", value: "rotation" },
+  "scenario.publish": { cardId: "card-relay-alarm", version: 1, triggerAtTick: 2 },
+  "scenario.withdraw": { cardId: "card-relay-alarm" },
+  "scenario.compensate": { cardId: "card-relay-alarm", effects: [broadcastEffect], note: "补偿" },
+  "scenario.override": {
+    effects: [{ kind: "meter-set", meter: "relay.stability", value: 45 }],
+    note: "调试覆盖",
+  },
+  "probe.ask": {
+    probeId: "prb-k3j9x0a1b2c3",
+    agentId,
+    askedBy: "system:world",
+    question: "你还记得上次的承诺吗？",
+  },
+};
+
+describe("命令目录", () => {
+  it("类型全集与固定目录一致", () => {
+    expect([...commandTypes]).toEqual([...expectedCommandTypes]);
+    expect([...commandTypeSchema.options]).toEqual([...expectedCommandTypes]);
+    for (const type of expectedCommandTypes) {
+      expect(commandPayloadSchemas[type]).toBeDefined();
+    }
+  });
+
+  it("载荷映射键与类型目录完全一致", () => {
+    expect(Object.keys(commandPayloadSchemas).sort()).toEqual([...expectedCommandTypes].sort());
+    expectInvalid(commandTypeSchema, "campaign.pause");
+  });
+
+  it.each(expectedCommandTypes)("命令 %s 的合法载荷通过且拒绝额外字段", (type) => {
+    const payload = validPayloads[type];
+    const schema = commandPayloadSchemas[type];
+    expectValid(schema, payload);
+    expectInvalid(schema, { ...(payload as object), __unexpectedField: true });
+    expectInvalid(schema, null);
+  });
+
+  it.each(expectedCommandTypes)("命令请求 %s 的 type 与 payload 必须匹配", (type) => {
+    expectValid(commandRequestSchema, { type, payload: validPayloads[type] });
+    expectInvalid(commandRequestSchema, { type, payload: { factionId: "human-neutral" }, extra: true });
+    expectInvalid(commandRequestSchema, { type: "unknown.command", payload: {} });
+  });
+});
+
+describe("协议条款 Term", () => {
+  const terms = [
+    deliverTerm,
+    { kind: "escort", obligorId: agentId, roadId: "r-gh-ps", byTick: 48 },
+    { kind: "rescue", obligorId: "npc-suhui", groupId: "grp-injured-migrants", byTick: 48 },
+    { kind: "repair-relay", obligorId: "npc-shenli", byTick: 48 },
+    {
+      kind: "share-evidence",
+      obligorId: "human-neutral",
+      evidenceId: "ev-water-ledger",
+      toPrincipalId: "player-1",
+      byTick: 48,
+    },
+    {
+      kind: "grant-passage",
+      obligorId: "species-extraterrestrial",
+      roadId: "r-gh-an",
+      granteeFactionId: "human-alien-accord",
+      untilTick: 100,
+    },
+    { kind: "water-allocation", obligorId: "human-neutral", policy: "rotation", untilTick: 100 },
+    {
+      kind: "delegate",
+      obligorId: "human-neutral",
+      granteeId: "npc-wenyuan",
+      teamIds: ["team-commons"],
+      stockpileId: "sp-commons",
+      maxDraw: { supply: 15, energy: 6, medical: 4 },
+      untilTick: 168,
+    },
+  ];
+
+  it("八种条款都通过且 kind 唯一判别", () => {
+    expect(terms).toHaveLength(8);
+    expect(new Set(terms.map((term) => term.kind)).size).toBe(8);
+    for (const term of terms) {
+      expectValid(termSchema, term);
+      expectInvalid(termSchema, { ...term, __unexpectedField: true });
+      expectInvalid(termSchema, { ...term, kind: "unknown" });
+    }
+  });
+
+  it("拒绝缺少义务人与越界数值", () => {
+    expectInvalid(termSchema, { ...deliverTerm, obligorId: "" });
+    expectInvalid(termSchema, { ...deliverTerm, amount: 0 });
+    expectInvalid(termSchema, { ...deliverTerm, byTick: -1 });
+  });
+});
+
+describe("剧情卡效果", () => {
+  const effects = [
+    broadcastEffect,
+    { kind: "message", from: "npc-guxun", to: ["human-neutral"], text: "请考虑轮换供水。" },
+    { kind: "rumor", sourceId: "src-trader", aboutIds: ["species-fauna"], text: "听说巡裔袭击了车队。" },
+    {
+      kind: "world-fact",
+      factType: "ConvoyDelayed",
+      audience: { kind: "node", nodeId: "watergate" },
+      payload: { roadId: "r-gh-wg", text: "车队延误 6 小时。" },
+    },
+    {
+      kind: "stockpile-adjust",
+      stockpileId: "sp-commons",
+      delta: { supply: -10 },
+      reason: "仓储受潮",
+    },
+    { kind: "wake-agents", agentIds: ["human-neutral", "species-fauna"], reason: "council" },
+  ];
+
+  it("六种效果都通过且拒绝未知效果与额外字段", () => {
+    expect(effects).toHaveLength(6);
+    for (const effect of effects) {
+      expectValid(cardEffectSchema, effect);
+      expectInvalid(cardEffectSchema, { ...effect, __unexpectedField: true });
+      expectInvalid(cardEffectSchema, { ...effect, kind: "meter-set" });
+    }
+  });
+
+  it("覆盖效果额外允许 meter-set 与 road-status-set", () => {
+    const overrideEffects = [
+      ...effects,
+      { kind: "meter-set", meter: "relay.stability", value: 45 },
+      { kind: "road-status-set", roadId: "r-gh-ps", status: "closed" },
+    ];
+    expect(overrideEffects).toHaveLength(8);
+    for (const effect of overrideEffects) {
+      expectValid(overrideEffectSchema, effect);
+    }
+    expectInvalid(overrideEffectSchema, { kind: "meter-set", meter: "watergate.allocation", value: 45 });
+    expectInvalid(overrideEffectSchema, { kind: "road-status-set", roadId: "r-gh-ps", status: "blocked" });
+  });
+});
