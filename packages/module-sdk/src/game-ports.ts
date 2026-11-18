@@ -5,6 +5,7 @@
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type {
+  CardEffect,
   MessageIntentKind,
   MeterChangeCause,
   NumericMeterId,
@@ -147,6 +148,18 @@ export interface GameSecret {
   readonly leakTerms: readonly string[];
 }
 
+export interface GameScenarioCard {
+  readonly cardId: string;
+  readonly version: number;
+  readonly trigger: { readonly atTick: number };
+  readonly effects: readonly CardEffect[];
+}
+
+export interface GameScenario {
+  readonly scenarioId: string;
+  readonly cards: readonly GameScenarioCard[];
+}
+
 /** 规则模块读取内容索引所需的最小只读视图；实际内容包实现提供同构数据。 */
 export interface GameContent {
   readonly nodes: ReadonlyMap<string, GameNode>;
@@ -159,6 +172,8 @@ export interface GameContent {
   readonly evidence: ReadonlyMap<string, GameEvidencePlacement>;
   readonly secrets: ReadonlyMap<string, GameSecret>;
   readonly starts: ReadonlyMap<string, GameStart>;
+  readonly scenarios: ReadonlyMap<string, GameScenario>;
+  readonly defaultScenario: string;
   readonly migrationRoads: readonly string[];
   readonly medicalFacilities: readonly string[];
   readonly playerNodeId: string;
@@ -454,6 +469,19 @@ export interface GameAgreementsPort {
   activeAgreements(): readonly AgreementView[];
 }
 
+/** 剧情卡查询端口；具体卡状态由剧情模块拥有。 */
+export interface ScenarioCardView {
+  readonly cardId: string;
+  readonly version: number;
+  readonly status: "draft" | "published" | "triggered" | "withdrawn";
+  readonly triggerAtTick: number;
+}
+
+export interface GameScenarioPort {
+  card(cardId: string): ScenarioCardView | null;
+  cards(): readonly ScenarioCardView[];
+}
+
 /** 通信端口：送达计算、知识授权与剧情/对白写入。 */
 export interface CommsPostResult {
   readonly eventId: string;
@@ -503,10 +531,8 @@ export interface GameModulePorts {
   readonly "game.resources": GameResourcesPort;
   readonly "game.world": GameWorldPort;
   readonly "game.actions": GameActionsPort;
-  readonly "game.agreements": {
-    agreement(agreementId: string): AgreementView | null;
-    agreementsOf(principalId: string): readonly AgreementView[];
-  };
+  readonly "game.agreements": GameAgreementsPort;
+  readonly "game.scenario": GameScenarioPort;
   readonly "game.comms": GameCommsPort;
 }
 

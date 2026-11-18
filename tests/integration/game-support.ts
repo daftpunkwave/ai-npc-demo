@@ -21,6 +21,7 @@ import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-no
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
 import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
+import { createScenarioContributor, createScenarioPort } from "@ai-npc/mod-game-scenario-watergate";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
@@ -87,6 +88,8 @@ export function toGameContent(content: ContentPack): GameContent {
     evidence: content.index.evidence,
     secrets: content.index.secrets,
     starts: content.index.starts,
+    scenarios: content.index.scenarios,
+    defaultScenario: content.pack.defaultScenario,
     migrationRoads: content.map.migrationRoads,
     medicalFacilities: content.map.medicalFacilities,
     playerNodeId: content.worldInit.player.nodeId,
@@ -131,6 +134,7 @@ function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branc
 /** 启动真实存储、加载内容、绑定模块端口并注册游戏处理器。 */
 export async function createGameHarness(options: {
   readonly approvedSpeech?: import("@ai-npc/module-sdk").ApprovedSpeechReader;
+  readonly scenarioEscalating?: boolean;
 } = {}): Promise<GameHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
   const host = createFakeHost();
@@ -164,6 +168,7 @@ export async function createGameHarness(options: {
       "game.comms": createCommsPort(txFor, gameContent, host.ids),
       "game.actions": createActionsPort(txFor),
       "game.agreements": createAgreementsPort(txFor),
+      "game.scenario": createScenarioPort(txFor),
     });
     const authority = new Authority({
       storage,
@@ -179,6 +184,7 @@ export async function createGameHarness(options: {
     authority.registerModule(createCommsContributor());
     authority.registerModule(createActionsContributor());
     authority.registerModule(createAgreementsContributor());
+    authority.registerModule(createScenarioContributor({ escalating: options.scenarioEscalating === true }));
     return {
       dataDir,
       storage,
@@ -240,11 +246,24 @@ export function playerAuth(harness: GameHarness): AuthContext {
   };
 }
 
-export function strategicAuth(harness: GameHarness, agentId = "human-neutral"): AuthContext {
-  return {
+export function strategicAuth(harness: GameHarness, agentId = "human-neutral"): AuthContext {  return {
     principalId: agentId,
     kind: "agent",
     roles: ["agent"],
+    worldId: harness.worldId,
+    branchId: harness.branchId,
+    actingAsAgentId: null,
+    controllerEpoch: null,
+    turnLeaseEpoch: null,
+    turnId: null,
+  };
+}
+
+export function operatorAuth(harness: GameHarness): AuthContext {
+  return {
+    principalId: "operator-1",
+    kind: "operator",
+    roles: ["operator"],
     worldId: harness.worldId,
     branchId: harness.branchId,
     actingAsAgentId: null,

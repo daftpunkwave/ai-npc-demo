@@ -1,0 +1,32 @@
+/**
+ * 实现剧情卡查询端口；控制台读取草稿与分支状态。
+ * 依赖 scenario-card 聚合与 scoped WorldTx；不触发卡片或应用效果。
+ * 禁止在查询中改写卡片状态。
+ */
+import { gameModuleIds, type ScenarioCardView, type ScopedWorldTxFactory } from "@ai-npc/module-sdk";
+import { readCardState, type ScenarioCardState } from "./state";
+
+/** 剧情卡查询形状；控制台与运营 API 复用。 */
+export interface ScenarioPort {
+  card(cardId: string): ScenarioCardView | null;
+  cards(): readonly ScenarioCardView[];
+}
+
+/** 构造绑定到当前事务的剧情查询端口。 */
+export function createScenarioPort(txFor: ScopedWorldTxFactory): ScenarioPort {
+  const tx = () => txFor(gameModuleIds.scenario);
+  return {
+    card: (cardId) => {
+      const state = readCardState(tx(), cardId);
+      return state === null ? null : { cardId: state.cardId, version: state.version, status: state.status, triggerAtTick: state.triggerAtTick };
+    },
+    cards: () => {
+      const cards: ScenarioCardView[] = [];
+      for (const entry of tx().list<ScenarioCardState>("scenario-card")) {
+        const state = entry.state;
+        cards.push({ cardId: state.cardId, version: state.version, status: state.status, triggerAtTick: state.triggerAtTick });
+      }
+      return cards;
+    },
+  };
+}

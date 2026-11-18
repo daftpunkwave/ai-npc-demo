@@ -260,6 +260,18 @@ importers:
         specifier: ^4
         version: 4.6.7
 
+  modules/server/game/scenario/watergate:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
   modules/server/game/world/slg-light:
     dependencies:
       '@ai-npc/contracts':
@@ -401,6 +413,9 @@ importers:
       '@ai-npc/mod-game-resources-light':
         specifier: workspace:*
         version: link:../modules/server/game/resources/light
+      '@ai-npc/mod-game-scenario-watergate':
+        specifier: workspace:*
+        version: link:../modules/server/game/scenario/watergate
       '@ai-npc/mod-game-world-slg-light':
         specifier: workspace:*
         version: link:../modules/server/game/world/slg-light
