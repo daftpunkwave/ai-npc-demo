@@ -18,6 +18,12 @@ import type { AggregateEntry, AggregateRecord, WorldTx } from "@ai-npc/module-sd
 import { type ContributorScope } from "./types";
 import { isThenable, readJsonCell, requireStorageNumber, requireStorageString } from "./storage-values";
 
+/** 事务内事件与版本收集器；绑定端口与主处理器共享同一实例。 */
+export interface TxCollector {
+  readonly eventIds: string[];
+  readonly versions: Record<string, number>;
+}
+
 /** 构造 WorldTx 所需的固定事务上下文；principalId 与 correlationId 由发起来源决定。 */
 export interface WorldTxOptions {
   readonly storageTx: StorageTransaction;
@@ -28,6 +34,7 @@ export interface WorldTxOptions {
   readonly correlationId: string;
   readonly scope: ContributorScope;
   readonly host: HostServices;
+  readonly collector?: TxCollector;
 }
 
 function aggregateKey(aggregateType: string, aggregateId: string): string {
@@ -72,8 +79,7 @@ export class TransactionWorldTx implements WorldTx {
   private readonly correlationId: string;
   private readonly scope: ContributorScope;
   private readonly host: HostServices;
-  private readonly versions = new Map<string, number>();
-  private readonly eventIds: string[] = [];
+  private readonly collector: TxCollector;
 
   constructor(options: WorldTxOptions) {
     if (options.correlationId.trim().length === 0) {
@@ -90,6 +96,7 @@ export class TransactionWorldTx implements WorldTx {
     this.correlationId = options.correlationId;
     this.scope = options.scope;
     this.host = options.host;
+    this.collector = options.collector ?? { eventIds: [], versions: {} };
     const branch = options.storageTx.branch(options.branchId);
     this.aggregateTable = branch.table("aggregate_state");
     this.jobsTable = branch.table("jobs");
@@ -144,13 +151,13 @@ export class TransactionWorldTx implements WorldTx {
       version,
       state_json: json,
     });
-    this.versions.set(aggregateKey(aggregateType, aggregateId), version);
+    this.collector.versions[aggregateKey(aggregateType, aggregateId)] = version;
   }
 
   remove(aggregateType: string, aggregateId: string): void {
     this.assertOwned(aggregateType);
     this.aggregateTable.delete({ aggregate_type: aggregateType, aggregate_id: aggregateId });
-    this.versions.set(aggregateKey(aggregateType, aggregateId), 0);
+    this.collector.versions[aggregateKey(aggregateType, aggregateId)] = 0;
   }
 
   emit(
@@ -204,7 +211,7 @@ export class TransactionWorldTx implements WorldTx {
       payload_json: valid.payload,
       committed_at: this.host.nowIso(),
     });
-    this.eventIds.push(valid.eventId);
+    this.collector.eventIds.push(valid.eventId);
     return valid.eventId;
   }
 
@@ -255,12 +262,12 @@ export class TransactionWorldTx implements WorldTx {
 
   /** 本次事务写入或删除过的聚合版本，键为 “聚合类型:聚合 ID”。 */
   resultingVersions(): Readonly<Record<string, number>> {
-    return Object.fromEntries(this.versions.entries());
+    return { ...this.collector.versions };
   }
 
   /** 本次事务成功登记的事件 ID，按登记顺序返回。 */
   emittedEventIds(): readonly string[] {
-    return [...this.eventIds];
+    return [...this.collector.eventIds];
   }
 }
 

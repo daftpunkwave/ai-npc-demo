@@ -130,7 +130,7 @@ export const resourcesConsumedPayloadSchema = z
     stockpileId: contentIdSchemas.sp,
     delta: resourceAmountsSchema,
     reason: z.string().min(1),
-    taskId: idSchemas.task,
+    taskId: idSchemas.task.nullable(),
   })
   .strict();
 

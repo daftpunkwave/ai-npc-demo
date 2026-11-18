@@ -6,6 +6,7 @@
 import { DomainError, type StorageTransaction } from "@ai-npc/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
+import { bindModulePorts } from "./module-binding";
 import type { RuleRegistry } from "./rule-registry";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime } from "./types";
@@ -24,6 +25,7 @@ export class ClockStepRunner {
   private readonly modules: unknown;
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
+  private readonly moduleBinder: RuleRuntime["moduleBinder"];
 
   constructor(options: ClockStepRunnerOptions) {
     this.storage = options.storage;
@@ -32,6 +34,7 @@ export class ClockStepRunner {
     this.modules = options.modules;
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
+    this.moduleBinder = options.moduleBinder;
   }
 
   /** 在分支当前 worldTick 上执行全部命中步骤，返回执行条数。 */
@@ -66,7 +69,18 @@ export class ClockStepRunner {
       const context = createHandlerContext({
         auth: createSystemAuth(branch.worldId, branchId),
         tx: worldTx,
-        modules: this.modules,
+        modules: bindModulePorts({
+          binder: this.moduleBinder,
+          fallback: this.modules,
+          registry: this.registry,
+          storageTx: tx,
+          worldId: branch.worldId,
+          branchId,
+          worldTick: clock.worldTick,
+          principalId: systemPrincipalId,
+          correlationId: `clock:${clock.worldTick}`,
+          host: this.host,
+        }),
         content: this.content,
         approvedSpeech: this.approvedSpeech,
         host: this.host,

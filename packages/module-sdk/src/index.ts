@@ -6,6 +6,7 @@
 export const packageName = "@ai-npc/module-sdk";
 
 export { defineModule } from "./define-module";
+export { createStatelessModule } from "./lifecycle";
 
 export { createScopedStateKey } from "./ports";
 export type {
@@ -15,12 +16,17 @@ export type {
   ApprovedSpeechReader,
   HandlerContext,
   HandlerResult,
+  ModuleBinder,
   OpResult,
   ScopedModelPort,
   ScopedModelScope,
   ScopedStateKey,
   ScopedStoragePort,
   ScopedStorageRecord,
+  ScopedWorldTxFactory,
   WorldTx,
   WorldTxReader,
 } from "./ports";
+export * from "./game-ports";
+export * from "./game-utils";
+export * from "./contributor";

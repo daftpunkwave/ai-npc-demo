@@ -14,7 +14,7 @@ import type {
   PrincipalKind,
   StoragePort,
 } from "@ai-npc/contracts";
-import type { ApprovedSpeechReader, HandlerContext, HandlerResult } from "@ai-npc/module-sdk";
+import type { ApprovedSpeechReader, HandlerContext, HandlerResult, ModuleBinder } from "@ai-npc/module-sdk";
 
 /** 命令处理器：必须是同步函数，payload 已通过契约 schema 校验。 */
 export type CommandHandler<TModules = unknown, TContent = unknown> = (
@@ -148,6 +148,7 @@ export interface RuleRuntime {
   readonly modules: unknown;
   readonly content: unknown;
   readonly approvedSpeech: ApprovedSpeechReader;
+  readonly moduleBinder?: ModuleBinder;
 }
 
 /** 允许直接提交 Agent 命令的测试开关只在构造时给出，生产装配不开启。 */

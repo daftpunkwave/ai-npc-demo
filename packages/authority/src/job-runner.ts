@@ -6,6 +6,7 @@
 import { DomainError, type StorageTransaction } from "@ai-npc/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
+import { bindModulePorts } from "./module-binding";
 import { requireStorageNumber, requireStorageString, readJsonCell } from "./storage-values";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, DueJob } from "./types";
@@ -28,6 +29,7 @@ export class JobRunner {
   private readonly modules: unknown;
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
+  private readonly moduleBinder: RuleRuntime["moduleBinder"];
 
   constructor(options: JobRunnerOptions) {
     this.storage = options.storage;
@@ -36,6 +38,7 @@ export class JobRunner {
     this.modules = options.modules;
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
+    this.moduleBinder = options.moduleBinder;
   }
 
   /** 执行所有 due_tick 不大于 tick 的 scheduled job，返回实际执行条数。 */
@@ -112,7 +115,18 @@ export class JobRunner {
     const context = createHandlerContext({
       auth: createSystemAuth(branch.worldId, branchId),
       tx: worldTx,
-      modules: this.modules,
+      modules: bindModulePorts({
+        binder: this.moduleBinder,
+        fallback: this.modules,
+        registry: this.registry,
+        storageTx: tx,
+        worldId: branch.worldId,
+        branchId,
+        worldTick: clock.worldTick,
+        principalId: systemPrincipalId,
+        correlationId: `job:${jobId}`,
+        host: this.host,
+      }),
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,

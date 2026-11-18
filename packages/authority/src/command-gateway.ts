@@ -27,12 +27,13 @@ import type { HandlerResult } from "@ai-npc/module-sdk";
 import { readBranch, readClock, tryReadClock, type BranchRecord, type ClockRecord } from "./branch-state";
 import { verifyFencing } from "./fencing";
 import { createHandlerContext } from "./handler-context";
+import { bindModulePorts } from "./module-binding";
 import { isCommandIssuerAllowed } from "./issuer-policy";
 import type { RuleRegistry } from "./rule-registry";
 import { requireStorageNumber, requireStorageString } from "./storage-values";
 import { isApprovedSpeechUsable, readSpeechCommitPayload } from "./speech-approval";
 import type { CommandGatewayOptions, ContributorScope } from "./types";
-import { assertSynchronous, TransactionWorldTx } from "./world-tx";
+import { assertSynchronous, TransactionWorldTx, type TxCollector } from "./world-tx";
 
 class CommandRejected extends Error {
   readonly reasonCode: ReasonCode;
@@ -89,6 +90,7 @@ export class CommandGateway {
   private readonly content: unknown;
   private readonly approvedSpeech: CommandGatewayOptions["approvedSpeech"];
   private readonly allowDirectAgentCommands: boolean;
+  private readonly moduleBinder: CommandGatewayOptions["moduleBinder"];
 
   constructor(options: CommandGatewayOptions) {
     this.storage = options.storage;
@@ -98,6 +100,7 @@ export class CommandGateway {
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
     this.allowDirectAgentCommands = options.allowDirectAgentCommands ?? false;
+    this.moduleBinder = options.moduleBinder;
   }
 
   execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
@@ -268,17 +271,28 @@ export class CommandGateway {
       }
     }
     const speechArtifactRef = speechPayload?.approvedSpeechArtifactRef ?? null;
-    const handlerTx = this.createWorldTx(tx, auth, envelope, registration.owner, clock);
+    const collector: TxCollector = { eventIds: [], versions: {} };
+    const handlerTx = this.createWorldTx(tx, auth, envelope, registration.owner, clock, collector);
     const handlerContext = createHandlerContext({
       auth,
       tx: handlerTx,
-      modules: this.modules,
+      modules: bindModulePorts({
+        binder: this.moduleBinder,
+        fallback: this.modules,
+        registry: this.registry,
+        storageTx: tx,
+        worldId: auth.worldId,
+        branchId: auth.branchId,
+        worldTick: clock.worldTick,
+        principalId: auth.principalId,
+        correlationId: envelope.commandId,
+        host: this.host,
+        collector,
+      }),
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
     });
-    const acceptedVersions: Record<string, number> = {};
-    const acceptedEventIds: string[] = [];
     let acceptedResult: HandlerResult | null = null;
     let rejection: CommandRejected | null = null;
     try {
@@ -297,15 +311,25 @@ export class CommandGateway {
           throw new CommandRejected(outcome.reasonCode, outcome.safeMessage);
         }
         acceptedResult = outcome;
-        Object.assign(acceptedVersions, handlerTx.resultingVersions());
-        acceptedEventIds.push(...handlerTx.emittedEventIds());
 
         for (const hook of this.registry.afterCommandsFor(type)) {
-          const hookTx = this.createWorldTx(tx, auth, envelope, hook.owner, clock);
+          const hookTx = this.createWorldTx(tx, auth, envelope, hook.owner, clock, collector);
           const hookContext = createHandlerContext({
             auth,
             tx: hookTx,
-            modules: this.modules,
+            modules: bindModulePorts({
+              binder: this.moduleBinder,
+              fallback: this.modules,
+              registry: this.registry,
+              storageTx: tx,
+              worldId: auth.worldId,
+              branchId: auth.branchId,
+              worldTick: clock.worldTick,
+              principalId: auth.principalId,
+              correlationId: envelope.commandId,
+              host: this.host,
+              collector,
+            }),
             content: this.content,
             approvedSpeech: this.approvedSpeech,
             host: this.host,
@@ -315,18 +339,16 @@ export class CommandGateway {
           if (hookOutcome.kind === "rejected") {
             throw new CommandRejected(hookOutcome.reasonCode, hookOutcome.safeMessage);
           }
-          Object.assign(acceptedVersions, hookTx.resultingVersions());
-          acceptedEventIds.push(...hookTx.emittedEventIds());
         }
         if (speechArtifactRef !== null) {
-          if (acceptedEventIds.length === 0) {
+          if (collector.eventIds.length === 0) {
             throw new CommandRejected("speech-not-approved", "已批准对白没有产生提交事件");
           }
           branchStorage.table("speech_commits").put({
             approved_speech_artifact_ref: speechArtifactRef,
             principal_id: auth.principalId,
             command_id: envelope.commandId,
-            event_id: acceptedEventIds[0] as string,
+            event_id: collector.eventIds[0] as string,
           });
         }
       });
@@ -359,8 +381,8 @@ export class CommandGateway {
       commandStatus: "accepted",
       reasonCode: null,
       safeMessage: null,
-      acceptedEventIds,
-      resultingVersions: acceptedVersions,
+      acceptedEventIds: collector.eventIds,
+      resultingVersions: collector.versions,
       result: requireJsonResult(accepted.result),
       worldTick: clock.worldTick,
     }, payloadHash);
@@ -372,6 +394,7 @@ export class CommandGateway {
     envelope: CommandEnvelope,
     owner: ContributorScope,
     clock: ClockRecord,
+    collector?: TxCollector,
   ): TransactionWorldTx {
     return new TransactionWorldTx({
       storageTx: tx,
@@ -382,6 +405,7 @@ export class CommandGateway {
       correlationId: envelope.commandId,
       scope: owner,
       host: this.host,
+      collector,
     });
   }
 
