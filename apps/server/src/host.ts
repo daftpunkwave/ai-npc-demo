@@ -95,6 +95,14 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   }
   const host = createHostServices();
   const signal = new AbortController().signal;
+  const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), options.packId ?? "earth-2964-v1");
+  const gameContent = toGameContent(content);
+  const assembly = loadAssembly(options.assemblyRef ?? "local-slg-standard-v1");
+  assertSupportedServerBindings(assembly);
+  const runSpec = loadRunSpec(options.runSpecRef ?? "online-default");
+  const resolvedModules = resolveServerModules(assembly, serverModuleDefinitions);
+  const clockConfig = assembly.configs["clock"] as { readonly secondsPerTick?: number } | undefined;
+  const secondsPerTick = typeof clockConfig?.secondsPerTick === "number" ? clockConfig.secondsPerTick : 10;
   const storageInput: ModuleCreateInput = {
     moduleId: "platform.storage.sqlite",
     realm: "server",
@@ -112,14 +120,6 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     throw new Error("存储模块没有暴露 StoragePort");
   }
 
-  const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), options.packId ?? "earth-2964-v1");
-  const gameContent = toGameContent(content);
-  const assembly = loadAssembly(options.assemblyRef ?? "local-slg-standard-v1");
-  assertSupportedServerBindings(assembly);
-  const runSpec = loadRunSpec(options.runSpecRef ?? "online-default");
-  const resolvedModules = resolveServerModules(assembly, serverModuleDefinitions);
-  const clockConfig = assembly.configs["clock"] as { readonly secondsPerTick?: number } | undefined;
-  const secondsPerTick = typeof clockConfig?.secondsPerTick === "number" ? clockConfig.secondsPerTick : 10;
   const contentVersion = content.pack.schemaVersion.toString();
   const timestamp = host.nowIso();
   const worldId = host.ids("wld");

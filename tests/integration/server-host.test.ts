@@ -4,7 +4,7 @@
  * 禁止用假存储替代首次启动路径。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startHost, type RunningHost } from "@ai-npc/app-server";
@@ -68,5 +68,13 @@ describe("服务端宿主", () => {
     const snapshots = await host.app.inject({ method: "GET", url: "/api/v1/campaign/snapshots", headers: { authorization: `Bearer ${session}` } });
     expect(snapshots.statusCode).toBe(200);
     expect((snapshots.json() as { readonly snapshots: unknown[] }).snapshots).toHaveLength(1);
+  });
+
+
+  it("未知装配在打开存储前失败", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-host-test-"));
+    dirs.push(dataDir);
+    await expect(startHost({ dataDir, playerToken: "test-player", consoleToken: "test-console", assemblyRef: "missing-assembly" })).rejects.toThrow("未知 server 装配");
+    expect(existsSync(join(dataDir, "ai-npc.db"))).toBe(false);
   });
 });
