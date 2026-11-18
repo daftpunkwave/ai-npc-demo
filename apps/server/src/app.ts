@@ -4,7 +4,7 @@
  * 禁止信任页面自报角色、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import websocket from "@fastify/websocket";
+import websocket, { type WebSocket } from "@fastify/websocket";
 import cors from "@fastify/cors";
 import { randomUUID } from "node:crypto";
 import {
@@ -149,7 +149,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
   let streamSeq = 0;
   let projectionVersion = 0;
   const history: Array<{ readonly streamSeq: number; readonly projectionVersion: number; readonly set: Record<string, unknown> }> = [];
-  const subscribers = new Set<{ send(data: string): void }>();
+  const subscribers = new Set<WebSocket>();
 
   const publishDelta = (): void => {
     streamSeq += 1;
@@ -369,7 +369,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
     tickets.delete(query.ticket ?? "");
     socket.send(JSON.stringify({ type: "hello", protocolVersion: "1", principalId: ticket.auth.principalId, channels: ["player"] }));
-    const subscriber = { send: (payload: string): void => { socket.send(payload); } };
+    const subscriber = socket;
     const sendSnapshot = (): void => {
       socket.send(JSON.stringify({
         type: "snapshot",
