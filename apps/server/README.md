@@ -6,6 +6,7 @@
 
 - `startHost`：打开 SQLite、加载内容包、解析 `config/assemblies/*.yaml` 与 `config/runs/online-default.yaml`、首次创建在线世界/分支/clock、live run 与 `world_aliases('online')`、注册 game authority、绑定游戏端口与存档服务、启动 clock/job/consumer worker。
 - 会话返回装配中已解析的 server 模块集；reset 会为新在线分支创建新的 live run。
+- 游戏端口工厂与规则贡献按装配 binding 选择；未实现的模块 ID 或缺失能力在启动时失败，不会退回硬编码组合。
 - 首次与后续启动都把在线时钟置为 `paused`；快照接口先暂停再保存；`POST /api/v1/campaign/reset` 先存快照，再创建空在线分支、归档旧分支并切换别名。
 - `createServerApp` 由 `transport.http-ws.fastify` provider 提供；应用工厂、路由、WS、CORS、Origin 与监听都在该 provider 内。
 - `buildPlayerProjection`：从世界/地图端口与内容索引构建严格玩家投影；缺失指标时拒绝构建，不合成数值。

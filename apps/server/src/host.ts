@@ -14,9 +14,10 @@ import { createHostServices } from "./host-services";
 import { buildPlayerProjection } from "./projection";
 import { loadAssembly, loadRunSpec, resolveServerModules } from "./host/assembly";
 import {
-  createGameContributors,
-  createGamePorts,
-  createModuleBinder,
+  createGameContributorsFromAssembly,
+  createGamePortsFromAssembly,
+  createModuleBinderFromAssembly,
+  assertSupportedServerBindings,
   createOperationsService,
   createSaveService,
   parseTransportConfig,
@@ -94,6 +95,14 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   }
   const host = createHostServices();
   const signal = new AbortController().signal;
+  const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), options.packId ?? "earth-2964-v1");
+  const gameContent = toGameContent(content);
+  const assembly = loadAssembly(options.assemblyRef ?? "local-slg-standard-v1");
+  assertSupportedServerBindings(assembly);
+  const runSpec = loadRunSpec(options.runSpecRef ?? "online-default");
+  const resolvedModules = resolveServerModules(assembly, serverModuleDefinitions);
+  const clockConfig = assembly.configs["clock"] as { readonly secondsPerTick?: number } | undefined;
+  const secondsPerTick = typeof clockConfig?.secondsPerTick === "number" ? clockConfig.secondsPerTick : 10;
   const storageInput: ModuleCreateInput = {
     moduleId: "platform.storage.sqlite",
     realm: "server",
@@ -111,13 +120,6 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     throw new Error("存储模块没有暴露 StoragePort");
   }
 
-  const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), options.packId ?? "earth-2964-v1");
-  const gameContent = toGameContent(content);
-  const assembly = loadAssembly(options.assemblyRef ?? "local-slg-standard-v1");
-  const runSpec = loadRunSpec(options.runSpecRef ?? "online-default");
-  const resolvedModules = resolveServerModules(assembly, serverModuleDefinitions);
-  const clockConfig = assembly.configs["clock"] as { readonly secondsPerTick?: number } | undefined;
-  const secondsPerTick = typeof clockConfig?.secondsPerTick === "number" ? clockConfig.secondsPerTick : 10;
   const contentVersion = content.pack.schemaVersion.toString();
   const timestamp = host.nowIso();
   const worldId = host.ids("wld");
@@ -205,9 +207,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   });
   ensureLiveRun(activeBranchId, activeWorldId);
 
-  const binder = createModuleBinder(gameContent, host);
-  const scenarioBinding = assembly.realms.server.bindings.find((binding) => binding.capability === "game.scenario");
-  const escalating = scenarioBinding?.moduleId === "game.scenario.watergate-escalating";
+  const binder = createModuleBinderFromAssembly(assembly, gameContent, host);
   const authority = new Authority({
     storage,
     host,
@@ -215,7 +215,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     moduleBinder: binder,
     allowDirectAgentCommands: true,
   });
-  for (const contributor of createGameContributors({ escalating })) {
+  for (const contributor of createGameContributorsFromAssembly(assembly)) {
     authority.registerModule(contributor);
   }
 
@@ -264,7 +264,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
   const projection = () => storage.transact((tx) => {
     const gameTx = txFor(tx, "read");
-    const ports = createGamePorts(gameTx, gameContent, host);
+    const ports = createGamePortsFromAssembly(assembly, gameTx, gameContent, host);
     return buildPlayerProjection({ content: gameContent, world: ports["game.world"], map: ports["game.map"], clock: clockView(readClockTx(tx, activeBranchId)) });
   });
 

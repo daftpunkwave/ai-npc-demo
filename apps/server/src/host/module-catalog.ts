@@ -6,6 +6,7 @@
 import type { GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory } from "@ai-npc/module-sdk";
 import type { GameRuleContributor } from "@ai-npc/module-sdk";
 import type { HostServices, StoragePort } from "@ai-npc/contracts";
+import type { AssemblyDescriptor } from "@ai-npc/contracts";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { clockModuleDefinition } from "@ai-npc/mod-game-clock-controlled";
 import { createMapPort, mapModuleDefinition, createMapContributor } from "@ai-npc/mod-game-map-six-nodes";
@@ -48,8 +49,52 @@ export type {
   ServerIdentity,
 } from "@ai-npc/mod-transport-http-ws-fastify";
 
-/** 绑定全部游戏端口；txFor 由 authority/宿主事务提供。 */
-export function createGamePorts(txFor: ScopedWorldTxFactory, content: GameContent, host: HostServices): GameModulePorts {
+function bindingFor(assembly: AssemblyDescriptor, capability: string): string {
+  const binding = assembly.realms.server.bindings.find((entry) => entry.capability === capability);
+  if (binding === undefined) {
+    throw new Error(`装配缺少必需能力: ${capability}`);
+  }
+  return binding.moduleId;
+}
+
+const expectedBindings: Readonly<Record<string, string>> = {
+  "game.world": "game.world.slg-light",
+  "game.map": "game.map.six-nodes",
+  "game.clock": "game.clock.controlled",
+  "game.resources": "game.resources.light",
+  "game.actions": "game.actions.standard",
+  "game.agreements": "game.agreements.standard",
+  "game.comms": "game.comms.standard",
+  "game.save": "game.save.sqlite",
+  "platform.storage": "platform.storage.sqlite",
+  "platform.access-policy": "platform.access-policy.roster",
+  "platform.secrets": "platform.secrets.env",
+  "platform.operations": "platform.operations.standard",
+  "transport.http-ws": "transport.http-ws.fastify",
+};
+
+/** 校验所有必需 server binding；返回已选 scenario moduleId。 */
+export function assertSupportedServerBindings(assembly: AssemblyDescriptor): string {
+  for (const [capability, moduleId] of Object.entries(expectedBindings)) {
+    if (bindingFor(assembly, capability) !== moduleId) {
+      throw new Error(`装配包含当前宿主未实现的绑定: ${capability}`);
+    }
+  }
+  const scenario = bindingFor(assembly, "game.scenario");
+  if (scenario !== "game.scenario.watergate" && scenario !== "game.scenario.watergate-escalating") {
+    throw new Error("装配包含当前宿主未实现的绑定: game.scenario");
+  }
+  return scenario;
+}
+
+/** 按装配绑定选择游戏端口实现；未支持的模块 ID 直接失败。 */
+export function createGamePortsFromAssembly(
+  assembly: AssemblyDescriptor,
+  txFor: ScopedWorldTxFactory,
+  content: GameContent,
+  host: HostServices,
+): GameModulePorts {
+  const scenario = assertSupportedServerBindings(assembly);
   return {
     "game.map": createMapPort(txFor, content, (prefix) => host.ids(prefix)),
     "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
@@ -57,12 +102,12 @@ export function createGamePorts(txFor: ScopedWorldTxFactory, content: GameConten
     "game.comms": createCommsPort(txFor, content, (prefix) => host.ids(prefix)),
     "game.actions": createActionsPort(txFor),
     "game.agreements": createAgreementsPort(txFor),
-    "game.scenario": createScenarioPort(txFor),
+    "game.scenario": createScenarioPort(txFor, scenario),
   };
 }
 
-export function createModuleBinder(content: GameContent, host: HostServices): ModuleBinder {
-  return (txFor) => createGamePorts(txFor, content, host);
+export function createModuleBinderFromAssembly(assembly: AssemblyDescriptor, content: GameContent, host: HostServices): ModuleBinder {
+  return (txFor) => createGamePortsFromAssembly(assembly, txFor, content, host);
 }
 
 /** 创建存档领域服务；宿主只经组合根引用具体实现。 */
@@ -70,8 +115,9 @@ export function createSaveService(storage: StoragePort, host: HostServices): Sql
   return new SqliteSaveService(storage, host);
 }
 
-/** 首版服务端规则贡献列表；escalating 由装配选择替换标准剧情。 */
-export function createGameContributors(options: { readonly escalating?: boolean } = {}): readonly GameRuleContributor<GameModulePorts, unknown>[] {
+/** 按装配绑定选择规则贡献；不支持的实现直接失败。 */
+export function createGameContributorsFromAssembly(assembly: AssemblyDescriptor): readonly GameRuleContributor<GameModulePorts, unknown>[] {
+  const scenario = assertSupportedServerBindings(assembly);
   return [
     createMapContributor(),
     createResourcesContributor(),
@@ -79,7 +125,7 @@ export function createGameContributors(options: { readonly escalating?: boolean 
     createCommsContributor(),
     createActionsContributor(),
     createAgreementsContributor(),
-    createScenarioContributor({ escalating: options.escalating === true }),
+    createScenarioContributor({ escalating: scenario === "game.scenario.watergate-escalating" }),
   ];
 }
 
