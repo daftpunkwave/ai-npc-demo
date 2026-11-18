@@ -239,11 +239,11 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
         handler: (context, job) => {
           const { agentId } = job.payload as { readonly agentId: string };
           const record = readWorldState(context.tx, "character", agentId, characterStateSchema);
-          if (record === null || record.state.injuredUntilTick === null) {
+          if (record === null) {
             return;
           }
-          // eslint-disable-next-line @typescript-eslint/prefer-optional-chain -- record 已在上方判空，不需要可选链。
-          if (record.state.injuredUntilTick > context.tx.worldTick) {
+          const { injuredUntilTick } = record.state;
+          if (injuredUntilTick === null || injuredUntilTick > context.tx.worldTick) {
             return;
           }
           context.tx.put("character", agentId, { ...record.state, injuredUntilTick: null });

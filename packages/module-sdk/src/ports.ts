@@ -3,6 +3,7 @@
  * 依赖公共契约的 JSON、受众、认证上下文、原因码与模块创建输入；只声明类型边界，不创建存储、事务或网络资源。
  * 禁止提供 SQL 执行、跨模块万能上下文、全局 service locator 或绕过 ownsAggregates/预算的写入口。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名中的参数名只用于表达调用契约。 */
 import {
   DomainError,
   type AudienceSpec,

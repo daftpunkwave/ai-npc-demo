@@ -11,9 +11,10 @@ import { createClockPort } from "./port";
 /** 创建时钟模块实例，端口以 deployment 存储为唯一持久化来源。 */
 export function createClockModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = clockConfigSchema.parse(input.config);
-  const storage = input.ports["platform.storage"] as StoragePort | undefined;
-  if (storage === undefined) {
+  const rawStorage = input.ports["platform.storage"];
+  if (rawStorage === undefined) {
     throw new DomainError("assembly-incompatible", "受控时钟缺少 platform.storage 端口");
   }
+  const storage = rawStorage as StoragePort;
   return createStatelessModule(input, createClockPort(storage, config, input.host.nowIso));
 }
