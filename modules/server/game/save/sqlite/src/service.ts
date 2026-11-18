@@ -3,7 +3,7 @@
  * 依赖 SQLite StoragePort、分支复制与快照表；不自行暂停时钟或排空 job。
  * 禁止在未暂停/静默时保存，也禁止覆盖已有分支或在快照上继续写入。
  */
-/* eslint-disable no-unused-vars, security/detect-object-injection -- 接口参数名表达调用契约；行访问列名来自本文件固定的 snapshots 列。 */
+/* eslint-disable security/detect-object-injection -- 行访问只使用本文件固定的 snapshots 列名。 */
 import type {
   BranchKind,
   ForkBranchResult,
@@ -39,16 +39,14 @@ export interface SaveService {
   restoreSnapshot(input: RestoreSnapshotInput): { readonly branchId: string; readonly runId: string };
 }
 
-function numberCell(row: Record<string, unknown>, column: string): number {
-  const value = row[column];
+function numberValue(value: unknown, column: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     throw new Error(`snapshots.${column} 不是安全整数`);
   }
   return value;
 }
 
-function stringCell(row: Record<string, unknown>, column: string): string {
-  const value = row[column];
+function stringValue(value: unknown, column: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`snapshots.${column} 不是非空字符串`);
   }
@@ -79,10 +77,17 @@ export class SqliteSaveService implements SaveService {
   }
 
   createSnapshot(input: CreateSnapshotInput): SnapshotRecord {
+    if (input.label.trim().length === 0) {
+      throw new Error("快照标签不能为空");
+    }
     return this.storage.transact((tx) => {
       const source = tx.rows("branches").get({ branch_id: input.sourceBranchId });
       if (source === null) {
         throw new Error(`源分支 ${input.sourceBranchId} 不存在`);
+      }
+      const clock = tx.branch(input.sourceBranchId).table("clock").get({});
+      if (clock === null) {
+        throw new Error(`源分支 ${input.sourceBranchId} 缺少时钟记录`);
       }
       const snapshotId = this.ids("snap");
       const frozenBranchId = this.ids("br");
@@ -91,14 +96,12 @@ export class SqliteSaveService implements SaveService {
         dstBranchId: frozenBranchId,
         kind: "snapshot",
       });
-      const clock = tx.branch(input.sourceBranchId).table("clock").get({});
-      const worldTick = clock === null ? 0 : numberCell(clock, "world_tick");
       const record: SnapshotRecord = {
         snapshotId,
         sourceBranchId: input.sourceBranchId,
         frozenBranchId: fork.branchId,
         worldSeq: maxWorldSeq(tx, input.sourceBranchId),
-        worldTick,
+        worldTick: numberValue(clock["world_tick"], "world_tick"),
         label: input.label,
         createdAt: this.nowIso(),
       };
@@ -120,13 +123,13 @@ export class SqliteSaveService implements SaveService {
   listSnapshots(): readonly SnapshotRecord[] {
     return this.storage.transact((tx) =>
       tx.rows("snapshots").list().map((row) => ({
-        snapshotId: stringCell(row, "snapshot_id"),
-        sourceBranchId: stringCell(row, "source_branch_id"),
-        frozenBranchId: stringCell(row, "frozen_branch_id"),
-        worldSeq: numberCell(row, "world_seq"),
-        worldTick: numberCell(row, "world_tick"),
-        label: stringCell(row, "label"),
-        createdAt: stringCell(row, "created_at"),
+        snapshotId: stringValue(row["snapshot_id"], "snapshot_id"),
+        sourceBranchId: stringValue(row["source_branch_id"], "source_branch_id"),
+        frozenBranchId: stringValue(row["frozen_branch_id"], "frozen_branch_id"),
+        worldSeq: numberValue(row["world_seq"], "world_seq"),
+        worldTick: numberValue(row["world_tick"], "world_tick"),
+        label: stringValue(row["label"], "label"),
+        createdAt: stringValue(row["created_at"], "created_at"),
       })),
     );
   }
@@ -137,15 +140,20 @@ export class SqliteSaveService implements SaveService {
       if (row === null) {
         throw new Error(`快照 ${input.snapshotId} 不存在`);
       }
-      const sourceBranchId = stringCell(row, "source_branch_id");
+      const sourceBranchId = stringValue(row["source_branch_id"], "source_branch_id");
+      const frozenBranchId = stringValue(row["frozen_branch_id"], "frozen_branch_id");
       const source = tx.rows("branches").get({ branch_id: sourceBranchId });
       if (source === null) {
         throw new Error(`快照源分支 ${sourceBranchId} 不存在`);
       }
+      const frozen = tx.rows("branches").get({ branch_id: frozenBranchId });
+      if (frozen === null || frozen["kind"] !== "snapshot" || frozen["status"] !== "frozen" || frozen["run_id"] !== null) {
+        throw new Error("快照冻结分支状态不合法");
+      }
       const runId = input.runId ?? this.ids("run");
       const branchId = this.ids("br");
       const fork: ForkBranchResult = this.storage.forkBranch(tx, {
-        srcBranchId: stringCell(row, "frozen_branch_id"),
+        srcBranchId: frozenBranchId,
         dstBranchId: branchId,
         kind: "online" as BranchKind,
         runId,

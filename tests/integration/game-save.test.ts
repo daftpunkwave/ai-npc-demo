@@ -38,6 +38,17 @@ describe("SQLite 存档", () => {
     expect(source).toMatchObject({ kind: "online" });
   });
 
+  it("缺少时钟或空标签时拒绝创建快照", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    const save = new SqliteSaveService(value.storage, value.host.ids, () => value.host.nowIso());
+    expect(() => save.createSnapshot({ sourceBranchId: value.branchId, label: " ", createdBy: "player-1" })).toThrow();
+    value.storage.transact((tx) => {
+      tx.run("DELETE FROM clock WHERE branch_id = ?", [value.branchId]);
+    });
+    expect(() => save.createSnapshot({ sourceBranchId: value.branchId, label: "无时钟", createdBy: "player-1" })).toThrow();
+  });
+
   it("从快照恢复为绑定源 run 的在线分支", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
