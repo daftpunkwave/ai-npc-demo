@@ -4,10 +4,10 @@
 
 ## 1. 两个模块的边界
 
-| 模块 | 输入 → 输出 | 不负责 |
+| 模块 | 输入与输出 | 不负责 |
 |---|---|---|
-| compression | 指定 ContextArtifact/段区间 → 替代段、来源映射、损失报告 | 遗忘世界事实、修改 NPC 长期信念、重新执行工具 |
-| tool-view | 一次完整合法工具结果 → 当前 phase/受众下的模型视图 | 改变执行结果、追加世界副作用、替换 command handler |
+| compression | 由指定 ContextArtifact 或段区间产出替代段、来源映射与损失报告 | 遗忘世界事实、修改 NPC 长期信念、重新执行工具 |
+| tool-view | 由一次完整合法工具结果生成当前 phase/受众下的模型视图 | 改变执行结果、追加世界副作用、替换 command handler |
 
 原始工具结果、原始上下文和完整请求档案分别保留。压缩只改变模型视图；NPC memory 的容量淘汰或信念修订走 [memory](memory.md)，不能把一次摘要自动变成长期“真相”。
 
@@ -38,23 +38,18 @@ sourceMap 将每个摘要条目映射到原 segment/sourceRefs；lossReport 区�
 | `compression.structured` | 保留结构字段、去重复投影、合并重复状态 | 需要工具/任务 schema，无法理解全部自然语言 |
 | `compression.summary` | 宿主 model port 生成带证据的受限摘要 | 有延迟、费用和语义失真，必须观测与评估 |
 
-```text
-检查触发条件 → 标记保护项与完整交互组
-  → 选择允许变换区间 → 规则变换/受控模型摘要
-  → 验证来源、权限、状态、数字与工具配对
-  → 生成新 artifact → 宿主重算最终预算
-```
+压缩流程是：先检查触发条件，标记保护项与完整交互组；再选择允许变换的区间，做规则变换或受控模型摘要；然后验证来源、权限、状态、数字与工具配对；最后生成新 artifact，由宿主重算最终预算。
 
 触发条件可选输入 token 占比、固定历史组数或任务阶段完成；逻辑时间条件只能使用 worldTick。触发点和阈值进入 resolved profile，不能每次按供应商隐式行为变化。
 
-summary 通过 `(agentId, compression)` mount 请求共享模型池；它是同一 Agent 的辅助调用，计入全 turn/run 费用与并发。没有独立“摘要 Agent”，满20 个 gameplay Agent 时也不能额外激活自主整理身份。
+summary 通过 `(agentId, compression)` mount 请求共享模型池；它是同一 Agent 的辅助调用，计入全 turn/run 费用与并发。没有独立“摘要 Agent”，满 20 个 gameplay Agent 时也不能额外激活自主整理身份。
 
 ## 4. 不可丢的语义
 
 1. 系统权限/输出协议、最小身份、当前交互不能为满足预算被偷偷删改。
 2. tool call 与对应 result 作为完整组处理；未完成工具结果不能被写成已成功。
 3. executionStatus、commandStatus、taskStatus 不可混用；网关拿到确定响应不等于命令获准，命令获准不等于任务完成。行动 receipt 和必要错误码保留。
-4. “A声称B背约”和“B确已背约”必须不同；证据不足不能压成确定结论。
+4. “A 声称 B 背约”和“B 确已背约”必须不同；证据不足不能压成确定结论。
 5. 当前世界状态取本次授权投影；旧工具快照保留 asOf/version，不能冒充当前库存。
 6. 未被 memory/context 提供的承诺不得为了“保护承诺”从全局合同补入。
 
@@ -66,7 +61,7 @@ summary 通过 `(agentId, compression)` mount 请求共享模型池；它是同�
 
 同一次重试复用有效检查点前，检查分支、phase、受众、模型口径和输入 hash。任一不匹配重新生成，不能将 policy 摘要缓存复用到 speech。审计重放直接读已归档摘要，不调用模型重新压缩。
 
-detail eviction、压缩保留和彻底撤回是不同操作。允许忘记细节但保留显式摘要；若来源被撤回、纠正或权限收紧，派生摘要需失效/重算。任何已公开旧文本的历史事实不因数据库删除就变成“从未说过”。
+detail eviction、压缩保留和彻底撤回是不同操作。允许忘记细节但保留显式摘要；若来源被撤回、纠正或权限收紧，派生摘要需失效或重算。已经公开过的旧文本属于历史事实，不因数据库删除就变成“从未说过”。
 
 memory 的 derivedThroughSeq 只由其维护提交推进；context 压缩成功不会伪造 memory-ready。若某种长期整理会产出 memory 核心块，任务归 memory-maintenance，并纳入其水位协议。
 
@@ -82,7 +77,7 @@ memory 的 derivedThroughSeq 只由其维护提交推进；context 压缩成功�
 
 稳定 envelope 保留 executionStatus=ok/error/unknown、错误原因、必要 receipt 与 taskStatus、来源和传播标签。receipt.commandStatus=accepted/rejected 不可变；taskStatus=pending/running/completed/failed/cancelled 是独立任务投影。ok 表示网关拿到确定合法响应，可包含 command rejected；unknown 需核对 receipt。完整协议由 [公共契约](../architecture/contracts.md) 维护。
 
-tool-view 实现唯一由 Agent profile 的 toolView 插件槽选择；ToolBinding.viewConstraints 只限制允许字段、条数和 token，不再另选 full/structured/brief。解析的 effective 上限同时服从 profile 预算、binding 收窄和动态权限，不能靠更换视图突破约束。不同细度保持同一 schema 和执行逻辑，只改变业务 detail。
+tool-view 的实现只由 Agent profile 的 toolView 插件槽选择；ToolBinding.viewConstraints 只限制允许字段、条数和 token，不再另选 full/structured/brief。解析出的 effective 上限同时服从 profile 预算、binding 收窄和动态权限，不能靠更换视图突破约束。不同细度保持同一 schema 和执行逻辑，只改变业务 detail。
 
 | 实现 | 模型看到什么 | 展开方式 |
 |---|---|---|
@@ -94,7 +89,7 @@ resultRef 是不透明受限引用，不是可跨 Agent 读取的公共 URL。�
 
 ## 7. 一次工具细度示例
 
-玩家请求护送材料。工具已拿到确定响应：护送命令接受，operation 为 op-17，任务当前 pending，预计 worldTick 42 完成；根庭道路通行不足可能导致改道。
+玩家请求护送材料。工具已拿到确定响应：护送命令接受，operation 为 op-17，任务当前 pending，预计 worldTick 42 完成；道路通行条件不足，可能改道。
 
 ```json
 {
@@ -118,9 +113,9 @@ resultRef 是不透明受限引用，不是可跨 Agent 读取的公共 URL。�
 
 ## 8. 流程与副作用
 
-runtime 调用工具 → 工具网关鉴权/执行/持久化 → 保存完整结果 → 针对 phase/受众过滤 → tool-view → context → 可选 compression → 最终 guard → 模型。
+runtime 调用工具，工具网关完成鉴权、执行与持久化并保存完整结果；结果先按 phase 和受众过滤，再经过 tool-view 和 context，需要时做 compression，最后经 guard 送入模型。
 
-环境查询固定在 inputFrontier 的 readview。本 turn 副作用命令按当下世界验证，其 receipt 可晚于 frontier，以 toolCallId/operationId/acceptedEventIds 标记为本 turn 追加结果；视图/压缩必须保留这种来源区别，不把它混成原先已知状态或扩大到无关新事实。
+环境查询固定在 inputFrontier 的 read view。本 turn 副作用命令按当下世界验证，其 receipt 可晚于 frontier，以 toolCallId/operationId/acceptedEventIds 标记为本 turn 追加结果；视图/压缩必须保留这种来源区别，不把它混成原先已知状态或扩大到无关新事实。
 
 tool-view 不重试原业务工具，也不以“获取更完整结果”为由再执行派遣。副作用只走标准 command 与 operationId 幂等；查看 resultRef 是只读。旧 turn 的晚到 view 不能触发新动作。
 
@@ -137,7 +132,7 @@ tool-view 不重试原业务工具，也不以“获取更完整结果”为由�
 
 ```yaml
 compression:
-  module: agent.compression.structured
+  module: agent.compression.window
   config:
     triggerRatio: 0.8
     preserveRecentGroups: 4

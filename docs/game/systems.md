@@ -4,24 +4,24 @@
 
 ## 1. 主体、接口与实现
 
-基础宿主保留模块装配、生命周期、typed port/事件通道、scope、版本/幂等/fencing检查和不可绕过的提交协议。游戏具体规则与服务通过 ModuleDefinition 注册；一个运行组合为每项必需能力选择兼容实现。
+基础宿主保留模块装配、生命周期、typed port 与事件通道、scope、版本/幂等/fencing 检查，以及不可绕过的提交协议。游戏具体规则与服务通过 ModuleDefinition 注册；一次运行组合为每项必需能力选择兼容实现。
 
 低耦合优先：模块不 import 其他模块内部文件、不直接访问其状态表、不通过全局单例找依赖。需要协作时声明所需能力与 apiVersion，由组合根注入公开 port。模块内部按单一职责组织；不能通过把所有功能装进一个“高内聚游戏核心”规避可替换边界。
 
-| 职能能力 | 负责输入 → 输出 | 可替换的内容 |
+| 职能能力 | 输入与输出 | 可替换的内容 |
 |---|---|---|
-| game.clock | 运行模式/推进命令 → 持久 worldTick 与到期触发 | 实时映射、受控单步、暂停策略 |
-| game.map | 授权地图、起终点、通行条件 → 路径与版本读集 | 地图表示、路径/通行判定策略 |
-| game.resources | 只读资源状态、预留/消耗提案 → 变更计划 | 资源种类、配给与返还规则 |
-| game.actions | 类型化行动、合法依赖结果 → 任务/后果计划 | 运输、护送、救援、修复等动作结算 |
-| game.agreements | 条款、确认、履约事实 → 协议状态计划 | 提案、改约、履约与违约判定 |
-| game.scenario | 已发布事件卡、前置条件、时钟 → 合法局势命令 | 压力、触发、剧情推进策略 |
-| platform.access-policy | 主体、目标、动作、当前授权 → 允许/拒绝与依据 | 玩家/派系/角色权限策略 |
-| game.save / platform.storage | 一致恢复点/读写计划 → 存档与持久结果 | 存档编码、迁移与存储适配 |
+| game.clock | 运行模式与推进命令，输出持久 worldTick 与到期触发 | 实时映射、受控单步、暂停策略 |
+| game.map | 授权地图、起终点、通行条件，输出路径与版本读集 | 地图表示、路径/通行判定策略 |
+| game.resources | 只读资源状态、预留/消耗提案，输出变更计划 | 资源种类、配给与返还规则 |
+| game.actions | 类型化行动、合法依赖结果，输出任务/后果计划 | 运输、护送、救援、修复等动作结算 |
+| game.agreements | 条款、确认、履约事实，输出协议状态计划 | 提案、改约、履约与违约判定 |
+| game.scenario | 已发布事件卡、前置条件、时钟，输出合法局势命令 | 压力、触发、剧情推进策略 |
+| platform.access-policy | 主体、目标、动作、当前授权，输出允许/拒绝与依据 | 玩家/派系/角色权限策略 |
+| game.save / platform.storage | 一致恢复点、读写计划，输出存档与持久结果 | 存档编码、迁移与存储适配 |
 
 这是职责清单，不代表所有能力必须各拆一个 npm 包。需要独立替换的功能应有独立能力/接口，即使首版由同一可信模块贡献多个相关 provider。模块 ID、能力、实现 ID 和版本由 [模块目录](../architecture/module-catalog.md) 与 [组合规范](../architecture/composition.md) 维护。
 
-游戏规则 provider 返回计划，不能自行提交数据库。由 ToolDefinition → command port → 已注册 handler/rules providers → 宿主提交关口形成唯一世界写入路径。所有世界状态在一个正式 branch 中有唯一权威；换实现不产生平行权威。
+游戏规则 provider 返回计划，不能自行提交数据库。ToolDefinition 经 command port 交给已注册的 handler 和 rules provider，最后由宿主提交关口写入，这条路径是唯一的世界写入路径。所有世界状态在一个正式 branch 中有唯一权威；换实现不产生平行权威。
 
 ## 2. 状态与人物认知
 
@@ -38,7 +38,7 @@
 
 ## 3. 时钟与地图的首版实现
 
-单玩家默认使用“运行/暂停/单步推进”时钟 provider。运行时按部署配置将真实时间映射为 worldTick；实验采用受控逻辑 tick。暂停停止逻辑计时与新自主决策，在途结果通过 fencing 失效；聊天不自动跳过一个回合。
+单玩家默认使用“运行/暂停/单步推进”时钟 provider。运行时按部署配置将真实时间映射为 worldTick；实验采用受控逻辑 tick。暂停停止逻辑计时与新自主决策，在途结果通过 fencing 失效；聊天不自动跳过一个 turn。
 
 离线默认暂停，不累计离线战争。恢复继续未完成任务与到期检查，不按现实离线天数追加记忆。真实网络耗时仅计性能，不参与记忆衰减。时钟实现可换，但持久 tick 不得倒退或绕过暂停协议。
 
@@ -48,9 +48,9 @@
 
 起始规则使用供给、能源、医疗材料三类有限资源；情报以证据与授权表达，不作为可刷货币。UI 模块优先显示短缺/可维持/有余量和可执行事项，内部整数用于一致性。
 
-提案、命令与任务分层：commandStatus=accepted/rejected 表示不可变受理结果；接受时可创建资源预留和任务。taskStatus 使用 pending → running → completed/failed/cancelled；受阻以 failed 和 reasonCode 表达。工具的 executionStatus 与这些业务状态分开，见 [公共契约](../architecture/contracts.md)。
+提案、命令与任务分层：commandStatus=accepted/rejected 表示不可变受理结果；接受时可创建资源预留和任务。taskStatus 取 pending、running、completed、failed 或 cancelled；受阻以 failed 和 reasonCode 表达。工具的 executionStatus 与这些业务状态分开，见 [公共契约](../architecture/contracts.md)。
 
-提案不占资源；接受时原子检查并预留。撤销按动作 provider 的显式补偿规则结算，不统一全额退款。冲突按提交顺序与 expectedVersion 裁决，玩家与 Agent 使用相同的已选规则组合。
+提案不占资源；接受时原子检查并预留。撤销按动作 provider 的显式补偿规则结算，不统一全额退款。冲突按提交顺序与 expectedVersions 裁决，玩家与 Agent 使用相同的已选规则组合。
 
 首批行为为运输、护送、救援、修复、侦察与临时通行。战斗由规则模块抽象为威胁、阻断、撤退与伤势；随机结果使用注入随机源并记录种子/实际抽样。资源与行动模块共同返回一个可原子提交的计划，不能各自先扣资源再等待别的模块补写。
 
@@ -80,14 +80,14 @@ game.scenario 接收策划发布内容，事件卡声明 ID/版本、条件、�
 
 ## 8. 安装、替换与卸载
 
-RunSpec.moduleAssemblyRef 冻结整个游戏/Agent/平台/UI组合，Agent profile 只是其中子配方。安装先校验依赖、接口版本与权限，再注册 handler、timer 和 UI 贡献；缺必需能力拒绝启动。
+RunSpec.moduleAssemblyRef 冻结整个游戏/Agent/平台/UI 组合，Agent profile 只是其中子配方。安装先校验依赖、接口版本与权限，再注册 handler、timer 和 UI 贡献；缺必需能力拒绝启动。
 
 可选模块卸载时撤销它贡献的工具绑定、订阅、任务入口与 UI 槽；依赖它的消费者必须停用或显式降级，不得保留能点击却不会工作的操作。必需 provider 不能在活动组合中拔空：先停止组合或准备兼容替代，实现 drain/fence 和状态迁移后切换。
 
-首版以暂停点的新 run/后继 branch 替换有状态模块，不承诺任意热拔。更换规则需要规则/schema版本；更换存储需要一致性与恢复验证。具体生命周期见 [插件机制](../architecture/plugins.md)。
+首版以暂停点的新 run/后继 branch 替换有状态模块，不承诺任意热拔。更换规则需要规则/schema 版本；更换存储需要一致性与恢复验证。具体生命周期见 [插件机制](../architecture/plugins.md)。
 
 ## 9. 验收
 
-重复命令只预留一次；冲突资源只合法一方成功；timer/恢复不重复结算；暂停不推进 tick；角色拒绝不被假装同意；误解不污染真值。
+重复命令只预留一次；冲突资源只有合法一方成功；timer 与恢复不重复结算；暂停不推进 tick；角色拒绝不会被当成同意；误解不污染真值。
 
-至少替换时钟与剧情推进两个非 Agent provider，并替换一个客户端 HUD/renderer 实现与一个控制台观测页面：只改模块自身、注册清单与配置，不修改无关消费者源码；差异有版本/trace且依赖和状态兼容性被验证。缺 provider 或不兼容版本必须在启用前失败。两端口启动、界面可用与最终验收见 [交付计划](../delivery/roadmap-and-acceptance.md)；模块目录见 [模块目录](../architecture/module-catalog.md)，事务恢复见 [事件与状态](../architecture/events-and-state.md)，行为复用见 [Tools](../agent/tools.md)。
+至少替换时钟与剧情推进两个非 Agent provider，再替换一个客户端 HUD/renderer 实现和一个控制台观测页面。替换只改模块自身、注册清单与配置，不修改无关消费者源码；差异要有版本和 trace 记录，依赖与状态兼容性需经过验证。缺 provider 或不兼容版本必须在启用前失败。两端口启动、界面可用与最终验收见 [交付计划](../delivery/roadmap-and-acceptance.md)；模块目录见 [模块目录](../architecture/module-catalog.md)，事务恢复见 [事件与状态](../architecture/events-and-state.md)，行为复用见 [Tools](../agent/tools.md)。

@@ -1,6 +1,6 @@
 # 公共契约与协议语义
 
-> 以下是待实现的 TypeScript 公共类型示意，具体 schema 由 `packages/contracts` 维护。本篇拥有跨模块共有语义；Module/Plugin 机制由 [插件机制](plugins.md) 维护，Tool、Model、Memory 的专有字段由对应专篇维护，禁止复制多份契约。
+> 以下是待实现的 TypeScript 公共类型示意，实际 schema 由 `packages/contracts` 维护。跨模块共有的语义由本文维护；Module/Plugin 机制见 [插件机制](plugins.md)，Tool、Model、Memory 的专有字段由对应专篇维护，其他文档只引用，不再复制一份契约。
 
 ## 1. 身份、事件与输入边界
 
@@ -77,19 +77,19 @@ interface MemoryRecord {
 }
 ```
 
-`AgentObservation.epistemic` 与 `MemoryRecord.epistemic` 是不同枚举：前者表示获知方式（亲历/转述/推断），后者表示记忆的证据地位（已验证事件/声称/推断）。两者不得互换或合并成一个字符串；传播权限另由 `releasePolicyId` 表达。scope 与事件 envelope 由服务端赋值或验证；worldSeq 在 branch 内排序。来源 ID 必须存在并属于合法知识边界。版本化身份/lore 使用独立 contentRef，不能伪造观察来源。
+`AgentObservation.epistemic` 与 `MemoryRecord.epistemic` 是两个不同的枚举：前者表示获知方式（亲历/转述/推断），后者表示记忆的证据地位（已验证事件/声称/推断）。两者不能互换，也不能合并成一个字符串；传播权限另由 `releasePolicyId` 表达。scope 和事件 envelope 由服务端赋值或验证，worldSeq 在 branch 内排序。来源 ID 必须存在，并且落在合法的知识边界内。版本化的身份和 lore 用独立 contentRef 表达，不能拿来伪造观察来源。
 
-InputFrontier 是每个 Agent 的冻结边界，由 scope 绑定；多主体快照存各身份的 frontier map。同一 worldSeq 下延迟观察也可能稍后送达，必须同时冻结 observationSeq、perceptionRevision 和 knowledgeGrantRevision，不能只比较世界序号。memoryRevision 指向满足边界的不可变视图；conversationCursor 限定该主体有权使用的会话日志。
+InputFrontier 由 scope 绑定，是每个 Agent 的冻结边界；多主体快照按身份各存一份 frontier map。同一个 worldSeq 下，延迟观察也可能稍后送达，所以必须同时冻结 observationSeq、perceptionRevision 和 knowledgeGrantRevision，只比较世界序号不够。memoryRevision 指向满足边界的不可变视图；conversationCursor 限定该主体有权使用的会话日志。
 
-时间满足 occurredAtTick ≤ sensedAtTick ≤ knownAtTick；confidence 校验为有限 0–1；channel 从已注册渠道解析。运行中经历的观察来源非空；contentRefs 仅用于版本化背景，不能替代经历证据。Json 只是传输形态，实际 payload 按 type + schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
+时间顺序上，occurredAtTick 不晚于 sensedAtTick，sensedAtTick 不晚于 knownAtTick；confidence 必须是 0 到 1 的有限数，channel 从已注册渠道解析。运行中经历到的观察，来源不能为空；contentRefs 只用于版本化背景，不能替代经历证据。JSON 只是传输形态，实际 payload 按 type 和 schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
 
 ## 2. 命令与 receipt
 
-CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文/宿主附加。不能由模型自报 author 获得权限。
+CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文或宿主附加。模型不能靠自报 author 取得权限。
 
-CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、acceptedEventIds、operationId 与 resultingVersions。commandStatus 只为 accepted 或 rejected，是不可变提交回执；accepted 不等于异步任务已完成。相同幂等键与 payloadHash 返回原 receipt，不重复执行；键相同但内容不同拒绝。
+CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、acceptedEventIds、operationId 与 resultingVersions。commandStatus 只有 accepted 或 rejected 两个值，是不可变的提交回执；accepted 不代表异步任务已经完成。幂等键和 payloadHash 都相同的请求返回原 receipt，不重复执行；键相同但内容不同的请求拒绝。
 
-异步任务投影使用独立 taskStatus：pending、running、completed、failed、cancelled。ToolResult 使用 executionStatus：ok、error、unknown；ok 表示网关拿到确定合法响应，仍可能包含 commandStatus=rejected；unknown 表示副作用结果未确认，必须查询 receipt。工具视图不得把这些不同层状态混成一个 status 或省略失败。无任务的只读结果不伪造 taskStatus。
+异步任务投影使用独立的 taskStatus：pending、running、completed、failed、cancelled。ToolResult 使用 executionStatus：ok、error、unknown。ok 表示网关拿到了确定的合法响应，响应里仍可能带 commandStatus=rejected；unknown 表示副作用结果未确认，必须去查 receipt。工具视图不得把这几个层次的状态混成一个 status，也不能省略失败。没有任务的只读结果不伪造 taskStatus。
 
 ## 3. 模块、能力与装配
 
@@ -174,7 +174,7 @@ interface UiExtension {
 }
 ```
 
-`StrictConfigSchema`、`MigrationPath`、`ContributionRef`、`ExperimentAxis`、`ModuleCreateInput` 是 contracts 包内的受控类型，暂不在本篇展开。`ResolvedModuleSet` 是浏览器 realm 握手时唯一可以拿到的东西：模块 ID/版本、能力、协议版本与装配 hash。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 与 [模块目录](module-catalog.md)。
+`StrictConfigSchema`、`MigrationPath`、`ContributionRef`、`ExperimentAxis`、`ModuleCreateInput` 是 contracts 包内的受控类型，这里不展开。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本与装配 hash。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
 
 ## 4. 跨端会话与协议
 
@@ -207,22 +207,22 @@ interface ConsoleRequestContext {
 }
 ```
 
-WebSocket 只推送授权投影与已提交对话/任务状态；重连携带最后确认游标，缺口过大重取快照。控制台请求必须携带会话并重新校验角色与 scope，不能依赖同源、隐藏菜单或本机地址。玩家/控制台协议版本不一致时显式拒绝，不尝试兼容未声明字段。
+WebSocket 只推送授权投影和已提交的对话与任务状态；重连时携带最后确认的游标，缺口过大就重取快照。控制台请求必须携带会话，角色与 scope 每次重新校验，不能依赖同源、隐藏菜单或本机地址。玩家侧或控制台侧的协议版本不一致时显式拒绝，不尝试兼容未声明的字段。
 
 ## 5. 模型和工具的关联
 
-runId、turnId、attemptId、llmCallId、toolCallId、operationId、commandId 分开。一个逻辑 operation 可对应多次网络重试，但只能产生一次有效副作用。模型多次建议同一动作不能借新 toolCallId 规避 operation 去重。
+runId、turnId、attemptId、llmCallId、toolCallId、operationId 与 commandId 要分开。一个逻辑 operation 可以对应多次网络重试，但只能产生一次有效副作用。模型反复建议同一动作时，不能靠新的 toolCallId 绕过 operation 去重。
 
-ToolDefinition/ToolBinding 的 schema 见 [工具](../agent/tools.md)；modelId/mounts/purpose 的 schema 见 [模型池](../agent/model-pool.md)；ContextArtifact 和 memory revision 由 [上下文](../agent/context.md) 与 [记忆](../agent/memory.md) 维护；模块描述符与装配 schema 以本文 §3 为唯一实现，[插件机制](plugins.md) 只解释注册、生命周期与拔插机制，不另建第二套 schema。
+ToolDefinition/ToolBinding 的 schema 见 [工具](../agent/tools.md)，modelId/mounts/purpose 的 schema 见 [模型池](../agent/model-pool.md)，ContextArtifact 与 memory revision 由 [上下文](../agent/context.md) 和 [记忆](../agent/memory.md) 维护。模块描述符与装配 schema 以本文第 3 节为准，[插件机制](plugins.md) 只解释注册、生命周期与拔插机制，不另建第二套 schema。
 
 ## 6. 错误与取消
 
-统一错误至少包含 code、retryable、safeMessage、traceId、detailsArtifactRef；敏感 details 不返回玩家。code 区分 forbidden、validation、paused、idempotency-conflict、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、capability-conflict、assembly-incompatible、realm-violation、plugin-failed、provider-failed、cancelled。
+统一错误至少包含 code、retryable、safeMessage、traceId、detailsArtifactRef，敏感 details 不返回给玩家。code 分四组：请求类 forbidden、validation；状态与预算类 paused、not-ready、budget-exhausted、cancelled；版本与并发类 idempotency-conflict、version-conflict、stale-controller、stale-turn；装配与供应商类 module-missing、capability-conflict、assembly-incompatible、realm-violation、plugin-failed、provider-failed。
 
-取消是请求，fencing 才保证晚到输出无效。provider 连接超时不证明 tool/command 未执行，必须查询 receipt。响应不完整保持明确状态，不能解析失败后返回空成功。模块卸载/替换期间返回 not-ready，不返回旧实现的伪造结果。
+取消只是一个请求，真正保证晚到输出无效的是 fencing。provider 连接超时不能证明 tool 或 command 没有执行，必须查询 receipt。响应不完整时要保持明确状态，不能解析失败后返回一个空成功。模块卸载或替换期间返回 not-ready，不能返回旧实现伪造的结果。
 
 ## 7. 契约演进
 
-公共 API 不在 v1 中改变既有字段含义；新增可选字段需默认语义，破坏性变更使用新 schemaVersion 和迁移。事件旧版本保留 reader/upcaster 与原始 payload，不原地重写日志。模块 apiVersion 与内容 schemaVersion 分别校验，不能混成一个版本号。assembly 增加新 realm 或新能力类别属于契约升级，必须记录兼容窗口与迁移说明。
+公共 API 在 v1 中不改变既有字段的含义；新增可选字段需要有默认语义，破坏性变更使用新的 schemaVersion 和迁移。事件旧版本保留 reader/upcaster 与原始 payload，不原地重写日志。模块 apiVersion 与内容 schemaVersion 分别校验，不能混成一个版本号。assembly 增加新 realm 或新能力类别属于契约升级，必须记录兼容窗口与迁移说明。
 
-共享契约测试覆盖合法/非法 payload、scope、幂等、旧版本读取、重连投影、realm 兼容、能力闭包与装配冲突。仓库尚未创建 contracts 包，本篇不是已验证的运行时 API。
+共享契约测试覆盖合法与非法 payload、scope、幂等、旧版本读取、重连投影、realm 兼容、能力闭包与装配冲突。仓库里还没有 contracts 包，本文描述的 API 尚未经过运行时验证。

@@ -1,12 +1,12 @@
 # 上下文模块详细设计
 
-> 状态：目标规范，尚未实现。context 决定“这一次模型调用看到哪些合法材料、按何顺序看到”，不负责记住历史或执行行动。相邻模块见 [memory](memory.md)、[感知](perception.md)、[压缩与工具视图](compression-and-tool-view.md)。
+> 状态：目标规范，尚未实现。context 决定“这一次模型调用看到哪些合法材料、按什么顺序看到”，不负责记住历史或执行行动。相邻模块见 [memory](memory.md)、[感知](perception.md)、[压缩与工具视图](compression-and-tool-view.md)。
 
 ## 1. 边界与调用阶段
 
 所有 decision 实现必须经过同一宿主管线，不能在插件内部自行拼第二套 prompt 或直接调用 provider。context 接收宿主已取出的类型化材料，返回不可变 ContextArtifact；它不持有数据库、世界全局日志或无限历史查询权限。
 
-单玩家选择五个人类派系之一，仅决定授权、开局关系与目标；context 从版本化身份和授权投影取数，不因玩家“加入某派”就加入该派全部私密记忆。20 个 gameplay Agent 共享世界设定，各自组装上下文。
+玩家从五个人类派系里选一个，这个选择只影响授权、开局关系与目标；context 从版本化身份和授权投影取数，不会因为玩家“加入某派”就把该派的全部私密记忆一并纳入。20 个 gameplay Agent 共享世界设定，各自组装上下文。
 
 两个必需 phase；字段统一使用 decision/speech，policy 仅指决策策略职责：
 
@@ -17,7 +17,7 @@
 
 二者使用同一个 agentId，不新增自主 Agent。speech 使用全新请求，不沿用 policy 会话、隐藏线程、自由文本理由或含秘密的缓存前缀；模型池可分别挂载不同 modelId，见 [模型池](model-pool.md)。
 
-policy 的 dialogueIntent 只允许意图枚举、目标受众、合法公开证据引用和模板参数。不能把“不要提到秘密A”作为自由文本交给 speech，因为这已经传输了秘密A。
+policy 的 dialogueIntent 只允许意图枚举、目标受众、合法公开证据引用和模板参数。不能把“不要提到秘密 A”作为自由文本交给 speech，因为这已经传输了秘密 A。
 
 ## 2. 输入与输出契约
 
@@ -42,7 +42,7 @@ policy 的 dialogueIntent 只允许意图枚举、目标受众、合法公开证
 | content、format | 类型化内容和渲染模板；玩家原话始终是数据 |
 | priority、protected | 预算选择优先级与不可裁剪标记，由宿主核验 |
 | tokenCount、byteCount | 当前模型序列化口径及字节量，不以中文字数代替 token |
-| omissionReason | 未选中/被替换的原因，保存在报告而非假装不存在 |
+| omissionReason | 未选中或被替换的原因，保存在报告里，不能假装不存在 |
 
 既有观察、memory 与环境查询的 sourceRefs 必须存在、属于合法 branch/主体且不晚于 inputFrontier。身份来源允许 contentRef；不能用空来源给某组补上一段“它一向记得玩家救过它”。
 
@@ -50,13 +50,7 @@ policy 的 dialogueIntent 只允许意图枚举、目标受众、合法公开证
 
 ## 3. 标准组装流程
 
-```text
-runtime 冻结 turn 输入与 model mount
-  → 校验 phase/受众/来源 → 显式 segment builders
-  → 排序与配额 → tool-view 替换 → 需要时 compression
-  → 宿主最终权限/协议/token 检查
-  → 规范请求与 provider 业务请求体归档 → model port
-```
+组装流程是：runtime 先冻结 turn 输入与 model mount，再校验 phase、受众与来源，由显式 segment builder 产出段落；随后做排序与配额、tool-view 替换，需要时做 compression，经宿主最终权限、协议与 token 检查后，把规范请求与 provider 业务请求体归档，再交给 model port。
 
 1. 取得当次 `(agentId, purpose)` 唯一 modelId 与能力，不允许 context 自选更便宜模型或隐式改采样参数。
 2. 运行前检查 memory 所需的 durableThroughSeq/derivedThroughSeq，固定对应 revision；context 不自行等待或触发无记录的反思。
@@ -66,14 +60,14 @@ runtime 冻结 turn 输入与 model mount
 6. 模型适配器序列化后再算实际请求预算；协议包装和工具 schema 都计入输入。
 7. 权限、来源、工具配对、总预算任一失败，不发送该请求；正式实验失败显式保留。
 
-没有为每个函数使用事件总线。上下文阶段是 typed port 的纯计算/受控转换；阶段结果与错误进入 [观测](../platform/observability.md)，不写成游戏事实事件。
+函数之间不通过事件总线连接。上下文阶段是 typed port 上的纯计算或受控转换；阶段结果与错误进入 [观测](../platform/observability.md)，不写成游戏事实事件。
 
 ## 4. 基线结构与可替换排列
 
 | 顺序 | 基线段 | 是否受保护 |
 |---|---|---|
 | 1 | 系统权限、输出协议与 phase 说明 | 是 |
-| 2 | 稳定身份、必要共享 lore | 必要最小部分是；不等于整本世界观常驻 |
+| 2 | 稳定身份、必要共享 lore | 只有必要最小部分受保护，整本世界观不会因此常驻 |
 | 3 | 当前任务、合法当前世界投影 | 完成当前交互所需部分受保护 |
 | 4 | 本次 memory 召回条目及来源 | 按 profile 和条目优先级 |
 | 5 | 合法会话窗口、工具往返 | 未闭合 tool call/result 及必要 receipt 受保护 |

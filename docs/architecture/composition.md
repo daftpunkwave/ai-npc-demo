@@ -1,6 +1,6 @@
 # 积木组合与配置生效
 
-> 状态：目标设计。本文说明如何把模块、内容、身份、策略、模型和工具组合成可运行、可对比的组合。模块清单见 [模块目录](module-catalog.md)，描述符与生命周期见 [插件机制](plugins.md)，配置 schema 以 [配置](../platform/configuration.md) 为唯一规范；本页不另建第二套落盘格式。
+> 状态：目标设计。本文说明如何把模块、内容、身份、策略、模型和工具装配成可运行、可对比的组合。模块清单见 [模块目录](module-catalog.md)，描述符与生命周期见 [插件机制](plugins.md)，配置 schema 以 [配置](../platform/configuration.md) 为唯一规范；本文不另建第二套落盘格式。
 
 ## 1. 五类对象分开
 
@@ -38,7 +38,7 @@ assembly 同时声明 `server`、`client`、`console` 三段。服务端在启�
 - 缺必需模块或 apiVersion 不兼容：显示组合不完整，不加载旧实现、不静默降级。
 - 缺可选模块：对应 slot/页面显示不可用原因，服务端能力仍按权限工作。
 
-玩家设置不是 assembly：显示、语言、镜头、声音、图形质量与已获准的测试 preset 属于 preference/settings 模块，即时生效且不改变运行组合。设立新 preset 或更换模块必须申请新 run/后继 branch。
+玩家设置不是 assembly：显示、语言、镜头、声音、图形质量属于 preference/settings 模块，即时生效且不改变运行组合。测试 preset 不是偏好，它只能提交新 run 或后继 branch 的申请，由服务端预检并记录 assembly diff。
 
 ## 4. profile 的层级与覆盖
 
@@ -51,13 +51,13 @@ assembly 同时声明 `server`、`client`、`console` 三段。服务端在启�
 
 roster 通过 `profileRef` 引用明确的 Agent profile，后者引用其父级。层级关系必须构成无环图；不能由文件加载顺序决定优先级。
 
-Agent profile 只选择 Agent 作用域的认知策略（perception/memory/context/compression/tool-view/decision/scheduling）与参数，不能暗中决定整个世界的地图、时钟、持久化或 UI 实现。若实验要改变游戏规则或界面，必须改 assembly 并作为独立实验条件。
+Agent profile 只选择 Agent 作用域的认知策略（perception/memory/context/compression/tool-view/decision）与参数，不能暗中决定整个世界的地图、时钟、持久化或 UI 实现。调度属于 run 作用域，由场景 profile 与实验 variant 配置。若实验要改变游戏规则或界面，必须改 assembly 并作为独立实验条件。
 
 ## 5. 模型池的组合方式
 
-模型配置集中在 `models`；挂载列表为 `mounts`，每条包含 `modelId + agentIds + purposes`。启动解析后形成只读 `(agentId, purpose) → modelId` 索引。配置一个条目后选择多个 Agent 挂载，不要求逐人复制连接配置。
+模型配置集中在 `models`；挂载列表为 `mounts`，每条包含 `modelId + agentIds + purposes`。启动解析后形成只读索引：由 `(agentId, purpose)` 解析出唯一 `modelId`。配置一个条目后选择多个 Agent 挂载，不要求逐人复制连接配置。
 
-gameplay mounts 的 purpose 统一为 `decision`、`speech`、`memory-maintenance`、`compression`、`embedding`。仅实际启用的能力必须有对应挂载；memory.none 不因为存在该 purpose 就自动调用反思模型。`evaluation` 由独立 evaluator 主体配置引用 modelId，不进入 gameplay mounts 或 20 身份 roster，也没有游戏行动权限。
+gameplay mounts 的 purpose 统一为 `decision`、`speech`、`memory-maintenance`、`compression`、`embedding`。仅实际启用的能力必须有对应挂载；memory.none 不因为存在该 purpose 就自动调用反思模型。`evaluation` 由独立 evaluator 主体配置引用 modelId，不进入 gameplay mounts 或 20 个身份 roster，也没有游戏行动权限。
 
 同一 Agent 可以让 decision 和 speech 使用同一条目，让 memory-maintenance 使用另一条目。embedding 是独立能力：文本生成 endpoint 可用，不代表它能生成向量。模型池先校验条目的 provider adapter 与能力，再校验挂载覆盖；未知 Agent、未知 modelId、purpose 不支持、同一索引键冲突或必需 purpose 缺失均拒绝启动；不能默默使用“默认第一个模型”。
 
@@ -84,16 +84,16 @@ ToolBinding 允许进一步限制可作用对象、行动种类、调用预算�
 7. 解析快照、起始记忆与控制模式；每个实验 run 分配独占 branch，不复用活动分支。
 8. 校验全平台活动 Agent 配额和模型/工具并发，预留资源；未获配额只能等待或拒绝，不能创建后再补记账。
 9. 创建 scoped state 与模块实例，按依赖顺序启动，确认必需水位和资源就绪；浏览器 realm 完成握手并加载本域模块。
-10. 冻结 resolved manifest、内容/模块版本、模型挂载、工具 binding、client/console assembly hash 及 hash；分支进入 ready。
+10. 冻结 resolved manifest、内容/模块版本、模型挂载、工具 binding、client/console assembly hash 与 catalog 快照 hash；分支进入 ready。
 11. 运行中记录各阶段实际生效值；停止时先 fencing 和 drain，再逆序释放实例及配额。
 
 dry-run 只执行解析与校验，展示将创建什么、还缺什么，不创建活动 Agent、调用模型或修改在线状态。需要连通性探测时，作为明确有预算的测试操作单独记录。
 
-全平台活动 gameplay Agent 总数上限为 20，在线和实验共同计数。满员在线运行时可以编辑实验草稿和预检；完整 20 Agent 闭环实验需要维护暂停并释放在线实例，按变体顺序激活与释放。不要为并行对比扩上限。
+全平台活动 gameplay Agent 总数上限为 20，在线和实验共同计数。满员在线运行时可以编辑实验草稿和预检；完整 20 个 Agent 闭环实验需要暂停在线运行并释放实例，按变体顺序激活与释放。不得为并行对比扩大 Agent 配额上限。
 
 ## 8. 一次 memory 实验怎样组合
 
-先选择同一快照、同一输入脚本、相同模型池版本及挂载、相同工具集和预算，建立三个 variant：无长期记忆、结构化账本、观察流与反思。它们复用 runtime 和游戏规则，差异集中在 memory 槽及其明确声明的子参数。
+先选择同一快照、同一输入脚本、相同模型池版本及挂载、相同工具集和预算，建立四个 variant：M0 无长期记忆、M1 结构化经历账本、M2 观察流与反思、M3 分层混合。它们复用 runtime 和游戏规则，差异集中在 memory 槽及其明确声明的子参数。
 
 每个 variant 使用独占 branch 和独立记忆/索引。比较起点必须说明冷启动、共同历史重建或兼容状态导入；不能直接把账本状态复制给另一个不兼容记忆算法后声称条件相同。
 
@@ -109,7 +109,7 @@ dry-run 只执行解析与校验，展示将创建什么、还缺什么，不创
 
 context 可以实验片段顺序，compression 可以实验阈值和算法，decision 可以替换策略，但不能以 profile 自定义任意执行脚本，不能通过不调用后续 hook 跳过 guard。模块存在不等于本次生效；自带 loop 的 decision adapter 若无法暴露 context/model/tool 拦截点，必须声明 unsupported，相关实验预检失败，不能挂上开关后保持空操作。
 
-决策与对白的 phase 字段分别为 decision/speech，policy 仅指决策策略职责。决策可在本主体权限内利用秘密，公开对白请求只能包含目标受众合法素材和已裁决 receipt；不复用携密会话、自由文本理由或缓存前缀。两次请求计入同一 turn，而非新增 Agent。
+决策与对白的 phase 字段分别为 decision/speech，policy 仅指决策策略职责。决策可在本主体权限内利用秘密，公开对白请求只能包含目标受众合法素材和已裁决 receipt；不复用携密会话、自由文本理由或缓存前缀。两次请求计入同一 turn，不算新增 Agent。
 
 ## 10. requested、resolved 与 effective
 

@@ -1,14 +1,14 @@
 # 玩家客户端、UI 模块与 2.5D 场景
 
-> 目标设计。玩家访问 http://127.0.0.1:5173；世界权威、模型与后台管理位于 http://127.0.0.1:3000。两个端口是固定部署边界，详见 [双端口拓扑](two-endpoints.md)。本文定义客户端宿主与可替换功能，不把图形界面写成不可拆的游戏主体。控制台页面是同一模块机制在 `console` realm 的另一个宿主，见 [模块目录](module-catalog.md)。
+> 目标设计。玩家访问 http://127.0.0.1:5173，世界权威、模型和后台管理在 http://127.0.0.1:3000。两个端口是固定的部署边界，详见 [双端口拓扑](two-endpoints.md)。客户端宿主与可替换功能的规则由本文维护，图形界面不是不可拆的游戏主体。控制台页面是同一套模块机制在 `console` realm 的另一个宿主，见 [模块目录](module-catalog.md)。
 
 ## 1. 客户端宿主保留什么
 
-apps/client 只保留启动、模块装载、依赖/能力校验、扩展槽容器、生命周期、错误边界与协议客户端接入。地图、渲染、镜头、输入、HUD、对话、角色册、派系开局、设置、通知、音频等具体功能均由 ModuleDefinition 注册，不写死在宿主页面。宿主不提供可被模块绕过的“全局 store”或直接 DOM 注入入口。
+apps/client 只保留启动、模块装载、依赖与能力校验、扩展槽容器、生命周期、错误边界和协议客户端接入。地图、渲染、镜头、输入、HUD、对话、角色册、派系开局、设置、通知、音频这些功能都由 ModuleDefinition 注册，不写死在宿主页面里。宿主不提供模块可以绕过的“全局 store”，也不提供直接注入 DOM 的入口。
 
-模块按 contracts 中的 typed port 交互，不直接 import 另一模块实现，不通过全局可写 store 寻找隐式依赖。宿主只把声明所需的 capability handle 注入实例；跨客户端/服务端的调用只能经 client-protocol 和授权网络协议，不能跨进程依赖注入服务端对象。
+模块之间按 contracts 里的 typed port 交互，不直接 import 另一个模块的实现，也不靠全局可写 store 找隐式依赖。宿主只把模块声明所需的 capability handle 注入实例；跨客户端与服务端的调用只能走 client-protocol 和授权网络协议，不能跨进程注入服务端对象。
 
-低耦合优先意味着变更一个功能不要求修改无关模块。它不等于没有契约，也不意味着把每次函数调用广播到一个无限制的事件总线。模块内部按单一职责组织，模块之间通过明确输入输出协作。
+低耦合优先指改一个功能时不必修改无关模块。它不等于没有契约，也不意味着每次函数调用都要广播到一个无限制的事件总线。模块内部按单一职责组织，模块之间通过明确的输入输出协作。
 
 ## 2. 功能模块与扩展槽
 
@@ -20,12 +20,12 @@ apps/client 只保留启动、模块装载、依赖/能力校验、扩展槽容�
 | hud | 局势、资源等级、任务状态 | 授权 world/task view | 不内嵌经济或战斗结算 |
 | dialogue | 已提交对话、证据卡、提案入口 | conversation view、command client | 不持有私密 decision context |
 | character/faction | 人物册、派系开局 | 已授权角色内容、campaign client | 不复制模型编辑器或阵营规则 |
-| settings | 允许的玩家偏好与测试入口 | preference port、preset catalog | 不直接修改运行中的 module assembly |
+| settings | 允许的玩家偏好 | preference port | 不直接修改运行中的 module assembly |
 | notifications/audio | 提醒、声音与反馈 | 已授权 presentation events | 不把提示声音当作世界事实 |
 
-`scene`、`hud`、`dialogue`、`overlay`、`sidebar`、`modal`、`settings.section`、`notification`、`boot.screen` 等 slot 由客户端宿主定义。UI ExtensionDefinition 是所属 ModuleDefinition 的视图贡献记录，包含 extensionId、slot、requiredCapabilities 与 viewFactoryRef；不是另一套拥有独立权限的注册系统。
+`scene`、`hud`、`dialogue`、`overlay`、`sidebar`、`modal`、`settings.section`、`notification`、`boot.screen` 等 slot 由客户端宿主定义。`UiExtension` 是所属 ModuleDefinition 的视图贡献记录，包含 extensionId、slot、requiredCapabilities、order 与 viewRef；它不构成另一套带独立权限的注册系统。
 
-扩展先验证依赖与重复 ID，再按显式布局/顺序装载。必需能力不存在时给出组合不完整错误；可选面板可以显示不可用原因，但不能伪造功能已生效。卸载视图释放订阅、事件处理、图形资源和临时状态，不得卸载仍被必需模块使用的 provider。
+扩展先验证依赖和重复 ID，再按显式布局与顺序装载。必需能力不存在时给出组合不完整错误；可选面板可以显示不可用原因，但不能伪造功能已生效。卸载视图要释放订阅、事件处理、图形资源和临时状态，不得卸载仍被必需模块使用的 provider。
 
 ## 3. 两个 origin 的职责
 
@@ -36,33 +36,33 @@ apps/client 只保留启动、模块装载、依赖/能力校验、扩展槽容�
 | 127.0.0.1:3000/api/v1/* | 玩家或后台获准使用的 REST API | 未授权原始世界日志/记忆 |
 | 127.0.0.1:3000/api/v1/streams | 有会话与 channel scope 的 WebSocket | 无限制广播所有角色私密事件 |
 
-后台 UI 的静态资源由 apps/server 同一监听端口提供，仍在浏览器执行；不能再为运营或实验界面启动第三个 Web 监听端口。开发资源更新与 WebSocket 也必须复用两端口拓扑，不能以开发模式为由额外开放后台端口。
+后台 UI 的静态资源由 apps/server 的同一个监听端口提供，仍在浏览器里执行；不能再为运营或实验界面启动第三个 Web 监听端口。开发资源更新和 WebSocket 也必须复用两端口拓扑，不能以开发模式为借口额外开放后台端口。
 
 ## 4. 客户端数据流
 
-transport → authorized projection reducer → typed scene/UI view-model → 已装载功能模块。网络 reducer 属可替换客户端投影模块，通过 ProjectionPort 提供只读订阅与版本信息；模块不能各自维护一份互相矛盾的权威世界。
+数据先从 transport 进入 authorized projection reducer，转为 typed scene/UI view-model，再交给已装载的功能模块。网络 reducer 属于可替换的客户端投影模块，通过 ProjectionPort 提供只读订阅和版本信息；模块不能各自维护一份互相矛盾的权威世界。
 
-客户端维护 worldTick、projectionVersion、streamSeq 与当前 branch 标识。断线携带最后确认游标续传；缺口过大重取快照。重连不是新建 NPC，进入实验分支必须有可见标识。
+客户端维护 worldTick、projectionVersion、streamSeq 与当前 branch 标识。断线重连时携带最后确认的游标续传；缺口过大就重取快照。重连不会新建 NPC，进入实验分支必须有可见标识。
 
-SceneSnapshot/SceneDelta 只包含玩家已知节点、可见角色、获准任务、路线与展示等级，不包含私密记忆、完整 prompt、未发布剧情或凭据。render/camera/input/HUD 都消费同一授权投影，其模块化不能扩大可见范围。
+SceneSnapshot/SceneDelta 只包含玩家已知的节点、可见角色、获准任务、路线和展示等级，不包含私密记忆、完整 prompt、未发布剧情或凭据。render、camera、input、HUD 都消费同一份授权投影，模块化不能扩大可见范围。
 
-角色点选先转换为实体/世界坐标意图，再提交标准 command；最终合法性由服务端模块组合处理并经宿主提交关口验证。客户端只显示 accepted 与后续任务状态，不假定精灵移动就是完成行动。
+角色点选先转成实体或世界坐标的意图，再提交标准 command；最终是否合法由服务端的模块组合处理，并经宿主提交关口验证。客户端只显示 accepted 和后续任务状态，不把精灵移动当作行动已经完成。
 
 ## 5. 2.5D 渲染适配
 
-React 是首版 UI 适配目标，PixiJS 是首版场景适配目标；两者不是宿主契约。PixiJS 官方定位为面向 Web 的 2D 渲染器，支持 WebGL 与可选 WebGPU；本项目在其上选择等距精灵表现 2.5D，不依赖完整 3D 物理。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
+React 是首版的 UI 适配目标，PixiJS 是首版的场景适配目标，两者都不构成宿主契约。PixiJS 官方定位是面向 Web 的 2D 渲染器，支持 WebGL 和可选的 WebGPU；本项目在它之上用等距精灵表现 2.5D，不依赖完整的 3D 物理。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
 
-SceneRenderer port 接收授权场景、相机与选择状态，输出 entity-picked/location-picked 等意图。projection 负责世界/屏幕变换，input 负责命中与交互，renderer 负责资源/显示；它们可分别提供实现，但在 assembly 中必须满足相容的坐标、命中与视口契约。
+SceneRenderer port 接收授权场景、相机和选择状态，输出 entity-picked/location-picked 这类意图。projection 负责世界与屏幕的变换，input 负责命中和交互，renderer 负责资源与显示；三者可以分别提供实现，但在 assembly 中必须满足相容的坐标、命中和视口契约。
 
-基础投影为 screenX=(x-y)×tileWidth/2，screenY=(x+y)×tileHeight/2-height×heightStep。高度首版用于视觉表现；路径、位置、可达、视野与到达由服务端规则/地图模块决定。视觉遮挡与知识权限分开。
+基础投影为 `screenX=(x-y)×tileWidth/2`、`screenY=(x+y)×tileHeight/2-height×heightStep`。高度在首版用于视觉表现；路径、位置、可达、视野和到达由服务端的规则和地图模块决定。视觉遮挡与知识权限分开。
 
-深度按落脚点、地形层和稳定次序排序。平移/缩放后的命中转换保持世界目标不变；移动只是已接受路径的插值。请求失败显示最近合法位置与原因，不能由渲染器补造完成事件。
+深度按落脚点、地形层和稳定次序排序。平移或缩放之后，命中转换要保持世界目标不变；移动只是对已接受路径做插值。请求失败时显示最近的合法位置和原因，不能由渲染器补造完成事件。
 
-场景每帧更新相机/插值/必要精灵，React 按业务变化刷新；不按渲染帧重建整个世界。图形资产是版本化内容，URL 由内容包验证，不由 LLM 提供任意资源地址。
+场景每帧更新相机、插值和必要的精灵，React 按业务变化刷新，不按渲染帧重建整个世界。图形资产是版本化内容，URL 由内容包验证，不接受 LLM 提供的任意资源地址。
 
 ## 6. 玩家必要设置
 
-`client.settings.standard` 模块向 `settings.section` slot 贡献设置；设置模块可替换，缺失时使用宿主默认值并说明不可自定义。偏好经 preference port 保存，作用域为设备/玩家，不进入 run manifest，也不能改变世界规则。
+`client.settings.standard` 模块向 `settings.section` slot 贡献设置；设置模块可以替换，缺失时使用宿主默认值，并说明当前不可自定义。偏好经 preference port 保存，作用域是设备或玩家，不进入 run manifest，也不能改变世界规则。
 
 | 设置 | 生效边界 |
 |---|---|
@@ -72,14 +72,14 @@ SceneRenderer port 接收授权场景、相机与选择状态，输出 entity-pi
 | 游戏暂停/保存/恢复 | 走有权限的 campaign API，不只是暂停客户端画面 |
 | 测试 preset 入口 | 展示获准选择的组合摘要，申请新 run/branch，不能直接热改当前世界 |
 
-模型/模块详细装配、API 凭据、世界真值与评分原文位于服务端控制台。玩家测试入口不能借设置项获得后台权限；只有已授权研究操作才能创建相应实验。控制台与玩家的 origin/角色规则见 [两个本地端口](two-endpoints.md)。
+模型和模块的详细装配、API 凭据、世界真值与评分原文都在服务端控制台。玩家的测试入口不能借设置项取得后台权限；只有已授权的研究操作才能创建相应实验。控制台与玩家的 origin 和角色规则见 [两个本地端口](two-endpoints.md)。
 
 ## 7. 生命周期、故障与验收
 
-纯偏好变更可即时生效；切换功能实现或 module assembly 在受控边界销毁旧实例、校验依赖并重建，新 run/branch 的生效规则见 [配置](../platform/configuration.md)。不承诺任意有状态功能可在帧中间热拔。
+纯偏好变更可以即时生效；切换功能实现或 module assembly 时，在受控边界销毁旧实例、校验依赖再重建，新 run 和 branch 的生效规则见 [配置](../platform/configuration.md)。不承诺任何有状态功能都能在帧中间热拔。
 
-可选 UI 模块失败隔离到自身区域并显示原因；renderer/transport 等必需能力失效时显示不可运行/重连状态，不用静态画面假装世界仍在运行。服务端继续与否按 campaign 策略决定，客户端不能自行决定世界回滚。
+可选 UI 模块的失败隔离在自身区域内，并显示原因；renderer、transport 这类必需能力失效时显示不可运行或重连状态，不用静态画面假装世界还在运行。服务端是否继续按 campaign 策略决定，客户端不能自行决定世界回滚。
 
-验收必须覆盖：两个端口之外无新增监听；替换 renderer/camera/HUD/设置任一实现不改无关模块；移除必需 provider 被拒绝；卸载无资源/监听残留；相机变化不改 command 世界目标；重连不复制角色；player 来源不能读取后台 trace；原始 token 不提前显示给玩家；无画面适配可用于规则实验；控制台页面替换后玩家域仍不可访问后台 API。
+验收必须覆盖：两个端口之外没有新增监听；替换 renderer、camera、HUD、设置中的任一实现，不改动无关模块；移除必需 provider 会被拒绝；卸载后没有资源或监听残留；相机变化不改变 command 的世界目标；重连不复制角色；player 来源读不到后台 trace；原始 token 不提前显示给玩家；无画面适配也能用于规则实验；控制台页面替换后，玩家域仍然访问不到后台 API。
 
-职责和接口拥有者见 [模块设计](modules.md)、[模块目录](module-catalog.md)、[公共契约](contracts.md)；跨端接口以 [双端口拓扑](two-endpoints.md) 为准。
+职责与接口的归属见 [模块设计](modules.md)、[模块目录](module-catalog.md)、[公共契约](contracts.md)；跨端接口以 [双端口拓扑](two-endpoints.md) 为准。

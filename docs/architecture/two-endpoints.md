@@ -1,22 +1,22 @@
 # 两个本地端口与三运行域
 
-> 状态：目标设计，尚未实现。本文拥有端口、origin、运行域、玩家设置与服务端控制台的部署边界。模块清单见 [模块目录](module-catalog.md)，客户端渲染见 [客户端与 2.5D](client-and-rendering.md)，观测与评估界面见 [观测](../platform/observability.md) 与 [评估](../platform/evaluation.md)。
+> 状态：目标设计，尚未实现。端口、origin、运行域、玩家设置与服务端控制台的部署边界以本文为准。模块清单见 [模块目录](module-catalog.md)，客户端渲染见 [客户端与 2.5D](client-and-rendering.md)，观测与评估界面见 [观测](../platform/observability.md) 与 [评估](../platform/evaluation.md)。
 >
-> 术语提醒：本文的“端口”指网络监听端口；模块之间通过 capability port/能力端口 交互，见 [模块边界](modules.md) 与 [公共契约](contracts.md)，两者不是同一概念。
+> 这里的“端口”指网络监听端口；模块之间通过 capability port（能力端口）交互，见 [模块边界](modules.md) 与 [公共契约](contracts.md)，两者不是同一概念。
 
 ## 1. 部署不变量：只有两个监听端口
 
 | 端口 | 归属 | 谁访问 | 承载 |
 |---|---|---|---|
 | `127.0.0.1:5173` | 玩家客户端 host（浏览器 realm） | 玩家 | 2.5D 场景、交互、对话、人物册、开局、必要设置 |
-| `127.0.0.1:3000` | 服务端 host（Node realm） | 玩家客户端、控制台浏览器 | 权威世界、模型池、REST API、WebSocket、控制台静态资源与 API |
+| `127.0.0.1:3000` | 服务端 host（Node server realm） | 玩家客户端、控制台浏览器 | 权威世界、模型池、REST API、WebSocket、控制台静态资源与 API |
 
 控制台不是第三个服务：它的静态资源由服务端 `:3000` 的 `/console/*` 提供，浏览器页面通过同源 API/WS 与服务端通信。开发期的客户端热更新也只使用 `:5173` 同一端口，不得为方便另开后台端口。
 
 以下情况视为部署验收失败：
 
 - 新增 `ops-web`、`lab-web`、`admin-web` 或独立 HMR 端口；
-- 为“只在开发时”方便启动第三个监听器，并在文档中写成可接受；
+- 以“只在开发时用”为由启动第三个监听器，并在文档中写成可接受；
 - 客户端直连数据库、模型供应商或控制台私有接口绕过服务端；
 - 控制台页面直接嵌入服务端 Node 对象或持有 API 密钥。
 
@@ -34,18 +34,18 @@
 
 ~~~mermaid
 flowchart LR
-  subgraph CLIENT["client realm · 127.0.0.1:5173"]
+  subgraph CLIENT["client realm：127.0.0.1:5173"]
     CH["client host"]
     CM["scene / hud / dialogue / settings modules"]
   end
-  subgraph SERVER["server realm · 127.0.0.1:3000"]
+  subgraph SERVER["server realm：127.0.0.1:3000"]
     SH["server host + guards"]
     GM["game modules"]
     AM["agent modules"]
     PM["platform / adapters"]
     CA["console API + static assets"]
   end
-  subgraph CONSOLE["console realm · 127.0.0.1:3000/console"]
+  subgraph CONSOLE["console realm：127.0.0.1:3000/console"]
     OH["console host"]
     OM["model-mounts / faction-ops / obs / eval / debug"]
   end
@@ -92,9 +92,9 @@ flowchart LR
 
 “可运营”具体指：
 
-1. **模型挂载**：先集中定义 connection/model，再把多个 Agent 的 purpose 挂载到模型；控制台可预览 resolved 路由与费用，但不下发密钥。
-2. **三势力剧情走向**：巡裔、根庭、泊星者三个非人类势力各有一个运营席位，可独立选择 agent 或 human 控制；可编辑、预演、发布事件卡，暂停/单步/快照/恢复世界。
-3. **运营与研究的隔离**：human 席位仍是原 agentId 的控制者变化，不新增玩家或 Agent；研究真值不自动进入席位输入；调试覆盖产生 `ScenarioOverride` 与污染标记。
+1. 模型挂载：先集中定义 connection/model，再把多个 Agent 的 purpose 挂载到模型；控制台可预览 resolved 路由与费用，但不下发密钥。
+2. 三势力剧情走向：巡裔、根庭、泊星者三个非人类势力各有一个运营席位，可独立选择 agent 或 human 控制；可编辑、预演、发布事件卡，暂停/单步/快照/恢复世界。
+3. 运营与研究的隔离：human 席位仍是原 agentId 的控制者变化，不新增玩家或 Agent；研究真值不自动进入席位输入；调试覆盖产生 `ScenarioOverride` 与污染标记。
 
 控制台页面被隐藏、按钮被禁用或菜单项不存在，都不是授权；所有控制台 API 都重新校验会话、角色、资源 scope 与期望 epoch/version。
 
@@ -111,7 +111,7 @@ flowchart LR
 | `/api/v1/console/*` | 控制台的运营、模型、观测、评估、调试、模块管理 | 同源会话 + 角色；与玩家 API 分开授权 |
 | `/console/*` | 控制台静态资源 | 由 server 提供；不得启动第三端口 |
 
-一次玩家交互：客户端提交 command → 服务端 guard 校验 → 世界/Agent 模块处理 → 提交事实与 outbox → 授权投影/WS 增量 → 客户端 reducer → 已装载 UI 模块。控制台读取同一事件的审计视图，但不会产生新的角色获知。
+一次玩家交互：客户端提交 command，经服务端 guard 校验后交给世界/Agent 模块处理；处理结果提交为事实与 outbox，再形成授权投影与 WS 增量，客户端 reducer 更新后交给已装载的 UI 模块。控制台读取同一事件的审计视图，但不会产生新的角色获知。
 
 玩家客户端与 NPC 使用同一 command 与规则管线；控制台操作也通过标准 command/API，不允许直接写数据库。所有失败区分 forbidden、validation、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、assembly-incompatible 等错误。
 

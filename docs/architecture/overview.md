@@ -1,18 +1,18 @@
 # 系统架构总览
 
-> 目标设计 v0.3。首版单玩家、统一世界观、标准 20 Agent；两个本地端口：玩家客户端 `:5173` 与服务端 `:3000`（含控制台）。技术采用 TypeScript 全栈模块化单体。
+> 目标设计 v0.3。首版单玩家、统一世界观、标准 20 个 Agent；两个本地端口：玩家客户端 `:5173` 与服务端 `:3000`（含控制台）。技术采用 TypeScript 全栈模块化单体。
 
 ## 1. 核心命题：主机保留，职能全部可插拔
 
-基础宿主只保留“主板”能力：模块注册与能力图、生命周期、序列/版本/幂等/fencing、授权与提交关口、事件与证据协议、配置冻结、三运行域与两端口信任边界。游戏规则、地图、时钟、资源、行动、协议、剧情、存档、Agent 感知/记忆/上下文/压缩/工具视图/决策/调度、模型池、工具、客户端渲染与界面、控制台页面、存储与模型传输，全部由模块提供；替换一个职能只改该模块、装配与配置。
+基础宿主只保留“主板”能力：模块注册与能力图、生命周期、序列/版本/幂等/fencing、授权与提交关口、事件与证据协议、配置冻结，以及三运行域与两端口信任边界。其余全部由模块提供：游戏规则、地图、时钟、资源、行动、协议、剧情、存档，Agent 的感知、记忆、上下文、压缩、工具视图、决策、调度，以及模型池、工具、客户端渲染与界面、控制台页面、存储与模型传输。替换一个职能只改该模块、装配与配置。
 
-三层含义要分清：
+模块化、插件化、积木化说的是三个层面的问题：
 
-- **模块化**：每个职能有明确 port、状态所有权与依赖方向，模块之间不 import 实现。
-- **插件化**：模块以可信插件包交付，显式注册、校验能力、按生命周期启动/卸载；首版不支持上传任意不可信代码。
-- **积木化**：assembly 把模块、内容、roster、profile、模型挂载和工具绑定组合成可运行、可冻结、可对比的组合。
+- 模块化管职责划分。每个职能有明确的 port、状态所有权和依赖方向，模块之间不 import 实现。
+- 插件化管交付与生命周期。模块以可信插件包交付，显式注册、校验能力，按生命周期启动和卸载；首版不支持上传任意不可信代码。
+- 积木化管一次运行怎么拼装。assembly 把模块、内容、roster、profile、模型挂载和工具绑定组合成可运行、可冻结、可对比的整体。
 
-严格脱耦优先于“把所有相关功能塞进一个高内聚大模块”：当内聚与可替换性冲突时，优先拆开并显式声明依赖。必要的协议依赖不能消除，但必须版本化、可检查。
+严格解耦优先于“把所有相关功能塞进一个高内聚大模块”：当内聚与可替换性冲突时，优先拆开并显式声明依赖。必要的协议依赖不能消除，但必须版本化、可检查。
 
 ## 2. 七项架构决策
 
@@ -54,7 +54,7 @@ flowchart LR
 | 运行生命周期 | TurnQueued、MemoryCommitted、ModelAttemptFailed、ControllerChanged、ModuleStarted | 持久到运行/控制日志；驱动恢复，不伪装世界事实 |
 | 观测流 | token delta、检索耗时、阶段 span、模块调用 | 高频可采样；最终请求/响应、错误和结算引用不得采样丢失 |
 
-Command 是请求，Event 是已发生的事实。不能把模型输出“已救出村民”直接作为 RescueCompleted；它只能提交 RescueRequested，经规则校验与任务结算后才产生结果。模块调用也不等于世界事实。
+Command 是请求，Event 是已发生的事实。不能把模型输出“已救出村民”直接作为 RescueCompleted；模型只能提交 RescueRequested，经规则校验与任务结算后才产生结果。模块调用也不等于世界事实。
 
 ## 4. 部署与传输
 
@@ -74,7 +74,7 @@ Command 是请求，Event 是已发生的事实。不能把模型输出“已救
 | POST /api/v1/console/runs | 选快照、assembly、profile、协议与预算；预检后创建隔离运行 |
 | GET /api/v1/console/runs/{id}/trace | 完整因果链；原文需要单独研究权限 |
 
-HTTP 命令与所有副作用工具共用 command handler。WebSocket 重连只补投影，不重新发起 action。接口错误至少区分 forbidden、validation、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、assembly-incompatible、plugin-failed。
+HTTP 命令与所有副作用工具共用 command handler。WebSocket 重连只补投影，不重新发起 action。接口错误至少区分 forbidden、validation、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、assembly-incompatible、plugin-failed；完整错误码见 [公共契约](contracts.md)。
 
 一个服务端进程即可同时宿主 API、逻辑调度器、outbox worker、agent workers、控制台 API 与静态资源，但模块通过 port 交互。模型网络调用发生在数据库事务之外。client 与 console 是独立浏览器 realm，共享组件与契约，发布时分别按 player/operator/researcher/evaluator 权限隔离；服务端是唯一授权来源，隐藏按钮不是鉴权。
 

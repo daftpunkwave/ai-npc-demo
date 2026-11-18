@@ -4,25 +4,25 @@
 
 ## 1. 核心关系
 
-`connection → models → mounts → resolved (agentId, purpose) → host model port` 是唯一解析路径。roster 只定义身份与职责，不复制每个 Agent 的 provider、密钥、温度和超时参数。
+解析路径只有一条：从 `connection` 出发，经 `models`、`mounts` 与 `resolved (agentId, purpose)`，最后交给 `host model port`。roster 只定义身份与职责，不复制每个 Agent 的 provider、密钥、温度和超时参数。
 
 同一个 modelId 可服务多个 Agent 与多个 purpose；共享的是连接、参数配置及资源额度，消息、记忆、工具集、供应商会话和私密上下文必须分别隔离。
 
-首版 5 个人类派系、3 个非人类势力、12 个角色最多 20 个活跃 gameplay 身份。模型池并发上限是另一组资源约束，不因配置 20 个 Agent 就默认启动 20 路请求。
+首版有 5 个人类派系、3 个非人类势力、12 个角色，最多 20 个活跃 gameplay 身份。模型池并发上限是另一组资源约束，不因配置 20 个 Agent 就默认启动 20 路请求。
 
-在线与实验活跃身份合计不得超过 20；完整 20 Agent 对比暂停在线，逐分支执行。改变挂载不改变 Agent 身份，memory-maintenance 和 speech 也不另占身份。
+在线与实验活跃身份合计不得超过 20；完整 20 个 Agent 的对比实验要暂停在线运行，再逐分支执行。改变挂载不改变 Agent 身份，memory-maintenance 和 speech 也不另占身份。
 
 ## 2. 三类配置职责
 
 | 配置 | 内容 | 禁止内容 |
 |---|---|---|
-| connections | adapterId、受控 endpoint、credentialRef、账号级 rateLimitKey | 明文密钥、Agent 消息历史 |
+| connections | adapterId（模块 ID）、受控 endpoint、credentialRef、账号级 rateLimitKey | 明文密钥、Agent 消息历史 |
 | models | modelId、connectionId、外部模型名、生成参数、能力与资源上限 | 每个角色的主张、记忆与授权 |
 | mounts | modelId、agentIds、purposes，精确挂载关系 | 复制模型参数、放宽工具权限 |
 
 credentialRef 由服务端 secret resolver 解析；前端只能看到连接别名与验证状态。导出 manifest 保留引用及配置 hash，删除实际密钥、认证 header、Cookie 和敏感 URL 参数。
 
-modelId 是本平台配置 ID，externalModel 是供应商名称；两者都记录。不同 modelId 若共用同一账号，仍受同一 rateLimitKey 总限额，不能通过多起别名规避配额。
+modelId 是本平台配置 ID，externalModel 是供应商名称；两者都记录。不同 modelId 若共用同一账号，仍受同一 rateLimitKey 总限额，不能通过多个别名规避配额。
 
 ## 3. Purpose 契约
 
@@ -49,7 +49,7 @@ evaluation 由独立 evaluator 配置引用 modelId，调用主体类型为 eval
 schemaVersion: 1
 connections:
   primary:
-    adapterId: model.http-compatible
+    adapterId: platform.model-transport.http-compatible
     endpoint: https://provider.example/v1
     credentialRef: env:NPC_MODEL_API_KEY
     rateLimitKey: primary-account
@@ -97,16 +97,16 @@ evaluator:
 
 这是共享模型的完整挂载示例，不表示所有策略都必须进行模型反思或压缩。embedding 未启用；需要时在 models 声明向量模型，并为所需主体增加不冲突的 embedding 挂载。
 
-让 npc-cenyan 使用另一模型时，在 models 增加一次定义，并从原挂载的对应 purpose 移除该身份，再新增指向新 modelId 的挂载。不能保留重叠行后依赖“最后一条优先”。
+让 npc-cenyan 使用另一模型时，在 models 增加一次定义，并从原挂载的对应 purpose 移除该身份，再新增指向新 modelId 的挂载。不能保留重叠挂载后再依赖“最后一条优先”。
 
 若一个 Agent 的 decision 和 speech 使用不同模型，拆成两条 purpose 不重叠的挂载；不把两份 LLM 配置复制到角色档案。配置 UI 应同时提供“按模型看挂载”和“按角色看已解析路由”。
 
 ## 5. 解析与 run 冻结
 
-算法 profile 装配顺序为平台配置 → 场景 profile → 可复用 Agent profile → 实验 variant patch。Agent profile 只声明 required purposes/capabilities，不隐式选择 modelId 或覆盖路由；模型布局唯一由 RunSpec.modelLayoutRef 选择集中 connections/models/mounts 版本，再预检并写入 resolved manifest。
+Agent profile 的装配顺序是平台配置、场景 profile、可复用 Agent profile、实验 variant patch。Agent profile 只声明 required purposes/capabilities，不隐式选择 modelId 或覆盖路由；模型布局唯一由 RunSpec.modelLayoutRef 选择集中 connections/models/mounts 版本，再预检并写入 resolved manifest。
 
 1. 校验 connections/models 的引用、字段、单位、有限上限与 adapter 可用性。
-2. 将 mounts 展开为唯一 `(agentId, purpose) → modelId`；未知身份或重复键立即报错。
+2. 将 mounts 展开为唯一映射，由 `(agentId, purpose)` 解析出唯一 `modelId`；未知身份或重复键立即报错。
 3. 由激活 roster、策略能力与运行模式确定 required purposes；缺少挂载报错，不自动套默认模型。
 4. 从 modelId 解析 connection、externalModel、参数、tokenizer 与能力证据，检查与工具/输出协议兼容。
 5. 生成去密钥的路由表、请求能力、预算、显式 fallback、版本与 hash，并随 run 持久化。
@@ -170,7 +170,7 @@ speech 故障可使用预先批准的安全模板或不回应；decision 故障�
 memory 实验固定解析后的路由、参数、池限额和预算；轮换运行顺序并记录缓存与队列负载。单纯“用了同一 modelId”不足以保证实验公平，也不保证 LLM 确定性。
 
 - 一个模型挂载多个 Agent，验证只共享资源配额，不串消息、工具、索引或供应商会话。
-- 重叠挂载、未知 agentId、缺 purpose、坏引用与不兼容能力均在预检失败。
+- 重叠挂载、未知 agentId、缺 purpose、坏引用与不兼容能力均在预检阶段失败。
 - 改一个模型定义后新 run 的所有相关挂载一致更新，既有 run 的冻结路由不变。
 - 同账号不同 modelId 共同触达总限额，队列有界且低优先维护不会永久饥饿。
 - 在排队/调用/返回阶段接管或取消，验证旧结果不能下令、写认知或发布对白。
@@ -180,4 +180,4 @@ memory 实验固定解析后的路由、参数、池限额和预算；轮换运�
 
 ## 11. 参考边界
 
-借鉴 deepseek-harness 的 [可替换 LLM 服务与适配器](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts)。集中 models/mounts、NPC purpose 路由、公平队列和 20 身份限制是本项目设计，不声称参考框架已经提供这一游戏模型池。
+借鉴 deepseek-harness 的 [可替换 LLM 服务与适配器](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts)。集中 models/mounts、NPC purpose 路由、公平队列和 20 个身份限制是本项目设计，不声称参考框架已经提供这一游戏模型池。
