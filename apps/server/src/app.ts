@@ -64,12 +64,12 @@ interface SnapshotRestoreArgs {
   readonly runId?: string;
 }
 
-function createSnapshotHook(input: SnapshotCreateArgs): SnapshotRecordView {
+function createSnapshotHook(input: SnapshotCreateArgs): { readonly snapshotId: string; readonly worldTick: number } {
   void input;
   throw new Error(`save hook 未注入: ${input.sourceBranchId}`);
 }
 
-function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string; readonly runId: string } {
+function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string } {
   void input;
   throw new Error(`restore hook 未注入: ${input.snapshotId}`);
 }
@@ -383,8 +383,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
-    const body = request.body as { readonly snapshotId: string };
-    const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId });
+    const body = request.body as { readonly snapshotId: string; readonly runId?: string };
+    const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId, ...(body.runId === undefined ? {} : { runId: body.runId }) });
     branchId = restored.branchId;
     resetStream();
     options.onBranchChanged?.(restored.branchId);

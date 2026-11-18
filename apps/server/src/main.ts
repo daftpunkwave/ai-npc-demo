@@ -23,18 +23,19 @@ const running = await startHost({
   packId: process.env.CONTENT_PACK ?? "earth-2964-v1",
   playerToken,
   consoleToken,
+  transportHost: hostname,
+  transportPort: port,
 });
-
 try {
-  await running.app.listen({ port, host: hostname });
+  await running.app.listen({ port: running.transport.port, host: running.transport.host });
 } catch (error) {
   await running.close();
-  throw new Error(`监听 ${hostname}:${port} 失败: ${error instanceof Error ? error.message : String(error)}`);
+  throw new Error(`监听 ${running.transport.host}:${running.transport.port} 失败: ${error instanceof Error ? error.message : String(error)}`);
 }
 
-console.info(`server ready: http://${hostname}:${port}`);
-console.info(`player login: http://${hostname}:${port}/#token=${playerToken}`);
-console.info(`console login: http://${hostname}:${port}/console/#token=${consoleToken}`);
+console.info(`server ready: http://${running.transport.host}:${running.transport.port}`);
+console.info(`player login: http://${running.transport.host}:${running.transport.port}/#token=${playerToken}`);
+console.info(`console login: http://${running.transport.host}:${running.transport.port}/console/#token=${consoleToken}`);
 
 const shutdown = async (): Promise<void> => {
   await running.close();
