@@ -34,9 +34,9 @@ export interface RestoreSnapshotInput {
 }
 
 export interface SaveService {
-  createSnapshot(input: CreateSnapshotInput): SnapshotRecord;
+  createSnapshot(...args: [CreateSnapshotInput]): SnapshotRecord;
   listSnapshots(): readonly SnapshotRecord[];
-  restoreSnapshot(input: RestoreSnapshotInput): { readonly branchId: string; readonly runId: string };
+  restoreSnapshot(...args: [RestoreSnapshotInput]): { readonly branchId: string; readonly runId: string };
 }
 
 function numberValue(value: unknown, column: string): number {
@@ -67,10 +67,10 @@ function maxWorldSeq(tx: StorageTransaction, branchId: string): number {
 /** SQLite 存档实现；所有操作在单个存储事务内完成分支复制与快照行写入。 */
 export class SqliteSaveService implements SaveService {
   private readonly storage: StoragePort;
-  private readonly ids: (prefix: string) => string;
+  private readonly ids: (...args: [string]) => string;
   private readonly nowIso: () => string;
 
-  constructor(storage: StoragePort, ids: (prefix: string) => string, nowIso: () => string) {
+  constructor(storage: StoragePort, ids: (...args: [string]) => string, nowIso: () => string) {
     this.storage = storage;
     this.ids = ids;
     this.nowIso = nowIso;
