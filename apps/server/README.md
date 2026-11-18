@@ -10,7 +10,8 @@
 - `buildPlayerProjection`：从世界/地图端口与内容索引构建严格玩家投影；缺失指标时拒绝构建，不合成数值。
 - `module-catalog`：唯一模块组合根，显式登记 11 个 server 模块定义、端口与规则贡献。
 - `pnpm dev:server`：读取 `PORT`/`HOST`/`DATA_DIR`/`CONTENT_ROOT`/`CONTENT_PACK`/`PLAYER_TOKEN`/`CONSOLE_TOKEN`，默认监听 `127.0.0.1:3000`，打印玩家与控制台登录地址。
-- `pnpm check:catalog`：运行时加载组合根，校验模块 ID 唯一。
+- WS 玩家频道：订阅快照、命令后的顶层 delta、按 `fromStreamSeq` 补发最近 200 条增量；缺口回退快照。
+- `config/assemblies/*.yaml`：标准与升级剧情两份 server 装配；`check:catalog` 解析 schema、校验模块与配置引用。
 
 ## 尚未包含
 

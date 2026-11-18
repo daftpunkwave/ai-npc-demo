@@ -166,6 +166,39 @@ describe("服务端 API", () => {
     expect(resumed.json()).toMatchObject({ mode: "running", runVersion: before.runVersion + 2 });
   });
 
+  it("WS 订阅补发最近 200 条增量，缺口时回退快照", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const session = await login(app, "player-token");
+    const auth = { authorization: `Bearer ${session}` };
+    const command = gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd"));
+    expect((await app.inject({ method: "POST", url: "/api/v1/commands", headers: auth, payload: command })).statusCode).toBe(200);
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("没有监听端口");
+    }
+    const ticket = await app.inject({ method: "POST", url: "/api/v1/streams/ticket", headers: auth });
+    const ticketValue = (ticket.json() as { readonly ticket: string }).ticket;
+    const WebSocketCtor = (globalThis as unknown as {
+      WebSocket: new (url: string) => {
+        addEventListener(type: string, listener: (event: { data: unknown }) => void): void;
+        send(data: string): void;
+        close(): void;
+      };
+    }).WebSocket;
+    const socket = new WebSocketCtor(`ws://127.0.0.1:${address.port}/api/v1/streams?ticket=${ticketValue}`);
+    const next = (): Promise<Record<string, unknown>> => new Promise((resolve) => {
+      socket.addEventListener("message", (event) => resolve(JSON.parse(String(event.data)) as Record<string, unknown>));
+    });
+    expect(await next()).toMatchObject({ type: "hello" });
+    socket.send(JSON.stringify({ type: "subscribe", channel: "player", fromStreamSeq: 0 }));
+    expect(await next()).toMatchObject({ type: "delta", channel: "player", streamSeq: 1 });
+    socket.send(JSON.stringify({ type: "subscribe", channel: "player", fromStreamSeq: 999 }));
+    expect(await next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 1 });
+    socket.close();
+  });
+
   it("拒绝错误 Origin 与玩家访问控制台", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value);

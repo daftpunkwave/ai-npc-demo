@@ -4,7 +4,7 @@
  * 禁止信任页面自报角色、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import websocket from "@fastify/websocket";
+import websocket, { type WebSocket } from "@fastify/websocket";
 import cors from "@fastify/cors";
 import { randomUUID } from "node:crypto";
 import {
@@ -136,16 +136,77 @@ function receiptOf(row: Record<string, unknown>): CommandReceipt {
   return commandReceiptSchema.parse(value);
 }
 
+export interface ServerApp extends FastifyInstance {
+  notifyWorldChanged(): void;
+}
+
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
-export async function createServerApp(options: ServerAppOptions): Promise<FastifyInstance> {
+export async function createServerApp(options: ServerAppOptions): Promise<ServerApp> {
   const app = Fastify({ logger: false });
   const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
   const sessions = new Map<string, Session>();
-  const tickets = new Map<string, { readonly auth: AuthContext; readonly expiresAt: number }>();
+  const tickets = new Map<string, { readonly auth: AuthContext; readonly session: Session; readonly expiresAt: number }>();
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
+  let streamSeq = 0;
+  let projectionVersion = 0;
+  const history: Array<{ readonly streamSeq: number; readonly projectionVersion: number; readonly set: Record<string, unknown> }> = [];
+  const subscribers = new Map<WebSocket, Session>();
+
+  const sendSnapshot = (socket: WebSocket): void => {
+    try {
+      socket.send(JSON.stringify({
+        type: "snapshot",
+        channel: "player",
+        streamSeq,
+        projectionVersion,
+        data: options.projection(),
+      }));
+    } catch {
+      socket.close(1012, "projection unavailable");
+    }
+  };
+
+  const publishDelta = (): boolean => {
+    let projection: PlayerProjection;
+    try {
+      projection = options.projection();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("尚未初始化")) {
+        return false;
+      }
+      throw error;
+    }
+    streamSeq += 1;
+    projectionVersion += 1;
+    const set = { ...projection } as Record<string, unknown>;
+    const frame = { streamSeq, projectionVersion, set };
+    history.push(frame);
+    if (history.length > 200) {
+      history.shift();
+    }
+    const payload = JSON.stringify({ type: "delta", channel: "player", ...frame });
+    for (const [socket, session] of subscribers) {
+      if (Date.parse(session.expiresAt) <= Date.now()) {
+        subscribers.delete(socket);
+        socket.close(4401, "session expired");
+        continue;
+      }
+      socket.send(payload);
+    }
+    return true;
+  };
+
+  const resetStream = (): void => {
+    streamSeq = 0;
+    projectionVersion = 0;
+    history.length = 0;
+    for (const [socket] of subscribers) {
+      sendSnapshot(socket);
+    }
+  };
 
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
@@ -194,6 +255,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     sessions.delete(session.token);
+    for (const [socket, subscriber] of subscribers) {
+      if (subscriber === session) {
+        subscribers.delete(socket);
+        socket.close(4401, "logged out");
+      }
+    }
     return { ok: true };
   });
 
@@ -224,6 +291,11 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return reply.code(403).send({ code: "forbidden", safeMessage: "玩家不能使用该命令" });
     }
     const receipt = options.authority.commands.execute(session.auth, envelope);
+    try {
+      publishDelta();
+    } catch (error) {
+      app.log.error(error, "投影发布失败");
+    }
     return commandReceiptSchema.parse(receipt);
   });
 
@@ -251,7 +323,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     if (session === null) {
       return;
     }
-    return { streamSeq: 0, projectionVersion: 0, projection: options.projection() };
+    return { streamSeq, projectionVersion, projection: options.projection() };
   });
 
   app.post("/api/v1/campaign/pause", (request, reply) => {
@@ -260,7 +332,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
-    return options.pause(body.operationId, body.expectedRunVersion);
+    const clock = options.pause(body.operationId, body.expectedRunVersion);
+    publishDelta();
+    return clock;
   });
 
   app.post("/api/v1/campaign/resume", (request, reply) => {
@@ -269,7 +343,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
-    return options.resume(body.operationId, body.expectedRunVersion);
+    const clock = options.resume(body.operationId, body.expectedRunVersion);
+    publishDelta();
+    return clock;
   });
 
   app.post("/api/v1/campaign/snapshots", (request, reply) => {
@@ -310,6 +386,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     const body = request.body as { readonly snapshotId: string };
     const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId });
     branchId = restored.branchId;
+    resetStream();
     options.onBranchChanged?.(restored.branchId);
     return { branchId: restored.branchId, clock: options.clock() };
   });
@@ -321,6 +398,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
     const reset = options.reset();
     branchId = reset.branchId;
+    resetStream();
     options.onBranchChanged?.(reset.branchId);
     return { branchId: reset.branchId, clock: reset.clock };
   });
@@ -331,7 +409,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     const ticket = `ticket-${randomUUID()}`;
-    tickets.set(ticket, { auth: session.auth, expiresAt: Date.now() + 30_000 });
+    tickets.set(ticket, { auth: session.auth, session, expiresAt: Date.now() + 30_000 });
     return { ticket, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   });
 
@@ -344,6 +422,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
     tickets.delete(query.ticket ?? "");
     socket.send(JSON.stringify({ type: "hello", protocolVersion: "1", principalId: ticket.auth.principalId, channels: ["player"] }));
+    subscribers.set(socket, ticket.session);
+    socket.on("close", () => { subscribers.delete(socket); });
     socket.on("message", (data: Buffer) => {
       let message: unknown;
       try {
@@ -352,18 +432,25 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
         socket.send(JSON.stringify({ type: "error", code: "invalid-json", safeMessage: "消息不是 JSON" }));
         return;
       }
-      const value = message as { readonly type?: string; readonly channel?: string };
+      const value = message as { readonly type?: string; readonly channel?: string; readonly fromStreamSeq?: number };
       if (typeof message !== "object" || message === null || value.type !== "subscribe" || value.channel !== "player") {
         socket.send(JSON.stringify({ type: "error", code: "invalid-channel", safeMessage: "频道不可用" }));
         return;
       }
-      socket.send(JSON.stringify({
-        type: "snapshot",
-        channel: "player",
-        streamSeq: 0,
-        projectionVersion: 0,
-        data: options.projection(),
-      }));
+      const from = typeof value.fromStreamSeq === "number" ? value.fromStreamSeq : null;
+      const replay = from === null ? [] : history.filter((frame) => frame.streamSeq > from);
+      const contiguous = from !== null
+        && replay.length > 0
+        && replay[0]?.streamSeq === from + 1
+        && replay.at(-1)?.streamSeq === streamSeq;
+      subscribers.set(socket, ticket.session);
+      if (contiguous) {
+        for (const frame of replay) {
+          socket.send(JSON.stringify({ type: "delta", channel: "player", ...frame }));
+        }
+      } else {
+        sendSnapshot(socket);
+      }
     });
   });
 
@@ -387,5 +474,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     });
   });
 
-  return app;
+  app.decorate("notifyWorldChanged", () => {
+    publishDelta();
+  });
+
+  return app as unknown as ServerApp;
 }

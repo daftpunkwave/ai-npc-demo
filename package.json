@@ -21,7 +21,9 @@
                             "tsx":  "^4",
                             "typescript":  "^7",
                             "vitest":  "^5",
-                            "@ai-npc/app-server":  "workspace:*"
+                            "@ai-npc/app-server":  "workspace:*",
+                            "yaml":  "^2.9.1",
+                            "@ai-npc/contracts":  "workspace:*"
                         },
     "dependencies":  {
                          "@fastify/cors":  "^11.4.3",
