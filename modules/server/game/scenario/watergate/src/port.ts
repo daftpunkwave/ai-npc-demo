@@ -3,6 +3,7 @@
  * 依赖 scenario-card 聚合与 scoped WorldTx；不触发卡片或应用效果。
  * 禁止在查询中改写卡片状态。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名用于表达调用契约；Codacy 缺少 workspace 类型解析时将联合类型误判为 any。 */
 import { gameModuleIds, type ScenarioCardView, type ScopedWorldTxFactory } from "@ai-npc/module-sdk";
 import { readCardState, type ScenarioCardState } from "./state";
 
