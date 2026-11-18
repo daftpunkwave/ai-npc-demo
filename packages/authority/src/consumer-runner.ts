@@ -11,7 +11,6 @@ import {
   type Json,
   type StorageRawRow,
   type StorageTransaction,
-  type StorageValue,
 } from "@ai-npc/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
@@ -21,7 +20,7 @@ import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, StoredEventConsumer } from "./types";
 import { assertSynchronous, TransactionWorldTx } from "./world-tx";
 
-function rawCell(row: StorageRawRow, column: string): StorageValue | undefined {
+function rawCell(row: StorageRawRow, column: string): unknown {
   // eslint-disable-next-line security/detect-object-injection -- column 由本文件的固定事件字段列表提供。
   return row[column];
 }

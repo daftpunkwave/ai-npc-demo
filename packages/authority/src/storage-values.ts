@@ -7,7 +7,6 @@ import {
   DomainError,
   jsonValueSchema,
   type Json,
-  type StorageCell,
   type StorageRow,
 } from "@ai-npc/contracts";
 
@@ -18,7 +17,7 @@ function invalidRow(table: string, column: string, reason: string): never {
 }
 
 /** 读取一列；列名由本文件的固定辅助函数传入，不接受任意外部键。 */
-function cellOf(row: StorageRow, column: string): StorageCell | undefined {
+function cellOf(row: StorageRow, column: string): unknown {
   // eslint-disable-next-line security/detect-object-injection -- column 由固定调用点提供，row 来自已解码存储行。
   return row[column];
 }

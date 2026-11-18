@@ -3,7 +3,7 @@
  * 依赖公共契约的信封、主体、存储与宿主类型，以及 module-sdk 的事务内端口。
  * 禁止在此执行事务、生成 receipt 或把未登记的命令、job、消费者当作合法输入。
  */
-/* eslint-disable @typescript-eslint/no-unused-vars -- 函数类型参数名用于表达调用契约，运行时不会读取。 */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 函数类型参数名用于表达调用契约，运行时不会读取。 */
 import type {
   AuthContext,
   CommandEnvelope,

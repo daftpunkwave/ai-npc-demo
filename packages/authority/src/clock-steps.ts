@@ -71,9 +71,9 @@ export class ClockStepRunner {
         approvedSpeech: this.approvedSpeech,
         host: this.host,
       });
+      // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression -- Codacy 无法解析索引访问返回的 unknown，保留同步检查。
       const outcome = step.handler(context, clock.worldTick);
-      assertSynchronous(outcome, `时钟步骤 ${step.stepId}`);
-      executed += 1;
+      assertSynchronous(outcome, `时钟步骤 ${step.stepId}`);      executed += 1;
     }
     return executed;
   }
