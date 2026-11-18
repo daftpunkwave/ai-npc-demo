@@ -188,6 +188,18 @@ importers:
         specifier: ^5
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
+  modules/server/game/actions/standard:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
   modules/server/game/clock/controlled:
     dependencies:
       '@ai-npc/contracts':
@@ -359,6 +371,9 @@ importers:
       '@ai-npc/kernel':
         specifier: workspace:*
         version: link:../packages/kernel
+      '@ai-npc/mod-game-actions-standard':
+        specifier: workspace:*
+        version: link:../modules/server/game/actions/standard
       '@ai-npc/mod-game-clock-controlled':
         specifier: workspace:*
         version: link:../modules/server/game/clock/controlled

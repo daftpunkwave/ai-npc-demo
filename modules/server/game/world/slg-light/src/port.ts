@@ -301,12 +301,17 @@ class SlgWorldPort implements GameWorldPort {
     return { ok: true };
   }
 
-  setGroupStatus(groupId: string, status: GroupState["status"], taskId: string | null): OpSuccess | OpFailure {
+  setGroupStatus(groupId: string, status: GroupState["status"], taskId: string | null, injured?: number): OpSuccess | OpFailure {
     const record = readWorldState(this.tx(), "group", groupId, groupStateSchema);
     if (record === null) {
       return failure("invalid-params");
     }
-    this.tx().put("group", groupId, { ...record.state, status, currentTaskId: taskId });
+    this.tx().put("group", groupId, {
+      ...record.state,
+      status,
+      currentTaskId: taskId,
+      ...(injured === undefined ? {} : { injured }),
+    });
     return { ok: true };
   }
 

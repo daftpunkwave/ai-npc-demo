@@ -382,6 +382,7 @@ export interface GameWorldPort {
     groupId: string,
     status: "waiting" | "rescued" | "worsened",
     taskId: string | null,
+    injured?: number,
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   drawDelegation(
     principalId: string,
@@ -427,6 +428,13 @@ export interface TaskView {
   readonly status: TaskStatus;
   readonly params: unknown;
   readonly completedAtTick: number | null;
+}
+
+/** 行动模块查询端口；协议履约判定与剧情订阅复用已完成任务事实。 */
+export interface GameActionsPort {
+  task(taskId: string): TaskView | null;
+  tasksOf(principalId: string): readonly TaskView[];
+  isRoadEscorted(roadId: string, atTick: number): boolean;
 }
 
 /** 协议查询端口；条款状态由协议模块拥有。 */
@@ -484,7 +492,7 @@ export interface GameModulePorts {
   readonly "game.map": GameMapPort;
   readonly "game.resources": GameResourcesPort;
   readonly "game.world": GameWorldPort;
-  readonly "game.actions": { task(taskId: string): TaskView | null; tasksOf(principalId: string): readonly TaskView[] };
+  readonly "game.actions": GameActionsPort;
   readonly "game.agreements": {
     agreement(agreementId: string): AgreementView | null;
     agreementsOf(principalId: string): readonly AgreementView[];
