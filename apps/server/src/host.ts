@@ -77,6 +77,10 @@ function clockView(clock: ClockState): ClockView {
   };
 }
 
+function createOperations(driver: import("./host/module-catalog").OperationsDriver): ReturnType<typeof createOperationsService> {
+  return createOperationsService(driver);
+}
+
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
 export async function startHost(options: HostOptions): Promise<RunningHost> {
   const dataDir = resolve(options.dataDir);
@@ -286,7 +290,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   });
   await operationsInstance.start(signal);
   const operationsFactory = operationsInstance.port as {
-    create(driver: import("./host/module-catalog").OperationsDriver): ReturnType<typeof createOperationsService>;
+    create: typeof createOperations;
   };
   const operations = operationsFactory.create({
     clock: () => clockState(),
