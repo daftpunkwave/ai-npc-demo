@@ -3,6 +3,7 @@
  * 依赖公共契约的认证上下文和 module-sdk 的已批准对白类型；只做同步只读判断。
  * 禁止在这里生成对白、扩大受众或把未批准结果当作可提交事实。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的联合类型误判为 any。 */
 import { DomainError, type AuthContext, type Json } from "@ai-npc/contracts";
 import type { ApprovedSpeech } from "@ai-npc/module-sdk";
 
