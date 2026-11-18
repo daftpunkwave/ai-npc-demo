@@ -157,6 +157,46 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
     expect(violations).toEqual([]);
   });
 
+  it("SQLite 存储 adapter 可以使用文件系统读取迁移与库文件", () => {
+    const directory = "modules/server/platform/storage/sqlite";
+    const modulePackage = packageManifest("@ai-npc/mod-platform-storage-sqlite", directory);
+    const violations = checkFixture(
+      `${directory}/src/index.ts`,
+      "module-server-adapter-sqlite-filesystem-valid.ts.txt",
+      {
+        packages: packagesWith([modulePackage]),
+        definitionKinds: [{ packageName: "@ai-npc/mod-platform-storage-sqlite", kind: "adapter" }],
+      },
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("模块测试文件可以使用测试工具、Node 内置模块与宿主机制包", () => {
+    const modulePackage = packageManifest(SERVER_SERVICE_PACKAGE, SERVER_SERVICE_DIRECTORY);
+    const violations = checkFixture(
+      `${SERVER_SERVICE_DIRECTORY}/tests/behavior.test.ts`,
+      "module-server-test-vitest-valid.ts.txt",
+      {
+        packages: packagesWith([modulePackage]),
+        definitionKinds: [SERVER_SERVICE_KIND],
+      },
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("模块测试也不能引用其他模块实现", () => {
+    const violations = checkFixture(
+      `${SERVER_SERVICE_DIRECTORY}/tests/behavior.test.ts`,
+      "module-cross-dependency.ts.txt",
+      {
+        packages: packagesWith([packageManifest(SERVER_SERVICE_PACKAGE, SERVER_SERVICE_DIRECTORY), memoryModule()]),
+        definitionKinds: [SERVER_SERVICE_KIND, MEMORY_MODULE_KIND],
+      },
+    );
+    expectCode(violations, "module-forbidden-workspace-import");
+    expectRule(violations, 2);
+  });
+
   it("adapter 白名单按所属适配器收窄", () => {
     const directory = "modules/server/platform/storage/sqlite";
     const modulePackage = packageManifest("@ai-npc/mod-platform-storage-sqlite", directory);

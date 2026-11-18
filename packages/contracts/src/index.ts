@@ -19,6 +19,7 @@ export * from "./events";
 export * from "./projection";
 export * from "./agent-world-view";
 export * from "./modules";
+export * from "./storage";
 export * from "./model";
 export * from "./schema-profile";
 export * from "./api";

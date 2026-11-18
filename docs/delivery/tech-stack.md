@@ -69,11 +69,12 @@ packages:
 - 包之间只能 import 对方 `exports` 暴露的入口（即 `@ai-npc/xxx`），禁止 `@ai-npc/xxx/src/...` 深层路径。
 - 一个包 import 的每个 workspace 包都必须写在自己的 `dependencies` 里；`check-boundaries` 同时检查源码 import 与 `package.json`。
 - 模块生产源码及 `dependencies` 按下表的 realm/kind 白名单检查；未列出的库不因“纯工具”或 adapter 身份自动获准。测试工具仅用于测试，构建工具仅用于源码配置，不得被生产实现引用。新增依赖先评审并更新本表，不允许跨模块实现依赖。
+- `modules/**/tests/**` 下的模块测试不属于生产源码，可以使用 vitest、Node 内置模块与宿主机制包的公开入口；深层导入、跨模块实现依赖与循环依赖仍照常检查。
 
 | realm / kind | workspace 入口 | 外部依赖与环境边界 |
 |---|---|---|
 | server / service、contributor | `@ai-npc/contracts`、`@ai-npc/module-sdk` | `zod`；环境能力由 HostServices 注入 |
-| server / adapter | 同上 | `zod`；另仅按第 1 节所属适配器使用 Fastify 及其插件、`node:sqlite`、Anthropic SDK 或内置 `fetch`；不因此获得任意环境访问权限 |
+| server / adapter | 同上 | `zod`；另仅按第 1 节所属适配器使用 Fastify 及其插件、`node:sqlite`、Anthropic SDK 或内置 `fetch`；`platform.storage.sqlite` 另可用 `node:fs`、`node:path`、`node:url` 读取迁移与读写库文件；不因此获得任意环境访问权限 |
 | client、console / service、contributor | `@ai-npc/contracts`、`@ai-npc/client-sdk`、`@ai-npc/client-protocol` | `zod`、UI 所需 `react`；无 Node、数据库、模型 SDK 或直接后端网络访问 |
 | client、console / adapter | 同上 | 同上；仅 `client.scene-renderer.pixi` 使用 `pixi.js`；仍只经 typed protocol 访问后端 |
 
@@ -192,7 +193,7 @@ NPC_OPENAI_COMPAT_MODEL=
 ANTHROPIC_API_KEY=
 ```
 
-部署参数只有这一个来源：主机、两个端口、数据目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置，装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/ai-npc.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
+部署参数只有这一个来源：主机、两个端口、数据目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `NPC_DATA_DIR`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/ai-npc.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
 
 ## 6. 本地双端拓扑
 

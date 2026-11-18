@@ -1,0 +1,18 @@
+/**
+ * 夹具：SQLite 存储 adapter 使用 Node 文件系统与路径模块读取迁移文件、创建数据目录。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法符合存储 adapter 的白名单。
+ */
+import { mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
+
+export const openDatabase = (dataDir: string): DatabaseSync => {
+  mkdirSync(dataDir, { recursive: true });
+  const migrationPath = fileURLToPath(new URL("../migrations/0001_init.sql", import.meta.url));
+  const sql = readFileSync(migrationPath, "utf8");
+  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  database.exec(sql);
+  return database;
+};
