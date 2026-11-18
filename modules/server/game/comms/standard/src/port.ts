@@ -16,7 +16,6 @@ import {
 } from "@ai-npc/module-sdk";
 import {
   conversationStateSchema,
-  knowledgeGrantStateSchema,
   readCommsState,
   type ConversationState,
   type KnowledgeGrantState,
@@ -87,7 +86,7 @@ class StandardCommsPort implements GameCommsPort {
     }
     const state = this.relayState();
     if (state === "down") {
-      return channel === "broadcast" ? "relay-down" : "relay-down";
+      return "relay-down";
     }
     if (channel === "dialogue") {
       return state === "degraded" ? tick + 2 : tick;
@@ -224,7 +223,7 @@ class StandardCommsPort implements GameCommsPort {
     readonly deliveries: readonly Delivery[];
   } {
     const conversationId = input.conversationId ?? this.ids("conv");
-    const conversation = this.saveConversation(conversationId, [input.speakerId, ...input.audience]);
+    this.saveConversation(conversationId, [input.speakerId, ...input.audience]);
     const deliveries = this.deliveries("dialogue", input.speakerId, input.audience);
     if (deliveries === null) {
       throw new DomainError("invalid-state", "中继中断时不能提交对白");

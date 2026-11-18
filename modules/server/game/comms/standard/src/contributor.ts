@@ -3,7 +3,8 @@
  * 依赖通信/世界端口、内容索引、已批准对白读取器与 authority 事务上下文。
  * 禁止在这里直接写世界状态、绕过已批准对白或把秘密当作可分享证据。
  */
-import type { EventEnvelope, Json, MessageIntentKind } from "@ai-npc/contracts";
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
+import type { Json, MessageIntentKind } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
@@ -224,7 +225,7 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
       {
         consumerId: "comms-audit",
         eventTypes: ["DialogueSubmitted", "MessageSent", "InformationShared"],
-        handler: (_context, _event: EventEnvelope) => {
+        handler: () => {
           // 通信事件自身已经携带冻结投递名单；保留消费者用于后续投影与审计扩展。
         },
       },
