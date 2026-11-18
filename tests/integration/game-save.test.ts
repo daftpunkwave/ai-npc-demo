@@ -28,7 +28,7 @@ describe("SQLite 存档", () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 5, mode: "paused" });
-    const save = new SqliteSaveService(value.storage, value.host.ids, () => value.host.nowIso());
+    const save = new SqliteSaveService(value.storage, value.host);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "测试存档", createdBy: "player-1" });
     expect(snapshot).toMatchObject({ sourceBranchId: value.branchId, worldTick: 5, label: "测试存档" });
     expect(save.listSnapshots().map((item) => item.snapshotId)).toContain(snapshot.snapshotId);
@@ -41,7 +41,7 @@ describe("SQLite 存档", () => {
   it("缺少时钟或空标签时拒绝创建快照", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
-    const save = new SqliteSaveService(value.storage, value.host.ids, () => value.host.nowIso());
+    const save = new SqliteSaveService(value.storage, value.host);
     expect(() => save.createSnapshot({ sourceBranchId: value.branchId, label: " ", createdBy: "player-1" })).toThrow();
     value.storage.transact((tx) => {
       tx.run("DELETE FROM clock WHERE branch_id = ?", [value.branchId]);
@@ -59,7 +59,7 @@ describe("SQLite 存档", () => {
       }
       tx.rows("branches").put({ ...row, run_id: "run-save-test" });
     });
-    const save = new SqliteSaveService(value.storage, value.host.ids, () => value.host.nowIso());
+    const save = new SqliteSaveService(value.storage, value.host);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "恢复点", createdBy: "operator-1" });
     const restored = save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1", runId: "run-save-restored" });
     expect(restored.runId).toBe("run-save-restored");

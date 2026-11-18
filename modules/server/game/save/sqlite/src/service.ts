@@ -7,6 +7,7 @@
 import type {
   BranchKind,
   ForkBranchResult,
+  HostServices,
   StoragePort,
   StorageTransaction,
 } from "@ai-npc/contracts";
@@ -31,12 +32,6 @@ export interface RestoreSnapshotInput {
   readonly snapshotId: string;
   readonly createdBy: string;
   readonly runId?: string;
-}
-
-export interface SaveService {
-  createSnapshot(...args: [CreateSnapshotInput]): SnapshotRecord;
-  listSnapshots(): readonly SnapshotRecord[];
-  restoreSnapshot(...args: [RestoreSnapshotInput]): { readonly branchId: string; readonly runId: string };
 }
 
 function numberValue(value: unknown, column: string): number {
@@ -65,15 +60,17 @@ function maxWorldSeq(tx: StorageTransaction, branchId: string): number {
 }
 
 /** SQLite 存档实现；所有操作在单个存储事务内完成分支复制与快照行写入。 */
-export class SqliteSaveService implements SaveService {
+export class SqliteSaveService {
   private readonly storage: StoragePort;
-  private readonly ids: (...args: [string]) => string;
-  private readonly nowIso: () => string;
+  private readonly host: Pick<HostServices, "ids" | "nowIso">;
 
-  constructor(storage: StoragePort, ids: (...args: [string]) => string, nowIso: () => string) {
+  constructor(storage: StoragePort, host: Pick<HostServices, "ids" | "nowIso">) {
     this.storage = storage;
-    this.ids = ids;
-    this.nowIso = nowIso;
+    this.host = host;
+  }
+
+  private nextId(prefix: string): string {
+    return this.host.ids(prefix);
   }
 
   createSnapshot(input: CreateSnapshotInput): SnapshotRecord {
@@ -89,8 +86,8 @@ export class SqliteSaveService implements SaveService {
       if (clock === null) {
         throw new Error(`源分支 ${input.sourceBranchId} 缺少时钟记录`);
       }
-      const snapshotId = this.ids("snap");
-      const frozenBranchId = this.ids("br");
+      const snapshotId = this.nextId("snap");
+      const frozenBranchId = this.nextId("br");
       const fork: ForkBranchResult = this.storage.forkBranch(tx, {
         srcBranchId: input.sourceBranchId,
         dstBranchId: frozenBranchId,
@@ -103,7 +100,7 @@ export class SqliteSaveService implements SaveService {
         worldSeq: maxWorldSeq(tx, input.sourceBranchId),
         worldTick: numberValue(clock["world_tick"], "world_tick"),
         label: input.label,
-        createdAt: this.nowIso(),
+        createdAt: this.host.nowIso(),
       };
       tx.rows("snapshots").put({
         snapshot_id: record.snapshotId,
@@ -150,8 +147,8 @@ export class SqliteSaveService implements SaveService {
       if (frozen === null || frozen["kind"] !== "snapshot" || frozen["status"] !== "frozen" || frozen["run_id"] !== null) {
         throw new Error("快照冻结分支状态不合法");
       }
-      const runId = input.runId ?? this.ids("run");
-      const branchId = this.ids("br");
+      const runId = input.runId ?? this.nextId("run");
+      const branchId = this.nextId("br");
       const fork: ForkBranchResult = this.storage.forkBranch(tx, {
         srcBranchId: frozenBranchId,
         dstBranchId: branchId,
@@ -162,3 +159,6 @@ export class SqliteSaveService implements SaveService {
     });
   }
 }
+
+/** 存档服务公开类型；调用方只依赖这些方法。 */
+export type SaveService = Pick<SqliteSaveService, "createSnapshot" | "listSnapshots" | "restoreSnapshot">;

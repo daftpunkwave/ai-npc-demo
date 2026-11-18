@@ -23,6 +23,6 @@ export function createSaveModule(input: ModuleCreateInput): Promise<ModuleInstan
   if (!isStoragePort(storage)) {
     throw new Error("game.save.sqlite 需要宿主注入 StoragePort");
   }
-  const save = new SqliteSaveService(storage, (prefix) => input.host.ids(prefix), () => input.host.nowIso());
+  const save = new SqliteSaveService(storage, input.host);
   return createStatelessModule(input, { save });
 }
