@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: online-default
+moduleAssemblyRef: local-slg-standard-v1
+worldPackRef: earth-2964-v1
+scenarioRef: watergate-v1
+rosterRef: standard-20
+modelLayoutRef: shared-model-layout-v1
+seed: generated
+player: { principalId: player-1, factionId: null }   # 由 campaign.start 选择
+mode: live
+initialState: { kind: cold-start }
+variant: null
+script: null
+clock: { kind: realtime }
+budget: { maxTokens: null, maxCost: null }
+failurePolicy: online-fallback

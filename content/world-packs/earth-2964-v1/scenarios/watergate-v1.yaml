@@ -1,0 +1,54 @@
+schemaVersion: 1
+scenarioId: watergate-v1
+cards:
+  - cardId: card-relay-alarm
+    version: 1
+    trigger: { atTick: 2 }
+    effects:
+      - { kind: broadcast, speakerId: npc-shenli, text: 中继读数持续下降。照现在的分水方式，几天后远程通信就会变慢。修一次需要能源 10、供给 5。 }
+  - cardId: card-injured-migrants
+    version: 1
+    trigger: { atTick: 6 }
+    effects:
+      - { kind: broadcast, speakerId: npc-suhui, text: 隘口有 6 名受伤的迁徙者，需要医疗材料，最好在第 2 天结束前送到医疗点。 }
+  - cardId: card-water-dispute
+    version: 1
+    trigger: { atTick: 26 }
+    effects:
+      - { kind: broadcast, speakerId: npc-qingzhi, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
+      - { kind: message, from: npc-guxun, to: [human-neutral], text: 请考虑轮换供水。渗漏的事我还在查。 }
+  - cardId: card-repair-exchange
+    version: 1
+    trigger: { atTick: 30 }
+    effects:
+      - { kind: broadcast, speakerId: npc-luo, text: 泊星者可以修复中继。作为交换，我们需要战前星图。 }
+  - cardId: card-flood-delay
+    version: 1
+    trigger: { atTick: 44 }
+    effects:
+      - kind: world-fact
+        factType: ConvoyDelayed
+        audience: { kind: node, nodeId: watergate }
+        payload: { roadId: r-gh-wg, cause: flood, delayTicks: 6, text: 旧堤渗水漫过道路，补给车队改道，延误 6 小时，没有发生冲突。 }
+  - cardId: card-attack-rumor
+    version: 1
+    trigger: { atTick: 50 }
+    effects:
+      - { kind: rumor, sourceId: src-trader, aboutIds: [species-fauna], text: 听说昨夜巡裔在隘口附近袭击了补给车队。 }
+  - cardId: card-supply-spoilage
+    version: 1
+    trigger: { atTick: 72 }
+    effects:
+      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮 }
+      - { kind: broadcast, speakerId: npc-wenyuan, text: 仓库受潮，损失了 10 点供给。 }
+  - cardId: card-migration-season
+    version: 1
+    trigger: { atTick: 96 }
+    effects:
+      - { kind: broadcast, speakerId: npc-zhuifeng, text: 迁徙季开始了。隘口要是关着，族群只能冒险走别的路。 }
+  - cardId: card-council
+    version: 1
+    trigger: { atTick: 144 }
+    effects:
+      - { kind: broadcast, speakerId: npc-tangzhen, text: 明天之前在灰港议事。各方请带上可以签的条款。 }
+      - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, human-neutral, species-fauna, species-flora, species-extraterrestrial], reason: council }

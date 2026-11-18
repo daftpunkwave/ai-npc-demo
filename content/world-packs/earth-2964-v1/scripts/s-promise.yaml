@@ -1,0 +1,19 @@
+schemaVersion: 1
+scriptId: s-promise
+rosterRef: core-3
+start: { factionId: human-neutral }
+steps:
+  - { atTick: 1, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: npc-cenyan, text: 岑守备，我答应明天之前从灰港给隘口送 8 点供给。 } } }
+  - { atTick: 2, as: player-1, command: { type: agreement.propose, payload: { parties: [player-1, npc-cenyan], terms: [ { kind: deliver, obligorId: player-1, resource: supply, amount: 8, fromStockpileId: sp-commons, toStockpileId: sp-rubble, byTick: 36 } ] } } }
+  - { atTick: 60, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: npc-cenyan, text: 我需要你派人护送隘口那条路，能帮忙吗？ } } }
+branches:
+  - name: keep
+    addSteps:
+      - { atTick: 6, as: player-1, command: { type: task.dispatch, payload: { taskType: transport, teamId: team-commons, params: { fromStockpileId: sp-commons, toStockpileId: sp-rubble, cargo: { supply: 8, energy: 0, medical: 0 } } } } }
+  - name: break
+    addSteps: []
+checkpoints:
+  - atTick: 62
+    probes:
+      - { probeId: p-recall-promise, agentId: npc-cenyan, askedBy: player-1, question: 特派员之前答应过你什么？做到了吗？, kind: recall,
+          answerKey: { mustMention: [供给], mustNotMention: [] } }

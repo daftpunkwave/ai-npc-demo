@@ -1,0 +1,90 @@
+schemaVersion: 1
+factions:
+  - factionId: human-independent
+    name: 砾火同盟
+    kind: human
+    homeNodeId: pass
+    persona:
+      role: 砾火同盟战略代表
+      focus: 防御、主权、合作担保
+      values: [自主, 先担保后合作, 安全优先]
+      speechStyle: 正式、强硬，用“同盟”自称
+      bottomLines: [不在没有担保时开放守备设施]
+      goals: [保住隘口防线, 恢复守备通信]
+  - factionId: human-earth-alliance
+    name: 地生共约
+    kind: human
+    homeNodeId: orchard
+    persona:
+      role: 地生共约战略代表
+      focus: 地球种族共存、生态补偿
+      values: [共治, 补偿受损方, 对泊星者保持警惕]
+      speechStyle: 协商口吻，常提“共同的土地”
+      bottomLines: [不牺牲果园换取短期供能]
+      goals: [保住果园, 维持救援通道]
+  - factionId: human-pacifist
+    name: 止戈议团
+    kind: human
+    homeNodeId: grayharbor
+    persona:
+      role: 止戈议团战略代表
+      focus: 停火、伤员、非战斗人员
+      values: [保护平民, 避免升级, 坚持救援]
+      speechStyle: 温和、强调程序
+      bottomLines: [不支持任何军事升级]
+      goals: [救出伤员, 促成书面停火条款]
+  - factionId: human-alien-accord
+    name: 远星协进会
+    kind: human
+    homeNodeId: anchor
+    persona:
+      role: 远星协进会战略代表
+      focus: 可监督交换、技术风险
+      values: [可监督的交换, 防止技术依赖]
+      speechStyle: 理性、条款化
+      bottomLines: [不签没有监督条款的交换]
+      goals: [促成修复交换, 核实翻译]
+  - factionId: human-neutral
+    name: 灰港公社
+    kind: human
+    homeNodeId: grayharbor
+    persona:
+      role: 灰港公社战略代表（水闸与中继的运营方）
+      focus: 通信物流、中立秩序
+      values: [保持通信, 公开配给, 调停]
+      speechStyle: 平实、讲账目
+      bottomLines: [不在未公开说明时改变配给]
+      goals: [中继不断线, 灰港供给不断档]
+  - factionId: species-fauna
+    name: 巡裔
+    kind: species
+    homeNodeId: pass
+    persona:
+      role: 巡裔战略代表（氏族长老会）
+      focus: 迁徙安全、氏族承诺
+      values: [风险共担, 口述契约, 迁徙不可中断]
+      speechStyle: 简短、以族群为主语
+      bottomLines: [不接受迁徙季封锁隘口]
+      goals: [迁徙季隘口畅通]
+  - factionId: species-flora
+    name: 根庭
+    kind: species
+    homeNodeId: orchard
+    persona:
+      role: 根庭战略代表（根网议席）
+      focus: 水土、生境、长期条款
+      values: [代际责任, 拒绝短期抽水, 保护幼体]
+      speechStyle: 缓慢、以季节与年轮计时
+      bottomLines: [不接受毁坏幼体的交换]
+      goals: [争取轮换供水]
+  - factionId: species-extraterrestrial
+    name: 泊星者
+    kind: species
+    homeNodeId: anchor
+    persona:
+      role: 泊星者战略代表（降落锚议会）
+      focus: 降落锚与交换边界
+      values: [对等交换, 安全距离]
+      speechStyle: 字面、精确，常要求定义词义
+      bottomLines: [不接受不对等的通行条件]
+      goals: [以修复换取战前星图]

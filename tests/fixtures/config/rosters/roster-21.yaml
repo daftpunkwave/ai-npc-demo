@@ -1,0 +1,24 @@
+schemaVersion: 1
+rosterId: roster-21
+agents:
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-cenyan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }

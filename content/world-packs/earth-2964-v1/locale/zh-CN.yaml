@@ -1,0 +1,151 @@
+reasonCodes:
+  invalid-params: 命令参数不正确。
+  unknown-target: 目标不存在。
+  no-authority: 你没有执行这个操作的权限。
+  paused: 世界已暂停。
+  not-ready: 相关组件尚未就绪。
+  idempotency-conflict: 相同的幂等键对应了不同的内容。
+  version-conflict: 世界状态已变化，请重试。
+  stale-controller: 控制权已转移。
+  stale-turn: 这次行动已经过期。
+  budget-exhausted: 预算或配额已用尽。
+  relay-down: 中继中断，消息无法送达。
+  speech-not-approved: 对白未通过校验。
+  evidence-not-held: 你没有这条证据的授权。
+  secret-not-shareable: 秘密不能分享。
+  invalid-terms: 条款不合法。
+  obligor-not-party: 承担义务的人不是当事人。
+  deadline-out-of-range: 期限超出允许范围。
+  not-a-party: 你不是这份协议的当事人。
+  agreement-not-open: 协议已不在可回复状态。
+  already-responded: 你已经回复过这份协议。
+  team-busy: 队伍正忙。
+  capability-missing: 队伍不具备所需能力。
+  route-unavailable: 找不到可用路线。
+  route-closed: 道路已关闭。
+  insufficient-resource: 资源不足。
+  draw-limit-exceeded: 超出委托的动用额度。
+  over-capacity: 超出队伍运力。
+  participant-unavailable: 参与者当前不可用。
+  team-not-at-origin: 队伍不在出发地。
+  task-not-cancellable: 这个任务不能取消。
+  not-invited: 你不在受邀之列。
+  invitation-closed: 邀请已失效。
+  no-change: 新设置与当前值相同。
+  unknown-policy: 未知的政策项。
+  card-not-draft: 剧情卡不是草稿状态。
+  card-already-triggered: 剧情卡已经触发过。
+  invalid-effect: 剧情卡效果不合法。
+  campaign-exists: 战役已经开始。
+  unknown-faction: 未知的派系。
+  danger: 太危险。
+  duty: 不在职责范围内。
+  past-breach: 对方上次没有兑现。
+  low-trust: 信不过对方。
+  lack-resources: 资源不够。
+  policy: 不符合规矩。
+  need-guarantee: 需要先有担保。
+  injured: 有伤在身。
+  busy: 正忙着别的事。
+  none: 无。
+taskTypes:
+  transport: 运输
+  escort: 护送
+  rescue: 救援
+  repair: 修复
+  scout: 侦察
+meters:
+  relay.stability: 中继稳定度
+  orchard.water: 果园水量
+  migration.safety: 迁徙安全
+  watergate.allocation: 水闸分配
+meterLevels:
+  critical: 危急
+  strained: 紧张
+  stable: 稳定
+policyKeys:
+  watergate.allocation: 水闸分配
+  road.status: 道路通行状态
+policyValues:
+  harbor-first: 优先灰港
+  rotation: 轮换供水
+  orchard-first: 优先果园
+  open: 开放
+  restricted: 受限
+  closed: 关闭
+resources:
+  supply: 供给
+  energy: 能源
+  medical: 医疗材料
+resourceLevels:
+  scarce: 短缺
+  adequate: 可维持
+  surplus: 有余量
+nodes:
+  grayharbor: 灰港中继站
+  watergate: 旧堤水闸
+  orchard: 灼痕果园
+  pass: 迁徙隘口
+  archive: 战前档案库
+  anchor: 降落锚区
+facilities:
+  relay: 中继站
+  field-hospital: 野战医院
+  sluice: 闸门
+  clinic: 诊所
+  outpost: 哨站
+  archive-vault: 档案库
+  landing-anchor: 降落锚
+playerName: 特派员
+ui:
+  noReply: （对方暂未回应）
+  waitingReply: 等待回应
+  reconnecting: 重连中
+  serverUnavailable: 服务端不可连接
+  incompleteAssembly: 组合不完整
+  moduleNotLoaded: 模块未装载
+lexicons:
+  taskKeywords:
+    - { word: 护送, taskType: escort }
+    - { word: 救, taskType: rescue }
+    - { word: 伤员, taskType: rescue }
+    - { word: 修, taskType: repair }
+    - { word: 侦察, taskType: scout }
+    - { word: 探路, taskType: scout }
+    - { word: 运, taskType: transport }
+    - { word: 送, taskType: transport }
+    - { word: 派人, taskType: generic }
+    - { word: 帮忙, taskType: generic }
+    - { word: 出人, taskType: generic }
+  questionMarkers: ["？", "?", "吗", "什么", "怎么", "为什么", "几"]
+  unknownMarkers: ["不知道", "不清楚", "没听说", "不确定"]
+  forgetMarkers: ["不记得", "忘了"]
+  completionClaims: ["已经送到", "送到了", "已完成", "已经完成", "修好了"]
+  progressClaims: ["已经安排", "已经出发"]
+  memoryQueryTags:
+    - { word: 护送, tags: [escort] }
+    - { word: 供给, tags: [transport, resource] }
+    - { word: 物资, tags: [transport, resource] }
+    - { word: 运, tags: [transport] }
+    - { word: 送, tags: [transport] }
+    - { word: 水, tags: [water] }
+    - { word: 轮换, tags: [water] }
+    - { word: 星图, tags: [exchange] }
+    - { word: 交换, tags: [exchange] }
+    - { word: 袭击, tags: [rumor] }
+    - { word: 传闻, tags: [rumor] }
+    - { word: 隘口, tags: [pass] }
+    - { word: 伤员, tags: [rescue] }
+    - { word: 救, tags: [rescue] }
+    - { word: 修, tags: [relay, repair] }
+    - { word: 中继, tags: [relay] }
+    - { word: 协议, tags: [agreement] }
+    - { word: 答应, tags: [agreement] }
+    - { word: 约定, tags: [agreement] }
+    - { word: 承诺, tags: [agreement] }
+  personalityKeywords:
+    agreement: [重兑现, 对重复承诺敏感, 重递信承诺]
+    rescue: [护弱者, 保护平民, 护幼体]
+    resource: [重公平, 公平透明]
+    road: [警惕路线暴露, 重同路经历]
+    evidence: [讲验证, 讲证据, 求证后再发布]

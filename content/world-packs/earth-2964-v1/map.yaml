@@ -1,0 +1,20 @@
+schemaVersion: 1
+nodes:
+  - { nodeId: grayharbor, name: 灰港中继站, x: 12, y: 12, facilities: [relay, field-hospital] }
+  - { nodeId: watergate,  name: 旧堤水闸,   x: 12, y: 5,  facilities: [sluice] }
+  - { nodeId: orchard,    name: 灼痕果园,   x: 19, y: 9,  facilities: [clinic] }
+  - { nodeId: pass,       name: 迁徙隘口,   x: 4,  y: 8,  facilities: [outpost] }
+  - { nodeId: archive,    name: 战前档案库, x: 6,  y: 17, facilities: [archive-vault] }
+  - { nodeId: anchor,     name: 降落锚区,   x: 18, y: 18, facilities: [landing-anchor] }
+roads:
+  - { roadId: r-gh-wg, a: grayharbor, b: watergate, travelTicks: 4, risk: 0 }
+  - { roadId: r-gh-or, a: grayharbor, b: orchard,   travelTicks: 5, risk: 0 }
+  - { roadId: r-gh-ps, a: grayharbor, b: pass,      travelTicks: 6, risk: 1, controlledBy: human-independent, initialStatus: open }
+  - { roadId: r-gh-ar, a: grayharbor, b: archive,   travelTicks: 4, risk: 1 }
+  - { roadId: r-gh-an, a: grayharbor, b: anchor,    travelTicks: 5, risk: 0, controlledBy: species-extraterrestrial, initialStatus: restricted }
+  - { roadId: r-wg-or, a: watergate,  b: orchard,   travelTicks: 3, risk: 0 }
+  - { roadId: r-wg-ps, a: watergate,  b: pass,      travelTicks: 7, risk: 2 }
+  - { roadId: r-ps-ar, a: pass,       b: archive,   travelTicks: 5, risk: 1 }
+  - { roadId: r-or-an, a: orchard,    b: anchor,    travelTicks: 6, risk: 1, controlledBy: species-extraterrestrial, initialStatus: restricted }
+migrationRoads: [r-gh-ps, r-wg-ps, r-ps-ar]
+medicalFacilities: [field-hospital, clinic]
