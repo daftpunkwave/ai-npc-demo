@@ -23,9 +23,17 @@ import {
 } from "@ai-npc/contracts";
 
 /** 传输层需要的命令网关视图；不依赖 authority 实现包。 */
+function executeCommandHook(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
+  throw new Error(`command hook 未注入: ${auth.principalId}:${envelope.type}`);
+}
+
+function idHook(prefix: string): string {
+  throw new Error(`id hook 未注入: ${prefix}`);
+}
+
 export interface AuthorityPort {
   readonly commands: {
-    execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt;
+    execute: typeof executeCommandHook;
   };
 }
 
@@ -101,7 +109,7 @@ export interface ServerAppOptions {
   };
   readonly reset: typeof resetHook;
   readonly identities: readonly ServerIdentity[];
-  readonly ids: (prefix: string) => string;
+  readonly ids: typeof idHook;
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: typeof onBranchChangedHook;
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
