@@ -5,6 +5,7 @@
  */
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket from "@fastify/websocket";
+import cors from "@fastify/cors";
 import { randomUUID } from "node:crypto";
 import {
   commandEnvelopeSchema,
@@ -90,13 +91,19 @@ export interface ServerAppOptions {
   };
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
-  readonly onBranchChanged?: (branchId: string) => void;
+  readonly onBranchChanged?: typeof onBranchChangedHook;
 }
 
 interface Session {
   readonly auth: AuthContext;
   readonly token: string;
   readonly expiresAt: string;
+}
+
+function onBranchChangedHook(nextBranchId: string): void {
+  if (nextBranchId.length === 0) {
+    throw new Error("分支 ID 不能为空");
+  }
 }
 
 const playerCommandTypes = new Set([
@@ -126,10 +133,11 @@ function receiptOf(row: Record<string, unknown>): CommandReceipt {
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
 export async function createServerApp(options: ServerAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
+  await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
   const sessions = new Map<string, Session>();
   const tickets = new Map<string, { readonly auth: AuthContext; readonly expiresAt: number }>();
-  const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
 
@@ -139,18 +147,6 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       await reply.code(403).send({ code: "forbidden", safeMessage: "Origin 不被允许" });
     }
   });
-
-  app.addHook("onSend", async (request, reply, payload) => {
-    const origin = request.headers.origin;
-    if (typeof origin === "string" && allowedOrigins.has(origin)) {
-      reply.header("access-control-allow-origin", origin);
-      reply.header("access-control-allow-headers", "authorization,content-type");
-      reply.header("access-control-allow-methods", "GET,POST,OPTIONS");
-    }
-    return payload;
-  });
-
-  app.options("/*", async (_request, reply) => reply.code(204).send());
 
   const authenticate = (request: FastifyRequest, reply: FastifyReply): Session | null => {
     const token = bearer(request);

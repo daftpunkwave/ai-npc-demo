@@ -125,9 +125,13 @@ async function login(app: Awaited<ReturnType<typeof createServerApp>>, token: st
 
 describe("服务端 API", () => {
   it("登录、会话、命令、回执与世界视图", async () => {
+
     const value = await createTrackedGameHarness(active);
+
     const app = await appFor(value);
+
     const session = await login(app, "player-token");
+
     const auth = { authorization: `Bearer ${session}` };
     const me = await app.inject({ method: "GET", url: "/api/v1/session", headers: auth });
     expect(me.statusCode).toBe(200);
@@ -172,7 +176,15 @@ describe("服务端 API", () => {
     const consoleSession = await login(app, "console-token");
     const allowed = await app.inject({ method: "GET", url: "/api/v1/console/health", headers: { authorization: `Bearer ${consoleSession}` } });
     expect(allowed.statusCode).toBe(200);
-    const preflight = await app.inject({ method: "OPTIONS", url: "/api/v1/commands", headers: { origin: "http://127.0.0.1:5173" } });
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/commands",
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "authorization,content-type",
+      },
+    });
     expect(preflight.statusCode).toBe(204);
     expect(preflight.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
   });

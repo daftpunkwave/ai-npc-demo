@@ -3,6 +3,7 @@
  * 依赖玩家投影 schema、内容与模块端口；不读取 Agent 私有记忆。
  * 禁止把内部任务风险、秘密正文或模型输出直接放入投影。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将投影联合类型误判为 any。 */
 import {
   playerProjectionSchema,
   type ClockView,
