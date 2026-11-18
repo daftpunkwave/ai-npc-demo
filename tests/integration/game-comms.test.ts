@@ -11,6 +11,7 @@ import {
   gameCommandEnvelope,
   playerAuth,
   readGameEvents,
+  setGameClock,
   strategicAuth,
   type GameHarness,
 } from "./game-support";
@@ -130,6 +131,23 @@ describe("通信", () => {
     const events = readGameEvents(value);
     expect(events.filter((event) => event.type === "InformationShared")).toHaveLength(1);
     expect(events.filter((event) => event.type === "KnowledgeGranted").length).toBeGreaterThan(1);
+  });
+
+  it("异地证据分享的授权在送达 tick 才生效", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    setRelay(value, 25);
+    const accepted = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["npc-cenyan"] }, value.host.ids("cmd")),
+    );
+    expect(accepted.commandStatus).toBe("accepted");
+    const before = readGameEvents(value).filter((event) => event.type === "KnowledgeGranted");
+    expect(before.some((event) => (event.payload as { readonly principalId?: string }).principalId === "npc-cenyan")).toBe(false);
+    setGameClock(value, { worldTick: 3, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 3);
+    const after = readGameEvents(value).filter((event) => event.type === "KnowledgeGranted");
+    expect(after.some((event) => (event.payload as { readonly principalId?: string }).principalId === "npc-cenyan")).toBe(true);
   });
 
   it("已批准对白以消息提交，受众不匹配时拒绝", async () => {

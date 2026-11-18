@@ -439,6 +439,7 @@ export interface AgreementView {
 /** 通信端口：送达计算、知识授权与剧情/对白写入。 */
 export interface CommsPostResult {
   readonly eventId: string;
+  readonly messageId: string | null;
   readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
 }
 
@@ -446,6 +447,7 @@ export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
+  canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean;
   grantKnowledge(input: {
     readonly principalId: string;
     readonly itemId: string;
@@ -459,6 +461,7 @@ export interface GameCommsPort {
     readonly channel: "message" | "broadcast" | "seat" | "opening";
     readonly intentKind: MessageIntentKind;
     readonly speechArtifactRef?: string | null;
+    readonly audience?: readonly string[];
   }): CommsPostResult;
   postDialogue(input: {
     readonly speakerId: string;

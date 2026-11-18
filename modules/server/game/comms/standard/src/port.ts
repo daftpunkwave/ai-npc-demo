@@ -137,6 +137,14 @@ class StandardCommsPort implements GameCommsPort {
       .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
   }
 
+  canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean {
+    const existing = readCommsState(this.tx(), "conversation", conversationId, conversationStateSchema);
+    if (existing === null) {
+      return true;
+    }
+    return principalIds.every((principalId) => existing.participants.includes(principalId));
+  }
+
   grantKnowledge(input: {
     readonly principalId: string;
     readonly itemId: string;
@@ -178,9 +186,11 @@ class StandardCommsPort implements GameCommsPort {
     readonly channel: "message" | "broadcast" | "seat" | "opening";
     readonly intentKind: MessageIntentKind;
     readonly speechArtifactRef?: string | null;
-  }): { readonly eventId: string; readonly deliveries: readonly Delivery[] } {
+    readonly audience?: readonly string[];
+  }): { readonly eventId: string; readonly messageId: string; readonly deliveries: readonly Delivery[] } {
+    const wantsPublic = input.channel !== "broadcast" || input.audience === undefined || input.audience.includes("public");
     const recipients = input.channel === "broadcast"
-      ? this.allPrincipals()
+      ? (wantsPublic ? this.allPrincipals() : (input.audience ?? []))
       : [...input.to];
     const deliveries = input.channel === "opening"
       ? [...new Set([input.fromId, ...recipients])]
@@ -191,21 +201,26 @@ class StandardCommsPort implements GameCommsPort {
       throw new DomainError("invalid-state", "中继中断时不能发送定向通信");
     }
     const messageId = this.ids("msg");
+    const publicBroadcast = input.channel === "broadcast" && wantsPublic;
+    const relayDown = input.channel === "broadcast" && this.relayState() === "down";
+    const audience = publicBroadcast && !relayDown
+      ? [{ kind: "public" } as const]
+      : [...principalsAudience(deliveries.map((delivery) => delivery.principalId))];
     const eventId = this.tx().emit(
       "MessageSent",
       {
         messageId,
         fromId: input.fromId,
-        to: input.channel === "broadcast" ? ["public"] : [...input.to],
+        to: publicBroadcast ? ["public"] : [...input.to],
         channel: input.channel,
         text: input.text,
         deliveries: [...deliveries],
         intentKind: input.intentKind,
         speechArtifactRef: input.speechArtifactRef ?? null,
       },
-      input.channel === "broadcast" ? [{ kind: "public" }] : [...principalsAudience([input.fromId, ...input.to])],
+      audience,
     );
-    return { eventId, deliveries };
+    return { eventId, messageId, deliveries };
   }
 
   postDialogue(input: {
@@ -216,13 +231,11 @@ class StandardCommsPort implements GameCommsPort {
     readonly channelKind: "face-to-face" | "relay";
     readonly conversationId: string | null;
     readonly replyToId: string | null;
-  }): {
-    readonly eventId: string;
-    readonly conversationId: string;
-    readonly dialogueId: string;
-    readonly deliveries: readonly Delivery[];
-  } {
+  }): { readonly eventId: string; readonly conversationId: string; readonly dialogueId: string; readonly deliveries: readonly Delivery[] } {
     const conversationId = input.conversationId ?? this.ids("conv");
+    if (!this.canJoinConversation(conversationId, [input.speakerId, ...input.audience])) {
+      throw new DomainError("forbidden", "主体不在该会话中，不能追加对白");
+    }
     this.saveConversation(conversationId, [input.speakerId, ...input.audience]);
     const deliveries = this.deliveries("dialogue", input.speakerId, input.audience);
     if (deliveries === null) {
@@ -250,7 +263,7 @@ class StandardCommsPort implements GameCommsPort {
     readonly fromId: string;
     readonly evidenceId: string;
     readonly audience: readonly string[];
-  }): { readonly eventId: string; readonly deliveries: readonly Delivery[] } {
+  }): { readonly eventId: string; readonly messageId: null; readonly deliveries: readonly Delivery[] } {
     const deliveries = this.deliveries("message", input.fromId, input.audience);
     if (deliveries === null) {
       throw new DomainError("invalid-state", "中继中断时不能分享证据");
@@ -267,7 +280,7 @@ class StandardCommsPort implements GameCommsPort {
       },
       [...principalsAudience([input.fromId, ...input.audience])],
     );
-    return { eventId, deliveries };
+    return { eventId, messageId: null, deliveries };
   }
 }
 

@@ -45,11 +45,31 @@ function speechAllowed(
 
 function nodeOf(context: CommsContext, principalId: string): string | null {
   const content = requireGameContent(context.content);
+  const live = asPorts(context)["game.world"].character(principalId);
+  if (live !== null) {
+    return live.nodeId;
+  }
   const character = content.characters.get(principalId);
   if (character !== undefined) {
     return character.spawnNodeId;
   }
   return principalId === content.playerPrincipalId ? content.playerNodeId : null;
+}
+
+function sameNode(context: CommsContext, left: string, right: string): boolean {
+  const leftNode = nodeOf(context, left);
+  const rightNode = nodeOf(context, right);
+  return leftNode !== null && leftNode === rightNode;
+}
+
+function allDeliverable(
+  context: CommsContext,
+  channel: "dialogue" | "message",
+  fromId: string,
+  audience: readonly string[],
+): boolean {
+  const port = asPorts(context)["game.comms"];
+  return audience.every((principalId) => port.deliverAt(channel, fromId, principalId) !== "relay-down");
 }
 
 function initializeOpening(context: CommsContext): void {
@@ -98,13 +118,10 @@ function dialogueSay(context: CommsContext, payload: Json): HandlerResult {
     return { kind: "rejected", reasonCode: "unknown-target", safeMessage: "目标主体不存在" };
   }
   const speaker = context.auth.principalId;
-  const at = asPorts(context)["game.comms"].deliverAt("dialogue", speaker, input.targetAgentId);
-  if (at === "relay-down") {
+  if (!allDeliverable(context, "dialogue", speaker, [input.targetAgentId])) {
     return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法通话" };
   }
-  const speakerNode = content.playerNodeId;
-  const targetNode = nodeOf(context, input.targetAgentId);
-  const channelKind = targetNode !== null && targetNode === speakerNode ? "face-to-face" : "relay";
+  const channelKind = sameNode(context, speaker, input.targetAgentId) ? "face-to-face" : "relay";
   const result = asPorts(context)["game.comms"].postDialogue({
     speakerId: speaker,
     audience: [input.targetAgentId],
@@ -130,22 +147,35 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
   if (!speechAllowed(speech, context, input.audience, input.channel)) {
     return { kind: "rejected", reasonCode: "speech-not-approved", safeMessage: "对白未批准或受众不匹配" };
   }
+  const content = requireGameContent(context.content);
+  if (input.channel === "broadcast") {
+    const broadcaster = content.characters.get(speech.agentId);
+    const allowed = speech.agentId === "human-neutral" || broadcaster?.permissions?.includes("broadcast") === true;
+    if (!allowed) {
+      return { kind: "rejected", reasonCode: "no-authority", safeMessage: "该主体没有公开广播权限" };
+    }
+  }
   const ports = asPorts(context);
   if (input.channel === "dialogue") {
-    const at = ports["game.comms"].deliverAt("dialogue", speech.agentId, input.audience[0] ?? "");
-    if (at === "relay-down") {
+    if (!allDeliverable(context, "dialogue", speech.agentId, input.audience)) {
       return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法提交对白" };
+    }
+    if (input.conversationId !== null && !ports["game.comms"].canJoinConversation(input.conversationId, [speech.agentId, ...input.audience])) {
+      return { kind: "rejected", reasonCode: "no-authority", safeMessage: "主体不在该会话中" };
     }
     const result = ports["game.comms"].postDialogue({
       speakerId: speech.agentId,
       audience: input.audience,
       text: speech.text,
       channel: "dialogue",
-      channelKind: at === context.tx.worldTick ? "face-to-face" : "relay",
+      channelKind: sameNode(context, speech.agentId, input.audience[0] ?? "") ? "face-to-face" : "relay",
       conversationId: input.conversationId,
       replyToId: input.replyToId,
     });
     return { kind: "accepted", result: { conversationId: result.conversationId, dialogueId: result.dialogueId } };
+  }
+  if (input.channel === "message" && !allDeliverable(context, "message", speech.agentId, input.audience)) {
+    return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法发送消息" };
   }
   const result = ports["game.comms"].postMessage({
     fromId: speech.agentId,
@@ -154,15 +184,15 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
     channel: input.channel === "broadcast" ? "broadcast" : "message",
     intentKind: input.intentKind as MessageIntentKind,
     speechArtifactRef: input.approvedSpeechArtifactRef,
+    ...(input.channel === "broadcast" ? { audience: input.audience } : {}),
   });
-  return { kind: "accepted", result: { messageId: result.eventId } };
+  return { kind: "accepted", result: { messageId: result.messageId } };
 }
 
 function seatSay(context: CommsContext, payload: Json): HandlerResult {
   const input = payload as unknown as { readonly to: readonly string[]; readonly text: string };
   const fromId = effectivePrincipalId(context.auth);
-  const at = asPorts(context)["game.comms"].deliverAt("message", fromId, input.to[0] ?? "");
-  if (at === "relay-down") {
+  if (!allDeliverable(context, "message", fromId, input.to)) {
     return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法发送消息" };
   }
   asPorts(context)["game.comms"].postMessage({
@@ -190,13 +220,26 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
     return { kind: "rejected", reasonCode: "evidence-not-held", safeMessage: "当前主体不持有该证据" };
   }
   for (const principalId of input.audience) {
-    if (ports["game.comms"].deliverAt("message", fromId, principalId) === "relay-down") {
+    if (!allDeliverable(context, "message", fromId, [principalId])) {
       return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法分享证据" };
     }
   }
-  ports["game.comms"].postInformationShare({ fromId, evidenceId: input.evidenceId, audience: input.audience });
+  const share = ports["game.comms"].postInformationShare({ fromId, evidenceId: input.evidenceId, audience: input.audience });
   for (const principalId of input.audience) {
-    ports["game.comms"].grantKnowledge({ principalId, itemId: input.evidenceId, via: "share" });
+    const at = ports["game.comms"].deliverAt("message", fromId, principalId);
+    if (at === "relay-down") {
+      continue;
+    }
+    if (at <= context.tx.worldTick) {
+      ports["game.comms"].grantKnowledge({ principalId, itemId: input.evidenceId, via: "share" });
+    } else {
+      context.tx.schedule(
+        "comms.knowledge-delivery",
+        at,
+        `knowledge-delivery:${share.eventId}:${principalId}`,
+        { principalId, itemId: input.evidenceId },
+      );
+    }
   }
   return { kind: "accepted" };
 }
@@ -218,6 +261,19 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
         hook: (context) => {
           initializeOpening(context as CommsContext);
           return { kind: "accepted" };
+        },
+      },
+    ],
+    jobs: [
+      {
+        kind: "comms.knowledge-delivery",
+        handler: (context, job) => {
+          const input = job.payload as { readonly principalId: string; readonly itemId: string };
+          asPorts(context)["game.comms"].grantKnowledge({
+            principalId: input.principalId,
+            itemId: input.itemId,
+            via: "share",
+          });
         },
       },
     ],
