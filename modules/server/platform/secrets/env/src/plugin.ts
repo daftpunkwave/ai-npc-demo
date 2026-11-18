@@ -8,7 +8,7 @@ import { createStatelessModule } from "@ai-npc/module-sdk";
 import { secretsConfigSchema } from "./definition";
 
 function resolveHook(credentialRef: string): string | null {
-  return credentialRef.length > 0 ? null : null;
+  return credentialRef.length > 0 ? null : credentialRef;
 }
 
 export interface SecretsPort {
