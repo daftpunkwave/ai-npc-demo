@@ -214,8 +214,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   });
 
   const save = createSaveService(storage, host);
-  const resetOnline = (operationId: string): { readonly branchId: string; readonly clock: ClockView } => {
-    void operationId;
+  const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
     const current = clockState();
     if (current.mode === "running") {
       control("pause", current.runVersion);

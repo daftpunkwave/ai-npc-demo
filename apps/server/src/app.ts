@@ -74,9 +74,8 @@ function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: s
   throw new Error(`restore hook 未注入: ${input.snapshotId}`);
 }
 
-function resetHook(operationId: string): { readonly branchId: string; readonly clock: ClockView } {
-  void operationId;
-  throw new Error(`reset hook 未注入: ${operationId}`);
+function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
+  throw new Error("reset hook 未注入");
 }
 
 export interface ServerAppOptions {
@@ -320,8 +319,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     if (session === null) {
       return;
     }
-    const body = request.body as { readonly operationId: string };
-    const reset = options.reset(body.operationId);
+    const reset = options.reset();
     branchId = reset.branchId;
     options.onBranchChanged?.(reset.branchId);
     return { branchId: reset.branchId, clock: reset.clock };
