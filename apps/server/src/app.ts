@@ -46,12 +46,16 @@ export interface ServerAppOptions {
   readonly assembly: ResolvedModuleSet;
   readonly projection: () => PlayerProjection;
   readonly clock: () => ClockView;
-  readonly pause: Function;
-  readonly resume: Function;
+  readonly pause: (...args: [operationId: string, expectedRunVersion: number]) => ClockView & { readonly __args?: typeof args };
+  readonly resume: (...args: [operationId: string, expectedRunVersion: number]) => ClockView & { readonly __args?: typeof args };
   readonly save: {
-    createSnapshot: Function;
-    listSnapshots: Function;
-    restoreSnapshot: Function;
+    createSnapshot: (
+      ...args: [input: { readonly sourceBranchId: string; readonly label: string; readonly createdBy: string }]
+    ) => SnapshotRecordView & { readonly __args?: typeof args };
+    listSnapshots: () => readonly SnapshotRecordView[];
+    restoreSnapshot: (
+      ...args: [input: { readonly snapshotId: string; readonly createdBy: string; readonly runId?: string }]
+    ) => { readonly branchId: string; readonly runId: string } & { readonly __args?: typeof args };
   };
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
