@@ -12,13 +12,47 @@ export interface SnapshotView {
   readonly worldTick: number;
 }
 
+interface SnapshotInput {
+  readonly label: string;
+  readonly createdBy: string;
+}
+
+interface RestoreInput {
+  readonly snapshotId: string;
+  readonly createdBy: string;
+}
+
+function clockHook(): { readonly mode: string; readonly runVersion: number } {
+  return { mode: "paused", runVersion: 0 };
+}
+
+function pauseHook(expectedRunVersion: number): ClockView {
+  throw new Error(`pause hook 未注入: ${expectedRunVersion}`);
+}
+
+function resumeHook(expectedRunVersion: number): ClockView {
+  throw new Error(`resume hook 未注入: ${expectedRunVersion}`);
+}
+
+function snapshotHook(input: SnapshotInput): SnapshotView {
+  throw new Error(`snapshot hook 未注入: ${input.label}:${input.createdBy}`);
+}
+
+function restoreHook(input: RestoreInput): { readonly branchId: string } {
+  throw new Error(`restore hook 未注入: ${input.snapshotId}:${input.createdBy}`);
+}
+
+function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
+  throw new Error("reset hook 未注入");
+}
+
 export interface OperationsDriver {
-  clock(): { readonly mode: string; readonly runVersion: number };
-  pause(expectedRunVersion: number): ClockView;
-  resume(expectedRunVersion: number): ClockView;
-  snapshot(input: { readonly label: string; readonly createdBy: string }): SnapshotView;
-  restore(input: { readonly snapshotId: string; readonly createdBy: string }): { readonly branchId: string };
-  reset(): { readonly branchId: string; readonly clock: ClockView };
+  readonly clock: typeof clockHook;
+  readonly pause: typeof pauseHook;
+  readonly resume: typeof resumeHook;
+  readonly snapshot: typeof snapshotHook;
+  readonly restore: typeof restoreHook;
+  readonly reset: typeof resetHook;
 }
 
 /** 统一运营流程；快照前强制暂停，恢复/重开保留旧分支。 */
