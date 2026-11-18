@@ -6,7 +6,6 @@
 import type { GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory } from "@ai-npc/module-sdk";
 import type { GameRuleContributor } from "@ai-npc/module-sdk";
 import type { HostServices, StoragePort } from "@ai-npc/contracts";
-import { toGameContent } from "./content-adapter";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { clockModuleDefinition } from "@ai-npc/mod-game-clock-controlled";
 import { createMapPort, mapModuleDefinition, createMapContributor } from "@ai-npc/mod-game-map-six-nodes";
