@@ -12,6 +12,7 @@ import { loadContentPack } from "@ai-npc/experiment";
 import type { ClockState } from "@ai-npc/module-sdk";
 import { createHostServices } from "./host-services";
 import { buildPlayerProjection } from "./projection";
+import { loadAssembly, loadRunSpec, resolveServerModules } from "./host/assembly";
 import {
   createGameContributors,
   createGamePorts,
@@ -31,6 +32,8 @@ export interface HostOptions {
   readonly dataDir: string;
   readonly contentRoot?: string;
   readonly packId?: string;
+  readonly assemblyRef?: string;
+  readonly runSpecRef?: string;
   readonly playerToken: string;
   readonly consoleToken: string;
   readonly transportHost?: string;
@@ -40,6 +43,7 @@ export interface HostOptions {
 
 export interface RunningHost {
   readonly app: ServerApp;
+  readonly storage: StoragePort;
   readonly branchId: string;
   readonly worldId: string;
   readonly transport: import("./host/module-catalog").TransportPort;
@@ -109,6 +113,11 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
 
   const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), options.packId ?? "earth-2964-v1");
   const gameContent = toGameContent(content);
+  const assembly = loadAssembly(options.assemblyRef ?? "local-slg-standard-v1");
+  const runSpec = loadRunSpec(options.runSpecRef ?? "online-default");
+  const resolvedModules = resolveServerModules(assembly, serverModuleDefinitions);
+  const clockConfig = assembly.configs["clock"] as { readonly secondsPerTick?: number } | undefined;
+  const secondsPerTick = typeof clockConfig?.secondsPerTick === "number" ? clockConfig.secondsPerTick : 10;
   const contentVersion = content.pack.schemaVersion.toString();
   const timestamp = host.nowIso();
   const worldId = host.ids("wld");
@@ -143,7 +152,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     tx.branch(branchId).table("clock").put({
       world_tick: 0,
       mode: "paused",
-      seconds_per_tick: 10,
+      seconds_per_tick: secondsPerTick,
       run_version: 0,
       step_target_tick: null,
       updated_at: timestamp,
@@ -166,7 +175,39 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     }
   });
 
+  const ensureLiveRun = (branch: string, world: string): string => storage.transact((tx) => {
+    const row = tx.rows("branches").get({ branch_id: branch });
+    if (row === null) {
+      throw new Error(`分支 ${branch} 不存在`);
+    }
+    if (typeof row["run_id"] === "string" && row["run_id"].length > 0) {
+      return row["run_id"];
+    }
+    const runId = host.ids("run");
+    const createdAt = host.nowIso();
+    tx.rows("runs").put({
+      run_id: runId,
+      world_id: world,
+      branch_id: branch,
+      mode: "live",
+      status: "running",
+      run_spec_json: runSpec,
+      manifest_json: null,
+      manifest_hash: null,
+      contaminated: 0,
+      evidence_complete: 1,
+      created_at: createdAt,
+      started_at: createdAt,
+      ended_at: null,
+    });
+    tx.rows("branches").put({ ...row, run_id: runId });
+    return runId;
+  });
+  ensureLiveRun(activeBranchId, activeWorldId);
+
   const binder = createModuleBinder(gameContent, host);
+  const scenarioBinding = assembly.realms.server.bindings.find((binding) => binding.capability === "game.scenario");
+  const escalating = scenarioBinding?.moduleId === "game.scenario.watergate-escalating";
   const authority = new Authority({
     storage,
     host,
@@ -174,7 +215,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     moduleBinder: binder,
     allowDirectAgentCommands: true,
   });
-  for (const contributor of createGameContributors()) {
+  for (const contributor of createGameContributors({ escalating })) {
     authority.registerModule(contributor);
   }
 
@@ -237,6 +278,16 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     save.createSnapshot({ sourceBranchId: activeBranchId, label, createdBy: "operator-1" });
     const nextBranchId = host.ids("br");
     storage.transact((tx) => {
+      const now = host.nowIso();
+      const nextRunId = host.ids("run");
+      const previous = tx.rows("branches").get({ branch_id: activeBranchId });
+      const previousRunId = previous === null ? null : previous["run_id"];
+      if (typeof previousRunId === "string") {
+        const previousRun = tx.rows("runs").get({ run_id: previousRunId });
+        if (previousRun !== null) {
+          tx.rows("runs").put({ ...previousRun, status: "completed", ended_at: now });
+        }
+      }
       tx.rows("branches").put({
         branch_id: nextBranchId,
         world_id: activeWorldId,
@@ -246,18 +297,46 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         forked_at_world_seq: null,
         run_id: null,
         profile_hash: null,
-        created_at: host.nowIso(),
+        created_at: now,
+      });
+      tx.rows("runs").put({
+        run_id: nextRunId,
+        world_id: activeWorldId,
+        branch_id: nextBranchId,
+        mode: "live",
+        status: "running",
+        run_spec_json: runSpec,
+        manifest_json: null,
+        manifest_hash: null,
+        contaminated: 0,
+        evidence_complete: 1,
+        created_at: now,
+        started_at: now,
+        ended_at: null,
+      });
+      tx.rows("branches").put({
+        branch_id: nextBranchId,
+        world_id: activeWorldId,
+        kind: "online",
+        status: "active",
+        parent_branch_id: activeBranchId,
+        forked_at_world_seq: null,
+        run_id: nextRunId,
+        profile_hash: null,
+        created_at: now,
       });
       tx.branch(nextBranchId).table("clock").put({
         world_tick: 0,
         mode: "paused",
-        seconds_per_tick: 10,
+        seconds_per_tick: secondsPerTick,
         run_version: 0,
         step_target_tick: null,
-        updated_at: host.nowIso(),
+        updated_at: now,
       });
-      tx.rows("branches").put({ ...tx.rows("branches").get({ branch_id: activeBranchId }), status: "archived" });
-      tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: host.nowIso() });
+      if (previous !== null) {
+        tx.rows("branches").put({ ...previous, status: "archived" });
+      }
+      tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: now });
     });
     activeBranchId = nextBranchId;
     return { branchId: nextBranchId, clock: clockView(clockState()) };
@@ -311,7 +390,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     storage,
     worldId: activeWorldId,
     branchId: activeBranchId,
-    assembly: { realm: "server", protocolVersion: "1", modules: [], capabilities: [], assemblyHash: "runtime" },
+    assembly: resolvedModules,
     projection,
     clock: () => clockView(clockState()),
     pause: (operationId, expected) => {
@@ -385,6 +464,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
 
   return {
     app,
+    storage,
     branchId: activeBranchId,
     worldId: activeWorldId,
     transport,
