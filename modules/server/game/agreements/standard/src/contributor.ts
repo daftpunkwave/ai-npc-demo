@@ -4,7 +4,7 @@
  * 禁止替当事人记忆承诺，也禁止用未提交的任务事实提前判定履约。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；数组索引来自内部 terms/progress，资源键来自受限枚举。 */
-import type { EventEnvelope, Json, ReasonCode, Term } from "@ai-npc/contracts";
+import type { EventEnvelope, Json, Term } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,

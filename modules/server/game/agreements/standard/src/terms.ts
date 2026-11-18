@@ -3,6 +3,7 @@
  * 依赖内容索引、世界/通信端口与公共条款 schema；只读，不写协议。
  * 禁止在这里执行条款效果或自动修正非法条款。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将端口泛型误判为 any。 */
 import type { ReasonCode, Term } from "@ai-npc/contracts";
 import {
   coversAmounts,
