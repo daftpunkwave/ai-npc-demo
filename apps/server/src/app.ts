@@ -136,25 +136,51 @@ function receiptOf(row: Record<string, unknown>): CommandReceipt {
   return commandReceiptSchema.parse(value);
 }
 
+export interface ServerApp extends FastifyInstance {
+  notifyWorldChanged(): void;
+}
+
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
-export async function createServerApp(options: ServerAppOptions): Promise<FastifyInstance> {
+export async function createServerApp(options: ServerAppOptions): Promise<ServerApp> {
   const app = Fastify({ logger: false });
   const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
   const sessions = new Map<string, Session>();
-  const tickets = new Map<string, { readonly auth: AuthContext; readonly expiresAt: number }>();
+  const tickets = new Map<string, { readonly auth: AuthContext; readonly sessionToken: string; readonly expiresAt: number }>();
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
   let streamSeq = 0;
   let projectionVersion = 0;
   const history: Array<{ readonly streamSeq: number; readonly projectionVersion: number; readonly set: Record<string, unknown> }> = [];
-  const subscribers = new Set<WebSocket>();
+  const subscribers = new Map<WebSocket, string>();
 
-  const publishDelta = (): void => {
+  const sendSnapshot = (socket: WebSocket): void => {
+    try {
+      socket.send(JSON.stringify({
+        type: "snapshot",
+        channel: "player",
+        streamSeq,
+        projectionVersion,
+        data: options.projection(),
+      }));
+    } catch {
+      socket.close(1012, "projection unavailable");
+    }
+  };
+
+  const publishDelta = (): boolean => {
+    let projection: PlayerProjection;
+    try {
+      projection = options.projection();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("尚未初始化")) {
+        return false;
+      }
+      throw error;
+    }
     streamSeq += 1;
     projectionVersion += 1;
-    const projection = options.projection();
     const set = { ...projection } as Record<string, unknown>;
     const frame = { streamSeq, projectionVersion, set };
     history.push(frame);
@@ -162,8 +188,24 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       history.shift();
     }
     const payload = JSON.stringify({ type: "delta", channel: "player", ...frame });
-    for (const subscriber of subscribers) {
-      subscriber.send(payload);
+    for (const [socket, sessionToken] of subscribers) {
+      const session = sessions.get(sessionToken);
+      if (session === undefined || Date.parse(session.expiresAt) <= Date.now()) {
+        subscribers.delete(socket);
+        socket.close(4401, "session expired");
+        continue;
+      }
+      socket.send(payload);
+    }
+    return true;
+  };
+
+  const resetStream = (): void => {
+    streamSeq = 0;
+    projectionVersion = 0;
+    history.length = 0;
+    for (const [socket] of subscribers) {
+      sendSnapshot(socket);
     }
   };
 
@@ -214,6 +256,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     sessions.delete(session.token);
+    for (const [socket, token] of subscribers) {
+      if (token === session.token) {
+        subscribers.delete(socket);
+        socket.close(4401, "logged out");
+      }
+    }
     return { ok: true };
   });
 
@@ -246,8 +294,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     const receipt = options.authority.commands.execute(session.auth, envelope);
     try {
       publishDelta();
-    } catch {
-      // 世界尚未具备完整投影时（例如 reset 后未开局），命令回执仍应返回。
+    } catch (error) {
+      app.log.error(error, "投影发布失败");
     }
     return commandReceiptSchema.parse(receipt);
   });
@@ -285,7 +333,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
-    return options.pause(body.operationId, body.expectedRunVersion);
+    const clock = options.pause(body.operationId, body.expectedRunVersion);
+    publishDelta();
+    return clock;
   });
 
   app.post("/api/v1/campaign/resume", (request, reply) => {
@@ -294,7 +344,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
-    return options.resume(body.operationId, body.expectedRunVersion);
+    const clock = options.resume(body.operationId, body.expectedRunVersion);
+    publishDelta();
+    return clock;
   });
 
   app.post("/api/v1/campaign/snapshots", (request, reply) => {
@@ -335,6 +387,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     const body = request.body as { readonly snapshotId: string };
     const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId });
     branchId = restored.branchId;
+    resetStream();
     options.onBranchChanged?.(restored.branchId);
     return { branchId: restored.branchId, clock: options.clock() };
   });
@@ -346,6 +399,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
     const reset = options.reset();
     branchId = reset.branchId;
+    resetStream();
     options.onBranchChanged?.(reset.branchId);
     return { branchId: reset.branchId, clock: reset.clock };
   });
@@ -356,7 +410,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return;
     }
     const ticket = `ticket-${randomUUID()}`;
-    tickets.set(ticket, { auth: session.auth, expiresAt: Date.now() + 30_000 });
+    tickets.set(ticket, { auth: session.auth, sessionToken: session.token, expiresAt: Date.now() + 30_000 });
     return { ticket, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   });
 
@@ -369,17 +423,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
     tickets.delete(query.ticket ?? "");
     socket.send(JSON.stringify({ type: "hello", protocolVersion: "1", principalId: ticket.auth.principalId, channels: ["player"] }));
-    const subscriber = socket;
-    const sendSnapshot = (): void => {
-      socket.send(JSON.stringify({
-        type: "snapshot",
-        channel: "player",
-        streamSeq,
-        projectionVersion,
-        data: options.projection(),
-      }));
-    };
-    socket.on("close", () => { subscribers.delete(subscriber); });
+    subscribers.set(socket, ticket.sessionToken);
+    socket.on("close", () => { subscribers.delete(socket); });
     socket.on("message", (data: Buffer) => {
       let message: unknown;
       try {
@@ -395,14 +440,17 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       }
       const from = typeof value.fromStreamSeq === "number" ? value.fromStreamSeq : null;
       const replay = from === null ? [] : history.filter((frame) => frame.streamSeq > from);
-      const contiguous = from !== null && replay.length > 0 && replay[0]?.streamSeq === from + 1;
-      subscribers.add(subscriber);
+      const contiguous = from !== null
+        && replay.length > 0
+        && replay[0]?.streamSeq === from + 1
+        && replay.at(-1)?.streamSeq === streamSeq;
+      subscribers.set(socket, ticket.sessionToken);
       if (contiguous) {
         for (const frame of replay) {
           socket.send(JSON.stringify({ type: "delta", channel: "player", ...frame }));
         }
       } else {
-        sendSnapshot();
+        sendSnapshot(socket);
       }
     });
   });
@@ -427,5 +475,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     });
   });
 
-  return app;
+  app.decorate("notifyWorldChanged", () => {
+    publishDelta();
+  });
+
+  return app as unknown as ServerApp;
 }

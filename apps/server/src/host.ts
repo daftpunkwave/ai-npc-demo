@@ -313,6 +313,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         authority.clock.run(activeBranchId);
         authority.jobs.runDue(activeBranchId, clock.worldTick + 1);
         authority.consumers.run(activeBranchId);
+        app.notifyWorldChanged();
       }
     } catch (error) {
       workerFailed = true;
