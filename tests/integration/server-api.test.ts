@@ -113,6 +113,7 @@ async function appFor(harness: GameHarness) {
       { token: "player-token", auth: playerAuth(harness) },
       { token: "console-token", auth: operatorAuth(harness) },
     ],
+    ids: (prefix: string) => harness.host.ids(prefix),
   });
   apps.push(app);
   return app;

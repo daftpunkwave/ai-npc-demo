@@ -6,7 +6,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket, { type WebSocket } from "@fastify/websocket";
 import cors from "@fastify/cors";
-import { randomUUID } from "node:crypto";
 import {
   commandEnvelopeSchema,
   commandReceiptSchema,
@@ -15,13 +14,20 @@ import {
   loginResponseSchema,
   type AuthContext,
   type ClockView,
+  type CommandEnvelope,
   type CommandReceipt,
   type PlayerProjection,
   type ResolvedModuleSet,
   type SessionDescriptor,
+  type StoragePort,
 } from "@ai-npc/contracts";
-import type { Authority } from "@ai-npc/authority";
-import type { StoragePort } from "@ai-npc/contracts";
+
+/** 传输层需要的命令网关视图；不依赖 authority 实现包。 */
+export interface AuthorityPort {
+  readonly commands: {
+    execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt;
+  };
+}
 
 /** 存档服务在传输层使用的最小视图；具体实现由 host/module-catalog 绑定。 */
 export interface SnapshotRecordView {
@@ -79,7 +85,7 @@ function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
 }
 
 export interface ServerAppOptions {
-  readonly authority: Authority;
+  readonly authority: AuthorityPort;
   readonly storage: StoragePort;
   readonly worldId: string;
   readonly branchId: string;
@@ -95,6 +101,7 @@ export interface ServerAppOptions {
   };
   readonly reset: typeof resetHook;
   readonly identities: readonly ServerIdentity[];
+  readonly ids: (prefix: string) => string;
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: typeof onBranchChangedHook;
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
@@ -238,7 +245,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (identity === undefined) {
       return reply.code(401).send({ code: "unauthorized", safeMessage: "登录令牌无效" });
     }
-    const sessionToken = `sess-${randomUUID()}`;
+    const sessionToken = options.ids("ses");
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
     sessions.set(sessionToken, { auth: identity.auth, token: sessionToken, expiresAt });
     return loginResponseSchema.parse({
@@ -408,7 +415,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
-    const ticket = `ticket-${randomUUID()}`;
+    const ticket = options.ids("ticket");
     tickets.set(ticket, { auth: session.auth, session, expiresAt: Date.now() + 30_000 });
     return { ticket, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   });

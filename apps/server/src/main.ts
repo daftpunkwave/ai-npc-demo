@@ -27,7 +27,7 @@ const running = await startHost({
   transportPort: port,
 });
 try {
-  await running.app.listen({ port: running.transport.port, host: running.transport.host });
+  await running.listen();
 } catch (error) {
   await running.close();
   throw new Error(`监听 ${running.transport.host}:${running.transport.port} 失败: ${error instanceof Error ? error.message : String(error)}`);

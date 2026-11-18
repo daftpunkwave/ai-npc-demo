@@ -6,4 +6,6 @@ export const packageName = "@ai-npc/mod-transport-http-ws-fastify";
 
 export { transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";
-export type { TransportPort } from "./plugin";
+export { TransportPort } from "./plugin";
+export { createServerApp } from "./app";
+export type { AuthorityPort, ServerApp, ServerAppOptions, ServerIdentity } from "./app";
