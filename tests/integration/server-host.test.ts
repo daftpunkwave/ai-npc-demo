@@ -61,6 +61,8 @@ describe("服务端宿主", () => {
     expect(resetBody.clock.mode).toBe("paused");
     const runs = host.storage.transact((tx) => tx.rows("runs").list({ mode: "live" }));
     expect(runs).toHaveLength(2);
+    expect(runs.filter((run) => run["status"] === "running")).toHaveLength(1);
+    expect(runs.filter((run) => run["status"] === "completed")).toHaveLength(1);
     const alias = host.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }));
     expect(alias).toMatchObject({ branch_id: resetBody.branchId });
     const snapshots = await host.app.inject({ method: "GET", url: "/api/v1/campaign/snapshots", headers: { authorization: `Bearer ${session}` } });

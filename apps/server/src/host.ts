@@ -184,6 +184,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       return row["run_id"];
     }
     const runId = host.ids("run");
+    const createdAt = host.nowIso();
     tx.rows("runs").put({
       run_id: runId,
       world_id: world,
@@ -195,8 +196,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       manifest_hash: null,
       contaminated: 0,
       evidence_complete: 1,
-      created_at: timestamp,
-      started_at: timestamp,
+      created_at: createdAt,
+      started_at: createdAt,
       ended_at: null,
     });
     tx.rows("branches").put({ ...row, run_id: runId });
@@ -205,6 +206,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   ensureLiveRun(activeBranchId, activeWorldId);
 
   const binder = createModuleBinder(gameContent, host);
+  const scenarioBinding = assembly.realms.server.bindings.find((binding) => binding.capability === "game.scenario");
+  const escalating = scenarioBinding?.moduleId === "game.scenario.watergate-escalating";
   const authority = new Authority({
     storage,
     host,
@@ -212,7 +215,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     moduleBinder: binder,
     allowDirectAgentCommands: true,
   });
-  for (const contributor of createGameContributors()) {
+  for (const contributor of createGameContributors({ escalating })) {
     authority.registerModule(contributor);
   }
 
@@ -275,6 +278,16 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     save.createSnapshot({ sourceBranchId: activeBranchId, label, createdBy: "operator-1" });
     const nextBranchId = host.ids("br");
     storage.transact((tx) => {
+      const now = host.nowIso();
+      const nextRunId = host.ids("run");
+      const previous = tx.rows("branches").get({ branch_id: activeBranchId });
+      const previousRunId = previous === null ? null : previous["run_id"];
+      if (typeof previousRunId === "string") {
+        const previousRun = tx.rows("runs").get({ run_id: previousRunId });
+        if (previousRun !== null) {
+          tx.rows("runs").put({ ...previousRun, status: "completed", ended_at: now });
+        }
+      }
       tx.rows("branches").put({
         branch_id: nextBranchId,
         world_id: activeWorldId,
@@ -284,7 +297,33 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         forked_at_world_seq: null,
         run_id: null,
         profile_hash: null,
-        created_at: host.nowIso(),
+        created_at: now,
+      });
+      tx.rows("runs").put({
+        run_id: nextRunId,
+        world_id: activeWorldId,
+        branch_id: nextBranchId,
+        mode: "live",
+        status: "running",
+        run_spec_json: runSpec,
+        manifest_json: null,
+        manifest_hash: null,
+        contaminated: 0,
+        evidence_complete: 1,
+        created_at: now,
+        started_at: now,
+        ended_at: null,
+      });
+      tx.rows("branches").put({
+        branch_id: nextBranchId,
+        world_id: activeWorldId,
+        kind: "online",
+        status: "active",
+        parent_branch_id: activeBranchId,
+        forked_at_world_seq: null,
+        run_id: nextRunId,
+        profile_hash: null,
+        created_at: now,
       });
       tx.branch(nextBranchId).table("clock").put({
         world_tick: 0,
@@ -292,13 +331,14 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         seconds_per_tick: secondsPerTick,
         run_version: 0,
         step_target_tick: null,
-        updated_at: host.nowIso(),
+        updated_at: now,
       });
-      tx.rows("branches").put({ ...tx.rows("branches").get({ branch_id: activeBranchId }), status: "archived" });
-      tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: host.nowIso() });
+      if (previous !== null) {
+        tx.rows("branches").put({ ...previous, status: "archived" });
+      }
+      tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: now });
     });
     activeBranchId = nextBranchId;
-    ensureLiveRun(nextBranchId, activeWorldId);
     return { branchId: nextBranchId, clock: clockView(clockState()) };
   };
 

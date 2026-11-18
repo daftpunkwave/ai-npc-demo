@@ -3,6 +3,7 @@
  * 依赖 yaml、契约 schema 与组合根模块定义；不启动模块、不打开存储。
  * 禁止接受任意路径或未登记模块。
  */
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import {
@@ -60,7 +61,10 @@ export function resolveServerModules(
       moduleId: definition.id,
       version: definition.version,
       apiVersion: definition.apiVersion,
-      configHash: binding.configRef ?? "default",
+      configHash: createHash("sha256")
+        .update(JSON.stringify(binding.configRef === null ? {} : assembly.configs[binding.configRef]))
+        .digest("hex")
+        .slice(0, 16),
     });
     for (const provided of definition.provides) {
       const key = `${provided.capability}:${provided.instanceScope}:${provided.cardinality}`;
