@@ -2,9 +2,9 @@
 
 > 状态：待实现规范。ToolDefinition 是实现目录，ToolBinding 是 Agent 授权装配；工具实现不随 Agent 数量复制。
 
-## 1. 两层设计
+## 1. 定义、绑定与执行
 
-工具能力分为定义、注册绑定、执行三个层次。新增角色通常只新增数据化 binding；新增能力才增加 definition/executor。不存在 npc-cenyan 的专用运输实现与其他角色的另一份相同实现。
+工具能力分为定义、注册绑定、执行三个层次。新增角色通常只新增数据化 binding；新增能力才增加 definition/executor。npc-cenyan 的运输能力与其他角色共用同一份实现，不存在专用版本。
 
 | 层 | 拥有什么 | 不承担什么 |
 |---|---|---|
@@ -53,33 +53,33 @@ schema 只描述 Agent 可选参数；agentId、principalId、worldId、branchId
 
 ## 3. Binding 与有效权限
 
-有效权限 = 身份能力 ∩ binding 收窄 ∩ 当前动态授权，再经世界规则裁决。注册了工具，只代表可以尝试调用，不保证任意参数都可执行。
+有效权限取身份能力、binding 收窄与当前动态授权的交集，再经世界规则裁决。注册了工具，只代表可以尝试调用，不保证任意参数都可执行。
 
-binding 可以限制地点、目标类型、自己受委托的资产、最大数量、可分享受众、调用频率与单次结果预算；不能在 profile 中把角色升级为种族控制器。
+binding 可以限制地点、目标类型、自己受委托的资产、最大数量、可分享受众、调用频率与单次结果预算；不能在 profile 中把角色升级为势力控制器。
 
 执行上下文从已认证任务取得身份，再查该身份有效 binding 与当前 grants。模型的“我是指挥官”文本、另一 NPC 的工具结果或模型选择的 toolId 都不能替代授权。
 
 限制既参与工具 schema 投影和描述，也在调用时强制校验。为模型隐藏选项只是减少误用，最终动态权限仍在服务端检查。
 
-角色权限变化时，旧 schema 不必立即重发也能拒绝越权请求；下一次模型请求使用新工具集，并归档实际生效版本。不可用工具明确返回 forbidden/unavailable，不改名伪装成功。
+角色权限变化时，旧 schema 不必立即重发也能拒绝越权请求；下一次模型请求使用新工具集，并归档实际生效版本。不可用工具明确返回 forbidden 或 not-ready，不改名伪装成功。
 
 ## 4. 首批共用工具
 
 | toolId | effect | 输入与输出重点 |
 |---|---|---|
-| world.inspect | query | 已知区域/实体引用 → 授权当前投影、版本与证据 |
-| route.inspect | query | 起终点 → 已知路径、可达条件与风险来源 |
-| task.inspect | query | 有权查看的任务/receipt 引用 → 分别返回 commandStatus 与适用的 taskStatus |
-| conversation.inspect | query | 当前合法会话与窗口 → 受众过滤后的消息，不提供全历史外挂 |
-| operation.inspect | query | 当前身份 operationId → 既有 receipt 与未知结果的核对状态 |
-| message.send | command | 目标主体、受约束发送意图/披露引用 → 宿主安全生成与裁决后的消息 receipt |
-| information.share | command | 可披露证据引用与受众 → InformationShared 或明确拒绝 |
-| agreement.propose | command | 条款、对象、期限 → 提案 receipt，不代表双方已签约 |
-| agreement.respond | command | 提案引用、接受/拒绝/修改 → 权限与条款裁决 |
-| asset.dispatch | command | 受委托资产、路线、任务 → 派遣 receipt 与异步任务引用 |
-| task.cancel | command | 本身份有权取消的任务引用 → 撤销裁决，不保证已完成任务可回滚 |
+| world.inspect | query | 已知区域/实体引用，返回授权当前投影、版本与证据 |
+| route.inspect | query | 起终点，返回已知路径、可达条件与风险来源 |
+| task.inspect | query | 有权查看的任务/receipt 引用，分别返回 commandStatus 与适用的 taskStatus |
+| conversation.inspect | query | 当前合法会话与窗口，返回受众过滤后的消息，不提供全历史外挂 |
+| operation.inspect | query | 当前身份 operationId，返回既有 receipt 与未知结果的核对状态 |
+| message.send | command | 目标主体、受约束发送意图/披露引用，由宿主安全生成并裁决后得到消息 receipt |
+| information.share | command | 可披露证据引用与受众，产出 InformationShared 或明确拒绝 |
+| agreement.propose | command | 条款、对象、期限，产出提案 receipt，不代表双方已签约 |
+| agreement.respond | command | 提案引用、接受/拒绝/修改，按权限与条款裁决 |
+| asset.dispatch | command | 受委托资产、路线、任务，产出派遣 receipt 与异步任务引用 |
+| task.cancel | command | 本身份有权取消的任务引用，返回撤销裁决，不保证已完成任务可回滚 |
 
-memory.retrieve 由固定检索阶段驱动，不默认提供可任意深挖历史的工具；如未来增加主动回忆工具，所有组必须明确启用并纳入同一记忆/预算实验协议。
+记忆检索（memory 的 retrieve 操作）由固定检索阶段驱动，不默认提供可任意深挖历史的工具；如未来增加主动回忆工具，所有组必须明确启用并纳入同一记忆/预算实验协议。
 
 decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；message.send 不接受自由文本直发。宿主接续 safe speech/template 管线生成批准 artifact，最终发送 handler 校验 approvedSpeechArtifactRef、目标受众与当前权限后才写入消息；生成/裁决前不能返回“已发送”。information.share 只接受经验证可披露的来源引用，也不能夹带自由文本绕过该流程。
 
@@ -89,7 +89,7 @@ decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；
 
 下表是角色类的权限上限模板，实际每次仍取交集。12 个角色不因同属 character 就获得相同资产或私聊权限。
 
-| 工具组 | 5 人类战略 Agent | 3 非人类势力战略 Agent | 12 角色 Agent |
+| 工具组 | 5 个人类派系战略 Agent | 3 个非人类势力战略 Agent | 12 个角色 Agent |
 |---|---|---|---|
 | world/route.inspect | 本派已知区域 | 本种族已知区域 | 个人已知与被授予区域 |
 | task/operation.inspect | 自己及受委托任务 | 自己及受委托任务 | 自己参与或可观察任务 |
@@ -110,9 +110,9 @@ permissionProfile、budgetProfile 和 constraint preset 是复用数据；角色
 
 例如“可派遣自己的护送队”由 delegated-assets 约束读取当前 grants；岑雁与其他角色引用同一个 asset.dispatch，只是被委托资产集合不同。
 
-新增角色的工作顺序为：定义身份/职责 → 选择 binding 模板 → 收窄具体限制 → 校验能力 → 生成 effective tool manifest。无需新增同义工具名称或复制实现。
+新增角色时，先定义身份/职责，再选择 binding 模板并收窄具体限制，然后校验能力，最后生成 effective tool manifest。无需新增同义工具名称或复制实现。
 
-新增工具的工作顺序为：定义输入/输出及 effect → 实现通用 executor → 注册一次 → 新增契约验证 → 按需要引用 binding；世界命令先有规则 handler，才可绑定 command 工具。
+新增工具时，先定义输入/输出及 effect，再实现通用 executor 并注册一次，然后新增契约验证，最后按需要引用 binding；世界命令先有规则 handler，才可绑定 command 工具。
 
 约束组件应先复用简单的 schema/谓词，如 owned-or-delegated、known-location、audience-subset、quantity-cap；不设计可执行配置语言或任意脚本表达式。
 
@@ -132,7 +132,7 @@ query executor 的世界数据源固定为 inputFrontier=F 的授权 read view�
 
 ## 8. 幂等、副作用与未知结果
 
-稳定关联为 `(worldId, branchId, agentId, operationId) → commandId + payloadHash`。operationId 由宿主在首次接受操作时生成并持久化；模型重试、worker 恢复沿用该映射。
+稳定关联由 `(worldId, branchId, agentId, operationId)` 确定 `commandId + payloadHash`。operationId 由宿主在首次接受操作时生成并持久化；模型重试、worker 恢复沿用该映射。
 
 世界 handler 以主体和 commandId 去重：相同请求返回原 receipt，相同键不同 payload 报 idempotency-conflict。receipt、事件、状态、outbox 与确定性 jobs 在一个 SQLite 事务提交。
 
@@ -154,7 +154,7 @@ receipt 仍未知时不允许重新派遣另一份资产；返回 executionStatu
 
 进程崩溃恢复先核对 admitted/dispatched/settled 状态，再查 receipt。已提交工具结果可直接复用；query 如需重新执行，必须使用原冻结投影或记录新检查点，不能冒充原响应。
 
-并行只用于可并行的查询；涉及同资源的 command 由世界单写者裁决，顺序与冲突必须留痕。不能承诺“同一模型批次”意味着所有命令原子成功。
+同一模型批次不意味着所有命令原子成功；涉及同一资源的 command 仍由世界单写者裁决，顺序与冲突必须留痕。
 
 ## 10. 原始结果与模型视图
 

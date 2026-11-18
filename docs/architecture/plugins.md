@@ -1,6 +1,6 @@
 # 模块、插件与宿主契约
 
-> 状态：目标规范。本文约束模块如何进入宿主、声明能力、获得状态、按生命周期运行与退出。模块边界见 [模块边界](modules.md)，清单见 [模块目录](module-catalog.md)，组合见 [积木组合](composition.md)，参数落盘见 [配置](../platform/configuration.md)。
+> 状态：目标规范。本文规定模块如何进入宿主、声明能力、获得状态，以及按生命周期运行与退出。模块边界见 [模块边界](modules.md)，清单见 [模块目录](module-catalog.md)，组合见 [积木组合](composition.md)，参数落盘见 [配置](../platform/configuration.md)。
 
 ## 1. 术语：模块、插件、积木
 
@@ -18,7 +18,7 @@
 
 ## 2. ModuleDefinition 契约
 
-完整字段、schema 与 TypeScript 类型由 [公共契约](contracts.md) 第 3 节统一维护；本节只解释各字段在注册、解析与运行中的用途，不另建第二份 schema。
+字段、schema 与 TypeScript 类型以 [公共契约](contracts.md) 第 3 节为准；下面只说明各字段在注册、解析与运行中的用途，不另建第二份 schema。
 
 | 字段组 | 用途与约束 |
 |---|---|
@@ -32,17 +32,17 @@
 | experimentAxes | 参数说明、显示顺序与可比较轴；UI 与评估共用同一描述符 |
 | create | 接收已解析配置和最小宿主能力，返回对应 kind 的 typed instance |
 
-代码层使用 kind→port 映射，使 memory 工厂只能返回 MemoryPort，不能用 `any` 或万能 `execute(Json)` 掩盖协议。一个模块可声明多个能力，但必须分别有端口与配置；不能用一个“游戏核心”能力吞掉全部规则。
+代码层使用 kind 到 port 的映射，memory 工厂只能返回 MemoryPort，不能用 `any` 或万能 `execute(Json)` 掩盖协议。一个模块可声明多个能力，但必须分别有端口与配置；不能用一个“游戏核心”能力吞掉全部规则。
 
 ## 3. 模块类别与扩展点
 
 | 类别 | 作用 | 例子 | 冲突规则 |
 |---|---|---|---|
-| `service` | 提供独占能力，被装配解析为唯一 provider | `game.clock.controlled`、`agent.memory.ledger`、`platform.storage.sqlite` | 同一 capability/实例出现两个默认 provider 即预检失败；fallback 必须显式 |
+| `service` | 提供独占能力，被装配解析为唯一 provider | `game.clock.controlled`、`agent.memory.ledger`、`platform.budget.standard` | 同一 capability/实例出现两个默认 provider 即预检失败；fallback 必须显式 |
 | `contributor` | 向宿主扩展点贡献条目，可并存 | 共享 ToolDefinition、事件卡、HUD 面板、控制台页面 | 贡献 ID 与 slot 可唯一；顺序显式声明 |
 | `adapter` | 对接外部技术，把第三方类型关在内部 | SQLite、模型 HTTP、PixiJS、HTTP/WS | 实现同一 port；不支持的能力显式报错 |
 
-扩展点包括：guest 宿主 slot（`scene`、`hud`、`dialogue`、`sidebar`、`modal`、`settings.section`、`notification`、`overlay`、`boot.screen`）、工具目录、事件卡目录、命令 handler、事件订阅、模型 purpose 路由、控制台 route/panel/action。每个扩展点由宿主定义 ID、基数、权限标签和 disposer 所有权；模块只在 definition 中声明贡献，运行期由宿主登记。
+扩展点包括：客户端宿主 slot（`scene`、`hud`、`dialogue`、`sidebar`、`modal`、`settings.section`、`notification`、`overlay`、`boot.screen`）、工具目录、事件卡目录、命令 handler、事件订阅、模型 purpose 路由、控制台 route/panel/action。每个扩展点由宿主定义 ID、基数、权限标签和 disposer 所有权；模块只在 definition 中声明贡献，运行期由宿主登记。
 
 模块的 UI 贡献是 ModuleDefinition 的一部分（extensionId、slot、requiredCapabilities、order），不是第二套拥有独立权限的注册系统。
 
@@ -57,7 +57,7 @@
 7. 先预留全平台 Agent 配额与模块资源，再创建状态与实例；失败按相反顺序释放，不能留下半个活动分支。
 8. 浏览器 realm 连接时执行握手：server 返回本 realm 已解析模块清单与远端能力描述；客户端验证本地内置模块能满足，不满足则显示组合不完整，不静默降级。
 
-同一模块定义可被多个主体引用，实例状态是否共享由 `instanceScope` 与契约明确规定。instanceScope 决定生命周期维度，不替代状态 scope：memory 实例的生命周期按 agent，但状态仍按 branch + agent 隔离；模型传输客户端可共享；工具定义为宿主共享，但调用上下文与 ToolBinding 永远按主体生成。
+同一模块定义可被多个主体引用，实例状态是否共享由 `instanceScope` 与契约明确规定。instanceScope 决定生命周期维度，不替代状态 scope：memory 实例的生命周期按 agent，但状态仍按 branch + agent 隔离。模型传输客户端可共享；工具定义为宿主共享，但调用上下文与 ToolBinding 永远按主体生成。
 
 ## 5. 生命周期、拔插与撤销
 
@@ -79,29 +79,27 @@
 | 必需能力 provider | 活动组合中不可拔空；先停止组合或准备兼容替代，再迁移状态 |
 | 宿主固定 guard | 不可卸载、不可替换为放行实现 |
 
-`dispose` 不是删除持久状态。旧分支的状态与 artifact 受保留策略管理，不能因模块实例退出而清库。移除工具 binding 不代表已进入队列的调用仍可执行；执行网关需要重新核对 binding revision 与权限。
+`dispose` 不是删除持久状态。旧分支的状态与 artifact 受保留策略管理，不能因模块实例退出而清库。移除工具 binding 后，已进入队列的调用不可继续执行；执行网关要重新核对 binding revision 与权限。
 
-取消后晚到的模型/整理结果仍须通过 turn epoch、controller epoch 或 revision CAS。`AbortSignal` 是合作式取消通知，不是副作用不会发生的证明。启动失败、drain 超时和资源释放失败分别记录；必需实例未就绪时 realm 不可标成 ready，不能跳过失败模块后继续声称同一配置运行成功。
+取消后晚到的模型/整理结果仍须通过 turn epoch、controller epoch 或 revision CAS。`AbortSignal` 只是合作式取消通知，不能用来证明副作用不会发生。启动失败、drain 超时和资源释放失败分别记录；必需实例未就绪时 realm 不可标成 ready，不能跳过失败模块后继续声称同一配置运行成功。
 
 ## 6. 宿主能力与不可绕过的 guard
 
 普通模块获得：scoped storage、授权查询、受预算的模型调用、时钟/随机源、trace、配置读取。storage adapter 的原始连接只由组合根注入；普通 memory/context/decision 不获得数据库句柄或全局 world 对象。
 
-宿主固定执行顺序（模块不能把这些步骤设为可选 hook）：
+宿主固定执行以下顺序，模块不能把这些步骤设为可选 hook：
 
-```text
-认证与会话
-  → 主体/受众/scope 解析
-  → 权限与知识边界过滤
-  → 输入 schema 与协议版本校验
-  → 预算与并发准入
-  → 模块调用（纯计算/计划/查询）
-  → 命令裁决与事务提交（服务端）
-  → fencing/幂等/版本复核
-  → 证据归档与授权投影
-```
+1. 认证与会话。
+2. 解析主体、受众与 scope。
+3. 按权限与知识边界过滤。
+4. 校验输入 schema 与协议版本。
+5. 做预算与并发准入。
+6. 调用模块，执行纯计算、计划或查询。
+7. 在服务端裁决命令并提交事务。
+8. 复核 fencing、幂等与版本。
+9. 归档证据并生成授权投影。
 
-授权输入过滤 → scoped state/来源校验 → 预算与协议检查 → 模型/工具网关 → 命令裁决 → 受众安全对白发布，是服务端不可跳过的顺序。模块可以拒绝自身输入，但不能把这些 guard 设为可选。
+授权输入过滤、scoped state 与来源校验、预算与协议检查、模型/工具网关、命令裁决、受众安全对白发布，这个顺序在服务端不可跳过。模块可以拒绝自身输入，但不能把这些 guard 设为可选。
 
 hook 分为 transform、guard、observe：transform 返回不可变新版本；guard 可拒绝；observe 只读。使用显式 stage 和 before/after 约束拓扑排序，冲突或环在预检报错；不能依赖注册顺序决定 prompt 顺序。模型上下文的 phase 字段仅使用 decision/speech，与处理 stage 分开。
 
@@ -130,13 +128,13 @@ hook 分为 transform、guard、observe：transform 返回不可变新版本；g
 
 ## 9. 扩展验收
 
-- **注册**：重复实现、未知参数、版本不兼容、能力缺失和 realm 冲突均在运行前失败。
-- **隔离**：伪造 scope、跨主体/分支查询、共享缓存串读、浏览器读取密钥均被拒绝。
-- **一致性**：重复 ingest 幂等，过期发布 CAS 失败，冻结 revision 不包含未来观察。
-- **生命周期**：启动失败回收资源；撤销后无残余监听/工具 binding；晚到输出无法提交。
-- **有效性**：trace 显示 requested/resolved/effective、applied/skipped/failed 及输入输出差分；必需阶段 skipped 不进入有效样本。
-- **可替换**：增加或替换模块只触及模块自身、组合根登记及配置，不修改领域规则或复制 runtime。
-- **共享能力**：多个 Agent 引用同一模型条目和工具定义，仍保有独立预算、权限、会话和 trace。
-- **双端**：替换 client/console 模块不需要改 server 实现；两个端口之外无监听。
+- 注册：重复实现、未知参数、版本不兼容、能力缺失和 realm 冲突均在运行前失败。
+- 隔离：伪造 scope、跨主体/分支查询、共享缓存串读、浏览器读取密钥均被拒绝。
+- 一致性：重复 ingest 幂等，过期发布 CAS 失败，冻结 revision 不包含未来观察。
+- 生命周期：启动失败回收资源；撤销后无残余监听/工具 binding；晚到输出无法提交。
+- 有效性：trace 显示 requested/resolved/effective、applied/skipped/failed 及输入输出差分；必需阶段 skipped 不进入有效样本。
+- 可替换：增加或替换模块只触及模块自身、组合根登记及配置，不修改领域规则或复制 runtime。
+- 共享能力：多个 Agent 引用同一模型条目和工具定义，仍保有独立预算、权限、会话和 trace。
+- 双端：替换 client/console 模块不需要改 server 实现；两个端口之外无监听。
 
 正式实验失败策略与报告分母见 [评估](../platform/evaluation.md)；交付入口见 [路线与验收](../delivery/roadmap-and-acceptance.md)。

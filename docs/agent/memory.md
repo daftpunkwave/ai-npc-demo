@@ -4,7 +4,7 @@
 
 ## 1. 职责与不变量
 
-memory 接收角色已经获准感知的观察，形成可修订、可检索、可遗忘的主观记录；向 decision/context 提供证据包。它不查询完整世界事件库、不决定谁看见什么、不组装完整 prompt，也不执行游戏动作。
+memory 接收角色已经获准感知的观察，形成可修订、可检索、可遗忘的主观记录；向 decision/context 提供证据包。世界事件库全集、可见性判断、完整 prompt 组装和游戏动作执行都不在它的职责内。
 
 scope 固定为 `worldId/branchId/agentId`；每个实验 run 独占一个 branch。单玩家从五个人类派系中选择开局，不改变 NPC 记忆归属，也不把该派系的全部记忆自动授予玩家。角色表见 [角色设计](../game/characters.md)。
 
@@ -14,7 +14,7 @@ scope 固定为 `worldId/branchId/agentId`；每个实验 run 独占一个 branc
 
 ## 2. 数据与接口
 
-以下字段是公共契约要求；TypeScript 实现由 contracts 统一定义，插件不得维护不同版本的 scope、时间或事件信封。
+下表类型中，`MemoryScope`、时间与事件信封等共享字段由 contracts 定义；Memory 专有类型由本文定义，插件不得维护不同版本的 scope、时间或事件信封。
 
 | 数据 | 必需字段与含义 |
 |---|---|
@@ -30,13 +30,13 @@ epistemic 分两层：`AgentObservation.epistemic` 为 witnessed/reported/inferr
 
 状态值为 active、superseded、expired、evicted、retracted。取代旧认识时新增 revision，保留审计；检索默认排除非 active 项。只读身份/世界观通过 contentRefs 引用版本化内容，不伪造一条“亲历事件”。
 
-| 操作 | 输入 → 输出 | 提交责任 |
+| 操作 | 输入与输出 | 提交责任 |
 |---|---|---|
-| `prepareIngest` | 已授权观察批次＋baseRevision → MemoryChangePlan | 宿主验证并原子提交记录/inbox/水位 |
-| `retrieve` | MemoryQuery → MemoryBundle | 只读冻结版本，不推进时间或偷偷强化 |
-| `prepareMaintenance` | 到期任务、截止 tick/frontier、baseRevision → 变更计划及调用引用 | 模型在事务外计算，宿主 CAS 发布 |
-| `recordUse` | turnId、实际注入/合法引用 ID、使用类型 → 强化计划 | 宿主幂等验证，不能信任任意模型自报 |
-| `export/import` | 检查点与兼容 schema → 状态或显式迁移错误 | branch 暂停后执行，失败保留旧档 |
+| `prepareIngest` | 输入已授权观察批次与 baseRevision，产出 MemoryChangePlan | 宿主验证并原子提交记录/inbox/水位 |
+| `retrieve` | 输入 MemoryQuery，返回 MemoryBundle | 只读冻结版本，不推进时间或偷偷强化 |
+| `prepareMaintenance` | 输入到期任务、截止 tick/frontier、baseRevision，产出变更计划及调用引用 | 模型在事务外计算，宿主 CAS 发布 |
+| `recordUse` | 输入 turnId、实际注入/合法引用 ID、使用类型，产出强化计划 | 宿主幂等验证，不能信任任意模型自报 |
+| `export/import` | 输入检查点与兼容 schema，产出状态或显式迁移错误 | branch 暂停后执行，失败保留旧档 |
 
 模型调用走宿主 model port 与 `(agentId, purpose)` 挂载：整理使用 memory-maintenance，向量生成使用 embedding。插件配置只声明策略需求，不复制 provider、model、temperature 或凭据，见 [模型池](model-pool.md)。
 
@@ -51,7 +51,7 @@ epistemic 分两层：`AgentObservation.epistemic` 为 witnessed/reported/inferr
 | 核心 core | 此刻最在乎的是失踪队员 | 稳定身份只读，动态关切有来源与限长 |
 | 公共 public | 已公开的联合护送纪要 | 授权公共投影，不能成为无限历史外挂 |
 
-沿用旧研究的 L1–L6 类型思路；L0 世界事实始终归平台。类型不是强制存储层：一个插件可以用同一表，也可以完全不实现某类，但必须声明 capability，不能输出空对象假装支持。
+沿用旧研究的 L1 到 L6 类型思路；L0 世界事实始终归平台。类型不要求单独存储层：一个插件可以用同一张表，也可以完全不实现某一类，但必须声明 capability，不能输出空对象假装支持。
 
 ## 4. 四类初始实现
 
@@ -59,22 +59,16 @@ epistemic 分两层：`AgentObservation.epistemic` 为 witnessed/reported/inferr
 |---|---|---|
 | `memory.none` | 不保留长期经历；消费观察并推进游标；检索返回空 | 当前输入或短窗口是否已足够 |
 | `memory.ledger` | 规则将经历、关系、主观承诺写成结构化记录；按标签检索 | 便宜且可解释的账本能否驱动行为 |
-| `memory.stream-reflection` | 观察流＋相关/新近/重要度排序＋证据化反思 | 反思与检索是否增加跨场景理解 |
+| `memory.stream-reflection` | 观察流 + 相关/新近/重要度排序 + 证据化反思 | 反思与检索是否增加跨场景理解 |
 | `memory.layered-hybrid` | 分型容量、生命周期、核心块及显式组合 | 多层组合的收益是否覆盖复杂度和费用 |
 
-`none` 可配无历史 context 的诊断 preset，或配有限会话窗口的主基线；窗口属于 context，不是 none 偷藏长期状态。固定当前投影、身份与窗口后再比较其他 memory 实现。
+`none` 可配无历史 context 的诊断 preset（baseline-current），或配有限会话窗口的主基线（baseline-window）；窗口由 context 管理，none 不保留长期状态。固定当前投影、身份与窗口后再比较其他 memory 实现。
 
-ledger 的关系/前瞻输入必须有开关。若四组都从 context、工具或派系简报绕回完整历史账本，实验无效。当前可见正式合同可按同一规则提供，但不得附带全历史“人物应当记住的理由”。
+M1 的 structured-ledger preset 就是 ledger 的基线参数组合；ledger 的关系/前瞻输入必须有开关。若四组都从 context、工具或派系简报绕回完整历史账本，实验无效。当前可见正式合同可按同一规则提供，但不得附带全历史“人物应当记住的理由”。
 
 ## 5. 写入与整理流程
 
-```text
-已授权观察 → 幂等检查 → 结构化分类/显著度门控
-  → 候选经历/关系/主观承诺 → 来源与容量校验
-  → 原子提交 + durableThroughSeq
-  → 到期维护任务 → 衰减/合并/反思/核心块编译
-  → 证据/权限/版本校验 → CAS 发布 + derivedThroughSeq
-```
+写入流程是：已授权观察先做幂等检查与结构化分类、显著度门控，形成候选经历、关系或主观承诺并校验来源与容量，然后原子提交并推进 durableThroughSeq；到期维护任务再做衰减、合并、反思和核心块编译，最后经证据、权限与版本校验后 CAS 发布并推进 derivedThroughSeq。
 
 1. 观察以 observationId 去重；重投不能重复记仇、加信任或登记承诺。
 2. 即时游戏事实优先用规则映射；自由文本理解的结果仍是候选，不直接写入权威状态。
@@ -83,15 +77,15 @@ ledger 的关系/前瞻输入必须有开关。若四组都从 context、工具�
 5. 整理只处理截止 frontier 以前已知的资料；输出印象必须带证据，不允许新增证据中不存在的人物或机制事实。
 6. 对冲突先区分“新的事实状态”“不同人的说法”“旧认识被反证”，不能一律按最新文本覆盖。
 
-反思失败不推进代表成功派生的水位；任务保存 failed 状态与错误。正式实验按 readiness 判 failed/invalid，在线仅允许已声明且可见的 fallback，不自动换成 none。
+反思失败不推进 derivedThroughSeq 水位；任务保存 failed 状态与错误。正式实验按 readiness 判 failed/invalid，在线仅允许已声明且可见的 fallback，不自动换成 none。
 
 ## 6. 检索、使用与行为
 
-检索顺序：绑定冻结 revision → scope/获知时间过滤 → 目标对象与话题召回 → 分项排序 → 去重/多样性 → 条数与 token 截断 → 返回原始记录和来源。context 负责将记录变成最终段落。
+检索顺序：先绑定冻结 revision，再按 scope 和获知时间过滤，接着召回目标对象与话题，然后分项排序，做去重与多样性处理，按条数与 token 截断，最后返回原始记录和来源。context 负责将记录变成最终段落。
 
 stream-reflection 可使用 `score = wR × relevance + wT × recency + wI × importance`。归一化区间、时间基准、权重、候选池与并列排序必须固定；若使用随机扰动，使用宿主注入的带种子随机源。LLM seed 不保证模型重现相同输出。
 
-候选数、requested top-k、resolved top-k、最终入模数分别记录。命中但被 context 截断的记录不算“使用”；实际入模和输出合法引用分开计数，强化选择哪一种必须写入策略。
+候选数、requested top-k、resolved top-k、最终入模数分别记录。命中但被 context 截断的记录不算“使用”；实际入模数与输出合法引用数分开计数，把哪一种计数作为强化依据，必须在策略里写明。
 
 记忆包只影响 Agent 的输入及选择，不直接扣资源。例：岑雁回忆玩家曾临阵撤退，提出“先交担保再护送”；world authority 校验担保和护送是否可执行。接受/拒绝不能全部由固定规则决定后只让模型改写台词。
 
@@ -142,7 +136,7 @@ memory:
 
 审计记录保留用于研究，不属于 NPC 可读记忆；memory TTL 不能删除模型档案或世界事实。由来源权限合成的摘要只能按保守范围传播，公开输出还要由 speech context 重新过滤。
 
-切换记忆模块新建 run/branch，并明确冷启动、从合法历史重建或迁移。重建只消费该角色在切换点之前获准感知的观察；共享20 个 gameplay Agent的总激活配额，满额时暂停在线后逐分支执行，不能隐藏新增整理 Agent。
+切换记忆模块新建 run/branch，并明确冷启动、从合法历史重建或迁移。重建只消费该角色在切换点之前获准感知的观察；受全平台 20 个 gameplay Agent 总激活配额的约束，满额时先暂停在线运行，再逐分支执行，不能隐藏新增的整理 Agent。
 
 ## 10. 验收用例
 

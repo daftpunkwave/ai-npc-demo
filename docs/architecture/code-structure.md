@@ -108,7 +108,7 @@ ai-npc-demo/
     models/                      # connections + models
     mounts/                      # modelId + agentIds + purposes
     toolsets/                    # 工具集与 binding 模板
-    settings-presets/            # 玩家可选的展示/测试 preset
+    settings-presets/            # 展示偏好与 preset 申请入口
   content/
     lore/                        # 版本化世界观
     maps/                        # 节点、道路与通行数据
@@ -131,7 +131,7 @@ ai-npc-demo/
   docs/
 ```
 
-这是职责边界，不要求每个目录立即成为 workspace 包。具备真实独立依赖、测试或替换价值的模块再成为包；内部零逻辑转发层不形成新包。
+这是职责边界，不要求每个目录马上变成 workspace 包。具备真实独立依赖、测试或替换价值的模块再成为包；内部零逻辑转发层不形成新包。
 
 ## 2. 三个宿主，三个组合根
 
@@ -141,9 +141,9 @@ ai-npc-demo/
 | `apps/client` | `host/module-catalog.ts` + `host/bootstrap.tsx` | client 模块、contracts/kernel/client-sdk/client-protocol | Node 内置模块、数据库、密钥、server 模块实现 |
 | `apps/console` | `host/module-catalog.ts` + `host/bootstrap.tsx` | console 模块、contracts/kernel/client-sdk/client-protocol | 服务端对象、直接数据库/模型连接；玩家域私有投影 |
 
-每个宿主只有一个实例级 registry；模块通过显式 import 清单登记，禁止文件系统扫描自动执行、禁止模块 import 时向全局 Map 自注册。三个组合根共享解析算法，但不共享进程内对象。
+每个宿主只有一个实例级 registry；模块通过显式 import 清单登记，禁止文件系统扫描自动执行，也禁止模块在 import 时向全局 Map 自注册。三个组合根共享解析算法，但不共享进程内对象。
 
-`apps/server` 的 console 静态资源只做挂载与权限/缓存策略；console 前端仍是独立构建产物，由 server 的 HTTP 路由提供，不把 React 组件编译进 server 业务代码。
+`apps/server` 对 console 静态资源只做挂载以及权限和缓存策略；console 前端仍然是独立的构建产物，由 server 的 HTTP 路由提供，不把 React 组件编译进 server 业务代码。
 
 ## 3. 模块目录约定
 
@@ -164,34 +164,34 @@ modules/server/agent/memory/ledger/
 ```
 
 - `src/index.ts` 的公开导出只有模块定义、port 实现工厂与公开配置类型；不 deep export 内部文件。
-- 模块不得在 import 阶段启动后台循环、读环境变量、创建数据库连接或注册全局单例；这些在 `create/start` 中由宿主注入。
+- 模块不得在 import 阶段启动后台循环、读环境变量、创建数据库连接或注册全局单例；这些动作只能放在 `create/start`，由宿主注入。
 - 有状态模块声明 `stateSchemaVersion`、scope、导出/导入与迁移路径；无状态模块明确声明无状态。
-- 模块的 configSchema 随模块维护，跨模块 DTO/port 归 `contracts`；禁止模块自建近似共享类型。
-- 模块的 UI 贡献是 ModuleDefinition 的一部分（slot、requiredCapabilities、order），不是第二套注册系统。
+- 模块的 configSchema 随模块维护，跨模块 DTO/port 归 `contracts`；禁止模块自建近似的共享类型。
+- 模块的 UI 贡献记录在 ModuleDefinition 里（slot、requiredCapabilities、order），不再另设一套注册系统。
 
 ## 4. 包与文件规则
 
-`contracts` 是事件信封、命令、receipt、观察、记忆、context、模型请求、ToolDefinition/ToolBinding、模块描述符、装配与双端协议的唯一定义处。各模块不能定义字段略有差别的“内部公共 DTO”。
+`contracts` 是事件信封、命令、receipt、观察、记忆、context、模型请求、ToolDefinition/ToolBinding、模块描述符、装配和双端协议的唯一定义处。各模块不能定义字段略有差别的“内部公共 DTO”。
 
 `kernel` 只放 realm 无关的宿主机制：注册表、能力图、生命周期、slot、hook 排序、配置解析、manifest 摘要。它不得 import 任何 `modules/*`、`apps/*`、游戏内容、供应商 SDK 或具体 UI。
 
 `authority` 放服务端固定的命令网关、事务/outbox 协调、幂等与 fencing 机制；`world` 规则本身是模块，`authority` 不包含水闸、资源或协议结算。
 
-`agent-runtime` 保留唯一 turn 管线与调度协调。memory、context、compression、decision 等模块只实现阶段策略；不得在另一目录复制 loop 再让配置选择两套不一致的系统。
+`agent-runtime` 保留唯一的 turn 管线与调度协调。memory、context、compression、decision 等模块只实现阶段策略；不能在另一个目录里复制一份 loop，再让配置在两套不一致的系统之间选。
 
-`observability` 提供 trace/evidence 协议与 span 辅助；具体存储/查询由 `platform.observability` 模块提供，控制台页面由 `console.observability` 模块贡献。三者不能互相 import 实现。
+`observability` 提供 trace/evidence 协议与 span 辅助；具体存储/查询由 `platform.observability.sqlite` 模块提供，控制台页面由 `console.observability.standard` 模块贡献。三者不能互相 import 实现。
 
 `client-protocol` 只含类型化传输与投影 reducer 协议；场景/UI 模块只消费授权投影，不拼装第二份世界。
 
 ## 5. 显式装配与配置
 
-`config/assemblies` 是数据，不是代码：每个文件描述 server/client/console 三个 realm 的模块选择、能力绑定、配置块引用与可替换项。装配解析器由 `platform.module-admin` 与宿主共同提供，在启动/run 创建时生成 resolved manifest。
+`config/assemblies` 只存数据：每个文件描述 server/client/console 三个 realm 的模块选择、能力绑定、配置块引用与可替换项。装配解析器由 `platform.module-admin` 与宿主共同提供，在启动或创建 run 时生成 resolved manifest。
 
-`config/profiles` 只描述 Agent 策略子配方（perception/memory/context/compression/tool-view/decision/scheduling 等），不选择游戏规则、客户端渲染器或控制台页面。`config/rosters` 只引用 profile/toolset 与身份数据，不复制 provider/model 参数。
+`config/profiles` 只描述 Agent 策略子配方（perception/memory/context/compression/tool-view/decision 等），不选择游戏规则、客户端渲染器或控制台页面；调度参数属 run 作用域，放在场景 profile 与实验 variant 中。`config/rosters` 只引用 profile/toolset 与身份数据，不复制 provider/model 参数。
 
 `config/models` 与 `config/mounts` 一起定义集中模型池；`config/toolsets` 引用共享 ToolDefinition 与 binding 模板。三者分别由 [模型池](../agent/model-pool.md) 与 [工具](../agent/tools.md) 维护。
 
-`content` 与 `config` 都由 schema 校验；世界背景、地图、角色与事件卡是内容版本，不能藏在 module 源码里。新增内容不应要求改宿主。
+`content` 与 `config` 都由 schema 校验；世界背景、地图、角色与事件卡是内容版本，不能藏在 module 源码里。新增内容不应该要求改宿主。
 
 ## 6. 新增模块的工作流
 
@@ -239,7 +239,7 @@ modules/server/agent/memory/ledger/
 - 普通策略自行创建数据库连接、模型 client、随机源或未登记网络调用；
 - 模块 ID/能力/版本重复、能力闭包缺口、实例作用域非法、slot 冲突。
 
-检查失败优先修正 owning module 与依赖方向，不增加宽泛 allowlist、不导出整个内部目录、不关闭 schema 校验。这些脚本是待实现交付项，不能把本文目录当成已有 CI。
+检查失败时优先修正 owning module 和依赖方向，不加宽泛的 allowlist、不导出整个内部目录、不关闭 schema 校验。这些脚本是待实现的交付项，不能把本文的目录当成已有的 CI。
 
 ## 8. 测试放置与验收证据
 
@@ -249,9 +249,9 @@ modules/server/agent/memory/ledger/
 | `tests/contract` | 跨域 schema、port、生命周期、scope、迁移、effective 参数 |
 | `tests/integration` | 事务/outbox/inbox、模型池、工具绑定、fencing、恢复与取消竞态 |
 | `tests/catalog` | 模块目录快照、能力闭包、冲突、realm 兼容、装配 diff |
-| `tests/scenarios` | 单玩家多轮交涉、承诺后果、20 Agent 运行与隔离变体对比 |
+| `tests/scenarios` | 单玩家多轮交涉、承诺后果、20 个 Agent 运行与隔离变体对比 |
 | `tests/e2e` | 两个端口启动、玩家关键路径、控制台页面权限与模型挂载 |
 
-一次扩展的验收包包含：源码 revision、锁文件、内容版本、冻结 manifest、输入脚本、断言结果、授权 artifact、失败记录与实测限制。每个实验 run 独占 branch；在线与实验活动身份合计不超过 20。
+一次扩展的验收包包含源码 revision、锁文件、内容版本、冻结 manifest、输入脚本、断言结果、授权 artifact、失败记录和实测限制。每个实验 run 独占 branch；在线与实验的活动身份合计不超过 20。
 
 完整交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)；观测字段与查询权限见 [可观测性](../platform/observability.md)。

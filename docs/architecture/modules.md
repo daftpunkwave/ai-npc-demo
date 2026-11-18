@@ -1,16 +1,16 @@
 # 全职能模块职责与依赖边界
 
-> 状态：目标设计，尚未实现。本文拥有模块职责、依赖和数据所有权；插件机制见 [plugins](plugins.md)，装配见 [composition](composition.md)，目录见 [code-structure](code-structure.md)。
+> 状态：目标设计，尚未实现。本文定义模块职责、依赖与数据所有权；插件机制见 [plugins](plugins.md)，装配见 [composition](composition.md)，目录见 [code-structure](code-structure.md)。
 
 ## 1. 设计原则：宿主保留，职能可换
 
 整个游戏与研究平台采用同一套模块机制，不只替换 memory。游戏规则、地图、时钟、行动、存档、剧情、Agent、模型、工具、网络、渲染、界面、设置、观测、评估和调试都通过明确的 port 接入宿主。
 
-这里的“严格脱耦”是实现不互相依赖、状态不隐式共享、交互仅使用版本化契约。必要的协议依赖明确声明，无法也不应消除所有交互。本项目在权衡时**优先解耦**：当“模块内高内聚”会诱使把两个可独立替换的职能塞进一个大模块时，优先拆开并显式声明依赖；内聚只作为模块内部的组织原则，不为追求零引用复制逻辑。用户所说的“耦合优先于内聚”按此取舍执行，不是鼓励模块互相依赖。
+这里的“严格解耦”指实现不互相依赖、状态不隐式共享、交互只用版本化契约。必要的协议依赖明确声明，也不可能消除所有交互。权衡时本项目优先解耦：如果“模块内高内聚”会诱使把两个可独立替换的职能塞进一个大模块，就拆开并显式声明依赖。内聚只是模块内部的组织原则，不该为了少写几行引用而复制逻辑。需求里说的“耦合优先于内聚”，在本项目里就是这条取舍，即优先保证低耦合和可替换性，不是鼓励模块互相依赖。
 
 宿主类似保留接口的主机；职能模块类似遵守协议的设备。接口稳定不意味着每个设备必须同时在线，也不意味着有状态服务可以任意热拔。缺少必需能力时，组合应拒绝启动或明确停止。
 
-首版仍为单玩家、统一世界观、TypeScript 全栈、2.5D；标准 20 Agent 为 5 人类战略、3 非人类势力战略、12 角色。玩法范围与配额由 [全局基线](../00-scope-and-invariants.md) 维护。
+首版仍为单玩家、统一世界观、TypeScript 全栈、2.5D；标准 20 个 Agent 由 5 个人类派系战略 Agent、3 个非人类势力战略 Agent 和 12 个角色组成。玩法范围与配额由 [全局基线](../00-scope-and-invariants.md) 维护。
 
 ## 2. 最小宿主保留什么
 
@@ -40,7 +40,7 @@ kernel 中不得出现角色姓名、派系 ID、SLG 资源、memory 类型、�
 | game/agreements | 提案、确认、履约与改约规则 | 自动替所有角色回忆合同 |
 | game/scenario | 局势卡、前置条件、受众与补偿计划 | 不可见的强制剧情胜负 |
 | game/save | 一致检查点、导入/迁移协调 | 任意复制正在写的数据库文件 |
-| agent/runtime | mailbox、turn 管线、模型/工具受控调用 | 任一 memory/model 的内部实现 |
+| agent/runtime（宿主固定，不在 catalog） | mailbox、turn 管线、模型/工具受控调用 | 任一 memory/model 的内部实现 |
 | agent/cognition | 感知、记忆、context、压缩、decision、调度 | 全量世界数据库、相邻模块深层文件 |
 | agent/models | 集中 models/mounts、purpose 路由、共享资源限额 | 角色人格、个人会话共享 |
 | agent/tools | 共享定义、主体 binding、执行与 receipt | 绕过世界 command authority |
@@ -66,7 +66,7 @@ kernel 中不得出现角色姓名、派系 ID、SLG 资源、memory 类型、�
 | apps/server 的组合根 | 服务端 module 的公开定义、authority/agent-runtime 与通用宿主 |
 | apps/console 的组合根 | 控制台 module 的公开定义、client-sdk 与通用宿主；不持有服务端对象 |
 
-模块不得 import 另一个模块的实现，不得跨目录 deep import，不得通过全局 service locator 偷拿依赖。需要能力时在 requires 中声明 typed port，由所属宿主注入。requires 可以依赖 port，不能指定“调用某文件里的私有函数”。
+模块只能通过 requires 声明的 typed port 获得依赖；直接 import 另一个模块的实现、跨目录 deep import、通过全局 service locator 取依赖都不允许。requires 可以依赖 port，不能指定“调用某文件里的私有函数”。
 
 公共 DTO、port 和协议 schema 归 contracts；模块私有 configSchema 和内部类型归模块自身。新增参数不应迫使修改 kernel；新增公共语义才升级对应契约。避免把所有业务类型塞进一个巨型公共对象。
 
@@ -108,7 +108,7 @@ SDK/数据库/PixiJS 类型停在适配器内部，不能进入世界领域接�
 
 共享 ToolDefinition 实现一次，ToolBinding 按主体注册；共享 models 条目通过 mounts 解析，不复制 provider 参数。代码和只读定义可复用，可写执行状态不隐式共享。具体协议见 [工具](../agent/tools.md) 和 [模型池](../agent/model-pool.md)。
 
-实验 run 独占 branch。索引、缓存、后台任务、导出和 artifact 与主数据使用相同隔离规则，不仅隔离主表。换模块的状态准备发生在新分支或显式维护边界。
+实验 run 独占 branch。索引、缓存、后台任务、导出和 artifact 与主数据使用相同的隔离规则，不只隔离主表。换模块所需的状态准备发生在新分支或显式维护边界。
 
 ## 8. 替换验收必须覆盖游戏和界面
 

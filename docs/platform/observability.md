@@ -1,6 +1,6 @@
 # 可观测性与原始调用档案
 
-> 目标规范。本文拥有观测字段、调用归档、控制台与隐私规则；实验模式/指标由 [评估](evaluation.md) 维护。观测实现是可替换模块，但证据契约与采集位置属于宿主固定能力，不能随 provider 更换而丢失。
+> 目标规范。观测字段、调用归档、控制台与隐私规则以本文为准；实验模式与指标由 [评估](evaluation.md) 维护。观测实现是可替换模块，但证据契约与采集位置属于宿主固定能力，不能随 provider 更换而丢失。
 
 ## 1. 观测必须回答的问题
 
@@ -14,13 +14,13 @@
 
 ```text
 外部指令/内生事件
-  → 世界裁决与已提交事件
-  → 带权限的感知投影
-  → 记忆写入/更新
-  → 调度与决策轮次
-  → 记忆检索 → 上下文组装 → 压缩 → LLM 请求/响应
-  → 工具执行 → Agent 行动提案 → 规则接受/拒绝
-  → 新世界事件 → 后续感知
+  先经世界裁决，产生已提交事件
+  再形成带权限的感知投影
+  随后写入或更新记忆
+  进入调度与决策轮次
+  依次做记忆检索、上下文组装和压缩，发出 LLM 请求并接收响应
+  执行工具，形成 Agent 行动提案，由规则接受或拒绝
+  产生新世界事件，触发后续感知
 ```
 
 链路用结构化 ID 连接，不靠日志文本猜测。一个父事件可触发多个 NPC，使用 `causationIds` 和 span links 表达多因多果；`traceId` 只用于定位一次处理链，不承担世界排序或权限判断。
@@ -28,7 +28,7 @@
 | 层级 | 必须保留的关联字段 |
 |---|---|
 | 实验 | `experimentId`、`runId`、`worldId`、`branchId`、`scenarioId` |
-| 参与者 | `agentId`、`playerId`（如适用）、`controllerKind`、`controllerEpoch` |
+| 参与者 | `agentId`、`principalId`（如适用）、`controllerKind`（agent 或 human）、`controllerEpoch` |
 | 因果与顺序 | `eventId`、`worldSeq`、`causationIds`、`correlationId`、`traceId`、`spanId` |
 | 决策 | `turnId`、`attemptId`、`commandId`、`idempotencyKey` |
 | 证据 | `observationIds`、`memoryIds`、`contextArtifactId`、`llmCallId`、`toolCallIds` |
@@ -50,7 +50,7 @@
 | 行动 | 提案、引用证据、有效性、裁决、实际后果 | 口头承诺与执行差距 |
 | 整理 | 批次输入范围、读写水位、派生操作、证据校验、失败 | 异步记忆污染与整理漂移 |
 
-检索记录覆盖候选总数与筛选过程；大量候选可以归档分页展示，但不得只保存命中的 top-k 而丢失诊断所需依据。观测写入有界缓冲，写档失败必须使本次运行标记 `evidence-incomplete`，不能伪装成完整可复现实验。
+检索记录覆盖候选总数与筛选过程；大量候选可以归档分页展示，但不得只保存命中的 top-k 而丢失诊断所需依据。观测写入有界缓冲，写入档案失败必须使本次运行标记 `evidence-incomplete`，不能伪装成完整可复现实验。
 
 ### 3.1 LLM 调用档案
 
@@ -76,39 +76,38 @@
 
 ## 4. 服务端控制台的观测页
 
-观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由/panel slot，通过授权控制台 API 读取 `platform.observability` 模块归档的数据。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
+观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
 
-1. **运行总览**：分支、模式、配置 hash、20 个 Agent 状态、controller、当前水位、失败与预算。
-2. **世界事件时间线**：按玩家/Agent/地点筛选，区分公开事实、观察投影和研究员真值。
-3. **Agent 检查器**：身份与主张、当前可见世界、记忆版本、关系来源、承诺的主观认知。
-4. **调用检查器**：有序上下文、原始请求/响应、工具完整结果与 toolView 结果并排查看。
-5. **记忆差异**：写入、合并、失效、衰减及淘汰前后差异，逐层追到来源事件。
-6. **分支对比**：同一决策点并排展示输入差异、行动差异、后续世界差异与指标分母。
-7. **模块与装配**：本 run 的 server/client/console 模块、版本、config hash 与 effective 参数；换模块后的差异可并排。
+1. 运行总览：分支、模式、配置 hash、20 个 Agent 状态、controller、当前水位、失败与预算。
+2. 世界事件时间线：按玩家/Agent/地点筛选，区分公开事实、观察投影和研究员真值。
+3. Agent 检查器：身份与主张、当前可见世界、记忆版本、关系来源、承诺的主观认知。
+4. 调用检查器：有序上下文、原始请求/响应、工具完整结果与 toolView 结果并排查看。
+5. 记忆差异：写入、合并、失效、衰减及淘汰前后差异，逐层追到来源事件。
+6. 分支对比：同一决策点并排展示输入差异、行动差异、后续世界差异与指标分母。
+7. 模块与装配：本 run 的 server/client/console 模块、版本、config hash 与 effective 参数；换模块后的差异可并排。
 
-每个列表能跳转至上一层和下一层证据。配置面板必须展示“下次新运行生效”或具体生效边界；正式单玩家世界的玩家不拥有实验配置写权限。后台运营席位也是 gameplay Agent 的控制者，不承担评估裁判职责。调试页面（`console.debug.standard`）可以单步/重放与查看预算，但不能把研究真值注入角色知识，调试覆盖产生污染标记。
-
+每个列表能跳转至上一层和下一层证据。配置面板必须展示“下个运行生效”或具体生效边界；正式单玩家世界的玩家不拥有实验配置写权限。后台运营席位也是 gameplay Agent 的控制者，不承担评估裁判职责。调试页面（`console.debug.standard`）可以单步/重放与查看预算，但不能把研究真值注入角色知识，调试覆盖产生污染标记。
 
 ## 5. 模型池与共享工具的观测
 
-modelId、connectionId、modelConfigHash、purpose、resolved mount 与实际供应商模型标识同时记录。一个模型挂载多个角色时，可按模型聚合费用/限流，也可按角色定位每份独立 context。凭据不进入档案；共享modelId不代表调用输入相同。
+modelId、connectionId、modelConfigHash、purpose、resolved mount 与实际供应商模型标识同时记录。一个模型挂载多个角色时，可按模型聚合费用/限流，也可按角色定位每份独立 context。凭据不进入档案；共享 modelId 不表示调用输入相同。
 
-每次工具调用记录 toolId/version（定义身份）、bindingId、主体/目标、effective permissions、operationId、command receipt，以及原始完整结果/模型可见结果两个 artifact。相同definition被多个角色复用时，不能只按工具名混成一条无法区分权限的日志。
+每次工具调用记录 toolId/version（定义身份）、bindingId、主体/目标、effective permissions、operationId、command receipt，以及原始完整结果/模型可见结果两个 artifact。相同 definition 被多个角色复用时，不能只按工具名混成一条无法区分权限的日志。
 
-记录 Agent 激活/休眠配额、全模型池排队、账号限流、各purpose预算、取消和fencing拒绝，避免把队列等待误判为模型慢或记忆慢。真实耗时与worldTick分开。
+记录 Agent 激活/休眠配额、全模型池排队、账号限流、各 purpose 预算、取消和 fencing 拒绝，避免把队列等待误判为模型慢或记忆慢。真实耗时与 worldTick 分开。
 
 模块级调用也必须进入同一宿主 trace：模块创建的模型请求、存储事务、工具执行、渲染/页面数据请求都要带 traceId/spanId 与模块 ID/version，不能在模块内部开未记录的外部调用。替换观测模块只改变存储与查询 provider，不改变采集点；替换其他模块不能使其调用从证据链消失。
 
 ## 6. 证据完整性与排障流程
 
-从一条行为先确认世界裁决，再沿source向前检查：主体是否看见→是否写入→是否仍有效→是否召回→是否入模→模型是否使用→工具是否成功。不能仅凭最终台词判定memory故障。
+从一条行为先确认世界裁决，再沿 source 向前检查：主体是否看见、是否写入、是否仍有效、是否召回、是否入模、模型是否使用、工具是否成功。不能只凭最终台词判定 memory 故障。
 
-正式实验要求最终模型请求、响应、必要工具结果与裁决引用完整。观测存储失败使run进入evidence-incomplete，停止成功评分；在线可继续规则任务但必须显示故障。高频渲染帧可采样，关键证据不可采样。
+正式实验要求最终模型请求、响应、必要工具结果与裁决引用完整。观测存储失败使 run 进入 `evidence-incomplete`，停止成功评分；在线可继续规则任务但必须显示故障。高频渲染帧可采样，关键证据不可采样。
 
-request/response保存模型真实返回内容，不声称拥有隐藏chain-of-thought；策略引用与语言理由只作可核验陈述，不能被当作内部推理的完整证明。
+request/response 保存模型真实返回内容，不声称拥有隐藏的 chain-of-thought；策略引用与语言理由只作可核验陈述，不能被当作内部推理的完整证明。
 
-每个界面明确真值视角、Agent视角与玩家视角。研究员查看真值不产生InformationShared，不改变角色知识，也不能经后台席位自动下发真相。
+每个界面明确真值视角、Agent 视角与玩家视角。研究员查看真值不产生 InformationShared，不改变角色知识，也不能经后台席位自动下发真相。
 
 ## 7. 验收
 
-从任意一次角色拒绝可定位到其观察、记忆revision、最终请求与规则结果；同模型不同Agent不混档；同工具不同binding能区分；失败重试与未知usage仍进入费用/样本统计；普通玩家和运营席位无权访问未授权原文。替换 memory/context/renderer/控制台页面后，同一 traceId 的证据链仍完整；控制台页面权限与 API 权限分开验证。
+从任意一次角色拒绝可定位到其观察、记忆 revision、最终请求与规则结果；同模型不同 Agent 不混档；同工具不同 binding 能区分；失败重试与未知 usage 仍进入费用/样本统计；普通玩家和运营席位无权访问未授权原文。替换 memory/context/renderer/控制台页面后，同一 traceId 的证据链仍完整；控制台页面权限与 API 权限分开验证。

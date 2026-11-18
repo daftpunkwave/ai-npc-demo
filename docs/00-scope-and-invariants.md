@@ -1,6 +1,6 @@
 # 首版范围与全局不变量
 
-> 目标规范 v0.3｜2026-11-18。本文是范围、命名和数量的唯一维护入口；其他文档定义各自模块的细节。目前只有文档，没有已实现的游戏、Agent 运行时或双端服务。
+> 目标规范 v0.3，2026-11-18。范围、命名和数量以本文为准；各模块的细节由对应文档维护。目前只有文档，没有已实现的游戏、Agent 运行时或双端服务。
 
 ## 1. 当前范围
 
@@ -14,22 +14,22 @@
 | 世界 | 一个共享世界观版本；一个正式世界状态，实验在隔离分支运行 |
 | 开局 | 玩家选择五个人类派系之一，作为该派系的灰港特派员 |
 | 表现 | TypeScript 全栈、2.5D 俯视等距地图、React 界面、独立场景适配层 |
-| Agent | 标准完整 roster 为 20：5 人类派系战略 + 3 非人类势力战略 + 12 角色 |
-| NPC | 12 位有独立人格与记忆的可交互角色；战略 Agent 不额外冒充十二位地图角色 |
-| 上限 | 同一部署同时激活的 gameplay Agent 总数 ≤20，包含正式世界和实验 |
+| Agent | 标准完整 roster 为 20：5 个人类派系战略 Agent、3 个非人类势力战略 Agent、12 个角色 |
+| NPC | 12 位有独立人格与记忆的可交互角色；战略 Agent 不额外冒充 12 位地图角色 |
+| 上限 | 同一部署同时激活的 gameplay Agent 总数不超过 20，包含正式世界和实验 |
 | 模型 | 集中定义 models，再通过 mounts 将多个 Agent 挂载到同一模型 |
 | 行为 | 共享 ToolDefinition 实现一次；ToolBinding 按角色注册引用、约束与授权 |
 | 运营 | 三个非人类势力（巡裔、根庭、泊星者）可独立选择 agent/human 控制；控制台从 `:3000/console` 操作 |
 | 研究 | 服务端控制台提供可观测、可评估、可调试内容；玩家客户端只获得玩家投影与必要设置 |
 | 首版不含 | 多人玩家联机、充值/活动、复杂战斗数值、第三方不可信插件执行 |
 
-20 个身份是内容/系统上限，不是 20 个同时推理请求。首个开发切片允许只激活三个核心角色，完整首版需覆盖标准 20 身份及 12 角色；必须明确所用 roster preset，不能拿三角色切片冒充完整交付。
+20 个身份是内容与系统上限，不等于 20 个并发推理请求。首个开发切片可以只激活三个核心角色，完整首版要覆盖标准 20 个身份和 12 个角色；必须写明所用的 roster preset，不能拿三个角色切片冒充完整交付。
 
-满 20 身份运行时，闭环实验先维护暂停正式世界、释放激活名额，再逐分支执行；不额外启动一套 20 Agent。快照、审计回放和普通规则任务不算自主身份，辅助模型调用仍计资源/费用，不得借此创建隐藏子 Agent。
+满 20 个身份运行时，闭环实验先暂停正式世界、释放激活名额，再逐个分支执行，不额外启动一套 20 个 Agent。快照、审计回放和普通规则任务不算自主身份；辅助模型调用仍然计入资源和费用，不能借此创建隐藏子 Agent。
 
 ## 2. 权威边界
 
-1. 世界规则拥有 authority：资源、通行、权限、时钟、伤势、合同与行动结果。
+1. 世界权威侧拥有 authority：资源、通行、时钟、伤势、合同与行动结果；权限由 `platform.access-policy` provider 裁决。
 2. Agent 拥有 policy：感知后的解释、记忆、选择、协商、行动提案与台词意图。
 3. 共享 lore 不等于共享秘密。每个 Agent 只获得其授权和感知范围内的信息。
 4. Agent 不能写世界数据库；所有副作用经 tool gateway 和标准 command handler。
@@ -46,16 +46,16 @@ model 连接、型号、采样与限额集中在模型池；roster 不复制 pro
 
 通用 purpose 为 decision、speech、memory-maintenance、compression、embedding；只为实际启用的能力要求绑定。evaluation 使用独立评估主体/配置，不混入 gameplay roster，不参与游戏行动。具体 schema 由 [模型池](agent/model-pool.md) 与 [配置](platform/configuration.md) 维护。
 
-每个实验 run 独占 branchId，运行时绑定冻结 manifest：三 realm 模块、内容、roster/profile、模型挂载、工具授权与测试设置。换 memory、模型挂载、工具授权、内容版本或游戏规则必须新 run/后继分支；不能修改在途 turn 的配置。
+每个实验 run 独占 branchId，运行时绑定冻结 manifest：三 realm 模块、内容、roster/profile、模型挂载、工具授权与实验设置。换 memory、模型挂载、工具授权、内容版本或游戏规则必须新 run/后继分支；不能修改在途 turn 的配置。
 
 memory 基线统一为：
 
 | 组 | 模块 / preset |
 |---|---|
-| M0 | memory.none；baseline-window 为主要基线，baseline-current 为诊断基线 |
-| M1 | memory.ledger / structured-ledger |
-| M2 | memory.stream-reflection / stream-reflection |
-| M3 | memory.layered-hybrid / layered-hybrid |
+| M0 | `agent.memory.none`；baseline-window 为主要基线，baseline-current 为诊断基线 |
+| M1 | `agent.memory.ledger` / structured-ledger |
+| M2 | `agent.memory.stream-reflection` / stream-reflection |
+| M3 | `agent.memory.layered-hybrid` / layered-hybrid |
 
 其余槽先固定合法基线。上下文、压缩、工具视图、感知、调度、模型、游戏规则与客户端 UI 是后续独立实验轴；首版不要求穷举全部组合。
 
@@ -87,7 +87,7 @@ memory 基线统一为：
 
 ## 5. 验收与诚实性
 
-架构必须可插拔、可定位、可对比；游戏必须让记忆影响行动、关系和承诺，而非只生成更长台词。失败、降级、未应用选项和成本未知都显式记录。任何数量、阈值、预算、时长都是初始配置，尚无实测最优结论。
+架构要可插拔、可定位、可对比；记忆要影响行动、关系和承诺，不能只让台词变长。失败、降级、未应用选项和成本未知都要显式记录。所有数量、阈值、预算和时长都是初始配置，尚无实测最优结论。
 
 首版验收必须至少证明：换 game 规则模块、换 client UI 模块、换 agent 认知模块、换 console 页面各一次，只改模块、装配与配置；两个端口之外无监听；玩家/控制台权限不串；缺必需模块时组合拒绝启动。只增加目录、包或接口数量不算模块化证据。
 

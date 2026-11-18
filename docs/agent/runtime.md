@@ -1,16 +1,16 @@
 # Agent Runtime：事件到行为的宿主管线
 
-> 状态：待实现规范。TypeScript 全栈、Node 模块化单体、SQLite 单写者；本文的状态、接口和任务名称都是目标契约。
+> 状态：待实现规范。TypeScript 全栈、Node 模块化单体、SQLite 单写者；状态、接口和任务名称都是目标契约。
 
 ## 1. 运行边界
 
-首版是单玩家、单权威世界；玩家从五个人类派系选择立场。世界观统一，动态知识按主体授权，选择派系不会复制世界真值或 NPC 人格。
+首版是单玩家、单权威世界；玩家从五个人类派系中选择立场。世界观统一，动态知识按主体授权，选择派系不会复制世界真值或 NPC 人格。
 
 完整 roster 为 5 个人类派系战略 Agent、3 个非人类势力战略 Agent、12 个角色 Agent，共 20 个。在线世界与实验分支的活跃身份合计不得超过 20；20 个身份不等于同时发出 20 个模型请求。
 
-完整 20 Agent 实验需要暂停在线运行，再逐分支执行。休眠快照不占活跃名额，恢复前原子预留名额；policy、speech 和记忆整理属于同一身份的任务，不额外创造 Agent。
+完整 20 个 Agent 实验需要暂停在线运行，再逐分支执行。休眠快照不占活跃名额，恢复前原子预留名额；policy、speech 和记忆整理属于同一身份的任务，不额外创造 Agent。
 
-Runtime 负责推进统一管线、预算、租约和证据；模块（插件）实现各阶段策略。世界服务独立裁决行动，renderer 只显示结果，模型响应不能直接改 SQLite 世界状态。感知、记忆、上下文、压缩、工具视图、决策与调度都通过与其他职能相同的 ModuleDefinition/catalog 注册，只是实例作用域为 agent；runtime 本身是宿主固定管线，不在模块目录中。
+Runtime 负责推进统一管线、预算、租约和证据；模块（插件）实现各阶段策略。世界服务独立裁决行动，renderer 只显示结果，模型响应不能直接改 SQLite 世界状态。感知、记忆、上下文、压缩、工具视图与决策都通过与其他职能相同的 ModuleDefinition/catalog 注册，实例作用域为 agent；调度作用在整次 run 上，实例作用域为 run。runtime 本身是宿主固定管线，不在模块目录中。
 
 配套边界见 [架构总览](../architecture/overview.md)、[模块责任](../architecture/modules.md) 与 [角色 roster](../game/characters.md)。
 
@@ -73,19 +73,19 @@ world action 可以仍为 pending，而对应 turn 已结束；任务到达或�
 | 阶段 | 输入与产物 | 宿主关口 |
 |---|---|---|
 | 1 冻结 | trigger、时钟、控制权、profile、inputFrontier | 身份/分支有效，激活名额和租约可用 |
-| 2 感知 | 授权投影 → AgentObservation | ACL 先于 perception，记录真实获知时间 |
-| 3 等待记忆 | 必需水位 → 不可变 memory revision | 不读未来；不把过期索引当就绪 |
-| 4 检索 | 话题、对象、预算 → 带来源记忆包 | scope、来源和受众校验 |
-| 5 组上下文 | 身份、当前观察、记忆、合法窗口 → segments | 显式顺序与版本，不从旁路补历史 |
-| 6 视图处理 | 工具结果、分段 → tool-view/压缩视图 | 保留原件、工具配对与传播限制 |
-| 7 决策循环 | 最终归档请求 → 工具调用或候选决策 | 请求窗口、输出 schema、模型能力与调用预算 |
-| 8 工具/命令 | 提案 → tool result / receipt | 同一授权和命令 pipeline，副作用幂等 |
-| 9 安全对白 | 可披露素材、意图、receipt → 对白候选 | 独立调用、受众校验、持久化后才展示 |
-| 10 结算 | 实际入模引用、终态、消耗 → 使用记录 | 不把候选召回当实际利用，不抹除失败 |
+| 2 感知 | 授权投影解析为 AgentObservation | ACL 先于 perception，记录真实获知时间 |
+| 3 等待记忆 | 必需水位到达后绑定不可变 memory revision | 不读未来；不把过期索引当就绪 |
+| 4 检索 | 话题、对象、预算产出带来源记忆包 | scope、来源和受众校验 |
+| 5 组上下文 | 身份、当前观察、记忆、合法窗口组装为 segments | 显式顺序与版本，不从旁路补历史 |
+| 6 视图处理 | 工具结果、分段生成 tool-view/压缩视图 | 保留原件、工具配对与传播限制 |
+| 7 决策循环 | 最终归档请求转为工具调用或候选决策 | 请求窗口、输出 schema、模型能力与调用预算 |
+| 8 工具/命令 | 提案得到 tool result / receipt | 同一授权和命令 pipeline，副作用幂等 |
+| 9 安全对白 | 可披露素材、意图、receipt 生成对白候选 | 独立调用、受众校验、持久化后才展示 |
+| 10 结算 | 实际入模引用、终态、消耗写入使用记录 | 不把候选召回当实际利用，不抹除失败 |
 
 阶段 7 与 8 构成有界循环：决策产生工具调用，工具结果回到下一轮决策；候选决策可来自任一轮，但只有最终有效 attempt 能提交命令。阶段 6 的 tool-view/压缩处理的是已归档的工具结果或上下文区间，不是新的一轮模型决策。其余阶段顺序固定，不能被模块重排。
 
-这些阶段由同一 runtime 调度；decision 插件不能另起私有 loop、直接调用供应商 SDK 或跳过最后 guard。transform 可改候选，observe 只读，最终权限和预算裁决固定执行。
+这些阶段由同一 runtime 调度；decision 插件不能另起私有 loop、直接调用供应商 SDK 或跳过最终 guard。transform 可改候选，observe 只读，最终权限和预算裁决固定执行。
 
 ## 6. 记忆、水位与冻结视图
 
@@ -163,9 +163,9 @@ worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不�
 | 控制权/租约过期 | 旧结果只归档，不得执行命令或发布对白 |
 | 证据归档失败 | 标记 evidence-incomplete；不能宣称可重现正式实验 |
 
-审计重放使用已记录模型/工具产物；开环写工具只返回 proposal；闭环在独占分支真正裁决。三种模式复用同一管线与 guard，差别在明示执行 adapter。
+审计重放使用已记录模型/工具产物；开环写工具只返回 proposal；闭环在独占分支真正裁决。三种模式复用同一管线与 guard，只在显式执行的 adapter 上有区别。
 
-快照先 quiesce：暂停新命令、fence 在途 turn、排空短提交、冻结输入、等待必要水位、冻结维护发布。恢复点包含未完成操作与任务，不仅复制世界表。
+快照前先静默（quiesce）：暂停新命令、fence 在途 turn、排空短提交、冻结输入、等待必要水位、冻结维护发布。恢复点包含未完成操作与任务，不仅复制世界表。
 
 运行与恢复细则见 [事件与状态](../architecture/events-and-state.md)、[运营控制](../platform/operations.md) 和 [评估协议](../platform/evaluation.md)。
 
@@ -184,6 +184,6 @@ worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不�
 
 ## 12. 参考边界
 
-借鉴 deepseek-harness 的 [运行与事件分域](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/docs/architecture.md) 和 [可重建 session log](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/README.md)。世界事务、NPC 私有知识、双阶段对白和 20 身份调度是本平台设计，不是对参考仓库既有游戏能力的描述。
+借鉴 deepseek-harness 的 [运行与事件分域](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/docs/architecture.md) 和 [可重建 session log](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/README.md)。世界事务、NPC 私有知识、双阶段对白和 20 个身份调度是本平台设计，不是对参考仓库既有游戏能力的描述。
 
 插件生命周期、最终 guard 和可支持实验能力统一遵循 [插件规范](../architecture/plugins.md)；没有完成实现与运行验证前，不把本文状态机或故障行为写成已上线能力。
