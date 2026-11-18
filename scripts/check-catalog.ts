@@ -3,8 +3,7 @@
  * 通过包公开入口加载组合根，避免依赖构建产物。
  * 禁止启动服务、打开存储或修改任何模块。
  */
-import { readdirSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { assemblyDescriptorSchema } from "@ai-npc/contracts";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
@@ -18,19 +17,26 @@ for (const definition of definitions) {
   ids.add(definition.id);
 }
 
-const assemblyDir = join(process.cwd(), "config/assemblies");
-if (existsSync(assemblyDir)) {
-  for (const file of readdirSync(assemblyDir).filter((name) => name.endsWith(".yaml"))) {
-    const text = readFileSync(join(assemblyDir, file), "utf8");
-    const assembly = assemblyDescriptorSchema.parse(parse(text));
-    for (const realm of [assembly.realms.server, assembly.realms.client, assembly.realms.console]) {
-      for (const binding of realm.bindings) {
-        if (!ids.has(binding.moduleId)) {
-          throw new Error(`装配 ${file} 引用了未登记模块 ${binding.moduleId}`);
-        }
-        if (binding.configRef !== null && !(binding.configRef in assembly.configs)) {
-          throw new Error(`装配 ${file} 引用了缺失配置块 ${binding.configRef}`);
-        }
+const assemblyFiles = [
+  {
+    name: "local-slg-standard-v1.yaml",
+    text: readFileSync("config/assemblies/local-slg-standard-v1.yaml", "utf8"),
+  },
+  {
+    name: "local-slg-escalating-v1.yaml",
+    text: readFileSync("config/assemblies/local-slg-escalating-v1.yaml", "utf8"),
+  },
+];
+
+for (const file of assemblyFiles) {
+  const assembly = assemblyDescriptorSchema.parse(parse(file.text));
+  for (const realm of [assembly.realms.server, assembly.realms.client, assembly.realms.console]) {
+    for (const binding of realm.bindings) {
+      if (!ids.has(binding.moduleId)) {
+        throw new Error(`装配 ${file.name} 引用了未登记模块 ${binding.moduleId}`);
+      }
+      if (binding.configRef !== null && !(binding.configRef in assembly.configs)) {
+        throw new Error(`装配 ${file.name} 引用了缺失配置块 ${binding.configRef}`);
       }
     }
   }

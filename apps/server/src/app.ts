@@ -149,7 +149,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
   let streamSeq = 0;
   let projectionVersion = 0;
   const history: Array<{ readonly streamSeq: number; readonly projectionVersion: number; readonly set: Record<string, unknown> }> = [];
-  const subscribers = new Set<{ readonly send: (payload: string) => void }>();
+  const subscribers = new Set<{ send(data: string): void }>();
 
   const publishDelta = (): void => {
     streamSeq += 1;
