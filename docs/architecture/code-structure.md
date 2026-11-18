@@ -8,7 +8,8 @@
 
 ```text
 ai-npc-demo/
-  AGENTS.md                      # rules for coding agents
+  AGENTS.md  CLAUDE.md            # shared rules and reference entry
+  AGENTS.local.md  CLAUDE.local.md # optional local supplements (git-ignored)
   package.json  pnpm-workspace.yaml  tsconfig.base.json  tsconfig.server.json  tsconfig.browser.json
   vitest.config.ts  playwright.config.ts  .env.example
   apps/
@@ -19,9 +20,9 @@ ai-npc-demo/
           bootstrap.ts           # resolve assembly, create/start instances, ready check
           module-catalog.ts      # explicit imports of every server module definition
           guards/                # fixed-order guards: auth, scope, schema, budget, commit, fencing, evidence
-          sessions/              # token login, sessions, stream tickets, active role
+          sessions/              # session mechanics; call bound access-policy ports
           routes/                # HTTP route table -> application services (no business rules here)
-          workers/               # clock, consumers, scheduler, turn runner, memory workers, projection push
+          workers/               # lifecycle and wake-up coordination; call runtime and bound ports
       console-static/            # built console assets served at /console/* (generated, git-ignored)
     client/                      # client host (browser, :5173)
       index.html
@@ -47,7 +48,7 @@ ai-npc-demo/
     client-protocol/             # typed HTTP/WS client and projection reducer protocol
     authority/                   # command gateway, transactions, idempotency, fencing, job runner, consumers
     agent-runtime/               # trigger store, scheduler host, turn state machine, tool gateway, speech pipeline
-    experiment/                  # runs, branches, snapshots, manifests, scripts, probes
+    experiment/                  # run lifecycle, snapshot coordination and frozen manifests; no scoring policy
     observability/               # trace/span helpers and evidence envelope
   modules/
     server/
@@ -108,7 +109,7 @@ ai-npc-demo/
 
 首版的场景渲染不需要美术资源：节点、道路、角色、队伍都用 PixiJS 的矢量图元绘制（见 [客户端](client-and-rendering.md) 第 8 节）。
 
-每个模块目录都是一个 workspace 源码包（不单独构建），包内按职责拆文件；不为零逻辑的转发层新建包。
+每个模块目录都是一个 workspace 源码包（不单独构建），包内按职责拆文件；不为零逻辑的转发层新建包。应用组合根只装配，packages 只提供机制，modules 按 realm/能力/实现承载职能，config 选择组合，content 保存内容，tests 提供验证。routes/workers/sessions 不能成为隐藏业务规则、认知策略或平台功能的容器。
 
 ## 2. 三个宿主，三个组合根
 
@@ -149,6 +150,8 @@ modules/server/agent/memory/ledger/
 - 模块的 UI 贡献记录在 ModuleDefinition 里（slot、requiredCapabilities、order），不再另设一套注册系统。
 
 ## 4. 包与文件规则
+
+目录、文件与导出按职责命名，避免万能 manager/utils/core 容器；适配器的 sqlite、fastify、pixi 等真实实现名保留。冻结的模块/能力 ID 不因措辞调整而更名。源码 header 的唯一详细规范见 [技术栈](../delivery/tech-stack.md) 第 7 节。
 
 `contracts` 是事件信封、命令、receipt、观察、记忆、context、模型请求、ToolDefinition/ToolBinding、模块描述符、装配和双端协议的唯一定义处。各模块不能定义字段略有差别的“内部公共 DTO”。
 
@@ -209,7 +212,7 @@ modules/server/agent/memory/ledger/
 
 ## 7. 依赖守门与自动检查
 
-目标脚本（尚未实现）同时读取源码 import 与各包 manifest，拒绝：
+目标脚本（尚未实现）按 [技术栈](../delivery/tech-stack.md) 第 2、7 节读取源码引用、各包 manifest 并检查 header；运行时能力闭包由装配解析验证。依赖检查拒绝：
 
 - 循环依赖、跨包深层引用、模块 import 时自动注册或执行副作用；
 - client/console 模块 import `node:*`、SQLite、模型 SDK、server 模块或密钥路径；

@@ -109,7 +109,8 @@ flowchart LR
 | 观测、档案、脱敏 | [platform/observability](platform/observability.md) |
 | 实验、指标、报告 | [platform/evaluation](platform/evaluation.md) |
 | 暂停、存档、席位、剧情运营 | [platform/operations](platform/operations.md) |
-| 技术栈与工程约定 | [delivery/tech-stack](delivery/tech-stack.md) |
+| realm/kind 依赖白名单、技术栈与源码 header | [delivery/tech-stack](delivery/tech-stack.md) |
+| 共享 Agent 工作流、Git 授权与本地补充边界 | [AGENTS.md](../AGENTS.md) |
 | 实施顺序与完成判据 | [delivery/build-plan](delivery/build-plan.md) |
 | 切片验收 | [delivery/roadmap-and-acceptance](delivery/roadmap-and-acceptance.md) |
 
@@ -126,6 +127,6 @@ flowchart LR
 
 - 每篇文档开头的“状态”一行说明它是概念还是规格，以及负责范围。
 - 文中的数量、阈值、预算与时长都是初始设计值，不是实测最优结论；修改规则数值或内容数据会产生新的内容版本。
-- 文档正文用中文；代码、标识符与代码注释用英文。
+- 文档、代码注释与 file header 默认使用中文，保留英文专有名词；代码标识符遵循语言与生态命名惯例。
 - 目录、接口、schema 都是目标设计，“实现规格”章节可以照抄实现；不能据此声称系统已经运行、模型已经连接或某种记忆方案更好。
 - 修改文档时同步修正引用它的地方，并保证 `pnpm check:docs`（构建计划 S00 实现）报告 0 个坏链接。

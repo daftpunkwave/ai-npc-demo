@@ -1,68 +1,57 @@
-# AGENTS.md：给编码 Agent 的工作说明
+# Coding Agent 工作说明
 
-本仓库是一个单玩家 2.5D 轻数值 SLG demo，用来验证游戏里 Agent NPC 的记忆、感知、上下文与行为设计：TypeScript 全栈，服务端 `127.0.0.1:3000`（含 `/console` 控制台），玩家客户端 `127.0.0.1:5173`。**当前只有设计文档，没有任何实现代码**；实现从 [构建计划](docs/delivery/build-plan.md) 的 S00 开始。
+本项目是 TypeScript 全栈、单玩家 2.5D 轻数值 SLG 与研究控制台。
 
-## 1. 开始前必读（按顺序）
+## 阅读与规格
 
-1. [README](README.md)：项目一页概览。
-2. [文档入口](docs/README.md)：文档地图与“哪个主题由哪篇文档负责”。
-3. [首版范围与不变量](docs/00-scope-and-invariants.md)：范围、数量、术语。
-4. [技术栈](docs/delivery/tech-stack.md)：依赖版本、目录与包名规则、脚本、编码约定。
-5. [构建计划](docs/delivery/build-plan.md)：26 个步骤；每一步再读它列出的“先读”章节。
+依次阅读 [README](README.md)、[文档入口](docs/README.md)、[范围与不变量](docs/00-scope-and-invariants.md)、[技术栈](docs/delivery/tech-stack.md)、[构建计划](docs/delivery/build-plan.md)，再读当前步骤的“先读”章节。实现严格按构建计划推进，前一步未满足完成判据，不开始下一步。
 
-## 2. 工作方式
+规则、数值、业务 ID、API、配置与 prompt 以文档入口的主题归属为准，不得在实现时静默改变；规范本身可按明确需求修订并同步相关契约。修改前读目标及相关调用/数据流，先找已有抽象；只做任务要求的最小完整修改。发现矛盾或未覆盖且影响结果的选择，报告影响并确认，不静默决定、不新增未经批准的依赖或服务。
 
-- 严格按构建计划的步骤顺序推进；上一步的完成判据没有全部满足，不开始下一步。
-- 每一步结束都运行 `pnpm check`，全部通过后再提交；一步一个提交，提交信息用 Conventional Commits：`<type>(<scope>): <subject>`，type 取 feat/fix/docs/refactor/chore/test/perf。
-- 每一步按构建计划第 0 节的格式写完成报告：做了什么、测试、检查结果、偏差、未决问题。失败就写失败，跳过就写跳过，没运行就写没运行。
-- 规则、数值、ID、prompt、表结构、接口都以文档为准，照抄，不要自己“改进”。文档之间矛盾时，以负责该主题的文档为准（第 4 节），并在完成报告里指出矛盾。
-- 文档没有覆盖、又会影响结果的选择：选最保守、最容易回退的做法，写进完成报告的“未决问题”，不要静默决定。
-- 不新增文档里没有的依赖、端口、进程、数据库或外部服务；需要时先在完成报告里提出。
+## 架构与安全边界
 
-## 3. 硬性规则（任何一步都不能违反）
+- 解耦优先于内聚；全职能插件化，不只替换 memory；宿主只保留装配、生命周期、契约校验、安全/事务守卫和唯一管线协调。游戏规则、认知策略、平台功能、传输适配和 UI 由显式 provider 装配；职责与状态所有权见 [模块边界](docs/architecture/modules.md)，目录见 [代码目录](docs/architecture/code-structure.md)。
+- 源码 import、包依赖与运行时 requires 分开校验，遵守技术栈的 realm/kind 白名单；不跨模块导入实现、不深层导入、不循环依赖、不共享可变状态。环境与 I/O 只经规定的注入和适配器边界。
+- 仅监听 `127.0.0.1:5173` 与 `127.0.0.1:3000`；5173 提供玩家界面与必要设置，3000 提供服务端 API 和 `/console` 控制台（三方势力运营、模型挂载、观测、评估、调试），二者遵守 [双端权限](docs/architecture/two-endpoints.md)，占用即失败，不换端口。
+- 不绕过命令网关、事务提交与授权投影；模型输出不充当事实，decision 与 speech 隔离。记忆版本、实验隔离、公平对照及密钥边界遵守范围与不变量及其负责文档；不可用 fallback、吞错或禁用校验伪造成功。
 
-1. **只有两个监听端口**：`127.0.0.1:5173` 与 `127.0.0.1:3000`；端口被占用时启动失败，不自动换端口；不为开发便利另开端口（[两个端口](docs/architecture/two-endpoints.md)）。
-2. **世界只有一条写入路径**：所有副作用都是命令 → 命令网关 → 规则处理器返回计划 → authority 在一个事务内提交。规则处理器是同步纯函数；**事务内禁止 await**（[领域模型](docs/architecture/domain-model.md) 第 4 节）。
-3. **模型输出不是事实**：Agent 只能经工具网关提出命令，结果以 receipt 为准；`accepted` 不等于任务完成（[公共契约](docs/architecture/contracts.md) 第 2 节）。
-4. **决策与对白分离**：decision 可以用本 Agent 知道的秘密；speech 是一次全新的请求，只含对受众可披露的资料，秘密永远不进入 speech 请求（[prompts](docs/agent/prompts.md) 第 3–4 节）。
-5. **按授权投影**：玩家只拿到 `PlayerProjection`，Agent 只看到自己的 `AgentWorldView`；浏览器永远拿不到记忆、prompt、模型请求或密钥（[领域模型](docs/architecture/domain-model.md) 第 7–8 节）。
-6. **模块之间只经契约**：模块只依赖 `@ai-npc/contracts` 与 SDK；不 import 其他模块，不 deep import；只有组合根显式登记模块（[代码目录](docs/architecture/code-structure.md)）。
-7. **模块不直接接触环境**：不调用 `Date.now()`、`Math.random()`、`crypto.randomUUID()`、`process.env`、`fs` 或网络；一律用注入的 `HostServices` 与端口；只有 `kind = adapter` 的模块可以通过它封装的第三方库做网络与文件 I/O（[技术栈](docs/delivery/tech-stack.md) 第 7 节）。
-8. **记忆不可变、按 revision 读取**：记录只追加行版本；检索绑定冻结的 revision；提交用 CAS（[记忆](docs/agent/memory.md) 第 11 节、[存储](docs/architecture/storage.md) 第 4 节）。
-9. **实验隔离**：每个 run 独占一个分支；改变任何可比较配置都是新 run；全部署同时激活的 gameplay 身份不超过 20（[事件与状态](docs/architecture/events-and-state.md)）。
-10. **不隐藏失败**：不吞错误，不用 fallback 冒充成功；严格实验中的无效样本单独计数（[评估](docs/platform/evaluation.md)）。
-11. **密钥只在服务端环境变量**：配置与 manifest 只存 `credentialRef`；日志与 artifact 不出现密钥（[模型传输](docs/agent/model-transport.md) 第 8 节）。
-12. **公平对照**：不给无记忆组（M0）任何历史旁路，例如把已结束的协议、全量关系或公共历史塞进上下文（[记忆](docs/agent/memory.md) 第 4 节）。
-13. **测试确定**：常规测试只用确定性装配与固定种子；不对真实模型的逐字输出做断言；真实模型测试放在 `tests/live/`。
-14. **中文文本不进代码**：玩家可见的中文与 prompt 模板放在内容包的 `prompts/`、`locale/`；代码注释与标识符用英文。
+## 命名与注释
 
-## 4. 文档负责关系
+目录、文件、函数和类型按边界、职责及业务含义中立命名，避免无领域限定的万能工具目录与临时名称；适配器保留真实技术实现名，不因目录措辞重命名冻结能力 ID。代码标识符遵循语言与生态命名惯例；注释、file header、文档与开发交流默认使用中文，保留 deadlock 等英文专有名词。玩家文本与 prompt 放内容包。header 范围、例外与不引用开发文档的规则统一见技术栈第 7 节，不机械给每个函数加注释。
 
-每个主题只有一个负责文档，完整对照表见 [文档入口](docs/README.md) 第 4 节。常用的几项：规则与数值看 [game/rules](docs/game/rules.md)，初始数据看 [game/content-pack](docs/game/content-pack.md)，命令与事件看 [architecture/domain-model](docs/architecture/domain-model.md)，接口看 [architecture/api](docs/architecture/api.md)，表结构看 [architecture/storage](docs/architecture/storage.md)，配置文件看 [platform/configuration](docs/platform/configuration.md) 第 10 节，prompt 看 [agent/prompts](docs/agent/prompts.md)。
+## 验证与交付
 
-## 5. 常用命令
+- 按构建计划第 0 节报告做了什么、测试、检查结果、偏差、未决问题。失败、跳过、未运行分别如实说明；每行 diff 应能追溯需求，不留 TODO、占位实现或调试输出。
+- 实现步骤运行当时已配置的 `pnpm check` 及该步要求的额外检查。文档变更检查链接、交叉一致性与 `git diff --check`；缺少适用检查时如实说明，不以文档检查代替实现测试。
+- 只要求仓库实际配置的必需检查与审查，不硬编码第三方门禁。使用应用 CI 通知，不自动轮询；审查意见先核实、修复并验证，再回复或处理可 Resolve 的线程，普通评论不等同于线程。
 
-```bash
-pnpm install
-```
+## Git 工作流
 
-```bash
-pnpm dev
-```
+`main` 是默认分支，变更通过 PR 进入主干；不直接向 main 提交。提交、推送、建 PR 与合并须本次任务明确授权，不继承历史授权。
 
-```bash
-pnpm check
-```
+- 从最新 main 创建任务分支；保留已有未提交工作，不用重置或强推清理工作区。
+- 一次提交只处理一个逻辑变更；实现步骤按构建计划提交。Conventional Commits：`<type>(<scope>): <subject>`；scope 可选，分支命名为 `<type>/<kebab-case-description>`。type 按下表选择。
 
-```bash
-pnpm test:e2e
-```
+| type | 用途 |
+|---|---|
+| feat | 新增或扩展功能 |
+| fix | 修复错误行为 |
+| docs | 文档与开发规范 |
+| refactor | 不新增功能、不修复缺陷的结构调整 |
+| perf | 性能优化 |
+| test | 测试用例、夹具与测试基础设施 |
+| style | 不影响行为的格式调整，不指界面功能 |
+| build | 构建、打包、编译配置与依赖管理 |
+| ci | CI/CD 自动化：检查、发布、部署与回滚 |
+| chore | 不属于以上类型的日常维护 |
+| revert | 撤销既有提交，使用 `git revert` 并说明原因 |
 
-`pnpm install` 与 `pnpm check` 在 S00 之后可用；`pnpm dev` 与 `pnpm test:e2e` 在 S10 之后可用（各脚本加入的步骤见 [构建计划](docs/delivery/build-plan.md) 第 0.2 节）。首次运行时复制 `.env.example` 为 `.env` 并按需填写模型配置；服务端启动时会打印玩家与控制台的登录地址。
+CI 与 CD 共用 `ci`，以 `ci(check)`、`ci(release)`、`ci(deploy)`、`ci(rollback)` 区分职责。依赖升级用 `build(deps)`，安全修复用 `fix(auth)` 等职责 scope，不另设 deps、security 或 hotfix 类型。`git revert` 自动生成的标题可保留标准格式。
 
-## 6. 提交前检查
+- Commit 和 PR 的标题、正文、评论默认使用中文，保留英文专有名词及 Conventional Commits 的 type/scope。所有文本均不设每行 72 字符限制。
+- Commit 和 PR 标题清晰概括改动本身，不提及与改动无关的任务、阶段或进度；正文说明实际变更、技术原因、验证及兼容性影响。不提交密钥或本地私有配置。
+- 推送前完成自审与适用检查。必需检查和审查通过后，按授权 squash 合并；分支清理另按授权执行，不为追求干净状态丢弃工作。
 
-- 需求满足：本步构建计划的“产出”与“测试”都已完成，diff 中每一行都能追溯到本步要求。
-- 已验证：`pnpm check` 通过；本步要求的 e2e 或人工验证已执行，或在报告中写明未执行的原因。
-- 没有遗留：没有 `TODO`、被注释掉的代码、占位实现或调试输出。
-- 没有越界：没有与本步无关的修改，没有破坏已有的契约或测试。
+## 本地补充
+
+共享规则以本文件及主题负责文档为准。本机可有被忽略的 `AGENTS.local.md`；它仅补充本地偏好，不能覆盖项目硬约束，如果 `AGENTS.md` 和 `AGENTS.local.md` 发生冲突, `AGENTS.md`优先。冲突须报告。
