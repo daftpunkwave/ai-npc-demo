@@ -60,19 +60,7 @@ Command 是请求，Event 是已发生的事实。不能把模型输出“已救
 
 两个本地监听：`127.0.0.1:5173` 玩家客户端，`127.0.0.1:3000` 服务端（含 `/console/*`）。控制台是服务端提供的浏览器界面，不是第三个进程或端口。详见 [两个本地端口与三运行域](two-endpoints.md)。
 
-以下为待实现 API 契约入口，不表示现有路由；版本统一 `/api/v1`。
-
-| 路径 | 用途与约束 |
-|---|---|
-| POST /api/v1/commands | 玩家/运营标准命令；返回 receipt 与事件引用，副作用幂等 |
-| GET /api/v1/world/view | 按 principal 返回投影与重连游标，不能读取原始全局日志 |
-| WS /api/v1/streams | 授权投影、已提交对话、任务状态；分玩家/研究 channel |
-| GET /api/v1/session 与 /session/assembly | 会话、角色、协议版本与 realm 模块清单；不含密钥与工厂 |
-| POST /api/v1/console/ops/controllers/{agentId}/handover | 期望 epoch、目标模式、原因；租约与审计 |
-| POST /api/v1/console/ops/scenarios/{id}/publish | 校验版本和受众后发布，不允许直接覆盖历史 |
-| GET /api/v1/console/modules 与 /assemblies | 描述符、schema、兼容性与 resolved diff |
-| POST /api/v1/console/runs | 选快照、assembly、profile、协议与预算；预检后创建隔离运行 |
-| GET /api/v1/console/runs/{id}/trace | 完整因果链；原文需要单独研究权限 |
+接口的完整清单、载荷、角色权限与错误码见 [API](api.md)，版本统一为 `/api/v1`。
 
 HTTP 命令与所有副作用工具共用 command handler。WebSocket 重连只补投影，不重新发起 action。接口错误至少区分 forbidden、validation、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、assembly-incompatible、plugin-failed；完整错误码见 [公共契约](contracts.md)。
 
@@ -98,6 +86,6 @@ HTTP 命令与所有副作用工具共用 command handler。WebSocket 重连只�
 
 ## 6. 与模块专篇的关系
 
-世界写入规则见 [事件与状态](events-and-state.md)；职责与依赖见 [模块边界](modules.md)；模块清单与默认装配见 [模块目录](module-catalog.md)；替换单元与生命周期见 [插件机制](plugins.md)；装配顺序与冻结见 [积木组合](composition.md)。模型请求先解析 [模型池挂载](../agent/model-pool.md)，工具统一走 [共享行为网关](../agent/tools.md)。客户端见 [2.5D 渲染](client-and-rendering.md)，双端部署见 [两个本地端口](two-endpoints.md)，公共协议见 [契约](contracts.md)。
+命令、事件与投影的数据字典见 [领域模型](domain-model.md)，表结构见 [存储](storage.md)，接口见 [API](api.md)，首章规则与数据见 [规则](../game/rules.md) 与 [内容包](../game/content-pack.md)。世界写入规则见 [事件与状态](events-and-state.md)；职责与依赖见 [模块边界](modules.md)；模块清单与默认装配见 [模块目录](module-catalog.md)；替换单元与生命周期见 [插件机制](plugins.md)；装配顺序与冻结见 [积木组合](composition.md)。模型请求先解析 [模型池挂载](../agent/model-pool.md)，工具统一走 [共享行为网关](../agent/tools.md)。客户端见 [2.5D 渲染](client-and-rendering.md)，双端部署见 [两个本地端口](two-endpoints.md)，公共协议见 [契约](contracts.md)。
 
 LLM、工具、记忆、压缩和模块内部网络调用都必须进入同一 trace/预算宿主，不允许模块自行创建未记录的外部调用。模型共享资源不共享会话，工具共享实现不共享超出绑定的权限。

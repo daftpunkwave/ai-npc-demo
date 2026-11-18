@@ -79,6 +79,8 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 | 真人/Agent 接管 | 三个运营席位独立接管并归还 | epoch 拒绝旧命令、无双重下令、记忆连续 |
 | 长期运行与故障 | 忘记、压缩、限额和模型故障是否可定位 | 有界、恢复、失败标注、证据完整 |
 
+首版提供三个可执行脚本：承诺与反悔（`s-promise`）、传闻与反证（`s-rumor`，同时覆盖“旧印象被反证”）、私密谈判（`s-secret`），见 [内容包](../game/content-pack.md) 第 11 节。真人/Agent 接管与长期运行故障由集成测试覆盖（见 [构建计划](../delivery/build-plan.md)）；救援后再求助、多主体冲突请求、派系交涉三个场景在首版以人工试玩记录，脚本留到后续补充。
+
 场景同时包含“应记住”和“应不知道/不确定”的题，防止系统靠全部回答肯定获取高分。秘密的泄露评估须排除由公开线索可合理推断的事实，另列“推断命中”。
 
 ## 5. 指标必须带分母
@@ -126,3 +128,59 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 只有先证明选项确实改变实际阶段，再比较体验。没有调用某模型反思的 memory.none 不能被分摊虚构的维护费用；启用反思的组不能漏算该费用。所有 fallback 与运营干预单列。
 
 报告必须区分“世界结果差异”“Agent 可见输入差异”“玩家/控制台呈现差异”；只改了 client/console 模块而声称为 Agent 能力提升，属于无效结论。控制台评估页由 `console.evaluation.standard` 模块贡献，替换页面不得改变指标定义或失败分母。
+
+## 8. 探针执行与计分（首版）
+
+探针脚本格式见 [内容包](../game/content-pack.md) 第 11 节，prompt 见 [prompts](../agent/prompts.md) 第 7 节。
+
+执行：
+
+1. 受控时钟推进到检查点 tick，并等本步结算完成（[运行时](../agent/runtime.md) 第 13.2 节）。
+2. 静默实验分支，为每个探针各复制一个沙盒分支（[存储](../architecture/storage.md) 第 3 节），互不影响。先把实验分支激活状态置为 dormant 释放配额，再逐个创建沙盒；沙盒里只激活被提问的 Agent（占用配额，探针结束后释放）。全部探针结束后重新预留配额并激活实验名册。
+3. 运行器在沙盒里以 `system:world` 身份提交 `probe.ask`（[领域模型](../architecture/domain-model.md) 第 5 节），产生 `ProbeAsked` 事件；感知把它变成 `probe` 渠道的观察（来源就是这个事件，`releasePolicyId = parties:<askedBy,agentId>`），并生成 `probe` trigger。该命令仅在 active sandbox 中豁免 paused；沙盒不推进逻辑时间。只调度本次 probe trigger，decision 仅提供只读查询与 `decision.submit`，speech 照常校验但不调用 `speech.commit`，使用所属实验 run 冻结的 profile 与模型挂载；确定性决策按 [运行时](../agent/runtime.md) 第 13.7 节以 `answer` 意图作答。
+4. 把对白原文、decision JSON、引用的记忆 ID、turn 状态写入 `probe_results`；沙盒分支归档，实验分支继续推进。
+
+计分（按 `answerKey` 做子串匹配，匹配前去掉空白与标点；词表取自内容包的 `lexicons`）：
+
+| kind | 判定为正确 | 计入的指标 |
+|---|---|---|
+| `recall` | `mustMention` 全部出现，且 `mustNotMention` 都不出现；回答中含 `unknownMarkers` 或 `forgetMarkers` 的词时记为遗漏 | 有证据回忆正确率、遗漏率 |
+| `belief` | 同 recall | 信念更新正确率 |
+| `unknown` | 回答含 `unknownMarkers` 中的词之一，且 `mustNotMention` 都不出现；否则记为编造 | 编造率 |
+| `secret` | `mustNotMention` 都不出现；出现任一即记为泄露 | 知情泄露率 |
+
+探针在以下情况记为无效，不进入正确率的分母，但在报告里单列数量与原因：turn 失败；没有产生对白（意图为 none）；对白来自安全模板但模型决策路径本应作答（`speech-fallback`）；严格实验中出现模型替换（`model-substituted`）；证据不完整。确定性决策的对白本来就是模板，不算 `speech-fallback`。LLM judge 默认关闭；开启时使用独立的 evaluator 挂载，结果与上述规则分数并列报告，不替代它。
+
+行为记录：脚本里每个触发 Agent 决策的外部输入（例如 `s-promise` 第 60 tick 的请求）都记录该 Agent 的 `stance`、意图、理由类别与提交的命令，用于比较各组的行为分布。
+
+## 9. 报告格式
+
+`GET /api/v1/console/runs/{runId}/report` 返回：
+
+```json
+{
+  "runId": "run-...",
+  "variant": "memory-m1-structured-ledger",
+  "scriptId": "s-promise",
+  "scriptBranch": "break",
+  "validity": { "valid": true, "contaminated": false, "evidenceComplete": true, "invalidReasons": [] },
+  "metrics": [
+    { "metric": "recall-accuracy", "numerator": 1, "denominator": 1, "value": 1.0 },
+    { "metric": "fabrication-rate", "numerator": 0, "denominator": 1, "value": 0.0 },
+    { "metric": "leak-rate", "numerator": 0, "denominator": 1, "value": 0.0 },
+    { "metric": "rule-rejection-rate", "numerator": 1, "denominator": 4, "value": 0.25 },
+    { "metric": "traceable-turn-rate", "numerator": 9, "denominator": 9, "value": 1.0 }
+  ],
+  "probes": [
+    { "probeId": "p-recall-promise", "agentId": "npc-cenyan", "answer": "……", "score": { "kind": "recall", "correct": true }, "valid": true }
+  ],
+  "behavior": [
+    { "atTick": 60, "agentId": "npc-cenyan", "trigger": "player-dialogue", "stance": "decline", "reasonCode": "past-breach", "commands": [] }
+  ],
+  "memory": { "recordsByTier": { "short": 12, "long": 5, "core": 1 }, "maintenanceRuns": 2, "maintenanceFailures": 0 },
+  "cost": { "inputTokens": 12000, "outputTokens": 3000, "unknownUsageAttempts": 0, "costEstimate": 0, "currency": "USD", "pricingVersion": "2026-11" },
+  "latency": { "turnP50Ms": 4200, "turnP95Ms": 9100 }
+}
+```
+
+没有机会计算的指标写 `"value": null` 并附 `"reason": "n/a"`。实验汇总（`GET /api/v1/console/experiments/{id}`）按“变体 × 脚本分支”列出各指标的有效样本数、无效样本数与均值，以及每个 run 的链接；样本数少于 3 的格子标注“样本不足”。首版报告不做显著性检验，结论可以是“差异不显著”或“证据不足”。

@@ -111,14 +111,13 @@ scannedThroughSeq 是内部扫描 frontier，不发送模型；它可跨过没�
 perception:
   module: agent.perception.local
   config:
-    visibleGraphDepth: 1
-    broadcastDelayTicks: 0
-    directedMessageDelayTicks: 1
+    visibleGraphDepth: 0
+    extraDelayTicks: { broadcast: 0, directed: 0, briefing: 0 }
     maxObservationsPerBatch: 12
     retainUncertainCues: true
 ```
 
-这是初始参数示例，不是经过验证的最优范围。descriptor 声明单位、能力、稳定随机源与不可变字段；配置继承、阶段冻结和 UI 展示见 [统一配置](../platform/configuration.md)。
+这是初始参数示例，不是经过验证的最优范围。异地送达的基础延迟由世界规则写在事件逐主体的 `deliveries[].deliverAtTick` 里（见 [规则](../game/rules.md) 第 9 节），`extraDelayTicks` 只是实验用的额外延迟，默认 0，避免重复计算。descriptor 声明单位、能力、稳定随机源与不可变字段；配置继承、阶段冻结和 UI 展示见 [统一配置](../platform/configuration.md)。
 
 ## 9. 状态、故障与生命周期
 
@@ -147,3 +146,164 @@ perception:
 8. 已关闭/撤回渠道的旧任务不能晚到泄露；恢复运行与快照保留 pending 队列。
 
 相关事件、快照与来源结构见 [事件和状态](../architecture/events-and-state.md)；感知准确度、知情泄露与行为影响采用 [评估](../platform/evaluation.md) 的共同分母和失败口径。
+
+## 11. 首版实现规格：`agent.perception.local`
+
+### 11.1 处理流程
+
+感知消费者按 `worldSeq` 顺序读取新事件，每个事件在一个事务里处理完全部 Agent：
+
+1. 宿主按 [领域模型](../architecture/domain-model.md) 第 7 节计算有资格的 Agent 集合（硬 ACL）。玩家不经过感知模块，玩家投影直接按 ACL 构建。
+2. 对每个有资格的 Agent，模块按 11.2 节决定渠道、获知方式、置信度与细度，按 11.3 节决定 `knownAtTick`。
+3. `knownAtTick ≤ 当前 tick` 的观察直接写入 `observations`（分配该 Agent 的下一个 `observationSeq`）；更晚的写成 `perception.deliver` job，到期时再写入。
+4. 同一 tick 内写给同一 Agent 的观察超过 `maxObservationsPerBatch` 时，按优先级保留（自身 > 定向/当事 > 在场 > 派系简报 > 公开通报），其余合并成一条聚合观察（“另有 N 条公开通报：类型与数量”），不含具体内容。
+5. 推进该 Agent 的 `scanned_through_seq`；没有资格的事件也会推进扫描游标，但不生成任何观察。
+6. 事务提交后，通知记忆摄入与调度器（11.5 节）。
+
+### 11.2 渠道、获知方式与细度
+
+对每个有资格的 Agent，按下表**从上到下第一个匹配的行**决定渠道；“自己”指该 Agent。
+
+| # | 情形 | channel | epistemic | confidence | detail | extraDelayTicks 键 |
+|---|---|---|---|---|---|---|
+| 1 | `DialogueSubmitted`，channel 为 face-to-face，自己不是说话人 | `face-to-face` | witnessed（话语本身）；话语里的说法另记为声称 | 0.6 | full | — |
+| 2 | `DialogueSubmitted`（channel relay）或定向 `MessageSent`，自己不是发送者 | `relay` | reported | 0.6 | full | directed |
+| 3 | `InformationShared`，自己在受众中且不是分享者 | `evidence` | reported | 0.9 | full | directed |
+| 4 | `ProbeAsked`（只在 sandbox 分支） | `probe` | reported | 0.6 | full | — |
+| 5 | `MessageSent` channel broadcast | `broadcast` | reported | 0.7 | full | broadcast |
+| 6 | `RumorSpread` | `rumor` | reported | 0.3 | full | broadcast |
+| 7 | 官方公开通报：`MetersChanged`、`PolicyChanged`、`PassageGranted`、`DayPassed`、危机事件、`Group*`、`CharacterMoved`、`TeamMoved`、`CampaignStarted`、`ChapterStageEvaluated` | `public-notice` | witnessed | 1.0 | full | broadcast |
+| 8 | 自己是事件主体：自己发出的命令产生的事件、自己受伤、`AgentsSummoned` 点名自己 | `self` | witnessed | 1.0 | full | — |
+| 9 | 其余 `principals` 受众中有自己（协议、邀请、任务、委托等正式通知） | `party` | witnessed | 1.0 | full | — |
+| 10 | `node` 受众，自己当时在该节点 | `on-site` | witnessed | 1.0 | summary | — |
+| 11 | `faction` 受众（派系简报） | `briefing` | witnessed | 1.0 | full | briefing |
+
+`detail: summary` 时删除 `params`、`cargo`、预留、受邀者等细节，只保留“谁、在哪、做了哪类事”。任务的风险抽样结果在任何情况下都不进入观察。`visibleGraphDepth = 1` 时，相邻节点的角色也能以 `summary` 细度观察到 `TaskDeparted`、`TaskCompleted`、`WorldFactRecorded`；首版默认 0。
+
+### 11.3 获知时间与传播权限
+
+- `occurredAtTick` = 事件的 `worldTick`；`knownAtTick = max(occurredAtTick, payload.deliveries 中本主体的 deliverAtTick（非通信事件取 occurredAtTick）) + extraDelayTicks[该行的键]`（键为 — 时加 0）；`sensedAtTick` 在 local 策略下等于 `knownAtTick`。
+- `releasePolicyId` 按 [prompts](prompts.md) 第 3 节赋值：public 与 node 受众为 `public`；principals 受众为 `parties:<排序后的名单>`；faction 受众为 `faction:<factionId>`；证据为 `holders:<evidenceId>`。
+- `ProbeAsked` 特殊使用 `parties:<排序去重后的 askedBy, agentId>`，而不是仅 agentId；只允许回答提问者，不扩展实际事件 audience。
+- 通信事件没有本主体 delivery 时不生成观察；混合受众定向发送的原子拒绝、广播本地子集和逐收件者冻结延迟遵循规则第 9 节，不以最慢接收者统一延迟。
+- 来源字段：`sourceEventIds = [eventId]`；转述类观察（对话、消息、传闻）在 `content.claim` 中记录原声称者（`sourceId`）与直接发送者。
+
+### 11.4 观察内容
+
+```ts
+interface ObservationContent {
+  eventType: string;
+  summaryZh: string;            // rendered from the template of the event type
+  subjectIds: string[];         // principals involved
+  nodeId: string | null;
+  refs: { agreementId?: string; taskId?: string; evidenceId?: string; conversationId?: string; dialogueId?: string; messageId?: string };
+  facts: Json;                  // payload fields kept after the detail filter
+  claim: { sourceId: string; senderId: string; text: string } | null; // for reported speech and rumors
+  detail: "full" | "summary";
+}
+```
+
+`summaryZh` 仅由授权且按 detail 过滤后的数据渲染。下表是完整的 `prompts/zh-CN.yaml` 中 `observationTemplates` 清单（每行一个键，不能省略 system 事件；system 模板不产生 gameplay 观察）：
+
+| 事件 | 模板 |
+|---|---|
+| `CampaignStarted` | `战役已开始。` |
+| `DelegationCreated` | `已建立委托 {delegationId}。` |
+| `KnowledgeGranted` | `已获得一项授权资料。` |
+| `MessageSent` | `{fromName}来信：“{text}”` |
+| `DialogueSubmitted` | `{speakerName}说：“{text}”` |
+| `InformationShared` | `{fromName}分享了证据《{evidenceTitle}》。` |
+| `RumorSpread` | `听说（来源：{sourceName}）：{text}` |
+| `WorldFactRecorded` | `{text}` |
+| `AgentsSummoned` | `你收到一次召集。` |
+| `ProbeAsked` | `【{askedByName} 问你】{question}` |
+| `AgreementProposed` | `收到协议提案 {agreementId}：{termsText}` |
+| `AgreementResponded` | `协议 {agreementId} 收到回应。` |
+| `AgreementActivated` | `协议 {agreementId} 生效：{termsText}` |
+| `AgreementRejected` | `协议 {agreementId} 被拒绝。` |
+| `AgreementExpired` | `协议 {agreementId} 已过期。` |
+| `AgreementSuperseded` | `协议 {agreementId} 已被新提案替代。` |
+| `AgreementTermFulfilled` | `已履行：{termText}` |
+| `AgreementFulfilled` | `协议 {agreementId} 已全部履行。` |
+| `AgreementBreached` | `{obligorName}没有按期履行：{termText}` |
+| `PassageGranted` | `{roadName}已授予通行许可。` |
+| `PolicyChanged` | `{byName}把 {keyName} 改为“{newValueName}”。` |
+| `TaskDispatched` | `任务 {taskId} 已安排。` |
+| `ResourcesReserved` | `任务 {taskId} 已预留资源。` |
+| `ResourcesReleased` | `任务 {taskId} 已释放预留资源。` |
+| `TaskInvitationIssued` | `你收到任务 {taskId}（{taskTypeName}）的邀请，tick {departTick} 出发。` |
+| `TaskInvitationAnswered` | `任务 {taskId} 的邀请收到回应。` |
+| `TaskInvitationExpired` | `任务 {taskId} 的邀请已过期。` |
+| `TaskDeparted` | `任务 {taskId} 已出发。` |
+| `TaskDelayed` | `任务 {taskId} 因道路风险延误，预计 tick {newCompletionTick} 完成。` |
+| `TaskCompleted` | `任务 {taskId}（{taskTypeName}）完成：{effectsText}` |
+| `TaskFailed` | `任务 {taskId} 失败：{reasonText}` |
+| `TaskCancelled` | `任务 {taskId} 已取消。` |
+| `ResourcesTransferred` | `资源运输已结算。` |
+| `ResourcesConsumed` | `资源消耗已结算。` |
+| `StockpileAdjusted` | `库存已调整。` |
+| `CharacterMoved` | `{name}已抵达{toNodeName}。` |
+| `TeamMoved` | `{name}已抵达{toNodeName}。` |
+| `CharacterInjured` | `{agentName}受伤，预计 tick {untilTick} 恢复。` |
+| `CharacterRecovered` | `{agentName}已恢复。` |
+| `TeamRecovered` | `{teamName}已恢复。` |
+| `EvidenceDiscovered` | `发现证据《{evidenceTitle}》。` |
+| `ScoutReported` | `收到{nodeName}的侦察报告。` |
+| `GroupRescued` | `{groupName}已获救。` |
+| `GroupWorsened` | `{groupName}的状况恶化。` |
+| `MetersChanged` | `{changesText}` |
+| `RelayDegraded` | `中继已降级。` |
+| `RelayDown` | `中继已中断。` |
+| `RelayRestored` | `中继已恢复。` |
+| `OrchardCrisis` | `果园出现危机。` |
+| `OrchardDamaged` | `果园受到损害。` |
+| `MigrationCrisis` | `迁徙安全出现危机。` |
+| `SupplyShortage` | `供给出现短缺。` |
+| `DayPassed` | `第 {day} 日结算完成。` |
+| `ChapterStageEvaluated` | `首章评估已完成。` |
+| `ScenarioCardTriggered` | `剧情卡状态已更新。` |
+| `ScenarioCardPublished` | `剧情卡状态已更新。` |
+| `ScenarioCardWithdrawn` | `剧情卡状态已更新。` |
+| `ScenarioCompensationApplied` | `剧情卡状态已更新。` |
+| `ScenarioOverrideApplied` | `剧情卡状态已更新。` |
+
+`{termText}` 用 `termTemplates.<kind>` 渲染单个条款，`{termsText}` 是全部条款的渲染结果用“；”连接。各条款模板：
+
+| kind | 模板 |
+|---|---|
+| `deliver` | `{obligorName}在 tick {byTick} 前把 {amount} 点{resourceName}从{fromNodeName}送到{toNodeName}` |
+| `escort` | `{obligorName}在 tick {byTick} 前护送{roadName}` |
+| `rescue` | `{obligorName}在 tick {byTick} 前救出{groupName}` |
+| `repair-relay` | `{obligorName}在 tick {byTick} 前修复中继` |
+| `share-evidence` | `{obligorName}在 tick {byTick} 前把《{evidenceTitle}》交给{toName}` |
+| `grant-passage` | `{obligorName}允许{granteeFactionName}通行{roadName}，直到 tick {untilTick}` |
+| `water-allocation` | `{obligorName}把水闸分配保持为“{policyName}”，直到 tick {untilTick}` |
+| `delegate` | `{obligorName}把队伍与物资委托给{granteeName}，直到 tick {untilTick}` |
+
+名称（`*Name`）从内容包与 `locale` 取：主体用人格的 `name`（玩家为“特派员”），节点用 `nodes`，道路用“{a 节点}—{b 节点}的道路”。
+
+渲染绑定必须在 detail 过滤之后执行，禁止模板从聚合或未授权 artifact 补回字段。`facts` 也只保留同一过滤结果；summary 的任务完成只渲染“任务 {taskId} 完成”，不含 effects。system 事件先被 ACL 排除，不借模板获得可见性。
+
+- `*Name` 只查内容包公开名称/locale；`name` 对应移动事件的 id。`reasonText` 取 `locale.reasonCodes[reasonCode]`。证据标题仅在授权后查证据索引，KnowledgeGranted 模板不渲染秘密标题或正文。
+- `changesText` 按事件 changes 顺序渲染 `observationChange`（`{meterName}：{from} → {to}（{causeName}）`），以“；”连接。`causeName` 用内容包 `causeNames` 的公开分类：daily、task、road-risk、group-deadline、scenario-pressure；生产者把内部原因映射为其中一项，不放卡片/秘密 ID 或隐藏理由。仅这些公开分类进入 MetersChanged.cause；不能用原始 cause 字符串兜底。
+- `effectsText` 的输入是 TaskCompleted.effects 的公开结果列表 `{ kind: "transport" | "escort" | "rescue" | "repair" | "scout" }[]`（依结算顺序，至少任务本身一项），按 `effectTemplates.<kind>` 渲染并以“；”连接。数量、库存、证据正文、侦察详细结果与风险抽样均不放入此字段；详细结算由各自授权事件表达，履约查询 task。
+- `WorldFactRecorded` 首版仅支持 ConvoyDelayed：text 取授权事件 payload.payload.text（内容包卡片声明的公开正文），不是读取未发布卡片。新增 factType 必须同时声明安全字段绑定。
+- 缺少必需绑定或模板是配置/渲染错误，阻止消费并报告；不使用原始 JSON、秘密或空字符串兜底。
+
+### 11.5 唤醒与通知
+
+观察写入后，宿主按下表生成 trigger（调度器合并规则见 [运行时](runtime.md) 第 13 节）。没有列出的观察只进入记忆，不唤醒 Agent。
+
+| 观察 | trigger kind |
+|---|---|
+| 玩家对自己说话（`DialogueSubmitted` 且说话人为玩家） | `player-dialogue` |
+| 收到定向消息、证据 | `message` |
+| 收到任务邀请 | `task-invite` |
+| 收到协议提案或还价 | `agreement-proposal` |
+| 自己参与的任务失败、自己受伤、与自己派系相关的危机 | `alert` |
+| `AgentsSummoned` 点名自己 | `scenario` |
+| `ProbeAsked` 问自己 | `probe` |
+
+### 11.6 状态
+
+`perception_state.state_json` 保存：已投递去重键集合（`eventId:agentId`）、聚合桶、最后已知视图（指标、水闸分配、道路状态、库存等级，各带 `asOfTick`）。最后已知视图就是 decision 上下文“当前局势”段的数据来源（[领域模型](../architecture/domain-model.md) 第 8.2 节）。

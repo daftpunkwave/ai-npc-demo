@@ -111,3 +111,47 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 ## 7. 验收
 
 从任意一次角色拒绝可定位到其观察、记忆 revision、最终请求与规则结果；同模型不同 Agent 不混档；同工具不同 binding 能区分；失败重试与未知 usage 仍进入费用/样本统计；普通玩家和运营席位无权访问未授权原文。替换 memory/context/renderer/控制台页面后，同一 traceId 的证据链仍完整；控制台页面权限与 API 权限分开验证。
+
+## 8. 首版实现规格
+
+### 8.1 span 与 trace
+
+| span 名称 | 产生位置 | 关键属性 |
+|---|---|---|
+| `http.request` | 路由层 | `route`、`status`、`principalId`、`activeRole` |
+| `command` | authority | `commandType`、`commandId`、`principalId`、`commandStatus`、`reasonCode`、事件数 |
+| `job` | 规则 job 执行 | `jobKind`、`jobId`、`dueTick` |
+| `perception.event` | 感知消费者 | `eventId`、`eventType`、获得观察的 Agent 数 |
+| `memory.ingest` / `memory.maintenance` | 记忆 worker | `agentId`、`moduleId`、`baseRevision`、`newRevision`、条数、结果 |
+| `turn` | turn 根 span | `turnId`、`agentId`、`triggerIds`、`profileHash`、终态 |
+| `turn.freeze` / `turn.retrieve` / `turn.context` / `turn.compression` / `turn.speech` / `turn.settle` | turn 各阶段 | 阶段的 requested/resolved/effective、`applied`/`skipped`/`failed` 与原因 |
+| `turn.decision.round` | 每一轮 decision | 轮次、工具调用数 |
+| `model.attempt` | 模型池 | `attemptId`、`purpose`、`modelId`、`adapterId`、usage、各段耗时、错误 |
+| `tool.call` | 工具网关 | `toolId`、`bindingId`、`operationId`、`executionStatus`、`commandStatus` |
+
+- 每个外部输入（玩家或运营的一次 HTTP 命令）开启一个 trace，`traceId` 同时写进由它产生的事件的 `correlationId`。
+- 由事件唤醒的 turn 开启新的 trace，在根 span 的 `causeTraceIds` 属性里记录触发事件的 `correlationId`，控制台据此跨 trace 跳转。
+- span 先写进内存缓冲，每 200 ms 或满 500 条批量落库。`turn`、`model.attempt`、`tool.call`、`command` 四类是必需证据：缓冲溢出时可以丢弃其他 span，但这四类不能丢；一旦丢失，该 run 的 `evidence_complete` 置 0。
+
+### 8.2 artifact 种类
+
+| kind | 写入者 | 内容 |
+|---|---|---|
+| `context` | context 模块 | ContextArtifact（[上下文](../agent/context.md) 第 11.4 节） |
+| `model-request` / `model-response` | 模型池 | 规范化请求与线协议请求体 / 线协议响应体与规范化响应 |
+| `tool-raw` / `tool-view` | 工具网关 / tool-view 模块 | 工具完整结果 / 入模视图 |
+| `speech` | speech 流程 | 已通过校验的对白与校验记录 |
+| `manifest` | experiment | 去密钥的冻结 manifest |
+| `export` | audit | 导出包 |
+
+大于 64 KB 的正文写到 `data/artifacts/<artifactId>`，表中只存路径与 hash。
+
+### 8.3 脱敏副本
+
+控制台默认展示、导出默认使用脱敏副本；原文需要 researcher 角色并写一条审计生命周期事件。首版的脱敏规则：
+
+1. 秘密原文（`private:` 资料）替换为 `[SECRET <secretId> len=N]`。
+2. 凭据形态的字符串（与任一已解析凭据相同的子串）替换为 `[REDACTED]`；正常情况下不应出现，出现即记一条安全事件。
+3. 其余字段（包括玩家原话）保留，它们本身就是研究对象；对外分享前由研究员另行审查。
+
+脱敏副本另存为新的 artifact（`redaction: redacted`，`redacted_from` 指向原文），不覆盖原文。

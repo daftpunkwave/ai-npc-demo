@@ -50,36 +50,40 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 | 模块 ID | 类别 | 实例作用域 | 提供能力 | 拥有状态 | 说明 |
 |---|---|---|---|---|---|
-| `game.world.slg-light` | service | run | `game.world` | 世界聚合、版本、命令接受后的状态计划 | 首个轻数值实现；替换即改变规则语义，必须新 run |
-| `game.map.six-nodes` | service | run | `game.map` | 六节点地图、道路、通行与可达查询 | 地图数据属内容包，模块负责查询语义 |
-| `game.clock.controlled` | service | run | `game.clock` | `worldTick`、暂停/单步、到期触发建议 | 实时映射与受控 tick 是同模块的运行模式，不是两套时钟 |
-| `game.resources.light` | service | run | `game.resources` | 供给、能源、医疗材料及预留/消耗/返还 | 只返回变更计划，不自行扣减 |
-| `game.actions.standard` | service | run | `game.actions` | 运输、护送、救援、修复、侦察、临时通行的结算 | 可拆成多个 contributor；本行是默认组合 |
-| `game.agreements.standard` | service | run | `game.agreements` | 提案、确认、履约、改约、违约与补偿 | 正式协议真值与主观承诺分开 |
-| `game.scenario.watergate` | service | run | `game.scenario` | 首章局势卡、前置条件、受众、补偿路径 | 草稿不可感知；发布后走标准命令 |
-| `game.save.sqlite` | service | run | `game.save` | 一致检查点、恢复预检、状态迁移协调 | 通过 `platform.storage` 读写，不直接复制数据库文件 |
+| `game.world.slg-light` | service | run | `game.world` | campaign、指标、角色/队伍/群体的世界状态、委托、证据位置 | 首个轻数值实现；处理 `campaign.start`、水闸政策与每日结算；替换即改变规则语义，必须新 run |
+| `game.map.six-nodes` | service | run | `game.map` | 受控道路状态、通行许可；静态六节点地图来自内容包 | 地图数据属内容包，模块负责路径与可达查询语义 |
+| `game.clock.controlled` | service | run | `game.clock` | `worldTick`、运行/暂停/单步状态 | 实时映射与受控 tick 是同模块的运行模式，不是两套时钟 |
+| `game.resources.light` | service | run | `game.resources` | 库存点数量与预留 | 只返回变更计划，不自行扣减 |
+| `game.actions.standard` | service | run | `game.actions` | 任务与邀请 | 运输、护送、救援、修复、侦察的结算 |
+| `game.agreements.standard` | service | run | `game.agreements` | 协议、条款状态 | 正式协议真值与主观承诺分开 |
+| `game.comms.standard` | service | run | `game.comms` | 会话、消息投递、知识授权 | 对话、消息、广播、证据分享与 `speech.commit` |
+| `game.scenario.watergate` | service | run | `game.scenario` | 剧情卡状态 | 首章卡片按内容包的 `atTick` 触发；草稿不可感知，发布后走标准命令 |
+| `game.scenario.watergate-escalating` | service | run | `game.scenario` | 同上 | 模块替换演示用的第二实现：同一份卡片，节奏加快并带额外压力（[内容包](../game/content-pack.md) 第 9 节） |
+| `game.save.sqlite` | service | run | `game.save` | 快照记录 | 静默、分支复制与恢复预检（[存储](storage.md) 第 3 节）；通过 `platform.storage` 读写 |
+
+`game.scenario.*` 两个实现对同一 capability 只能选一个；替换它们只改装配绑定，客户端、Agent 与其他游戏模块的代码都不改。
 
 默认假设单玩家、单权威世界；替换以上任意游戏模块时，客户端、感知、工具都只依赖 capability 契约，不 import 具体实现。若规则版本变化导致旧存档语义不兼容，必须显式迁移或新分支，不能静默重解释。
 
 ### 4.2 Agent 认知与行为
 
-| 能力 | 默认实现 | 可比较实现（目标，后续轴逐步补齐） | 实例作用域 | 配置拥有者 |
-|---|---|---|---|---|
-| `agent.perception` | `agent.perception.local` | `agent.perception.briefing`、`agent.perception.attention` | agent | 场景/Agent profile |
-| `agent.memory` | `agent.memory.ledger` | `agent.memory.none`、`agent.memory.stream-reflection`、`agent.memory.layered-hybrid` | agent | Agent profile / variant patch |
-| `agent.context` | `agent.context.ordered-blocks` | `agent.context.task-centered` | agent（无持久状态） | Agent profile |
-| `agent.compression` | `agent.compression.window` | `agent.compression.none`、`agent.compression.structured`、`agent.compression.summary` | agent（无持久状态） | Agent profile |
-| `agent.tool-view` | `agent.tool-view.structured` | `agent.tool-view.full`、`agent.tool-view.brief` | agent（无持久状态） | Agent profile |
-| `agent.decision` | `agent.decision.model` | `agent.decision.deterministic`（测试/CI） | agent | Agent profile + 模型挂载 |
-| `agent.scheduling` | `agent.scheduling.fair` | `agent.scheduling.priority-cooldown` | run | 场景 profile |
-| `agent.model-pool` | `agent.model-pool.shared` | 独立评估用 `agent.model-pool.isolated`（后续） | deployment | RunSpec 模型布局 |
-| `agent.tools` | `agent.tools.game-tools` | 按工具族拆分的 contributor | deployment | roster toolset/binding |
+| 能力 | 默认实现 | 首版还要交付 | 后续实验轴（D 阶段，首版不做） | 实例作用域 | 配置拥有者 |
+|---|---|---|---|---|---|
+| `agent.perception` | `agent.perception.local` | — | `agent.perception.briefing`、`agent.perception.attention` | agent | 场景/Agent profile |
+| `agent.memory` | `agent.memory.ledger` | `agent.memory.none`、`agent.memory.stream-reflection`、`agent.memory.layered-hybrid` | — | agent | Agent profile / variant patch |
+| `agent.context` | `agent.context.ordered-blocks` | — | `agent.context.task-centered` | agent（无持久状态） | Agent profile |
+| `agent.compression` | `agent.compression.window` | `agent.compression.none` | `agent.compression.structured`、`agent.compression.summary` | agent（无持久状态） | Agent profile |
+| `agent.tool-view` | `agent.tool-view.structured` | — | `agent.tool-view.full`、`agent.tool-view.brief` | agent（无持久状态） | Agent profile |
+| `agent.decision` | `agent.decision.model` | `agent.decision.deterministic`（测试/CI 与可重复对照） | — | agent | Agent profile + 模型挂载 |
+| `agent.scheduling` | `agent.scheduling.fair` | — | `agent.scheduling.priority-cooldown` | run | 场景 profile |
+| `agent.model-pool` | `agent.model-pool.shared` | — | 独立评估用 `agent.model-pool.isolated` | deployment | RunSpec 模型布局 |
+| `agent.tools` | `agent.tools.game-tools` | — | 按工具族拆分的 contributor | deployment | roster toolset/binding |
 
 `agent.runtime` 不在目录中：turn 管线、预算、租约、证据和会话边界是宿主固定机制，模块只实现各阶段策略。memory 的四个实现与评价口径由 [记忆](../agent/memory.md) 与 [评估](../platform/evaluation.md) 维护；decision 的 deterministic 实现只用于工程测试，不冒充真实模型效果。
 
 下文与 Agent 专篇中的 `memory.ledger`、`perception.local`、`context.ordered-blocks` 等是本表 `agent.<family>.<impl>` 的简写；冻结 manifest 与 trace 必须记录完整模块 ID，不能只写简写。
 
-首版要求保留 memory 的四个实现（M0 到 M3），其他能力的第二、第三实现按后续实验轴逐步补齐；本表列出项不等于首版全部交付，`agent.model-pool.isolated` 已经标为后续。
+首版要求交付 memory 的四个实现（M0 到 M3），以及上表“首版还要交付”一列；“后续实验轴”一列在首版不实现，也不出现在首版的 catalog 显式登记里。
 
 ### 4.3 平台与适配器
 
@@ -93,9 +97,12 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `platform.operations.standard` | service | run | `platform.operations` | 暂停/快照/恢复、席位交接、内容发布与补偿操作 |
 | `platform.module-admin.standard` | service | deployment | `platform.module-admin` | catalog 快照、装配预检、diff、冻结与更换流程 |
 | `platform.secrets.env` | service | deployment | `platform.secrets` | 只向服务端适配器解析 credentialRef，浏览器永远拿不到 |
-| `platform.model-transport.http-compatible` | adapter | deployment | `platform.model-transport` | 兼容 HTTP 的模型传输；归档规范化与序列化请求 |
-| `platform.model-transport.deterministic` | adapter | deployment | `platform.model-transport` | CI/测试用确定性响应，不产生外部费用；仅测试装配使用，不与 http-compatible 同装 |
+| `platform.model-transport.openai-compatible` | adapter | deployment | `platform.model-transport` | Chat Completions 协议（DeepSeek、Kimi、通义、Ollama、vLLM 等）；映射见 [模型传输](../agent/model-transport.md) 第 3 节 |
+| `platform.model-transport.anthropic` | adapter | deployment | `platform.model-transport` | Anthropic 官方 SDK 的 Messages API；映射见 [模型传输](../agent/model-transport.md) 第 4 节 |
+| `platform.model-transport.deterministic` | adapter | deployment | `platform.model-transport` | CI/测试用确定性响应，不产生外部费用；只出现在测试装配 |
 | `transport.http-ws.fastify` | adapter | deployment | `transport.http-ws` | HTTP 命令/查询与 WebSocket 投影 |
+
+`platform.model-transport` 的基数是 `many`：模型布局里每个 connection 用 `adapterId` 指定一个已装配的传输适配器。标准装配同时装 `openai-compatible` 与 `anthropic`；`deterministic` 只出现在测试装配，预检拒绝它与真实适配器出现在同一装配里，以免测试响应混进真实实验。
 
 `run`/`branch`/`manifest` 生命周期由宿主 `packages/experiment` 机制协调，不属于可替换能力；评估协议、runner 与报告由 `platform.evaluation.standard` 模块提供。适配器只做技术转换；语义失败（未知 schema、不支持的输出协议、缺 usage）必须显式返回，不能吞掉或伪造成功。
 
@@ -106,20 +113,22 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | 模块 ID | 类别 | 实例作用域 | 提供能力/贡献 | 必需性 | 说明 |
 |---|---|---|---|---|---|
 | `client.world-view.standard` | service | session | `client.world-view` | required | 网络投影 reducer，合并快照/增量与游标 |
-| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer` | required | 2.5D 等距场景；可换无渲染 `client.scene-renderer.null`（测试）跑规则 |
+| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 2.5D 等距场景 |
+| `client.scene-renderer.null` | adapter | session | `client.scene-renderer` | 仅测试装配 | 不绘制画面，只记录收到的场景视图，用于 CI 跑规则场景 |
 | `client.camera.standard` | service | session | `client.camera` | required | 平移/缩放/跟随，不读世界库 |
 | `client.screen-projection.isometric` | service | session | `client.screen-projection` | required | 世界坐标与屏幕坐标互转、命中转换 |
 | `client.input.standard` | service | session | `client.input` | required | 点选、移动、交谈意图转为 command |
-| `client.hud.standard` | contributor | session | `hud` slot | required | 局势、资源、任务、承诺与时钟状态 |
-| `client.dialogue.standard` | contributor | session | `dialogue` slot | required | 已提交对白、证据卡、提案入口 |
-| `client.faction-start.standard` | contributor | session | `boot.screen`/`modal` slot | required（新 campaign） | 五个人类派系开局选择与初始化确认 |
-| `client.characters.standard` | contributor | session | `sidebar` slot | default | 人物册、公开主张、已知经历 |
-| `client.settings.standard` | contributor | session | `settings.section` slot | default | 语言、显示、声音、镜头、输入、图形、暂停/保存；测试 preset 申请入口 |
-| `client.notifications.standard` | contributor | session | `notification` slot | default | 紧急任务、承诺到期、邀请、公共消息 |
-| `client.audio.standard` | contributor | session | `notification` slot | optional | 声音反馈；缺失不影响规则 |
-| `client.debug-overlay.research` | contributor | session | `overlay` slot | optional | 仅研究/测试开关启用，玩家投影外不自动注入真值 |
+| `client.hud.standard` | contributor | session | `client.hud`（`hud` slot） | required | 局势、资源、任务、承诺与时钟状态，文字与数值完整显示 |
+| `client.hud.compact` | contributor | session | `client.hud`（`hud` slot） | 替换演示 | 第二实现：只显示图标与等级，可折叠；与 standard 二选一 |
+| `client.dialogue.standard` | contributor | session | `client.dialogue`（`dialogue` slot） | required | 已提交对白、证据卡、提案入口 |
+| `client.faction-start.standard` | contributor | session | `client.faction-start`（`boot.screen` slot） | required（新 campaign） | 五个人类派系开局选择与初始化确认 |
+| `client.characters.standard` | contributor | session | `client.characters`（`sidebar` slot） | default | 人物册、公开主张、已知经历 |
+| `client.settings.standard` | contributor | session | `client.settings`（`settings.section` slot） | default | 语言、显示、声音、镜头、输入、图形、暂停/保存；测试 preset 申请入口 |
+| `client.notifications.standard` | contributor | session | `client.notifications`（`notification` slot） | default | 紧急任务、承诺到期、邀请、公共消息 |
+| `client.audio.standard` | contributor | session | `client.audio` | D 阶段 | 声音反馈；首版不实现 |
+| `client.debug-overlay.research` | contributor | session | `client.debug-overlay`（`overlay` slot） | D 阶段 | 研究/测试开关；首版不实现 |
 
-玩家设置只改变展示与输入表达；暂停/保存/恢复仍走服务端 campaign API（`game.clock`、`game.save` 与 `platform.operations` 协作），不是客户端本地状态。测试 preset 只能申请新 run/branch，不能热改在线世界；`client.faction-start.standard` 只在新建 campaign 的装配中 required，恢复已有 campaign 时不在该装配里，required 始终相对当次 assembly 判定。
+玩家设置只改变展示与输入表达；暂停/保存/恢复仍走服务端 campaign API（`game.clock`、`game.save` 与 `platform.operations` 协作），不是客户端本地状态。测试 preset 只能申请新 run/branch，不能热改在线世界；`client.faction-start.standard` 始终装配：已有 campaign 时它不渲染任何内容。
 
 ## 6. 控制台模块
 
@@ -133,6 +142,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `console.faction-ops.standard` | 三势力运营席位 | `platform.operations`、`game.clock` | operator | 三个非人类势力 agent/human、暂停/单步/快照 |
 | `console.scenario-editor.standard` | 事件卡与剧情 | `game.scenario`、`platform.operations` | operator | 草稿、预演、发布、撤回、补偿与污染标记 |
 | `console.observability.standard` | 可观测 | `platform.observability` | researcher | 世界时间线、Agent 检查器、请求/响应、记忆 diff、分支对比 |
+| `console.observability.lite` | 可观测（精简） | `platform.observability` | researcher | 替换演示用第二实现：只有 turn 列表与单个 turn 详情两页，读取同一批 API；与 standard 二选一 |
 | `console.evaluation.standard` | 可评估 | `platform.evaluation` | researcher/evaluator | run 创建、指标、报告、判定与失败分母 |
 | `console.debug.standard` | 可调试 | `platform.observability`、`game.clock` | researcher | 有界单步/重放、预算与队列、注入与定位工具 |
 | `console.audit.standard` | 审计与导出 | `platform.observability` | researcher | 按权限脱敏导出与保留策略 |
@@ -148,7 +158,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | 一个 capability 恰好需要一个 provider | 装配必须解析出唯一实现；两个默认实现冲突则预检失败 |
 | 一个 capability 允许多个 contributor | 各贡献必须带稳定 ID 与排序；ID 冲突或不可比较顺序拒绝启动 |
 | 一个 capability 有 fallback | fallback 必须是显式声明、有触发条件、有预算且写入 effective 记录；不能按注册顺序静默选择 |
-| 必需能力缺失 | 该 realm 拒绝进入 ready；不允许“先启动再补” |
+| 必需能力缺失 | 该 realm 拒绝进入 ready；不允许“先启动再补”。各宿主的必需能力：server 为全部 `game.*`、`platform.storage`、`platform.secrets`、`platform.access-policy`、`platform.operations`、`transport.http-ws`；装配含 `agentSlots` 时再加 `agent.scheduling`、`agent.tools` 以及 `agentSlots` 中各模块 `requires` 的能力；client 为 `client.world-view`、`client.scene-renderer`、`client.camera`、`client.screen-projection`、`client.input`、`client.hud`、`client.dialogue`、`client.faction-start`；console 没有必需页面 |
 | 可选 UI/页面缺失 | 导航与 slot 显示不可用原因；不影响服务端权威 |
 | 同一模块 ID/version 两个实现 | 拒绝注册；模块升级必须新 version 与新装配 |
 | 跨 realm 提供能力 | 拒绝；浏览器只能 `requiresRemote`，由握手与角色校验 |
@@ -162,17 +172,17 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 | realm | 选择 |
 |---|---|
-| server | 4.1 全部游戏模块、4.2 默认认知/模型/工具模块、4.3 平台模块与已选适配器（model-transport 仅 `http-compatible`） |
-| client | 5 章 `required` 与 `default` 模块；`optional` 由部署偏好决定 |
-| console | 6 章全部页面模块；默认角色按表 |
+| server | 4.1 中除 `game.scenario.watergate-escalating` 以外的游戏模块、4.2 的默认实现、4.3 平台模块与适配器（model-transport 为 `openai-compatible` 与 `anthropic`） |
+| client | 5 章 `required` 与 `default` 模块（HUD 为 `client.hud.standard`） |
+| console | 6 章全部页面模块（可观测页为 `console.observability.standard`） |
 
-`platform.model-transport.deterministic` 只出现在 `local-slg-test-v1`，不能与 `http-compatible` 同时进入同一装配；同一 capability 的唯一 provider 规则见第 7 节。
+`local-slg-test-v1` 与标准装配的差别只有两处：model-transport 只有 `deterministic`；client 的 scene-renderer 为 `client.scene-renderer.null`。模型布局与名册不属于装配，测试时由 RunSpec 或环境变量选择 `deterministic-model-layout-v1` 与 `core-3`。它用于 CI 与规则回归，不产生模型费用，不能假装验证真实模型行为。装配文件的完整内容见 [配置](../platform/configuration.md) 第 10.1 节，S09–S24 期间的逐步增长见 [构建计划](../delivery/build-plan.md) 第 0.2 节。
 
-另有 `local-slg-test-v1`：server 使用 `platform.model-transport.deterministic`，client 可用无渲染 `client.scene-renderer.null`，用于 CI 与规则回归；它不产生模型费用，不能假装验证真实模型行为。
+M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `game.scenario.watergate-escalating`；`client.hud` 换成 `client.hud.compact`；`console.observability` 换成 `console.observability.lite`；Agent profile 的 memory 槽在 M0–M3 之间切换。
 
 装配文件只选择模块与配置引用，不复制 roster、模型参数或世界内容。RunSpec 通过 `moduleAssemblyRef` 选择装配，并同时选择 world pack、scenario、roster、model layout 与 toolsets，见 [配置](../platform/configuration.md)。
 
-默认装配中的 `agent.memory.ledger` 只是可用起点，它的默认参数不等于 M1 基线；正式 M1 需显式选择 structured-ledger preset（同一模块的不同参数）。M0 到 M3 都由 profile/variant 明确选择，不能拿“默认装配选了 ledger”当作某组已经验证。
+默认装配中的 `agent.memory.ledger` 只是为了让在线游戏开箱可玩。实验 run 不能依赖模块默认值：M0 到 M3 都必须由 variant patch 显式引用 preset（`memory-m0-window`、`memory-m0-current`、`memory-m1-structured-ledger`、`memory-m2-stream-reflection`、`memory-m3-layered-hybrid`），manifest 记录 preset ID 与解析后的完整参数；不能拿“默认装配选了 ledger”当作某组已经验证。
 
 ## 9. 替换与新增矩阵
 

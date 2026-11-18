@@ -83,7 +83,7 @@ turn 冻结 inputFrontier 后等待必要水位；超时在正式实验中算失
 
 ## 4. 存储与快照
 
-下表是逻辑数据集合，可以共享一个 SQLite 文件，由 storage port 隔离；模块不能各自随意创建世界数据库。
+下表是逻辑数据集合，可以共享一个 SQLite 文件，由 storage port 隔离；模块不能各自随意创建世界数据库。物理表结构、索引与分支复制算法见 [存储](storage.md)。
 
 | 集合 | 关键内容 |
 |---|---|
@@ -97,7 +97,7 @@ turn 冻结 inputFrontier 后等待必要水位；超时在正式实验中算失
 
 唯一键与索引必须包含必要的 scope；跨分支检索会被 port 拒绝。每个实验 run（包括开环）分配独占的 branchId；branch 激活期间绑定一个 profileHash，禁止两个 run 并发复用。在线世界更新配置时也创建后继分支和 run，在维护边界切换在线别名，并保留旧分支。embedding 这类可选索引属于派生数据，可以从已授权记忆重建；索引构建版本和 ready 水位要纳入实验记录。
 
-快照在 branch 静默（quiescing）之后生成：暂停接收变更命令，fence 或 cancel 在途 turn 并排空短提交，冻结输入 frontier；等所选策略的必要 memory 水位到齐后冻结 maintenance 发布，记录未完成动作、timer、控制权与状态版本。世界、memory、job 和 manifest 必须来自同一个逻辑恢复点。只复制世界表不算可复现的实验快照。
+快照在 branch 静默（quiescing）之后生成：暂停接收变更命令，fence 或 cancel 在途 turn 并排空短提交，冻结输入 frontier；等所选策略的必要 memory 水位到齐后冻结 maintenance 发布，记录未完成动作、timer、控制权与状态版本。世界、memory、job 和 manifest 必须来自同一个逻辑恢复点。只复制世界表不算可复现的实验快照；首版的实现方式是把静默后的分支整体复制成一个冻结分支（[存储](storage.md) 第 3 节）。
 
 事件、原始模型记录和原始工具结果按 run 保留；memory 遗忘只影响 Agent 可读的那一层。细节淘汰可以按显式策略保留概括；来源撤回或彻底遗忘则要沿 provenance 级联更新，不能让被撤回的秘密继续通过旧摘要读到。研究员可以从审计库重建，不代表 NPC 有权访问审计库。
 

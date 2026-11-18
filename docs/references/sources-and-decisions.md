@@ -8,22 +8,22 @@
 
 ### 项目现有记忆资料
 
-父项目的 [记忆设计资料](../../../../design/memory/) 和 [研究汇编](../../../../research/agent-memory.md) 目前属于设计资料，没有运行中的 memory 模块。本方案继承其“规则写事实、LLM 写理解”、L0 到 L6 分类、来源链、知情边界和后台整理。
+父项目的记忆设计资料（`game-agent/design/memory/last-light-memory-design.md`）和研究汇编（`game-agent/research/agent-memory.md`）位于本仓库之外，属于设计资料，没有运行中的 memory 模块。本仓库已把实现所需的部分（L1–L6 分层、显著度门控、容量、衰减、检索打分、引用才强化）改写进 [记忆](../agent/memory.md) 第 3、11 节，不依赖这两份外部文件。本方案继承其“规则写事实、LLM 写理解”、L0 到 L6 分类、来源链、知情边界和后台整理。
 
 本轮做了场景适配：隔离键从玩家/王国/居民改为 world/branch/agent；世界合同与主观承诺分开；规则只保留 authority，memory 对 policy 的输入显式可调；审计历史不随角色遗忘删除。旧稿的价格、容量、成本结论和商业化内容不作为本 demo 的依据。
 
-父项目资料位于当前独立仓库之外；若单独分发本仓库，应附相应来源或保留来源清单，不把外链缺失误报为运行依赖。
+父项目资料不随本仓库分发，也不是运行或实现依赖。
 
 ### agent-prism
 
-本地参考仓库为 `D:/daftpunkwav/04-MyProjects/agent-prism`；检视时 HEAD 为 945541b973430996cd216b9a672b76eac3dbb092，以实际读取的工作区源码为证据。
+参考仓库 agent-prism 是作者本机的私有工作区（检视时 HEAD 为 945541b973430996cd216b9a672b76eac3dbb092），没有公开链接；下表以仓库内相对路径标注当时读取的文件，只作来源记录，实现时不需要访问它。
 
 | 已核实机制 | 采用方式与边界 |
 |---|---|
-| [唯一组合根](D:/daftpunkwav/04-MyProjects/agent-prism/apps/server/src/assemble.ts) | 借鉴显式装配与依赖方向；新增 branch/agent scoped 实例，不能照搬全 arena 共享 memory 文件。该文件同时混合装配与热更新细节，本项目把装配、guards 与业务配置分开 |
-| [自定义维度描述符](D:/daftpunkwav/04-MyProjects/agent-prism/packages/contracts/contracts/src/custom-dimension.ts) | 借鉴描述符驱动参数、UI 与实验轴；本项目扩展为 ModuleDefinition：realm/能力/实例作用域/状态迁移/远端依赖/两端口声明，不只有 Agent 维度 |
-| [memory port](D:/daftpunkwav/04-MyProjects/agent-prism/packages/contracts/contracts/src/memory-port.ts) | 借鉴实现中立接口；本 demo 扩展观察来源、scope、水位、revision 和迁移约束 |
-| [边界检查](D:/daftpunkwav/04-MyProjects/agent-prism/scripts/check-boundaries.mjs) | 同时约束源码 imports 与包依赖，阻止反向依赖及深层 import；本项目需额外增加 realm 边界与“新模块目录不能绕过守门”的目录生成规则 |
+| 唯一组合根（`apps/server/src/assemble.ts`） | 借鉴显式装配与依赖方向；新增 branch/agent scoped 实例，不能照搬全 arena 共享 memory 文件。该文件同时混合装配与热更新细节，本项目把装配、guards 与业务配置分开 |
+| 自定义维度描述符（`packages/contracts/contracts/src/custom-dimension.ts`） | 借鉴描述符驱动参数、UI 与实验轴；本项目扩展为 ModuleDefinition：realm/能力/实例作用域/状态迁移/远端依赖/两端口声明，不只有 Agent 维度 |
+| memory port（`packages/contracts/contracts/src/memory-port.ts`） | 借鉴实现中立接口；本 demo 扩展观察来源、scope、水位、revision 和迁移约束 |
+| 边界检查（`scripts/check-boundaries.mjs`） | 同时约束源码 imports 与包依赖，阻止反向依赖及深层 import；本项目需额外增加 realm 边界与“新模块目录不能绕过守门”的目录生成规则 |
 
 该参考的 memory-store 当前是分词/词频匹配，不是 embedding 检索；memory-top-n 只能裁剪已召回集合；部分 driver 不经过全部 context hooks。这些限制促使本设计要求候选池/入模数量分开记录、所有实验能力预检。其 best-effort memory 失败处理也不能作为严格实验的有效样本策略。
 
@@ -80,6 +80,15 @@ PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。
 | 不可变输入与原始档案 | 对比需要可定位的观察、记忆 revision、最终请求和真实世界结果；换模块不能删证据 |
 | SQLite 模块化单体 | demo 规模下优先一致性和维护性；保留 storage/transport 适配空间；不引入微服务/Kafka/Redis |
 | 首版先 memory，其余槽预留基线 | 完整架构不等于立即实现所有算法；但 M 验收要求游戏/UI/控制台模块至少各替换一次 |
+| 两种参考模型适配器 | 需求方选择同时规定 OpenAI 兼容协议（覆盖国内云端模型与本地模型）与 Anthropic 官方 SDK；两者共用供应商无关的 ModelPort，另有确定性适配器用于测试 |
+| decision 以 `decision_submit` 工具收尾 | 两种协议都能稳定支持“工具调用”，而“工具 + JSON 输出格式”的组合在各供应商之间差异大；Claude Opus 5.5 也不接受强制 tool_choice |
+| 工具循环内历史只追加、压缩只在首轮前 | Anthropic 的思考块要求历史前缀不变；两种协议统一遵守，保证实验条件一致 |
+| 内置 `node:sqlite`，不用原生扩展 | 本机验证 Node 26 无需参数即可使用，避免原生编译；同步 API 让“事务内不 await”自然成立 |
+| 快照、恢复与实验分支都用整分支复制 | 首章数据只有数千行，整表复制最简单、最不易出错；记忆用行版本保存不可变 revision |
+| 替换演示固定为剧情节奏、HUD、观测页与 memory | 把“可插拔”的验收落到四个具体的第二实现上，避免“至少替换一个”含义不清 |
+| 场景只用矢量图元绘制 | 首版不依赖美术资源，渲染替换与无画面测试都更简单 |
+| 本地令牌登录 | 不做账号系统，但保留会话、角色与 Origin 校验，满足“本机访问不等于授权” |
+| 规则数值与内容数据写进文档 | 让实现者照抄即可得到确定的世界与可断言的测试；数值是初始设计值，修改即为新内容版本 |
 
 以上是设计决定，不是实测结论。需求变化优先于参考工程的组织方式；源码能力不够时标明差异，不把术语相似当作可直接复用。
 

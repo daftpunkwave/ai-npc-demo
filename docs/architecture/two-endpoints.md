@@ -100,46 +100,38 @@ flowchart LR
 
 ## 5. 请求与数据流
 
-| 入口 | 用途 | 关键边界 |
-|---|---|---|
-| `GET /` on `:5173` | 客户端 host 静态资源 | 只加载 client realm 模块与授权投影 |
-| `POST /api/v1/commands` | 玩家/运营标准命令 | 鉴权、幂等、版本、scope、controller/turn fencing |
-| `GET /api/v1/world/view` | 当前 principal 的授权投影 | 不返回原始全局事件或他人记忆 |
-| `WS /api/v1/streams` | 投影、已提交对白、任务状态 | 授权 channel、游标补齐、缺口重取快照 |
-| `GET /api/v1/session` | 会话、角色、协议版本、realm 装配描述 | 只返回本角色可见能力 |
-| `GET /api/v1/session/assembly`（`realm=client` 或 `console`） | 已解析的本域模块清单与兼容性 | 不含工厂、密钥或服务端对象 |
-| `/api/v1/console/*` | 控制台的运营、模型、观测、评估、调试、模块管理 | 同源会话 + 角色；与玩家 API 分开授权 |
-| `/console/*` | 控制台静态资源 | 由 server 提供；不得启动第三端口 |
+接口的完整清单、请求与响应格式、角色权限矩阵和错误码以 [API](api.md) 为准，本文不再重复。按归属分：`:5173` 只提供客户端静态资源，并把 `/api` 代理到 `:3000`；`:3000` 提供 `/api/v1/*`（玩家与通用接口）、`/api/v1/console/*`（控制台接口，按当前角色单独授权）、`/api/v1/streams`（WebSocket）与 `/console/*`（控制台静态资源）。
 
 一次玩家交互：客户端提交 command，经服务端 guard 校验后交给世界/Agent 模块处理；处理结果提交为事实与 outbox，再形成授权投影与 WS 增量，客户端 reducer 更新后交给已装载的 UI 模块。控制台读取同一事件的审计视图，但不会产生新的角色获知。
 
-玩家客户端与 NPC 使用同一 command 与规则管线；控制台操作也通过标准 command/API，不允许直接写数据库。所有失败区分 forbidden、validation、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、assembly-incompatible 等错误。
+玩家客户端与 NPC 使用同一 command 与规则管线；控制台操作也通过标准 command/API，不允许直接写数据库。
 
 ## 6. 鉴权、会话与本地运行
 
-本地 demo 不等于无鉴权：
+本地 demo 不等于无鉴权，具体机制见 [API](api.md) 第 2 节：
 
-- 服务端启动时生成本地操作员会话与玩家会话种子，或从环境注入；控制台必须登录/携带会话，不能凭 `127.0.0.1` 直接获批。
-- 角色至少区分 `player`、`operator`、`researcher`、`evaluator`；一个账号可持有多个角色，但每次请求按当前角色与 scope 校验。
-- CORS 只允许 `http://127.0.0.1:5173` 与 `http://127.0.0.1:3000` 的明确 origin；WebSocket 握手校验 origin、会话与 channel scope。
-- 模型凭据只存在服务端环境/secret store；控制台只看到连接别名、模型能力与验证状态。
+- 服务端启动时读取或生成玩家令牌与控制台令牌，并打印两条带 `#token=` 的登录地址；浏览器用令牌换取会话令牌，存在按 origin 隔离的 `sessionStorage` 中。控制台不能凭 `127.0.0.1` 直接获批。
+- 角色区分 `player`、`operator`、`researcher`、`evaluator`；控制台会话可持有多个角色，但每个请求用 `X-Active-Role` 指明当前角色，服务端只按当前角色与资源 scope 校验。
+- 服务端只接受 `Origin` 为 `http://127.0.0.1:5173` 或 `http://127.0.0.1:3000` 的请求与 WebSocket 握手；WebSocket 用一次性票据认证。
+- 模型凭据只存在服务端环境变量；控制台只看到连接别名、模型能力与验证状态。
 - 浏览器端状态（偏好、缓存、未提交草稿）与权威状态分开；刷新页面不能重放已提交副作用。
 
-单玩家首版允许同一操作员兼任 player 与 operator，但必须显式切换角色/视图；研究数据与扮演界面不能共享携带真值的缓存。
+单玩家首版允许同一个人同时持有玩家令牌与控制台令牌，但两者是不同的会话、在不同的 origin 下运行；研究数据与扮演界面不能共享携带真值的缓存。
 
 ## 7. 启动、开发与测试
 
-| 命令/场景 | 行为 |
+命令、脚本与本地拓扑的实现方式见 [技术栈](../delivery/tech-stack.md) 第 4、6 节。要点：
+
+| 命令 | 行为 |
 |---|---|
-| `pnpm dev` | 并行启动 server（`:3000`）与 client（`:5173`）；控制台在 `:3000/console` |
-| `pnpm dev:server` / `pnpm dev:client` | 只启动单侧；另一侧按契约显示不可用，不新建第三个监听 |
-| `pnpm build` | 构建 server、client、console 静态资源；console 资源进入 server 产物 |
-| `pnpm start` | 启动 server 与 client 两个监听；控制台复用 server 端口 |
-| `pnpm test` | 契约、边界、装配、目录检查与两端口 e2e（目标脚本） |
+| `pnpm dev` | 服务端（`:3000`）+ 客户端 Vite dev server（`:5173`，HMR 复用该端口）+ 控制台 `vite build --watch`（不监听端口） |
+| `pnpm build` | 构建客户端产物与控制台静态资源（控制台产物输出到服务端的 `console-static/`） |
+| `pnpm start` | 服务端 + `vite preview`（`:5173`）；控制台复用服务端端口 |
+| `pnpm check:ports` | 启动后确认只有两个本应用监听 |
 
-开发代理可以存在于 `:5173` 或 `:3000` 内部（同一监听的反向代理），但不得产生新的监听端口。客户端 API base URL 只通过环境配置注入；生产构建不得把密钥、服务端模块或内部路径打包进浏览器。
+开发代理只存在于 `:5173` 的监听内部，不产生新的监听端口。生产构建不得把密钥、服务端模块或内部路径打包进浏览器。
 
-两端口验收建议在启动后执行：`Get-NetTCPConnection -State Listen | Where-Object LocalPort -in 5173,3000`（Windows）或 `ss -ltnp`，确认只有两个本应用监听；再用无控制台权限的玩家会话请求控制台 API，确认返回 forbidden。
+手工核对两端口：启动后执行 `Get-NetTCPConnection -State Listen | Where-Object LocalPort -in 5173,3000`（Windows）或 `ss -ltnp`（Linux），确认只有两个本应用监听；再用玩家会话请求任一控制台 API，确认返回 403。
 
 ## 8. 故障、降级与不变量
 
@@ -166,3 +158,29 @@ flowchart LR
 - 无第三个 Web 端口、无客户端直连数据库/模型、无隐藏按钮替代鉴权。
 
 以上均为目标验收，尚无运行时或实测记录。
+
+## 10. 控制台页面首版规格
+
+### 10.1 控制台宿主壳
+
+- 登录方式同客户端：读取 `#token`，换取会话令牌，存进 `sessionStorage`。
+- 顶栏有“当前角色”下拉框，只列出会话拥有的角色；切换后所有请求都带新的 `X-Active-Role`，页面重新加载数据。
+- 导航由已装载页面模块的贡献生成，每个页面声明 `allowedRoles`，当前角色不在其中时导航项置灰并注明原因；装配里没有的页面显示“模块未装载”。
+- 页面模块只经 `client-protocol` 调用 [API](api.md) 第 5 节的接口，不直接 `fetch` 未声明的路径。
+
+### 10.2 各页面
+
+| 页面模块 | 角色 | 数据来源 | 视图 | 操作 |
+|---|---|---|---|---|
+| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 端口、三个 realm 的就绪状态、装配 hash、时钟、各队列长度、水位落后的 Agent、预算消耗、最近 20 条失败 | 无 |
+| `console.module-admin.standard` | operator、researcher | `/console/modules`、`/console/assemblies*` | catalog 表（按 realm 筛选）、装配列表、各 realm 的解析结果 | 粘贴装配 YAML 做预检，显示错误与相对当前装配的 diff；operator 可保存为草稿 |
+| `console.model-mounts.standard` | operator、researcher | `/console/model-layouts*` | 布局列表；布局详情（连接只显示适配器、主机名与 `credentialRef` 名称）；“按模型看挂载”与“按角色看路由”两个视图 | 校验草稿、保存草稿；operator 可对某个模型做一次计费的连通性测试 |
+| `console.faction-ops.standard` | operator | `/console/ops/*`、`/console/campaign/*`、`/console/run-requests` | 三个席位的控制方式、epoch、租约；接管后的席位视图（只含该身份合法获知的信息与待处理事项）；时钟状态；存档列表；玩家的运行申请 | 接管/交还（填写原因）；以席位身份提交命令（消息 `seat.say`、协议提出与回复、`policy.set`、派遣）；暂停/继续/单步 N tick；存档；恢复（先 dry-run 再确认）；批准或拒绝运行申请 |
+| `console.scenario-editor.standard` | operator | `/console/scenarios/*` | 卡片列表与在线分支中的状态 | YAML 编辑草稿并校验；沙盒预演；按 tick 发布；撤回未触发的卡；补偿；调试覆盖（醒目提示会污染当前 run） |
+| `console.observability.standard` | researcher | `/console/timeline`、`/console/agents*`、`/console/turns*`、`/console/artifacts/*`、`/console/traces/*`、`/console/branches/compare` | 世界时间线（可按 Agent、节点、事件类型筛选，标注受众）；Agent 检查器（人格、最后已知视图、指定 revision 的记忆、关系、承诺、水位）；记忆 diff；turn 详情（各阶段 requested/resolved/effective、context 段落与剔除报告、全部 attempt 的请求与响应、工具原始结果与模型视图并排、receipt、对白）；trace 树；分支对比 | 原文与脱敏切换（查看原文写审计记录） |
+| `console.observability.lite` | researcher | `/console/turns*`、`/console/artifacts/*` | 只有 turn 列表与单个 turn 详情 | 同上 |
+| `console.evaluation.standard` | researcher、evaluator | `/console/runs*`、`/console/experiments*` | run 列表与状态；run 详情（去密钥 manifest、污染标记、证据完整性）；报告（指标、分子分母、无效样本与原因、探针回答与得分） | researcher：用 RunSpec YAML 创建 run（先显示预检结果）、启动/停止、用实验规格创建实验；evaluator 只读 |
+| `console.debug.standard` | researcher | `/console/debug/*` | 调度队列、模型池队列、整理队列 | 审计重放某个 turn 并比较请求 hash；注入调试唤醒（污染当前 run）；单步 |
+| `console.audit.standard` | researcher | `POST /console/exports`、`/console/artifacts/*` | 导出列表 | 创建脱敏或原文导出包并下载 |
+
+每个页面的数据都按当前角色向服务端请求；页面隐藏某个按钮不能代替服务端鉴权。

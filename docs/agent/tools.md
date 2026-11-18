@@ -77,7 +77,12 @@ binding 可以限制地点、目标类型、自己受委托的资产、最大数
 | agreement.propose | command | 条款、对象、期限，产出提案 receipt，不代表双方已签约 |
 | agreement.respond | command | 提案引用、接受/拒绝/修改，按权限与条款裁决 |
 | asset.dispatch | command | 受委托资产、路线、任务，产出派遣 receipt 与异步任务引用 |
+| task.respond | command | 对收到的任务邀请回复参加或拒绝，附拒绝理由 |
 | task.cancel | command | 本身份有权取消的任务引用，返回撤销裁决，不保证已完成任务可回滚 |
+| policy.set | command | 仅战略 Agent：修改本派系拥有的政策（水闸分配、受控道路状态） |
+| decision.submit | —（宿主处理） | 结束本轮决策，提交立场与对白意图；不是世界命令，见 [prompts](prompts.md) 第 2.3 节 |
+
+各工具的输入 schema、对应命令、入模字段与默认工具集见第 13 节。
 
 记忆检索（memory 的 retrieve 操作）由固定检索阶段驱动，不默认提供可任意深挖历史的工具；如未来增加主动回忆工具，所有组必须明确启用并纳入同一记忆/预算实验协议。
 
@@ -98,7 +103,9 @@ decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；
 | information.share | 自己持有且可披露的证据 | 自己持有且可披露的证据 | 自己持有且可披露的证据 |
 | agreement.propose/respond | 本派授权条款 | 本种族授权条款 | 个人承诺；组织条款需委托 |
 | asset.dispatch | 本派可用资产 | 本种族可用资产 | 无默认权；按角色职责委托 |
+| task.respond | 不适用（战略 Agent 不会被邀请） | 不适用 | 收到的邀请 |
 | task.cancel | 自己有撤销权的任务 | 自己有撤销权的任务 | 自己有撤销权的任务 |
+| policy.set | 本派系拥有的政策 | 本种族拥有的政策 | 无 |
 
 玩家选择五个人类派系之一，改变开局关系、已知信息和有限授权，不直接继承该派战略 Agent 全部工具权限。三个非人类势力真人运营席位也走同一 command pipeline，控制方式见 [运营控制](../platform/operations.md)。
 
@@ -188,3 +195,101 @@ tool-view 实现仅由 Agent profile 的槽选择；binding 的 viewConstraints 
 借鉴 deepseek-harness 的 [scoped registry 与最终 guard](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/index.ts) 和 [工具生命周期事件](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/tools/src/events.ts)。definition/binding 分层、游戏资产约束、operation receipt 和未知结果协议是本平台的目标设计。
 
 可信内置插件仍运行于同一 Node 进程；scope 和 manifest 是工程约束，不是恶意代码沙箱。插件装载、能力声明与释放统一见 [插件规范](../architecture/plugins.md)。
+
+## 13. 首版实现规格
+
+### 13.1 工具定义
+
+模型看到的工具名是 `toolId` 把点换成下划线（`world.inspect` → `world_inspect`），规则见 [模型传输](model-transport.md) 第 6 节。输入 schema 用 Zod 定义，生成后按 [模型传输](model-transport.md) 第 7 节清洗：所有字段都必须出现，可选字段用 `null` 表示，**不使用判别联合与 record**，而是用“所有可能字段都列出、用不到的填 null”的平铺对象。工具网关把调用转成命令前做两件事：删除值为 null 的字段；按 `taskType` 或 `kind` 只保留该类型需要的字段，再用命令自己的严格 schema（[领域模型](../architecture/domain-model.md) 第 5 节）校验。校验失败返回错误结果 `invalid-params`，不发命令。
+
+```ts
+const Cargo = z.object({ supply: z.number().int(), energy: z.number().int(), medical: z.number().int() });
+
+const DispatchParams = z.object({            // flat: fields that the chosen taskType does not use must be null
+  fromStockpileId: z.string().nullable(), toStockpileId: z.string().nullable(), cargo: Cargo.nullable(),   // transport
+  roadId: z.string().nullable(), durationTicks: z.number().int().nullable(),                              // escort
+  groupId: z.string().nullable(), toNodeId: z.string().nullable(), medicalStockpileId: z.string().nullable(), // rescue
+  energyStockpileId: z.string().nullable(), supplyStockpileId: z.string().nullable(),                     // repair
+  nodeId: z.string().nullable(),                                                                          // scout
+});
+
+const ToolTerm = z.object({                   // flat version of the Term union; unused fields are null
+  kind: z.enum(["deliver", "escort", "rescue", "repair-relay", "share-evidence", "grant-passage", "water-allocation", "delegate"]),
+  obligorId: z.string(),
+  resource: z.enum(["supply", "energy", "medical"]).nullable(), amount: z.number().int().nullable(),
+  fromStockpileId: z.string().nullable(), toStockpileId: z.string().nullable(),
+  byTick: z.number().int().nullable(), untilTick: z.number().int().nullable(),
+  roadId: z.string().nullable(), groupId: z.string().nullable(),
+  evidenceId: z.string().nullable(), toPrincipalId: z.string().nullable(),
+  granteeFactionId: z.string().nullable(), policy: z.enum(["harbor-first", "rotation", "orchard-first"]).nullable(),
+  granteeId: z.string().nullable(), teamIds: z.array(z.string()).nullable(), stockpileId: z.string().nullable(), maxDraw: Cargo.nullable(),
+});
+```
+
+| toolId | 输入 | 执行 | 入模字段 `viewFields` | 给模型的说明（`toolDescriptions`） |
+|---|---|---|---|---|
+| `world.inspect` | `{ nodeId: string \| null }` | 读取冻结 frontier 时的 `AgentWorldView`：`nodeId` 为 null 时返回概况，否则返回该节点的已知情况 | `asOfTick`、`meters`、`allocation`、`roads`（列表）、`characters`（列表）、`stockpileLevels` | 查看你所知道的局势；可指定一个地点。只返回你已知的信息，可能已经过时。 |
+| `route.inspect` | `{ fromNodeId, toNodeId, teamId: string \| null }` | 用该 Agent **已知**的道路状态与本派系通行许可求路径，不读实时真值 | `path`、`travelTicks`、`risks`、`blockedRoads` | 按你所知的道路情况查询两地之间的路线与风险。 |
+| `task.inspect` | `{ taskId: string \| null }` | 自己派遣、参与或受邀的任务；null 时列出全部 | `taskId`、`taskType`、`commandStatus`、`taskStatus`、`departTick`、`nominalCompletionTick`、`participants` | 查看你派遣、参与或受邀的任务状态。 |
+| `conversation.inspect` | `{ conversationId: string \| null, limit: number }` | 受众包含自己的发言，条数不超过 profile 的 `historyTurns`（因此 M0 的 `baseline-current` 返回空列表） | `lines`（列表） | 查看你参与的对话里最近的发言。 |
+| `operation.inspect` | `{ operationId }` | 查询本身份操作的 receipt | `receipt`、`taskStatus` | 查询你本轮发出的某个操作是否已被受理。 |
+| `message.send` | `{ to: string[], intent: { kind, tone, reasonCode, subjectRef: string \| null, factRefs: string[] } }` | 先走对白流程生成并校验正文，再提交 `speech.commit`（channel message；`to` 为 `["public"]` 时为 broadcast，需要 broadcast 权限） | envelope + `messageId`、`deliverAtTick` | 给某人发一条消息。只描述想表达的意图和依据，正文由系统生成。 |
+| `information.share` | `{ evidenceId, audience: string[] }` | 命令 `information.share` | envelope + `shareId`、`deliverAtTick` | 把你持有的一条证据交给指定对象。 |
+| `agreement.propose` | `{ parties: string[], terms: ToolTerm[], expiresInTicks: number \| null }` | 命令 `agreement.propose` | envelope + `agreementId` | 提出一份协议。你提出即视为你已同意，其他当事人接受后生效。 |
+| `agreement.respond` | `{ agreementId, response: "accept" \| "reject" \| "counter", counterTerms: ToolTerm[] \| null }` | 命令 `agreement.respond` | envelope + `agreementStatus` | 接受、拒绝或还价一份发给你的协议提案。 |
+| `asset.dispatch` | `{ taskType, teamId, invitees: string[], params: DispatchParams, departAfterTicks: number \| null }` | 命令 `task.dispatch` | envelope + `taskId`、`departTick` | 派遣你有权调动的队伍执行运输、护送、救援、修复或侦察，可以邀请角色同行。 |
+| `task.respond` | `{ taskId, response: "accept" \| "decline", reasonCode }` | 命令 `task.respond` | envelope | 回复一项任务邀请：参加或拒绝，并说明理由类别。 |
+| `task.cancel` | `{ taskId }` | 命令 `task.cancel` | envelope | 撤销一项由你派遣的任务。 |
+| `policy.set` | `{ key, value }` | 命令 `policy.set` | envelope + `oldValue`、`newValue` | 修改你所在派系掌管的政策（水闸分配或受控道路的通行状态）。 |
+| `decision.submit` | 见 [prompts](prompts.md) 第 2.3 节 | 宿主结束工具循环 | — | 结束本轮并提交你的决定。对外说话只填意图，不写台词。 |
+
+envelope 指 `executionStatus`、`commandStatus`、`reasonCode`、`receiptId`、`operationId`、`resultRef`（以及有任务时的 `taskStatus`）。
+
+请求构建时按 binding 收窄 schema：`asset.dispatch.teamId` 写成该 Agent 可派遣队伍的 `enum`，`policy.set.key` 写成该 Agent 拥有的政策键的 `enum`，`information.share.evidenceId` 写成持有证据的 `enum`，`task.respond.taskId` 写成待回复邀请的 `enum`。**收窄后 enum 为空时，本 turn 不提供该工具**（例如没有任何证据的角色不会看到 `information_share`）。收窄结果在 turn 冻结时确定，同一工具循环内不变。
+
+### 13.2 binding 模板与工具集
+
+```yaml
+# config/toolsets/character-default.yaml
+schemaVersion: 1
+toolsetId: character-default
+tools:
+  - { toolId: world.inspect,        version: "1", permissionProfile: self-known,         budgetProfile: query,   viewConstraints: { maxListItems: 5, maxTokens: 300 } }
+  - { toolId: route.inspect,        version: "1", permissionProfile: self-known,         budgetProfile: query,   viewConstraints: { maxListItems: 5, maxTokens: 250 } }
+  - { toolId: task.inspect,         version: "1", permissionProfile: self-known,         budgetProfile: query,   viewConstraints: { maxListItems: 5, maxTokens: 300 } }
+  - { toolId: conversation.inspect, version: "1", permissionProfile: self-known,         budgetProfile: query,   viewConstraints: { maxListItems: 8, maxTokens: 400 } }
+  - { toolId: operation.inspect,    version: "1", permissionProfile: self-known,         budgetProfile: query,   viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: message.send,         version: "1", permissionProfile: message-principals, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: information.share,    version: "1", permissionProfile: share-held,         budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: agreement.propose,    version: "1", permissionProfile: agreement-personal, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: agreement.respond,    version: "1", permissionProfile: agreement-personal, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: asset.dispatch,       version: "1", permissionProfile: dispatch-delegated, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: task.respond,         version: "1", permissionProfile: invited-only,       budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: task.cancel,          version: "1", permissionProfile: cancel-own,         budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+```
+
+其余工具集都写成完整文件（不支持继承），与 character-default 的差别：
+
+| 工具集 | 使用者 | 差别 |
+|---|---|---|
+| `character-broadcaster` | 伊诺 | `message.send` 的 permissionProfile 为 `message-principals-or-public` |
+| `strategic-default` | 除 `human-neutral` 外的 7 个战略 Agent | 去掉 `task.respond`；`agreement.propose`/`agreement.respond` 的 permissionProfile 为 `agreement-faction`；`asset.dispatch` 为 `dispatch-faction`；增加 `{ toolId: policy.set, version: "1", permissionProfile: policy-owner, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }` |
+| `strategic-broadcaster` | `human-neutral` | 与 `strategic-default` 相同，另把 `message.send` 的 permissionProfile 改为 `message-principals-or-public` |
+
+| permissionProfile | 调用前检查（不通过时返回 executionStatus=error、reasonCode=no-authority，不发命令） |
+|---|---|
+| `self-known` | 只读自己的视图 |
+| `message-principals` / `message-principals-or-public` | `to` 中每个主体都在名册内或是玩家；后者还允许 `["public"]` |
+| `share-held` | 持有该证据的知识授权；秘密 ID 一律拒绝 |
+| `agreement-personal` / `agreement-faction` | 自己必须是当事人；`agreement-personal` 只检查本次提交的新条款：propose 的 `terms` 或 counter 的 `counterTerms` 中，资源类条款义务人只能是自己；accept/reject 不提交新条款，不检查已有协议中他方承担的资源义务。最终接受权限与履约约束仍由规则处理器校验 |
+| `dispatch-delegated` / `dispatch-faction` | 队伍在自己的委托内 / 属于本派系 |
+| `invited-only` | 自己是该任务的受邀者 |
+| `cancel-own` | 自己是派遣者 |
+| `policy-owner` | 政策键属于本派系 |
+
+| budgetProfile | 每 turn 上限 |
+|---|---|
+| `query` | 同一工具最多 3 次 |
+| `command` | 同一工具最多 2 次 |
+
+所有工具合计受 profile 的 `maxToolCallsPerTurn` 与 `maxToolCallsPerRound` 约束（默认 8 与 3），一轮内多个调用的执行顺序见 [运行时](runtime.md) 第 13.3 节。这些检查只是提前拒绝，最终权限仍由规则处理器裁决。

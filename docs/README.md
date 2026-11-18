@@ -1,69 +1,131 @@
-# Agent NPC 设计与验证平台
+# Agent NPC 设计与验证平台：文档入口
 
-> 文档基线 v0.3，2026-11-18。首版是单玩家、统一世界观的 TypeScript 全栈 2.5D 游戏，最多 20 个 gameplay Agent。只有两个本地端口：玩家客户端 `:5173`，服务端 `:3000`（控制台在 `/console`）。当前是设计规范，没有运行时和实测数据。
+> 文档基线 v0.4，2026-11-18。当前只有设计文档，没有运行时代码与实测数据；实现从 [构建计划](delivery/build-plan.md) 开始，编码 Agent 先读仓库根目录的 [AGENTS.md](../AGENTS.md)。
 
-游戏提供选择与后果，平台用来验证 Agent 的记忆、感知、上下文、压缩、模型和行为设计。目标是让 NPC 按自己的立场与经历行动，也让开发者查得清某个效果来自哪里、代价多少。
+## 1. 一页看懂
 
-可插拔范围是全部职能，不只记忆。宿主只保留主板机制，游戏规则、地图、时钟、行动、剧情、Agent 认知、模型、工具、客户端界面、控制台页面和基础设施都通过明确的 port 接入，可以按装配替换。可以拿主机和 USB 设备作类比：接口稳定、设备可换、拔插受生命周期约束，但主机不让设备绕过安全与提交规则。
+**这是什么**：一个单玩家、统一世界观的 TypeScript 全栈 2.5D 轻数值 SLG。游戏提供选择与后果，平台用来验证 Agent NPC 的记忆、感知、上下文、压缩、模型与行为设计：NPC 要按自己的立场与经历行动，开发者要能查清某个行为来自哪里、花了多少。
 
-## 文档地图
+**玩家做什么**：在五个人类派系中选一个，作为驻灰港的特派员参与首章“水闸之前”（7 个游戏日）。灰港中继供能不稳、果园缺水、迁徙季临近、外星来客提出交换；玩家通过交谈、出示证据、签协议、邀请角色参与任务、派遣运输/护送/救援/修复/侦察来影响局势。数字只提供约束，乐趣来自 NPC 的反应：他们会记得你守约还是违约，会拒绝、讨价还价，也会主动提醒你。
 
-| 分区 | 文档及职责 |
-|---|---|
-| 全局基线 | [首版范围、不变量与术语](00-scope-and-invariants.md) |
-| 游戏 | [背景与势力](game/background.md)、[玩法与五派开局](game/gameplay.md)、[游戏规则系统](game/systems.md)、[20 个 Agent / 12 个 NPC 角色册](game/characters.md) |
-| 系统架构 | [总览与七个决策](architecture/overview.md)、[事件/状态/恢复](architecture/events-and-state.md)、[公共契约](architecture/contracts.md) |
-| 模块体系 | [模块边界](architecture/modules.md)、[全职能模块目录](architecture/module-catalog.md)、[插件机制](architecture/plugins.md)、[积木组合](architecture/composition.md) |
-| 双端部署 | [两个本地端口与三运行域](architecture/two-endpoints.md)、[客户端与 2.5D](architecture/client-and-rendering.md)、[目标代码目录](architecture/code-structure.md) |
-| Agent | [运行时与决策](agent/runtime.md)、[共享行为工具](agent/tools.md)、[集中模型池与挂载](agent/model-pool.md) |
-| 认知模块 | [记忆](agent/memory.md)、[上下文](agent/context.md)、[压缩与工具视图](agent/compression-and-tool-view.md)、[世界环境感知](agent/perception.md) |
-| 平台与控制台 | [配置与装配](platform/configuration.md)、[完整观测档案](platform/observability.md)、[评估与对比](platform/evaluation.md)、[运营/暂停/接管](platform/operations.md) |
-| 交付与依据 | [阶段计划和验收](delivery/roadmap-and-acceptance.md)、[真实来源与设计决策](references/sources-and-decisions.md) |
+**谁在行动**：20 个 Agent 身份：8 个派系战略代表（5 个人类派系、3 个非人类势力）与 12 个地图角色。玩家不是 Agent。三个非人类势力可以随时由控制台里的真人接管。
 
-阅读顺序：先读基线和游戏，再依次读总览、双端、模块边界、模块目录、插件、组合、各个 Agent 模块和验收。每类规则只由一份文档维护，其他文档引用；共同名词放在基线，跨模块数据放在 contracts，模块参数放在各自文档。
+**NPC 怎么运作**：
 
-## 模块体系
-
-模块化解决职责与依赖。模块是替换单位，建了多少目录不算证据。每个模块要有明确的 capability、port、状态所有权、配置 schema 和测试；模块之间不 import 实现，也不靠全局单例取依赖。严格解耦优先：内聚和可替换性冲突时拆开，必要的协议依赖必须版本化、可检查。
-
-插件化解决打包、注册与生命周期。模块以可信插件包交付，由组合根显式登记，宿主校验 id、version、apiVersion、能力闭包、realm 和实例作用域后放进 catalog。拔插分三档：纯展示模块可以即时换；无状态页面在空闲边界换；有状态模块要先暂停、快照或导出，再进入新 run 或后继 branch。首版不支持上传任意不可信代码。
-
-积木化解决装配与冻结。assembly 选择 server、client、console 三个 realm 的模块、能力绑定和配置引用；profile 只负责 Agent 认知子配方；models/mounts 与 toolsets/bindings 分别管理共享资源和共享行为。resolved manifest 冻结所有可比较条件，改变 server 模块或可比较配置必须新 run，不能热切在途 turn；无状态 client/console 模块可在空闲边界替换，但必须与当前 server assembly 兼容并记录 assembly hash。
-
-双端分域解决信任边界。玩家客户端 `:5173` 只拿授权投影和必要设置；服务端 `:3000` 承载模型池、三个非人类势力的剧情运营、可观测/可评估/可调试的控制台和全部权威写入。控制台复用服务端端口，不新增第三个服务。浏览器域不持有密钥、数据库连接或世界权威。
-
-~~~mermaid
+```mermaid
 flowchart LR
-  CAT["module catalog"] --> ASM["assembly：server / client / console"]
-  CONTENT["world pack / roster"] --> ASM
-  ASM --> RUN["run + frozen manifest"]
-  RUN --> MOD["modules"]
-  MOD --> WORLD["authority 世界命令与事件"]
-  MOD --> TRACE["trace / 证据 / 评估"]
-  CLIENT["client :5173"] -->|"授权投影/命令"| RUN
-  CONSOLE["console :3000/console"] -->|"控制台 API"| RUN
-~~~
+  P["玩家命令"] --> W["世界规则裁决<br/>（唯一写入路径）"]
+  W --> E["已提交事件"]
+  E --> PE["感知：谁、何时、以什么渠道知道"]
+  PE --> M["记忆：写入 / 整理 / 检索"]
+  M --> C["上下文组装"]
+  C --> D["决策（可用秘密）<br/>工具循环 → 命令"]
+  D --> W
+  D --> S["对白（只用可披露资料）"]
+  S --> W
+```
 
-## 贯穿全项目的边界
+**平台验证什么**：首个对比轴是记忆：M0 无长期记忆、M1 结构化账本、M2 观察流与反思、M3 分层混合。固定其他条件，比较 NPC 的行动、关系、履约与泄密情况。宿主只保留“主板”机制，游戏规则、Agent 认知、模型、工具、客户端界面与控制台页面都是可替换模块；首版要用四次真实替换证明这一点。
 
-角色是主体，模型是可挂载的资源。先配置连接和模型池，再把多个 Agent 的 decision/speech 等用途挂到同一个 modelId 上；同一个 Agent 也可以按用途挂不同模型。角色档案不复制 provider、型号、温度和密钥。共享模型只共享资源配置与额度，不共享记忆、消息或供应商私密会话。
+**怎么部署**：只有两个本地端口：玩家客户端 `127.0.0.1:5173`，服务端 `127.0.0.1:3000`（控制台在 `/console`）。浏览器不持有密钥、数据库连接或世界权威。
 
-行为只定义一次，按角色注册和授权。侦察、情报查询、递信、交涉、派遣、救援等工具只有一份 ToolDefinition/executor，多个 Agent 的 ToolBinding 引用它，并收窄对象、能力、预算和可见结果。执行仍然走同一套世界规则，换个工具名字绕不过权限。
+## 2. 阅读路径
 
-世界只有一个，视角因人而异，实验互相隔离。所有主体使用同一份 lore 和正式世界，每个主体有自己的感知和记忆。实验 run 独占 branch，不污染正式世界；审计库里的真值不能直接变成 NPC 的知识。
+| 你是 | 建议顺序 |
+|---|---|
+| 想 10 分钟了解项目的人 | 本文第 1 节 → [范围与不变量](00-scope-and-invariants.md) → [背景](game/background.md) → [玩法](game/gameplay.md) → [架构总览](architecture/overview.md) |
+| 实现者（人或编码 Agent） | [AGENTS.md](../AGENTS.md) → [范围与不变量](00-scope-and-invariants.md) → [技术栈](delivery/tech-stack.md) → [构建计划](delivery/build-plan.md)，之后按每一步列出的“先读”章节阅读 |
+| 研究者与评估者 | [范围与不变量](00-scope-and-invariants.md) 第 3 节 → [记忆](agent/memory.md) → [评估](platform/evaluation.md) → [内容包](game/content-pack.md) 第 11 节 → [观测](platform/observability.md) |
+| 运营与剧情策划 | [背景](game/background.md) → [规则](game/rules.md) → [内容包](game/content-pack.md) → [运营](platform/operations.md) |
 
-## 设计如何进入游戏
+## 3. 文档地图
 
-玩家选五个人类派系之一，作为驻灰港特派员参与“水闸之前”。通过交涉、证据、承诺、护送、救援和修复影响局势；十二位角色各自记得不同经历，八个战略主体处理政策与外交。三个非人类势力（巡裔、根庭、泊星者）的剧情走向由服务端控制台的运营席位管理。玩家不是第 21 个 Agent。
+“类型”一列：**概念**说明为什么这样设计与必须守住的边界；**规格**给出可以照着实现的精确定义；**手册**给出操作步骤。
 
-首个对比轴是 M0 无长期记忆、M1 结构化账本、M2 记忆流/反思、M3 分层混合。先固定其他条件，再比较 NPC 的行动、关系、履约和体验；之后扩展上下文、感知、压缩、工具信息量和模型轴。游戏规则、客户端 UI、控制台页面也可以作为独立装配轴。
+| 分区 | 文档 | 回答的问题 | 类型 |
+|---|---|---|---|
+| 全局 | [范围、不变量与术语](00-scope-and-invariants.md) | 首版做什么、不做什么，哪些规则永远成立 | 概念 |
+| 游戏 | [背景与势力](game/background.md) | 世界观、势力、六个地点 | 概念 |
+| | [玩法与开局](game/gameplay.md) | 玩家循环、五派开局、界面结构 | 概念 |
+| | [角色册](game/characters.md) | 20 个身份与 12 位角色的人格设计 | 概念 |
+| | [游戏职能模块](game/systems.md) | 游戏规则按哪些可替换模块划分 | 概念 |
+| | [规则与数值](game/rules.md) | 时间、通行、资源、任务、协议、指标的精确规则与测试用例 | 规格 |
+| | [内容包](game/content-pack.md) | 地图、角色、库存、剧情卡、名册、实验脚本的全部数据 | 规格 |
+| 架构 | [总览与决策](architecture/overview.md) | 系统边界、七项架构决策、故障策略 | 概念 |
+| | [领域模型](architecture/domain-model.md) | 命令、事件、状态归属、受众、投影、原因码 | 规格 |
+| | [事件、状态与恢复](architecture/events-and-state.md) | 事务、投递、水位、快照与恢复的语义 | 概念 |
+| | [存储](architecture/storage.md) | SQLite 表结构、分支复制、事务规则 | 规格 |
+| | [公共契约](architecture/contracts.md) | 跨模块共享的类型与错误码 | 规格 |
+| | [API](architecture/api.md) | 全部 HTTP 与 WebSocket 接口 | 规格 |
+| 模块体系 | [模块边界](architecture/modules.md) | 宿主保留什么、模块之间怎么依赖 | 概念 |
+| | [插件机制](architecture/plugins.md) | 描述符、注册、生命周期、不可绕过的 guard | 概念 |
+| | [积木组合](architecture/composition.md) | 装配、profile、模型与工具怎样组合并冻结 | 概念 |
+| | [模块目录](architecture/module-catalog.md) | 首版有哪些模块、默认装配、替换矩阵 | 规格 |
+| | [代码目录](architecture/code-structure.md) | 仓库目录、组合根、新增模块的流程 | 规格 |
+| 双端 | [两个端口与三运行域](architecture/two-endpoints.md) | 端口、鉴权、控制台页面 | 规格 |
+| | [客户端与 2.5D](architecture/client-and-rendering.md) | 客户端宿主、slot、渲染、交互、HUD、设置 | 规格 |
+| Agent | [运行时](agent/runtime.md) | turn 管线、调度、fencing、确定性决策 | 规格 |
+| | [记忆](agent/memory.md) | 四种记忆实现的完整算法 | 规格 |
+| | [感知](agent/perception.md) | 谁在何时以什么渠道获知什么 | 规格 |
+| | [上下文](agent/context.md) | 一次模型调用看到什么、按什么顺序 | 规格 |
+| | [压缩与工具视图](agent/compression-and-tool-view.md) | 历史怎样变短、工具结果给模型看多细 | 规格 |
+| | [工具](agent/tools.md) | 共享工具、绑定与权限、工具清单 | 规格 |
+| | [prompts](agent/prompts.md) | prompt 模板、输出 schema、对白安全门 | 规格 |
+| | [模型池](agent/model-pool.md) | 模型挂载、排队、重试、预算 | 规格 |
+| | [模型传输](agent/model-transport.md) | OpenAI 兼容、Anthropic、确定性三个适配器 | 规格 |
+| 平台 | [配置](platform/configuration.md) | 配置对象、预检、冻结、全部配置文件格式 | 规格 |
+| | [观测](platform/observability.md) | 因果链、调用档案、脱敏、控制台观测页 | 规格 |
+| | [评估](platform/evaluation.md) | 实验模式、变量控制、探针、指标、报告 | 规格 |
+| | [运营](platform/operations.md) | 暂停与存档、三势力席位、剧情卡发布 | 规格 |
+| 交付 | [技术栈](delivery/tech-stack.md) | 依赖版本、workspace、脚本、本地拓扑、编码约定 | 手册 |
+| | [构建计划](delivery/build-plan.md) | 26 个实施步骤与每步完成判据 | 手册 |
+| | [路线与验收](delivery/roadmap-and-acceptance.md) | 切片 A/B/C/M 的范围与验收标准 | 规格 |
+| 依据 | [来源与决策](references/sources-and-decisions.md) | 参考了什么、做了哪些关键取舍 | 概念 |
 
-完整运行激活 20 个身份时，实验先暂停正式世界，再逐个分支执行。20 个身份不等于 20 个并发模型请求；调度器和集中模型池共同控制调用成本、优先级和背压。
+## 4. 负责关系：每个主题只有一个负责文档
 
-## 准确性与交付边界
+其他文档只引用负责文档，不复制它的定义。发现两处说法不一致时，以负责文档为准，并修正另一处。
 
-文档里的目录、接口、schema、模型布局和模块装配都是目标设计。配置示例标注为目标格式，引用必须在实现时真实存在并通过预检；不能据此声称游戏已经运行、模型已经连接或某种记忆方案最优。
+| 主题 | 负责文档 |
+|---|---|
+| 范围、数量、术语、memory 基线 | [00-scope-and-invariants](00-scope-and-invariants.md) |
+| 游戏规则与数值 | [game/rules](game/rules.md) |
+| 初始数据、剧情卡、名册、实验脚本、模板文件结构 | [game/content-pack](game/content-pack.md) |
+| 命令、事件、聚合归属、受众、投影、原因码 | [architecture/domain-model](architecture/domain-model.md) |
+| 事务、投递、水位、快照的语义 | [architecture/events-and-state](architecture/events-and-state.md) |
+| 表结构与分支复制 | [architecture/storage](architecture/storage.md) |
+| 通用类型与错误码 | [architecture/contracts](architecture/contracts.md) |
+| HTTP 与 WebSocket 接口 | [architecture/api](architecture/api.md) |
+| 模块清单、默认装配、替换演示 | [architecture/module-catalog](architecture/module-catalog.md) |
+| 目录与包结构 | [architecture/code-structure](architecture/code-structure.md) |
+| 端口、鉴权、控制台页面 | [architecture/two-endpoints](architecture/two-endpoints.md) |
+| 客户端交互与渲染 | [architecture/client-and-rendering](architecture/client-and-rendering.md) |
+| turn 管线、调度、确定性决策 | [agent/runtime](agent/runtime.md) |
+| 记忆 / 感知 / 上下文 / 压缩与工具视图 | [agent/memory](agent/memory.md) / [agent/perception](agent/perception.md) / [agent/context](agent/context.md) / [agent/compression-and-tool-view](agent/compression-and-tool-view.md) |
+| 工具定义、绑定、工具清单 | [agent/tools](agent/tools.md) |
+| prompt 模板与模型输入输出 | [agent/prompts](agent/prompts.md) |
+| 模型路由、排队、预算 / 线协议 | [agent/model-pool](agent/model-pool.md) / [agent/model-transport](agent/model-transport.md) |
+| 配置文件格式与预检 | [platform/configuration](platform/configuration.md) |
+| 观测、档案、脱敏 | [platform/observability](platform/observability.md) |
+| 实验、指标、报告 | [platform/evaluation](platform/evaluation.md) |
+| 暂停、存档、席位、剧情运营 | [platform/operations](platform/operations.md) |
+| 技术栈与工程约定 | [delivery/tech-stack](delivery/tech-stack.md) |
+| 实施顺序与完成判据 | [delivery/build-plan](delivery/build-plan.md) |
+| 切片验收 | [delivery/roadmap-and-acceptance](delivery/roadmap-and-acceptance.md) |
 
-已经核对过父项目的记忆资料、agent-prism 源码和固定版本的 deepseek-harness，并区分了可借鉴的机制和本项目新增的设计；外部模式来源见独立参考篇。首版不以多人联机、穷举全部实验轴或复杂数值系统作为完成条件。
+## 5. 核心设计一览
 
-实施时先交付两个端口和三个核心角色的最小闭环，再让 memory 成为可比较的实验轴，最后完成五派开局、12 个角色、20 个身份、共享工具、模型池和全模块替换证据。失败、未完成、降级和未测试项都要如实报告。
+- **宿主保留，职能可换**：宿主只负责注册、能力图、生命周期、固定顺序的 guard、版本/幂等/fencing、证据与配置冻结；其余都是模块。模块化管职责，插件化管打包与生命周期，积木化管一次运行的装配与冻结（[模块边界](architecture/modules.md)、[插件机制](architecture/plugins.md)、[积木组合](architecture/composition.md)）。
+- **authority 与 policy 分开**：世界规则决定能不能做、结果如何；Agent 决定想不想做、怎么说。模型输出只是提案，结果以规则 receipt 为准（[总览](architecture/overview.md)）。
+- **一个世界，各自的视角**：所有主体共享同一份公开世界观，但每个主体只获得自己有资格感知的事；研究员看到的真值不会变成任何 NPC 的知识（[感知](agent/perception.md)、[领域模型](architecture/domain-model.md) 第 7 节）。
+- **决策与对白分离**：决策可以用秘密，对白是一次只含可披露资料的新请求，并经过泄密与状态检查（[prompts](agent/prompts.md)）。
+- **角色是主体，模型是资源**：模型集中定义，再按 `(agentId, purpose)` 挂载；工具只实现一次，按角色绑定与授权（[模型池](agent/model-pool.md)、[工具](agent/tools.md)）。
+- **实验可比较**：每个 run 独占分支并冻结完整 manifest；改变任何可比较条件都是新 run；全部署同时激活的身份不超过 20（[配置](platform/configuration.md)、[评估](platform/evaluation.md)）。
+
+## 6. 文档约定
+
+- 每篇文档开头的“状态”一行说明它是概念还是规格，以及负责范围。
+- 文中的数量、阈值、预算与时长都是初始设计值，不是实测最优结论；修改规则数值或内容数据会产生新的内容版本。
+- 文档正文用中文；代码、标识符与代码注释用英文。
+- 目录、接口、schema 都是目标设计，“实现规格”章节可以照抄实现；不能据此声称系统已经运行、模型已经连接或某种记忆方案更好。
+- 修改文档时同步修正引用它的地方，并保证 `pnpm check:docs`（构建计划 S00 实现）报告 0 个坏链接。

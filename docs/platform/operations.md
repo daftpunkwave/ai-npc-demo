@@ -23,7 +23,7 @@
 
 `worldTick` 是持久逻辑时间。运行时按部署配置推进；暂停和默认离线期间不推进，不计算离线战争或按真实天数衰减记忆。请求耗时和控制租约的服务时间独立记录，不参与剧情时间。
 
-单步推进仅从 `paused` 发起，进入 `stepping` 后只允许本步范围内的规则任务和有界决策提交，按设定推进确定数量的 tick、结算到期任务并收集触发。需要模型时异步完成本步工作，再回到 `paused`；不能把一次单步变成无限事件或模型循环。
+单步推进仅从 `paused` 发起，进入 `stepping` 后只允许本步范围内的规则任务、由实验运行器按脚本注入的当前 tick 命令和有界决策提交（脚本命令仍按其主体校验权限），按设定推进确定数量的 tick、结算到期任务并收集触发。需要模型时异步完成本步工作，再回到 `paused`；不能把一次单步变成无限事件或模型循环。
 
 暂停期间允许查询、编辑草稿、查看运行状态和生成快照；改变世界的玩家或运营 command 返回明确的 `paused` 状态。需要新事件或导演行动时先恢复或受控单步，不能在后台绕过时钟。
 
@@ -48,7 +48,7 @@
 
 从快照建立后继 branch/run，验证状态与水位，重新取得任务租约并生成新 fencing 代次。旧进程、旧 turn 或旧控制者的晚到请求不能对新 branch 生效。
 
-准备成功后原子切换正式世界别名，保证同一时刻仅一个在线权威世界；随后按逻辑 tick 恢复待办规则任务和有效触发。历史里已完成操作不能再次扣资源或再次强化关系。
+配额 dry-run 按切换后的净激活数计算，不把即将释放的旧在线身份重复计数。准备成功后，在同一事务中释放旧分支的激活配额、预留新分支配额并原子切换正式世界别名；失败全部回滚。保证同一时刻仅一个在线权威世界；随后按逻辑 tick 恢复待办规则任务和有效触发。历史里已完成操作不能再次扣资源或再次强化关系。
 
 恢复不回写旧历史。玩家选择旧存档时创建新的后继分支，保留原分支及差异；如果研究对比使用该存档，每个实验 run 仍需独占 branch。
 
@@ -96,21 +96,7 @@
 
 ## 8. 目标请求 API 与通用规则
 
-以下是待实现的接口入口；公共 command/receipt schema 位于 `contracts`，具体路径在实现时保持本表和客户端同步。
-
-| 入口 | 用途 | 关键边界 |
-|---|---|---|
-| `POST /api/v1/commands` | 玩家/导演合法世界操作 | 鉴权、幂等、版本、scope、controller/turn fencing |
-| `GET /api/v1/world/view` | 当前 principal 的投影 | 禁止返回原始全局事件或他人 memory |
-| `WS /api/v1/streams` | 投影、已提交对白和任务状态 | 授权 channel、游标补齐、缺口重取快照 |
-| `POST /api/v1/campaign/pause`、`resume`、`snapshots` | 玩家暂停/恢复/保存自己的 campaign | 玩家身份与 campaign 授权；期望版本、幂等、写审计 |
-| `POST /api/v1/console/campaign/pause`、`resume`、`step` | 运营控制单玩家逻辑时钟 | 期望运行版本、幂等操作、状态机校验 |
-| `POST /api/v1/console/campaign/snapshots`、`restore` | 保存与恢复 | 一致恢复点、预检、后继 branch、单在线别名 |
-| `POST /api/v1/console/ops/controllers/{agentId}/handover` | 三势力席位接管/交还 | 席位权限、期望 epoch、lease 和审计 |
-| `POST /api/v1/console/ops/scenarios/{id}/publish` | 发布冻结事件卡 | 版本、受众、前置条件与次数限制 |
-| `POST /api/v1/console/runs` | 创建隔离实验 | 独占 branch、冻结 manifest、资源配额 |
-| `GET /api/v1/console/modules`、`/assemblies` | 模块目录与装配预检 | 只读描述符；不返回工厂与密钥 |
-| `GET /api/v1/console/health` | 运行总览 | 端口、readiness、水位、预算、失败 |
+接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，席位、时钟、存档与运行申请在第 5.3 节，剧情卡在第 5.4 节。
 
 玩家入口与控制台入口都在服务端同一端口；路由前缀区分权限域，不能因为控制台与玩家同源就复用玩家 scope。相同幂等键和 payload 返回原 receipt；相同键不同 payload 返回冲突。accepted 只表示已接纳，不等于异步任务 completed。服务端决定 principal/scope，不能信任模型或客户端自报授权身份。
 
@@ -130,3 +116,36 @@
 在线与实验活动 gameplay 身份共用 20 上限。满员时先暂停正式世界、保存在线实例并释放名额，再逐分支实验；结束后释放实验实例再恢复在线。只暂停画面而不释放实例不产生新配额。
 
 运营页面的模块可替换，但暂停/保存/接管/发布的服务端语义与审计不可替换；替换页面不得绕过过期 checkpoint、引用了过期 epoch 的 handover 或未校验的发布。恢复、接管和发布的并发/故障验收见 [roadmap-and-acceptance](../delivery/roadmap-and-acceptance.md)。
+
+## 10. 在线世界的生命周期（首版）
+
+| 时机 | 服务端行为 |
+|---|---|
+| 第一次启动（数据库里没有 `world_aliases('online')`） | 创建 world（内容包 `earth-2964-v1`）、一个 `kind = online` 的分支（时钟 `paused`、`worldTick = 0`）、一个 `mode = live` 的 run，其 RunSpec 取 `config/runs/online-default.yaml`，并用环境变量 `NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 覆盖其中的 `moduleAssemblyRef`、`modelLayoutRef`、`rosterRef`；`seed` 在此时随机生成并写入 RunSpec 与 manifest；`world_aliases('online')` 指向该分支 |
+| 之后每次启动 | 沿用在线别名指向的分支与 run；时钟一律置为 `paused`（离线不推进），由玩家或运营手动继续 |
+| `campaign.start` 被接受 | 在线分支写入 campaign 与初态；按名册激活 Agent（`agent_activations` 置为 active，计入 20 的配额，配额不足时命令被拒绝，原因码 `budget-exhausted`） |
+| 玩家“重新开局” | `POST /api/v1/campaign/reset`：先存一个快照，再创建新的空在线分支与新的 live run，旧分支设为 archived；玩家随后重新选择开局 |
+| 从存档恢复 | 见第 4 节；恢复出的后继分支沿用原 live run 的 RunSpec 与 seed，生成新的 run 记录，并按名册重新激活 Agent |
+
+`config/runs/online-default.yaml`：
+
+```yaml
+schemaVersion: 1
+id: online-default
+moduleAssemblyRef: local-slg-standard-v1
+worldPackRef: earth-2964-v1
+scenarioRef: watergate-v1
+rosterRef: standard-20
+modelLayoutRef: shared-model-layout-v1
+seed: generated
+player: { principalId: player-1, factionId: null }   # chosen by campaign.start
+mode: live
+initialState: { kind: cold-start }
+variant: null
+script: null
+clock: { kind: realtime }
+budget: { maxTokens: null, maxCost: null }
+failurePolicy: online-fallback
+```
+
+在线世界默认使用 `online-fallback`（允许已声明的降级并标记），实验 run 默认使用 `strict`；两者的区别见 [运行时](../agent/runtime.md) 第 13.3 节。

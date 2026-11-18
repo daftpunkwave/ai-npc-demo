@@ -4,134 +4,111 @@
 
 ## 1. 目录树
 
+模块目录与包名的映射规则见 [技术栈](../delivery/tech-stack.md) 第 2 节：server 模块在 `modules/server/<group>/<family>/<impl>/`，浏览器模块在 `modules/<client|console>/<family>/<impl>/`，每个目录是一个 workspace 源码包。
+
 ```text
 ai-npc-demo/
+  AGENTS.md                      # rules for coding agents
+  package.json  pnpm-workspace.yaml  tsconfig.base.json  tsconfig.server.json  tsconfig.browser.json
+  vitest.config.ts  playwright.config.ts  .env.example
   apps/
-    server/                      # server host（Node，:3000）
+    server/                      # server host (Node, :3000)
       src/
-        main.ts
+        main.ts                  # load env -> open storage -> load content/config -> bootstrap -> listen
         host/
-          bootstrap.ts           # 启动、装配解析、ready 判定
-          guards/                # 固定顺序的权限/预算/提交/证据关口
-          module-catalog.ts      # 显式 import 全部 server 模块定义
-          sessions/              # 玩家/运营/研究会话与角色
-        console-static/          # console 构建产物挂载到 /console/*
-        platform-services/       # 仅 server host 使用的框架服务
-    client/                      # client host（浏览器，:5173）
+          bootstrap.ts           # resolve assembly, create/start instances, ready check
+          module-catalog.ts      # explicit imports of every server module definition
+          guards/                # fixed-order guards: auth, scope, schema, budget, commit, fencing, evidence
+          sessions/              # token login, sessions, stream tickets, active role
+          routes/                # HTTP route table -> application services (no business rules here)
+          workers/               # clock, consumers, scheduler, turn runner, memory workers, projection push
+      console-static/            # built console assets served at /console/* (generated, git-ignored)
+    client/                      # client host (browser, :5173)
       index.html
+      vite.config.ts
       src/
         main.tsx
         host/
-          bootstrap.tsx        # 模块装载、slot 容器、错误边界
-          module-catalog.ts    # 显式 import 全部 client 模块定义
-          transport.ts
-        styles/
-    console/                     # console host（浏览器，由 server :3000 提供）
+          bootstrap.tsx          # login from #token, handshake, module loading, slots, error boundaries
+          module-catalog.ts      # explicit imports of every client module definition
+    console/                     # console host (browser, served by :3000/console)
+      index.html
+      vite.config.ts
       src/
         main.tsx
         host/
-          bootstrap.tsx
-          module-catalog.ts    # 显式 import 全部 console 页面模块
-          transport.ts
+          bootstrap.tsx          # login, active role switch, handshake, route/panel slots
+          module-catalog.ts      # explicit imports of every console page module
   packages/
-    contracts/                   # 跨域 schema、DTO、port、能力与模块描述符
-    kernel/                      # realm 无关宿主机制：registry、能力图、生命周期、slot、hook 排序
-    module-sdk/                  # 模块作者辅助：定义、scoped state、贡献与 disposer
-    client-sdk/                  # 浏览器宿主辅助：slot、偏好、projection 订阅
-    client-protocol/             # 类型化 HTTP/WS 客户端与投影 reducer 协议
-    authority/                   # 服务端命令网关、事务、幂等、fencing、outbox 协调
-    agent-runtime/               # 固定 turn 管线、调度 job、预算/租约协调
-    experiment/                  # run、branch、manifest、评估调度
-    observability/               # trace/evidence 协议与 span 辅助
+    contracts/                   # zod schemas + types: envelopes, commands, events, DTOs, ports, descriptors, API
+    kernel/                      # realm-agnostic host mechanics: registry, capability graph, lifecycle, slots, hook order, config resolution, hashing
+    module-sdk/                  # server module authoring helpers: defineModule, scoped ports, disposers
+    client-sdk/                  # browser module helpers: slot components, preference port, projection hooks
+    client-protocol/             # typed HTTP/WS client and projection reducer protocol
+    authority/                   # command gateway, transactions, idempotency, fencing, job runner, consumers
+    agent-runtime/               # trigger store, scheduler host, turn state machine, tool gateway, speech pipeline
+    experiment/                  # runs, branches, snapshots, manifests, scripts, probes
+    observability/               # trace/span helpers and evidence envelope
   modules/
     server/
       game/
-        world/                   # game.world.slg-light
-        map/                     # game.map.six-nodes
-        clock/                   # game.clock.controlled
-        resources/               # game.resources.light
-        actions/                 # game.actions.standard
-        agreements/              # game.agreements.standard
-        scenario/                # game.scenario.watergate
-        save/                    # game.save.sqlite
+        world/slg-light/         # game.world.slg-light
+        map/six-nodes/           # game.map.six-nodes
+        clock/controlled/        # game.clock.controlled
+        resources/light/         # game.resources.light
+        actions/standard/        # game.actions.standard
+        agreements/standard/     # game.agreements.standard
+        comms/standard/          # game.comms.standard
+        scenario/watergate/      # game.scenario.watergate
+        scenario/watergate-escalating/
+        save/sqlite/             # game.save.sqlite
       agent/
-        perception/              # local / briefing / attention
-        memory/                  # none / ledger / stream-reflection / layered-hybrid
-        context/                 # ordered-blocks / task-centered
-        compression/             # none / window / structured / summary
-        tool-view/               # full / structured / brief
-        decision/                # model / deterministic
-        scheduling/              # fair / priority-cooldown
-        model-pool/              # shared；connections/models/mounts 解析
-        tools/                   # 共享 ToolDefinition、toolset、binding 贡献
+        perception/local/
+        memory/none/  memory/ledger/  memory/stream-reflection/  memory/layered-hybrid/
+        context/ordered-blocks/
+        compression/none/  compression/window/
+        tool-view/structured/
+        decision/model/  decision/deterministic/
+        scheduling/fair/
+        model-pool/shared/
+        tools/game-tools/
       platform/
-        access-policy/           # roster 驱动的授权策略
-        budget/                  # 预算与用量账本
-        storage/                 # SQLite adapter
-        observability/           # trace/artifact 存储与查询
-        evaluation/              # 评估协议与运行器
-        operations/              # 暂停/快照/席位/内容发布
-        module-admin/            # catalog 快照、装配预检与 diff
-        secrets/                 # credentialRef 解析，仅 server
-      adapters/
-        transport-http-ws/       # HTTP/WS 适配器
-        model-http/              # 兼容 HTTP 的模型传输
-        model-deterministic/     # CI 确定性响应
+        access-policy/roster/  budget/standard/  storage/sqlite/  observability/sqlite/
+        evaluation/standard/  operations/standard/  module-admin/standard/  secrets/env/
+        model-transport/openai-compatible/  model-transport/anthropic/  model-transport/deterministic/
+      transport/
+        http-ws/fastify/
     client/
-      world-view/                # 投影 reducer
-      scene-renderer-pixi/       # 2.5D adapter；另有 null renderer 供测试
-      camera/
-      screen-projection/
-      input/
-      hud/
-      dialogue/
-      characters/
-      faction-start/
-      settings/
-      notifications/
-      audio/
-      debug-overlay/
+      world-view/standard/  scene-renderer/pixi/  scene-renderer/null/  camera/standard/
+      screen-projection/isometric/  input/standard/  hud/standard/  hud/compact/
+      dialogue/standard/  faction-start/standard/  characters/standard/  settings/standard/
+      notifications/standard/
     console/
-      health/
-      module-admin/
-      model-mounts/
-      faction-ops/
-      scenario-editor/
-      observability/
-      evaluation/
-      debug/
-      audit/
+      health/standard/  module-admin/standard/  model-mounts/standard/  faction-ops/standard/
+      scenario-editor/standard/  observability/standard/  observability/lite/
+      evaluation/standard/  debug/standard/  audit/standard/
   config/
-    assemblies/                  # 三 realm 模块选择、能力绑定与配置引用
-    profiles/                    # Agent 策略子配方与实验 variant patch
-    rosters/                     # 身份、profileRef、toolsetRef
-    models/                      # connections + models
-    mounts/                      # modelId + agentIds + purposes
-    toolsets/                    # 工具集与 binding 模板
-    settings-presets/            # 展示偏好与 preset 申请入口
+    assemblies/                  # local-slg-standard-v1, local-slg-test-v1, and the three swap-demo assemblies
+    profiles/                    # platform baseline, scene profile, agent profiles, memory variant patches
+    rosters/                     # standard-20, core-3
+    model-layouts/               # shared-, claude-, deterministic-model-layout-v1
+    toolsets/                    # character-default, character-broadcaster, strategic-default
+    presets/                     # test presets players may request
+    runs/                        # RunSpec and experiment examples
+    pricing.yaml
   content/
-    lore/                        # 版本化世界观
-    maps/                        # 节点、道路与通行数据
-    characters/                  # 人格、主张、初始关系与已知来源
-    scenarios/                   # 首章事件卡、初态与测试刺激
-    ui/                          # 图标、字体、本地化
-    audio/                       # 声音资源与清单
+    world-packs/earth-2964-v1/   # see docs/game/content-pack.md
   tests/
-    contract/                    # 跨域 schema、port、模块一致性
-    integration/                 # 事务、outbox、模型池、工具、生命周期
-    catalog/                     # 模块目录与装配解析/冲突
-    scenarios/                   # 多轮玩法与对比场景
-    e2e/                         # 两端口启动、玩家/控制台关键路径
+    contract/  integration/  catalog/  scenarios/  e2e/  live/  fixtures/
   scripts/
-    check-boundaries.ts          # import/依赖/realm 边界
-    check-catalog.ts             # 模块 ID、能力闭包、实例作用域
-    check-docs.ts                # 文档链接、术语与示例语法
-    dev.ts                       # 只启动两个端口的开发编排
-  artifacts/                     # 本地输出，排除 Git
+    dev.ts  start.ts  check-boundaries.ts  check-catalog.ts  check-docs.ts  check-ports.ts
+  data/                          # runtime database, artifacts, backups, dev tokens (git-ignored)
   docs/
 ```
 
-这是职责边界，不要求每个目录马上变成 workspace 包。具备真实独立依赖、测试或替换价值的模块再成为包；内部零逻辑转发层不形成新包。
+首版的场景渲染不需要美术资源：节点、道路、角色、队伍都用 PixiJS 的矢量图元绘制（见 [客户端](client-and-rendering.md) 第 8 节）。
+
+每个模块目录都是一个 workspace 源码包（不单独构建），包内按职责拆文件；不为零逻辑的转发层新建包。
 
 ## 2. 三个宿主，三个组合根
 
@@ -151,6 +128,7 @@ ai-npc-demo/
 
 ```text
 modules/server/agent/memory/ledger/
+  package.json        # @ai-npc/mod-agent-memory-ledger, exports ./src/index.ts
   src/
     index.ts          # 只导出 moduleDefinition 与公开类型
     definition.ts     # ModuleDefinition：id/kind/version/apiVersion/scope/state
@@ -164,6 +142,7 @@ modules/server/agent/memory/ledger/
 ```
 
 - `src/index.ts` 的公开导出只有模块定义、port 实现工厂与公开配置类型；不 deep export 内部文件。
+- `src/definition.ts` 只含描述符数据（另以 `"./definition"` 导出），不得静态 import 实现文件、React、PixiJS、Fastify 或模型 SDK；`create` 用动态 `import("./plugin")` 加载实现。这样三个组合根的 `module-catalog.ts` 都能在 Node 中导入，`check-catalog` 才能校验浏览器 realm 的模块。
 - 模块不得在 import 阶段启动后台循环、读环境变量、创建数据库连接或注册全局单例；这些动作只能放在 `create/start`，由宿主注入。
 - 有状态模块声明 `stateSchemaVersion`、scope、导出/导入与迁移路径；无状态模块明确声明无状态。
 - 模块的 configSchema 随模块维护，跨模块 DTO/port 归 `contracts`；禁止模块自建近似的共享类型。
@@ -189,7 +168,7 @@ modules/server/agent/memory/ledger/
 
 `config/profiles` 只描述 Agent 策略子配方（perception/memory/context/compression/tool-view/decision 等），不选择游戏规则、客户端渲染器或控制台页面；调度参数属 run 作用域，放在场景 profile 与实验 variant 中。`config/rosters` 只引用 profile/toolset 与身份数据，不复制 provider/model 参数。
 
-`config/models` 与 `config/mounts` 一起定义集中模型池；`config/toolsets` 引用共享 ToolDefinition 与 binding 模板。三者分别由 [模型池](../agent/model-pool.md) 与 [工具](../agent/tools.md) 维护。
+`config/model-layouts` 定义集中模型池（connections、models、mounts 在同一个文件里，由 RunSpec 的 `modelLayoutRef` 选择）；`config/toolsets` 引用共享 ToolDefinition 与 binding 模板。两者分别由 [模型池](../agent/model-pool.md) 与 [工具](../agent/tools.md) 维护。各配置文件的完整格式见 [配置](../platform/configuration.md) 第 10 节。
 
 `content` 与 `config` 都由 schema 校验；世界背景、地图、角色与事件卡是内容版本，不能藏在 module 源码里。新增内容不应该要求改宿主。
 

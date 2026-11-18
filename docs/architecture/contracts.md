@@ -41,7 +41,7 @@ interface EventEnvelope {
   readonly principalId: string;
   readonly causationIds: readonly string[];
   readonly correlationId: string;
-  readonly audiencePolicyId: string;
+  readonly audience: readonly AudienceSpec[]; // domain-model §7
   readonly payload: Json;
 }
 
@@ -111,6 +111,7 @@ interface CapabilityRef {
 interface ModuleRef {
   readonly moduleId: string;
   readonly version: string;
+  readonly apiVersion: string;
   readonly configHash: string;
 }
 
@@ -122,20 +123,27 @@ interface ResolvedModuleSet {
   readonly assemblyHash: string;
 }
 
-interface AssemblyDescriptor {
+type AgentSlot = "perception" | "memory" | "context" | "compression" | "toolView" | "decision";
+
+interface AssemblyDescriptor {           // file format: platform/configuration.md §10.1
   readonly schemaVersion: number;
-  readonly id: string;
-  readonly realms: Readonly<Record<Realm, {
-    readonly modules: readonly string[];
-    readonly bindings: readonly CapabilityBinding[];
-  }>>;
+  readonly assemblyId: string;
+  readonly configs: Readonly<Record<string, Json>>;          // named config blocks
+  readonly realms: {
+    readonly server: {
+      readonly bindings: readonly CapabilityBinding[];
+      readonly agentSlots: Readonly<Record<AgentSlot, readonly string[]>>; // implementations profiles may pick
+    };
+    readonly client: { readonly bindings: readonly CapabilityBinding[] };
+    readonly console: { readonly bindings: readonly CapabilityBinding[] };
+  };
 }
 
 interface CapabilityBinding {
   readonly capability: CapabilityId;
   readonly moduleId: string;
-  readonly configRef: string;
-  readonly fallbackModuleIds?: readonly string[];
+  readonly configRef: string | null;     // key in AssemblyDescriptor.configs
+  readonly fallbackModuleIds?: readonly string[]; // unused in the first version (strict, no fallback)
 }
 
 interface ModuleDefinition {
@@ -151,6 +159,7 @@ interface ModuleDefinition {
   readonly configSchema: StrictConfigSchema;
   readonly defaults?: Json;
   readonly stateSchemaVersion: number | null;
+  readonly ownsAggregates?: readonly string[];   // game modules: aggregate types this module may write (domain-model §4)
   readonly migrationPaths: readonly MigrationPath[];
   readonly contributions?: readonly ContributionRef[];
   readonly experimentAxes?: readonly ExperimentAxis[];
@@ -165,6 +174,29 @@ interface ModuleInstance {
   readonly port?: unknown; // 由 kind/capability 映射收窄，禁止 any 万能入口
 }
 
+interface ModuleCreateInput {
+  readonly moduleId: string;
+  readonly realm: Realm;
+  readonly config: Json;                                   // validated against configSchema, defaults applied
+  readonly scope: { readonly worldId?: string; readonly branchId?: string; readonly agentId?: string; readonly sessionId?: string };
+  readonly ports: Readonly<Record<string, unknown>>;       // resolved `requires`, keyed by capability id, narrowed by the kind mapping
+  readonly host: HostServices;
+  readonly signal: AbortSignal;
+}
+
+interface HostServices {                                   // the only way modules reach time, randomness, ids and I/O
+  ids(prefix: string): string;
+  nowIso(): string;
+  monotonicMs(): number;
+  sleep(ms: number, signal?: AbortSignal): Promise<void>; // the only way a module waits (backoff, polling)
+  rng(...seedParts: string[]): () => number;               // rules.md §11
+  hash(value: Json): Promise<string>;                      // sha256 of canonical JSON
+  logger: { info(msg: string, data?: Json): void; warn(msg: string, data?: Json): void; error(msg: string, data?: Json): void };
+  tracer: { span<T>(name: string, attrs: Json, fn: () => T): T };
+  storage?: unknown;                                       // server only: scoped storage port of the owning module
+  model?: unknown;                                         // server only: ScopedModelPort (agent/model-pool.md §12.1)
+}
+
 interface UiExtension {
   readonly extensionId: string;
   readonly slot: string;
@@ -174,7 +206,7 @@ interface UiExtension {
 }
 ```
 
-`StrictConfigSchema`、`MigrationPath`、`ContributionRef`、`ExperimentAxis`、`ModuleCreateInput` 是 contracts 包内的受控类型，这里不展开。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本与装配 hash。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
+其余受控类型的首版定义：`StrictConfigSchema` 是一个调用过 `.strict()` 的 Zod object schema（未知键报错），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本与装配 hash。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
 
 ## 4. 跨端会话与协议
 
@@ -217,7 +249,7 @@ ToolDefinition/ToolBinding 的 schema 见 [工具](../agent/tools.md)，modelId/
 
 ## 6. 错误与取消
 
-统一错误至少包含 code、retryable、safeMessage、traceId、detailsArtifactRef，敏感 details 不返回给玩家。code 分四组：请求类 forbidden、validation；状态与预算类 paused、not-ready、budget-exhausted、cancelled；版本与并发类 idempotency-conflict、version-conflict、stale-controller、stale-turn；装配与供应商类 module-missing、capability-conflict、assembly-incompatible、realm-violation、plugin-failed、provider-failed。
+统一错误至少包含 code、retryable、safeMessage、traceId、detailsArtifactRef，敏感 details 不返回给玩家。code 分五组：请求类 unauthenticated、forbidden、validation、not-found；状态与预算类 paused、not-ready、invalid-state、budget-exhausted、cancelled；版本与并发类 idempotency-conflict、version-conflict、stale-controller、stale-turn；装配与供应商类 module-missing、capability-conflict、assembly-incompatible、realm-violation、plugin-failed、provider-failed。HTTP 状态码映射见 [API](api.md) 第 7 节；业务规则拒绝使用 receipt 的 reasonCode（[领域模型](domain-model.md) 第 9 节），不使用这里的错误码。
 
 取消只是一个请求，真正保证晚到输出无效的是 fencing。provider 连接超时不能证明 tool 或 command 没有执行，必须查询 receipt。响应不完整时要保持明确状态，不能解析失败后返回一个空成功。模块卸载或替换期间返回 not-ready，不能返回旧实现伪造的结果。
 

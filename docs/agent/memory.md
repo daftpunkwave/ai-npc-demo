@@ -51,7 +51,7 @@ epistemic 分两层：`AgentObservation.epistemic` 为 witnessed/reported/inferr
 | 核心 core | 此刻最在乎的是失踪队员 | 稳定身份只读，动态关切有来源与限长 |
 | 公共 public | 已公开的联合护送纪要 | 授权公共投影，不能成为无限历史外挂 |
 
-沿用旧研究的 L1 到 L6 类型思路；L0 世界事实始终归平台。类型不要求单独存储层：一个插件可以用同一张表，也可以完全不实现某一类，但必须声明 capability，不能输出空对象假装支持。
+沿用父项目记忆设计中的分层思路（本仓库自包含，定义如下）：L0 世界事件日志是客观事实，始终归平台，不属于任何角色的记忆；L1 个人经历（episodic）、L2 关系账本（relation）、L3 认知与印象（belief）、L4 承诺与嘱托（prospective）、L5 核心记忆块（core）、L6 公共编年史（public）。类型不要求单独存储层：一个插件可以用同一张表，也可以完全不实现某一类，但必须声明 capability，不能输出空对象假装支持。四个实现各自用到哪些层见第 11 节。
 
 ## 4. 四类初始实现
 
@@ -112,16 +112,14 @@ turn 等待所需水位后冻结不可变 revision；检索还需验证每条来
 | 整理 | 定时/事件触发、批大小、反思证据要求 | readiness 积压与模型费用 |
 | 输入 | relationInput、prospectiveInput、publicHistory | 记忆旁路和实验混杂 |
 
-以下仅展示 memory 槽配置片段，不是完整可启动配置：
+以下仅展示 memory 槽配置片段，不是完整可启动配置；四个实现的完整参数与默认值见第 11 节：
 
 ```yaml
 memory:
   module: agent.memory.layered-hybrid
   config:
-    episodicCapacity: 200
-    beliefCapacity: 40
-    recallCandidateLimit: 30
-    recallTopK: 6
+    capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 }
+    recall: { topK: 8, candidateLimit: 40 }
     relationInput: enabled
     prospectiveInput: enabled
     reinforcement: validated-reference
@@ -152,3 +150,283 @@ memory:
 | 行为对照 | 相同当前输入下合作条件/行动有可追踪差异，不仅台词措辞变化 |
 
 观测只记录阶段事实和来源，不宣称输出引用证明模型内部因果。详细指标、样本有效性与请求响应归档由 [观测](../platform/observability.md) 和 [评估](../platform/evaluation.md) 统一维护。
+
+## 11. 首版实现规格
+
+本节是四个实现的可执行规格；前面各节是它们必须满足的约束。存储方式（行版本 + revision 可见性）见 [存储](../architecture/storage.md) 第 2、4 节。
+
+### 11.1 MemoryPort 与类型
+
+```ts
+interface MemoryPort {
+  // fold newly delivered observations (seq > consumed) into a plan; never calls a model
+  prepareIngest(input: { scope: MemoryScope; baseRevision: number; observations: AgentObservation[]; worldTick: number }): MemoryChangePlan;
+  // read-only, bound to a frozen revision
+  retrieve(query: MemoryQuery): MemoryBundle;
+  // decide whether maintenance work is due; returns null when nothing is due (called by the host, runtime.md §13.1)
+  planMaintenance(input: { scope: MemoryScope; revision: number; worldTick: number; observationSeqThrough: number;
+                           trigger: "day-passed" | "importance" }): MaintenanceTask | null;
+  // run outside the actor lock; may call the model port with purpose memory-maintenance
+  runMaintenance(task: MaintenanceTask, view: RevisionView, model: ScopedModelPort | null): Promise<MemoryChangePlan>;
+  // after a turn: reinforce validated citations and adjudicate model-reported noteworthy points
+  recordUse(input: { scope: MemoryScope; baseRevision: number; turnId: string; citedMemoryIds: string[];
+                     noteworthy: Noteworthy[]; inputObservations: AgentObservation[]; worldTick: number }): MemoryChangePlan;
+  // prospective wake-ups; the scheduler calls it once per tick (runtime.md §13.2); M0 and M2 return []
+  proposeWakeups(input: { scope: MemoryScope; revision: number; worldTick: number }): WakeupProposal[];
+  exportState(scope: MemoryScope, revision: number): MemoryCheckpoint;
+  importState(scope: MemoryScope, checkpoint: MemoryCheckpoint): MemoryChangePlan; // throws on incompatible schema
+}
+
+interface NewMemoryRow {           // one row version; memoryId is new, or an existing id for a new version
+  memoryId: string;
+  kind: MemoryRecord["kind"];
+  tier: "short" | "long" | "core" | "none";
+  status: MemoryRecord["status"];
+  epistemic: MemoryRecord["epistemic"];
+  releasePolicyId: string;         // most restrictive of the sources (prompts.md §3)
+  validFromTick: number;
+  validUntilTick: number | null;
+  strength: number;                // s0 = salience at creation
+  salience: number;
+  recallCount: number;
+  lastReinforcedTick: number;      // validFromTick at creation
+  tags: string[];                  // vocabulary in §11.2
+  sourceObservationIds: string[];
+  content: { summaryZh: string; counterpartIds: string[]; data: Json };
+}
+
+interface MemoryChangePlan {
+  baseRevision: number;
+  observationSeqThrough: number;   // highest observation folded in by this plan
+  inserts: NewMemoryRow[];
+  retires: { memoryId: string; status: MemoryRecord["status"] }[];
+  derivedThroughSeq: number | null;  // set only by maintenance plans
+  derivedThroughTick: number | null; // set only by maintenance plans (= the task's due_tick)
+  changeKind: "ingest" | "maintenance" | "use" | "import";
+}
+
+interface MaintenanceTask {        // stored in maintenance_runs.task_json
+  moduleId: string;
+  trigger: "day-passed" | "importance";
+  dueTick: number;                 // day-passed: the DayPassed tick; importance: current tick + 1
+  baseRevision: number;
+  observationSeqThrough: number;
+  day: number | null;              // for day-passed
+  needsModel: boolean;             // false for M1 and for M3 agents outside the daily top-8
+}
+
+interface MemoryBundle {
+  status: "ok" | "empty-by-design" | "not-ready";
+  revision: number;
+  coreBlock: string | null;        // M3 only
+  relationSummary: { targetId: string; trust: number; affinity: number; wariness: number;
+                     causes: RelationCause[]; reasonMemoryIds: string[] }[];
+  items: { memoryId: string; kind: MemoryRecord["kind"]; epistemic: MemoryRecord["epistemic"]; summaryZh: string;
+           validFromTick: number; score: number; mustInclude: boolean; releasePolicyId: string; sourceObservationIds: string[] }[];
+  candidates: number;              // size of the candidate pool, for observability
+  dropped: { memoryId: string; reason: "budget" | "dedupe" | "rank" }[];
+}
+
+interface WakeupProposal { atTick: number; dedupeKey: string; reason: "self-due" | "other-due" | "intent"; memoryId: string; counterpartId: string | null }
+```
+
+`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询）。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
+
+### 11.2 共用：显著度与标签
+
+`agent.memory.ledger` 与 `agent.memory.layered-hybrid` 用下式给每条观察打分，`stream-reflection` 用它换算重要度：
+
+```text
+salience = clamp01(base(eventType, role) × involvement × personality × freshness)
+```
+
+| 事件（以观察者视角） | base |
+|---|---|
+| 自己或自己照看的群体被救（`GroupRescued`、自己参与的救援 `TaskCompleted`） | 0.9 |
+| 对方违约，自己是当事人（`AgreementBreached`，义务人不是自己） | 0.8 |
+| 自己受伤（`CharacterInjured`） | 0.8 |
+| 对方履约（`AgreementTermFulfilled`/`AgreementFulfilled`，义务人不是自己） | 0.7 |
+| 自己违约 | 0.6 |
+| 协议生效且自己是当事人（`AgreementActivated`） | 0.6 |
+| 与自己派系相关的危机（`RelayDown` 对所有人；`OrchardCrisis` 对 earth-alliance 与 flora；`MigrationCrisis` 对 fauna 与 pacifist） | 0.6 |
+| 自己参与的任务失败（`TaskFailed`） | 0.6 |
+| 自己参与的任务完成、收到证据（`InformationShared`）、亲眼目睹的叙事事实（`WorldFactRecorded`） | 0.5 |
+| 影响自己派系的政策变化（`PolicyChanged`：本派系常用道路，或对 earth-alliance/flora 而言的水闸分配） | 0.5 |
+| 别人回复了自己的邀请（`TaskInvitationAnswered`）、收到邀请（`TaskInvitationIssued`） | 0.4 |
+| 传闻（`RumorSpread`）、与本派系无关的危机 | 0.4（无关危机 0.3） |
+| 对自己说的话（`DialogueSubmitted`）、发给自己的消息（`MessageSent`）、被提问（`ProbeAsked`） | 0.3 |
+| 指标与每日变化（`MetersChanged`、`DayPassed`） | 0.1 |
+| 其他事件 | 0.2 |
+
+| 因子 | 取值 |
+|---|---|
+| involvement | 按观察的 channel（[感知](perception.md) 第 11.2 节）：`self`、`party`、`face-to-face`、`relay`、`evidence`、`probe`（直接发给自己或自己参与的）1.0；`on-site`（在场目击）0.5；`broadcast`、`rumor`、`public-notice`、`briefing`（听说或通报）0.3 |
+| personality | 人格 `values` 中出现 `lexicons.personalityKeywords` 某一类的词时：`agreement` 类对协议事件 ×1.5；`rescue` 类对救援与受伤事件 ×1.5；`resource` 类对资源与水闸事件 ×1.5；`road` 类对道路与迁徙事件 ×1.3；`evidence` 类对证据与传闻事件 ×1.3；多个命中取最大值 |
+| freshness | 同一 `(事件类型, 对方)` 在最近 48 tick 内第一次出现 ×1.2；之后依次 ×1.0、×0.8、×0.6，最低 0.5 |
+
+分流：`salience ≥ 0.5` 写入长期经历（tier `long`），并按 11.3 节写关系修正；`0.2 ≤ salience < 0.5` 写入短期经历（tier `short`）；`< 0.2` 不单独记录，只累加到当天的聚合记录（每天每种事件类型一条，例如“第 3 天：收到 4 条公共通报”）。关系修正对所有被观察到的事件都按 11.3 节计算，与分流结果无关。
+
+标签词表（记录的 `tags` 与查询的 `queryTags` 只用这些值）：
+
+| 类别 | 标签 |
+|---|---|
+| 事件类别 | `agreement`、`breach`（违约事件）、`fulfilled`（履约事件）、`task`、`resource`、`water`、`road`、`migration`、`rumor`、`evidence`、`dialogue`、`policy`、`crisis`、`exchange`、`relay` |
+| 任务类型 | `transport`、`escort`、`rescue`、`repair`、`scout`（任务事件带上其类型） |
+| 实体 | 涉及的主体 ID、节点 ID（如 `pass`）、证据 ID 与证据自带的 tags |
+
+事件到类别的对应：协议事件 → `agreement`（违约再加 `breach`，履约再加 `fulfilled`）；任务事件 → `task` + 任务类型；`ResourcesTransferred/Consumed/StockpileAdjusted`、`SupplyShortage` → `resource`；水闸政策、`OrchardCrisis/Damaged` → `water`；道路政策、`PassageGranted` → `road`；`MigrationCrisis`、迁徙道路上的任务 → `migration`；中继指标、`RelayDegraded/Down/Restored`、修复任务 → `relay`；`RumorSpread` → `rumor`；证据事件 → `evidence`（`ev-exchange-draft`、`ev-star-charts` 再加 `exchange`）；对话与消息 → `dialogue`；其他政策 → `policy`；危机事件 → `crisis`。
+
+### 11.3 共用：关系账本（L2）
+
+关系是 `(观察者, 对象)` 上若干带原因的修正项，维度为 `trust`、`affinity`、`wariness`。基线：`trust` 基线 = 4 × 人格 `initialRelations.trust`（−2…2 对应 −8…8，与下面的文字等级一致），其余维度基线为 0。某一时刻的关系值：
+
+```text
+value(dim, t) = baseline(dim) + Σ delta_i × 0.5 ^ ((t − t0_i) / halfLife_i)
+```
+
+| 触发（对象 X） | 修正 | cause | halfLife（tick） |
+|---|---|---|---|
+| X 履约，自己是当事人（`AgreementTermFulfilled`，X 为 `obligorId`，X 不是自己） | trust +6 | `fulfilled` | 240 |
+| X 违约，自己是当事人（`AgreementBreached`，X 为 `obligorId`，X 不是自己） | trust −8，affinity −3 | `breach` | 480 / 240 |
+| 与 X 的协议生效 | trust +1 | `agreement` | 120 |
+| X 派遣的任务救了自己或自己派系照看的群体（`GroupRescued`），或把物资送到自己派系的库存点（`ResourcesTransferred` 的终点属于自己派系）；X 取事件的 `dispatcherId` | affinity +5，trust +3 | `aid` | 240 |
+| X 接受自己的邀请 / 拒绝自己的邀请 | affinity +2 / −2 | `invite-accepted` / `invite-declined` | 120 |
+| X 向自己分享证据 | trust +2 | `shared-evidence` | 120 |
+| X 的政策关闭或限制了自己派系需要的道路，或（对 earth-alliance 与 flora）把水闸设为 harbor-first | wariness +4 | `hostile-policy` | 240 |
+| 听说 X 有敌对行为（传闻） | wariness +1 | `rumor-hostile` | 120 |
+| 收到可信反证（带 `rumor-counter` 标签的证据，涉及 X） | 撤销对应传闻修正（标记 superseded），并 trust +1 | `counter-evidence` | 120 |
+
+每个对象最多保留 20 个修正项，超出时淘汰当前权重（`|delta| × 衰减系数`）最小的；每日整理时，权重低于 0.1 的修正项过期，并把原 delta 的 20% 沉淀进基线，同时留下一句概括性原因（例如“多次按约送达”）。
+
+`retrieve` 返回的 `relationSummary` 只含本次查询的 counterpart：`causes` 是当前权重 ≥ 0.1 的修正项的 cause 去重列表，`reasonMemoryIds` 是绝对贡献最大的两项对应的记忆。context 把它渲染成文字行（`relationInput: enabled` 时，排在记忆段的核心块之后、条目之前）：
+
+```text
+- 对特派员：信任 7（信任），亲近 2，戒备 0；主要原因：[mem-…] 按约送达供给；[mem-…] 拒绝过我的邀请
+```
+
+数值到文字（数值先四舍五入到整数，`labels.trust`）：≥ 8 深信、3–7 信任、−2–2 一般、−7–−3 戒备、≤ −8 敌视。`agent.decision.deterministic` 直接读取数值与 `causes`。没有关系账本的实现（M0、M2）返回空数组。
+
+### 11.4 共用：承诺与唤醒（L4）
+
+前瞻记录来自三处：
+
+1. 自己是当事人的协议生效（`AgreementActivated`）：每个条款一条，字段 `{ sourceKind: "agreement", agreementId, termIndex, obligorId, dueTick, state: "open" }`；收到对应的 `AgreementTermFulfilled` 或 `AgreementBreached` 时关闭，并转成一条经历。
+2. 自己接受的任务邀请：`{ sourceKind: "task", taskId, dueTick: departTick }`。
+3. 经裁决的模型自报要点（11.9 节）：`{ sourceKind: "informal", byId, dueTick }`，证据地位为 `reported-claim`。
+
+`proposeWakeups`（`wakeups: enabled` 时）对每条开放记录给出至多一条建议：义务人是自己 → `atTick = dueTick − 6`，`reason = self-due`；义务人是别人 → `atTick = dueTick`（期限当天追问；违约要到 `dueTick + 1` 才结算，此时记录仍开放），`reason = other-due`；`dueTick` 为 null 的非正式承诺不提出。`dedupeKey = <memoryId>:<reason>:<atTick>`。M3 的每日整理产生的 `intents` 转为 `atTick = 次日 8 时`、`reason = intent` 的建议。调度器每个 tick 调用一次，把 `atTick ≤ 当前 tick` 的建议按 `dedupeKey` 去重后转成 `prospective` trigger（见 [运行时](runtime.md) 第 13.2 节）。
+
+### 11.5 M0：`agent.memory.none`
+
+- `prepareIngest`：不写记录，只把 `observationSeqThrough` 推进到最后一条观察；durable 水位随之推进。
+- `retrieve`：返回 `status: "empty-by-design"`、`items: []`、`relationSummary: []` 的 MemoryBundle。
+- `planMaintenance` 恒返回 null，`derivedThroughSeq`/`derivedThroughTick` 随摄入推进；`proposeWakeups` 返回 `[]`；`recordUse` 只记录使用统计，不写记录。
+- 两个 preset 的差别只在 context：`baseline-window` 的 `historyTurns = 8`（主基线），`baseline-current` 的 `historyTurns = 0`（诊断基线）。
+
+### 11.6 M1：`agent.memory.ledger`（structured-ledger preset）
+
+使用 L1、L2、L4，不调用模型。下面的参数既是 `memory-m1-structured-ledger` preset，也是该模块 configSchema 的默认值。
+
+```yaml
+memory:
+  module: agent.memory.ledger
+  config:
+    capacity: { short: 50, long: 120, core: 30 }
+    salienceThresholds: { long: 0.5, short: 0.2 }
+    decayBaseTicks: { short: 48, long: 480 }
+    relationModifiersPerTarget: 20
+    recall:
+      mustIncludeProspective: 5
+      mustIncludeAboutCounterpart: 2
+      topK: 6
+      candidateLimit: 30
+      weights: { strength: 0.35, salience: 0.25, relevance: 0.30, recency: 0.10 }
+    relationInput: enabled
+    prospectiveInput: enabled
+    wakeups: enabled
+    reinforcement: validated-reference
+    maintenanceTrigger: world-period
+```
+
+- 强度：`strength(t) = salience × exp(−(t − lastReinforcedTick) / τ)`，`τ = decayBase(tier) × (1 + recallCount)`；core 层不衰减（strength = salience）。被引用强化时 `recallCount + 1`、`lastReinforcedTick = t`。
+- 每日整理（`DayPassed` 触发的 `MaintenanceTask`，`needsModel = false`）：重算强度；同一 `(事件类型, 对方)` 在 72 tick 内的多条短期记录合并为一条带计数的模式记录；短期记录 `recallCount ≥ 2` 或合并后 salience ≥ 0.5 时升为长期；salience ≥ 0.9 的长期记录升为 core；各层超出容量时淘汰强度最低者，主旨并入当天的聚合记录；关系修正过期与沉淀（11.3 节）。完成后推进 `derivedThroughSeq` 与 `derivedThroughTick`。
+- 检索：先放必带项（与对方相关的开放承诺最多 5 条；关于对方的长期记录中 salience 最高的 2 条），再从候选中按分数取到 `topK`：`score = 0.35·strength + 0.25·salience + 0.30·relevance + 0.10·recency`，其中 `relevance = |tags ∩ queryTags| / |tags ∪ queryTags|`（记录的 `counterpartIds` 含对方时再 +0.5，上限 1），`recency = exp(−(t − validFromTick) / 240)`；同一来源事件只取一条；同分按 `validFromTick` 降序，再按 memoryId。
+- 强化：只有 `citedMemoryIds` 中通过校验的记录被强化；被检索到但没被引用的不强化。
+
+### 11.7 M2：`agent.memory.stream-reflection`
+
+使用观察流（L1）与反思得到的看法（L3），没有关系账本与承诺账本。
+
+```yaml
+memory:
+  module: agent.memory.stream-reflection
+  config:
+    capacity: { stream: 300, reflections: 60 }
+    retrieval:
+      topK: 6
+      candidateLimit: 40
+      weights: { relevance: 1, recency: 1, importance: 1 }
+      recencyDecayPerTick: 0.995
+    reflection: { importanceSumThreshold: 15, recentWindow: 15, maxPerRun: 3, minEvidence: 2 }
+    maintenanceTrigger: importance-threshold
+```
+
+- 每条观察都写入观察流，重要度 `importance = 1 + round(9 × salience)`（1–10）。
+- 检索：候选为与 queryTags 有交集或 `counterpartIds` 含对方的记录，再补最近 10 条；三个分量先在候选池内做 min-max 归一化（候选池所有值相同时该分量记为 0）再加权求和：`relevance = 0.6·tag Jaccard + 0.4·中文字符二元组 Dice 系数`（记录摘要对比查询文本），`recency = 0.995^(当前 tick − validFromTick)`，`importance = importance / 10`。
+- 反思：每次摄入提交后，宿主调用 `planMaintenance(trigger = "importance")`；自上次反思以来新记录的重要度之和 ≥ 15 时返回任务（`dueTick = 当前 tick + 1`，`needsModel = true`）。`runMaintenance` 用 [prompts](prompts.md) 第 6.1 节的请求生成最多 3 条看法，每条至少引用 2 条记录；校验通过的看法写为 `belief` 记录（证据地位 `inference`，来源为所引记录的来源观察之并集）。成功才推进 `derivedThroughSeq`/`derivedThroughTick`。
+- 超出容量时淘汰重要度最低、最旧的观察流记录；看法超出容量时淘汰被引用次数最少的。
+
+### 11.8 M3：`agent.memory.layered-hybrid`
+
+使用 L1–L6。L1、L2、L4 与 M1 相同；额外有：
+
+| 层 | 规则 |
+|---|---|
+| L3 看法 | 每日整理时，对当天有显著变化（当天新增长期记录或关系变化绝对值 ≥ 3）的 Agent，按变化量排序取前 8 个（这些 Agent 的任务 `needsModel = true`），用 [prompts](prompts.md) 第 6.2 节的请求生成 `beliefOps`：add 新增；update 生成新行版本；supersede 把旧看法标为 superseded 并新增；keep 不变。最多 40 条 |
+| L5 核心块 | 身份部分来自人格（职责、价值取向、目标，约 120 token，静态）；动态部分是 `currentConcerns`（每日整理生成；模型返回 null 或不可用时用规则兜底：开放承诺中最早到期的两条 + 最负面的关系一句）。总长不超过 300 token，每次检索都作为必带项放在记忆段第一条 |
+| L6 公共编年史 | salience ≥ 0.5 的公开事件（危机、政策变化、章节事件）的摘要，按分支只存一份（`agent_id = '~public'`），检索时最多取 3 条 |
+
+```yaml
+memory:
+  module: agent.memory.layered-hybrid
+  config:
+    capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 }
+    salienceThresholds: { long: 0.5, short: 0.2 }
+    decayBaseTicks: { short: 48, long: 480 }
+    coreBlockMaxTokens: 300
+    chronicle: { enabled: true, maxPerRecall: 3 }
+    llmMaintenance: { enabled: true, maxAgentsPerDay: 8 }
+    recall:
+      mustIncludeProspective: 5
+      topK: 8
+      candidateLimit: 40
+      weights: { strength: 0.35, salience: 0.25, relevance: 0.30, recency: 0.10 }
+      jitter: 0.02
+    relationInput: enabled
+    prospectiveInput: enabled
+    wakeups: enabled
+    reinforcement: validated-reference
+    maintenanceTrigger: world-period
+```
+
+检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), String(agentTurnIndex))`）。每日整理先做规则段（与 M1 相同，另加：别人做出的非正式承诺过期未兑现时，写一条 `inference` 经历“X 没有兑现……”），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进。
+
+### 11.9 检索查询与自报要点
+
+runtime 从触发构造 `MemoryQuery`：
+
+- `counterpartIds`：触发观察的说话人、发送者、提案人、邀请人、提问人，以及 `subjectRef` 涉及的当事人。
+- `queryTags`：触发观察的标签（11.2 节的词表），再加 `lexicons.memoryQueryTags` 中出现在触发文本里的词对应的标签。
+- `queryText`：触发观察的摘要文本（M2 用于二元组相似度）。
+- `nodeId`、`purpose`、`audience`、`budget`（条数与 token 上限来自 profile）。
+
+`recordUse` 对 `noteworthy` 的裁决（M0 忽略；M2 只把它们作为普通观察流记录写入）：
+
+| kind | 条件 | 写入 |
+|---|---|---|
+| `promise-by-other` | `sourceRefs` 都是本 turn 的输入观察，且 `aboutId` 是其中一条观察的说话人 | 非正式承诺（L4，义务人为 aboutId） |
+| `promise-by-me` | `sourceRefs` 合法 | 非正式承诺（L4，义务人为自己） |
+| `claim` | `sourceRefs` 合法 | `reported-claim` 记录（M1 写为经历，M3 写为 L3 看法候选） |
+| `request` | `sourceRefs` 合法 | 短期经历 |
+
+不满足条件的条目丢弃，原因写进 turn 的 effective 记录。非正式承诺永远不会成为世界合同，也不会被规则结算。

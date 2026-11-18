@@ -113,11 +113,11 @@ provider 的提示词缓存只能加速合法请求，不是长期 memory。缓�
 context:
   module: agent.context.ordered-blocks
   config:
-    segmentOrder: [protocol, identity, task, world, memory, history, input]
+    segmentOrder: [protocol, identity, world, task, memory, history, input]
     historyTurns: 8
-    memoryTokenBudget: 1200
-    maxInputTokens: 6000
     lendUnusedBudget: false
+    decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 } }
+    speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }
 ```
 
 示例参数是起点；schema 包含单位、范围与 phase 支持。这里只配置上下文策略；真实模型和 temperature 从 [统一配置](../platform/configuration.md) 的模型池与 mounts 解析，不能在角色文件里再复制。
@@ -153,3 +153,83 @@ speech 的输入重新取“北侧目前不开放”等已授权状态，不带�
 7. 一轮多次工具返回形成多个可追踪 artifact，最终请求能逐段还原，不依赖现场打印的临时日志。
 
 实验中固定 memory/perception/tool-view/compression 与模型后，才把变化归因于 context。完整比较协议由 [评估](../platform/evaluation.md) 维护。
+
+## 11. 首版实现规格：`agent.context.ordered-blocks`
+
+### 11.1 段落与去向
+
+| segment | 内容来源 | 发到哪里 | 是否受保护 |
+|---|---|---|---|
+| `protocol` | [prompts](prompts.md) 第 2.1 节的规则部分 | system | 是 |
+| `identity` | 内容包的 lore 摘要与人格 | system | 是 |
+| `world` | `AgentWorldView`（[领域模型](../architecture/domain-model.md) 第 8.2 节）：现在、位置、最后已知局势、持有的证据与秘密 | 第一条 user 消息 | 现在与位置受保护，其余可裁剪 |
+| `task` | 自己的委托、进行中的任务、待回复邀请、proposed/active 的协议与条款状态、最近 12 tick 内状态变化的协议（[领域模型](../architecture/domain-model.md) 第 8.2 节） | 第一条 user 消息 | 与本次触发直接相关的条目受保护 |
+| `memory` | MemoryBundle 的内容，固定顺序：M3 的核心块（第一行）→ 关系摘要（M1、M3，`relationInput` 开启时）→ 记忆条目（按检索顺序） | 第一条 user 消息 | 核心块、关系摘要与必带项受保护 |
+| `history` | 触发所在会话中、受众包含本 Agent 的最近 `historyTurns` 条发言 | 第一条 user 消息 | 否 |
+| `input` | 本次触发的观察 | 第一条 user 消息 | 是 |
+
+`segmentOrder` 只调整第一条 user 消息里各段的顺序；`protocol` 与 `identity` 总在 system 中。M0 的 `baseline-current` preset 把 `historyTurns` 设为 0。
+
+### 11.2 token 估算
+
+首版用确定性估算，不调用供应商的计数接口：
+
+```ts
+// CJK and full-width characters count as one token each; other characters as one token per four
+export function estimateTokens(text: string): number {
+  let cjk = 0;
+  let other = 0;
+  for (const ch of text) {
+    if (/[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/u.test(ch)) cjk += 1;
+    else other += 1;
+  }
+  return cjk + Math.ceil(other / 4);
+}
+// request estimate = estimateTokens(system) + Σ (estimateTokens(message text) + 4) + Σ estimateTokens(JSON.stringify(tool schema))
+```
+
+估算值记为 `tokenizer: "estimate-v1"`，与供应商实报的 usage 分开记录。
+
+### 11.3 预算与裁剪
+
+参数来自 context 槽配置的 `decision`/`speech` 子块（默认值见 [配置](../platform/configuration.md) 第 10.2 节），`reservedOutputTokens` 来自 profile 的 `budgets.reserveOutputTokens`（经 ContextBuildRequest 的 budgets 传入）：
+
+| 参数 | decision 默认 | speech 默认 |
+|---|---|---|
+| `maxInputTokens` | 8000 | 2500 |
+| `reservedOutputTokens`（预算估算，不是发给供应商的上限） | 1500 | 400 |
+| `safetyTokens` | 300 | 200 |
+| `toolLoopReserveTokens`（给工具循环留的空间） | 1600 | — |
+| `segmentBudgets` | world 800、task 500、memory 1000、history 800 | facts 800、history 400 |
+
+有效上限 `L = min(maxInputTokens, 模型窗口 − reservedOutputTokens − safetyTokens)`；decision 首轮请求的目标上限为 `L − toolLoopReserveTokens`，speech 的目标上限为 `L`。组装顺序：
+
+1. 按段配额生成各段（每段内部超出配额时，按该段的裁剪规则先删到配额以内）。
+2. 估算整个请求（[11.2 节](#112-token-估算)）。若 profile 的压缩模块不是 `none`，且估算值超过 `triggerRatio × 目标上限`，先调用压缩槽（[压缩与工具视图](compression-and-tool-view.md) 第 12 节）。
+3. 仍超出目标上限时，按顺序裁剪，每裁一项都写进剔除报告：`history` 从最早的发言开始删；`memory` 从分数最低的非必带项开始删；`world` 删除与本次触发无关的道路与库存行；`task` 删除与本次触发无关的旧条目。
+4. 只剩受保护内容仍超出时返回 `over-budget`，本次请求不发送。
+
+`lendUnusedBudget: true` 时，某段没用完的配额按 world → task → memory → history 的顺序借给后面超出配额的段；默认 false。
+
+### 11.4 ContextArtifact
+
+```ts
+interface ContextArtifact {
+  artifactId: string;
+  parentArtifactId: string | null;   // previous round in the same tool loop
+  scope: MemoryScope;
+  turnId: string;
+  phase: "decision" | "speech";
+  inputFrontier: InputFrontier;
+  profileHash: string;
+  templateVersion: string;
+  system: string;
+  segments: { segmentId: string; kind: string; sourceRefs: string[]; releasePolicyIds: string[];
+              text: string; tokenEstimate: number; protected: boolean }[];
+  omissions: { sourceRef: string; reason: "budget" | "not-disclosable" | "not-in-frontier" | "invalid-source" }[];
+  tokenEstimate: number;
+  hash: string;                       // sha256 of canonical JSON without artifactId
+}
+```
+
+工具循环的每一轮都生成一个新的 artifact，`parentArtifactId` 指向上一轮；新 artifact 只在末尾增加 assistant 与 tool 消息，前面的内容逐字节相同。
