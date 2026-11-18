@@ -281,7 +281,7 @@ tools:
 | `self-known` | 只读自己的视图 |
 | `message-principals` / `message-principals-or-public` | `to` 中每个主体都在名册内或是玩家；后者还允许 `["public"]` |
 | `share-held` | 持有该证据的知识授权；秘密 ID 一律拒绝 |
-| `agreement-personal` / `agreement-faction` | 自己必须是当事人；前者的资源类条款义务人只能是自己 |
+| `agreement-personal` / `agreement-faction` | 自己必须是当事人；`agreement-personal` 只检查本次提交的新条款：propose 的 `terms` 或 counter 的 `counterTerms` 中，资源类条款义务人只能是自己；accept/reject 不提交新条款，不检查已有协议中他方承担的资源义务。最终接受权限与履约约束仍由规则处理器校验 |
 | `dispatch-delegated` / `dispatch-faction` | 队伍在自己的委托内 / 属于本派系 |
 | `invited-only` | 自己是该任务的受邀者 |
 | `cancel-own` | 自己是派遣者 |

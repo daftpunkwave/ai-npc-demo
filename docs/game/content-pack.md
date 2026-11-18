@@ -425,7 +425,7 @@ secrets:
 
 ## 8. 五个人类派系开局（starts.yaml）
 
-玩家始终驻在 grayharbor。`campaign.start` 被接受时，在同一事务里：world 创建 8 条职责委托（第 6 节）与玩家委托；comms 的后续钩子提交两条开局消息（`MessageSent`：`fromId` 为接触角色、`to` 为玩家、`channel = opening`、`intentKind = scripted`、`speechArtifactRef = null`、`deliverAtTick = 0`，正文取自下表，不调用模型），并授予开局知识与第 7 节的 `heldBy` 知识；scenario 的后续钩子安排剧情卡（见 [领域模型](../architecture/domain-model.md) 第 4 节）。
+玩家始终驻在 grayharbor。`campaign.start` 被接受时，在同一事务里：world 创建 8 条职责委托（第 6 节）与玩家委托；comms 的后续钩子提交两条开局消息（`MessageSent`：`fromId` 为接触角色、`to` 为玩家、`channel = opening`、`intentKind = scripted`、`speechArtifactRef = null`、`deliveries = [{ principalId: "player-1", deliverAtTick: 0 }, { principalId: 接触角色ID, deliverAtTick: 0 }]`（按 principalId 排序），正文取自下表，不调用模型），并授予开局知识与第 7 节的 `heldBy` 知识；scenario 的后续钩子安排剧情卡（见 [领域模型](../architecture/domain-model.md) 第 4 节）。
 
 ```yaml
 schemaVersion: 1
@@ -688,6 +688,7 @@ checkpoints:
 | | `maintenance.reflection`、`maintenance.dailyReview` | 记忆整理模板 | [prompts](../agent/prompts.md) 第 6 节 |
 | | `probe.question` | 探针注入观察的文本 | “【{{askedByName}} 问你】{{question}}” |
 | | `observationTemplates.<eventType>` | 观察摘要模板，每个事件类型一条 | [感知](../agent/perception.md) 第 11.4 节 |
+| | `observationChange`、`causeNames`、`effectTemplates` | 指标原因与任务结果的公开渲染词典 | 下方 YAML，绑定见感知第 11.4 节 |
 | | `termTemplates.<kind>` | 协议条款的中文渲染，每种条款一条 | [感知](../agent/perception.md) 第 11.4 节 |
 | `locale/zh-CN.yaml` | `reasonCodes.<code>` | 每个原因码的玩家提示 | [领域模型](../architecture/domain-model.md) 第 9 节，各写一句 |
 | | `taskTypes`、`meters`、`meterLevels`、`policyKeys`、`policyValues`、`resources`、`resourceLevels`、`nodes`、`facilities` | 名称与等级文字 | [规则](rules.md)、本文第 3 节 |
@@ -776,3 +777,24 @@ lexicons:
 ```
 
 内容加载器校验：每个领域事件类型都有 `observationTemplates` 条目；每种条款都有 `termTemplates` 条目；每个原因码都有 `reasonCodes` 条目；每个对白意图都有 `speechTemplates` 与 `labels.intents` 条目；每个工具都有 `toolDescriptions` 条目；`lexicons` 的各个键都存在且非空；缺项即启动失败。
+
+
+观察摘要的完整事件模板严格取 [感知](../agent/perception.md) 第 11.4 节清单（包括 system 事件，不扩大 ACL），并增加以下固定键：
+
+```yaml
+observationChange: "{meterName}：{from} → {to}（{causeName}）"
+causeNames:
+  daily: 每日结算
+  task: 任务结算
+  road-risk: 道路风险
+  group-deadline: 救援期限
+  scenario-pressure: 局势变化
+effectTemplates:
+  transport: 运输已结算
+  escort: 护送已完成
+  rescue: 救援已完成
+  repair: 修复已完成
+  scout: 侦察已完成
+```
+
+加载器还校验 causeNames 和 effectTemplates 全部键及模板绑定存在，不允许原始原因/效果 JSON 兜底。通信模板仅在本主体的 deliveries 到期后渲染；定向混合受众原子拒绝、广播中断时仅本地子集、逐收件者延迟与发送者立即回显均按 [规则](rules.md) 第 9 节，不在内容模板另算延迟。

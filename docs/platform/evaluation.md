@@ -136,8 +136,8 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 执行：
 
 1. 受控时钟推进到检查点 tick，并等本步结算完成（[运行时](../agent/runtime.md) 第 13.2 节）。
-2. 静默实验分支，为每个探针各复制一个沙盒分支（[存储](../architecture/storage.md) 第 3 节），互不影响。沙盒里只激活被提问的 Agent（占用配额，探针结束后释放）。
-3. 运行器在沙盒里以 `system:world` 身份提交 `probe.ask`（[领域模型](../architecture/domain-model.md) 第 5 节），产生 `ProbeAsked` 事件；感知把它变成 `probe` 渠道的观察（来源就是这个事件，`releasePolicyId = parties:<askedBy,agentId>`），并生成 `probe` trigger。decision 与 speech 照常运行，使用该 run 的 profile 与模型挂载；确定性决策按 [运行时](../agent/runtime.md) 第 13.7 节以 `answer` 意图作答。
+2. 静默实验分支，为每个探针各复制一个沙盒分支（[存储](../architecture/storage.md) 第 3 节），互不影响。先把实验分支激活状态置为 dormant 释放配额，再逐个创建沙盒；沙盒里只激活被提问的 Agent（占用配额，探针结束后释放）。全部探针结束后重新预留配额并激活实验名册。
+3. 运行器在沙盒里以 `system:world` 身份提交 `probe.ask`（[领域模型](../architecture/domain-model.md) 第 5 节），产生 `ProbeAsked` 事件；感知把它变成 `probe` 渠道的观察（来源就是这个事件，`releasePolicyId = parties:<askedBy,agentId>`），并生成 `probe` trigger。该命令仅在 active sandbox 中豁免 paused；沙盒不推进逻辑时间。只调度本次 probe trigger，decision 仅提供只读查询与 `decision.submit`，speech 照常校验但不调用 `speech.commit`，使用所属实验 run 冻结的 profile 与模型挂载；确定性决策按 [运行时](../agent/runtime.md) 第 13.7 节以 `answer` 意图作答。
 4. 把对白原文、decision JSON、引用的记忆 ID、turn 状态写入 `probe_results`；沙盒分支归档，实验分支继续推进。
 
 计分（按 `answerKey` 做子串匹配，匹配前去掉空白与标点；词表取自内容包的 `lexicons`）：

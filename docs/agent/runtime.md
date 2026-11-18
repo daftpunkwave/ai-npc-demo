@@ -243,7 +243,7 @@ scheduling:
 4. 每个 Agent 同一时刻最多一个活动 turn；turn 运行中新到的 trigger 只排队，不改变已冻结的输入。
 5. turn 以 `cancelled` 结束（暂停、静默、接管、租约过期导致）时，它并入的 trigger 被释放（`consumed_by_turn_id` 置空），之后重新调度；以 `completed`、`failed`、`budget-exhausted` 结束时 trigger 视为已消费。
 
-`stepping` 模式下，一次 step 在“目标 tick 已到、没有到期 job、没有排队或运行中的 turn、没有 `due_tick ≤ 目标 tick` 的排队或执行中的整理任务”时结束，然后时钟回到 paused。
+`stepping` 模式下，每个 tick 按规则第 1 节注入该 tick 的脚本命令，然后排空本 tick：规则与感知消费者追平最新 worldSeq、记忆摄入追平已投递观察、没有到期 job、没有当前可调度的 trigger、没有排队或运行中的 turn、没有 `due_tick ≤ 当前 tick` 的排队或执行中的整理任务。消费者或 turn 产生新事件后重新检查这些条件；未来投递与冷却中的 trigger 留到后续 tick，不阻塞本 tick。达到收敛点才推进下一 tick；目标 tick 收敛后回到 paused。超出运行预算时明确失败并暂停，不把未收敛当作完成。
 
 ### 13.3 turn 主循环
 
@@ -260,10 +260,13 @@ async function runTurn(turnId: string): Promise<void> {
   //    agent.decision.deterministic replaces steps 5-6 with §13.7 and never calls a model
   // 7. speech: if dialogueIntent.kind != "none" -> speech request -> validate -> template fallback -> speech.commit
   //    (agent.decision.deterministic always uses the safe templates of prompts.md §5)
+  //    probe turns write the validated speech to probe_results instead of speech.commit
   // 8. settle: in the agent's actor tx -> memory.recordUse plan (CAS with rebase, 13.5), turn completed, effective record
   // every stage writes a span; every commit re-checks controllerEpoch, turnLeaseEpoch and branch status
 }
 ```
+
+探针 turn 仅提供只读查询工具与 `decision.submit`；工具网关同样拒绝任何写工具，不能通过模型输出修改沙盒世界。仅 active sandbox 内由 `system:world` 提交的 `probe.ask` 豁免暂停检查；其他命令不豁免。探针只调度本次 `ProbeAsked` 的 trigger，不消费复制来的历史 trigger。
 
 一轮 decision 响应的处理规则：
 

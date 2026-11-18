@@ -146,7 +146,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 
 | 玩家操作 | 界面 | 结果 |
 |---|---|---|
-| 选择开局派系 | `boot.screen` 的五张卡片（名称、首个委托、接触角色） | `campaign.start`（暂停时也被接受）；受理后客户端立即调用 `POST /api/v1/campaign/resume`，`expectedRunVersion` 取投影的 `clock.runVersion` |
+| 选择开局派系 | `boot.screen` 的五张卡片（名称、首个委托、接触角色） | `campaign.start`（暂停时也被接受）；受理后先重新执行第 8.2 节第 5 步的有 campaign 分支（获取投影、申请 WS 票据并订阅），再调用 `POST /api/v1/campaign/resume`，`expectedRunVersion` 取投影的 `clock.runVersion` |
 | 点击角色 | 底部对话面板打开与该角色的会话 | 输入文字发送 → `dialogue.say`；发出后显示“等待回应”，直到收到回话或投影的 `awaitingReplyFrom` 不再包含该角色 |
 | 对话面板“出示证据” | 从笔记里选证据 | `information.share`（受众为当前角色） |
 | 对话面板“提议” | 协议表单：当事人、条款类型与参数、有效期 | `agreement.propose` |

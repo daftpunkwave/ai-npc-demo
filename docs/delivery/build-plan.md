@@ -32,19 +32,21 @@ Step SNN <title>
 | S05 | — | `config/rosters/standard-20.yaml`、`core-3.yaml`、`config/runs/online-default.yaml` | — |
 | S09 | `dev:server`、`check:catalog`（并加入 `check`） | 两份主装配首次创建 | server：九个 game 绑定（scenario 为 `game.scenario.watergate`）、`platform.storage.sqlite`、`platform.secrets.env`、`platform.access-policy.roster`、`platform.operations.standard`、`transport.http-ws.fastify`；无 `agentSlots`；client、console 的 bindings 为空 |
 | S10 | `dev:client`、`dev`、`build`、`start`、`test:e2e` | — | client：第 5 节全部 client 绑定（标准用 `client.scene-renderer.pixi`，测试用 `client.scene-renderer.null`） |
-| S11 | — | — | server：`platform.observability.sqlite`、`platform.module-admin.standard`；console：health、module-admin、`console.observability.standard` |
+| S11 | `dev`、`build` 加入 console 构建 | — | server：`platform.observability.sqlite`、`platform.module-admin.standard`；console：health、module-admin、`console.observability.standard` |
 | S12 | `check:ports` | — | — |
 | S15 | — | `config/toolsets/*.yaml` | — |
 | S16 | — | `config/profiles/platform-baseline.yaml`（decision 槽暂为 `agent.decision.deterministic`）、`scene-watergate.yaml`、两个 Agent profile | server：`agent.scheduling.fair`、`agent.tools.game-tools`；`agentSlots`：perception local；memory none、ledger；context ordered-blocks；compression none、window；toolView structured；decision deterministic |
-| S17 | — | baseline 的 decision 槽改为 `agent.decision.model`；`config/model-layouts/deterministic-model-layout-v1.yaml`；`config/pricing.yaml`；`config/profiles/variants/decision-deterministic.yaml` | server：`agent.model-pool.shared`、`platform.budget.standard`；测试装配加 `platform.model-transport.deterministic`；`agentSlots.decision` 加 `agent.decision.model` |
-| S18 | — | `shared-model-layout-v1.yaml`、`claude-model-layout-v1.yaml` | 标准装配加 `platform.model-transport.openai-compatible`、`platform.model-transport.anthropic` |
-| S19 | — | — | console：model-mounts、faction-ops、debug |
-| S20 | — | 四个记忆 variant 文件 | `agentSlots.memory` 加 stream-reflection、layered-hybrid |
+| S17 | — | baseline 的 decision 槽改为 `agent.decision.model`，标准 run 叠加 `decision-deterministic` patch；`config/model-layouts/deterministic-model-layout-v1.yaml`；`config/pricing.yaml`；`config/profiles/variants/decision-deterministic.yaml` | 仅测试装配的 server 加 `agent.model-pool.shared`、`platform.budget.standard`、`platform.model-transport.deterministic`，`agentSlots.decision` 加 `agent.decision.model`；标准装配仍只有 deterministic decision，不绑定 pool/transport |
+| S18 | — | `shared-model-layout-v1.yaml`、`claude-model-layout-v1.yaml` | 标准装配加 `agent.model-pool.shared`、`platform.budget.standard`、`platform.model-transport.openai-compatible`、`platform.model-transport.anthropic`，`agentSlots.decision` 加 `agent.decision.model`；标准 run 移除过渡用 decision patch |
+| S19 | — | `memory-m1-structured-ledger` variant | console：model-mounts、faction-ops、debug |
+| S20 | — | 其余四个记忆 variant 文件（`memory-m0-window`、`memory-m0-current`、`memory-m2-stream-reflection`、`memory-m3-layered-hybrid`） | `agentSlots.memory` 加 stream-reflection、layered-hybrid |
 | S21 | — | `config/runs/exp-*.yaml` | server：`platform.evaluation.standard`；console：evaluation |
 | S22 | — | `config/presets/*.yaml` | console：scenario-editor、audit |
 | S24 | — | 三份替换装配 | client：`client.hud.compact`、console：`console.observability.lite` 只出现在替换装配里 |
 
-装配没有 `agentSlots` 时，服务端宿主不启动 Agent 运行时，也不解析名册里的 `profileRef`/`toolsetRef` 与 RunSpec 的 `modelLayoutRef`（S09–S15 的在线世界没有 NPC 行动）。有 `agentSlots` 时，`agent.scheduling` 与 `agent.tools` 成为必需能力；`agentSlots` 中各模块声明的 `requires`（例如 `agent.decision.model` 需要 `agent.model-pool`）也纳入能力闭包检查。
+装配没有 `agentSlots` 时，服务端宿主不启动 Agent 运行时，也不解析名册里的 `profileRef`/`toolsetRef` 与 RunSpec 的 `modelLayoutRef`（S09–S15 的在线世界没有 NPC 行动）。有 `agentSlots` 时解析 profile/toolset；仅绑定 `agent.model-pool` 时才解析、校验 RunSpec 的 `modelLayoutRef`（S16 虽有 `agentSlots`，仍不读取尚不存在的模型布局文件）。有 `agentSlots` 时，`agent.scheduling` 与 `agent.tools` 成为必需能力；`agentSlots` 中各模块声明的 `requires`（例如 `agent.decision.model` 需要 `agent.model-pool`）也纳入能力闭包检查。
+
+S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-default.yaml`）须在 `variant.profilePatchRefs` 末尾追加 `decision-deterministic`，测试模型路径的 RunSpec 则显式移除该 patch、选择测试装配与 `deterministic-model-layout-v1`。profile 合并后再检查所选槽是否在装配白名单中：标准最终为 deterministic，测试最终为 model，二者都可运行；不得让标准装配依赖尚未实现的真实 transport。S18 标准装配具备 pool/transport 后移除这一过渡 patch、选择真实布局。
 
 ### 0.3 控制台与玩家接口的实现步骤
 
@@ -146,7 +148,7 @@ Step SNN <title>
 ### S09 服务端宿主与 API
 
 - **先读**：[API](../architecture/api.md) 第 1–4、7、9 节、[两个端口](../architecture/two-endpoints.md) 第 1、6 节、[领域模型](../architecture/domain-model.md) 第 8.1 节、[技术栈](tech-stack.md) 第 5、6 节、[运营](../platform/operations.md) 第 2–4、10 节、[代码目录](../architecture/code-structure.md) 第 2、3 节、本文 0.2 节。
-- **产出**：`apps/server`（`main.ts`：加载环境变量、打开存储、加载内容与配置、首次启动时按运营第 10 节创建在线世界与 live run、解析 server 装配、启动模块与 worker（时钟、job、消费者、投影推送）、监听；端口被占用时退出码非 0；`module-catalog.ts` 显式登记全部 server 模块定义）；`transport.http-ws.fastify`（0.3 节分配给 S09 的路由、Origin 校验、错误格式）；`platform.access-policy.roster`；`platform.secrets.env`；`platform.operations.standard`（暂停、继续、存档、恢复、重新开局的编排）；令牌生成与打印；玩家投影构建与增量推送（200 条重放缓冲）；两份主装配的 S09 版本；`scripts/check-catalog.ts`（用运行时路径 `import(pathToFileURL(p).href)` 加载三个组合根的 `module-catalog.ts`，校验模块 ID 唯一、`config/assemblies/*.yaml` 全部可解析）。
+- **产出**：`apps/server`（`main.ts`：加载环境变量、打开存储、加载内容与配置、首次启动时按运营第 10 节创建在线世界与 live run、解析 server 装配、启动模块与 worker（时钟、job、消费者、投影推送）、监听；端口被占用时退出码非 0；`module-catalog.ts` 显式登记全部 server 模块定义）；`transport.http-ws.fastify`（0.3 节分配给 S09 的路由、Origin 校验、错误格式）；`platform.access-policy.roster`；`platform.secrets.env`；`platform.operations.standard`（暂停、继续、存档、恢复、重新开局的编排）；令牌生成与打印；玩家投影构建与增量推送（200 条重放缓冲）；两份主装配的 S09 版本；`scripts/check-catalog.ts`（用运行时路径 `import(pathToFileURL(p).href)` 加载已存在的各 realm 组合根 `module-catalog.ts`；catalog 尚不存在的 realm 仅当所有待校验装配中该 realm 的 bindings 都为空时才不加载，否则失败；已存在的 catalog 即使 bindings 为空也照常加载校验。校验模块 ID 唯一、`config/assemblies/*.yaml` 全部可解析）。
 - **测试**：用 `fastify.inject` 覆盖登录、会话、命令、receipt 查询、世界视图（含 `clock.runVersion`）、玩家访问控制台接口 403、错误 Origin 403、开局后继续与暂停；WS 用真实端口测试订阅、增量与断线重连。
 - **完成判据**：`pnpm check` 通过（已包含 `check:catalog`）；`pnpm dev:server` 启动后 `GET /api/v1/health` 返回 ready，并打印两条登录地址。
 
@@ -155,14 +157,14 @@ Step SNN <title>
 ### S10 客户端宿主、模块与启动脚本
 
 - **先读**：[客户端](../architecture/client-and-rendering.md) 全文、[模块目录](../architecture/module-catalog.md) 第 5 节、[API](../architecture/api.md) 第 2–4、9 节、[技术栈](tech-stack.md) 第 4、6、8 节。
-- **产出**：`packages/client-protocol`（类型化 HTTP 客户端、WS 客户端、投影 reducer）；`apps/client`（Vite 配置、宿主启动流程、slot 布局、登录、组合不完整页面）；客户端模块 `world-view.standard`、`scene-renderer.pixi`、`scene-renderer.null`、`camera.standard`、`screen-projection.isometric`、`input.standard`、`hud.standard`、`dialogue.standard`、`faction-start.standard`、`characters.standard`、`settings.standard`、`notifications.standard`；`scripts/dev.ts`、`scripts/start.ts`；`playwright.config.ts`（测试环境见技术栈第 8 节）；两份装配的 client 绑定。
+- **产出**：`packages/client-protocol`（类型化 HTTP 客户端、WS 客户端、投影 reducer）；`apps/client`（Vite 配置、宿主启动流程、slot 布局、登录、组合不完整页面）；客户端模块 `world-view.standard`、`scene-renderer.pixi`、`scene-renderer.null`、`camera.standard`、`screen-projection.isometric`、`input.standard`、`hud.standard`、`dialogue.standard`、`faction-start.standard`、`characters.standard`、`settings.standard`、`notifications.standard`；`scripts/dev.ts`、`scripts/start.ts`（S10 的 dev 只启动 server/client，build 只构建 client，不引用尚不存在的 console 配置）；`playwright.config.ts`（测试环境见技术栈第 8 节）；两份装配的 client 绑定。
 - **测试**：reducer（快照 + 增量 + 缺口时重取）；`worldToScreen` 与 `screenToWorld` 往返误差小于 0.5 像素；`CommandClient` 重试复用同一 `commandId`；e2e `tests/e2e/player-start.spec.ts`：打开 `http://127.0.0.1:5173/#token=e2e-player`，选择开局（客户端随后自动继续时钟），侧栏点击岑雁，发送一句话，对话面板出现这句话。
 - **完成判据**：`pnpm check` 通过；`pnpm test:e2e` 中的 `player-start` 通过。
 
 ### S11 控制台宿主与首批页面
 
 - **先读**：[两个端口](../architecture/two-endpoints.md) 第 4、10 节、[模块目录](../architecture/module-catalog.md) 第 6 节、[API](../architecture/api.md) 第 5.1、5.5 节、[观测](../platform/observability.md) 第 8 节。
-- **产出**：`apps/console`（宿主壳：登录、当前角色切换、导航、组合不完整页面；Vite 输出到 `apps/server/console-static/`）；服务端挂载 `/console/*` 静态资源（单页回退）；`platform.observability.sqlite`（span 落库与查询）、`platform.module-admin.standard`；0.3 节分配给 S11 的路由与 WS 频道；页面模块 `console.health.standard`、`console.module-admin.standard`、`console.observability.standard`（先只做时间线）。
+- **产出**：`apps/console`（宿主壳：登录、当前角色切换、导航、组合不完整页面；Vite 输出到 `apps/server/console-static/`）；`dev` 加入 console 的 `vite build --watch`，`build` 加入 console 的 `vite build`；服务端挂载 `/console/*` 静态资源（单页回退）；`platform.observability.sqlite`（span 落库与查询）、`platform.module-admin.standard`；0.3 节分配给 S11 的路由与 WS 频道；页面模块 `console.health.standard`、`console.module-admin.standard`、`console.observability.standard`（先只做时间线）。
 - **测试**：e2e `tests/e2e/console-basic.spec.ts`：用 `#token=e2e-console` 登录后能看到运行总览；切换到 evaluator 后模块装配页置灰；用玩家会话请求 `/api/v1/console/health` 返回 403。
 - **完成判据**：`pnpm check` 通过；`console-basic` 通过。
 
@@ -224,7 +226,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S19 三核心角色闭环
 
 - **先读**：[路线与验收](roadmap-and-acceptance.md) 第 2 节、[观测](../platform/observability.md) 第 4、8 节、[两个端口](../architecture/two-endpoints.md) 第 10 节、本文 0.3 节 S19 行。
-- **产出**：0.3 节分配给 S19 的路由；补全 `console.observability.standard`（Agent 检查器、turn 详情、trace）；`console.model-mounts.standard`（只读视图与校验）、`console.faction-ops.standard` 的时钟与存档部分、`console.debug.standard`；`tests/scenarios/slice-a.test.ts`。
+- **产出**：0.3 节分配给 S19 的路由；补全 `console.observability.standard`（Agent 检查器、turn 详情、trace）；`console.model-mounts.standard`（只读视图与校验）、`console.faction-ops.standard` 的时钟与存档部分、`console.debug.standard`；`config/profiles/variants/memory-m1-structured-ledger.yaml`（供本步场景测试使用）；`tests/scenarios/slice-a.test.ts`。
 - **场景测试**（测试装配、确定性模型布局、core-3、`human-neutral` 开局；行为断言使用 `profilePatchRefs: [memory-m1-structured-ledger, decision-deterministic]`）：双端启动；玩家与岑雁交谈并收到回复；派遣运输并在规则 tick 完成；按 `s-promise` 的 break 分支，协议违约后岑雁对 tick 60 的请求 `stance = decline`、`reasonCode = past-breach`；暂停时 tick 不变且晚到候选不提交；单步推进有界；存档后重启服务端，恢复后位置、预留、任务与记忆一致且不重复结算，Agent 仍会回话；控制台能按 traceId 查到完整因果链；玩家会话访问控制台接口 403。
 - **人工验证**：用真实模型布局（`shared-model-layout-v1` 或 `claude-model-layout-v1`）运行 `pnpm start`，按 `s-promise` 的步骤试玩一次，把观察到的行为与 trace 链接写进完成报告。
 - **完成判据**：`pnpm check`、`pnpm test:e2e`、`pnpm check:ports` 全部通过；路线第 2 节的表格逐项有证据。
@@ -234,8 +236,8 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S20 M2、M3 与整理任务
 
 - **先读**：[记忆](../agent/memory.md) 第 11.1、11.7–11.8 节、[prompts](../agent/prompts.md) 第 6 节、[运行时](../agent/runtime.md) 第 13.1、13.4、13.5 节。
-- **产出**：模块 `agent.memory.stream-reflection`、`agent.memory.layered-hybrid`；整理 worker 的模型调用路径（`runMaintenance`、校验、CAS 提交、`derivedThroughSeq`）；四个记忆 variant 文件；装配的 S20 更新。
-- **测试**：M2 达到重要度阈值后排入一次 `due_tick = 当前 tick + 1` 的反思，反思引用不存在的记录时被丢弃；M3 的核心块总是记忆段第一条且不超过 300 token；M3 整理的模型段失败时保留规则段结果、不推进 derived 水位，之后的 strict turn 立即 not-ready；四个 variant 在同一输入下的入模记忆段确实不同（比较 context artifact）。
+- **产出**：模块 `agent.memory.stream-reflection`、`agent.memory.layered-hybrid`；整理 worker 的模型调用路径（`runMaintenance`、校验、CAS 提交、`derivedThroughSeq`）；其余四个记忆 variant 文件（`memory-m0-window`、`memory-m0-current`、`memory-m2-stream-reflection`、`memory-m3-layered-hybrid`）；装配的 S20 更新。
+- **测试**：M2 达到重要度阈值后排入一次 `due_tick = 当前 tick + 1` 的反思，反思引用不存在的记录时被丢弃；M3 的核心块总是记忆段第一条且不超过 300 token；M3 整理的模型段失败时保留规则段结果、不推进 derived 水位，之后的 strict turn 立即 not-ready；五个记忆 variant 均可解析；四个主组 variant（M0 window、M1、M2、M3）在同一输入下的入模记忆段确实不同（比较 context artifact），另验证 `memory-m0-current` 的 `historyTurns = 0`。
 - **完成判据**：`pnpm check` 通过。
 
 ### S21 实验、探针与评估页面

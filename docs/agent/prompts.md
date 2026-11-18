@@ -197,7 +197,7 @@ const SpeechOutput = z.object({
 3. 泄密检查：对说话者持有、而任一受众不持有的每个秘密，`utterance` 中不得出现该秘密的任一 `leakTerms`（见 [内容包](../game/content-pack.md) 第 7 节）。
 4. 状态检查：本 turn 有任务处于 pending/running 时，`utterance` 不得包含 `lexicons.completionClaims` 中的词；有被拒绝的命令时，不得包含 `lexicons.progressClaims` 中的词。这是尽力而为的关键词检查，不代表语义上没有误导。
 
-任一项失败就重试一次（计入预算）；仍失败则使用第 5 节的安全模板，并在 trace 里记为 `speech-fallback`。通过校验的对白写成 `speech` artifact，再由宿主以 `speech.commit` 提交（`approvedSpeechArtifactRef` 指向它）。
+任一项失败就重试一次（计入预算）；仍失败则使用第 5 节的安全模板，并在 trace 里记为 `speech-fallback`。通过校验的对白写成 `speech` artifact，再由宿主以 `speech.commit` 提交（`approvedSpeechArtifactRef` 指向它）；探针例外：仅写 `probe_results`，不提交世界对白。
 
 ## 5. 安全模板
 
@@ -263,7 +263,7 @@ user:
 
 ## 7. 评估探针
 
-探针在开环沙盒分支里作为一个普通 turn 执行：宿主注入一条观察“【{{askedByName}} 问你】{{question}}”，渠道为当面交谈，`releasePolicyId = parties:<askedBy,agentId>`，触发类型为 `probe`。decision 与 speech 照常运行，`utterance` 作为回答写入 `probe_results`，按脚本的 `answerKey` 计分（见 [评估](../platform/evaluation.md) 第 8 节）。探针 turn 不会进入正式分支。
+探针在开环沙盒分支里作为一个普通 turn 执行：运行器提交 `probe.ask` 产生 `ProbeAsked`，感知由该事件生成观察“【{{askedByName}} 问你】{{question}}”，渠道为 `probe`，`releasePolicyId = parties:<askedBy,agentId>`，触发类型为 `probe`。decision 仅可调用只读查询与 `decision.submit`；speech 照常生成与校验，但不调用 `speech.commit`，`utterance` 作为回答写入 `probe_results`，按脚本的 `answerKey` 计分（见 [评估](../platform/evaluation.md) 第 8 节）。探针 turn 不会进入正式分支。
 
 ## 8. 验收
 

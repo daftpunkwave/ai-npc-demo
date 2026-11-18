@@ -10,7 +10,7 @@
 | 起点 | `campaign.start` 被接受时 `worldTick = 0` |
 | 首章长度 | 7 天，tick 0–167；tick 168 做章节评估（第 10 节），之后进入自由模式：时钟照常，不再触发剧情卡 |
 | running | 每 `secondsPerTick` 真实秒推进 1 tick（默认 10 秒，1 游戏日 = 4 分钟） |
-| paused | 不推进；除 `campaign.start` 外，改变世界的命令一律返回 `paused` |
+| paused | 不推进；除 `campaign.start` 与 active sandbox 内 `system:world` 的 `probe.ask` 外，改变世界的命令一律返回 `paused`；不豁免其他 sandbox 命令 |
 | stepping | 从 paused 发起，推进 N tick（1–24），并等本步触发的规则任务与 Agent turn 全部结算后回到 paused |
 | 离线 | live run 中，玩家的全部 WebSocket 连接断开超过 60 秒且时钟为 running 时自动暂停；不补算离线时间 |
 
@@ -22,6 +22,9 @@
 2. 按 `(dueTick, seq)` 升序执行所有 `dueTick ≤ T` 的 job，`seq` 是 job 在分支内的创建序号：任务出发/到达/完工、伤员期限、协议期限、剧情卡触发、延迟观察投递。
 3. 若 `T > 0` 且 `T % 24 == 0`：由时钟 worker 直接调用 world 模块的每日结算（第 4 节），提交 `DayPassed`。
 4. 若 `T == 168`：由时钟 worker 直接调用 world 模块的章节评估（第 10 节），提交 `ChapterStageEvaluated`。
+
+5. stepping 模式中，按脚本声明顺序注入 tick T 的脚本命令；脚本冒充玩家/席位时仍走对应正常认证、权限、版本与命令网关校验，不授予 system 权限或暂停豁免。
+6. stepping 在本 tick 等待收敛后才推进下一 tick：所有 dueTick ≤ T 的规则/投递 job 已结算、事件消费者追平最新 worldSeq、观察与记忆消费者追平其输入、无进行中的 turn，且无当前可调度 trigger。消费者或 turn 新产生事件/job/trigger 时重新检查。仅 cooldownUntilTick > T 的未来 trigger 不阻塞；失败或积压必须显式报错，不能视为收敛。N tick 全部完成后才恢复 paused。
 
 第 3、4 步是固定的时钟步骤，不是 job，因此不会因排序而乱序，也不会执行两次。
 
@@ -36,9 +39,9 @@
 - 路径：在可用道路上用 Dijkstra 按 `travelTicks` 求最短路；同长时选道路数少者，再按道路 ID 序列的字典序。找不到路径就拒绝命令，原因码 `route-unavailable`。
 - 行程：每条道路的 `travelTicks` 相加；有货物（`cargo` 总量 > 0）时每条道路再加 1。道路状态只在出发时检查，途中的变化不影响已出发的任务。
 - 风险：道路 `risk ∈ {0,1,2}`。出发时对路径上每条 `risk > 0` 且未被护送（第 6 节 escort）的道路依次抽样（随机源见第 11 节）：
-  - 延误：概率 `0.15 × risk`，完成时间 +2；
+  - 延误：概率 `0.15 × risk`，每条命中道路贡献 2 tick，累计延误 = `2 × 命中延误的道路数量`；
   - 受伤：概率 `0.05 × risk`；有参与角色时，从按 agentId 排序的参与者中用同一随机源取一人，受伤 48 tick；没有参与角色时，队伍在任务结束后休整 24 tick。
-- 抽样结果只写进任务的内部状态。`TaskDeparted` 与玩家投影只给出不含延误的**名义**到达/完成 tick；到了名义完成 tick 如果存在延误，提交 `TaskDelayed`（带新的完成 tick），到真正完成时才结算；受伤在任务完成时以 `CharacterInjured` 公布。
+- 抽样结果只写进任务的内部状态。`TaskDeparted` 与玩家投影只给出不含延误的**名义**到达/完成 tick；到了名义完成 tick 如果存在延误，仅在 `delayNoticeSent = false` 时提交一次 `TaskDelayed`（新的完成 tick = 名义完成 tick + 累计延误），同事务设置 `delayNoticeSent = true`，到真正完成时才结算；受伤在任务完成时以 `CharacterInjured` 公布。
 
 ## 3. 资源与库存
 
@@ -93,7 +96,7 @@
 
 1. 任务进入 `pending`，完成资源预留与委托余额扣减，并为每位受邀者提交 `TaskInvitationIssued`。出发 tick = 当前 tick + `departAfterTicks`（默认：无受邀者为 1，有受邀者为 2）。
 2. 出发时：在出发前用 `task.respond` 回复 accept 的受邀者才会参与，未回复的视为拒绝并提交 `TaskInvitationExpired`。重新检查路径与运力（温原没有参加时按原运力）；不满足时任务失败（原因码 `route-closed` 或 `over-capacity`），并释放预留、退回委托余额。都满足则提交 `TaskDeparted`（任务进入 `running`，带名义完成 tick），同时按第 2 节做风险抽样。
-3. 到了名义完成 tick：有延误则提交 `TaskDelayed` 并把完成推迟 2 tick；没有延误或延误已过，就按下表结算并提交 `TaskCompleted`；结算条件不满足时提交 `TaskFailed`，并附原因码。
+3. 到了名义完成 tick：有延误且尚未通知则提交一次 `TaskDelayed`，设置 `delayNoticeSent` 并安排累计延误后的真正完成 job；没有延误或延误已过，就按下表结算并提交 `TaskCompleted`；结算条件不满足时提交 `TaskFailed`，并附原因码。
 
 | 类型 | 参数 | 所需能力 | 用时 | 资源 | 完成效果 |
 |---|---|---|---|---|---|
@@ -101,7 +104,7 @@
 | escort 护送 | `roadId`、`durationTicks`（6–24，默认 12） | escort | 若不在道路端点，先赶到最近端点，再巡护 `durationTicks` | 无 | 巡护期（从到达端点起 `durationTicks` 个 tick）内出发、经过该道路的任务，对该道路跳过风险抽样；完成时若为迁徙道路，`migration.safety +12`（岑雁或追风参与再 +4） |
 | rescue 救援 | `groupId`、`toNodeId`（须有医疗设施）、`medicalStockpileId`（须在 `toNodeId`） | rescue | 队伍 → 群体所在节点 → `toNodeId` 的行程；苏回或林芜参与时总用时 −2（至少 1） | 预留医疗材料，数量等于伤员数 | 消耗预留；群体状态变为 rescued，伤员数归 0；`migration.safety +10` |
 | repair 修复 | `target: relay`、`energyStockpileId`、`supplyStockpileId` | repair | 先赶到 grayharbor，再工作 6 tick | 能源 10、供给 5（`team-star` 只需能源 10，`supplyStockpileId` 可为 null）；库存点必须在 grayharbor 或队伍出发节点 | `relay.stability` 按第 4 节增加 |
-| scout 侦察 | `nodeId` | scout | 赶到目标节点，再观察 2 tick；追风或谷寻参与时每条道路 −1（每条至少 1） | 无 | 提交 `ScoutReported`（受众：派遣者、参与者、队伍所属派系），内容为节点相邻道路状态、在场角色、群体状态；该节点上 `discoverable: true` 的证据提交 `EvidenceDiscovered`，并授予受众知识 |
+| scout 侦察 | `nodeId` | scout | 赶到目标节点，再观察 2 tick；追风或谷寻参与时每条道路 −1（每条至少 1） | 无 | 提交 `ScoutReported`（受众：派遣者、参与者、队伍所属派系），内容为节点相邻道路状态、在场角色、群体状态；该节点上 `discoverable: true` 的证据经 world 的 `discoverEvidence` op 提交 `EvidenceDiscovered`，再经 comms 的 `grantKnowledge` op 授予受众知识（同一事务） |
 
 取消（`task.cancel`，由派遣者或队伍所属派系的战略 Agent 发起）：
 
@@ -177,7 +180,7 @@ active   --任一条款违约--> breached（其余条款继续追踪，只记录
 | 开局消息 | tick 0 立即送达，不受中继影响 | | | |
 | 其他所有事件（协议、邀请、任务、委托、政策、指标、通行许可等正式通知） | 立即送达，不受中继影响 | | | |
 
-只有 `DialogueSubmitted`、`MessageSent`、`InformationShared` 带 `deliverAtTick` 字段；其余事件都在提交的 tick 送达。
+只有 `DialogueSubmitted`、`MessageSent`、`InformationShared` 带 `deliveries: { principalId, deliverAtTick }[]`，不再使用标量 deliverAtTick。提交时逐收件者按上表计算，按 principalId 排序去重并冻结；发送者立即回显，同节点收件者立即、异地分别延迟，不按最慢者统一等待。战略 Agent 无节点，按异地处理。定向消息/对话/证据分享若混合受众中任一异地收件者因中继中断不可达，整条命令 `relay-down`、不部分发出；广播则只保留同节点主体（无节点发布者中断时无同节点收件者）。已接受的投递不因随后中继变化重新计算；权限撤回仍取消待交付项。开局消息固定玩家 tick 0。其余事件都在提交的 tick 送达。
 
 | 行为 | 规则 |
 |---|---|
@@ -234,9 +237,9 @@ function rngFor(runSeed: string, ...parts: string[]): () => number {
 6. 一份 `deliver` 条款要求 tick 48 前送达 10 点供给，到 tick 49 仍未完成，提交 `AgreementBreached`，协议状态变为 breached。
 7. `human-neutral` 在 tick 1 把水闸分配设为 rotation，到 tick 168（共 7 次每日结算）：`orchard.water = 50 − 2×7 = 36`，`relay.stability = 45 − 5×7 = 10`（期间没有修复）。
 8. 救援：`team-truce` 在 pass，邀请苏回并由苏回 accept，把伤员送到 grayharbor，从 `sp-truce` 预留 6 点医疗材料；用时 6 − 2 = 4，再加上 `r-gh-ps`（risk 1）风险抽样得到的延误（测试固定 `runSeed`，断言时把抽样结果算进去）；完成后伤员归 0，`migration.safety +10`。
-9. 风险抽样：固定 `runSeed`、`teamId`、出发 tick、`roadId` 时结果恒定，与 taskId 无关；对 risk 0 的道路不抽样；在巡护期内经过被护送道路时不抽样；有延误时先在名义完成 tick 提交 `TaskDelayed`，2 tick 后才提交 `TaskCompleted`。
+9. 风险抽样：固定 `runSeed`、`teamId`、出发 tick、`roadId` 时结果恒定，与 taskId 无关；对 risk 0 的道路不抽样；在巡护期内经过被护送道路时不抽样；有延误时先在名义完成 tick 提交 `TaskDelayed`，累计延误 `2 × 命中道路数` tick 后才提交 `TaskCompleted`，多道路命中仍只通知一次。
 10. tick 48 时伤员既未救出也没有进行中的救援，提交 `GroupWorsened`，`migration.safety −10`。
 11. pending 状态取消运输，预留与委托余额全部退回；已在工作中的修复被取消时不退还资源。
 12. 章节评估：给定三个指标的值，结果分别为 `equilibrium` 或 `strained`，并带未达标列表。
 13. 两方协议：提出者提出后，另一方 accept 一次即变为 active；提出者再回复自己的提案，返回 `already-responded`。
-14. 中继降级（稳定度 25）时，玩家对 pass 的岑雁说话，`DialogueSubmitted.deliverAtTick = 当前 tick + 2`；中继中断时被拒绝，原因码 `relay-down`；同在 grayharbor 的温原照常立即收到。
+14. 中继降级（稳定度 25）时，玩家对 pass 的岑雁说话，`DialogueSubmitted.deliveries` 中岑雁的 deliverAtTick 为当前 tick + 2、玩家为当前 tick；中继中断时被拒绝，原因码 `relay-down`；同在 grayharbor 的温原照常立即收到。

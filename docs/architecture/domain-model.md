@@ -97,9 +97,20 @@ interface HandlerContext {
   readonly auth: AuthContext;
   readonly tx: WorldTx;                    // writes are limited to the aggregate types this module owns
   readonly modules: GameModulePorts;       // other game modules' queries and ops, bound to the same transaction
+  readonly approvedSpeech: { read(ref: string): ApprovedSpeech | null }; // host-injected, synchronous, read-only, transaction-scoped
   readonly content: ContentIndex;          // read-only content pack
   readonly rng: (...parts: string[]) => () => number; // rngFor(runSeed, ...parts), rules §11
   readonly ids: (prefix: string) => string;
+}
+
+interface ApprovedSpeech {
+  readonly text: string;
+  readonly agentId: string;
+  readonly turnId: string;
+  readonly branchId: string;
+  readonly audience: readonly string[];
+  readonly channel: "dialogue" | "message" | "broadcast";
+  readonly approved: boolean;
 }
 
 type HandlerResult =
@@ -113,7 +124,7 @@ type OpResult = { readonly ok: true } | { readonly ok: false; readonly reasonCod
 
 | 能力 | queries | ops |
 |---|---|---|
-| `game.world` | `campaign()`、`meters()`、`character(id)`、`team(id)`、`group(id)`、`delegationsOf(principalId)`、`canDispatchTeam(principalId, teamId)`、`drawAuthority(principalId, stockpileId)`（返回 `owner` / `delegation` / `none` 与余额） | `moveCharacter(id, nodeId)`、`moveTeam(id, nodeId)`、`setTeamStatus(id, status, busyUntilTick, taskId)`、`setCharacterTask(id, taskId)`、`injureCharacter(id, untilTick, cause)`、`drawDelegation(principalId, stockpileId, delta)`、`refundDelegation(principalId, stockpileId, delta)`、`createDelegation(spec)`、`changeMeter(meter, delta, cause)`、`setAllocation(value, byId)`、`setGroupStatus(id, status, taskId)` |
+| `game.world` | `campaign()`、`meters()`、`character(id)`、`team(id)`、`group(id)`、`delegationsOf(principalId)`、`canDispatchTeam(principalId, teamId)`、`drawAuthority(principalId, stockpileId)`（返回 `owner` / `delegation` / `none` 与余额） | `moveCharacter(id, nodeId)`、`moveTeam(id, nodeId)`、`setTeamStatus(id, status, busyUntilTick, taskId)`、`setCharacterTask(id, taskId)`、`injureCharacter(id, untilTick, cause)`、`drawDelegation(principalId, stockpileId, delta)`、`refundDelegation(principalId, stockpileId, delta)`、`createDelegation(spec)`、`changeMeter(meter, delta, cause)`、`setAllocation(value, byId)`、`setGroupStatus(id, status, taskId)`、`discoverEvidence({ evidenceId, discoveredBy, taskId })`（更新发现者并发 `EvidenceDiscovered`，不授予知识） |
 | `game.map` | `road(id)`、`findRoute({ fromNodeId, toNodeId, factionId, atTick, withCargo })`（返回道路列表与行程，或 null）、`hasPassage(roadId, factionId, atTick)` | `setRoadStatus(roadId, status, byId)`、`grantPassage({ roadId, granteeFactionId, untilTick })` |
 | `game.resources` | `stockpile(id)`、`available(id)`、`level(id)` | `reserve(stockpileId, delta, taskId)`、`release(stockpileId, delta, taskId)`、`consume(stockpileId, delta, reason, taskId)`、`transfer(fromId, toId, delta, taskId)`、`adjust(stockpileId, delta, reason)` |
 | `game.actions` | `task(id)`、`tasksOf(principalId)` | — |
@@ -123,7 +134,7 @@ type OpResult = { readonly ok: true } | { readonly ok: false; readonly reasonCod
 
 ops 修改所有者自己的聚合并发出对应事件（例如 `resources.reserve` 发出 `ResourcesReserved`）；不满足条件时返回 `{ ok: false, reasonCode }`，调用方应直接以该原因码返回 `rejected`。
 
-模块之间的依赖（`requires`）必须无环，首版固定为：world → map、resources；comms → world；actions → world、map、resources；agreements → world、map、comms；scenario → world、comms、resources；map、resources、clock、save 不依赖其他游戏模块。需要“反方向”协作时，用事件订阅或后续钩子，不新增依赖：
+模块之间的依赖（`requires`）必须无环，首版固定为：world → map、resources；comms → world；actions → world、map、resources、comms；agreements → world、map、comms、actions；scenario → world、map、comms、resources；map、resources、clock、save 不依赖其他游戏模块。需要“反方向”协作时，用事件订阅或后续钩子，不新增依赖：
 
 | 模块 | 后续钩子（`afterCommand`，与主处理器同一事务） | 事件订阅（各自独立的事务） |
 |---|---|---|
@@ -141,7 +152,7 @@ BEGIN IMMEDIATE
   1. idempotency: receipt for (branch, principal, commandId) exists?
        same payloadHash -> COMMIT, return the stored receipt; different -> return idempotency-conflict
   2. auth checks: command allowed for this principal kind; fencing (controllerEpoch, turnLeaseEpoch) unless allowDirectAgentCommands
-  3. pause check: clock.mode != running/stepping -> rejected "paused" (campaign.start is exempt)
+  3. pause check: clock.mode != running/stepping -> rejected "paused" (campaign.start and system:world probe.ask in an active sandbox are exempt)
   4. payload schema (zod, strict) -> rejected "invalid-params"
   5. expectedVersions: every listed aggregate has that version -> else rejected "version-conflict"
   SAVEPOINT cmd
@@ -178,14 +189,14 @@ COMMIT
 
 `Term` 即 [规则](../game/rules.md) 第 7 节的八种条款，统一为 `{ kind, obligorId, ...params }` 的判别联合。`CardEffect` 见 [内容包](../game/content-pack.md) 第 9 节；`OverrideEffect` 在 `CardEffect` 之外额外允许 `meter-set { meter, value }` 与 `road-status-set { roadId, status }`，只供调试，使用即污染。
 
-`campaign.start` 产生的两条开局消息：`MessageSent` 的 `fromId` 为接触角色，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliverAtTick` 为 0，正文取自 [内容包](../game/content-pack.md) 第 8 节。剧情卡的广播与消息同样不经过模型：`channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。
+`campaign.start` 产生的两条开局消息：`MessageSent` 的 `fromId` 为接触角色，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliveries` 为玩家与发送接触角色各自 tick 0 的条目（按 principalId 排序），正文取自 [内容包](../game/content-pack.md) 第 8 节。剧情卡的广播与消息同样不经过模型：`channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。
 
 规则 job：
 
 | job kind | 创建者 | 到期时处理 | 事件 |
 |---|---|---|---|
 | `task.depart` | `task.dispatch` | [规则](../game/rules.md) 第 6 节出发规则 | `TaskInvitationExpired`、`TaskDeparted` 或 `TaskFailed` |
-| `task.complete` | `task.depart`（到期 tick 为名义完成 tick） | 有未公布的延误：提交 `TaskDelayed` 并用同一 kind 安排新的到期 tick；否则结算完成效果 | `TaskDelayed`；或 `TaskCompleted`/`TaskFailed`，以及 `ResourcesTransferred`/`ResourcesConsumed`、`MetersChanged`、`CharacterMoved`、`TeamMoved`、`EvidenceDiscovered`、`ScoutReported`、`GroupRescued`、`CharacterInjured` |
+| `task.complete` | `task.depart`（到期 tick 为名义完成 tick） | 有延误且 delayNoticeSent 为 false：提交一次 `TaskDelayed`，同事务置 true，并用同一 kind 安排名义完成 tick + 2 × 命中道路数的 job；尚未到真正完成 tick 不结算；否则结算完成效果 | `TaskDelayed`；或 `TaskCompleted`/`TaskFailed`，以及 `ResourcesTransferred`/`ResourcesConsumed`、`MetersChanged`、`CharacterMoved`、`TeamMoved`、`EvidenceDiscovered`、`ScoutReported`、`GroupRescued`、`CharacterInjured` |
 | `team.recover` / `character.recover` | 受伤结果 | 恢复可用 | `TeamRecovered` / `CharacterRecovered` |
 | `agreement.expire` | `agreement.propose` | 仍为 proposed 则过期 | `AgreementExpired` |
 | `agreement.deadline` | 协议生效 | 检查对应条款 | `AgreementBreached` |
@@ -194,7 +205,9 @@ COMMIT
 
 时钟步骤（不是 job，见 [规则](../game/rules.md) 第 1 节）：`T % 24 == 0` 时的每日结算（`DayPassed`、`MetersChanged`、阈值事件、`ResourcesConsumed`），`T == 168` 时的章节评估（`ChapterStageEvaluated`）。
 
-履约判定不是独立 job：`game.agreements` 订阅 `TaskCompleted`、`InformationShared`、`PolicyChanged`，在同一个事件消费事务里提交 `AgreementTermFulfilled`、`AgreementFulfilled` 或 `AgreementBreached`。
+`speech.commit` 的正文只从宿主注入的 `approvedSpeech.read(approvedSpeechArtifactRef)` 取得；此端口只读已持久化且通过安全校验的 speech 结果，不做文件/网络 I/O。comms 校验 approved、agentId/turnId/branchId 与认证上下文一致，channel 与去重排序后的 audience 完全匹配，任何不符均 `speech-not-approved`。authority 在同一提交事务以 `(branchId, approvedSpeechArtifactRef)` 唯一消费绑定最终事件，禁止不同 commandId 重放；相同 commandId 只返回已有 receipt。拒绝事务不消费批准结果。probe speech 直接写 probe_results，不能走此命令。
+
+履约判定不是独立 job：`game.agreements` 订阅 `TaskCompleted`、`InformationShared`、`PolicyChanged`，在同一个事件消费事务里提交 `AgreementTermFulfilled`、`AgreementFulfilled` 或 `AgreementBreached`。收到 `TaskCompleted` 时通过 `game.actions.queries.task(taskId)` 读取已完成任务的 dispatcherId、params、participants 与完成状态进行条款匹配；不用扩大发给 gameplay 的事件 payload，也不能跨模块直接读聚合。
 
 ## 6. 事件目录
 
@@ -205,9 +218,9 @@ COMMIT
 | `CampaignStarted` | campaignId、factionId、playerId | public |
 | `DelegationCreated` | delegationId、grantorFactionId、granteeId、teamIds、stockpileId、maxDraw、untilTick | principals[grantee] + faction[grantor] |
 | `KnowledgeGranted` | grantId、principalId、itemId、via（start/share/discovery/setup） | principals[principalId] |
-| `MessageSent` | messageId、fromId、to（principal 列表或 `["public"]`）、channel（message/broadcast/seat/opening）、text、deliverAtTick、intentKind、speechArtifactRef | 定向：principals[from, ...to]；广播：public |
-| `DialogueSubmitted` | dialogueId、conversationId、speakerId、audience、text、channel（face-to-face/relay）、deliverAtTick、replyToId | principals[audience] |
-| `InformationShared` | shareId、fromId、evidenceId、audience、deliverAtTick | principals[from, ...audience] |
+| `MessageSent` | messageId、fromId、to（principal 列表或 `["public"]`）、channel（message/broadcast/seat/opening）、text、deliveries、intentKind、speechArtifactRef | 定向：principals[from, ...to]；广播：public |
+| `DialogueSubmitted` | dialogueId、conversationId、speakerId、audience、text、channel（face-to-face/relay）、deliveries、replyToId | principals[audience] |
+| `InformationShared` | shareId、fromId、evidenceId、audience、deliveries | principals[from, ...audience] |
 | `RumorSpread` | rumorId、sourceId、aboutIds、text | public |
 | `WorldFactRecorded` | factId、factType、payload | 卡片声明的 audience |
 | `AgentsSummoned` | agentIds、reason、cardId | principals[agentIds] |
@@ -227,7 +240,7 @@ COMMIT
 | `TaskInvitationAnswered` / `TaskInvitationExpired` | invitationId、taskId、inviteeId、response、reasonCode | principals[invitee, dispatcher] |
 | `TaskDeparted` | taskId、participants、route、nominalCompletionTick（不含风险延误） | principals[dispatcher, ...participants] + faction[team owner] + node[出发节点] |
 | `TaskDelayed` | taskId、newCompletionTick、cause（`road-risk`） | principals[dispatcher, ...participants] + faction[team owner] |
-| `TaskCompleted` | taskId、taskType、completedAtTick、effects | principals[dispatcher, ...participants] + faction[team owner] + node[结束节点] |
+| `TaskCompleted` | taskId、taskType、completedAtTick、effects（公开 `{ kind: "transport" \| "escort" \| "rescue" \| "repair" \| "scout" }[]`，渲染见感知 11.4） | principals[dispatcher, ...participants] + faction[team owner] + node[结束节点] |
 | `TaskFailed` / `TaskCancelled` | taskId、reasonCode / byId | principals[dispatcher, ...participants] + faction[team owner] |
 | `ResourcesTransferred` | fromStockpileId、toStockpileId、delta、taskId、dispatcherId | faction[两个库存点的所属派系] + principals[dispatcher] |
 | `ResourcesConsumed` | stockpileId、delta、reason、taskId | faction[所属派系] + principals[dispatcher] |
@@ -245,6 +258,8 @@ COMMIT
 | `ScenarioCardTriggered` / `ScenarioCardPublished` / `ScenarioCardWithdrawn` / `ScenarioCompensationApplied` / `ScenarioOverrideApplied` | cardId、version、note | system |
 | `ChapterStageEvaluated` | outcome、meters、unmet、fulfilledCount、breachedCount | public |
 
+通信事件的 `deliveries: { principalId: string; deliverAtTick: number }[]` 是提交时冻结、按 principalId 排序去重的实际投递名单（含发送者的立即回显）；单事件不再有标量 deliverAtTick。逐接收者延迟、中断时混合受众的处理见规则第 9 节；投影只读取自己的 delivery。
+
 事件 `type` 一旦发布不得改名；新增字段需有默认语义，破坏性变化提高 `schemaVersion`（见 [公共契约](contracts.md) 第 7 节）。
 
 ## 7. 受众与可见性
@@ -260,11 +275,11 @@ type AudienceSpec =
 
 宿主在事件提交后计算每个主体是否“有资格获知”（硬 ACL），结果交给感知模块决定何时、以何种细度形成观察（见 [感知](../agent/perception.md) 第 11 节）。规则：
 
-1. `public`：所有主体都有资格。例外：中继中断时，带 `deliverAtTick` 的公开广播只有与发布者同节点的主体有资格（[规则](../game/rules.md) 第 9 节）。
+1. `public`：所有主体都有资格。例外：通信事件还必须在 `deliveries` 中有该主体；公开广播中继中断时只冻结与发布者同节点的接收者（[规则](../game/rules.md) 第 9 节）。
 2. `node`：事件提交时位于该节点的角色有资格；玩家只在 grayharbor 有位置；战略 Agent 没有位置，不会通过 node 受众获知。
 3. `principals` 与 `faction`：名单内主体有资格。
 4. `system`：任何 gameplay 主体都没有资格。
-5. 送达时间：带 `deliverAtTick` 的事件（`DialogueSubmitted`、`MessageSent`、`InformationShared`）在该 tick 送达；其余事件在提交的 tick 送达。
+5. 送达时间：通信事件按本主体的 `deliveries[].deliverAtTick` 送达，不取全体最大值；无该主体条目则不送达。其余事件在提交的 tick 送达。
 6. 未激活的 Agent（名册未包含，或处于 dormant）照常获得观察记录，但不会因此被唤醒。
 
 ## 8. 投影
