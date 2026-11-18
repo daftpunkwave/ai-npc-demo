@@ -147,13 +147,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
   const sessions = new Map<string, Session>();
-  const tickets = new Map<string, { readonly auth: AuthContext; readonly sessionToken: string; readonly expiresAt: number }>();
+  const tickets = new Map<string, { readonly auth: AuthContext; readonly session: Session; readonly expiresAt: number }>();
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
   let streamSeq = 0;
   let projectionVersion = 0;
   const history: Array<{ readonly streamSeq: number; readonly projectionVersion: number; readonly set: Record<string, unknown> }> = [];
-  const subscribers = new Map<WebSocket, string>();
+  const subscribers = new Map<WebSocket, Session>();
 
   const sendSnapshot = (socket: WebSocket): void => {
     try {
@@ -188,9 +188,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       history.shift();
     }
     const payload = JSON.stringify({ type: "delta", channel: "player", ...frame });
-    for (const [socket, sessionToken] of subscribers) {
-      const session = sessions.get(sessionToken);
-      if (session === undefined || Date.parse(session.expiresAt) <= Date.now()) {
+    for (const [socket, session] of subscribers) {
+      if (Date.parse(session.expiresAt) <= Date.now()) {
         subscribers.delete(socket);
         socket.close(4401, "session expired");
         continue;
@@ -256,8 +255,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return;
     }
     sessions.delete(session.token);
-    for (const [socket, token] of subscribers) {
-      if (token === session.token) {
+    for (const [socket, subscriber] of subscribers) {
+      if (subscriber === session) {
         subscribers.delete(socket);
         socket.close(4401, "logged out");
       }
@@ -410,7 +409,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return;
     }
     const ticket = `ticket-${randomUUID()}`;
-    tickets.set(ticket, { auth: session.auth, sessionToken: session.token, expiresAt: Date.now() + 30_000 });
+    tickets.set(ticket, { auth: session.auth, session, expiresAt: Date.now() + 30_000 });
     return { ticket, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   });
 
@@ -423,7 +422,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     tickets.delete(query.ticket ?? "");
     socket.send(JSON.stringify({ type: "hello", protocolVersion: "1", principalId: ticket.auth.principalId, channels: ["player"] }));
-    subscribers.set(socket, ticket.sessionToken);
+    subscribers.set(socket, ticket.session);
     socket.on("close", () => { subscribers.delete(socket); });
     socket.on("message", (data: Buffer) => {
       let message: unknown;
@@ -444,7 +443,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
         && replay.length > 0
         && replay[0]?.streamSeq === from + 1
         && replay.at(-1)?.streamSeq === streamSeq;
-      subscribers.set(socket, ticket.sessionToken);
+      subscribers.set(socket, ticket.session);
       if (contiguous) {
         for (const frame of replay) {
           socket.send(JSON.stringify({ type: "delta", channel: "player", ...frame }));
