@@ -3,6 +3,7 @@
  * 依赖内容视图、地图/资源/世界端口、公共任务参数与 authority 上下文。
  * 禁止在这里写任务聚合、扣资源或发事件；计划只供派遣处理器提交。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将模块端口泛型误判为 any。 */
 import type { ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
 import {
   addAmounts,
@@ -75,10 +76,6 @@ function joinRoutes(first: RouteResult | null, second: RouteResult | null): Rout
     roadIds: [...first.roadIds, ...second.roadIds],
     travelTicks: first.travelTicks + second.travelTicks,
   };
-}
-
-function nodeOf(ports: GameModulePorts, principalId: string): string | null {
-  return ports["game.world"].character(principalId)?.nodeId ?? null;
 }
 
 function allowedWorkNodes(content: GameContent, plan: DispatchInput, teamNodeId: string): readonly string[] {

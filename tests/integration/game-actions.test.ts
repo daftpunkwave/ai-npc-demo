@@ -38,22 +38,26 @@ function eventsOf(value: GameHarness, type: string): ReturnType<typeof readGameE
   return readGameEvents(value).filter((event) => event.type === type);
 }
 
+function dispatchTransport(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
+  return value.authority.commands.execute(
+    playerAuth(value),
+    gameCommandEnvelope(
+      "task.dispatch",
+      {
+        taskType: "transport",
+        teamId: "team-commons",
+        params: { fromStockpileId: "sp-commons", toStockpileId: "sp-earth", cargo: { supply: 10, energy: 0, medical: 0 } },
+      },
+      value.host.ids("cmd"),
+    ),
+  );
+}
+
 describe("任务行动", () => {
   it("玩家运输 10 供给：预留、路线、完成转移与委托扣减", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
-    const dispatch = value.authority.commands.execute(
-      playerAuth(value),
-      gameCommandEnvelope(
-        "task.dispatch",
-        {
-          taskType: "transport",
-          teamId: "team-commons",
-          params: { fromStockpileId: "sp-commons", toStockpileId: "sp-earth", cargo: { supply: 10, energy: 0, medical: 0 } },
-        },
-        value.host.ids("cmd"),
-      ),
-    );
+    const dispatch = dispatchTransport(value);
     expect(dispatch.commandStatus).toBe("accepted");
     const taskId = (dispatch.result as { readonly taskId: string }).taskId;
     expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({ reserved: { supply: 10 } });
@@ -102,18 +106,7 @@ describe("任务行动", () => {
   it("任务取消释放预留并恢复委托与队伍", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
-    const dispatch = value.authority.commands.execute(
-      playerAuth(value),
-      gameCommandEnvelope(
-        "task.dispatch",
-        {
-          taskType: "transport",
-          teamId: "team-commons",
-          params: { fromStockpileId: "sp-commons", toStockpileId: "sp-earth", cargo: { supply: 10, energy: 0, medical: 0 } },
-        },
-        value.host.ids("cmd"),
-      ),
-    );
+    const dispatch = dispatchTransport(value);
     const taskId = (dispatch.result as { readonly taskId: string }).taskId;
     const cancel = value.authority.commands.execute(
       playerAuth(value),

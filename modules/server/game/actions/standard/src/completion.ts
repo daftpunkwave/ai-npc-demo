@@ -3,6 +3,7 @@
  * 依赖世界/资源/地图/通信端口、内容索引与任务状态；写入都在 authority 事务内。
  * 禁止在这里重算风险或把未满足条件的任务标记为成功。
  */
+/* eslint-disable @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态字段误判为 unknown。 */
 import type { ReasonCode } from "@ai-npc/contracts";
 import { requireGameContent, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
 import type { TaskState } from "./state";

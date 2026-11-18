@@ -3,6 +3,7 @@
  * 依赖任务聚合状态与注入的 scoped WorldTx；不执行任务结算。
  * 禁止在查询中改写任务、队伍或资源状态。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import {
   gameModuleIds,
   type GameActionsPort,

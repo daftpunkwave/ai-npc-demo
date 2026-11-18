@@ -3,6 +3,7 @@
  * 依赖计划校验、完成结算、世界/资源/地图/通信端口与 authority 事务上下文。
  * 禁止在处理器中使用真实时间、随机 ID 作为种子或越过资源预留直接结算。
  */
+/* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态与泛型端口字段误判为 unknown。 */
 import type { Json, ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
@@ -275,7 +276,6 @@ function depart(context: ActionContext, taskId: string): void {
       );
     }
   }
-  const content = requireGameContent(context.content);
   const team = asPorts(context)["game.world"].team(task.teamId);
   if (team === null) {
     failTask(context, task, "invalid-params");
@@ -333,7 +333,6 @@ function depart(context: ActionContext, taskId: string): void {
     `task-complete:${taskId}:${task.nominalCompletionTick}`,
     { taskId },
   );
-  void content;
 }
 
 function complete(context: ActionContext, taskId: string): void {
