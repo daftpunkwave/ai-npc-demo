@@ -70,8 +70,8 @@ function assertSafe(node: unknown, path: string): void {
       throw new Error(`资产包含事件处理器 ${key}: ${path}`);
     }
     if (key === "@href" || key.endsWith(":href")) {
-      const href = String(value);
-      if (/^(?:https?:)?\/\//i.test(href) || /^data:/i.test(href)) {
+      const href = String(value).toLowerCase();
+      if (href.startsWith("//") || href.startsWith("http:") || href.startsWith("https:") || href.startsWith("data:")) {
         throw new Error(`资产包含远端引用 ${href}: ${path}`);
       }
     }
@@ -98,7 +98,7 @@ for (const asset of manifest.assets) {
   }
   const parsed = parser.parse(source) as Record<string, unknown>;
   const svg = parsed["svg"] as Record<string, unknown> | undefined;
-  if (svg === undefined || svg === null) {
+  if (svg === undefined) {
     throw new Error(`根元素不是 svg: ${asset.path}`);
   }
   if (svg["@viewBox"] !== `0 0 ${asset.width} ${asset.height}`) {
