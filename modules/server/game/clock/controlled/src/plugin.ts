@@ -8,14 +8,14 @@ import { clockConfigSchema } from "./definition";
 import { createClockPort } from "./port";
 
 /** 创建时钟模块实例，端口以 deployment 存储为唯一持久化来源。 */
-export async function createClockModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+export function createClockModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = clockConfigSchema.parse(input.config);
   const storage = input.ports["platform.storage"] as StoragePort | undefined;
   if (storage === undefined) {
-    throw new DomainError("assembly-incompatible", "受控时钟缺少 platform.storage 端口");
+    return Promise.reject(new DomainError("assembly-incompatible", "受控时钟缺少 platform.storage 端口"));
   }
   const port = createClockPort(storage, config, input.host.nowIso);
-  return {
+  return Promise.resolve({
     moduleId: input.moduleId,
     start: async () => {
       // 时钟表由宿主在创建分支时写入初值；模块不自动开启 running。
@@ -27,5 +27,5 @@ export async function createClockModule(input: ModuleCreateInput): Promise<Modul
       // 存储连接由 platform.storage 模块负责关闭。
     },
     port,
-  };
+  });
 }

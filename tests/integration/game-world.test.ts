@@ -142,6 +142,19 @@ describe("世界核心", () => {
     expect(readGameEventTypes(value)).toContain("ChapterStageEvaluated");
   });
 
+  it("非零启动 tick 时按 startTick 计算每日与章节边界", async () => {
+    const value = await harness();
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    expect(start(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 173, mode: "running" });
+    value.authority.clock.run(value.branchId);
+    expect(readGameAggregate(value, "campaign", "campaign")).toMatchObject({
+      startTick: 5,
+      status: "evaluated",
+    });
+    expect(readGameEventTypes(value)).toContain("DayPassed");
+  });
+
   it("控制方可以通过政策命令关闭道路", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
@@ -185,6 +198,35 @@ describe("世界核心", () => {
       outcome: "strained",
     });
     expect(readGameEventTypes(value).filter((event) => event === "DayPassed")).toHaveLength(7);
+  });
+
+  it("绑定端口写入的事件与版本进入命令回执", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    value.authority.registerModule({
+      moduleId: "test.binder-accept",
+      ownsAggregates: [],
+      commands: [
+        {
+          type: "task.cancel",
+          handler: (context) => {
+            const ports = context.modules as {
+              readonly "game.world": { moveCharacter(agentId: string, nodeId: string): unknown };
+            };
+            ports["game.world"].moveCharacter("npc-cenyan", "grayharbor");
+            return { kind: "accepted" };
+          },
+        },
+      ],
+    });
+    const receipt = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("task.cancel", { taskId: "task-000000000001" }, value.host.ids("cmd")),
+    );
+    expect(receipt.commandStatus).toBe("accepted");
+    expect(receipt.acceptedEventIds.length).toBeGreaterThan(0);
+    expect(receipt.resultingVersions["character:npc-cenyan"]).toBeGreaterThan(0);
+    expect(readGameAggregate(value, "character", "npc-cenyan")).toMatchObject({ nodeId: "grayharbor" });
   });
 
   it("绑定端口在同一事务内写入，拒绝时整体回滚", async () => {
@@ -320,8 +362,12 @@ describe("世界端口", () => {
       }), content, value.host.ids);
       capture.push(world.character("npc-cenyan") as unknown as Json);
       capture.push(world.team("team-commons") as unknown as Json);
+      capture.push(world.drawAuthority("player-1", "sp-commons") as unknown as Json);
+      capture.push(world.drawAuthority("human-neutral", "sp-commons") as unknown as Json);
     });
     expect(capture[0]).toMatchObject({ agentId: "npc-cenyan", nodeId: "pass" });
     expect(capture[1]).toMatchObject({ teamId: "team-commons", status: "idle" });
+    expect(capture[2]).toMatchObject({ kind: "delegation" });
+    expect(capture[3]).toMatchObject({ kind: "owner" });
   });
 });

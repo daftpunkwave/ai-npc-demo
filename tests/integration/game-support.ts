@@ -117,7 +117,7 @@ export async function createGameHarness(): Promise<GameHarness> {
     const gameContent = toGameContent(content);
     const binder: ModuleBinder = (txFor) => ({
       "game.map": createMapPort(txFor, gameContent, host.ids),
-      "game.resources": createResourcesPort(txFor, gameContent, { scarceRatio: 0.3, surplusRatio: 1.2 }),
+      "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
       "game.world": createWorldPort(txFor, gameContent, host.ids),
     });
     const authority = new Authority({

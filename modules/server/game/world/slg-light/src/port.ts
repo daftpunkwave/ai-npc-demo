@@ -23,17 +23,15 @@ import {
   type ScopedWorldTxFactory,
   type TeamView,
 } from "@ai-npc/module-sdk";
-import { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
+import { clampMeter, thresholdEvents } from "./meters";
 import {
   campaignStateSchema,
   characterStateSchema,
-  delegationStateSchema,
   evidencePlacementStateSchema,
   groupStateSchema,
   metersStateSchema,
   readWorldState,
   teamStateSchema,
-  type CampaignState,
   type CharacterState,
   type DelegationState,
   type EvidencePlacementState,
@@ -60,6 +58,28 @@ function viewOfMeters(state: MetersState): MetersView {
     "migration.safety": state["migration.safety"],
     "watergate.allocation": state["watergate.allocation"],
   };
+}
+
+function meterValue(view: MetersView, meter: NumericMeterId): number {
+  switch (meter) {
+    case "relay.stability":
+      return view["relay.stability"];
+    case "orchard.water":
+      return view["orchard.water"];
+    case "migration.safety":
+      return view["migration.safety"];
+  }
+}
+
+function setMeter(view: MetersView, meter: NumericMeterId, value: number): MetersView {
+  switch (meter) {
+    case "relay.stability":
+      return { ...view, "relay.stability": value };
+    case "orchard.water":
+      return { ...view, "orchard.water": value };
+    case "migration.safety":
+      return { ...view, "migration.safety": value };
+  }
 }
 
 /** 世界端口实现；每个处理器调用构造一次，绑定同一 storage transaction。 */
@@ -149,8 +169,7 @@ class SlgWorldPort implements GameWorldPort {
     if (team === null) {
       return false;
     }
-    const factionId = this.principalFaction(principalId);
-    if (factionId === team.ownerFactionId) {
+    if (this.isStrategicPrincipal(principalId) && this.principalFaction(principalId) === team.ownerFactionId) {
       return true;
     }
     return this.tx()
@@ -163,12 +182,19 @@ class SlgWorldPort implements GameWorldPort {
       );
   }
 
+  private isStrategicPrincipal(principalId: string): boolean {
+    return this.content.factions.has(principalId);
+  }
+
   drawAuthority(principalId: string, stockpileId: string): DrawAuthority {
     const stockpile = this.content.stockpiles.get(stockpileId);
     if (stockpile === undefined) {
       return { kind: "none" };
     }
-    if (this.principalFaction(principalId) === stockpile.ownerFactionId) {
+    if (
+      this.isStrategicPrincipal(principalId) &&
+      this.principalFaction(principalId) === stockpile.ownerFactionId
+    ) {
       return { kind: "owner", factionId: stockpile.ownerFactionId };
     }
     const delegation = this.findDelegation(principalId, stockpileId);
@@ -365,9 +391,11 @@ class SlgWorldPort implements GameWorldPort {
     }
     const state = record.state;
     const previous = viewOfMeters(state);
-    const next = { ...previous, [meter]: clampMeter(previous[meter] + delta) };
+    const previousValue = meterValue(previous, meter);
+    const next = setMeter(previous, meter, clampMeter(previousValue + delta));
+    const nextValue = meterValue(next, meter);
     const change: MeterChange | null =
-      previous[meter] === next[meter] ? null : { meter, from: previous[meter], to: next[meter], cause };
+      previousValue === nextValue ? null : { meter, from: previousValue, to: nextValue, cause };
     const threshold = thresholdEvents(previous, next, new Set(state.triggered));
     const triggered = [...state.triggered, ...threshold.added];
     this.tx().put("meters", metersAggregateId, { ...state, ...next, triggered });

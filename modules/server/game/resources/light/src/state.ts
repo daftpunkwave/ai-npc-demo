@@ -23,6 +23,16 @@ export const stockpileStateSchema = z
     amount: amountsSchema,
     reserved: amountsSchema,
     baseline: amountsSchema,
+    reservations: z
+      .array(
+        z
+          .object({
+            taskId: z.string().min(1),
+            amount: amountsSchema,
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict()
   .superRefine((state, context) => {
@@ -34,6 +44,21 @@ export const stockpileStateSchema = z
     }
     if (state.reserved.medical > state.amount.medical) {
       context.addIssue({ code: "custom", message: "医疗材料预留不能超过库存", path: ["reserved", "medical"] });
+    }
+    const summed = state.reservations.reduce(
+      (total, entry) => ({
+        supply: total.supply + entry.amount.supply,
+        energy: total.energy + entry.amount.energy,
+        medical: total.medical + entry.amount.medical,
+      }),
+      { supply: 0, energy: 0, medical: 0 },
+    );
+    if (
+      summed.supply !== state.reserved.supply ||
+      summed.energy !== state.reserved.energy ||
+      summed.medical !== state.reserved.medical
+    ) {
+      context.addIssue({ code: "custom", message: "预留明细之和必须等于预留总量", path: ["reservations"] });
     }
   });
 

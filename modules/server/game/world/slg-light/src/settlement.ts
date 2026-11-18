@@ -44,6 +44,7 @@ function addChange(
 function computeDaily(
   previous: MetersView,
   tick: number,
+  elapsed: number,
   modules: GameModulePorts,
 ): { readonly next: MetersView; readonly changes: MeterChange[] } {
   const changes: MeterChange[] = [];
@@ -51,7 +52,7 @@ function computeDaily(
   const relayDelta = allocation === "harbor-first" ? -3 : allocation === "rotation" ? -5 : -8;
   const orchardDelta = allocation === "harbor-first" ? -9 : allocation === "rotation" ? -2 : 5;
   let migrationDelta = 0;
-  if (tick >= 96) {
+  if (elapsed >= 96) {
     const status = modules["game.map"].roadStatus("r-gh-ps");
     if (status === "closed") {
       migrationDelta = -10;
@@ -81,8 +82,16 @@ function computeDaily(
   };
 }
 
-/** 在每日结算事务内执行一次；已结算的 tick 直接返回。 */
+/** 在每日结算事务内执行一次；已结算的 tick 或未到结算日直接返回。 */
 export function runDailySettlement(context: WorldContext, tick: number): void {
+  const campaignRecord = readWorldState(context.tx, "campaign", "campaign", campaignStateSchema);
+  if (campaignRecord === null) {
+    return;
+  }
+  const elapsed = tick - campaignRecord.state.startTick;
+  if (elapsed <= 0 || elapsed % 24 !== 0) {
+    return;
+  }
   const record = readWorldState(context.tx, "meters", "meters", metersStateSchema);
   if (record === null) {
     return;
@@ -94,10 +103,10 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
   const content = requireGameContent(context.content);
   const modules = context.modules;
   const previous = metersView(state);
-  const { next, changes } = computeDaily(previous, tick, modules);
+  const { next, changes } = computeDaily(previous, tick, elapsed, modules);
   const threshold = thresholdEvents(previous, next, new Set(state.triggered));
   const triggered = [...state.triggered, ...threshold.added];
-  const day = Math.floor(tick / 24);
+  const day = elapsed / 24;
   context.tx.put("meters", "meters", {
     ...next,
     triggered,
@@ -148,10 +157,14 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
   );
 }
 
-/** 在章节评估事务内执行一次；已评估的 campaign 直接返回。 */
-export function runChapterEvaluation(context: WorldContext): void {
+/** 在章节评估事务内执行一次；未到章节长度或已评估的 campaign 直接返回。 */
+export function runChapterEvaluation(context: WorldContext, chapterLengthTicks = 168): void {
   const record = readWorldState(context.tx, "campaign", "campaign", campaignStateSchema);
   if (record === null || record.state.status === "evaluated") {
+    return;
+  }
+  const elapsed = context.tx.worldTick - record.state.startTick;
+  if (elapsed < chapterLengthTicks) {
     return;
   }
   const meterRecord = readWorldState(context.tx, "meters", "meters", metersStateSchema);

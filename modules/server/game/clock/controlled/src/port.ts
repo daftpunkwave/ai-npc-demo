@@ -52,24 +52,34 @@ class ControlledClockPort implements GameClockPort {
     });
   }
 
-  private write(
+  private commit(table: { put(row: Record<string, unknown>): void }, next: ClockState): ClockState {
+    table.put({
+      world_tick: next.worldTick,
+      mode: next.mode,
+      seconds_per_tick: next.secondsPerTick,
+      run_version: next.runVersion,
+      step_target_tick: next.stepTargetTick,
+      updated_at: this.nowIso(),
+    });
+    return next;
+  }
+
+  private control(
     branchId: string,
-    update: (clock: ClockState, row: Readonly<Record<string, unknown>>) => ClockState,
-  ): ClockState {
+    expectedRunVersion: number | undefined,
+    action: (current: ClockState) => ControlResult,
+  ): ControlResult {
     return this.storage.transact((tx) => {
       const table = tx.branch(branchId).table("clock");
-      const row = table.get({});
-      const current = parseClock(row, branchId);
-      const next = update(current, row ?? {});
-      table.put({
-        world_tick: next.worldTick,
-        mode: next.mode,
-        seconds_per_tick: next.secondsPerTick,
-        run_version: next.runVersion,
-        step_target_tick: next.stepTargetTick,
-        updated_at: this.nowIso(),
-      });
-      return next;
+      const current = parseClock(table.get({}), branchId);
+      if (expectedRunVersion !== undefined && expectedRunVersion !== current.runVersion) {
+        return { ok: false, reasonCode: "version-conflict" };
+      }
+      const outcome = action(current);
+      if (!outcome.ok) {
+        return outcome;
+      }
+      return { ok: true, clock: this.commit(table, outcome.clock) };
     });
   }
 
@@ -78,95 +88,89 @@ class ControlledClockPort implements GameClockPort {
   }
 
   start(branchId: string, expectedRunVersion?: number): ControlResult {
-    const current = this.read(branchId);
-    if (expectedRunVersion !== undefined && expectedRunVersion !== current.runVersion) {
-      return { ok: false, reasonCode: "version-conflict" };
-    }
-    if (current.mode === "running") {
-      return { ok: true, clock: current };
-    }
-    if (current.mode !== "paused" && current.mode !== "resuming" && current.mode !== "stepping") {
-      return { ok: false, reasonCode: "invalid-params" };
-    }
-    const clock = this.write(branchId, (value) => ({
-      ...value,
-      mode: "running",
-      runVersion: value.runVersion + 1,
-      stepTargetTick: null,
-    }));
-    return { ok: true, clock };
+    return this.control(branchId, expectedRunVersion, (current) => {
+      if (current.mode === "running") {
+        return { ok: true, clock: current };
+      }
+      if (current.mode !== "paused" && current.mode !== "resuming" && current.mode !== "stepping") {
+        return { ok: false, reasonCode: "invalid-params" };
+      }
+      return {
+        ok: true,
+        clock: { ...current, mode: "running", runVersion: current.runVersion + 1, stepTargetTick: null },
+      };
+    });
   }
 
   pause(branchId: string, expectedRunVersion?: number): ControlResult {
-    const current = this.read(branchId);
-    if (expectedRunVersion !== undefined && expectedRunVersion !== current.runVersion) {
-      return { ok: false, reasonCode: "version-conflict" };
-    }
-    if (current.mode === "paused") {
-      return { ok: true, clock: current };
-    }
-    if (current.mode !== "running" && current.mode !== "stepping") {
-      return { ok: false, reasonCode: "invalid-params" };
-    }
-    const clock = this.write(branchId, (value) => ({
-      ...value,
-      mode: "paused",
-      runVersion: value.runVersion + 1,
-      stepTargetTick: null,
-    }));
-    return { ok: true, clock };
+    return this.control(branchId, expectedRunVersion, (current) => {
+      if (current.mode === "paused") {
+        return { ok: true, clock: current };
+      }
+      if (current.mode !== "running" && current.mode !== "stepping") {
+        return { ok: false, reasonCode: "invalid-params" };
+      }
+      return {
+        ok: true,
+        clock: { ...current, mode: "paused", runVersion: current.runVersion + 1, stepTargetTick: null },
+      };
+    });
   }
 
   step(branchId: string, ticks: number, expectedRunVersion?: number): ControlResult {
     if (!Number.isSafeInteger(ticks) || ticks < 1 || ticks > this.config.maxStepTicks) {
       return { ok: false, reasonCode: "invalid-params" };
     }
-    const current = this.read(branchId);
-    if (expectedRunVersion !== undefined && expectedRunVersion !== current.runVersion) {
-      return { ok: false, reasonCode: "version-conflict" };
-    }
-    if (current.mode !== "paused") {
-      return { ok: false, reasonCode: "invalid-params" };
-    }
-    const clock = this.write(branchId, (value) => ({
-      ...value,
-      mode: "stepping",
-      runVersion: value.runVersion + 1,
-      stepTargetTick: value.worldTick + ticks,
-    }));
-    return { ok: true, clock };
+    return this.control(branchId, expectedRunVersion, (current) => {
+      if (current.mode !== "paused") {
+        return { ok: false, reasonCode: "invalid-params" };
+      }
+      return {
+        ok: true,
+        clock: {
+          ...current,
+          mode: "stepping",
+          runVersion: current.runVersion + 1,
+          stepTargetTick: current.worldTick + ticks,
+        },
+      };
+    });
   }
 
   finishStep(branchId: string): ClockState {
-    const current = this.read(branchId);
-    if (current.mode !== "stepping") {
-      return current;
-    }
-    return this.write(branchId, (value) => ({
-      ...value,
-      mode: "paused",
-      runVersion: value.runVersion + 1,
-      stepTargetTick: null,
-    }));
+    const outcome = this.control(branchId, undefined, (current) => {
+      if (current.mode !== "stepping") {
+        return { ok: true, clock: current };
+      }
+      return {
+        ok: true,
+        clock: { ...current, mode: "paused", runVersion: current.runVersion + 1, stepTargetTick: null },
+      };
+    });
+    return outcome.ok ? outcome.clock : this.read(branchId);
   }
 
   setTick(branchId: string, tick: number): ClockState {
     if (!Number.isSafeInteger(tick) || tick < 0) {
       throw new DomainError("validation", "时钟 tick 必须是非负安全整数", { details: { tick } });
     }
-    return this.write(branchId, (value) => {
-      if (tick < value.worldTick) {
+    const outcome = this.control(branchId, undefined, (current) => {
+      if (tick < current.worldTick) {
         throw new DomainError("invalid-state", "时钟不能回退", {
-          details: { branchId, current: value.worldTick, requested: tick },
+          details: { branchId, current: current.worldTick, requested: tick },
         });
       }
-      if (value.mode !== "running" && value.mode !== "stepping") {
+      if (current.mode !== "running" && current.mode !== "stepping") {
         throw new DomainError("invalid-state", "暂停状态下不能推进 tick", {
-          details: { branchId, mode: value.mode },
+          details: { branchId, mode: current.mode },
         });
       }
-      return { ...value, worldTick: tick };
+      return { ok: true, clock: { ...current, worldTick: tick } };
     });
+    if (!outcome.ok) {
+      throw new DomainError("invalid-state", "时钟推进被拒绝", { details: { branchId, tick } });
+    }
+    return outcome.clock;
   }
 }
 

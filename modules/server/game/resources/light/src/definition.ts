@@ -7,7 +7,7 @@ import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
-const resourcesConfigSchema = z
+export const resourcesConfigSchema = z
   .object({
     scarceRatio: z.number().positive().default(0.3),
     surplusRatio: z.number().positive().default(1.2),

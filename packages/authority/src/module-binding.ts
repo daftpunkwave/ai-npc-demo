@@ -6,7 +6,7 @@
 import { DomainError, type HostServices, type StorageTransaction } from "@ai-npc/contracts";
 import type { ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
 import type { RuleRegistry } from "./rule-registry";
-import { TransactionWorldTx } from "./world-tx";
+import { TransactionWorldTx, type TxCollector } from "./world-tx";
 
 /** 绑定模块端口所需的固定事务上下文。 */
 export interface ModuleBindingInput {
@@ -20,6 +20,7 @@ export interface ModuleBindingInput {
   readonly principalId: string;
   readonly correlationId: string;
   readonly host: HostServices;
+  readonly collector?: TxCollector;
 }
 
 /**
@@ -51,6 +52,7 @@ export function bindModulePorts(input: ModuleBindingInput): unknown {
       correlationId: input.correlationId,
       scope: owner,
       host: input.host,
+      collector: input.collector,
     });
     bound.set(moduleId, tx);
     return tx;

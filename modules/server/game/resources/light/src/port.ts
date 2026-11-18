@@ -36,8 +36,8 @@ function failure(reasonCode: ReasonCode): OpFailure {
 }
 
 function levelOf(state: StockpileState, resource: ResourceId, options: ResourcesPortOptions): ResourceLevel {
-  const baseline = Math.max(1, state.baseline[resource]);
-  const ratio = state.amount[resource] / baseline;
+  const baseline = Math.max(1, amountOf(state.baseline, resource));
+  const ratio = amountOf(state.amount, resource) / baseline;
   if (ratio < options.scarceRatio) {
     return "scarce";
   }
@@ -47,15 +47,61 @@ function levelOf(state: StockpileState, resource: ResourceId, options: Resources
   return "adequate";
 }
 
+/** 以显式分支读取资源字段，避免把外部资源 ID 当作对象索引。 */
+function amountOf(amountsValue: ResourceAmounts, resource: ResourceId): number {
+  switch (resource) {
+    case "supply":
+      return amountsValue.supply;
+    case "energy":
+      return amountsValue.energy;
+    case "medical":
+      return amountsValue.medical;
+  }
+}
+
+function reservationOf(state: StockpileState, taskId: string): ResourceAmounts | null {
+  return state.reservations.find((entry) => entry.taskId === taskId)?.amount ?? null;
+}
+
+function addReservation(
+  state: StockpileState,
+  taskId: string,
+  delta: ResourceAmounts,
+): StockpileState["reservations"] {
+  const existing = state.reservations.find((entry) => entry.taskId === taskId);
+  if (existing === undefined) {
+    return [...state.reservations, { taskId, amount: delta }];
+  }
+  return state.reservations.map((entry) =>
+    entry.taskId === taskId ? { taskId, amount: addAmounts(entry.amount, delta) } : entry,
+  );
+}
+
+function subtractReservation(
+  state: StockpileState,
+  taskId: string,
+  delta: ResourceAmounts,
+): StockpileState["reservations"] | null {
+  const existing = reservationOf(state, taskId);
+  if (existing === null || !coversAmounts(existing, delta)) {
+    return null;
+  }
+  const next = subtractAmounts(existing, delta);
+  if (isZeroAmounts(next)) {
+    return state.reservations.filter((entry) => entry.taskId !== taskId);
+  }
+  return state.reservations.map((entry) =>
+    entry.taskId === taskId ? { taskId, amount: next } : entry,
+  );
+}
+
 /** 轻资源端口实现；所有方法共享同一个 scoped WorldTx。 */
 class LightResourcesPort implements GameResourcesPort {
   private readonly txFor: ScopedWorldTxFactory;
-  private readonly content: GameContent;
   private readonly options: ResourcesPortOptions;
 
-  constructor(txFor: ScopedWorldTxFactory, content: GameContent, options: ResourcesPortOptions) {
+  constructor(txFor: ScopedWorldTxFactory, options: ResourcesPortOptions) {
     this.txFor = txFor;
-    this.content = content;
     this.options = options;
   }
 
@@ -90,6 +136,7 @@ class LightResourcesPort implements GameResourcesPort {
         amount,
         reserved: zeroResources,
         baseline: amount,
+        reservations: [],
       });
     }
   }
@@ -104,7 +151,7 @@ class LightResourcesPort implements GameResourcesPort {
 
   available(stockpileId: string, resource: ResourceId): number {
     const state = this.require(stockpileId);
-    return state === null ? 0 : state.amount[resource] - state.reserved[resource];
+    return state === null ? 0 : amountOf(state.amount, resource) - amountOf(state.reserved, resource);
   }
 
   level(stockpileId: string): Readonly<Record<ResourceId, ResourceLevel>> {
@@ -136,7 +183,11 @@ class LightResourcesPort implements GameResourcesPort {
     if (!coversAmounts(available, input.delta)) {
       return failure("insufficient-resource");
     }
-    this.save({ ...state, reserved: addAmounts(state.reserved, input.delta) });
+    this.save({
+      ...state,
+      reserved: addAmounts(state.reserved, input.delta),
+      reservations: addReservation(state, input.taskId, input.delta),
+    });
     this.tx().emit(
       "ResourcesReserved",
       { stockpileId: input.stockpileId, delta: input.delta, taskId: input.taskId },
@@ -155,10 +206,15 @@ class LightResourcesPort implements GameResourcesPort {
     if (state === null) {
       return failure("invalid-params");
     }
-    if (!coversAmounts(state.reserved, input.delta)) {
+    const reservations = subtractReservation(state, input.taskId, input.delta);
+    if (reservations === null) {
       return failure("invalid-params");
     }
-    this.save({ ...state, reserved: subtractAmounts(state.reserved, input.delta) });
+    this.save({
+      ...state,
+      reserved: subtractAmounts(state.reserved, input.delta),
+      reservations,
+    });
     this.tx().emit(
       "ResourcesReleased",
       { stockpileId: input.stockpileId, delta: input.delta, taskId: input.taskId },
@@ -183,10 +239,16 @@ class LightResourcesPort implements GameResourcesPort {
       return failure("invalid-params");
     }
     const fromReservation = input.fromReservation ?? true;
+    let reservations = state.reservations;
     if (fromReservation) {
-      if (!coversAmounts(state.reserved, input.delta)) {
+      if (input.taskId === null) {
+        return failure("invalid-params");
+      }
+      const nextReservations = subtractReservation(state, input.taskId, input.delta);
+      if (nextReservations === null) {
         return failure("insufficient-resource");
       }
+      reservations = nextReservations;
     } else {
       if (!coversAmounts(state.amount, input.delta)) {
         return failure("insufficient-resource");
@@ -199,6 +261,7 @@ class LightResourcesPort implements GameResourcesPort {
       ...state,
       amount: subtractAmounts(state.amount, input.delta),
       reserved: fromReservation ? subtractAmounts(state.reserved, input.delta) : state.reserved,
+      reservations,
     });
     this.tx().emit(
       "ResourcesConsumed",
@@ -218,18 +281,23 @@ class LightResourcesPort implements GameResourcesPort {
     if (isZeroAmounts(input.delta)) {
       return failure("invalid-params");
     }
+    if (input.fromStockpileId === input.toStockpileId) {
+      return failure("invalid-params");
+    }
     const from = this.require(input.fromStockpileId);
     const to = this.require(input.toStockpileId);
     if (from === null || to === null) {
       return failure("invalid-params");
     }
-    if (!coversAmounts(from.reserved, input.delta)) {
+    const reservations = subtractReservation(from, input.taskId, input.delta);
+    if (reservations === null) {
       return failure("insufficient-resource");
     }
     this.save({
       ...from,
       amount: subtractAmounts(from.amount, input.delta),
       reserved: subtractAmounts(from.reserved, input.delta),
+      reservations,
     });
     this.save({ ...to, amount: addAmounts(to.amount, input.delta) });
     this.tx().emit(
@@ -282,10 +350,9 @@ class LightResourcesPort implements GameResourcesPort {
 /** 构造绑定到当前事务的轻资源端口。 */
 export function createResourcesPort(
   txFor: ScopedWorldTxFactory,
-  content: GameContent,
   options: ResourcesPortOptions,
 ): GameResourcesPort {
-  return new LightResourcesPort(txFor, content, options);
+  return new LightResourcesPort(txFor, options);
 }
 
 /** 从资源库存状态构造对外快照；供资源模块自己的查询实现复用。 */

@@ -100,7 +100,7 @@ describe("轻资源", () => {
 
   function port(): ReturnType<typeof createResourcesPort> {
     const tx = memoryTx();
-    const result = createResourcesPort(() => tx, gameContent, { scarceRatio: 0.3, surplusRatio: 1.2 });
+    const result = createResourcesPort(() => tx, { scarceRatio: 0.3, surplusRatio: 1.2 });
     result.initializeCampaign(gameContent);
     return result;
   }
@@ -117,9 +117,16 @@ describe("轻资源", () => {
       fromStockpileId: "sp-commons",
       toStockpileId: "sp-earth",
       delta: { supply: 20, energy: 0, medical: 0 },
-      taskId: "task-000000000003",
+      taskId: "task-000000000001",
       byId: "player-1",
     })).toMatchObject({ ok: true });
+    expect(resources.transfer({
+      fromStockpileId: "sp-commons",
+      toStockpileId: "sp-commons",
+      delta: { supply: 1, energy: 0, medical: 0 },
+      taskId: "task-000000000001",
+      byId: "player-1",
+    })).toMatchObject({ ok: false, reasonCode: "invalid-params" });
     expect(resources.available("sp-commons", "supply")).toBe(30);
     expect(resources.stockpile("sp-earth")).toMatchObject({ amount: { supply: 40 } });
   });

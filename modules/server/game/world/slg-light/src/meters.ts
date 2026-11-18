@@ -3,7 +3,7 @@
  * 依赖公共契约的指标值与快照类型；只返回应提交的事件，不直接写世界状态。
  * 禁止重复触发已被记录的事件，或把水闸分配当作数值指标处理。
  */
-import type { MeterSnapshot, NumericMeterId } from "@ai-npc/contracts";
+import type { MeterSnapshot } from "@ai-npc/contracts";
 import type { MetersView } from "@ai-npc/module-sdk";
 
 /** 指标阈值事件；value 为触发后的当前值。 */
@@ -66,7 +66,7 @@ export function thresholdEvents(
     add("RelayDown", 0);
   }
   if (previous["relay.stability"] < 30 && next["relay.stability"] >= 30) {
-    add("RelayRestored", next["relay.stability"]);
+    events.push({ type: "RelayRestored", value: next["relay.stability"] });
   }
   if (previous["orchard.water"] > 20 && next["orchard.water"] <= 20) {
     add("OrchardCrisis", next["orchard.water"]);
@@ -78,14 +78,4 @@ export function thresholdEvents(
     add("MigrationCrisis", next["migration.safety"]);
   }
   return { events, added };
-}
-
-/** 生成单个指标的变化条目；from 与 to 相等时返回 null。 */
-export function changeOf(
-  meter: NumericMeterId,
-  from: number,
-  to: number,
-  cause: "daily" | "task" | "road-risk" | "group-deadline" | "scenario-pressure",
-): { readonly meter: NumericMeterId; readonly from: number; readonly to: number; readonly cause: string } | null {
-  return from === to ? null : { meter, from, to, cause };
 }

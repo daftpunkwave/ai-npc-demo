@@ -4,10 +4,11 @@
  * 禁止在 create 阶段读取内容、打开存储或缓存跨事务状态。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import { createMapPort } from "./port";
 
-/** 地图模块没有独立启动资源，返回空生命周期实例。 */
-export async function createMapModule(input: ModuleCreateInput): Promise<ModuleInstance> {
-  return {
+/** 地图模块没有独立启动资源，暴露端口绑定器供宿主装配。 */
+export function createMapModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+  return Promise.resolve({
     moduleId: input.moduleId,
     start: async () => {
       // 地图实现不启动后台任务；所有查询与写入由规则事务触发。
@@ -18,5 +19,6 @@ export async function createMapModule(input: ModuleCreateInput): Promise<ModuleI
     dispose: async () => {
       // 没有连接或定时器需要释放。
     },
-  };
+    port: { bind: createMapPort },
+  });
 }
