@@ -18,6 +18,7 @@ import { Authority } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
 import type { GameContent, ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
+import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
@@ -82,6 +83,7 @@ export function toGameContent(content: ContentPack): GameContent {
     teams: content.index.teams,
     groups: content.index.groups,
     evidence: content.index.evidence,
+    secrets: content.index.secrets,
     starts: content.index.starts,
     migrationRoads: content.map.migrationRoads,
     medicalFacilities: content.map.medicalFacilities,
@@ -125,7 +127,9 @@ function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branc
 }
 
 /** 启动真实存储、加载内容、绑定模块端口并注册游戏处理器。 */
-export async function createGameHarness(): Promise<GameHarness> {
+export async function createGameHarness(options: {
+  readonly approvedSpeech?: import("@ai-npc/module-sdk").ApprovedSpeechReader;
+} = {}): Promise<GameHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
   const host = createFakeHost();
   const worldId = "wld-000000000000";
@@ -155,6 +159,7 @@ export async function createGameHarness(): Promise<GameHarness> {
       "game.map": createMapPort(txFor, gameContent, host.ids),
       "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
       "game.world": createWorldPort(txFor, gameContent, host.ids),
+      "game.comms": createCommsPort(txFor, gameContent, host.ids),
     });
     const authority = new Authority({
       storage,
@@ -162,10 +167,12 @@ export async function createGameHarness(): Promise<GameHarness> {
       content: gameContent,
       moduleBinder: binder,
       allowDirectAgentCommands: true,
+      approvedSpeech: options.approvedSpeech,
     });
     authority.registerModule(createMapContributor());
     authority.registerModule(createResourcesContributor());
     authority.registerModule(createWorldContributor());
+    authority.registerModule(createCommsContributor());
     return {
       dataDir,
       storage,
@@ -270,5 +277,23 @@ export function readGameEventTypes(harness: GameHarness): readonly string[] {
     tx
       .all("SELECT type FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC", [harness.branchId])
       .map((row) => String(row["type"])),
+  );
+}
+
+/** 读取分支事件的信封与 payload，供断言投递名单和公开受众。 */
+export function readGameEvents(
+  harness: GameHarness,
+): readonly { readonly type: string; readonly payload: Json; readonly audience: Json }[] {
+  return harness.storage.transact((tx) =>
+    tx
+      .all(
+        "SELECT type, payload_json, audience_json FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC",
+        [harness.branchId],
+      )
+      .map((row) => ({
+        type: String(row["type"]),
+        payload: typeof row["payload_json"] === "string" ? (JSON.parse(row["payload_json"]) as Json) : (row["payload_json"] as Json),
+        audience: typeof row["audience_json"] === "string" ? (JSON.parse(row["audience_json"]) as Json) : (row["audience_json"] as Json),
+      })),
   );
 }
