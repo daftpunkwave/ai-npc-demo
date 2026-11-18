@@ -34,7 +34,7 @@ export function parseTransportConfig(config: unknown): TransportConfig {
 }
 
 export type { OperationsDriver, TransportPort };
-export { transportModuleDefinition };
+export { transportModuleDefinition, operationsModuleDefinition };
 
 /** 绑定全部游戏端口；txFor 由 authority/宿主事务提供。 */
 export function createGamePorts(txFor: ScopedWorldTxFactory, content: GameContent, host: HostServices): GameModulePorts {

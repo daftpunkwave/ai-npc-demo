@@ -20,6 +20,7 @@ interface SnapshotInput {
 interface RestoreInput {
   readonly snapshotId: string;
   readonly createdBy: string;
+  readonly runId?: string;
 }
 
 function clockHook(): { readonly mode: string; readonly runVersion: number } {
@@ -79,8 +80,8 @@ export class OperationsService {
     return this.driver.snapshot({ label, createdBy });
   }
 
-  restore(snapshotId: string, createdBy: string): { readonly branchId: string } {
-    return this.driver.restore({ snapshotId, createdBy });
+  restore(snapshotId: string, createdBy: string, runId?: string): { readonly branchId: string } {
+    return this.driver.restore({ snapshotId, createdBy, ...(runId === undefined ? {} : { runId }) });
   }
 
   reset(): { readonly branchId: string; readonly clock: ClockView } {

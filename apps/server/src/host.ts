@@ -23,6 +23,7 @@ import {
   serverModuleDefinitions,
   toGameContent,
   transportModuleDefinition,
+  operationsModuleDefinition,
   type TransportPort,
 } from "./host/module-catalog";
 
@@ -274,13 +275,26 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   const transport = transportInstance.port as TransportPort;
   await transportInstance.start(signal);
 
-  const operations = createOperationsService({
+  const operationsInstance = await operationsModuleDefinition.create({
+    moduleId: "platform.operations.standard",
+    realm: "server",
+    config: {},
+    scope: {},
+    ports: {},
+    host,
+    signal,
+  });
+  await operationsInstance.start(signal);
+  const operationsFactory = operationsInstance.port as {
+    create(driver: import("./host/module-catalog").OperationsDriver): ReturnType<typeof createOperationsService>;
+  };
+  const operations = operationsFactory.create({
     clock: () => clockState(),
     pause: (expected) => control("pause", expected),
     resume: (expected) => control("start", expected),
     snapshot: (input) => save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy }),
     restore: (input) => {
-      const restored = save.restoreSnapshot({ snapshotId: input.snapshotId, createdBy: input.createdBy });
+      const restored = save.restoreSnapshot({ snapshotId: input.snapshotId, createdBy: input.createdBy, ...(input.runId === undefined ? {} : { runId: input.runId }) });
       activeBranchId = restored.branchId;
       return restored;
     },
@@ -306,7 +320,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     save: {
       createSnapshot: (input) => operations.snapshot(input.label, input.createdBy),
       listSnapshots: () => save.listSnapshots(),
-      restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy),
+      restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy, input.runId),
     },
     reset: () => operations.reset(),
     allowedOrigins: [...transport.allowedOrigins],
@@ -375,6 +389,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       }
       await app.close();
       await transportInstance.dispose();
+      await operationsInstance.dispose();
       await storageInstance.dispose();
     },
   };

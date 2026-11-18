@@ -53,7 +53,7 @@ describe("platform 模块", () => {
         return { snapshotId: "snap-1", worldTick: clock.worldTick };
       },
       restore: (input) => {
-        calls.push(`restore:${input.snapshotId}`);
+        calls.push(`restore:${input.snapshotId}:${input.runId ?? "default"}`);
         return { branchId: "br-1" };
       },
       reset: () => {
@@ -66,6 +66,8 @@ describe("platform 模块", () => {
     expect(calls).toEqual(["pause:3", "snapshot:manual"]);
     expect(service.reset()).toMatchObject({ branchId: "br-2" });
     expect(calls).toContain("reset");
+    expect(service.restore("snap-1", "operator-1", "run-9")).toMatchObject({ branchId: "br-1" });
+    expect(calls).toContain("restore:snap-1:run-9");
   });
 
   it("传输模块只接受回环地址与合法端口", async () => {
