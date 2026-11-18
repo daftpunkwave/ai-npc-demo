@@ -201,24 +201,40 @@ flowchart LR
 ## 目标仓库结构
 
 ```text
-apps/                          # 三个组合根，负责宿主壳与装配
-  server/                      # :3000 API 与控制台资源供应
-  client/                      # :5173 玩家端
-  console/                     # 控制台浏览器应用，不增加端口
-packages/                      # 公共契约、SDK 与固定机制
-  contracts/  kernel/          # DTO、port、能力图、生命周期
-  module-sdk/  client-sdk/     # 模块实现边界
-  client-protocol/             # 类型化传输与授权投影协议
-  authority/  agent-runtime/   # 事务守卫与唯一 turn 管线
-  experiment/  observability/  # 实验协调与证据协议
-modules/                       # 按 realm、职能、实现组织的 provider
-  server/{game,agent,platform,transport}/
-  client/  console/
-config/                        # 装配、profile、名册、模型布局、工具与运行配置
-content/                       # 版本化世界内容、中文文本与 prompt
-tests/                        # 契约、集成、场景、e2e、live 与夹具
-scripts/                       # 启动及边界、目录、文档检查
-docs/                         # 各主题唯一负责的详细规格
+ai-npc-demo/
+├── apps/                       # 组合根与宿主壳
+│   ├── server/                 # :3000 API 与控制台资源
+│   ├── client/                 # :5173 玩家端
+│   └── console/                # 控制台浏览器应用，不新增端口
+├── packages/                   # 公共契约、SDK 与固定机制
+│   ├── contracts/              # DTO 与 port 契约
+│   ├── kernel/                 # 能力图与生命周期
+│   ├── module-sdk/             # 服务端模块实现边界
+│   ├── client-sdk/             # 浏览器模块实现边界
+│   ├── client-protocol/         # 类型化传输与授权投影协议
+│   ├── authority/              # 世界事务与提交守卫
+│   ├── agent-runtime/          # 唯一 turn 管线
+│   ├── experiment/             # 实验协调
+│   └── observability/          # 证据与追踪协议
+├── modules/                    # 按 realm、职能、实现组织 provider
+│   ├── server/
+│   │   ├── game/               # 游戏职能
+│   │   ├── agent/              # 认知与行为策略
+│   │   ├── platform/           # 平台能力
+│   │   └── transport/          # 传输适配器
+│   ├── client/                 # 玩家界面与渲染模块
+│   └── console/                # 运营与研究页面模块
+├── config/                     # 装配、名册、模型与运行配置
+├── content/                    # 世界内容、中文文本与 prompt
+├── tests/                      # 契约、集成、场景、e2e 与夹具
+├── scripts/                    # 启动与工程检查
+└── docs/                       # 分主题规格与目录导览
+    ├── architecture/           # 架构、模块与公共契约
+    ├── agent/                  # 认知与行为
+    ├── game/                   # 世界、玩法与规则
+    ├── platform/               # 配置、研究与运营
+    ├── delivery/               # 实施与验收
+    └── references/             # 来源与设计决策
 ```
 
 目录名表示职责，不授权任意 import。组合根显式登记 provider，禁止扫描目录后执行未知模块。完整目录与扩展流程见 [代码结构](docs/architecture/code-structure.md)。

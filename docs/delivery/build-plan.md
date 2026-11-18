@@ -1,6 +1,6 @@
 # 构建计划：从空仓库到首版
 
-> 状态：实施手册。本文把首版（切片 A、B、C、M，见 [路线与验收](roadmap-and-acceptance.md)）拆成 26 个按顺序执行的步骤。每一步都写明先读什么、产出什么、要写哪些测试、怎样算完成。实现者（包括编码 Agent）**严格按顺序执行**：前一步的完成判据没有全部满足，不开始下一步。工程约定见 [技术栈](tech-stack.md)，编码 Agent 的工作规则见仓库根目录的 `AGENTS.md`。
+> 状态：实施手册。本文把首版（切片 A、B、C、M，见 [路线与验收](roadmap-and-acceptance.md)）拆成 26 个按顺序执行的步骤。每一步都写明先读什么、产出什么、要写哪些测试、怎样算完成。实现者（包括编码 Agent）**严格按顺序执行**：前一步的完成判据没有全部满足，不开始下一步。工程约定见 [技术栈](tech-stack.md)，编码 Agent 的工作规则见仓库根目录的 [AGENTS.md — 开发规范](../../AGENTS.md)。
 
 ## 0. 怎样使用本计划
 
@@ -77,7 +77,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[技术栈](tech-stack.md) 全文。
 - **产出**：根目录的 `package.json`（只含 0.2 节 S00 行的脚本）、`pnpm-workspace.yaml`、三个 tsconfig、`vitest.config.ts`、`.env.example`；在 `.gitignore` 追加 `data/`、`data-e2e/`、`apps/server/console-static/`、`apps/client/dist/`、`test-results/`、`playwright-report/`；`packages/` 下九个包（`package.json` 与 `src/index.ts`，index 先导出包名常量 `export const packageName = "@ai-npc/<name>"`）；`tests/` 与 `scripts/` 两个包。
-- **实现** `scripts/check-docs.ts`：扫描 `README.md`、`AGENTS.md`、`docs/**/*.md` 中的相对链接，确认目标文件存在；带 `#锚点` 的链接确认目标标题存在（锚点规则：标题转小写，去掉除字母、数字、空格、连字符以外的字符，空格换成 `-`）。外部 `http(s)` 链接与代码块里的内容不检查。
+- **实现** `scripts/check-docs.ts`：扫描 [README.md — 项目概览](../../README.md)、[AGENTS.md — 开发规范](../../AGENTS.md)、`docs/**/*.md` 中的相对链接，确认目标文件存在；带 `#锚点` 的链接确认目标标题存在（锚点规则：标题转小写，去掉除字母、数字、空格、连字符以外的字符，空格换成 `-`）。外部 `http(s)` 链接与代码块里的内容不检查。
 - **测试**：`tests/contract/smoke.test.ts`：断言九个包的 `packageName` 与目录一致。
 - **完成判据**：`pnpm install` 成功；`pnpm check` 通过；`pnpm check:docs` 对当前文档报告 0 个坏链接。
 
