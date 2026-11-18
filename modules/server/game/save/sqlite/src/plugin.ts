@@ -3,6 +3,7 @@
  * 依赖宿主注入的 StoragePort 与 ID/时间服务。
  * 禁止在 create 阶段创建快照或复制分支。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将宿主存储类型误判为 any。 */
 import type { ModuleCreateInput, ModuleInstance, StoragePort } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
 import { SqliteSaveService } from "./service";

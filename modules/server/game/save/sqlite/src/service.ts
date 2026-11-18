@@ -3,6 +3,7 @@
  * 依赖 SQLite StoragePort、分支复制与快照表；不自行暂停时钟或排空 job。
  * 禁止在未暂停/静默时保存，也禁止覆盖已有分支或在快照上继续写入。
  */
+/* eslint-disable no-unused-vars, security/detect-object-injection -- 接口参数名表达调用契约；行访问列名来自本文件固定的 snapshots 列。 */
 import type {
   BranchKind,
   ForkBranchResult,
