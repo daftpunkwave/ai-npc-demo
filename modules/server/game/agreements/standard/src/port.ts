@@ -3,6 +3,7 @@
  * 依赖协议聚合与 scoped WorldTx；不执行条款校验或状态迁移。
  * 禁止在查询中改写协议或触发履约事件。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将泛型查询结果误判为 any。 */
 import {
   gameModuleIds,
   type AgreementView,

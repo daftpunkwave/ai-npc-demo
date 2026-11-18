@@ -3,7 +3,7 @@
  * 依赖协议聚合、内容索引、世界/地图/行动/通信端口与 authority 事务上下文。
  * 禁止替当事人记忆承诺，也禁止用未提交的任务事实提前判定履约。
  */
-/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将端口泛型误判为 any。 */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；数组索引来自内部 terms/progress，资源键来自受限枚举。 */
 import type { EventEnvelope, Json, ReasonCode, Term } from "@ai-npc/contracts";
 import {
   coversAmounts,
@@ -566,9 +566,9 @@ export function createAgreementsContributor(): GameRuleContributor<GameModulePor
       },
     ],
     consumers: [
-      { consumerId: "agreement-task-completed", eventTypes: ["TaskCompleted"], handler: (context, event) => onTaskCompleted(context as AgreementContext, event) },
-      { consumerId: "agreement-information-shared", eventTypes: ["InformationShared"], handler: (context, event) => onInformationShared(context as AgreementContext, event) },
-      { consumerId: "agreement-policy-changed", eventTypes: ["PolicyChanged"], handler: (context, event) => onPolicyChanged(context as AgreementContext, event) },
+      { consumerId: "agreement-task-completed", eventTypes: ["TaskCompleted"], handler: (context, event) => { onTaskCompleted(context as AgreementContext, event); } },
+      { consumerId: "agreement-information-shared", eventTypes: ["InformationShared"], handler: (context, event) => { onInformationShared(context as AgreementContext, event); } },
+      { consumerId: "agreement-policy-changed", eventTypes: ["PolicyChanged"], handler: (context, event) => { onPolicyChanged(context as AgreementContext, event); } },
     ],
   };
 }

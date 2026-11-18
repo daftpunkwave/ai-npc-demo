@@ -277,6 +277,29 @@ export function readGameAggregate(
   });
 }
 
+/** 创建并登记一个供 afterEach 释放的 harness，减少测试文件重复样板。 */
+export async function createTrackedGameHarness(
+  active: GameHarness[],
+  options: Parameters<typeof createGameHarness>[0] = {},
+): Promise<GameHarness> {
+  const created = await createGameHarness(options);
+  active.push(created);
+  return created;
+}
+
+/** 释放所有已登记的 harness。 */
+export async function disposeTrackedGameHarnesses(active: GameHarness[]): Promise<void> {
+  await Promise.all(active.splice(0).map(async (harness) => harness.dispose()));
+}
+
+/** 以人类中立阵营开局，供各游戏模块测试复用。 */
+export function startNeutralCampaign(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
+  return value.authority.commands.execute(
+    playerAuth(value),
+    gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
+  );
+}
+
 /** 读取分支事件类型序列，供断言事件顺序。 */
 export function readGameEventTypes(harness: GameHarness): readonly string[] {
   return harness.storage.transact((tx) =>

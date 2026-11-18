@@ -5,12 +5,14 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createGameHarness,
+  createTrackedGameHarness,
+  disposeTrackedGameHarnesses,
   gameCommandEnvelope,
   playerAuth,
   readGameAggregate,
   readGameEvents,
   setGameClock,
+  startNeutralCampaign,
   strategicAuth,
   type GameHarness,
 } from "./game-support";
@@ -18,20 +20,15 @@ import {
 const active: GameHarness[] = [];
 
 afterEach(async () => {
-  await Promise.all(active.splice(0).map(async (harness) => harness.dispose()));
+  await disposeTrackedGameHarnesses(active);
 });
 
 async function harness(): Promise<GameHarness> {
-  const created = await createGameHarness();
-  active.push(created);
-  return created;
+  return createTrackedGameHarness(active);
 }
 
 function start(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
-  return value.authority.commands.execute(
-    playerAuth(value),
-    gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
-  );
+  return startNeutralCampaign(value);
 }
 
 function proposeDelivery(value: GameHarness, expiresInTicks?: number): string {
