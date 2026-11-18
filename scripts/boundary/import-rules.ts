@@ -38,9 +38,35 @@ import type {
   BoundarySourceFile,
   BoundaryViolation,
   CheckContext,
+  DependencyAllowlist,
   ImportRecord,
+  ModuleKind,
   ModulePackageInfo,
+  ModulePathInfo,
 } from "./types";
+
+/** 模块包的 realm/kind 与其依赖白名单；模块信息或 kind 缺失时整体为 null。 */
+interface ModuleRealmAllowlist {
+  readonly path: ModulePathInfo;
+  readonly kind: ModuleKind;
+  readonly allowlist: DependencyAllowlist;
+}
+
+/**
+ * 解析模块包按自身 realm/kind 计算的依赖白名单。
+ * 缺少模块信息或 kind 读不到时返回 null，由调用方显式跳过 realm/kind 检查；
+ * 不用可选链合并判空，避免把 undefined 当成已读取的 kind。
+ */
+function moduleRealmAllowlist(importerModule: ModulePackageInfo | undefined): ModuleRealmAllowlist | null {
+  if (importerModule === undefined) {
+    return null;
+  }
+  const { path, kind } = importerModule;
+  if (kind === null) {
+    return null;
+  }
+  return { path, kind, allowlist: dependencyAllowlist(path, kind) };
+}
 
 function inspectRelativeImport(
   file: BoundarySourceFile,
@@ -167,12 +193,12 @@ function inspectWorkspaceImport(
     }
   }
 
-  if (importerModule !== undefined && importerModule.kind !== null) {
-    const allowlist = dependencyAllowlist(importerModule.path, importerModule.kind);
+  const moduleInfo = moduleRealmAllowlist(importerModule);
+  if (moduleInfo !== null) {
     // 测试文件可以使用宿主机制包等验证辅助，但模块之间（含测试）不能引用其他模块实现。
     const forbidden = isModulePackageName(target.name)
       ? true
-      : !testFile && !allowlist.workspace.includes(target.name);
+      : !testFile && !moduleInfo.allowlist.workspace.includes(target.name);
     if (forbidden) {
       violations.push(
         violation(
@@ -182,7 +208,7 @@ function inspectWorkspaceImport(
           record.line,
           isModulePackageName(target.name)
             ? `模块包之间不能互相依赖实现（目标 ${target.name}），测试也不得例外。`
-            : `${importerModule.path.realm}/${importerModule.kind} 模块不允许依赖 workspace 包 ${target.name}。`,
+            : `${moduleInfo.path.realm}/${moduleInfo.kind} 模块不允许依赖 workspace 包 ${target.name}。`,
         ),
       );
     }
@@ -236,18 +262,18 @@ function inspectExternalImport(
 ): BoundaryViolation[] {
   const violations: BoundaryViolation[] = [];
   const builtin = nodeBuiltinName(record.specifier);
+  const moduleInfo = moduleRealmAllowlist(importerModule);
 
   if (builtin !== null) {
-    if (!testFile && importerModule !== undefined && importerModule.kind !== null) {
-      const allowlist = dependencyAllowlist(importerModule.path, importerModule.kind);
-      if (!isAllowedNodeBuiltin(record.specifier, allowlist.nodeBuiltins)) {
+    if (!testFile && moduleInfo !== null) {
+      if (!isAllowedNodeBuiltin(record.specifier, moduleInfo.allowlist.nodeBuiltins)) {
         violations.push(
           violation(
             RULE_MODULE_REALM,
             "module-forbidden-node-import",
             file.path,
             record.line,
-            `${importerModule.path.realm}/${importerModule.kind} 模块不允许引用 Node 内置模块 ${record.specifier}。`,
+            `${moduleInfo.path.realm}/${moduleInfo.kind} 模块不允许引用 Node 内置模块 ${record.specifier}。`,
           ),
         );
       }
@@ -268,11 +294,10 @@ function inspectExternalImport(
 
   const packageBase = packageNameOfSpecifier(record.specifier);
 
-  if (!testFile && importerModule !== undefined && importerModule.kind !== null) {
-    const allowlist = dependencyAllowlist(importerModule.path, importerModule.kind);
+  if (!testFile && moduleInfo !== null) {
     const allowed =
-      allowlist.external.includes(packageBase) ||
-      allowlist.externalPrefixes.some((prefix) => packageBase.startsWith(prefix));
+      moduleInfo.allowlist.external.includes(packageBase) ||
+      moduleInfo.allowlist.externalPrefixes.some((prefix) => packageBase.startsWith(prefix));
     if (!allowed) {
       violations.push(
         violation(
@@ -280,7 +305,7 @@ function inspectExternalImport(
           "module-forbidden-external-import",
           file.path,
           record.line,
-          `${importerModule.path.realm}/${importerModule.kind} 模块不允许引用第三方库 ${packageBase}。`,
+          `${moduleInfo.path.realm}/${moduleInfo.kind} 模块不允许引用第三方库 ${packageBase}。`,
         ),
       );
     }

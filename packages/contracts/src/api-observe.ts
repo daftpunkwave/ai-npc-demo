@@ -57,6 +57,32 @@ export const agentsQuerySchema = z
   })
   .strict();
 
+/** turn 摘要：状态与终止原因由运行时维护，被 Agent 检查器与 turn 查询共用。 */
+export const turnSummarySchema = z
+  .object({
+    turnId: idSchemas.turn,
+    runId: idSchemas.run,
+    branchId: z.string().min(1),
+    agentId: principalIdSchema,
+    agentTurnIndex: z.number().int().nonnegative(),
+    status: z.string().min(1),
+    triggerKinds: z.array(z.string().min(1)),
+    terminalReason: z.string().min(1).nullable(),
+    createdAt: z.string().min(1),
+    endedAt: z.string().min(1).nullable(),
+    modelCalls: z.number().int().nonnegative(),
+    toolCalls: z.number().int().nonnegative(),
+    tokens: z
+      .object({
+        input: z.number().int().nonnegative().nullable(),
+        output: z.number().int().nonnegative().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type TurnSummary = z.infer<typeof turnSummarySchema>;
+
 /** Agent 检查器中的关系与承诺摘要。 */
 export const agentRelationViewSchema = z
   .object({
@@ -97,7 +123,7 @@ export const agentInspectorResponseSchema = z
     relations: z.array(agentRelationViewSchema),
     commitments: z.array(agentCommitmentViewSchema),
     watermarks: memoryWatermarkViewSchema,
-    recentTurns: z.array(z.lazy(() => turnSummarySchema)),
+    recentTurns: z.array(turnSummarySchema),
   })
   .strict();
 
@@ -171,32 +197,6 @@ export const observationsResponseSchema = z
   .strict();
 
 export type ObservationsResponse = z.infer<typeof observationsResponseSchema>;
-
-/** turn 摘要：状态与终止原因由运行时维护。 */
-export const turnSummarySchema = z
-  .object({
-    turnId: idSchemas.turn,
-    runId: idSchemas.run,
-    branchId: z.string().min(1),
-    agentId: principalIdSchema,
-    agentTurnIndex: z.number().int().nonnegative(),
-    status: z.string().min(1),
-    triggerKinds: z.array(z.string().min(1)),
-    terminalReason: z.string().min(1).nullable(),
-    createdAt: z.string().min(1),
-    endedAt: z.string().min(1).nullable(),
-    modelCalls: z.number().int().nonnegative(),
-    toolCalls: z.number().int().nonnegative(),
-    tokens: z
-      .object({
-        input: z.number().int().nonnegative().nullable(),
-        output: z.number().int().nonnegative().nullable(),
-      })
-      .strict(),
-  })
-  .strict();
-
-export type TurnSummary = z.infer<typeof turnSummarySchema>;
 
 export const turnStageViewSchema = z
   .object({
