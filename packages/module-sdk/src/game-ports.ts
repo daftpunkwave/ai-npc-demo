@@ -5,6 +5,7 @@
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type {
+  MessageIntentKind,
   MeterChangeCause,
   NumericMeterId,
   ReasonCode,
@@ -30,6 +31,8 @@ export const gameModuleIds = {
   agreements: "game.agreements.standard",
   comms: "game.comms.standard",
   scenario: "game.scenario.watergate",
+  scenarioEscalating: "game.scenario.watergate-escalating",
+  save: "game.save.sqlite",
 } as const;
 
 /** 内容索引中节点视图的最小结构。 */
@@ -127,9 +130,21 @@ export interface GameStart {
 /** 内容索引中可发现证据的初始位置。 */
 export interface GameEvidencePlacement {
   readonly evidenceId: string;
+  readonly title: string;
   readonly nodeId?: string;
   readonly discoverable?: boolean;
   readonly heldBy?: readonly string[];
+  readonly content: string;
+  readonly tags: readonly string[];
+}
+
+/** 内容索引中的私有秘密；只有持有者获得知识授权。 */
+export interface GameSecret {
+  readonly secretId: string;
+  readonly heldBy: readonly string[];
+  readonly releasePolicy: "private";
+  readonly content: string;
+  readonly leakTerms: readonly string[];
 }
 
 /** 规则模块读取内容索引所需的最小只读视图；实际内容包实现提供同构数据。 */
@@ -142,6 +157,7 @@ export interface GameContent {
   readonly teams: ReadonlyMap<string, GameTeamInit>;
   readonly groups: ReadonlyMap<string, GameGroupInit>;
   readonly evidence: ReadonlyMap<string, GameEvidencePlacement>;
+  readonly secrets: ReadonlyMap<string, GameSecret>;
   readonly starts: ReadonlyMap<string, GameStart>;
   readonly migrationRoads: readonly string[];
   readonly medicalFacilities: readonly string[];
@@ -420,11 +436,44 @@ export interface AgreementView {
   readonly parties: readonly string[];
 }
 
-/** 对白与知识查询端口；comms 模块拥有会话与知识授权。 */
+/** 通信端口：送达计算、知识授权与剧情/对白写入。 */
+export interface CommsPostResult {
+  readonly eventId: string;
+  readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
+}
+
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
+  grantKnowledge(input: {
+    readonly principalId: string;
+    readonly itemId: string;
+    readonly via: "start" | "share" | "discovery" | "setup";
+    readonly grantedAtTick?: number;
+  }): { readonly grantId: string };
+  postMessage(input: {
+    readonly fromId: string;
+    readonly to: readonly string[];
+    readonly text: string;
+    readonly channel: "message" | "broadcast" | "seat" | "opening";
+    readonly intentKind: MessageIntentKind;
+    readonly speechArtifactRef?: string | null;
+  }): CommsPostResult;
+  postDialogue(input: {
+    readonly speakerId: string;
+    readonly audience: readonly string[];
+    readonly text: string;
+    readonly channel: "dialogue" | "message";
+    readonly channelKind: "face-to-face" | "relay";
+    readonly conversationId: string | null;
+    readonly replyToId: string | null;
+  }): { readonly eventId: string; readonly conversationId: string; readonly dialogueId: string; readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[] };
+  postInformationShare(input: {
+    readonly fromId: string;
+    readonly evidenceId: string;
+    readonly audience: readonly string[];
+  }): CommsPostResult;
 }
 
 /** 游戏模块绑定的全部端口；宿主按能力解析后注入处理器上下文。 */

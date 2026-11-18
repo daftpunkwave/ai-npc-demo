@@ -24,6 +24,7 @@ function content(roads: GameContent["roads"]): GameContent {
     teams: new Map(),
     groups: new Map(),
     evidence: new Map(),
+    secrets: new Map(),
     starts: new Map(),
     migrationRoads: [],
     medicalFacilities: [],

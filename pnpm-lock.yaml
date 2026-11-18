@@ -200,6 +200,18 @@ importers:
         specifier: ^4
         version: 4.6.7
 
+  modules/server/game/comms/standard:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
   modules/server/game/map/six-nodes:
     dependencies:
       '@ai-npc/contracts':
@@ -350,6 +362,9 @@ importers:
       '@ai-npc/mod-game-clock-controlled':
         specifier: workspace:*
         version: link:../modules/server/game/clock/controlled
+      '@ai-npc/mod-game-comms-standard':
+        specifier: workspace:*
+        version: link:../modules/server/game/comms/standard
       '@ai-npc/mod-game-map-six-nodes':
         specifier: workspace:*
         version: link:../modules/server/game/map/six-nodes
