@@ -3,6 +3,13 @@
  * 不启动服务、不打开存储。
  */
 export { createServerApp } from "./host/module-catalog";
+export { loadAssembly, loadRunSpec, resolveServerModules } from "./host/assembly";
+export {
+  createGameContributorsFromAssembly,
+  createGamePortsFromAssembly,
+  createModuleBinderFromAssembly,
+  createSaveService,
+} from "./host/module-catalog";
 export type { AuthorityPort, ServerApp, ServerAppOptions, ServerIdentity } from "./host/module-catalog";
 export { buildPlayerProjection } from "./projection";
 export { startHost } from "./host";

@@ -14,9 +14,9 @@ import { createHostServices } from "./host-services";
 import { buildPlayerProjection } from "./projection";
 import { loadAssembly, loadRunSpec, resolveServerModules } from "./host/assembly";
 import {
-  createGameContributors,
-  createGamePorts,
-  createModuleBinder,
+  createGameContributorsFromAssembly,
+  createGamePortsFromAssembly,
+  createModuleBinderFromAssembly,
   createOperationsService,
   createSaveService,
   parseTransportConfig,
@@ -114,6 +114,27 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), options.packId ?? "earth-2964-v1");
   const gameContent = toGameContent(content);
   const assembly = loadAssembly(options.assemblyRef ?? "local-slg-standard-v1");
+  const requiredBindings: Readonly<Record<string, string>> = {
+    "game.world": "game.world.slg-light",
+    "game.map": "game.map.six-nodes",
+    "game.clock": "game.clock.controlled",
+    "game.resources": "game.resources.light",
+    "game.actions": "game.actions.standard",
+    "game.agreements": "game.agreements.standard",
+    "game.comms": "game.comms.standard",
+    "game.save": "game.save.sqlite",
+    "platform.storage": "platform.storage.sqlite",
+    "platform.access-policy": "platform.access-policy.roster",
+    "platform.secrets": "platform.secrets.env",
+    "platform.operations": "platform.operations.standard",
+    "transport.http-ws": "transport.http-ws.fastify",
+  };
+  for (const [capability, moduleId] of Object.entries(requiredBindings)) {
+    const binding = assembly.realms.server.bindings.find((entry) => entry.capability === capability);
+    if (binding === undefined || binding.moduleId !== moduleId) {
+      throw new Error(`装配包含当前宿主未实现的绑定: ${capability}`);
+    }
+  }
   const runSpec = loadRunSpec(options.runSpecRef ?? "online-default");
   const resolvedModules = resolveServerModules(assembly, serverModuleDefinitions);
   const clockConfig = assembly.configs["clock"] as { readonly secondsPerTick?: number } | undefined;
@@ -205,9 +226,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   });
   ensureLiveRun(activeBranchId, activeWorldId);
 
-  const binder = createModuleBinder(gameContent, host);
-  const scenarioBinding = assembly.realms.server.bindings.find((binding) => binding.capability === "game.scenario");
-  const escalating = scenarioBinding?.moduleId === "game.scenario.watergate-escalating";
+  const binder = createModuleBinderFromAssembly(assembly, gameContent, host);
   const authority = new Authority({
     storage,
     host,
@@ -215,7 +234,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     moduleBinder: binder,
     allowDirectAgentCommands: true,
   });
-  for (const contributor of createGameContributors({ escalating })) {
+  for (const contributor of createGameContributorsFromAssembly(assembly)) {
     authority.registerModule(contributor);
   }
 
@@ -264,7 +283,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
   const projection = () => storage.transact((tx) => {
     const gameTx = txFor(tx, "read");
-    const ports = createGamePorts(gameTx, gameContent, host);
+    const ports = createGamePortsFromAssembly(assembly, gameTx, gameContent, host);
     return buildPlayerProjection({ content: gameContent, world: ports["game.world"], map: ports["game.map"], clock: clockView(readClockTx(tx, activeBranchId)) });
   });
 
