@@ -44,6 +44,10 @@ describe("服务端宿主", () => {
     const view = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: { authorization: `Bearer ${session}` } });
     expect(view.statusCode).toBe(200);
     expect(view.json()).toMatchObject({ projection: { campaign: { factionId: "human-neutral" }, clock: { worldTick: 0 } } });
+    const sessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers: { authorization: `Bearer ${session}` } });
+    expect((sessionView.json() as { readonly serverAssembly: { readonly modules: unknown[] } }).serverAssembly.modules.length).toBeGreaterThan(0);
+    const liveRun = host.storage.transact((tx) => tx.rows("runs").list({ mode: "live" })[0]);
+    expect(liveRun).toMatchObject({ mode: "live", status: "running" });
 
     const reset = await host.app.inject({
       method: "POST",
@@ -55,6 +59,10 @@ describe("服务端宿主", () => {
     const resetBody = reset.json() as { readonly branchId: string; readonly clock: { readonly mode: string } };
     expect(resetBody.branchId).not.toBe(host.branchId);
     expect(resetBody.clock.mode).toBe("paused");
+    const runs = host.storage.transact((tx) => tx.rows("runs").list({ mode: "live" }));
+    expect(runs).toHaveLength(2);
+    const alias = host.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }));
+    expect(alias).toMatchObject({ branch_id: resetBody.branchId });
     const snapshots = await host.app.inject({ method: "GET", url: "/api/v1/campaign/snapshots", headers: { authorization: `Bearer ${session}` } });
     expect(snapshots.statusCode).toBe(200);
     expect((snapshots.json() as { readonly snapshots: unknown[] }).snapshots).toHaveLength(1);
