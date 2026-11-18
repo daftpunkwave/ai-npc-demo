@@ -1,0 +1,8 @@
+/**
+ * 夹具：包依赖环的另一侧。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法与另一侧共同构成环，属于违规样例。
+ */
+import { packageName } from "@ai-npc/cycle-a";
+
+export const cycleAPackageName = packageName;

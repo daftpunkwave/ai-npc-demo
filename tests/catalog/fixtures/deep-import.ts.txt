@@ -1,0 +1,8 @@
+/**
+ * 夹具：从契约包的源码深层路径导入，绕过包 exports 声明。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法依赖其他包的内部结构，属于违规样例。
+ */
+import { canonicalJson } from "@ai-npc/contracts/src/json";
+
+export const serialize = canonicalJson;

@@ -1,0 +1,6 @@
+/**
+ * 夹具：用 re-export 转发契约包的源码深层路径。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法同样绕过包 exports 声明，属于违规样例。
+ */
+export { canonicalJson } from "@ai-npc/contracts/src/json";

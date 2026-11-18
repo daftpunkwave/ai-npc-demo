@@ -1,0 +1,11 @@
+/**
+ * 夹具：模块定义源文本，含检查器可读取的 kind 字段。
+ * 仅作为边界检查输入，不会被编译或执行。
+ */
+export const definition = {
+  id: "game.world.slg-light",
+  realm: "server",
+  kind: "service",
+  version: "0.1.0",
+  apiVersion: "1",
+} as const;

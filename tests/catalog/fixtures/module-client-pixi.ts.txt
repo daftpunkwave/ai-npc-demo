@@ -1,0 +1,8 @@
+/**
+ * 夹具：浏览器 adapter 引用 2.5D 场景渲染库。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 只有场景渲染适配器可以使用该库。
+ */
+import { Application } from "pixi.js";
+
+export const createApplication = Application;

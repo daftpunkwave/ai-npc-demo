@@ -1,0 +1,8 @@
+/**
+ * 夹具：服务端 service 模块引用 HTTP 适配器才允许使用的框架。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法越过 realm/kind 白名单，属于违规样例。
+ */
+import Fastify from "fastify";
+
+export const transportFactory = Fastify;

@@ -1,0 +1,8 @@
+/**
+ * 夹具：存储 adapter 引用了只属于 HTTP 传输适配器的框架。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法越过所属适配器的依赖白名单，属于违规样例。
+ */
+import Fastify from "fastify";
+
+export const storageFactory = Fastify;

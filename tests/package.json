@@ -1,0 +1,18 @@
+{
+  "name": "@ai-npc/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ai-npc/agent-runtime": "workspace:*",
+    "@ai-npc/authority": "workspace:*",
+    "@ai-npc/client-protocol": "workspace:*",
+    "@ai-npc/client-sdk": "workspace:*",
+    "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/experiment": "workspace:*",
+    "@ai-npc/kernel": "workspace:*",
+    "@ai-npc/module-sdk": "workspace:*",
+    "@ai-npc/observability": "workspace:*",
+    "@ai-npc/scripts": "workspace:*"
+  }
+}

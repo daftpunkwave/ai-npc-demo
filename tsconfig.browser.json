@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": [
+    "apps/client/src",
+    "apps/console/src",
+    "packages/contracts/src",
+    "packages/kernel/src",
+    "packages/client-sdk/src",
+    "packages/client-protocol/src",
+    "modules/client",
+    "modules/console"
+  ]
+}

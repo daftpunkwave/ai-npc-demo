@@ -1,0 +1,15 @@
+/**
+ * 夹具：定义文件只用类型导入与动态导入，静态部分仅含描述符数据。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法符合定义文件可被宿主直接导入的约定。
+ */
+import type { ModuleDefinition } from "@ai-npc/contracts";
+import { z } from "zod";
+
+export const definition = {
+  id: "agent.memory.ledger",
+  realm: "server",
+  kind: "service",
+  configSchema: z.object({}),
+  create: () => import("./plugin"),
+} as unknown as ModuleDefinition;

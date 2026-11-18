@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+/**
+ * 夹具：带 shebang 的脚本，文件头紧随其后。
+ * 仅作为边界检查输入，不会被编译或执行。
+ */
+export const value = 1;

@@ -1,0 +1,8 @@
+/**
+ * 夹具：浏览器宿主源码引用 Node 内置模块。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法越过浏览器 realm 边界，属于违规样例。
+ */
+import { readFileSync } from "node:fs";
+
+export const readSnapshot = readFileSync;

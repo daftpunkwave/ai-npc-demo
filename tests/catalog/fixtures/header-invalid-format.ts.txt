@@ -1,0 +1,2 @@
+/* 普通块注释不是 JSDoc 文件头。 */
+export const value = 1;

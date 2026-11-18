@@ -1,0 +1,5 @@
+/**
+ * 夹具：没有 import 的源码，用于检查未使用的 workspace 依赖声明。
+ * 仅作为边界检查输入，不会被编译或执行。
+ */
+export const value = 1;

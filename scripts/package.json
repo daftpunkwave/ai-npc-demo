@@ -1,0 +1,9 @@
+{
+  "name": "@ai-npc/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./check-boundaries": "./check-boundaries.ts"
+  }
+}
