@@ -16,6 +16,8 @@ import { createActionsPort, actionsModuleDefinition, createActionsContributor } 
 import { createAgreementsPort, agreementsModuleDefinition, createAgreementsContributor } from "@ai-npc/mod-game-agreements-standard";
 import { createScenarioPort, scenarioModuleDefinition, escalatingScenarioModuleDefinition, createScenarioContributor } from "@ai-npc/mod-game-scenario-watergate";
 import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
+import { accessPolicyModuleDefinition } from "@ai-npc/mod-platform-access-policy-roster";
+import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 
 export { toGameContent } from "./content-adapter";
 
@@ -67,4 +69,6 @@ export const serverModuleDefinitions = [
   scenarioModuleDefinition,
   escalatingScenarioModuleDefinition,
   saveModuleDefinition,
+  accessPolicyModuleDefinition,
+  secretsModuleDefinition,
 ] as const;

@@ -21,6 +21,8 @@
     "@ai-npc/mod-game-scenario-watergate": "workspace:*",
     "@ai-npc/mod-game-world-slg-light": "workspace:*",
     "@ai-npc/mod-platform-storage-sqlite": "workspace:*",
+    "@ai-npc/mod-platform-access-policy-roster": "workspace:*",
+    "@ai-npc/mod-platform-secrets-env": "workspace:*",
     "@ai-npc/module-sdk": "workspace:*",
     "@fastify/cors": "^11",
     "@fastify/websocket": "^11",

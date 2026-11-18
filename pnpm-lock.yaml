@@ -239,6 +239,12 @@ importers:
       '@ai-npc/mod-game-world-slg-light':
         specifier: workspace:*
         version: link:../../modules/server/game/world/slg-light
+      '@ai-npc/mod-platform-access-policy-roster':
+        specifier: workspace:*
+        version: link:../../modules/server/platform/access-policy/roster
+      '@ai-npc/mod-platform-secrets-env':
+        specifier: workspace:*
+        version: link:../../modules/server/platform/secrets/env
       '@ai-npc/mod-platform-storage-sqlite':
         specifier: workspace:*
         version: link:../../modules/server/platform/storage/sqlite
@@ -352,6 +358,30 @@ importers:
         version: 4.6.7
 
   modules/server/game/world/slg-light:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
+  modules/server/platform/access-policy/roster:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
+  modules/server/platform/secrets/env:
     dependencies:
       '@ai-npc/contracts':
         specifier: workspace:*
@@ -504,6 +534,12 @@ importers:
       '@ai-npc/mod-game-world-slg-light':
         specifier: workspace:*
         version: link:../modules/server/game/world/slg-light
+      '@ai-npc/mod-platform-access-policy-roster':
+        specifier: workspace:*
+        version: link:../modules/server/platform/access-policy/roster
+      '@ai-npc/mod-platform-secrets-env':
+        specifier: workspace:*
+        version: link:../modules/server/platform/secrets/env
       '@ai-npc/mod-platform-storage-sqlite':
         specifier: workspace:*
         version: link:../modules/server/platform/storage/sqlite
