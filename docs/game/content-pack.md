@@ -619,7 +619,7 @@ steps:
 branches:
   - name: keep
     addSteps:
-      - { atTick: 6, as: player-1, command: { type: task.dispatch, payload: { taskType: transport, teamId: team-commons, params: { fromStockpileId: sp-commons, toStockpileId: sp-rubble, cargo: { supply: 8 } } } } }
+      - { atTick: 6, as: player-1, command: { type: task.dispatch, payload: { taskType: transport, teamId: team-commons, params: { fromStockpileId: sp-commons, toStockpileId: sp-rubble, cargo: { supply: 8, energy: 0, medical: 0 } } } } }
   - name: break
     addSteps: []
 checkpoints:

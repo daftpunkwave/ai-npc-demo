@@ -126,6 +126,69 @@ describe("内容包加载", () => {
     expect(error.code).toBe("reference");
     expect(error.source).toBe("../earth-2964-v1");
   });
+
+  it("声明文件缺失、重复或未登记时拒绝加载", () => {
+    const missingSources = readContentPackSources(contentRoot, packId);
+    const missingFiles = new Map(missingSources.files);
+    missingFiles.delete("map.yaml");
+    const missing = captureLoadingError(() =>
+      parseContentPack({ packId: missingSources.packId, files: missingFiles }),
+    );
+    expect(missing.code).toBe("missing-file");
+    expect(missing.source).toBe("map.yaml");
+
+    const duplicate = captureLoadingError(() =>
+      parseContentPack(mutatedSources("pack.yaml", "files: [lore.yaml,", "files: [lore.yaml, lore.yaml,")),
+    );
+    expect(duplicate.code).toBe("cross-check");
+    expect(duplicate.path).toBe("files.1");
+
+    const extra = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources("pack.yaml", "locale/zh-CN.yaml]", "locale/zh-CN.yaml, extra.yaml]"),
+      ),
+    );
+    expect(extra.code).toBe("unexpected-file");
+    expect(extra.path).toBe("files.9");
+  });
+
+  it("全局 ID 冲突与不可达证据被拒绝", () => {
+    const conflict = captureLoadingError(() =>
+      parseContentPack(mutatedSources("characters.yaml", "agentId: npc-cenyan", "agentId: human-neutral")),
+    );
+    expect(conflict.code).toBe("cross-check");
+    expect(conflict.source).toBe("characters.yaml");
+    expect(conflict.path).toBe("characters.0");
+    expect(conflict.message).toContain("human-neutral");
+
+    const unreachable = captureLoadingError(() =>
+      parseContentPack(mutatedSources("evidence.yaml", "discoverable: true", "discoverable: false")),
+    );
+    expect(unreachable.code).toBe("cross-check");
+    expect(unreachable.source).toBe("evidence.yaml");
+    expect(unreachable.path).toBe("evidence.0");
+  });
+
+  it("脚本命令引用错误定位到具体脚本文件", () => {
+    const sources = mutatedSources(
+      "scripts/s-promise.yaml",
+      "targetAgentId: npc-cenyan",
+      "targetAgentId: npc-nobody",
+    );
+    const error = captureLoadingError(() => parseContentPack(sources));
+    expect(error.code).toBe("cross-check");
+    expect(error.source).toBe("scripts/s-promise.yaml");
+    expect(error.path).toBe("steps.0.command.payload.targetAgentId");
+  });
+
+  it("理由模板只允许 none 为空", () => {
+    const error = captureLoadingError(() =>
+      parseContentPack(mutatedSources("prompts/zh-CN.yaml", "danger: 太危险了。", 'danger: ""')),
+    );
+    expect(error.code).toBe("schema");
+    expect(error.source).toBe("prompts/zh-CN.yaml");
+    expect(error.path).toBe("speechReasons.danger");
+  });
 });
 
 describe("名册校验", () => {

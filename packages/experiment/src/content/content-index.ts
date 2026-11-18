@@ -3,6 +3,7 @@
  * 依赖内容 schema 类型、各主题检查函数与共用 ID 辅助；输出只读索引供加载器与后续模块复用。
  * 禁止在此读取磁盘、修补缺失引用或跳过检查继续启动。
  */
+/* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
 import { checkScripts } from "./checks/scripts";
 import { checkTemplates } from "./checks/templates";
 import { checkEvidence, checkFactionsAndCharacters, checkMap, checkScenario, checkStarts, checkWorldInit } from "./checks/world";

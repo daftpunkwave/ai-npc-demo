@@ -3,6 +3,7 @@
  * 依赖公共契约的命令类型、内容索引与内容 schema 类型；只读取已解析数据。
  * 禁止在此执行命令、改写脚本或跳过引用检查。
  */
+/* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
 import type { CommandRequest } from "@ai-npc/contracts";
 import type { ContentIndex } from "../content-index";
 import type { ContentScript, ContentScriptStep } from "../schema/index";
@@ -67,7 +68,9 @@ function checkCommandReferences(
     }
     if (term.kind === "grant-passage") requireRoad(term.roadId, `${field}.roadId`);
     if (term.kind === "delegate") {
-      term.teamIds.forEach((teamId, teamIndex) => requireTeam(teamId, `${field}.teamIds.${teamIndex}`));
+      term.teamIds.forEach((teamId, teamIndex) => {
+        requireTeam(teamId, `${field}.teamIds.${teamIndex}`);
+      });
       if (term.stockpileId !== null) requireStockpile(term.stockpileId, `${field}.stockpileId`);
       requirePrincipal(term.granteeId, `${field}.granteeId`);
     }
@@ -83,22 +86,34 @@ function checkCommandReferences(
       requirePrincipal(command.payload.targetAgentId, "targetAgentId");
       break;
     case "seat.say":
-      command.payload.to.forEach((id, toIndex) => requirePrincipal(id, `to.${toIndex}`));
+      command.payload.to.forEach((id, toIndex) => {
+        requirePrincipal(id, `to.${toIndex}`);
+      });
       break;
     case "information.share":
       requireEvidence(command.payload.evidenceId, "evidenceId");
-      command.payload.audience.forEach((id, audienceIndex) => requirePrincipal(id, `audience.${audienceIndex}`));
+      command.payload.audience.forEach((id, audienceIndex) => {
+        requirePrincipal(id, `audience.${audienceIndex}`);
+      });
       break;
     case "agreement.propose":
-      command.payload.parties.forEach((id, partyIndex) => requirePrincipal(id, `parties.${partyIndex}`));
-      command.payload.terms.forEach((term, termIndex) => checkTerm(term, `terms.${termIndex}`));
+      command.payload.parties.forEach((id, partyIndex) => {
+        requirePrincipal(id, `parties.${partyIndex}`);
+      });
+      command.payload.terms.forEach((term, termIndex) => {
+        checkTerm(term, `terms.${termIndex}`);
+      });
       break;
     case "agreement.respond":
-      command.payload.counterTerms?.forEach((term, termIndex) => checkTerm(term, `counterTerms.${termIndex}`));
+      command.payload.counterTerms?.forEach((term, termIndex) => {
+        checkTerm(term, `counterTerms.${termIndex}`);
+      });
       break;
     case "task.dispatch":
       requireTeam(command.payload.teamId, "teamId");
-      command.payload.invitees?.forEach((id, inviteeIndex) => requirePrincipal(id, `invitees.${inviteeIndex}`));
+      command.payload.invitees?.forEach((id, inviteeIndex) => {
+        requirePrincipal(id, `invitees.${inviteeIndex}`);
+      });
       if (command.payload.taskType === "transport") {
         requireStockpile(command.payload.params.fromStockpileId, "params.fromStockpileId");
         requireStockpile(command.payload.params.toStockpileId, "params.toStockpileId");
@@ -128,7 +143,9 @@ function checkCommandReferences(
           fail(source, `${path}.command.payload.effects.${effectIndex}.speakerId`, `广播署名「${effect.speakerId}」不存在`);
         }
         if (effect.kind === "message") {
-          effect.to.forEach((id, toIndex) => requirePrincipal(id, `effects.${effectIndex}.to.${toIndex}`));
+          effect.to.forEach((id, toIndex) => {
+            requirePrincipal(id, `effects.${effectIndex}.to.${toIndex}`);
+          });
         }
         if (effect.kind === "wake-agents") {
           effect.agentIds.forEach((id, agentIndex) => {
@@ -159,11 +176,13 @@ export function checkScripts(
     if (!index.factions.has(script.start.factionId)) {
       fail(file, "start.factionId", `脚本开局的派系「${script.start.factionId}」不存在`);
     }
-    script.steps.forEach((step, stepIndex) => checkStep(step, `steps.${stepIndex}`, file));
+    script.steps.forEach((step, stepIndex) => {
+      checkStep(step, `steps.${stepIndex}`, file);
+    });
     script.branches?.forEach((branch, branchIndex) => {
-      branch.addSteps.forEach((step, stepIndex) =>
-        checkStep(step, `branches.${branchIndex}.addSteps.${stepIndex}`, file),
-      );
+      branch.addSteps.forEach((step, stepIndex) => {
+        checkStep(step, `branches.${branchIndex}.addSteps.${stepIndex}`, file);
+      });
     });
     script.setup?.forEach((setup, setupIndex) => {
       if (!index.evidence.has(setup.grantEvidence)) {

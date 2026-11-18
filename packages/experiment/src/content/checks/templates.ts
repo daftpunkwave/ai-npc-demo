@@ -26,18 +26,21 @@ export function checkTemplates(
   locale: ContentLocale,
   nodes: ReadonlyMap<string, ContentNode>,
 ): void {
+  const nodeNames = new Map(Object.entries(locale.nodes));
+  const facilityNames = new Map(Object.entries(locale.facilities));
+  const uiTexts = new Map(Object.entries(locale.ui));
   for (const node of nodes.values()) {
-    if (locale.nodes[node.nodeId] === undefined) {
+    if (!nodeNames.has(node.nodeId)) {
       fail(localeSource, `nodes.${node.nodeId}`, `节点「${node.nodeId}」缺少名称`);
     }
     for (const facility of node.facilities) {
-      if (locale.facilities[facility] === undefined) {
+      if (!facilityNames.has(facility)) {
         fail(localeSource, `facilities.${facility}`, `设施「${facility}」缺少名称`);
       }
     }
   }
   for (const key of requiredUiKeys) {
-    if (locale.ui[key] === undefined) {
+    if (!uiTexts.has(key)) {
       fail(localeSource, `ui.${key}`, `界面文字缺少「${key}」`);
     }
   }

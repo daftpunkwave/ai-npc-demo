@@ -151,7 +151,7 @@ describe("配置加载", () => {
     const schema = z
       .object({
         schemaVersion: z.literal(1),
-        token: z.string().min(1),
+        sampleValue: z.string().min(1),
         label: z.string().min(1),
         nested: z.object({ endpoint: z.string().url() }).strict(),
       })
@@ -159,16 +159,16 @@ describe("配置加载", () => {
 
     const loaded = loadConfigDocument("env-sample", schema, {
       configDir: fixturesConfigDir,
-      env: { NPC_TEST_TOKEN: "secret-value", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
+      env: { NPC_TEST_VALUE: "resolved-value", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
     });
-    expect(loaded.value.token).toBe("secret-value");
+    expect(loaded.value.sampleValue).toBe("resolved-value");
     expect(loaded.value.label).toBe("plain");
     expect(loaded.value.nested.endpoint).toBe("http://127.0.0.1:3000");
 
     const missing = captureLoadingError(() =>
       loadConfigDocument("env-sample", schema, {
         configDir: fixturesConfigDir,
-        env: { NPC_TEST_TOKEN: "secret-value" },
+        env: { NPC_TEST_VALUE: "resolved-value" },
       }),
     );
     expect(missing.code).toBe("env");
@@ -177,11 +177,36 @@ describe("配置加载", () => {
     const empty = captureLoadingError(() =>
       loadConfigDocument("env-sample", schema, {
         configDir: fixturesConfigDir,
-        env: { NPC_TEST_TOKEN: "", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
+        env: { NPC_TEST_VALUE: "", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
       }),
     );
     expect(empty.code).toBe("env");
-    expect(empty.path).toBe("token");
+    expect(empty.path).toBe("sampleValue");
+  });
+
+  it("拒绝内部 ID 与引用不一致的配置", () => {
+    const tempDir = makeTempConfigDir();
+    try {
+      const rostersDir = join(tempDir, "rosters");
+      mkdirSync(rostersDir, { recursive: true });
+      writeFileSync(join(rostersDir, "mismatch-roster.yaml"), rosterYaml("other-name"), "utf8");
+      const rosterError = captureLoadingError(() =>
+        loadRoster("mismatch-roster", { configDir: tempDir }),
+      );
+      expect(rosterError.code).toBe("reference");
+      expect(rosterError.path).toBe("rosterId");
+
+      const runsDir = join(tempDir, "runs");
+      mkdirSync(runsDir, { recursive: true });
+      writeFileSync(join(runsDir, "mismatch-run.yaml"), runSpecYaml("other-name"), "utf8");
+      const runError = captureLoadingError(() =>
+        loadRunSpec("mismatch-run", { configDir: tempDir }),
+      );
+      expect(runError.code).toBe("reference");
+      expect(runError.path).toBe("id");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("未知键被严格拒绝", () => {
@@ -198,6 +223,8 @@ describe("RunSpec 交叉检查", () => {
 
   it("online-default 的引用与内容一致", () => {
     expect(() => validateRunSpec(run.value, content)).not.toThrow();
+    const roster = loadRoster("standard-20", { configDir });
+    expect(() => validateRunSpec(run.value, content, roster, run.source)).not.toThrow();
   });
 
   it("拒绝不存在的剧情、脚本与非人类派系", () => {
@@ -231,12 +258,29 @@ describe("RunSpec 交叉检查", () => {
     expect(principalError.path).toBe("player.principalId");
   });
 
-  it("脚本引用可被解析到内容索引", () => {
-    expect(
+  it("脚本引用可被解析到内容索引，缺失分支被拒绝", () => {
+    const coreRun: RunSpec = {
+      ...run.value,
+      rosterRef: "core-3",
+      script: { scriptRef: "s-promise", branch: "keep" },
+    };
+    expect(validateRunSpec(coreRun, content)).toBeUndefined();
+
+    const branchError = captureLoadingError(() =>
       validateRunSpec(
-        { ...run.value, script: { scriptRef: "s-promise", branch: "keep" } },
+        { ...coreRun, script: { scriptRef: "s-promise", branch: "missing-branch" } },
         content,
       ),
-    ).toBeUndefined();
+    );
+    expect(branchError.path).toBe("script.branch");
+
+    const rosterError = captureLoadingError(() =>
+      validateRunSpec(
+        { ...coreRun, rosterRef: "standard-20" },
+        content,
+        loadRoster("standard-20", { configDir }),
+      ),
+    );
+    expect(rosterError.path).toBe("rosterRef");
   });
 });

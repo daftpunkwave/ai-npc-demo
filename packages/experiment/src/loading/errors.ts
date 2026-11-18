@@ -43,7 +43,7 @@ export function formatIssuePath(path: readonly PropertyKey[]): string {
 
 /** 把首个 zod 问题转换为带来源与路径的加载错误；没有问题时退化为通用 schema 错误。 */
 export function schemaLoadingError(source: string, error: ZodError): LoadingError {
-  const issue = error.issues[0];
+  const issue = error.issues.at(0);
   if (issue === undefined) {
     return new LoadingError({ code: "schema", source, message: "内容不符合 schema" });
   }

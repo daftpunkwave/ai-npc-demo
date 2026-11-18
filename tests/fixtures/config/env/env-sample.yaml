@@ -1,4 +1,4 @@
 schemaVersion: 1
-token: env:NPC_TEST_TOKEN
+sampleValue: env:NPC_TEST_VALUE
 label: plain
 nested: { endpoint: env:NPC_TEST_ENDPOINT }

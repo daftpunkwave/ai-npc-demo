@@ -18,13 +18,13 @@ export function uniqueById<T>(
   pathOf: (index: number) => string,
 ): Map<string, T> {
   const map = new Map<string, T>();
-  items.forEach((item, index) => {
+  for (const [index, item] of items.entries()) {
     const id = idOf(item);
     if (map.has(id)) {
       fail(source, pathOf(index), `重复的 ID「${id}」`);
     }
     map.set(id, item);
-  });
+  }
   return map;
 }
 

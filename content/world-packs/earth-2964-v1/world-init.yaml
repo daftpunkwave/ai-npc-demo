@@ -20,7 +20,7 @@ teams:
   - { teamId: team-star,    ownerFactionId: species-extraterrestrial, nodeId: anchor,     capabilities: [repair, transport],         capacity: 15 }
 groups:
   - { groupId: grp-injured-migrants, nodeId: pass, injured: 6, deadlineTick: 48 }
-# duty delegations granted by each faction to its duty character at campaign start
+# 各派系在开局时授予职责角色的委托
 dutyDelegations:
   - { granteeId: npc-cenyan,   grantorFactionId: human-independent,        teamIds: [team-rubble],  stockpileId: sp-rubble,  maxDraw: { supply: 10, energy: 4, medical: 2 }, untilTick: 168 }
   - { granteeId: npc-linwu,    grantorFactionId: human-earth-alliance,     teamIds: [team-earth],   stockpileId: sp-earth,   maxDraw: { supply: 6,  energy: 0, medical: 8 }, untilTick: 168 }

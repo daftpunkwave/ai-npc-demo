@@ -76,6 +76,7 @@ function parseDocument<T>(schema: z.ZodType<T>, text: string, source: string): T
 /** 读取文本文件；缺失文件按加载错误报告，其余 IO 错误不伪装成缺失。 */
 function readTextFile(filePath: string): string {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径由已校验的 packId 与固定文件清单拼出。
     return readFileSync(filePath, "utf8");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

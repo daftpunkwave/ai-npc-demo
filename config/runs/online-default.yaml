@@ -6,7 +6,7 @@ scenarioRef: watergate-v1
 rosterRef: standard-20
 modelLayoutRef: shared-model-layout-v1
 seed: generated
-player: { principalId: player-1, factionId: null }   # chosen by campaign.start
+player: { principalId: player-1, factionId: null }   # 由 campaign.start 选择
 mode: live
 initialState: { kind: cold-start }
 variant: null

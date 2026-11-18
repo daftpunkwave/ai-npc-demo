@@ -16,7 +16,7 @@ export type ConfigDraftKind = "assembly" | "model-layout" | "profile" | "toolset
 
 /** 数据库草稿读取器：返回最新版本的 JSON 值，没有草稿时返回 null。 */
 export interface ConfigDraftReader {
-  read(kind: ConfigDraftKind, configId: string): unknown | null;
+  read: (kind: ConfigDraftKind, configId: string) => unknown;
 }
 
 /** 配置加载上下文：仓库配置目录、环境变量与可选的草稿来源。 */
@@ -41,6 +41,7 @@ export interface LoadedConfig<T> {
 /** 递归列出目录下的 YAML 文件；跳过符号链接目录，避免扫描环路。 */
 function listYamlFiles(dir: string): string[] {
   const files: string[] = [];
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- 只扫描宿主注入的本地 config/ 目录。
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -54,6 +55,7 @@ function listYamlFiles(dir: string): string[] {
 
 /** 在 config/ 下按文件基名查找引用；多个同名文件视为配置歧义。 */
 function findRepoConfigFile(configRef: string, configDir: string): string | null {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- configDir 由宿主注入且只指向本地 config/。
   if (!existsSync(configDir)) {
     return null;
   }
@@ -94,6 +96,7 @@ export function resolveConfigReference(
   if (file !== null) {
     let text: string;
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- 路径来自 config/ 的基名匹配结果。
       text = readFileSync(file, "utf8");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -122,15 +125,15 @@ function resolveEnvValue(
   value: unknown,
   path: readonly string[],
   source: string,
-  env: Readonly<Record<string, string | undefined>>,
+  env: ReadonlyMap<string, string>,
 ): unknown {
   if (typeof value === "string") {
     const match = envReferencePattern.exec(value);
     if (match === null) {
       return value;
     }
-    const name = match[1] ?? "";
-    const resolved = env[name];
+    const [, name = ""] = match;
+    const resolved = env.get(name);
     if (resolved === undefined || resolved === "") {
       throw new LoadingError({
         code: "env",
@@ -155,6 +158,17 @@ function resolveEnvValue(
   return value;
 }
 
+/** 把注入的环境变量记录转换为只读映射，空值保留由解析阶段拒绝。 */
+function environmentMap(env: Readonly<Record<string, string | undefined>>): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  for (const [name, value] of Object.entries(env)) {
+    if (value !== undefined) {
+      map.set(name, value);
+    }
+  }
+  return map;
+}
+
 /** 读取、解析、替换 env: 并校验任意配置文档。 */
 export function loadConfigDocument<T>(
   configRef: string,
@@ -165,7 +179,7 @@ export function loadConfigDocument<T>(
   const reference = resolveConfigReference(configRef, context, draftKind);
   const source = reference.kind === "file" ? reference.path : `draft:${draftKind ?? "unknown"}:${configRef}`;
   const raw = reference.kind === "file" ? parseYamlText(reference.text, source) : reference.value;
-  const resolved = resolveEnvValue(raw, [], source, context.env ?? {});
+  const resolved = resolveEnvValue(raw, [], source, environmentMap(context.env ?? {}));
   const result = schema.safeParse(resolved);
   if (!result.success) {
     throw schemaLoadingError(source, result.error);
@@ -173,14 +187,32 @@ export function loadConfigDocument<T>(
   return { configRef, source, value: result.data };
 }
 
-/** 加载名册；引用与内容身份的一致性由 validateRoster 负责。 */
+/** 加载名册；文档 ID 必须与引用一致，内容身份检查由 validateRoster 负责。 */
 export function loadRoster(configRef: string, context: ConfigLoadContext): LoadedConfig<Roster> {
-  return loadConfigDocument(configRef, rosterSchema, context);
+  const loaded = loadConfigDocument(configRef, rosterSchema, context);
+  if (loaded.value.rosterId !== configRef) {
+    throw new LoadingError({
+      code: "reference",
+      source: loaded.source,
+      path: "rosterId",
+      message: `名册 ID「${loaded.value.rosterId}」与引用「${configRef}」不一致`,
+    });
+  }
+  return loaded;
 }
 
-/** 加载 RunSpec；引用存在性由 validateRunSpec 负责。 */
+/** 加载 RunSpec；文档 ID 必须与引用一致，引用存在性由 validateRunSpec 负责。 */
 export function loadRunSpec(configRef: string, context: ConfigLoadContext): LoadedConfig<RunSpec> {
-  return loadConfigDocument(configRef, runSpecSchema, context);
+  const loaded = loadConfigDocument(configRef, runSpecSchema, context);
+  if (loaded.value.id !== configRef) {
+    throw new LoadingError({
+      code: "reference",
+      source: loaded.source,
+      path: "id",
+      message: `RunSpec ID「${loaded.value.id}」与引用「${configRef}」不一致`,
+    });
+  }
+  return loaded;
 }
 
 /** 校验名册身份存在、类别匹配且不重复。 */
@@ -241,8 +273,23 @@ export function validateRunSpec(
   if (!content.index.scenarios.has(runSpec.scenarioRef)) {
     fail("scenarioRef", `剧情「${runSpec.scenarioRef}」不存在`);
   }
-  if (runSpec.script !== null && !content.index.scripts.has(runSpec.script.scriptRef)) {
-    fail("script.scriptRef", `脚本「${runSpec.script.scriptRef}」不存在`);
+  if (runSpec.script !== null) {
+    const script = content.index.scripts.get(runSpec.script.scriptRef);
+    if (script === undefined) {
+      fail("script.scriptRef", `脚本「${runSpec.script.scriptRef}」不存在`);
+    }
+    if (runSpec.script.branch !== undefined) {
+      const branchName = runSpec.script.branch;
+      if (!script.branches?.some((branch) => branch.name === branchName)) {
+        fail("script.branch", `脚本「${script.scriptId}」没有分支「${branchName}」`);
+      }
+    }
+    if (script.rosterRef !== runSpec.rosterRef) {
+      fail(
+        "rosterRef",
+        `脚本「${script.scriptId}」要求名册「${script.rosterRef}」，与 RunSpec 的「${runSpec.rosterRef}」不一致`,
+      );
+    }
   }
   if (runSpec.player.principalId !== content.index.playerPrincipalId) {
     fail("player.principalId", `玩家主体「${runSpec.player.principalId}」与内容包玩家「${content.index.playerPrincipalId}」不一致`);

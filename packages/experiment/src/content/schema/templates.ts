@@ -79,6 +79,14 @@ export const contentToolIds = [
   "decision.submit",
 ] as const;
 
+/** 安全模板的理由短句：只有 none 允许为空，其余必须非空。 */
+const speechReasonShape = Object.fromEntries(
+  reasonCodeGroups.agentRefusal.map((reasonCode) => [
+    reasonCode,
+    reasonCode === "none" ? z.literal("") : textSchema,
+  ]),
+);
+
 /** prompts/zh-CN.yaml：模型模板、标签、观察模板与渲染词典。 */
 export const contentPromptsSchema = z
   .object({
@@ -96,7 +104,7 @@ export const contentPromptsSchema = z
     jsonOutputSuffix: textSchema,
     speech: z.object({ system: textSchema, user: textSchema }).strict(),
     speechTemplates: exactRecord(speechIntentKinds, textSchema),
-    speechReasons: exactRecord(reasonCodeGroups.agentRefusal, z.string()),
+    speechReasons: z.object(speechReasonShape).strict(),
     speechNoFacts: textSchema,
     labels: z
       .object({

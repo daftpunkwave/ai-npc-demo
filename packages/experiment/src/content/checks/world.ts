@@ -3,6 +3,7 @@
  * 依赖内容 schema 类型与共用失败辅助；只读取已解析的数据，不访问文件系统。
  * 禁止修补缺失引用、跳过错误或在该文件中构建索引。
  */
+/* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
 import type {
   ContentCard,
   ContentCharacter,
@@ -41,10 +42,17 @@ export function checkMap(
     if (road.a === road.b) {
       fail(sources.map, `${path}.b`, `道路「${road.roadId}」两端指向同一节点`);
     }
-    for (const end of ["a", "b"] as const) {
-      const nodeId = road[end];
-      if (!nodes.has(nodeId)) {
-        fail(sources.map, `${path}.${end}`, `道路「${road.roadId}」引用了不存在的节点「${nodeId}」`);
+    const endpoints = [
+      { field: "a", nodeId: road.a },
+      { field: "b", nodeId: road.b },
+    ] as const;
+    for (const endpoint of endpoints) {
+      if (!nodes.has(endpoint.nodeId)) {
+        fail(
+          sources.map,
+          `${path}.${endpoint.field}`,
+          `道路「${road.roadId}」引用了不存在的节点「${endpoint.nodeId}」`,
+        );
       }
     }
     if (road.controlledBy !== undefined) {
@@ -168,11 +176,13 @@ export function checkEvidence(
     if (entry.nodeId !== undefined && !nodes.has(entry.nodeId)) {
       fail(sources.evidence, `${path}.nodeId`, `证据「${entry.evidenceId}」所在节点「${entry.nodeId}」不存在`);
     }
-    if (entry.discoverable === true && entry.nodeId === undefined) {
+    if (entry.nodeId === undefined && entry.discoverable === true) {
       fail(sources.evidence, `${path}.nodeId`, `可发现的证据「${entry.evidenceId}」必须声明所在节点`);
     }
-    if (entry.nodeId === undefined && (entry.heldBy === undefined || entry.heldBy.length === 0)) {
-      fail(sources.evidence, path, `证据「${entry.evidenceId}」既不可发现也没有持有者`);
+    const hasHolders = entry.heldBy !== undefined && entry.heldBy.length > 0;
+    const discoverableAtNode = entry.nodeId !== undefined && entry.discoverable === true;
+    if (!hasHolders && !discoverableAtNode) {
+      fail(sources.evidence, path, `证据「${entry.evidenceId}」既没有持有者，也不可通过侦察发现`);
     }
     entry.heldBy?.forEach((holder, holderIndex) => {
       if (!principalIds.has(holder)) {
