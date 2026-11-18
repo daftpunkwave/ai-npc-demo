@@ -40,6 +40,18 @@ flowchart LR
 
 ## 3. 文档地图
 
+各目录入口提供职责说明、文件索引和阅读顺序：
+
+| 目录 | 导览 |
+|---|---|
+| game | [世界、玩法与规则](game/README.md) |
+| architecture | [架构与模块契约](architecture/README.md) |
+| agent | [认知与行为](agent/README.md) |
+| platform | [配置、研究与运营](platform/README.md) |
+| delivery | [工程实施与验收](delivery/README.md) |
+| references | [来源与设计决策](references/README.md) |
+
+
 “类型”一列：**概念**说明为什么这样设计与必须守住的边界；**规格**给出可以照着实现的精确定义；**手册**给出操作步骤。
 
 | 分区 | 文档 | 回答的问题 | 类型 |

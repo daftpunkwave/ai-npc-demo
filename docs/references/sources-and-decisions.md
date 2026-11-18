@@ -16,7 +16,7 @@
 
 ### agent-prism
 
-参考仓库 agent-prism 是作者本机的私有工作区（检视时 HEAD 为 945541b973430996cd216b9a672b76eac3dbb092），没有公开链接；下表以仓库内相对路径标注当时读取的文件，只作来源记录，实现时不需要访问它。
+参考仓库：[agent-prism](https://github.com/daftpunkwav/agent-prism)。此前检视的本地工作区 HEAD 为 `945541b973430996cd216b9a672b76eac3dbb092`；下表以该仓库内的相对路径标注当时读取的文件，只作来源记录，实现时不需要访问它。
 
 | 已核实机制 | 采用方式与边界 |
 |---|---|
@@ -28,6 +28,8 @@
 该参考的 memory-store 当前是分词/词频匹配，不是 embedding 检索；memory-top-n 只能裁剪已召回集合；部分 driver 不经过全部 context hooks。这些限制促使本设计要求候选池/入模数量分开记录、所有实验能力预检。其 best-effort memory 失败处理也不能作为严格实验的有效样本策略。
 
 ### deepseek-harness
+
+参考仓库：[deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。
 
 远程源码核验固定到 39163dd30f703a79079e2d2446545cff3c453738（提交时间 2026-11-13T07:37:50Z），避免未来主分支变化影响依据。本地安装的 DeepSeek Harness（DSH）文档位于其 app.asar 包内，曾按只读方式核对 `architecture.md`、`cordis-primer.md`、`capability-seams.md`、`subsystems/scope.md` 与 `app-boot` README 的目录与关键段落。
 
