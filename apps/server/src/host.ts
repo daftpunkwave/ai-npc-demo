@@ -125,9 +125,10 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       profile_hash: null,
       created_at: timestamp,
     });
+    tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: timestamp });
     tx.branch(branchId).table("clock").put({
       world_tick: 0,
-      mode: "running",
+      mode: "paused",
       seconds_per_tick: 10,
       run_version: 0,
       step_target_tick: null,
@@ -138,8 +139,18 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   if (branchRow === null || branchRow === undefined) {
     throw new Error("无法创建在线分支");
   }
-  const activeWorldId = String(branchRow["world_id"]);
-  const activeBranchId = String(branchRow["branch_id"]);
+  let activeWorldId = String(branchRow["world_id"]);
+  let activeBranchId = String(branchRow["branch_id"]);
+  storage.transact((tx) => {
+    const clock = tx.branch(activeBranchId).table("clock");
+    const row = clock.get({});
+    if (row !== null && row["mode"] !== "paused") {
+      clock.put({ ...row, mode: "paused", run_version: Number(row["run_version"]) + 1, updated_at: timestamp });
+    }
+    if (tx.rows("world_aliases").get({ alias: "online" }) === null) {
+      tx.rows("world_aliases").put({ alias: "online", branch_id: activeBranchId, updated_at: timestamp });
+    }
+  });
 
   const binder = createModuleBinder(gameContent, host);
   const authority = new Authority({
@@ -203,6 +214,40 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   });
 
   const save = createSaveService(storage, host);
+  const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
+    const current = clockState();
+    if (current.mode === "running") {
+      control("pause", current.runVersion);
+    }
+    const label = `reset-${current.worldTick}`;
+    save.createSnapshot({ sourceBranchId: activeBranchId, label, createdBy: "operator-1" });
+    const nextBranchId = host.ids("br");
+    storage.transact((tx) => {
+      tx.rows("branches").put({
+        branch_id: nextBranchId,
+        world_id: activeWorldId,
+        kind: "online",
+        status: "active",
+        parent_branch_id: activeBranchId,
+        forked_at_world_seq: null,
+        run_id: null,
+        profile_hash: null,
+        created_at: host.nowIso(),
+      });
+      tx.branch(nextBranchId).table("clock").put({
+        world_tick: 0,
+        mode: "paused",
+        seconds_per_tick: 10,
+        run_version: 0,
+        step_target_tick: null,
+        updated_at: host.nowIso(),
+      });
+      tx.rows("branches").put({ ...tx.rows("branches").get({ branch_id: activeBranchId }), status: "archived" });
+      tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: host.nowIso() });
+    });
+    activeBranchId = nextBranchId;
+    return { branchId: nextBranchId, clock: clockView(clockState()) };
+  };
   const app = await createServerApp({
     authority,
     storage,
@@ -214,9 +259,23 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     pause: (_operationId, expected) => control("pause", expected),
     resume: (_operationId, expected) => control("start", expected),
     save: {
-      createSnapshot: (input) => save.createSnapshot(input),
+      createSnapshot: (input) => {
+        const current = clockState();
+        if (current.mode === "running") {
+          control("pause", current.runVersion);
+        }
+        return save.createSnapshot(input);
+      },
       listSnapshots: () => save.listSnapshots(),
-      restoreSnapshot: (input) => save.restoreSnapshot(input),
+      restoreSnapshot: (input) => {
+        const restored = save.restoreSnapshot(input);
+        activeBranchId = restored.branchId;
+        return restored;
+      },
+    },
+    reset: resetOnline,
+    onBranchChanged: (nextBranchId) => {
+      activeBranchId = nextBranchId;
     },
     identities: [
       { token: options.playerToken, auth: { principalId: "player-1", kind: "player", roles: ["player"], worldId: activeWorldId, branchId: activeBranchId, actingAsAgentId: null, controllerEpoch: null, turnLeaseEpoch: null, turnId: null } },

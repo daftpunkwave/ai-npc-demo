@@ -74,6 +74,10 @@ function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: s
   throw new Error(`restore hook 未注入: ${input.snapshotId}`);
 }
 
+function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
+  throw new Error("reset hook 未注入");
+}
+
 export interface ServerAppOptions {
   readonly authority: Authority;
   readonly storage: StoragePort;
@@ -89,6 +93,7 @@ export interface ServerAppOptions {
     listSnapshots: () => readonly SnapshotRecordView[];
     restoreSnapshot: typeof restoreSnapshotHook;
   };
+  readonly reset: typeof resetHook;
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: typeof onBranchChangedHook;
@@ -161,7 +166,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       reply.code(401).send({ code: "unauthorized", safeMessage: "会话已过期" });
       return null;
     }
-    return session;
+    return { ...session, auth: { ...session.auth, branchId } };
   };
 
   app.get("/api/v1/health", () => healthResponseSchema.parse({ status: options.healthStatus?.() ?? "ready", protocolVersion: "1" }));
@@ -307,6 +312,17 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     branchId = restored.branchId;
     options.onBranchChanged?.(restored.branchId);
     return { branchId: restored.branchId, clock: options.clock() };
+  });
+
+  app.post("/api/v1/campaign/reset", (request, reply) => {
+    const session = authenticate(request, reply);
+    if (session === null) {
+      return;
+    }
+    const reset = options.reset();
+    branchId = reset.branchId;
+    options.onBranchChanged?.(reset.branchId);
+    return { branchId: reset.branchId, clock: reset.clock };
   });
 
   app.post("/api/v1/streams/ticket", (request, reply) => {

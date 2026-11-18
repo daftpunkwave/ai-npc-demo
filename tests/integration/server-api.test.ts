@@ -108,6 +108,7 @@ async function appFor(harness: GameHarness) {
       return setClockMode(harness, "running", expected);
     },
     save,
+    reset: () => ({ branchId: harness.branchId, clock: clockView(harness) }),
     identities: [
       { token: "player-token", auth: playerAuth(harness) },
       { token: "console-token", auth: operatorAuth(harness) },
