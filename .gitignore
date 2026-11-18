@@ -31,6 +31,14 @@ tmp/
 # test / coverage
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
+
+# runtime data, builds and local consoles
+data/
+data-e2e/
+apps/server/console-static/
+apps/client/dist/
 
 # editors & OS
 .vscode/*

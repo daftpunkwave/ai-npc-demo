@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": [
+    "apps/server/src",
+    "packages/contracts/src",
+    "packages/kernel/src",
+    "packages/module-sdk/src",
+    "packages/authority/src",
+    "packages/agent-runtime/src",
+    "packages/experiment/src",
+    "packages/observability/src",
+    "modules/server",
+    "scripts",
+    "tests"
+  ]
+}
