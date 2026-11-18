@@ -1,0 +1,8 @@
+/**
+ * 夹具：引用未写入本包 dependencies 的 workspace 包。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法依赖未声明的包，属于违规样例。
+ */
+import { packageName } from "@ai-npc/kernel";
+
+export const kernelPackageName = packageName;

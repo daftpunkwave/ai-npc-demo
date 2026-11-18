@@ -1,0 +1,8 @@
+/**
+ * 夹具：SQLite 存储 adapter 使用内置 sqlite 模块。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法符合 adapter 白名单。
+ */
+import { DatabaseSync } from "node:sqlite";
+
+export const openDatabase = (databasePath: string): DatabaseSync => new DatabaseSync(databasePath);

@@ -1,6 +1,22 @@
 /**
- * 浏览器模块的作者辅助：slot 组件、preference port 与授权投影消费 hook。
- * 依赖 contracts、kernel 与 client-protocol 的浏览器侧公开入口。
- * 禁止使用 Node 内置能力、数据库连接、模型 SDK 或绕过 typed protocol。
+ * 汇总浏览器模块作者辅助：宿主 context、slot 组件、port 查找 hook 与纯展示偏好端口。
+ * 依赖本包 context、slot、preferences 的导出与契约类型；不执行服务端规则或直接访问后端。
+ * 禁止在此创建 Node 资源、伪造未注册 port 或绕过授权投影读取世界状态。
  */
 export const packageName = "@ai-npc/client-sdk";
+
+export { ModuleHostProvider, useModuleHost, usePort, usePreferencePort } from "./context";
+export type {
+  ContributionErrorReporter,
+  ModuleHostProviderProps,
+  ModuleHostValue,
+} from "./context";
+
+export { ContributionBoundary, Slot } from "./slot";
+export type { ContributionBoundaryProps, ContributionBoundaryState, SlotProps } from "./slot";
+
+export { selectSlotContributions } from "./slots";
+export type { SlotContribution } from "./slots";
+
+export { isPreferenceKey, preferenceKeys } from "./preferences";
+export type { PreferenceKey, PreferencePort, PreferenceValues } from "./preferences";

@@ -1,0 +1,12 @@
+/**
+ * 夹具：浏览器 service 模块只依赖允许的客户端辅助库与校验库。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法符合 realm/kind 白名单。
+ */
+import { useState } from "react";
+import { packageName } from "@ai-npc/client-sdk";
+import { z } from "zod";
+
+export const slotSchema = z.object({ slot: z.string() });
+export const initialPanelState = useState;
+export const clientSdkPackageName = packageName;

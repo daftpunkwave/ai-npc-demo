@@ -1,0 +1,8 @@
+/**
+ * 夹具：用变量拼接动态导入目标。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法使依赖目标无法静态校验，属于违规样例。
+ */
+export async function loadPlugin(target: string): Promise<unknown> {
+  return await import(target);
+}

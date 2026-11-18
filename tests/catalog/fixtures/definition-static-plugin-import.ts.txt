@@ -1,0 +1,14 @@
+/**
+ * 夹具：模块定义文件静态 import 同包实现文件。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法使定义加载时执行实现，属于违规样例。
+ */
+import { createMemoryPlugin } from "./plugin";
+
+export const definition = {
+  id: "game.world.slg-light",
+  realm: "server",
+  kind: "service",
+  create: () => import("./plugin"),
+  plugin: createMemoryPlugin,
+} as const;

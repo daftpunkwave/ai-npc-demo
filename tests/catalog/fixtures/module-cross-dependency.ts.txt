@@ -1,0 +1,8 @@
+/**
+ * 夹具：server 模块直接依赖另一个模块包。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法越过模块边界，属于违规样例。
+ */
+import { definition } from "@ai-npc/mod-agent-memory-ledger";
+
+export const memoryDefinition = definition;

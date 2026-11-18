@@ -1,0 +1,14 @@
+/**
+ * 夹具：模块定义文件静态 import 场景渲染库。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法让宿主导入定义时加载渲染依赖，属于违规样例。
+ */
+import { Application } from "pixi.js";
+
+export const definition = {
+  id: "client.scene-renderer.pixi",
+  realm: "client",
+  kind: "adapter",
+  create: () => import("./plugin"),
+  application: Application,
+} as const;

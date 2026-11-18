@@ -1,0 +1,8 @@
+/**
+ * 夹具：引用未在 dependencies 声明的第三方库。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法依赖安装环境的偶然可用性，属于违规样例。
+ */
+import { parse } from "yaml";
+
+export const parseYaml = parse;

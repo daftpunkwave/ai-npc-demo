@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json",
     "test": "vitest run",
     "check:docs": "tsx scripts/check-docs.ts",
-    "check": "pnpm typecheck && pnpm test && pnpm check:docs"
+    "check:boundaries": "tsx scripts/check-boundaries.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm check:boundaries && pnpm check:docs"
   },
   "devDependencies": {
     "@types/node": "^26",

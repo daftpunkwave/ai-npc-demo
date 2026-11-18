@@ -1,0 +1,8 @@
+/**
+ * 夹具：浏览器 service 模块引用 Node 文件系统模块。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法同时越过 realm 与 kind 白名单，属于违规样例。
+ */
+import { readFileSync } from "node:fs";
+
+export const readPreference = readFileSync;

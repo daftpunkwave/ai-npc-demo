@@ -1,0 +1,5 @@
+/**
+ * 读取 docs/architecture 下的说明后实现该文件。
+ * 仅作为边界检查输入，不会被编译或执行。
+ */
+export const value = 1;

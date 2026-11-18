@@ -1,0 +1,11 @@
+/**
+ * 夹具：服务端 service 模块只依赖允许的契约、模块辅助与校验库。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法符合 realm/kind 白名单。
+ */
+import { packageName } from "@ai-npc/contracts";
+import { packageName as moduleSdkPackageName } from "@ai-npc/module-sdk";
+import { z } from "zod";
+
+export const configSchema = z.object({});
+export const sources = [packageName, moduleSdkPackageName] as const;

@@ -1,0 +1,8 @@
+/**
+ * 夹具：按字面量路径动态加载同包实现文件。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法允许检查器静态确认加载目标。
+ */
+export async function loadPlugin(): Promise<unknown> {
+  return await import("./plugin");
+}

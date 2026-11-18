@@ -1,0 +1,8 @@
+/**
+ * 夹具：用相对路径跨包引用另一个 workspace 包的源码。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法绕过包边界，属于违规样例。
+ */
+import { packageName } from "../../kernel/src/index";
+
+export const kernelPackageName = packageName;

@@ -1,0 +1,8 @@
+/**
+ * 夹具：通过包 exports 已声明的子路径入口读取模块定义。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法属于合法的公开入口引用。
+ */
+import { definition } from "@ai-npc/mod-agent-memory-ledger/definition";
+
+export const memoryDefinition = definition;

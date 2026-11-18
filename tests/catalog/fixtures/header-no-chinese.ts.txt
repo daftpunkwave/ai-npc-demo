@@ -1,0 +1,4 @@
+/**
+ * Shared helper for the boundary fixtures.
+ */
+export const value = 1;

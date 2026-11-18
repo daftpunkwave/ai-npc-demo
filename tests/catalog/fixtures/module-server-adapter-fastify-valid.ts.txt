@@ -1,0 +1,9 @@
+/**
+ * 夹具：HTTP 传输 adapter 按所属适配器使用 Fastify 及其插件。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 该写法符合 adapter 白名单。
+ */
+import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
+
+export const createTransport = (): unknown => ({ Fastify, fastifyStatic });
