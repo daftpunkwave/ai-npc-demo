@@ -6,6 +6,7 @@
   "dependencies": {
     "@ai-npc/agent-runtime": "workspace:*",
     "@ai-npc/authority": "workspace:*",
+    "@ai-npc/app-server": "workspace:*",
     "@ai-npc/client-protocol": "workspace:*",
     "@ai-npc/client-sdk": "workspace:*",
     "@ai-npc/contracts": "workspace:*",
