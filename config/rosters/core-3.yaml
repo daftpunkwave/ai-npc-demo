@@ -1,0 +1,6 @@
+schemaVersion: 1
+rosterId: core-3
+agents:
+  - { agentId: npc-cenyan,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-linwu,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-qiaoshu, kind: character, profileRef: agent-character-default, toolsetRef: character-default }

@@ -1,0 +1,4 @@
+schemaVersion: 1
+token: env:NPC_TEST_TOKEN
+label: plain
+nested: { endpoint: env:NPC_TEST_ENDPOINT }

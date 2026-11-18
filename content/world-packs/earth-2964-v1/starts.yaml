@@ -1,0 +1,42 @@
+schemaVersion: 1
+starts:
+  - factionId: human-independent
+    contacts: [npc-cenyan, npc-shenli]
+    commission: 核实隘口安全，并修复守备通信。
+    playerDelegation: { teamIds: [team-rubble], stockpileId: sp-rubble, maxDraw: { supply: 10, energy: 6, medical: 2 }, untilTick: 168 }
+    knowledge: []
+    messages:
+      - { from: npc-cenyan, text: 特派员，隘口这几天不太平，我得先确认路线安全，再谈别的。 }
+      - { from: npc-shenli, text: 中继读数一直在掉，我手里缺能源和材料。 }
+  - factionId: human-earth-alliance
+    contacts: [npc-linwu, npc-guxun]
+    commission: 保住果园，同时保住迁徙双方的救援通道。
+    playerDelegation: { teamIds: [team-earth], stockpileId: sp-earth, maxDraw: { supply: 8, energy: 2, medical: 6 }, untilTick: 168 }
+    knowledge: [ev-water-ledger]
+    messages:
+      - { from: npc-linwu, text: 果园的水撑不了多久，隘口那边还有伤员，我两头都放不下。 }
+      - { from: npc-guxun, text: 水闸有渗漏，我在查，查清之前别急着下结论。 }
+  - factionId: human-pacifist
+    contacts: [npc-tangzhen, npc-suhui]
+    commission: 为伤员建立临时停火与运输。
+    playerDelegation: { teamIds: [team-truce], stockpileId: sp-truce, maxDraw: { supply: 6, energy: 0, medical: 6 }, untilTick: 168 }
+    knowledge: []
+    messages:
+      - { from: npc-suhui, text: 隘口有六个受伤的迁徙者，医疗材料在灰港，越快越好。 }
+      - { from: npc-tangzhen, text: 救人可以先做，停火的条款我们要一条条写清楚。 }
+  - factionId: human-alien-accord
+    contacts: [npc-qiaoshu, npc-luo]
+    commission: 核对修复交换中的翻译与通行条款。
+    playerDelegation: { teamIds: [team-accord], stockpileId: sp-accord, maxDraw: { supply: 6, energy: 4, medical: 0 }, untilTick: 168 }
+    knowledge: [ev-exchange-draft]
+    messages:
+      - { from: npc-qiaoshu, text: 交换草案里有个词我还没把握，泊星者说的“对等”可能不是我们理解的意思。 }
+      - { from: npc-luo, text: 我们可以修复中继。请定义你们愿意交换的东西。 }
+  - factionId: human-neutral
+    contacts: [npc-yinuo, npc-wenyuan]
+    commission: 整理物资与消息，召集一次议事。
+    playerDelegation: { teamIds: [team-commons], stockpileId: sp-commons, maxDraw: { supply: 15, energy: 6, medical: 4 }, untilTick: 168 }
+    knowledge: [ev-water-ledger]
+    messages:
+      - { from: npc-wenyuan, text: 仓里的供给每天都在少，我需要知道哪些承诺是真的。 }
+      - { from: npc-yinuo, text: 最近消息很多，没核实的我不会往外发。 }
