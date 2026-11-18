@@ -15,18 +15,19 @@ import {
   type ResolvedModuleSet,
 } from "@ai-npc/contracts";
 
-const assemblyPaths: Readonly<Record<string, string>> = {
-  "local-slg-standard-v1": "config/assemblies/local-slg-standard-v1.yaml",
-  "local-slg-escalating-v1": "config/assemblies/local-slg-escalating-v1.yaml",
-};
-
 /** 读取已登记装配；未知 ref 直接失败。 */
 export function loadAssembly(ref: string): AssemblyDescriptor {
-  const path = assemblyPaths[ref];
-  if (path === undefined) {
-    throw new Error(`未知 server 装配: ${ref}`);
-  }
-  return assemblyDescriptorSchema.parse(parse(readFileSync(path, "utf8")));
+  const text = (() => {
+    switch (ref) {
+      case "local-slg-standard-v1":
+        return readFileSync("config/assemblies/local-slg-standard-v1.yaml", "utf8");
+      case "local-slg-escalating-v1":
+        return readFileSync("config/assemblies/local-slg-escalating-v1.yaml", "utf8");
+      default:
+        throw new Error(`未知 server 装配: ${ref}`);
+    }
+  })();
+  return assemblyDescriptorSchema.parse(parse(text));
 }
 
 /** 解析 RunSpec；首版只要求可解析对象，字段由后续评估步骤扩展。 */
