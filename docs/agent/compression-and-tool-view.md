@@ -170,3 +170,58 @@ fallback 若使用原文或另一策略，必须记录 effective 配置和额外
 7. 在固定其他槽后分别比较压缩率、事实/不确定性保留、工具展开次数、费用及行为影响。
 
 详细请求档案与指标定义见 [观测](../platform/observability.md) 和 [评估](../platform/evaluation.md)。压缩率高本身不构成通过，仍需检验角色行为、秘密边界和真实机制结果。
+
+## 12. 首版实现规格
+
+首版实现 `agent.compression.none`、`agent.compression.window` 与 `agent.tool-view.structured`；`compression.structured`、`compression.summary`、`tool-view.full`、`tool-view.brief` 属于后续实验轴（D 阶段）。
+
+### 12.1 压缩发生的时机与工具循环的预算
+
+压缩只在一个 turn 的**第一次** decision 请求之前执行一次（[上下文](context.md) 第 11.3 节第 2 步）。工具循环开始后，消息只在末尾追加，任何压缩都不能改写已经发出的内容（Anthropic 适配器要求历史只追加，见 [模型传输](model-transport.md) 第 4.2 节；OpenAI 兼容适配器也遵守同一规则，保证两种协议的实验条件一致）。为工具循环预留的空间是 context 配置里的 `toolLoopReserveTokens`：首轮请求必须落在 `有效上限 − toolLoopReserveTokens` 以内。
+
+预检与运行时检查：
+
+- **run 预检**（静态）：system 的估算 + 全部工具 schema 的估算 + `input` 段的上限（400）≤ `有效上限 − toolLoopReserveTokens`；不满足时预检失败，提示调大 `maxInputTokens` 或减少工具。
+- **每个 turn 首轮请求前**：按 [上下文](context.md) 第 11.3 节组装、压缩、裁剪；仍超出目标上限则以 `over-budget` 结束本 turn。
+- **工具循环中**：每轮请求前重算估算值。若再执行一轮工具就可能超过有效上限（当前估算 + 本轮各工具视图的 `maxTokens` 之和 > 有效上限），或调用次数已达 `maxToolCallsPerTurn`，宿主**不改变工具列表**，只是对本轮除 `decision_submit` 以外的每个调用都返回错误结果（文本取 `decision.budgetStop`），让模型在下一轮提交决定；下一轮仍不提交则以 `over-budget` 结束。
+
+### 12.2 `agent.compression.none`
+
+不变换。上下文经第 11.3 节（[上下文](context.md)）的裁剪后仍超出上限时，返回 `cannot-fit`，本轮以 `over-budget` 结束。
+
+### 12.3 `agent.compression.window`
+
+```yaml
+compression:
+  module: agent.compression.window
+  config:
+    triggerRatio: 0.8          # apply when estimate > triggerRatio * effective max
+    preserveRecentGroups: 4    # keep the most recent N history groups
+    targetTokenRatio: 0.6
+```
+
+- 触发：估算 token 超过 `triggerRatio × 有效上限`；未触发时状态为 `not-triggered`，记录阈值与实际估算值。
+- 一个“历史组”是同一说话人连续的发言；保留最近 `preserveRecentGroups` 组，删除更早的组，并在 history 段开头插入一行“（更早的 N 条对话已省略）”。
+- 删除后仍高于 `targetTokenRatio × 有效上限` 时，继续按 context 的裁剪顺序处理 memory 与 world，直到达到目标或只剩受保护内容。
+- 结果写入 `sourceMap`（被删除的 dialogueId 列表）与 `lossReport`（`removed: history-groups`，数量）。
+
+### 12.4 `agent.tool-view.structured`
+
+每个工具在 [工具](tools.md) 第 13 节声明 `viewFields`（入模字段白名单）与列表字段。转换规则：
+
+1. 结果 envelope 永远保留：`executionStatus`、`commandStatus`（有命令时）、`taskStatus`（有任务时）、`reasonCode`、`receiptId`、`operationId`、`resultRef`。
+2. 其余字段只保留 `viewFields` 中列出的；列表截断到 `maxListItems`（默认 5），并附 `omittedCount`。
+3. 字符串超过 `maxTextChars`（默认 120）时截断并加“…”。
+4. 估算 token 超过 binding 的 `viewConstraints.maxTokens` 时，从列表尾部继续删除；仍超出则只保留 envelope 与 `resultRef`。
+5. 输出写为 `tool-view` artifact，记录原始结果 artifact 的 hash、删除字段与条数、实际 token。
+
+```yaml
+toolView:
+  module: agent.tool-view.structured
+  config:
+    maxListItems: 5
+    maxTextChars: 120
+    includeEvidenceRefs: true
+```
+
+`resultRef` 首版只用于审计与控制台，不提供“展开”工具。

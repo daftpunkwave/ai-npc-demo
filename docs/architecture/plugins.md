@@ -85,7 +85,7 @@
 
 ## 6. 宿主能力与不可绕过的 guard
 
-普通模块获得：scoped storage、授权查询、受预算的模型调用、时钟/随机源、trace、配置读取。storage adapter 的原始连接只由组合根注入；普通 memory/context/decision 不获得数据库句柄或全局 world 对象。
+普通模块获得：scoped storage、授权查询、受预算的模型调用、时钟/随机源、trace、配置读取，具体接口为 [公共契约](contracts.md) 第 3 节的 `ModuleCreateInput` 与 `HostServices`。storage adapter 的原始连接只由组合根注入；普通 memory/context/decision 不获得数据库句柄或全局 world 对象。
 
 宿主固定执行以下顺序，模块不能把这些步骤设为可选 hook：
 

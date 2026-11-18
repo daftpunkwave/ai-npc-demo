@@ -1,6 +1,6 @@
 # 垂直切片与验收
 
-> 状态：目标计划，不是完成报告。首版交付范围为 A 到 C 与 M（全模块可插拔与双端验收）；D 是之后的扩展方向，不要求首版为每个维度都实现两种策略。范围与数量以 [00](../00-scope-and-invariants.md) 为准。
+> 状态：目标计划，不是完成报告。本文定义切片与验收标准；逐步实施的顺序、每一步要建的文件与完成判据见 [构建计划](build-plan.md)。首版交付范围为 A 到 C 与 M（全模块可插拔与双端验收）；D 是之后的扩展方向，不要求首版为每个维度都实现两种策略。范围与数量以 [00](../00-scope-and-invariants.md) 为准。
 
 ## 1. 交付原则
 
@@ -84,10 +84,10 @@ M 是本项目的核心验收，不是可有可无的附加实验：基础宿主
 
 | 替换对象 | 只改什么 | 必须保持不变 | 通过证据 |
 |---|---|---|---|
-| 时钟或剧情推进（game 规则） | 模块实现 + assembly + 配置 | 世界命令/事件 schema、客户端协议 | 同一受控 tick/事件卡输入产生可解释差异；无关消费者源码未改 |
+| 剧情推进（game 规则）：`game.scenario.watergate` → `game.scenario.watergate-escalating` | 模块实现 + assembly + 配置 | 世界命令/事件 schema、客户端协议 | 同一受控 tick 与命令脚本下，卡片触发时刻与指标的差异可解释；无关消费者源码未改 |
 | 地图/通行 provider | game.map 模块 + 内容 pack | 客户端坐标与 command 语义 | 同一 command 的授权路径/拒绝原因与版本记录 |
-| 客户端 HUD 或 renderer | client 模块 + client assembly | 服务端投影、世界结果 | 同一 player command 结果不变；无渲染 adapter 可跑规则场景 |
-| 控制台观测/评估页面 | console 模块 + console assembly | trace/评估数据生成与权限 | 同 traceId 可查；玩家会话仍 403；页面缺失不影响服务端 |
+| 客户端 HUD：`client.hud.standard` → `client.hud.compact`（另用 null renderer 跑规则场景） | client 模块 + client assembly | 服务端投影、世界结果 | 同一 player command 结果不变；无渲染 adapter 可跑规则场景 |
+| 控制台观测页：`console.observability.standard` → `console.observability.lite` | console 模块 + console assembly | trace/评估数据生成与权限 | 同 traceId 可查；玩家会话仍 403；页面缺失不影响服务端 |
 | memory / context / compression / tool-view | 对应模块 + profile/variant | runtime、世界规则、客户端 | 同输入实际入模差异与行为差异 |
 | 模型传输或存储 adapter | adapter + assembly + 迁移 | 业务 port 与错误语义 | 重试/未知结果/事务/迁移测试通过 |
 | 新增共享工具 | tools contributor + binding | 其他 Agent executor | 一次实现多处注册，越权被拒 |

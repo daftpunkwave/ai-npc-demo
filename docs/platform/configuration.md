@@ -41,6 +41,7 @@ worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
 rosterRef: standard-20
 modelLayoutRef: shared-model-layout-v1
+seed: run-seed-001
 player:
   principalId: player-1
   factionId: human-neutral
@@ -50,9 +51,16 @@ initialState:
   snapshotRef: watergate-common-start
 variant:
   id: structured-ledger
-  profilePatchRef: memory-structured-ledger-v1
+  profilePatchRefs: [memory-m1-structured-ledger]   # applied in order after the agent profiles
+  agentIds: null            # null = every agent in the roster
+script:
+  scriptRef: s-promise      # optional; drives external inputs in audit/open-loop/closed-loop modes
+  branch: keep
 clock:
   kind: controlled
+budget:
+  maxTokens: 2000000
+  maxCost: null
 failurePolicy: strict
 ~~~
 
@@ -119,3 +127,242 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 换一项游戏规则、存档、镜头、HUD、控制台页面或 memory 实现都只修改模块自身/装配配置，无需改无关模块；UI 编辑和运行校验使用同一 schema。缺必需能力时启动/卸载都显式失败。两个端口承担全部界面/API/WS；玩家设置无后台权限；模型批量挂载不串状态；从 manifest 可重建同一组合。浏览器页面不得因为本机访问获得服务端角色，端口/会话校验见 [两个本地端口](../architecture/two-endpoints.md)。
 
 模块细节见 [模块边界](../architecture/modules.md)、[插件机制](../architecture/plugins.md)、[积木组合](../architecture/composition.md)、[双端口](../architecture/two-endpoints.md)。
+
+## 10. 完整配置文件（首版）
+
+所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找，找不到再查控制台保存的草稿（`config_drafts`）。`env:NAME` 形式的值在预检时从环境变量解析。
+
+### 10.1 装配 `config/assemblies/local-slg-standard-v1.yaml`
+
+```yaml
+schemaVersion: 1
+assemblyId: local-slg-standard-v1
+configs:                         # named config blocks referenced by bindings
+  clock: { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
+  storage: { inlineArtifactMaxBytes: 65536 }
+  # host, ports, allowed origins and the data directory are NOT configured here:
+  # the server host derives them from env (tech-stack.md §5) and merges them into the
+  # transport.http-ws.fastify and platform.storage.sqlite configs at startup
+realms:
+  server:
+    bindings:
+      - { capability: game.world,       moduleId: game.world.slg-light,      configRef: null }
+      - { capability: game.map,         moduleId: game.map.six-nodes,        configRef: null }
+      - { capability: game.clock,       moduleId: game.clock.controlled,     configRef: clock }
+      - { capability: game.resources,   moduleId: game.resources.light,      configRef: null }
+      - { capability: game.actions,     moduleId: game.actions.standard,     configRef: null }
+      - { capability: game.agreements,  moduleId: game.agreements.standard,  configRef: null }
+      - { capability: game.comms,       moduleId: game.comms.standard,       configRef: null }
+      - { capability: game.scenario,    moduleId: game.scenario.watergate,   configRef: null }
+      - { capability: game.save,        moduleId: game.save.sqlite,          configRef: null }
+      - { capability: agent.scheduling, moduleId: agent.scheduling.fair,     configRef: null }
+      - { capability: agent.model-pool, moduleId: agent.model-pool.shared,   configRef: null }
+      - { capability: agent.tools,      moduleId: agent.tools.game-tools,    configRef: null }
+      - { capability: platform.access-policy, moduleId: platform.access-policy.roster, configRef: null }
+      - { capability: platform.budget,        moduleId: platform.budget.standard,      configRef: null }
+      - { capability: platform.storage,       moduleId: platform.storage.sqlite,       configRef: storage }
+      - { capability: platform.observability, moduleId: platform.observability.sqlite, configRef: null }
+      - { capability: platform.evaluation,    moduleId: platform.evaluation.standard,  configRef: null }
+      - { capability: platform.operations,    moduleId: platform.operations.standard,  configRef: null }
+      - { capability: platform.module-admin,  moduleId: platform.module-admin.standard, configRef: null }
+      - { capability: platform.secrets,       moduleId: platform.secrets.env,          configRef: null }
+      - { capability: platform.model-transport, moduleId: platform.model-transport.openai-compatible, configRef: null }
+      - { capability: platform.model-transport, moduleId: platform.model-transport.anthropic,         configRef: null }
+      - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
+    agentSlots:                  # implementations that Agent profiles may select
+      perception: [agent.perception.local]
+      memory: [agent.memory.none, agent.memory.ledger, agent.memory.stream-reflection, agent.memory.layered-hybrid]
+      context: [agent.context.ordered-blocks]
+      compression: [agent.compression.none, agent.compression.window]
+      toolView: [agent.tool-view.structured]
+      decision: [agent.decision.model, agent.decision.deterministic]
+  client:
+    bindings:
+      - { capability: client.world-view,        moduleId: client.world-view.standard,         configRef: null }
+      - { capability: client.scene-renderer,    moduleId: client.scene-renderer.pixi,         configRef: null }
+      - { capability: client.camera,            moduleId: client.camera.standard,             configRef: null }
+      - { capability: client.screen-projection, moduleId: client.screen-projection.isometric, configRef: null }
+      - { capability: client.input,             moduleId: client.input.standard,              configRef: null }
+      - { capability: client.hud,               moduleId: client.hud.standard,                configRef: null }
+      - { capability: client.dialogue,          moduleId: client.dialogue.standard,           configRef: null }
+      - { capability: client.faction-start,     moduleId: client.faction-start.standard,      configRef: null }
+      - { capability: client.characters,        moduleId: client.characters.standard,         configRef: null }
+      - { capability: client.settings,          moduleId: client.settings.standard,           configRef: null }
+      - { capability: client.notifications,     moduleId: client.notifications.standard,      configRef: null }
+  console:
+    bindings:
+      - { capability: console.health,          moduleId: console.health.standard,          configRef: null }
+      - { capability: console.module-admin,    moduleId: console.module-admin.standard,    configRef: null }
+      - { capability: console.model-mounts,    moduleId: console.model-mounts.standard,    configRef: null }
+      - { capability: console.faction-ops,     moduleId: console.faction-ops.standard,     configRef: null }
+      - { capability: console.scenario-editor, moduleId: console.scenario-editor.standard, configRef: null }
+      - { capability: console.observability,   moduleId: console.observability.standard,   configRef: null }
+      - { capability: console.evaluation,      moduleId: console.evaluation.standard,      configRef: null }
+      - { capability: console.debug,           moduleId: console.debug.standard,           configRef: null }
+      - { capability: console.audit,           moduleId: console.audit.standard,           configRef: null }
+```
+
+上面是最终形态；S09–S22 期间两份主装配按 [构建计划](../delivery/build-plan.md) 第 0.2 节逐步追加绑定。其他装配都是这份文件的完整副本，只改下列内容；`pnpm check:catalog` 会断言每个副本与标准装配的差异恰好就是这些行：
+
+| 文件 | 与标准装配的差异 |
+|---|---|
+| `local-slg-test-v1.yaml` | model-transport 两行换成一行 `platform.model-transport.deterministic`；`client.scene-renderer` 换成 `client.scene-renderer.null`（模型布局与名册不属于装配：测试时由 RunSpec 或环境变量 `NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3` 选择） |
+| `local-slg-escalating-v1.yaml` | `game.scenario` 换成 `game.scenario.watergate-escalating` |
+| `local-slg-compact-hud-v1.yaml` | `client.hud` 换成 `client.hud.compact` |
+| `local-slg-obs-lite-v1.yaml` | `console.observability` 换成 `console.observability.lite` |
+
+### 10.2 profile 继承链 `config/profiles/`
+
+解析顺序固定为 `platform-baseline` → `scene-watergate` → Agent profile → variant patch。合并规则：`slots` 按槽整块替换（不深合并），其他顶层键整键替换。RunSpec 里的 `failurePolicy` 最后覆盖 profile 中的同名字段（在线世界为 `online-fallback`，实验默认 `strict`）；variant 的 `agentIds` 不为 null 时，patch 只作用于列出的 Agent。
+
+```yaml
+# platform-baseline.yaml
+schemaVersion: 1
+profileId: platform-baseline
+kind: platform
+parent: null
+budgets:
+  maxModelCallsPerTurn: 6
+  maxDecisionRounds: 4
+  maxToolCallsPerTurn: 8
+  maxToolCallsPerRound: 3
+  maxTurnMs: 90000
+  maxReplans: 1
+  maxTokensPerAgentPerDay: 60000
+  reserveOutputTokens: { decision: 1500, speech: 400, memory-maintenance: 800 }   # budget estimate per call; settled by actual usage
+readiness: { requireDurable: true, requireDerived: true, waitTimeoutMs: 120000, onlineDegradeAfterMs: 10000 }
+speech: { maxChars: 80 }        # max characters of one utterance (prompts.md §4)
+failurePolicy: strict
+slots:
+  perception:  { module: agent.perception.local, config: { visibleGraphDepth: 0, extraDelayTicks: { broadcast: 0, directed: 0, briefing: 0 }, maxObservationsPerBatch: 12, retainUncertainCues: true } }
+  memory:      { module: agent.memory.ledger, config: {} }
+  context:
+    module: agent.context.ordered-blocks
+    config:
+      segmentOrder: [protocol, identity, world, task, memory, history, input]
+      historyTurns: 8
+      lendUnusedBudget: false
+      decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 } }
+      speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }
+  compression: { module: agent.compression.window, config: { triggerRatio: 0.8, preserveRecentGroups: 4, targetTokenRatio: 0.6 } }
+  toolView:    { module: agent.tool-view.structured, config: { maxListItems: 5, maxTextChars: 120, includeEvidenceRefs: true } }
+  decision:    { module: agent.decision.model, config: {} }
+```
+
+```yaml
+# scene-watergate.yaml (run-scoped settings live here)
+schemaVersion: 1
+profileId: scene-watergate
+kind: scene
+parent: platform-baseline
+scheduling:
+  module: agent.scheduling.fair
+  config: { maxConcurrentTurns: 4, mergeLimit: 5, cooldownTicks: 1, agingPerTick: 5, agingCap: 40, patrolHour: 8 }
+```
+
+```yaml
+# agent-character-default.yaml
+schemaVersion: 1
+profileId: agent-character-default
+kind: agent
+parent: scene-watergate
+slots: {}
+```
+
+```yaml
+# agent-strategic-default.yaml
+schemaVersion: 1
+profileId: agent-strategic-default
+kind: agent
+parent: scene-watergate
+slots:
+  context:
+    module: agent.context.ordered-blocks
+    config:
+      segmentOrder: [protocol, identity, world, task, memory, history, input]
+      historyTurns: 6
+      lendUnusedBudget: false
+      decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 900, task: 600, memory: 900, history: 600 } }
+      speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }
+```
+
+variant patch 放在 `config/profiles/variants/`，`memory` 槽的完整参数取自 [记忆](../agent/memory.md) 第 11.5–11.8 节。一个 run 可以按顺序叠加多个 patch（`variant.profilePatchRefs`），后面的 patch 覆盖前面的同名槽：
+
+| profileId | patch |
+|---|---|
+| `memory-m0-window` | `slots.memory = { module: agent.memory.none, config: {} }` |
+| `memory-m0-current` | 同上，并把 `slots.context` 整块替换为与 baseline 相同、只把 `historyTurns` 改为 0 的版本 |
+| `memory-m1-structured-ledger` | `slots.memory = { module: agent.memory.ledger, config: <11.6 节全部参数> }` |
+| `memory-m2-stream-reflection` | `slots.memory = { module: agent.memory.stream-reflection, config: <11.7 节全部参数> }` |
+| `memory-m3-layered-hybrid` | `slots.memory = { module: agent.memory.layered-hybrid, config: <11.8 节全部参数> }` |
+| `decision-deterministic` | `slots.decision = { module: agent.decision.deterministic, config: {} }`（工程测试用） |
+
+```yaml
+# variants/memory-m1-structured-ledger.yaml (the shape of every variant file)
+schemaVersion: 1
+profileId: memory-m1-structured-ledger
+kind: variant
+patch:
+  slots:
+    memory:
+      module: agent.memory.ledger
+      config: { }   # copy the full config block from memory.md §11.6 here
+```
+
+### 10.3 实验规格 `config/runs/*.yaml`
+
+```yaml
+schemaVersion: 1
+experimentId: exp-memory-promise-v1
+base:                          # a RunSpec without id, variant and script; tests use local-slg-test-v1 + deterministic-model-layout-v1
+  moduleAssemblyRef: local-slg-standard-v1
+  worldPackRef: earth-2964-v1
+  scenarioRef: watergate-v1
+  rosterRef: core-3
+  modelLayoutRef: shared-model-layout-v1
+  seed: exp-memory-promise-v1
+  player: { principalId: player-1, factionId: human-neutral }
+  mode: closed-loop
+  initialState: { kind: cold-start }
+  clock: { kind: controlled }
+  budget: { maxTokens: 500000, maxCost: null }
+  failurePolicy: strict
+scriptRef: s-promise
+scriptBranches: [keep, break]
+commonPatchRefs: []           # applied to every run before the variant patch, e.g. [decision-deterministic]
+variants: [memory-m0-window, memory-m1-structured-ledger, memory-m2-stream-reflection, memory-m3-layered-hybrid]
+repetitions: 3
+runOrder: rotate               # rotate the variant order on each repetition
+```
+
+实验按“变体 × 脚本分支 × 重复次数”生成 run（上例为 24 个），按顺序逐个执行；每个 run 独占一个分支。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 取 `cold-start`（从内容包初态开始）、`snapshot`（引用快照）或 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）。
+
+### 10.4 玩家测试 preset `config/presets/*.yaml`
+
+```yaml
+schemaVersion: 1
+presetId: memory-m0-trial
+title: 体验：没有长期记忆的 NPC
+summary: 从当前存档创建一个实验分支，所有角色改用 M0（只记得最近 8 句对话）。
+runSpecTemplate:
+  moduleAssemblyRef: local-slg-standard-v1
+  rosterRef: standard-20
+  modelLayoutRef: shared-model-layout-v1
+  mode: live
+  variant: { id: m0-window, profilePatchRefs: [memory-m0-window], agentIds: null }
+  initialState: { kind: snapshot, snapshotRef: latest }
+```
+
+玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。
+
+### 10.5 价目 `config/pricing.yaml`
+
+```yaml
+schemaVersion: 1
+pricingVersion: "2026-11"
+currency: USD
+models:
+  npc-chat:    { inputPerMTok: 0, outputPerMTok: 0 }      # fill in from the provider's price list
+  npc-claude:  { inputPerMTok: 4.0, outputPerMTok: 20.0 } # claude-opus-5-5 list price, 2026-11
+  npc-fixture: { inputPerMTok: 0, outputPerMTok: 0 }
+```

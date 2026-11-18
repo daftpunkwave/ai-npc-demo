@@ -83,3 +83,107 @@ SceneRenderer port 接收授权场景、相机和选择状态，输出 entity-pi
 验收必须覆盖：两个端口之外没有新增监听；替换 renderer、camera、HUD、设置中的任一实现，不改动无关模块；移除必需 provider 会被拒绝；卸载后没有资源或监听残留；相机变化不改变 command 的世界目标；重连不复制角色；player 来源读不到后台 trace；原始 token 不提前显示给玩家；无画面适配也能用于规则实验；控制台页面替换后，玩家域仍然访问不到后台 API。
 
 职责与接口的归属见 [模块设计](modules.md)、[模块目录](module-catalog.md)、[公共契约](contracts.md)；跨端接口以 [双端口拓扑](two-endpoints.md) 为准。
+
+## 8. 首版实现规格
+
+### 8.1 页面布局与 slot
+
+```text
++--------------------------------- hud (top bar, 56px) ---------------------------------+
+| scene (PixiJS canvas, fills the rest)                        | sidebar (right, 360px) |
+|   overlay (above the canvas, unused in v1)                   |  tabs: 人物 / 地点 /   |
+|                                                              |        任务 / 协议 /   |
+|                                                              |        笔记            |
++------------------------- dialogue (bottom panel, 240px, collapsible) -----------------+
+notification: toasts at the top-right; modal: centered dialog; boot.screen: full screen before a campaign exists
+settings.section: rendered inside the settings modal opened from the HUD gear button
+```
+
+宿主用 React 组件 `<Slot name="hud" />` 渲染该 slot 下所有已装载模块的视图，按 `order` 升序排列。
+
+### 8.2 启动流程
+
+1. 读取 `location.hash` 的 `token`，调用 `POST /api/v1/auth/login`，把 `sessionToken` 存进 `sessionStorage`，清掉 hash。已有会话时跳过。
+2. `GET /api/v1/session`，再 `GET /api/v1/session/assembly?realm=client`。
+3. 校验本地 `module-catalog.ts` 能满足返回的每条绑定（模块 ID、版本、apiVersion 一致）；不满足就显示“组合不完整”页面并列出缺失项，不加载任何模块。
+4. 按依赖顺序 `create` → `start` 全部模块实例。
+5. `GET /api/v1/campaign`：没有 campaign 时只渲染 `boot.screen`（开局选择）；有 campaign 时 `GET /api/v1/world/view`，再申请 WS 票据并订阅 `player` 频道。
+6. 渲染全部 slot；WS 断线时 HUD 显示“重连中”，带 `fromStreamSeq` 重连。
+
+### 8.3 客户端模块之间的端口
+
+| 端口 | 提供者 | 接口 |
+|---|---|---|
+| `ProjectionPort` | `client.world-view.standard` | `getSnapshot(): PlayerProjection`、`subscribe(listener): () => void`、`streamSeq` |
+| `CommandClient` | 宿主（`client-protocol`） | `send(type, payload): Promise<CommandReceipt>`：生成 `commandId`，网络失败时用同一个 `commandId` 重试最多 3 次 |
+| `SelectionPort` | `client.input.standard` | `get(): { kind: "node" \| "character" \| "team" \| "task", id } \| null`、`select(sel)`、`subscribe` |
+| `CameraPort` | `client.camera.standard` | `get(): { x, y, zoom }`、`pan(dx, dy)`、`zoomTo(z)`、`follow(entityId)` |
+| `ScreenProjectionPort` | `client.screen-projection.isometric` | `worldToScreen(x, y, h)`、`screenToWorld(px, py)`，公式见第 5 节，`tileWidth = 64`、`tileHeight = 32` |
+| `SceneRenderer` | `client.scene-renderer.*` | `mount(container)`、`render(view: SceneView)`、`onPick(cb)`、`unmount()` |
+| `PreferencePort` | 宿主 | `get(key)`、`set(key, value)`，存于 `localStorage`，键前缀 `ai-npc.pref.` |
+
+`SceneView` 由 world-view 从投影派生：节点、道路（含当前状态）、角色与队伍的位置、在途任务（路线与出发/到达 tick）、当前选择。
+
+### 8.4 场景绘制（`client.scene-renderer.pixi`）
+
+首版不使用美术资源，全部用 PixiJS 的 `Graphics` 与 `Text` 绘制：
+
+| 元素 | 画法 |
+|---|---|
+| 节点 | 等距菱形（64×32），按设施类型填色；下方写节点名 |
+| 道路 | 两节点中心连线：open 为灰色实线，restricted 为橙色虚线，closed 为红色实线加“×”；risk 每高一级线宽 +1 |
+| 角色 | 直径 10 的圆，颜色取派系色，围绕所在节点均匀排布，悬停显示姓名 |
+| 队伍 | 边长 10 的方块，同样按派系色；在途时沿路线插值移动：`进度 = min(1, (worldTick − departTick) / (nominalCompletionTick − departTick))`；任务被标记延误后停在终点前 90% 处，直到收到完成事件 |
+| 选择 | 选中对象加白色描边 |
+
+派系色：砾火 `#c0392b`、地生 `#27ae60`、止戈 `#f1c40f`、远星 `#8e44ad`、灰港 `#7f8c8d`、巡裔 `#d35400`、根庭 `#16a085`、泊星者 `#2980b9`。
+
+图形对象设置 `eventMode = "static"`，点击时向 `SelectionPort` 发出 `location-picked` 或 `entity-picked`。拖拽平移、滚轮缩放（范围 0.5–2.0，由设置限制）由 camera 处理；平移与缩放只改视口，不改任何世界坐标。
+
+`client.scene-renderer.null` 实现同一端口，不绘制，只把最近一次收到的 `SceneView` 保存在 `window.__aiNpcSceneLog`，供测试读取。
+
+### 8.5 交互到命令
+
+| 玩家操作 | 界面 | 结果 |
+|---|---|---|
+| 选择开局派系 | `boot.screen` 的五张卡片（名称、首个委托、接触角色） | `campaign.start`（暂停时也被接受）；受理后客户端立即调用 `POST /api/v1/campaign/resume`，`expectedRunVersion` 取投影的 `clock.runVersion` |
+| 点击角色 | 底部对话面板打开与该角色的会话 | 输入文字发送 → `dialogue.say`；发出后显示“等待回应”，直到收到回话或投影的 `awaitingReplyFrom` 不再包含该角色 |
+| 对话面板“出示证据” | 从笔记里选证据 | `information.share`（受众为当前角色） |
+| 对话面板“提议” | 协议表单：当事人、条款类型与参数、有效期 | `agreement.propose` |
+| 点击节点 | 侧栏“地点”页：该节点的库存（等级，委托库存显示精确值）、队伍、角色 | — |
+| 地点页“派遣” | 派遣表单：任务类型、我能派遣的队伍、参数、可邀请的角色 | `task.dispatch` |
+| 任务页 | 我的任务列表：受理状态与任务状态分两列显示 | 可撤销的任务显示“撤销” → `task.cancel` |
+| 协议页 | 我参与的协议与条款状态；收到的提案显示接受/拒绝/还价 | `agreement.respond` |
+| HUD 暂停/继续/保存 | 已暂停时 HUD 醒目显示“已暂停 · 点击继续”（服务端重启后时钟总是暂停的） | `POST /campaign/pause`、`/resume`、`/snapshots`，`expectedRunVersion` 取投影的 `clock.runVersion` |
+
+为了无障碍与端到端测试，侧栏“地点”与“人物”页同时提供可点击的 DOM 列表，与画布点击等价。关键元素带 `data-testid`：`faction-start-<factionId>`、`list-node-<nodeId>`、`list-character-<agentId>`、`dialogue-input`、`dialogue-send`、`dialogue-line`、`hud-pause`、`hud-resume`、`hud-save`、`dispatch-submit`、`task-row-<taskId>`。
+
+投影需要为“等待回应”提供 `awaitingReplyFrom: string[]`：玩家在某会话中的最后一句之后，对方还没有回话，且对方的 turn 处于排队或进行中。它只暴露“正在处理”这一状态，不暴露任何内容。
+
+### 8.6 HUD 两种实现
+
+| 内容 | `client.hud.standard` | `client.hud.compact` |
+|---|---|---|
+| 时间与时钟 | “第 3 天 14 时 · 运行中”+ 暂停/继续按钮 | 时钟图标 + 天数 |
+| 三个指标 | 名称、数值、等级色条（等级阈值见 [规则](../game/rules.md) 第 4 节） | 三个彩色圆点（危急红、紧张黄、稳定绿），悬停显示数值 |
+| 水闸分配 | 文字 | 图标 |
+| 我的委托余额 | 三种资源的剩余数量 | 隐藏，点击展开 |
+| 提醒、设置、保存 | 按钮 | 按钮（可整体折叠成一行） |
+
+两者读取同一个 `ProjectionPort`，发出同样的命令；替换时只改装配里的一行绑定。
+
+### 8.7 设置项（`client.settings.standard`）
+
+| 设置 | 首版取值 | 生效方式 |
+|---|---|---|
+| 语言 | 仅 `zh-CN`（下拉框只有一项） | — |
+| 字号 | 小 / 中 / 大 | 根元素 `font-size` |
+| 高对比度 | 开 / 关 | 切换 CSS 变量 |
+| 通知 | 四个级别各自开关 | 过滤 toast |
+| 声音 | 显示“声音模块未装载” | 首版没有 `client.audio` |
+| 镜头速度、缩放范围 | 0.5–2.0 | 交给 camera |
+| 图形质量 | 标准 / 清晰（PixiJS `resolution` 1 或 2） | 重建画布 |
+| 暂停 / 保存 | 与 HUD 相同 | campaign API |
+| 测试 preset | 列出 `GET /api/v1/presets`，填写说明后提交 | `POST /api/v1/run-requests` |
+
+设置保存在 `PreferencePort`，不进入 run manifest，也不影响任何世界结果。

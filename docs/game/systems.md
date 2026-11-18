@@ -1,6 +1,6 @@
 # 游戏职能模块与规则边界
 
-> 状态：目标设计。游戏只是全平台模块组合之一，地图、时钟、资源、行动、协议、剧情与玩家授权均由可替换 provider 实现；宿主不固化这些游戏职能。
+> 状态：目标设计。游戏只是全平台模块组合之一，地图、时钟、资源、行动、协议、通信、剧情与玩家授权均由可替换 provider 实现；宿主不固化这些游戏职能。本文只定义职能边界与不变量；首版的具体规则、数值与结算顺序见 [规则](rules.md)，初始数据见 [内容包](content-pack.md)，命令与事件见 [领域模型](../architecture/domain-model.md)。
 
 ## 1. 主体、接口与实现
 
@@ -15,13 +15,14 @@
 | game.resources | 只读资源状态、预留/消耗提案，输出变更计划 | 资源种类、配给与返还规则 |
 | game.actions | 类型化行动、合法依赖结果，输出任务/后果计划 | 运输、护送、救援、修复等动作结算 |
 | game.agreements | 条款、确认、履约事实，输出协议状态计划 | 提案、改约、履约与违约判定 |
+| game.comms | 对话、消息、广播、证据分享，输出投递计划与知识授权 | 中继延迟、受众与传播规则 |
 | game.scenario | 已发布事件卡、前置条件、时钟，输出合法局势命令 | 压力、触发、剧情推进策略 |
 | platform.access-policy | 主体、目标、动作、当前授权，输出允许/拒绝与依据 | 玩家/派系/角色权限策略 |
 | game.save / platform.storage | 一致恢复点、读写计划，输出存档与持久结果 | 存档编码、迁移与存储适配 |
 
 这是职责清单，不代表所有能力必须各拆一个 npm 包。需要独立替换的功能应有独立能力/接口，即使首版由同一可信模块贡献多个相关 provider。模块 ID、能力、实现 ID 和版本由 [模块目录](../architecture/module-catalog.md) 与 [组合规范](../architecture/composition.md) 维护。
 
-游戏规则 provider 返回计划，不能自行提交数据库。ToolDefinition 经 command port 交给已注册的 handler 和 rules provider，最后由宿主提交关口写入，这条路径是唯一的世界写入路径。所有世界状态在一个正式 branch 中有唯一权威；换实现不产生平行权威。
+游戏规则 provider 只在 authority 打开的事务里通过 `WorldTx` 登记变更（相当于提交一份计划），不能自行提交数据库（[领域模型](../architecture/domain-model.md) 第 4 节）。ToolDefinition 经 command port 交给已注册的 handler 和 rules provider，最后由宿主提交关口写入，这条路径是唯一的世界写入路径。所有世界状态在一个正式 branch 中有唯一权威；换实现不产生平行权威。
 
 ## 2. 状态与人物认知
 
@@ -52,7 +53,7 @@
 
 提案不占资源；接受时原子检查并预留。撤销按动作 provider 的显式补偿规则结算，不统一全额退款。冲突按提交顺序与 expectedVersions 裁决，玩家与 Agent 使用相同的已选规则组合。
 
-首批行为为运输、护送、救援、修复、侦察与临时通行。战斗由规则模块抽象为威胁、阻断、撤退与伤势；随机结果使用注入随机源并记录种子/实际抽样。资源与行动模块共同返回一个可原子提交的计划，不能各自先扣资源再等待别的模块补写。
+首批行为为运输、护送、救援、修复与侦察五种任务；临时通行不是任务，而是协议条款 `grant-passage` 生效后产生的通行许可。战斗由规则模块抽象为道路风险、延误与伤势，不做战斗数值；随机结果使用注入随机源并记录种子。资源与行动模块共同返回一个可原子提交的计划，不能各自先扣资源再等待别的模块补写。
 
 ## 5. 角色意愿与关系
 
@@ -90,4 +91,4 @@ RunSpec.moduleAssemblyRef 冻结整个游戏/Agent/平台/UI 组合，Agent prof
 
 重复命令只预留一次；冲突资源只有合法一方成功；timer 与恢复不重复结算；暂停不推进 tick；角色拒绝不会被当成同意；误解不污染真值。
 
-至少替换时钟与剧情推进两个非 Agent provider，再替换一个客户端 HUD/renderer 实现和一个控制台观测页面。替换只改模块自身、注册清单与配置，不修改无关消费者源码；差异要有版本和 trace 记录，依赖与状态兼容性需经过验证。缺 provider 或不兼容版本必须在启用前失败。两端口启动、界面可用与最终验收见 [交付计划](../delivery/roadmap-and-acceptance.md)；模块目录见 [模块目录](../architecture/module-catalog.md)，事务恢复见 [事件与状态](../architecture/events-and-state.md)，行为复用见 [Tools](../agent/tools.md)。
+首版的替换演示固定为：剧情推进 provider 从 `game.scenario.watergate` 换成 `game.scenario.watergate-escalating`，客户端 HUD 从 `client.hud.standard` 换成 `client.hud.compact`，控制台观测页从 `console.observability.standard` 换成 `console.observability.lite`，再加上 memory 的四组切换。时钟 provider 的替换属于后续扩展，首版不要求。替换只改模块自身、注册清单与配置，不修改无关消费者源码；差异要有版本和 trace 记录，依赖与状态兼容性需经过验证。缺 provider 或不兼容版本必须在启用前失败。两端口启动、界面可用与最终验收见 [交付计划](../delivery/roadmap-and-acceptance.md)；模块目录见 [模块目录](../architecture/module-catalog.md)，事务恢复见 [事件与状态](../architecture/events-and-state.md)，行为复用见 [Tools](../agent/tools.md)。

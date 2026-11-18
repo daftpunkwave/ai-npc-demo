@@ -187,3 +187,166 @@ worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不�
 借鉴 deepseek-harness 的 [运行与事件分域](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/docs/architecture.md) 和 [可重建 session log](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/README.md)。世界事务、NPC 私有知识、双阶段对白和 20 个身份调度是本平台设计，不是对参考仓库既有游戏能力的描述。
 
 插件生命周期、最终 guard 和可支持实验能力统一遵循 [插件规范](../architecture/plugins.md)；没有完成实现与运行验证前，不把本文状态机或故障行为写成已上线能力。
+
+## 13. 首版实现规格
+
+### 13.1 进程内的 worker
+
+一个服务端进程里，以下循环都运行在 Node 主线程上（I/O 异步，计算同步），彼此只经数据库与内存通知协作：
+
+| worker | 触发 | 做什么 |
+|---|---|---|
+| 时钟 | running 时每 `secondsPerTick` 秒；step 请求 | 按 [规则](../game/rules.md) 第 1 节推进 tick、执行到期 job 与时钟步骤；每推进一个 tick 后通知调度器调用唤醒建议（13.2 节） |
+| 感知消费者 | 新领域事件 | [感知](perception.md) 第 11 节；写观察与 trigger |
+| 规则消费者 | 新领域事件 | 协议履约判定、剧情模块订阅等 |
+| 记忆摄入 | 有新观察 | 对每个 Agent：读取 `observation_seq > consumed` 的观察，调用 `prepareIngest`，在 Agent 的 actor 事务中提交；提交后调用 `planMaintenance(trigger = "importance")`，返回任务时写入 `maintenance_runs` |
+| 记忆整理 | `DayPassed` 被摄入后；有排队的整理任务 | `DayPassed` 被某 Agent 摄入后调用 `planMaintenance(trigger = "day-passed")` 并排队；认领排队任务（租约 2 分钟）→ `runMaintenance`（可调用模型，`deadlineMs` 为认领时刻 + 120000）→ CAS 提交（13.5 节）。分支激活时，对 `derived_through_tick` 落后于最近一次 `DayPassed` 且没有排队任务的 Agent 重新排队 |
+| 调度器 | 每 250 ms，以及新 trigger 通知 | 13.2 节 |
+| turn 执行 | 调度器创建的 turn | 13.3 节 |
+| 投影推送 | 新领域事件、turn 状态变化 | 更新玩家投影与控制台频道并经 WS 推送 |
+
+### 13.2 调度器（`agent.scheduling.fair`）
+
+trigger 来源与优先级：
+
+| kind | 来源 | 优先级 | 冷却 |
+|---|---|---|---|
+| `player-dialogue` | 玩家对该 Agent 说话 | 100 | 不受冷却限制 |
+| `debug` / `probe` | 控制台调试注入 / 评估探针（`ProbeAsked`） | 100 | 不受限制 |
+| `alert` | 自己的任务失败、自己受伤、相关危机 | 90 | 受限 |
+| `task-invite` | 收到任务邀请 | 80 | 受限 |
+| `agreement-proposal` | 收到提案或还价 | 70 | 受限 |
+| `message` / `scenario` | 定向消息与证据 / 剧情卡唤醒（`AgentsSummoned`） | 60 | 受限 |
+| `prospective` | 记忆模块的唤醒建议（[记忆](memory.md) 第 11.4 节） | 50 | 受限 |
+| `patrol` | 战略 Agent 每天 8 时一次巡检 | 10 | 受限 |
+
+```yaml
+# scene profile, run-scoped
+scheduling:
+  module: agent.scheduling.fair
+  config:
+    maxConcurrentTurns: 4
+    mergeLimit: 5          # max triggers merged into one turn
+    cooldownTicks: 1       # min ticks between autonomous turns of one agent
+    agingPerTick: 5        # priority bonus per tick waited
+    agingCap: 40
+    patrolHour: 8          # strategic agents only
+```
+
+唤醒建议：时钟每推进到一个新 tick T，调度器对每个已激活、由 agent 控制的 Agent 调用一次 `memory.proposeWakeups({ worldTick: T })`；对返回的每条 `atTick ≤ T` 的建议，以 `dedupeKey` 写入 `triggers.dedupe_key` 创建 `prospective` trigger（已存在则跳过，所以每条建议只触发一次）。巡检 trigger 的 `dedupeKey` 为 `patrol:<agentId>:<day>`。
+
+每次调度：
+
+1. 候选 = 有未消费 trigger、没有进行中 turn、处于 agent 控制、名册中已激活的 Agent；时钟 paused 时只处理 `debug` 与 `probe`。
+2. 候选得分 = 未消费 trigger 中的最高优先级 + min(`agingCap`, 等待 tick 数 × `agingPerTick`)；同分按最早 trigger 的 `created_tick`，再按 agentId 排序。冷却期内只有不受冷却限制的 trigger 能参与。
+3. 按得分依次创建 turn（`agent_turn_index` = 该 Agent 在本分支已有的 turn 数 + 1），直到运行中的 turn 数达到 `maxConcurrentTurns`。创建 turn 时，把该 Agent 最多 `mergeLimit` 条未消费 trigger 按创建顺序并入（写 `consumed_by_turn_id`），其余留给下一轮。
+4. 每个 Agent 同一时刻最多一个活动 turn；turn 运行中新到的 trigger 只排队，不改变已冻结的输入。
+5. turn 以 `cancelled` 结束（暂停、静默、接管、租约过期导致）时，它并入的 trigger 被释放（`consumed_by_turn_id` 置空），之后重新调度；以 `completed`、`failed`、`budget-exhausted` 结束时 trigger 视为已消费。
+
+`stepping` 模式下，一次 step 在“目标 tick 已到、没有到期 job、没有排队或运行中的 turn、没有 `due_tick ≤ 目标 tick` 的排队或执行中的整理任务”时结束，然后时钟回到 paused。
+
+### 13.3 turn 主循环
+
+```ts
+async function runTurn(turnId: string): Promise<void> {
+  // 1. claim: in one tx -> check branch active, agent active and agent-controlled, turnLeaseEpoch += 1, status = preparing
+  // 2. freeze (13.4): wait for memory ingest/readiness outside any tx, then record InputFrontier + memoryRevision in one tx
+  // 3. observations of this turn = trigger observations + observations in (previous frontier, this frontier]
+  // 4. bundle = memory.retrieve(query built from triggers, memory.md §11.9)          (sync)
+  // 5. artifact = context.build(decision phase); compression if needed                 (sync, before the first request only)
+  // 6. decision loop (agent.decision.model): for round = 1..maxDecisionRounds
+  //      request -> pool.call(decision) -> handle the round (rules below) -> append assistant + tool results
+  //      stop when decision_submit is valid; nudge once if the model ends with plain text (prompts.md §2.3)
+  //    agent.decision.deterministic replaces steps 5-6 with §13.7 and never calls a model
+  // 7. speech: if dialogueIntent.kind != "none" -> speech request -> validate -> template fallback -> speech.commit
+  //    (agent.decision.deterministic always uses the safe templates of prompts.md §5)
+  // 8. settle: in the agent's actor tx -> memory.recordUse plan (CAS with rebase, 13.5), turn completed, effective record
+  // every stage writes a span; every commit re-checks controllerEpoch, turnLeaseEpoch and branch status
+}
+```
+
+一轮 decision 响应的处理规则：
+
+1. `finishReason` 为 `length` 或 `refusal`：不执行其中任何工具调用，turn 以 `invalid-decision` 结束（不重试本轮）。
+2. 按模型返回的顺序处理工具调用：先执行所有非 `decision_submit` 的调用，其中只有前 `maxToolCallsPerRound` 个真正执行，其余返回错误结果（文本取 `decision.budgetStop`）；达到 `maxToolCallsPerTurn` 或 [压缩与工具视图](compression-and-tool-view.md) 第 12.1 节的预算条件时同样返回该错误结果。
+3. 然后处理 `decision_submit`（若有多个只认第一个，其余返回错误结果）：校验时，本轮刚执行的工具结果中出现的 ID 也算“出现在本次请求中”。校验通过则结束循环；不通过则返回 `invalid_decision` 结果，下一轮再给一次机会。
+4. 每个工具调用都配一条结果消息（包括被拒绝的），保证调用与结果一一对应。
+
+turn 的默认预算与失败策略（Agent profile，完整默认值见 [配置](../platform/configuration.md) 第 10.2 节）：
+
+```yaml
+budgets:
+  maxModelCallsPerTurn: 6     # decision rounds + nudges + speech + speech retry
+  maxDecisionRounds: 4
+  maxToolCallsPerTurn: 8
+  maxToolCallsPerRound: 3
+  maxTurnMs: 90000
+  maxReplans: 1
+readiness:
+  requireDurable: true
+  requireDerived: true
+  waitTimeoutMs: 120000
+  onlineDegradeAfterMs: 10000
+failurePolicy: strict         # strict | online-fallback (RunSpec.failurePolicy overrides it)
+```
+
+| 失败点 | strict（实验默认） | online-fallback（在线世界默认） |
+|---|---|---|
+| 记忆未就绪（等待超时，或 13.4 节的“整理失败”） | turn failed（`not-ready`），样本无效 | 等待超过 `onlineDegradeAfterMs` 或整理失败时，用当前已提交的 revision 继续，turn 标记 `degraded` |
+| decision 模型失败或 `invalid-decision` | turn failed；玩家看到 `ui.noReply`“（对方暂未回应）” | 同左 |
+| speech 失败 | 安全模板，标记 `speech-fallback` | 同左 |
+| 预算耗尽 | turn 以 `budget-exhausted` 结束，已提交的命令保留 | 同左 |
+
+### 13.4 冻结 InputFrontier 与就绪判定
+
+1. 读取该 Agent 当前的 `observationSeq` 上限 O 与时钟 tick T。
+2. durable：在事务外等待 `memory_watermarks.observation_seq_consumed ≥ O`。
+3. derived（`requireDerived` 为 true 时）：等待该 Agent 没有 `due_tick ≤ T` 且状态为 queued 或 leased 的整理任务；然后检查 `memory_watermarks.derived_through_tick ≥ latestDue`，其中 `latestDue` 是该 Agent `due_tick ≤ T` 的整理任务中最大的 `due_tick`（没有任务时视为满足）。不满足说明最近一次到期整理失败了，**立即**按 13.3 节的“记忆未就绪”处理，不再等待。
+4. 等待超过 `waitTimeoutMs` 同样按“记忆未就绪”处理。
+5. 在一个读事务里同时读取 `memory_watermarks`（得到 `observation_seq_consumed = O'`、`revision = R`）、`perception_state`（`scanned_through_seq`、`revision`）、时钟、该 Agent 知识授权的最大版本、会话游标，组成 InputFrontier：`observationSeq = O'`、`memoryRevision = R`、`worldSeq = scanned_through_seq`。
+6. 因为记忆摄入在同一事务里同时更新水位与 revision，O' 与 R 必然一致；O' 可能大于 O，多出的观察也已摄入，一并作为本 turn 的输入。
+
+M2 的重要度触发整理的 `due_tick` 为触发时 tick + 1（[记忆](memory.md) 第 11.7 节），因此不会阻塞引起它的那个 turn；`DayPassed` 触发的整理 `due_tick` 为该 `DayPassed` 的 tick，当天之后的 turn 要等它完成。
+
+### 13.5 actor 事务与 CAS
+
+同一 Agent 的记忆提交（摄入、整理、`recordUse`）在该 Agent 的 actor 队列里串行执行，每次都是一个短事务。计划都带 `baseRevision`：
+
+- 摄入计划总是基于当前 revision 当场生成并提交，不会过期。
+- 整理计划与 `recordUse` 计划在事务外生成，提交时如果当前 revision 已经前进，就检查冲突：计划要退役或更新的每个 memoryId，在 `baseRevision` 之后都没有新的行版本，即可在当前 revision 之上提交（rebase）；否则重新生成计划。`recordUse` 最多重新生成 2 次；整理任务最多重新执行 1 次（包括其中的模型调用，费用计入预算），仍冲突则该任务记为 failed，`derivedThroughSeq` 不推进。
+
+模型调用、等待水位与网络 I/O 都不在 actor 事务内进行。
+
+### 13.6 真人席位
+
+控制者为 human 的身份不会被调度：它的 trigger 继续累积，在控制台席位视图里作为待处理事项显示。真人通过 `/api/v1/console/ops/seats/{agentId}/commands` 提交与 Agent 相同的命令（以该 agentId 身份、带当前 `controllerEpoch`），用 `seat.say` 命令直接发送人写的消息（见 [领域模型](../architecture/domain-model.md) 第 5 节）。交还给 agent 时 epoch 再加一，积累的 trigger 按 13.2 节正常调度；交接摘要只由该身份合法获知的观察组成，不写入操作员笔记。
+
+### 13.7 确定性决策（`agent.decision.deterministic`）
+
+只用于工程测试与可重复的行为对照，不调用模型，不代表真实模型效果。它读取记忆包（`relationSummary` 与条目）、本 turn 的 trigger 与 `AgentWorldView`，按下面的规则做决定，经同一个工具网关执行命令，最后输出与 `decision_submit` 相同结构的决定；对白一律走安全模板。
+
+```text
+willingness(kind, requester) = 1
+    + (kind 为具体任务类型且 Agent 的 skills 含该类型 ? 1 : 0)
+    + clamp(trust(requester), −8, 8) / 4      # relationSummary 中 requester 的 trust；没有关系摘要（M0、M2）时为 0
+    − (自己受伤 ? 2 : 0)
+    − (触发是 task-invite 且该任务路径含 risk 2 的道路 ? 1 : 0)   # 对白请求没有路径，此项为 0
+    + jitter                                   # rngFor(runSeed, "jitter", agentId, String(worldTick), String(agentTurnIndex))，均匀分布 [−0.25, 0.25]
+```
+
+拒绝理由的选择（willingness < 1.5 时）：requester 的关系摘要 `causes` 含 `breach` → `past-breach`；否则 trust ≤ −3 → `low-trust`；否则 → `need-guarantee`。
+
+任务类型的识别：按 `lexicons.taskKeywords` 的顺序找第一个出现在文本里的词（具体任务词排在“派人/帮忙”之类的泛称前面）；命中泛称（`generic`）时取该 Agent `skills` 的第一项，没有技能则视为没有任务请求。“我需要你派人护送隘口那条路，能帮忙吗？”因此识别为 escort。
+
+| 触发 | 规则 |
+|---|---|
+| `task-invite` | willingness ≥ 1.5：`task.respond accept`，意图 agree；否则 `task.respond decline`（带上面的理由），意图 refuse |
+| `player-dialogue` | 识别出任务类型：按 willingness 给立场（≥ 1.5 为 accept/意图 agree，否则 decline/意图 refuse 带理由），不发命令；没有任务类型但含 `lexicons.questionMarkers` 中的词：意图 answer，`factRefs` 取记忆包中前 2 条的 memoryId；其余：意图 acknowledge |
+| `probe` | 与“没有任务类型的提问”相同：意图 answer |
+| `agreement-proposal` | 自己不承担任何条款：trust(提案人) > −8 时 accept，否则 reject；自己承担条款：这些条款都在自己的委托余额内且 willingness ≥ 1 时 accept，否则 reject，意图 refuse |
+| `prospective` | 自己是义务人：向对方 `message.send`，意图 remind；对方是义务人（期限当天）：向对方 `message.send`，trust ≥ 0 时意图 remind，否则意图 warn |
+| 其他 | 立场 none，意图 none |
+
+一个 turn 并入多个 trigger 时，按创建顺序逐个处理：`task-invite` 与 `agreement-proposal` 各自执行自己的命令；对白意图取优先级最高的 trigger 的结果（同优先级取最晚的那个）。
+
+用 [内容包](../game/content-pack.md) 第 11 节的 `s-promise` 推算（tick 2 协议生效，break 分支 tick 37 违约）：tick 60 时岑雁对玩家的 trust ≈ 1×0.5^(58/120) − 8×0.5^(23/480) ≈ −7.0。M1、M3 的 willingness ≈ 1 + 1 − 1.76 + jitter ∈ [−0.01, 0.50]，必然 decline，理由 `past-breach`；M0、M2 没有关系摘要，willingness = 2 + jitter ∈ [1.75, 2.25]，必然 accept。keep 分支在 tick 14–16 履约，trust 约 +8.6（取 8），四组都 accept。这就是 [构建计划](../delivery/build-plan.md) S21 断言的依据。

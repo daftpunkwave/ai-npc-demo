@@ -43,30 +43,41 @@ evaluation 由独立 evaluator 配置引用 modelId，调用主体类型为 eval
 
 ## 4. 目标配置示例
 
-下例展示同一模型挂载全部 20 个 Agent，参数仅为设计起点；示例 endpoint 和外部模型名需由部署配置替换并通过连接测试，不代表真实可用供应商。
+下例展示同一模型挂载全部 20 个 Agent（文件 `config/model-layouts/shared-model-layout-v1.yaml`），参数仅为设计起点；endpoint 与外部模型名由 `.env` 提供并需通过连接测试，不代表真实可用供应商。各适配器的字段含义见 [模型传输](model-transport.md)。
 
 ~~~yaml
 schemaVersion: 1
+layoutId: shared-model-layout-v1
 connections:
-  primary:
-    adapterId: platform.model-transport.http-compatible
-    endpoint: https://provider.example/v1
-    credentialRef: env:NPC_MODEL_API_KEY
-    rateLimitKey: primary-account
+  openai-compat:
+    adapterId: platform.model-transport.openai-compatible
+    endpoint: env:NPC_OPENAI_COMPAT_BASE_URL
+    credentialRef: env:NPC_OPENAI_COMPAT_API_KEY
+    rateLimitKey: openai-compat-account
 models:
-  npc-shared:
-    connectionId: primary
-    externalModel: configured-chat-model
+  npc-chat:
+    connectionId: openai-compat
+    externalModel: env:NPC_OPENAI_COMPAT_MODEL
     parameters:
       temperature: 0.6
-      maxOutputTokens: 1200
+      maxTokensField: max_tokens
+    capabilities:
+      toolCalling: true
+      strictTools: false
+      structuredOutput: json_object
+      assistantReplay: standard
+      contextWindowTokens: 64000
+      maxOutputTokens: 4096
+      embedding: false
+      embeddingDimensions: null
     limits:
       maxConcurrent: 2
       requestsPerMinute: 20
       tokensPerMinute: 40000
-      requestTimeoutMs: 20000
+      requestTimeoutMs: 30000
+    maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
 mounts:
-  - modelId: npc-shared
+  - modelId: npc-chat
     agentIds:
       - human-independent
       - human-earth-alliance
@@ -88,14 +99,44 @@ mounts:
       - npc-zhuifeng
       - npc-qingzhi
       - npc-luo
-    purposes: [decision, speech, memory-maintenance, compression]
+    purposes: [decision, speech, memory-maintenance]
 evaluator:
   enabled: false
   principalId: evaluator-judge
-  modelId: npc-shared
+  modelId: npc-chat
 ~~~
 
-这是共享模型的完整挂载示例，不表示所有策略都必须进行模型反思或压缩。embedding 未启用；需要时在 models 声明向量模型，并为所需主体增加不冲突的 embedding 挂载。
+这是共享模型的完整挂载示例，不表示所有策略都必须进行模型反思。首版的压缩是纯规则实现，不需要 compression 挂载；embedding 未启用，需要时在 models 声明向量模型，并为所需主体增加不冲突的 embedding 挂载。
+
+同一目录下另有两份布局。`claude-model-layout-v1.yaml` 让全部 Agent 的 decision 使用 Claude，speech 与记忆整理仍用 OpenAI 兼容模型：
+
+~~~yaml
+schemaVersion: 1
+layoutId: claude-model-layout-v1
+connections:
+  openai-compat: { adapterId: platform.model-transport.openai-compatible, endpoint: env:NPC_OPENAI_COMPAT_BASE_URL, credentialRef: env:NPC_OPENAI_COMPAT_API_KEY, rateLimitKey: openai-compat-account }
+  anthropic: { adapterId: platform.model-transport.anthropic, credentialRef: env:ANTHROPIC_API_KEY, rateLimitKey: anthropic-account }
+models:
+  npc-chat:          # identical to shared-model-layout-v1
+    connectionId: openai-compat
+    externalModel: env:NPC_OPENAI_COMPAT_MODEL
+    parameters: { temperature: 0.6, maxTokensField: max_tokens }
+    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: standard, contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }
+    limits: { maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000, requestTimeoutMs: 30000 }
+    maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
+  npc-claude:
+    connectionId: anthropic
+    externalModel: claude-opus-5-5
+    parameters: { effort: medium, serverSideFallback: default, strictTools: false }
+    limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
+    maxOutputTokensByPurpose: { decision: 16000, speech: 4000, memory-maintenance: 4000 }
+mounts:
+  - { modelId: npc-claude, agentIds: [<the same 20 agent ids as above>], purposes: [decision] }
+  - { modelId: npc-chat, agentIds: [<the same 20 agent ids as above>], purposes: [speech, memory-maintenance] }
+evaluator: { enabled: false, principalId: evaluator-judge, modelId: npc-chat }
+~~~
+
+（`<the same 20 agent ids as above>` 在实际文件里要写出完整列表，与上例相同。）`deterministic-model-layout-v1.yaml` 只有一个连接 `fixtures`（`adapterId: platform.model-transport.deterministic`、`fixtureFiles: [tests/fixtures/model/default.jsonl]`，见 [模型传输](model-transport.md) 第 5 节）与一个模型 `npc-fixture`（`externalModel: deterministic-v1`，`maxOutputTokensByPurpose` 与 npc-chat 相同），全部 20 个 Agent 的 decision、speech、memory-maintenance 都挂到 `npc-fixture`。
 
 让 npc-cenyan 使用另一模型时，在 models 增加一次定义，并从原挂载的对应 purpose 移除该身份，再新增指向新 modelId 的挂载。不能保留重叠挂载后再依赖“最后一条优先”。
 
@@ -181,3 +222,50 @@ memory 实验固定解析后的路由、参数、池限额和预算；轮换运�
 ## 11. 参考边界
 
 借鉴 deepseek-harness 的 [可替换 LLM 服务与适配器](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts)。集中 models/mounts、NPC purpose 路由、公平队列和 20 个身份限制是本项目设计，不声称参考框架已经提供这一游戏模型池。
+
+## 12. 首版实现规格：`agent.model-pool.shared`
+
+### 12.1 调用入口
+
+```ts
+interface ScopedModelPort {             // what runtime / memory / speech receive; already bound to an agent or evaluator
+  call(input: {
+    purpose: Purpose;
+    workRef: string;                    // turn id, maintenance id or probe id
+    system: string;
+    messages: NormalizedMessage[];
+    tools: NormalizedTool[];
+    output: ModelRequest["output"];
+    reserveOutputTokens: number;        // budget reservation, from the profile
+    deadlineMs: number;                 // absolute monotonic deadline of the turn or job
+    fence: () => boolean;               // re-checked before sending and after receiving; false => discard
+  }): Promise<ModelCallResult>;         // { response, attempts: AttemptRecord[] } or throws ModelPoolError
+}
+```
+
+一次 `call` 是一个逻辑调用（`llmCallId`），内部可能有多次 attempt。
+
+### 12.2 解析
+
+1. 预检时把 `mounts` 展开成 `(agentId, purpose) → modelId` 的映射；任何键出现两次即拒绝，不按“后者覆盖”。
+2. 由 `modelId` 找到 model 与 connection，解析 `env:` 值（外部模型名、endpoint）与 `credentialRef`（密钥只交给适配器，不写进任何记录）。
+3. `maxOutputTokens` 取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值（Anthropic 模型的思考也计入输出，所以 Claude 布局显式配置为 decision 16000、speech 4000、整理 4000）。这是发给供应商的硬上限；预算预留用 profile 的 `reserveOutputTokens`，结算按实际用量。
+4. 生成去密钥的路由表（agentId、purpose、modelId、connectionId、adapterId、externalModel、参数 hash）写入 manifest。
+
+### 12.3 排队、限流与重试
+
+- 全池一个 admission 队列，按 `(purpose 份额, 等待时间)` 出队：decision 与 speech 共享 70% 的份额，memory-maintenance 至少 20%，evaluation 至多 10%；同一 purpose 内按 Agent 轮转。
+- 出队时检查：该 model 的 `maxConcurrent`；`rateLimitKey` 对应账号在最近 60 秒内的请求数与 token 数（估算输入 + `reserveOutputTokens`）不超过 `requestsPerMinute` 与 `tokensPerMinute`；`fence()` 仍为 true；距 `deadlineMs` 至少还剩 `requestTimeoutMs` 的一半。不满足时继续排队，等到 deadline 就以 `backpressure` 失败。
+- 队列长度上限 200；超过时新请求立即以 `backpressure` 失败。
+- 重试：只对可重试错误（`rate-limited`、`timeout`、`network`、`server`）重试，最多 2 次，等待 1 秒、4 秒，若错误带 `retryAfterMs` 且更长则用它，单次等待上限 30 秒。每次重试都是新的 attempt，之前的 attempt 标为 superseded。不可重试错误与 `protocol` 错误（refusal、JSON 不合法）不在模型池内重试，交给调用方按失败策略处理。
+- 收到响应后再检查一次 `fence()`：为 false 时响应只归档、标 superseded，不返回给调用方使用。
+
+### 12.4 预算与费用
+
+- 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。
+- run、Agent、turn 三级预算：run 的 `maxTokens` 与 `maxCost`（来自 RunSpec，可为 null 表示不限）、每个 Agent 每游戏日的 `maxTokensPerAgentPerDay`（profile 的 budgets，默认 60000）、turn 的调用次数上限（profile）。任何一级不足时以 `budget-exhausted` 失败，不排队。
+- 费用：`config/pricing.yaml` 按 `modelId` 给出每百万输入/输出 token 的单价与币种（默认全部为 0，即只统计 token）；manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
+
+### 12.5 记录
+
+每个 attempt 写一行 `model_attempts`（agent、purpose、modelId、connectionId、adapterId、状态、是否为有效 attempt、请求/响应 artifact、usage、排队/首字/总耗时、错误），并写一个 span。`servedModel` 与配置的 `externalModel` 不同、或 `fallbackUsed` 为 true 时，attempt 标记 `model-substituted`，该 turn 的 effective 记录写明实际服务的模型。

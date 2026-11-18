@@ -1,6 +1,6 @@
 # 首版范围与全局不变量
 
-> 目标规范 v0.3，2026-11-18。范围、命名和数量以本文为准；各模块的细节由对应文档维护。目前只有文档，没有已实现的游戏、Agent 运行时或双端服务。
+> 目标规范 v0.4，2026-11-18。范围、命名和数量以本文为准；各模块的细节由对应文档维护。目前只有文档，没有已实现的游戏、Agent 运行时或双端服务。实现从 [构建计划](delivery/build-plan.md) 开始。
 
 ## 1. 当前范围
 
@@ -21,7 +21,9 @@
 | 行为 | 共享 ToolDefinition 实现一次；ToolBinding 按角色注册引用、约束与授权 |
 | 运营 | 三个非人类势力（巡裔、根庭、泊星者）可独立选择 agent/human 控制；控制台从 `:3000/console` 操作 |
 | 研究 | 服务端控制台提供可观测、可评估、可调试内容；玩家客户端只获得玩家投影与必要设置 |
-| 首版不含 | 多人玩家联机、充值/活动、复杂战斗数值、第三方不可信插件执行 |
+| 规则与数据 | 首章规则与数值见 [规则](game/rules.md)，全部初始数据见 [内容包](game/content-pack.md) |
+| 首版模块 | 以 [模块目录](architecture/module-catalog.md) 中“默认实现”与“首版还要交付”两类为准；标为 D 阶段的不做 |
+| 首版不含 | 多人玩家联机、充值/活动、复杂战斗数值、第三方不可信插件执行、美术资源、声音 |
 
 20 个身份是内容与系统上限，不等于 20 个并发推理请求。首个开发切片可以只激活三个核心角色，完整首版要覆盖标准 20 个身份和 12 个角色；必须写明所用的 roster preset，不能拿三个角色切片冒充完整交付。
 
@@ -52,10 +54,10 @@ memory 基线统一为：
 
 | 组 | 模块 / preset |
 |---|---|
-| M0 | `agent.memory.none`；baseline-window 为主要基线，baseline-current 为诊断基线 |
-| M1 | `agent.memory.ledger` / structured-ledger |
-| M2 | `agent.memory.stream-reflection` / stream-reflection |
-| M3 | `agent.memory.layered-hybrid` / layered-hybrid |
+| M0 | `agent.memory.none`；baseline-window（`memory-m0-window`）为主要基线，baseline-current（`memory-m0-current`）为诊断基线 |
+| M1 | `agent.memory.ledger` / structured-ledger（`memory-m1-structured-ledger`） |
+| M2 | `agent.memory.stream-reflection`（`memory-m2-stream-reflection`） |
+| M3 | `agent.memory.layered-hybrid`（`memory-m3-layered-hybrid`） |
 
 其余槽先固定合法基线。上下文、压缩、工具视图、感知、调度、模型、游戏规则与客户端 UI 是后续独立实验轴；首版不要求穷举全部组合。
 
@@ -84,6 +86,13 @@ memory 基线统一为：
 | ToolDefinition / ToolBinding | 共享行为实现 / 主体注册与权限约束 |
 | modelId / mounts | 可复用模型配置身份 / 模型与 Agent-purpose 的挂载关系 |
 | ModuleDefinition / ResolvedModuleSet | 模块描述符 / 握手时可公开的已解析模块清单 |
+| trigger | 唤醒某个 Agent 的持久化原因（玩家对话、邀请、到期提醒等），由调度器合并成 turn |
+| 委托 Delegation / 通行许可 PassageGrant / 知识授权 | 派系授予某主体动用队伍与库存的权限 / 受控道路的通行权 / 某主体获知某条证据或秘密的记录 |
+| releasePolicyId | 一条资料能向谁披露的标签：public、parties、faction、holders、private |
+| AgentWorldView / PlayerProjection | Agent 的最后已知视图 / 玩家的授权投影，见 [领域模型](architecture/domain-model.md) 第 8 节 |
+| decision_submit / speech.commit | decision 循环的收尾工具 / 宿主提交已校验对白的内部命令 |
+| preset / variant patch | 一组命名的参数（如 `memory-m1-structured-ledger`）/ 实验时整块替换 profile 槽位的补丁 |
+| 分支复制 forkBranch | 把一个分支的全部分支级数据拷贝成新分支，用于快照、恢复与实验，见 [存储](architecture/storage.md) 第 3 节 |
 
 ## 5. 验收与诚实性
 
@@ -91,4 +100,4 @@ memory 基线统一为：
 
 首版验收必须至少证明：换 game 规则模块、换 client UI 模块、换 agent 认知模块、换 console 页面各一次，只改模块、装配与配置；两个端口之外无监听；玩家/控制台权限不串；缺必需模块时组合拒绝启动。只增加目录、包或接口数量不算模块化证据。
 
-详细实现验收由 [路线与验收](delivery/roadmap-and-acceptance.md) 统一维护。发现文档冲突先修正拥有该规范的文档，再同步引用；不能在代码里悄悄选择另一套语义。
+详细实现验收由 [路线与验收](delivery/roadmap-and-acceptance.md) 统一维护，逐步实施与每步完成判据见 [构建计划](delivery/build-plan.md)。发现文档冲突先修正拥有该规范的文档，再同步引用；不能在代码里悄悄选择另一套语义。
