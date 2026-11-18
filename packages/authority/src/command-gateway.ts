@@ -3,14 +3,15 @@
  * 依赖存储事务、公共契约命令 schema、规则注册表与 fencing/发行者策略；处理器必须同步。
  * 禁止绕过保存点写入 receipt、吞掉处理器异常、把异步回调当作已提交，或让拒绝命令留下世界事实。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的联合类型误判为 any。 */
 import { createHash } from "node:crypto";
 import {
   DomainError,
   authContextSchema,
   canonicalJson,
   commandEnvelopeSchema,
-  commandPayloadSchemas,
   commandReceiptSchema,
+  commandRequestSchema,
   commandTypeSchema,
   jsonValueSchema,
   type AuthContext,
@@ -219,9 +220,8 @@ export class CommandGateway {
         clock,
       );
     }
-    const payloadSchema = commandPayloadSchemas[type];
-    const parsedPayload = payloadSchema.safeParse(envelope.payload);
-    if (!parsedPayload.success) {
+    const parsedRequest = commandRequestSchema.safeParse({ type, payload: envelope.payload });
+    if (!parsedRequest.success) {
       return this.writeRejection(
         branchStorage,
         auth,
@@ -250,7 +250,7 @@ export class CommandGateway {
       });
     }
 
-    const payload = parsedPayload.data as Json;
+    const payload = parsedRequest.data.payload as Json;
     const speechArtifactRef = type === "speech.commit" ? approvedSpeechArtifactRef(payload) : null;
     const handlerTx = this.createWorldTx(tx, auth, envelope, registration.owner, clock);
     const handlerContext = createHandlerContext({
@@ -296,22 +296,21 @@ export class CommandGateway {
           });
           const hookOutcome = hook.hook(hookContext, payload, envelope);
           assertSynchronous(hookOutcome, `命令 ${type} 后续钩子`);
-          if (hookOutcome !== undefined && hookOutcome.kind === "rejected") {
+          if (hookOutcome.kind === "rejected") {
             throw new CommandRejected(hookOutcome.reasonCode, hookOutcome.safeMessage);
           }
           Object.assign(acceptedVersions, hookTx.resultingVersions());
           acceptedEventIds.push(...hookTx.emittedEventIds());
         }
         if (speechArtifactRef !== null) {
-          const eventId = acceptedEventIds[0];
-          if (eventId === undefined) {
+          if (acceptedEventIds.length === 0) {
             throw new CommandRejected("speech-not-approved", "已批准对白没有产生提交事件");
           }
           branchStorage.table("speech_commits").put({
             approved_speech_artifact_ref: speechArtifactRef,
             principal_id: auth.principalId,
             command_id: envelope.commandId,
-            event_id: eventId,
+            event_id: acceptedEventIds[0] as string,
           });
         }
       });

@@ -3,6 +3,7 @@
  * 依赖公共契约的信封、主体、存储与宿主类型，以及 module-sdk 的事务内端口。
  * 禁止在此执行事务、生成 receipt 或把未登记的命令、job、消费者当作合法输入。
  */
+/* eslint-disable @typescript-eslint/no-unused-vars -- 函数类型参数名用于表达调用契约，运行时不会读取。 */
 import type {
   AuthContext,
   CommandEnvelope,
@@ -22,12 +23,12 @@ export type CommandHandler<TModules = unknown, TContent = unknown> = (
   envelope: CommandEnvelope,
 ) => HandlerResult;
 
-/** 命令后续钩子：与主处理器同一事务，返回 rejected 时回滚整条命令的写入。 */
+/** 命令后续钩子：与主处理器同一事务，必须返回 accepted 或 rejected。 */
 export type AfterCommandHook<TModules = unknown, TContent = unknown> = (
   context: HandlerContext<TModules, TContent>,
   payload: Json,
   envelope: CommandEnvelope,
-) => HandlerResult | void;
+) => HandlerResult;
 
 /** job 到期时传给处理器的持久化信息；payload 是创建 job 时登记的 JSON。 */
 export interface DueJob {
@@ -39,24 +40,24 @@ export interface DueJob {
   readonly payload: Json;
 }
 
-/** 规则 job 处理器：同步执行，由 JobRunner 在独立事务内调用。 */
+/** 规则 job 处理器：同步执行，由 JobRunner 在独立事务内调用；返回值必须被忽略。 */
 export type JobHandler<TModules = unknown, TContent = unknown> = (
   context: HandlerContext<TModules, TContent>,
   job: DueJob,
-) => void;
+) => unknown;
 
 /** 时钟步骤：when 在 authority 读取当前 tick 后求值，handler 在时钟事务内执行。 */
 export interface ClockStepRegistration<TModules = unknown, TContent = unknown> {
   readonly stepId: string;
   readonly when: (tick: number) => boolean;
-  readonly handler: (context: HandlerContext<TModules, TContent>, tick: number) => void;
+  readonly handler: (context: HandlerContext<TModules, TContent>, tick: number) => unknown;
 }
 
 /** 事件消费者：每个消费者按 worldSeq 顺序处理匹配事件，offset 与 inbox 原子提交。 */
 export interface EventConsumerRegistration<TModules = unknown, TContent = unknown> {
   readonly consumerId: string;
   readonly eventTypes?: readonly string[];
-  readonly handler: (context: HandlerContext<TModules, TContent>, event: EventEnvelope) => void;
+  readonly handler: (context: HandlerContext<TModules, TContent>, event: EventEnvelope) => unknown;
 }
 
 /** 单个模块贡献的命令、后续钩子、job、时钟步骤与事件消费者。 */
@@ -98,17 +99,17 @@ export type StoredAfterCommandHook = (
   context: HandlerContext<unknown, unknown>,
   payload: Json,
   envelope: CommandEnvelope,
-) => HandlerResult | void;
+) => HandlerResult;
 
 /** registry 内部保存的同步 job 处理器。 */
-export type StoredJobHandler = (context: HandlerContext<unknown, unknown>, job: DueJob) => void;
+export type StoredJobHandler = (context: HandlerContext<unknown, unknown>, job: DueJob) => unknown;
 
 /** registry 内部保存的同步时钟步骤。 */
 export type StoredClockStep = {
   readonly stepId: string;
   readonly owner: ContributorScope;
   readonly when: (tick: number) => boolean;
-  readonly handler: (context: HandlerContext<unknown, unknown>, tick: number) => void;
+  readonly handler: (context: HandlerContext<unknown, unknown>, tick: number) => unknown;
 };
 
 /** registry 内部保存的同步事件消费者。 */
@@ -116,7 +117,7 @@ export type StoredEventConsumer = {
   readonly consumerId: string;
   readonly owner: ContributorScope;
   readonly eventTypes: ReadonlySet<string> | null;
-  readonly handler: (context: HandlerContext<unknown, unknown>, event: EventEnvelope) => void;
+  readonly handler: (context: HandlerContext<unknown, unknown>, event: EventEnvelope) => unknown;
 };
 
 /** registry 内部保存的命令注册。 */

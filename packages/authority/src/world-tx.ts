@@ -3,6 +3,7 @@
  * 依赖存储事务、事件/JSON 契约、宿主 ID 与注册作用域；所有写入立即进入当前事务，回滚由 authority 统一触发。
  * 禁止读写他人聚合、手工提交事务、跳过事件信封校验或让 job 的唯一键重复。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import {
   DomainError,
   eventEnvelopeSchema,

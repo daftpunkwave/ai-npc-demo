@@ -3,14 +3,13 @@
  * 依赖公共契约的命令类型与领域错误，以及 authority 的注册类型；注册顺序即处理器执行顺序。
  * 禁止自动扫描模块、允许两个模块拥有同一聚合类型，或在注册后静默覆盖已有处理器。
  */
-import { DomainError, commandTypeSchema, type CommandType, type EventEnvelope, type Json } from "@ai-npc/contracts";
+import { DomainError, commandTypeSchema, type CommandType, type Json } from "@ai-npc/contracts";
 import type { HandlerContext } from "@ai-npc/module-sdk";
 import type {
   AfterCommandHook,
   ClockStepRegistration,
   CommandHandler,
   ContributorScope,
-  EventConsumerRegistration,
   JobHandler,
   RegisteredAfterCommand,
   RegisteredCommand,
@@ -55,13 +54,17 @@ function wrapAfterCommand<TModules, TContent>(
 }
 
 function wrapJob<TModules, TContent>(handler: JobHandler<TModules, TContent>): StoredJobHandler {
-  return (context, job) => handler(context as unknown as HandlerContext<TModules, TContent>, job);
+  return (context, job) => {
+    return handler(context as unknown as HandlerContext<TModules, TContent>, job);
+  };
 }
 
 function wrapClockStep<TModules, TContent>(
   step: ClockStepRegistration<TModules, TContent>,
-): (context: HandlerContext<unknown, unknown>, tick: number) => void {
-  return (context, tick) => step.handler(context as unknown as HandlerContext<TModules, TContent>, tick);
+): StoredClockStep["handler"] {
+  return (context, tick) => {
+    return step.handler(context as unknown as HandlerContext<TModules, TContent>, tick);
+  };
 }
 
 function normalizeEventTypes(
@@ -127,13 +130,13 @@ export class RuleRegistry {
     const jobsToAdd: { readonly kind: string; readonly handler: StoredJobHandler }[] = [];
     const stepsToAdd: {
       readonly stepId: string;
-      readonly when: (tick: number) => boolean;
-      readonly handler: (context: HandlerContext<unknown, unknown>, tick: number) => void;
+      readonly when: StoredClockStep["when"];
+      readonly handler: StoredClockStep["handler"];
     }[] = [];
     const consumersToAdd: {
       readonly consumerId: string;
       readonly eventTypes: ReadonlySet<string> | null;
-      readonly handler: (context: HandlerContext<unknown, unknown>, event: EventEnvelope) => void;
+      readonly handler: StoredEventConsumer["handler"];
     }[] = [];
 
     const seenCommands = new Set<CommandType>();
@@ -193,8 +196,9 @@ export class RuleRegistry {
       consumersToAdd.push({
         consumerId: consumer.consumerId,
         eventTypes: normalizeEventTypes(consumer.eventTypes, moduleId, consumer.consumerId),
-        handler: (context, event) =>
-          consumer.handler(context as unknown as HandlerContext<TModules, TContent>, event),
+        handler: (context, event) => {
+          return consumer.handler(context as unknown as HandlerContext<TModules, TContent>, event);
+        },
       });
     }
 

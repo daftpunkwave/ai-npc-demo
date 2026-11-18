@@ -66,6 +66,11 @@ export class JobRunner {
       });
     }
     const clock = readClock(tx, branchId);
+    if (tick > clock.worldTick) {
+      throw new DomainError("invalid-state", "job 推进 tick 不能超过分支当前 worldTick", {
+        details: { branchId, tick, worldTick: clock.worldTick },
+      });
+    }
     const jobsTable = tx.branch(branchId).table("jobs");
     const scheduled = jobsTable.list(
       { status: "scheduled" },

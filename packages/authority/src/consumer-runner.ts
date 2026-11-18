@@ -6,17 +6,70 @@
 import {
   DomainError,
   eventEnvelopeSchema,
+  jsonValueSchema,
   type EventEnvelope,
-  type StorageRow,
+  type Json,
+  type StorageRawRow,
   type StorageTransaction,
+  type StorageValue,
 } from "@ai-npc/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import type { RuleRegistry } from "./rule-registry";
-import { requireStorageNumber, requireStorageString, readJsonCell } from "./storage-values";
+import { requireStorageNumber } from "./storage-values";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, StoredEventConsumer } from "./types";
 import { assertSynchronous, TransactionWorldTx } from "./world-tx";
+
+function rawCell(row: StorageRawRow, column: string): StorageValue | undefined {
+  // eslint-disable-next-line security/detect-object-injection -- column 由本文件的固定事件字段列表提供。
+  return row[column];
+}
+
+function rawString(row: StorageRawRow, column: string): string {
+  const value = rawCell(row, column);
+  if (typeof value !== "string" || value.length === 0) {
+    throw new DomainError("invalid-state", `domain_events 列 ${column} 不是非空字符串`, {
+      details: { column },
+    });
+  }
+  return value;
+}
+
+function rawNumber(row: StorageRawRow, column: string): number {
+  const value = rawCell(row, column);
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new DomainError("invalid-state", `domain_events 列 ${column} 不是非负安全整数`, {
+      details: { column },
+    });
+  }
+  return value;
+}
+
+function rawJson(row: StorageRawRow, column: string): Json {
+  const value = rawCell(row, column);
+  if (typeof value !== "string") {
+    throw new DomainError("invalid-state", `domain_events 列 ${column} 不是 JSON 文本`, {
+      details: { column },
+    });
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(value);
+  } catch (error) {
+    throw new DomainError("invalid-state", `domain_events 列 ${column} 无法解析`, {
+      cause: error,
+      details: { column },
+    });
+  }
+  const parsed = jsonValueSchema.safeParse(decoded);
+  if (!parsed.success) {
+    throw new DomainError("invalid-state", `domain_events 列 ${column} 不是合法 JSON`, {
+      details: { column },
+    });
+  }
+  return parsed.data;
+}
 
 /** 消费者单次运行结果：scanned 含被过滤或去重跳过的事件。 */
 export interface ConsumerRunResult {
@@ -100,12 +153,10 @@ export class EventConsumerRunner {
     const offsetRow = offsets.get({ consumer_id: consumer.consumerId });
     const lastWorldSeq =
       offsetRow === null ? 0 : requireStorageNumber(offsetRow, "consumer_offsets", "last_world_seq");
-    const events = branchStorage
-      .table("domain_events")
-      .list(
-        {},
-        { orderBy: [{ column: "world_seq" }], limit: 1, offset: lastWorldSeq },
-      );
+    const events = tx.all(
+      "SELECT * FROM domain_events WHERE branch_id = ? AND world_seq > ? ORDER BY world_seq ASC LIMIT 1",
+      [branchId, lastWorldSeq],
+    );
     const row = events[0];
     if (row === undefined) {
       return null;
@@ -150,20 +201,20 @@ export class EventConsumerRunner {
     return 1;
   }
 
-  private parseEvent(row: StorageRow, worldId: string, branchId: string): EventEnvelope {
+  private parseEvent(row: StorageRawRow, worldId: string, branchId: string): EventEnvelope {
     const parsed = eventEnvelopeSchema.safeParse({
-      eventId: requireStorageString(row, "domain_events", "event_id"),
-      schemaVersion: requireStorageNumber(row, "domain_events", "schema_version"),
+      eventId: rawString(row, "event_id"),
+      schemaVersion: rawNumber(row, "schema_version"),
       worldId,
       branchId,
-      worldSeq: requireStorageNumber(row, "domain_events", "world_seq"),
-      worldTick: requireStorageNumber(row, "domain_events", "world_tick"),
-      type: requireStorageString(row, "domain_events", "type"),
-      principalId: requireStorageString(row, "domain_events", "principal_id"),
-      causationIds: readJsonCell(row["causation_ids_json"], "domain_events", "causation_ids_json"),
-      correlationId: requireStorageString(row, "domain_events", "correlation_id"),
-      audience: readJsonCell(row["audience_json"], "domain_events", "audience_json"),
-      payload: readJsonCell(row["payload_json"], "domain_events", "payload_json"),
+      worldSeq: rawNumber(row, "world_seq"),
+      worldTick: rawNumber(row, "world_tick"),
+      type: rawString(row, "type"),
+      principalId: rawString(row, "principal_id"),
+      causationIds: rawJson(row, "causation_ids_json"),
+      correlationId: rawString(row, "correlation_id"),
+      audience: rawJson(row, "audience_json"),
+      payload: rawJson(row, "payload_json"),
     });
     if (!parsed.success) {
       throw new DomainError("invalid-state", "存储中的领域事件不符合信封契约", {

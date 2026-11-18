@@ -360,9 +360,11 @@ describe("authority command gateway", () => {
       const order: string[] = [];
       harness.authority.afterCommand("test.counter", "task.cancel", () => {
         order.push("module");
+        return { kind: "accepted" };
       });
       harness.authority.hostAfterCommand("host.test", "task.cancel", () => {
         order.push("host");
+        return { kind: "accepted" };
       });
       const receipt = harness.authority.commands.execute(
         playerAuth(harness),
@@ -422,6 +424,7 @@ describe("authority job runner", () => {
         order: ["task-000000000001", "task-000000000002"],
       });
       expect(harness.authority.jobs.runDue(harness.branchId, 5)).toBe(0);
+      setClock(harness, { worldTick: 9, mode: "running" });
       expect(harness.authority.jobs.runDue(harness.branchId, 9)).toBe(1);
       expect(readAggregate(harness, "job-log", "job-log")?.state).toEqual({
         order: ["task-000000000001", "task-000000000002", "task-000000000010"],

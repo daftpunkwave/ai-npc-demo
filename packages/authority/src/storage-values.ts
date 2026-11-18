@@ -17,9 +17,15 @@ function invalidRow(table: string, column: string, reason: string): never {
   });
 }
 
+/** 读取一列；列名由本文件的固定辅助函数传入，不接受任意外部键。 */
+function cellOf(row: StorageRow, column: string): StorageCell | undefined {
+  // eslint-disable-next-line security/detect-object-injection -- column 由固定调用点提供，row 来自已解码存储行。
+  return row[column];
+}
+
 /** 读取必填整数列；负数、非安全整数或非数字都在此失败。 */
 export function requireStorageNumber(row: StorageRow, table: string, column: string): number {
-  const value = row[column];
+  const value = cellOf(row, column);
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     invalidRow(table, column, "不是非负安全整数");
   }
@@ -28,7 +34,7 @@ export function requireStorageNumber(row: StorageRow, table: string, column: str
 
 /** 读取必填字符串列；空字符串视为损坏数据。 */
 export function requireStorageString(row: StorageRow, table: string, column: string): string {
-  const value = row[column];
+  const value = cellOf(row, column);
   if (typeof value !== "string" || value.length === 0) {
     invalidRow(table, column, "不是非空字符串");
   }
@@ -37,7 +43,7 @@ export function requireStorageString(row: StorageRow, table: string, column: str
 
 /** 读取可空字符串列；未提供时返回 null。 */
 export function optionalStorageString(row: StorageRow, table: string, column: string): string | null {
-  const value = row[column];
+  const value = cellOf(row, column);
   if (value === null || value === undefined) {
     return null;
   }
@@ -49,7 +55,7 @@ export function optionalStorageString(row: StorageRow, table: string, column: st
 
 /** 读取可空整数列；未提供时返回 null。 */
 export function optionalStorageNumber(row: StorageRow, table: string, column: string): number | null {
-  const value = row[column];
+  const value = cellOf(row, column);
   if (value === null || value === undefined) {
     return null;
   }
@@ -60,7 +66,7 @@ export function optionalStorageNumber(row: StorageRow, table: string, column: st
 }
 
 /** 读取 JSON 列；表级接口已解码，这里只做 JSON 值形状复检。 */
-export function readJsonCell(cell: StorageCell | undefined, table: string, column: string): Json {
+export function readJsonCell(cell: unknown, table: string, column: string): Json {
   if (cell === undefined) {
     invalidRow(table, column, "缺失");
   }

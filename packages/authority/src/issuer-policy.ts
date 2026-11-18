@@ -26,8 +26,15 @@ export const commandIssuerKinds = {
   "probe.ask": ["system"],
 } as const satisfies Readonly<Record<CommandType, readonly PrincipalKind[]>>;
 
+const issuerKindsByCommand = new Map<CommandType, readonly PrincipalKind[]>(
+  Object.entries(commandIssuerKinds) as [CommandType, readonly PrincipalKind[]][],
+);
+
 /** 判断当前主体是否有资格发行该命令；真人席位代发按 Agent 权限裁决。 */
 export function isCommandIssuerAllowed(type: CommandType, auth: AuthContext): boolean {
-  const allowed: readonly PrincipalKind[] = commandIssuerKinds[type];
+  const allowed = issuerKindsByCommand.get(type);
+  if (allowed === undefined) {
+    return false;
+  }
   return allowed.includes(effectivePrincipalKind(auth));
 }
