@@ -553,7 +553,7 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 }
 ```
 
-列清单由迁移文件推导，在适配器里写成常量（每张表一行 `INSERT ... SELECT`），并由测试断言“分支级表清单与迁移中所有带 `branch_id` 主键列的表一致”，防止新增表漏拷。
+列清单由迁移文件推导，适配器可按推导结果缓存为常量后执行 `INSERT ... SELECT`；分支级表清单必须排除登记分支本身的 `branches` 表（它的主键列同样叫 `branch_id`），并由测试断言该清单与迁移中所有分支内数据表一致，防止新增表漏拷。
 
 新分支的 `branches` 行：
 

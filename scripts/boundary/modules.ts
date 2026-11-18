@@ -47,7 +47,11 @@ function serverAdapterExtras(modulePath: ModulePathInfo): AdapterExtras {
     case "transport.http-ws.fastify":
       return { external: ["fastify"], externalPrefixes: ["@fastify/"], nodeBuiltins: [] };
     case "platform.storage.sqlite":
-      return { external: [], externalPrefixes: [], nodeBuiltins: ["node:sqlite"] };
+      return {
+        external: [],
+        externalPrefixes: [],
+        nodeBuiltins: ["node:sqlite", "node:fs", "node:path", "node:url"],
+      };
     case "platform.model-transport.anthropic":
       return { external: ["@anthropic-ai/sdk"], externalPrefixes: [], nodeBuiltins: [] };
     case "platform.model-transport.openai-compatible":

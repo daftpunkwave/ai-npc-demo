@@ -1,0 +1,16 @@
+/**
+ * 夹具：server 模块自身测试引用 vitest、Node 内置模块与宿主机制包的公开入口。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 测试文件豁免模块生产源码白名单；深层导入与跨模块实现依赖仍照常检查。
+ */
+import { describe, it } from "vitest";
+import { tmpdir } from "node:os";
+import { createModuleRegistry } from "@ai-npc/kernel";
+
+it("样例", () => {
+  describe("行为", () => {
+    const registry = createModuleRegistry();
+    void registry;
+    void tmpdir;
+  });
+});

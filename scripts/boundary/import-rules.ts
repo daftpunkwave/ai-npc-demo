@@ -169,14 +169,20 @@ function inspectWorkspaceImport(
 
   if (importerModule !== undefined && importerModule.kind !== null) {
     const allowlist = dependencyAllowlist(importerModule.path, importerModule.kind);
-    if (!allowlist.workspace.includes(target.name)) {
+    // 测试文件可以使用宿主机制包等验证辅助，但模块之间（含测试）不能引用其他模块实现。
+    const forbidden = isModulePackageName(target.name)
+      ? true
+      : !testFile && !allowlist.workspace.includes(target.name);
+    if (forbidden) {
       violations.push(
         violation(
           RULE_MODULE_REALM,
           "module-forbidden-workspace-import",
           file.path,
           record.line,
-          `${importerModule.path.realm}/${importerModule.kind} 模块不允许依赖 workspace 包 ${target.name}。`,
+          isModulePackageName(target.name)
+            ? `模块包之间不能互相依赖实现（目标 ${target.name}），测试也不得例外。`
+            : `${importerModule.path.realm}/${importerModule.kind} 模块不允许依赖 workspace 包 ${target.name}。`,
         ),
       );
     }
@@ -232,7 +238,7 @@ function inspectExternalImport(
   const builtin = nodeBuiltinName(record.specifier);
 
   if (builtin !== null) {
-    if (importerModule !== undefined && importerModule.kind !== null) {
+    if (!testFile && importerModule !== undefined && importerModule.kind !== null) {
       const allowlist = dependencyAllowlist(importerModule.path, importerModule.kind);
       if (!isAllowedNodeBuiltin(record.specifier, allowlist.nodeBuiltins)) {
         violations.push(
@@ -262,7 +268,7 @@ function inspectExternalImport(
 
   const packageBase = packageNameOfSpecifier(record.specifier);
 
-  if (importerModule !== undefined && importerModule.kind !== null) {
+  if (!testFile && importerModule !== undefined && importerModule.kind !== null) {
     const allowlist = dependencyAllowlist(importerModule.path, importerModule.kind);
     const allowed =
       allowlist.external.includes(packageBase) ||
