@@ -4,7 +4,8 @@
 
 ## 当前范围
 
-- `startHost`：打开 SQLite、加载内容包、首次创建在线世界/分支/clock、注册 game authority、绑定游戏端口与存档服务、启动 clock/job/consumer worker。
+- `startHost`：打开 SQLite、加载内容包、首次创建在线世界/分支/clock 与 `world_aliases('online')`、注册 game authority、绑定游戏端口与存档服务、启动 clock/job/consumer worker。
+- 首次与后续启动都把在线时钟置为 `paused`；快照接口先暂停再保存；`POST /api/v1/campaign/reset` 先存快照，再创建空在线分支、归档旧分支并切换别名。
 - `createServerApp`：Fastify 应用工厂，提供登录、会话、命令、回执查询、世界视图、暂停/继续、快照、恢复、流票据与玩家 WS 快照。
 - `buildPlayerProjection`：从世界/地图端口与内容索引构建严格玩家投影；缺失指标时拒绝构建，不合成数值。
 - `module-catalog`：唯一模块组合根，显式登记 11 个 server 模块定义、端口与规则贡献。

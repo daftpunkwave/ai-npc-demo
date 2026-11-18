@@ -44,5 +44,19 @@ describe("服务端宿主", () => {
     const view = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: { authorization: `Bearer ${session}` } });
     expect(view.statusCode).toBe(200);
     expect(view.json()).toMatchObject({ projection: { campaign: { factionId: "human-neutral" }, clock: { worldTick: 0 } } });
+
+    const reset = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/reset",
+      headers: { authorization: `Bearer ${session}` },
+      payload: { operationId: "op-000000000001" },
+    });
+    expect(reset.statusCode).toBe(200);
+    const resetBody = reset.json() as { readonly branchId: string; readonly clock: { readonly mode: string } };
+    expect(resetBody.branchId).not.toBe(host.branchId);
+    expect(resetBody.clock.mode).toBe("paused");
+    const snapshots = await host.app.inject({ method: "GET", url: "/api/v1/campaign/snapshots", headers: { authorization: `Bearer ${session}` } });
+    expect(snapshots.statusCode).toBe(200);
+    expect((snapshots.json() as { readonly snapshots: unknown[] }).snapshots).toHaveLength(1);
   });
 });
