@@ -4,6 +4,7 @@
  * 禁止在这里绕过模块 catalog 直接引用游戏模块实现。
  */
 import { join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { ClockView, ModuleCreateInput, StoragePort, StorageTransaction } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { createSystemAuth, systemPrincipalId } from "@ai-npc/authority";
@@ -335,6 +336,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       { token: options.consoleToken, auth: { principalId: "operator-1", kind: "operator", roles: ["operator"], worldId: activeWorldId, branchId: activeBranchId, actingAsAgentId: null, controllerEpoch: null, turnLeaseEpoch: null, turnId: null } },
     ],
     ids: (prefix) => host.ids(prefix),
+    tokens: (kind) => `${kind}-${randomUUID()}`,
     healthStatus: () => (workerFailed ? "degraded" : "ready"),
   });
 

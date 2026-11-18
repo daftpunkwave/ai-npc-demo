@@ -31,6 +31,10 @@ function idHook(prefix: string): string {
   throw new Error(`id hook 未注入: ${prefix}`);
 }
 
+function tokenHook(kind: "session" | "ticket"): string {
+  throw new Error(`token hook 未注入: ${kind}`);
+}
+
 export interface AuthorityPort {
   readonly commands: {
     execute: typeof executeCommandHook;
@@ -110,6 +114,7 @@ export interface ServerAppOptions {
   readonly reset: typeof resetHook;
   readonly identities: readonly ServerIdentity[];
   readonly ids: typeof idHook;
+  readonly tokens: typeof tokenHook;
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: typeof onBranchChangedHook;
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
@@ -253,7 +258,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (identity === undefined) {
       return reply.code(401).send({ code: "unauthorized", safeMessage: "登录令牌无效" });
     }
-    const sessionToken = options.ids("ses");
+    const sessionToken = options.tokens("session");
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
     sessions.set(sessionToken, { auth: identity.auth, token: sessionToken, expiresAt });
     return loginResponseSchema.parse({
@@ -423,7 +428,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
-    const ticket = options.ids("ticket");
+    const ticket = options.tokens("ticket");
     tickets.set(ticket, { auth: session.auth, session, expiresAt: Date.now() + 30_000 });
     return { ticket, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   });
