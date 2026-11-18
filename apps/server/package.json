@@ -24,9 +24,6 @@
                          "@ai-npc/mod-platform-access-policy-roster":  "workspace:*",
                          "@ai-npc/mod-platform-secrets-env":  "workspace:*",
                          "@ai-npc/module-sdk":  "workspace:*",
-                         "@fastify/cors":  "^11",
-                         "@fastify/websocket":  "^11",
-                         "fastify":  "^5",
                          "@ai-npc/mod-platform-operations-standard":  "workspace:*",
                          "@ai-npc/mod-transport-http-ws-fastify":  "workspace:*"
                      }

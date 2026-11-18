@@ -263,15 +263,6 @@ importers:
       '@ai-npc/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
-      '@fastify/cors':
-        specifier: ^11
-        version: 11.4.3
-      '@fastify/websocket':
-        specifier: ^11
-        version: 11.3.7
-      fastify:
-        specifier: ^5
-        version: 5.12.8
 
   modules/server/game/actions/standard:
     dependencies:
@@ -437,6 +428,15 @@ importers:
       '@ai-npc/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
+      '@fastify/cors':
+        specifier: ^11
+        version: 11.4.3
+      '@fastify/websocket':
+        specifier: ^11
+        version: 11.3.7
+      fastify:
+        specifier: ^5
+        version: 5.12.8
       zod:
         specifier: ^4
         version: 4.6.7

@@ -3,6 +3,7 @@
  * 依赖真实 authority/存储与注入的投影/时钟/存档回调；不启动网络。
  * 禁止用静态回执替代命令网关。
  */
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   playerProjectionSchema,
@@ -113,6 +114,8 @@ async function appFor(harness: GameHarness) {
       { token: "player-token", auth: playerAuth(harness) },
       { token: "console-token", auth: operatorAuth(harness) },
     ],
+    ids: (prefix: string) => harness.host.ids(prefix),
+    tokens: (kind) => `${kind}-${randomUUID()}`,
   });
   apps.push(app);
   return app;
@@ -132,6 +135,7 @@ describe("服务端 API", () => {
     const app = await appFor(value);
 
     const session = await login(app, "player-token");
+    expect(await login(app, "player-token")).not.toBe(session);
 
     const auth = { authorization: `Bearer ${session}` };
     const me = await app.inject({ method: "GET", url: "/api/v1/session", headers: auth });

@@ -1,6 +1,12 @@
 # transport.http-ws.fastify
 
-HTTP/WS 传输模块的配置定义与端口。
+Fastify HTTP/WS 传输 provider。
+
+## 范围
+
+- `TransportPort.createApp(options)`：创建 Fastify 应用，包含登录/会话/命令/回执/世界视图/时钟/存档/流票据/WS 玩家流、CORS、Origin 校验与错误格式。
+- `TransportPort.listen(app)`：按 provider 配置监听回环地址。
+- `TransportPort` 暴露 `host`、`port`、`allowedOrigins`，Origin 白名单由 provider 固化，调用方不能覆盖。
 
 ## 配置
 
@@ -12,11 +18,11 @@ allowedOrigins:
   - http://127.0.0.1:3000
 ```
 
-## 端口
+## 依赖
 
-`TransportPort` 暴露 `host`、`port`、`allowedOrigins`。Fastify 路由、错误格式、Origin 校验与 WebSocket 由 `apps/server` 的 `createServerApp` 实现，宿主把该端口配置传入应用。
+`createApp` 接收 `AuthorityPort`、`StoragePort`、投影/时钟/存档/运营回调、身份令牌与 ID 生成器；不依赖 authority 实现包。
 
 ## 限制
 
-- 模块本身不创建 Fastify 实例，也不监听端口；端口绑定由宿主完成。
-- 未来若把路由迁入模块，需要把 `createServerApp` 移动为 transport adapter 的实现。
+- WebSocket 只实现 snapshot/delta；append 帧尚未实现。
+- 命令回执查询直接读 `command_receipts` 表，未抽出 receipt 查询端口。

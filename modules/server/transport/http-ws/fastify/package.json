@@ -10,6 +10,9 @@
   "dependencies": {
     "@ai-npc/contracts": "workspace:*",
     "@ai-npc/module-sdk": "workspace:*",
+    "@fastify/cors": "^11",
+    "@fastify/websocket": "^11",
+    "fastify": "^5",
     "zod": "^4"
   }
 }

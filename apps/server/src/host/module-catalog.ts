@@ -19,7 +19,13 @@ import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-s
 import { accessPolicyModuleDefinition } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
-import { transportModuleDefinition, transportConfigSchema, type TransportConfig, type TransportPort } from "@ai-npc/mod-transport-http-ws-fastify";
+import {
+  transportModuleDefinition,
+  transportConfigSchema,
+  createServerApp,
+  type TransportConfig,
+  type TransportPort,
+} from "@ai-npc/mod-transport-http-ws-fastify";
 
 export { toGameContent } from "./content-adapter";
 
@@ -34,7 +40,13 @@ export function parseTransportConfig(config: unknown): TransportConfig {
 }
 
 export type { OperationsDriver, TransportPort };
-export { transportModuleDefinition, operationsModuleDefinition };
+export { transportModuleDefinition, operationsModuleDefinition, createServerApp };
+export type {
+  AuthorityPort,
+  ServerApp,
+  ServerAppOptions,
+  ServerIdentity,
+} from "@ai-npc/mod-transport-http-ws-fastify";
 
 /** 绑定全部游戏端口；txFor 由 authority/宿主事务提供。 */
 export function createGamePorts(txFor: ScopedWorldTxFactory, content: GameContent, host: HostServices): GameModulePorts {

@@ -4,15 +4,14 @@
  * 禁止在这里绕过模块 catalog 直接引用游戏模块实现。
  */
 import { join, resolve } from "node:path";
-import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import type { ClockView, ModuleCreateInput, StoragePort, StorageTransaction } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { createSystemAuth, systemPrincipalId } from "@ai-npc/authority";
 import { loadContentPack } from "@ai-npc/experiment";
 import type { ClockState } from "@ai-npc/module-sdk";
-import { createServerApp } from "./app";
-import { buildPlayerProjection } from "./projection";
 import { createHostServices } from "./host-services";
+import { buildPlayerProjection } from "./projection";
 import {
   createGameContributors,
   createGamePorts,
@@ -25,6 +24,7 @@ import {
   transportModuleDefinition,
   operationsModuleDefinition,
   type TransportPort,
+  type ServerApp,
 } from "./host/module-catalog";
 
 export interface HostOptions {
@@ -39,10 +39,11 @@ export interface HostOptions {
 }
 
 export interface RunningHost {
-  readonly app: FastifyInstance;
+  readonly app: ServerApp;
   readonly branchId: string;
   readonly worldId: string;
   readonly transport: import("./host/module-catalog").TransportPort;
+  listen(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -305,7 +306,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     reset: resetOnline,
   });
 
-  const app = await createServerApp({
+  const app = await transport.createApp({
     authority,
     storage,
     worldId: activeWorldId,
@@ -327,7 +328,6 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy, input.runId),
     },
     reset: () => operations.reset(),
-    allowedOrigins: [...transport.allowedOrigins],
     onBranchChanged: (nextBranchId) => {
       activeBranchId = nextBranchId;
     },
@@ -335,6 +335,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       { token: options.playerToken, auth: { principalId: "player-1", kind: "player", roles: ["player"], worldId: activeWorldId, branchId: activeBranchId, actingAsAgentId: null, controllerEpoch: null, turnLeaseEpoch: null, turnId: null } },
       { token: options.consoleToken, auth: { principalId: "operator-1", kind: "operator", roles: ["operator"], worldId: activeWorldId, branchId: activeBranchId, actingAsAgentId: null, controllerEpoch: null, turnLeaseEpoch: null, turnId: null } },
     ],
+    ids: (prefix) => host.ids(prefix),
+    tokens: (kind) => `${kind}-${randomUUID()}`,
     healthStatus: () => (workerFailed ? "degraded" : "ready"),
   });
 
@@ -386,6 +388,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     branchId: activeBranchId,
     worldId: activeWorldId,
     transport,
+    listen: () => transport.listen(app),
     close: async () => {
       workerFailed = true;
       if (timer !== null) {
