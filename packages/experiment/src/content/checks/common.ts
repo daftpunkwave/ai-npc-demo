@@ -3,6 +3,7 @@
  * 依赖加载错误类型；只服务于内容索引构建与引用检查。
  * 禁止在此修补缺失引用或返回部分结果。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 回调签名中的参数名仅用于表达契约，实际调用由调用方提供。 */
 import { LoadingError } from "../../loading/errors";
 
 /** 交叉检查失败统一抛出带文件与字段路径的加载错误。 */
@@ -18,7 +19,6 @@ export function uniqueById<T>(
   pathOf: (index: number) => string,
 ): Map<string, T> {
   const map = new Map<string, T>();
-  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars -- index 与 item 在循环体内使用。
   for (const [index, item] of items.entries()) {
     const id = idOf(item);
     if (map.has(id)) {
