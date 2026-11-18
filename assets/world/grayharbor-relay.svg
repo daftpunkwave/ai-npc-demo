@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">灰港中继站</title>
+  <desc id="desc">黄昏雾港中的中继塔、系泊驳船与湿漉码头，远处是旧文明的楼群。</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12232b"/>
+      <stop offset=".45" stop-color="#2e4c52"/>
+      <stop offset=".72" stop-color="#8a7461"/>
+      <stop offset="1" stop-color="#c99a6a"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5e7573"/>
+      <stop offset=".35" stop-color="#2c4244"/>
+      <stop offset="1" stop-color="#101d21"/>
+    </linearGradient>
+    <linearGradient id="tower" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a2528"/>
+      <stop offset="1" stop-color="#46504c"/>
+    </linearGradient>
+    <radialGradient id="lamp" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ffe6a6" stop-opacity="1"/>
+      <stop offset=".25" stop-color="#ffb45c" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#ff9d3c" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="fog" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency=".006 .02" numOctaves="4" seed="7"/>
+      <feColorMatrix values="0 0 0 0 .62  0 0 0 0 .68  0 0 0 0 .66  0 0 0 .55 0"/>
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <filter id="grain" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="11" result="n"/>
+      <feColorMatrix in="n" values="0 0 0 0 .05  0 0 0 0 .07  0 0 0 0 .06  0 0 0 .16 0"/>
+    </filter>
+    <filter id="blur6"><feGaussianBlur stdDeviation="6"/></filter>
+    <pattern id="planks" width="64" height="8" patternUnits="userSpaceOnUse">
+      <rect width="64" height="8" fill="#2b2822"/>
+      <path d="M0 7.5h64M14 8V0M49 8V0" stroke="#15130f" stroke-width="1"/>
+    </pattern>
+    <pattern id="rain" width="26" height="46" patternUnits="userSpaceOnUse" patternTransform="skewX(-12)">
+      <path d="M4 0v26M17 12v30" stroke="#cfd8d2" stroke-width="1" opacity=".28"/>
+    </pattern>
+    <radialGradient id="vignette" cx=".5" cy=".45" r=".72">
+      <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".55"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <g opacity=".28" fill="none" stroke="#d7b48c" stroke-width="7" filter="url(#blur6)">
+    <path d="M-30 92c90-26 150 8 232-6s142-28 218-8 140 22 220 2 120-20 190-4"/>
+    <path d="M-20 132c100-16 156 14 250 2s150-24 228-8 138 20 206 2 106-10 156-2"/>
+  </g>
+  <g opacity=".22" fill="none" stroke="#dfe6df" stroke-width="2">
+    <path d="M-20 74c70-14 130 6 190-2m-90 34c80-12 130 8 210 0m230-20c80-16 150 6 220-2"/>
+  </g>
+  <circle cx="612" cy="118" r="34" fill="#f0c48b" opacity=".35" filter="url(#blur6)"/>
+  <circle cx="612" cy="118" r="17" fill="#f6d7a6" opacity=".8"/>
+  <path d="M556 112c18-8 42-9 62-3m-70 16c28-8 54-7 82 1" stroke="#e8c79b" stroke-width="1.5" opacity=".35" fill="none"/>
+
+  <!-- distant dead skyline -->
+  <g opacity=".5" fill="#1b2b2f">
+    <path d="M0 236h58v-42h24v30h31v-63h18v63h36v-27h44v42h39v-55h21v55h58v-34h40v34h35v-51h23v51h43v-25h46v25h60v-40h28v40h35v-18h52v32H0z"/>
+    <path d="M92 191v45m69-45v45m112-45v45m130-45v45m112-45v45m89-45v45" stroke="#0c1619" stroke-width="3"/>
+  </g>
+
+  <!-- sea and harbor basin -->
+  <rect y="232" width="800" height="218" fill="url(#water)"/>
+  <path d="M0 250c90 10 160-6 246 2s166 16 252 4 206-12 302 2v-18H0z" fill="#84908a" opacity=".22"/>
+  <g stroke="#d8b183" stroke-opacity=".28" stroke-width="2">
+    <path d="M508 270h96m-104 8h122m-130 9h104m-112 10h132m-138 9h90"/>
+    <path d="M120 300h74m-82 8h104m-112 10h74"/>
+  </g>
+
+  <!-- quay -->
+  <path d="M0 350h800v100H0z" fill="#211f1b"/>
+  <path d="M0 350h800v16H0z" fill="url(#planks)"/>
+  <path d="M0 366h800v7H0z" fill="#0f0e0c" opacity=".7"/>
+  <g stroke="#6f6554" stroke-width="2" opacity=".35">
+    <path d="M0 392h800M0 414h800M0 434h800"/>
+    <path d="M84 366v84m130-84v84m118-84v84m156-84v84m152-84v84"/>
+  </g>
+  <path d="M0 350h800v10H0z" fill="#b08b5c" opacity=".25"/>
+
+  <!-- mooring bollards and ropes -->
+  <g fill="#111513" stroke="#3c403a" stroke-width="2">
+    <path d="M98 350h18v30H98zM104 340h6v12h-6z"/>
+    <path d="M702 350h18v30h-18zM708 340h6v12h-6z"/>
+  </g>
+  <path d="M110 356c40 36 92 20 124 44m444-44c-46 30-104 18-132 44" fill="none" stroke="#8b775d" stroke-width="2" opacity=".55"/>
+
+  <!-- relay tower -->
+  <g>
+    <path d="M338 342l16-210h52l16 210z" fill="url(#tower)"/>
+    <path d="M346 342l12-210m64 210l-12-210" stroke="#78807a" stroke-width="2" opacity=".5"/>
+    <path d="M348 300h64M352 256h56M356 214h48M360 176h40M364 146h32" stroke="#0d1516" stroke-width="5"/>
+    <path d="M348 300l12-44m52 44l-12-44M356 214l8-38m32 38l-8-38M364 146l4-14m12 14l-4-14" stroke="#0d1516" stroke-width="4"/>
+    <path d="M330 132h100l-12 26H342z" fill="#151f21"/>
+    <path d="M348 132V96h64v36" fill="#101819"/>
+    <path d="M360 96V72h40v24" fill="#0d1415"/>
+    <circle cx="380" cy="80" r="5" fill="#ff7043"/>
+    <circle cx="380" cy="80" r="28" fill="url(#lamp)" opacity=".8"/>
+    <path d="M380 72V24" stroke="#aeb7ad" stroke-width="2"/>
+    <circle cx="380" cy="20" r="4" fill="#ffd28a"/>
+    <path d="M380 20l-70 26m70-26l78 34m-78-34l-24 62" stroke="#aeb7ad" stroke-width="1.2" opacity=".55"/>
+    <g stroke="#d8c39a" stroke-width="1" opacity=".35">
+      <path d="M380 46l-48 18m48-18l54 24"/>
+    </g>
+  </g>
+
+  <!-- crane -->
+  <g stroke="#1a2222" fill="none">
+    <path d="M652 350V128h12v222m-6-204l-92 44m92-44l96 36" stroke-width="9"/>
+    <path d="M560 176v54m-14 0h28m-14-54v-18" stroke-width="4"/>
+    <path d="M748 164v38m-12 0h24" stroke-width="4"/>
+    <path d="M566 230c22 24 52 26 84 0" stroke-width="2" stroke="#6d6a5a" opacity=".7"/>
+  </g>
+  <path d="M560 230l-26 44h34l-8-44" fill="#1c2221"/>
+
+  <!-- moored barges -->
+  <g>
+    <path d="M122 318h176l-22 34H140z" fill="#272a25"/>
+    <path d="M140 318h140v-22H152z" fill="#35352c"/>
+    <path d="M158 296h104v-30H166z" fill="#232723"/>
+    <path d="M170 266h76v-14h-70z" fill="#3b3b31"/>
+    <g fill="#ffbe6b" opacity=".85">
+      <rect x="180" y="272" width="12" height="8" rx="1"/>
+      <rect x="204" y="272" width="12" height="8" rx="1"/>
+      <rect x="228" y="284" width="18" height="7" rx="1"/>
+    </g>
+    <path d="M292 310l28-22 24 22" fill="#1b1d19"/>
+    <path d="M300 312v-20h20v20" fill="#4a4638"/>
+  </g>
+  <g>
+    <path d="M520 330h142l-18 28H536z" fill="#242622"/>
+    <path d="M548 330V286h84v44z" fill="#31322a"/>
+    <path d="M560 286v-18h58v18" fill="#1c201d"/>
+    <rect x="574" y="300" width="16" height="12" fill="#eaa05d" opacity=".75"/>
+  </g>
+
+  <!-- pier lamp and reflection -->
+  <g>
+    <path d="M244 350V286" stroke="#161a18" stroke-width="5"/>
+    <path d="M230 286h28l-4-12h-20z" fill="#1d2320"/>
+    <circle cx="244" cy="270" r="6" fill="#ffd9a0"/>
+    <circle cx="244" cy="270" r="30" fill="url(#lamp)" opacity=".55"/>
+  </g>
+  <path d="M206 352c40 4 62 30 92 40 28 10 58 8 80 22" stroke="#f0bd7c" stroke-width="8" opacity=".12" fill="none" filter="url(#blur6)"/>
+
+  <!-- pier cargo and figures -->
+  <g>
+    <path d="M24 330h56l6 22H18z" fill="#2e3029"/>
+    <path d="M30 330v-24h44v24" fill="#393a30"/>
+    <path d="M36 306v-18h32v18" fill="#262a24"/>
+    <path d="M44 288v-12h16v12" fill="#4b4738"/>
+    <path d="M28 332h48M28 340h48" stroke="#6f6653" stroke-width="1" opacity=".5"/>
+  </g>
+  <g fill="#1a1d19" stroke="#4a4b40" stroke-width="1">
+    <path d="M742 334h34l4 16h-40z"/>
+    <path d="M748 334v-16h20v16"/>
+    <path d="M756 318v-10h6v10"/>
+  </g>
+  <g fill="#141714">
+    <path d="M438 338c4-14 8-20 12-20s9 8 12 20z"/>
+    <circle cx="450" cy="314" r="5"/>
+    <path d="M470 340c3-11 7-16 10-16s7 6 10 16z"/>
+    <circle cx="480" cy="320" r="4"/>
+    <path d="M500 342c3-9 6-13 9-13s6 5 9 13z"/>
+  </g>
+  <path d="M446 326l-10 8m16-8l8 10m20-10l-8 8" stroke="#141714" stroke-width="2"/>
+  <g opacity=".5" stroke="#b79a72" stroke-width="1">
+    <path d="M0 360h800M0 370h800"/>
+    <path d="M58 350v18m56-18v18m54-18v18m60-18v18m52-18v18m58-18v18m58-18v18m54-18v18m60-18v18m52-18v18m58-18v18m58-18v18"/>
+  </g>
+
+  <!-- fog and grain -->
+  <rect y="120" width="800" height="230" filter="url(#fog)" opacity=".55"/>
+  <rect width="800" height="450" fill="url(#rain)" opacity=".5"/>
+  <rect width="800" height="450" filter="url(#grain)" opacity=".55"/>
+  <rect width="800" height="450" fill="url(#vignette)"/>
+  <path d="M0 450h800" stroke="#000" stroke-width="0"/>
+</svg>

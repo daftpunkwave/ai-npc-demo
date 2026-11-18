@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="远星协进会徽记">
+  <title>远星协进会徽记</title>
+  <desc>双轨四芒星与轨道环，中心为交换节点。</desc>
+  
+  <defs>
+    <radialGradient id="bg" cx=".5" cy=".4" r=".8"><stop stop-color="#2c1f3c"/><stop offset="1" stop-color="#0b0811"/></radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7bdf0"/><stop offset=".5" stop-color="#7d5ba6"/><stop offset="1" stop-color="#2c1b40"/></linearGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f4e6ff"/><stop offset=".5" stop-color="#b789e8"/><stop offset="1" stop-color="#6b3fa0"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="4"/></filter>
+    <filter id="g"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="21"/><feColorMatrix values="0 0 0 0 .7 0 0 0 0 .5 0 0 0 0 .9 0 0 0 .1 0"/></filter>
+  </defs>
+  <circle cx="128" cy="128" r="118" fill="url(#bg)" stroke="url(#rim)" stroke-width="6"/>
+  <g fill="none" stroke="#8e44ad" stroke-width="1.5" opacity=".55">
+    <ellipse cx="128" cy="128" rx="92" ry="34" transform="rotate(-24 128 128)"/>
+    <ellipse cx="128" cy="128" rx="78" ry="24" transform="rotate(38 128 128)"/>
+  </g>
+  <g fill="#d8c6ee" opacity=".7">
+    <circle cx="62" cy="84" r="2"/><circle cx="198" cy="94" r="2.5"/><circle cx="74" cy="178" r="1.5"/><circle cx="190" cy="170" r="2"/>
+  </g>
+  <path d="M128 48l12 50 50 30-50 8-12 62-12-62-50-8 50-30z" fill="url(#star)" stroke="#f0e2ff" stroke-width="2" filter="url(#glow)" opacity=".8"/>
+  <path d="M128 48l12 50 50 30-50 8-12 62-12-62-50-8 50-30z" fill="url(#star)" stroke="#f0e2ff" stroke-width="1.5"/>
+  <circle cx="128" cy="128" r="12" fill="#1a1025" stroke="#d8bdf2" stroke-width="2"/>
+  <path d="M122 128h12m-6-6v12" stroke="#f6eaff" stroke-width="1.5"/>
+  <g stroke="#c7a6e8" stroke-width="2" opacity=".7">
+    <path d="M50 130h22m112 0h22M128 50v14m0 128v14"/>
+  </g>
+  <text x="128" y="220" text-anchor="middle" font-family="Georgia, serif" font-size="10" letter-spacing="4" fill="#c9b3e0">远星</text>
+  <rect width="256" height="256" filter="url(#g)" opacity=".45"/>
+</svg>

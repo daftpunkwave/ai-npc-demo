@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="巡裔徽记">
+  <title>巡裔徽记</title>
+  <desc>弯角兽首与迁徙月路，背景是风蚀草原。</desc>
+  
+  <defs>
+    <radialGradient id="bg" cx=".4" cy=".3" r=".85"><stop stop-color="#3a2418"/><stop offset="1" stop-color="#0f0a07"/></radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e3a875"/><stop offset=".5" stop-color="#8a4f2c"/><stop offset="1" stop-color="#3a2216"/></linearGradient>
+    <linearGradient id="horn" x1="0" y1="1" x2="0" y2="0"><stop stop-color="#8e5733"/><stop offset=".6" stop-color="#d9a87a"/><stop offset="1" stop-color="#f0d6b4"/></linearGradient>
+    <filter id="g"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="44"/><feColorMatrix values="0 0 0 0 .9 0 0 0 0 .55 0 0 0 0 .25 0 0 0 .11 0"/></filter>
+  </defs>
+  <circle cx="128" cy="128" r="118" fill="url(#bg)" stroke="url(#rim)" stroke-width="6"/>
+  <path d="M84 88c-16-26-8-42 4-44 10 18 20 26 34 30M172 88c16-26 8-42-4-44-10 18-20 26-34 30" fill="url(#horn)" stroke="#5b3622" stroke-width="2"/>
+  <path d="M96 96c0-24 14-38 32-38s32 14 32 38v34c0 20-14 36-32 50-18-14-32-30-32-50z" fill="#1a1310" stroke="#c99566" stroke-width="2.5"/>
+  <path d="M112 108c6-6 12-6 16 0m16 0c-6-6-12-6-16 0" stroke="#e8c49c" stroke-width="2" fill="none"/>
+  <path d="M128 124l-8 14h16z" fill="#a86a3e"/>
+  <path d="M118 152c6 6 14 6 20 0" stroke="#d8ad82" stroke-width="2" fill="none"/>
+  <path d="M92 162c-12 16-12 26-6 34 14-2 22-8 28-20M164 162c12 16 12 26 6 34-14-2-22-8-28-20" fill="none" stroke="#9b6238" stroke-width="2.5" opacity=".8"/>
+  <path d="M66 196c42-16 82-16 124 0" stroke="#e0a270" stroke-width="2" fill="none" opacity=".55"/>
+  <g fill="#f4d3a6"><circle cx="78" cy="86" r="2.5"/><circle cx="180" cy="78" r="2"/><circle cx="196" cy="116" r="1.5"/></g>
+  <text x="128" y="224" text-anchor="middle" font-family="Georgia, serif" font-size="11" letter-spacing="5" fill="#d8b18a">巡裔</text>
+  <rect width="256" height="256" filter="url(#g)" opacity=".48"/>
+</svg>

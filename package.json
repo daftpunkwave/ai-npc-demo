@@ -14,7 +14,8 @@
                     "check:boundaries":  "tsx scripts/check-boundaries.ts",
                     "check:catalog":  "tsx scripts/check-catalog.ts",
                     "dev:server":  "tsx apps/server/src/main.ts",
-                    "check":  "pnpm typecheck \u0026\u0026 pnpm test \u0026\u0026 pnpm check:boundaries \u0026\u0026 pnpm check:catalog \u0026\u0026 pnpm check:docs"
+                    "check":  "pnpm typecheck \u0026\u0026 pnpm test \u0026\u0026 pnpm check:boundaries \u0026\u0026 pnpm check:catalog \u0026\u0026 pnpm check:assets \u0026\u0026 pnpm check:docs",
+                    "check:assets":  "tsx scripts/check-assets.ts"
                 },
     "devDependencies":  {
                             "@types/node":  "^26",

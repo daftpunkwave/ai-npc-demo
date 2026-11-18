@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">迁徙隘口</title>
+  <desc id="desc">雪山之间的迁徙隘口，蜿蜒车队、木制瞭望塔与信号旗在风雪中前行。</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2a34"/><stop offset=".55" stop-color="#60747a"/><stop offset="1" stop-color="#c7b49a"/></linearGradient>
+    <linearGradient id="snow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8d3cf"/><stop offset=".5" stop-color="#879b98"/><stop offset="1" stop-color="#34494a"/></linearGradient>
+    <linearGradient id="rock" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#394a4a"/><stop offset=".5" stop-color="#263535"/><stop offset="1" stop-color="#101b1c"/></linearGradient>
+    <linearGradient id="path" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#7f8980"/><stop offset=".5" stop-color="#a5a99a"/><stop offset="1" stop-color="#5e6d68"/></linearGradient>
+    <filter id="fog"><feTurbulence type="fractalNoise" baseFrequency=".008 .02" numOctaves="4" seed="31"/><feColorMatrix values="0 0 0 0 .72 0 0 0 0 .78 0 0 0 0 .8 0 0 0 .5 0"/><feGaussianBlur stdDeviation="10"/></filter>
+    <filter id="snowfall"><feTurbulence type="fractalNoise" baseFrequency=".4 .1" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .35 0"/><feGaussianBlur stdDeviation=".6"/></filter>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="6"/><feColorMatrix values="0 0 0 0 .05 0 0 0 0 .06 0 0 0 0 .06 0 0 0 .15 0"/></filter>
+    <radialGradient id="vig" cx=".5" cy=".45" r=".72"><stop offset=".5" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".52"/></radialGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <g opacity=".24" stroke="#e4d4bc" stroke-width="2" fill="none"><path d="M-20 96c90-14 160 6 250-2s160-12 250 0 150 8 220-4"/></g>
+
+  <!-- distant peaks -->
+  <path d="M0 280L110 164l52 44 82-94 74 78 58-48 96 106 64-58 88 88 58-40 118 100v10H0z" fill="#42565a"/>
+  <path d="M38 250l40-42 34 36-22 2-16 10-18-4zM206 232l42-44 38 38-22 4-16 10-20-6z" fill="#b9c6c2" opacity=".25"/>
+
+  <!-- mid ridge and pass -->
+  <path d="M0 310l120-70 62 28 84-56 72 44 94-70 84 76 88-40 96 68 100-46v40H0z" fill="#2b3c3c"/>
+  <path d="M182 240l62 28 84-56 72 44 94-70 84 76-78 36-92-34-86 30-72-26-88 26-30-24z" fill="#8d9b94" opacity=".55"/>
+
+  <!-- switchback road -->
+  <path d="M0 356c90 0 122-18 190-34s108 10 170-16 94-38 156-36 88 22 150 22 90-12 134-18v66H0z" fill="#5f706b"/>
+  <path d="M0 360c110-8 150-32 226-44s104 8 166-16 96-26 150-22 108 30 168 26 72-14 90-16" fill="none" stroke="url(#path)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M0 360c110-8 150-32 226-44s104 8 166-16 96-26 150-22 108 30 168 26 72-14 90-16" fill="none" stroke="#d5d8cd" stroke-width="2" stroke-dasharray="12 22" opacity=".6"/>
+
+  <!-- snow drifts -->
+  <path d="M0 380c120-22 170-4 250-18s130 0 210-16 140-2 210-12 90 6 130 4v72H0z" fill="url(#snow)" opacity=".8"/>
+  <path d="M0 402c100-14 170 2 250-8s130 6 210-4 150-2 210-8 90 0 130-2v30H0z" fill="#dbe2de" opacity=".45"/>
+
+  <!-- watchtower -->
+  <g>
+    <path d="M646 316l18-92h46l18 92z" fill="#252d2b"/>
+    <path d="M654 224h46l-6-18h-34z" fill="#1b2321"/>
+    <path d="M662 206v-22h30v22" fill="#141b1a"/>
+    <path d="M656 256h42M650 284h54M646 316h64" stroke="#4b4d3f" stroke-width="4"/>
+    <path d="M664 250l-2 66m34-66l2 66M670 284l24-34" stroke="#151c1b" stroke-width="3"/>
+    <rect x="670" y="226" width="14" height="12" fill="#ffbe6a" opacity=".8"/>
+    <circle cx="677" cy="198" r="3" fill="#ff6b4a"/>
+    <path d="M677 194v-30" stroke="#8d9589" stroke-width="2"/>
+    <path d="M684 182l30 12-30 12z" fill="#b24d37"/>
+  </g>
+
+  <!-- caravan -->
+  <g>
+    <path d="M282 350h70l-6 22h-60z" fill="#2e2f27"/>
+    <path d="M292 350v-14h40v14" fill="#454333"/>
+    <circle cx="298" cy="376" r="9" fill="#181c1a" stroke="#5e5a48" stroke-width="2"/>
+    <circle cx="342" cy="376" r="9" fill="#181c1a" stroke="#5e5a48" stroke-width="2"/>
+    <path d="M328 336v-30h8v30" stroke="#6f6753" stroke-width="2"/>
+    <path d="M332 306l22 8-22 8z" fill="#b4563c"/>
+    <path d="M354 352h36l-4 16h-30z" fill="#2b2c25"/>
+    <circle cx="360" cy="370" r="6" fill="#171b19"/>
+    <circle cx="382" cy="370" r="6" fill="#171b19"/>
+    <path d="M394 330c8-10 18-12 26-8l6 20h-30z" fill="#3a3930"/>
+    <circle cx="408" cy="318" r="6" fill="#1b1e1c"/>
+    <path d="M420 338c6-8 14-9 20-5" stroke="#232622" stroke-width="3" fill="none"/>
+  </g>
+
+  <!-- foreground rocks and figures -->
+  <path d="M0 400l54-34 40 18 34-24 48 40 38-18 38 44H0z" fill="#1c2929"/>
+  <path d="M0 408l60-22 44 14 30-12 52 26 34-10 44 32H0z" fill="#30413f"/>
+  <g fill="#121918">
+    <circle cx="170" cy="380" r="5"/><path d="M162 386h18l4 20h-26zM164 406h6v10h-6zM174 406h6v10h-6z"/>
+    <circle cx="202" cy="384" r="4"/><path d="M195 390h15l3 17h-21zM197 407h5v8h-5zM205 407h5v8h-5z"/>
+  </g>
+  <path d="M182 392l-22 10m28-10l26 8" stroke="#121918" stroke-width="2"/>
+  <g fill="#ffd08a" opacity=".8"><circle cx="222" cy="360" r="3"/><circle cx="250" cy="346" r="2"/></g>
+
+  <rect y="160" width="800" height="200" filter="url(#fog)" opacity=".55"/>
+  <rect width="800" height="450" filter="url(#snowfall)" opacity=".55"/>
+  <rect width="800" height="450" filter="url(#grain)" opacity=".45"/>
+  <rect width="800" height="450" fill="url(#vig)"/>
+</svg>

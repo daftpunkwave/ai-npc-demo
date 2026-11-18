@@ -14,6 +14,7 @@
 | 目录入口 | 职责 |
 |---|---|
 | [game/README.md — 世界、玩法与规则](game/README.md) | 世界背景、角色、玩法、规则与内容数据 |
+| [game/art-direction.md — 美术与表现资源](game/art-direction.md) | 世界资产包、派系徽记、风格与冲突记录 |
 | [architecture/README.md — 架构与模块契约](architecture/README.md) | 宿主、插件、装配、公共契约、持久化与双端协议 |
 | [agent/README.md — 认知与行为](agent/README.md) | 感知、记忆、上下文、工具、决策与模型调用 |
 | [platform/README.md — 配置、研究与运营](platform/README.md) | 配置冻结、观测、实验评估与运营控制 |

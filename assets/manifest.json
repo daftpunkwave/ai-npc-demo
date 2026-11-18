@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "packId": "earth-2964-v1",
+  "style": "gray-harbor-editorial-vector",
+  "assets": [
+    {
+      "assetId": "world.grayharbor-relay",
+      "kind": "location",
+      "path": "assets/world/grayharbor-relay.svg",
+      "width": 800,
+      "height": 450,
+      "nodeId": "grayharbor",
+      "palette": ["#12232b", "#2e4c52", "#c99a6a", "#ffb45c"],
+      "description": "黄昏雾港中的中继塔、驳船、吊机与湿漉码头"
+    },
+    {
+      "assetId": "world.old-watergate",
+      "kind": "location",
+      "path": "assets/world/old-watergate.svg",
+      "width": 800,
+      "height": 450,
+      "nodeId": "watergate",
+      "palette": ["#101d24", "#4d514b", "#9a5a37", "#ffb14e"],
+      "description": "旧堤混凝土水闸、锈蚀闸门、控制舱与警示灯"
+    },
+    {
+      "assetId": "world.ash-orchard",
+      "kind": "location",
+      "path": "assets/world/ash-orchard.svg",
+      "width": 800,
+      "height": 450,
+      "nodeId": "orchard",
+      "palette": ["#182a2d", "#5f7a72", "#c84a35", "#a9d2c2"],
+      "description": "被水淹没的果园、玻璃诊所与红灯笼"
+    },
+    {
+      "assetId": "world.migration-pass",
+      "kind": "location",
+      "path": "assets/world/migration-pass.svg",
+      "width": 800,
+      "height": 450,
+      "nodeId": "pass",
+      "palette": ["#1b2a34", "#60747a", "#c8d3cf", "#b4563c"],
+      "description": "雪山迁徙隘口、蜿蜒车队与信号旗瞭望塔"
+    },
+    {
+      "assetId": "world.archive-vault",
+      "kind": "location",
+      "path": "assets/world/archive-vault.svg",
+      "width": 800,
+      "height": 450,
+      "nodeId": "archive",
+      "palette": ["#171c1b", "#5f6257", "#6b7f54", "#4abf98"],
+      "description": "地下战前档案库、气密门、档案架、树根与尘埃光柱"
+    },
+    {
+      "assetId": "world.landing-anchor",
+      "kind": "location",
+      "path": "assets/world/landing-anchor.svg",
+      "width": 800,
+      "height": 450,
+      "nodeId": "anchor",
+      "palette": ["#050b18", "#12263b", "#7ff2d0", "#d8f5ff"],
+      "description": "外星降落锚、轨道缆绳、生物荧光环与人类前哨"
+    },
+    {
+      "assetId": "faction.ember-compact",
+      "kind": "emblem",
+      "path": "assets/factions/ember-compact.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "human-independent",
+      "palette": ["#3a211d", "#c0392b", "#ffd070"],
+      "description": "折断山脊与炉火"
+    },
+    {
+      "assetId": "faction.earthborn-pact",
+      "kind": "emblem",
+      "path": "assets/factions/earthborn-pact.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "human-earth-alliance",
+      "palette": ["#1d3327", "#27ae60", "#d8e8a5"],
+      "description": "穿过年轮的麦穗"
+    },
+    {
+      "assetId": "faction.ceasefire-circle",
+      "kind": "emblem",
+      "path": "assets/factions/ceasefire-circle.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "human-pacifist",
+      "palette": ["#3b3520", "#f1c40f", "#8b6b14"],
+      "description": "盾面上的水波与折断的刀"
+    },
+    {
+      "assetId": "faction.far-star-assembly",
+      "kind": "emblem",
+      "path": "assets/factions/far-star-assembly.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "human-alien-accord",
+      "palette": ["#2c1f3c", "#8e44ad", "#f4e6ff"],
+      "description": "双轨四芒星"
+    },
+    {
+      "assetId": "faction.grayharbor-commune",
+      "kind": "emblem",
+      "path": "assets/factions/grayharbor-commune.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "human-neutral",
+      "palette": ["#2b3436", "#7f8c8d", "#f2c986"],
+      "description": "灯塔、桥与天平"
+    },
+    {
+      "assetId": "faction.wandering-kin",
+      "kind": "emblem",
+      "path": "assets/factions/wandering-kin.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "species-fauna",
+      "palette": ["#3a2418", "#d35400", "#f0d6b4"],
+      "description": "弯角与迁徙月路"
+    },
+    {
+      "assetId": "faction.root-court",
+      "kind": "emblem",
+      "path": "assets/factions/root-court.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "species-flora",
+      "palette": ["#13322c", "#16a085", "#bdf0dc"],
+      "description": "根球、叶脉与发光孢子"
+    },
+    {
+      "assetId": "faction.starfarers",
+      "kind": "emblem",
+      "path": "assets/factions/starfarers.svg",
+      "width": 256,
+      "height": 256,
+      "factionId": "species-extraterrestrial",
+      "palette": ["#162c44", "#2980b9", "#d9ecff"],
+      "description": "锚与外星四芒星"
+    }
+  ],
+  "fallback": {
+    "renderer": "client.scene-renderer.null",
+    "vectorOnly": true,
+    "description": "无画面/确定性测试不加载资产；缺图时允许退回等距矢量图元"
+  }
+}
