@@ -1,0 +1,24 @@
+schemaVersion: 1
+assemblyId: local-slg-standard-v1
+configs:
+  clock: { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
+  storage: { inlineArtifactMaxBytes: 65536 }
+realms:
+  server:
+    bindings:
+      - { capability: game.world, moduleId: game.world.slg-light, configRef: null }
+      - { capability: game.map, moduleId: game.map.six-nodes, configRef: null }
+      - { capability: game.clock, moduleId: game.clock.controlled, configRef: clock }
+      - { capability: game.resources, moduleId: game.resources.light, configRef: null }
+      - { capability: game.actions, moduleId: game.actions.standard, configRef: null }
+      - { capability: game.agreements, moduleId: game.agreements.standard, configRef: null }
+      - { capability: game.comms, moduleId: game.comms.standard, configRef: null }
+      - { capability: game.scenario, moduleId: game.scenario.watergate, configRef: null }
+      - { capability: game.save, moduleId: game.save.sqlite, configRef: null }
+      - { capability: platform.storage, moduleId: platform.storage.sqlite, configRef: storage }
+      - { capability: platform.access-policy, moduleId: platform.access-policy.roster, configRef: null }
+      - { capability: platform.secrets, moduleId: platform.secrets.env, configRef: null }
+  client:
+    bindings: []
+  console:
+    bindings: []

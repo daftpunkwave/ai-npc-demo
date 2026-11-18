@@ -146,6 +146,26 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
   const tickets = new Map<string, { readonly auth: AuthContext; readonly expiresAt: number }>();
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
+  let streamSeq = 0;
+  let projectionVersion = 0;
+  const history: Array<{ readonly streamSeq: number; readonly projectionVersion: number; readonly set: Record<string, unknown> }> = [];
+  const subscribers = new Set<{ readonly send: (payload: string) => void }>();
+
+  const publishDelta = (): void => {
+    streamSeq += 1;
+    projectionVersion += 1;
+    const projection = options.projection();
+    const set = { ...projection } as Record<string, unknown>;
+    const frame = { streamSeq, projectionVersion, set };
+    history.push(frame);
+    if (history.length > 200) {
+      history.shift();
+    }
+    const payload = JSON.stringify({ type: "delta", channel: "player", ...frame });
+    for (const subscriber of subscribers) {
+      subscriber.send(payload);
+    }
+  };
 
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
@@ -224,6 +244,11 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
       return reply.code(403).send({ code: "forbidden", safeMessage: "玩家不能使用该命令" });
     }
     const receipt = options.authority.commands.execute(session.auth, envelope);
+    try {
+      publishDelta();
+    } catch {
+      // 世界尚未具备完整投影时（例如 reset 后未开局），命令回执仍应返回。
+    }
     return commandReceiptSchema.parse(receipt);
   });
 
@@ -251,7 +276,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     if (session === null) {
       return;
     }
-    return { streamSeq: 0, projectionVersion: 0, projection: options.projection() };
+    return { streamSeq, projectionVersion, projection: options.projection() };
   });
 
   app.post("/api/v1/campaign/pause", (request, reply) => {
@@ -344,6 +369,17 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
     tickets.delete(query.ticket ?? "");
     socket.send(JSON.stringify({ type: "hello", protocolVersion: "1", principalId: ticket.auth.principalId, channels: ["player"] }));
+    const subscriber = { send: (payload: string): void => { socket.send(payload); } };
+    const sendSnapshot = (): void => {
+      socket.send(JSON.stringify({
+        type: "snapshot",
+        channel: "player",
+        streamSeq,
+        projectionVersion,
+        data: options.projection(),
+      }));
+    };
+    socket.on("close", () => { subscribers.delete(subscriber); });
     socket.on("message", (data: Buffer) => {
       let message: unknown;
       try {
@@ -352,18 +388,22 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
         socket.send(JSON.stringify({ type: "error", code: "invalid-json", safeMessage: "消息不是 JSON" }));
         return;
       }
-      const value = message as { readonly type?: string; readonly channel?: string };
+      const value = message as { readonly type?: string; readonly channel?: string; readonly fromStreamSeq?: number };
       if (typeof message !== "object" || message === null || value.type !== "subscribe" || value.channel !== "player") {
         socket.send(JSON.stringify({ type: "error", code: "invalid-channel", safeMessage: "频道不可用" }));
         return;
       }
-      socket.send(JSON.stringify({
-        type: "snapshot",
-        channel: "player",
-        streamSeq: 0,
-        projectionVersion: 0,
-        data: options.projection(),
-      }));
+      const from = typeof value.fromStreamSeq === "number" ? value.fromStreamSeq : null;
+      const replay = from === null ? [] : history.filter((frame) => frame.streamSeq > from);
+      const contiguous = from !== null && replay.length > 0 && replay[0]?.streamSeq === from + 1;
+      subscribers.add(subscriber);
+      if (contiguous) {
+        for (const frame of replay) {
+          socket.send(JSON.stringify({ type: "delta", channel: "player", ...frame }));
+        }
+      } else {
+        sendSnapshot();
+      }
     });
   });
 

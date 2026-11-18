@@ -1,20 +1,15 @@
 /**
- * 校验 server 组合根：唯一模块 ID、全部定义可加载、可选装配文件存在性。
- * 通过运行时路径导入组合根，避免依赖构建产物。
+ * 校验 server 组合根与装配文件：模块 ID 唯一、装配 schema 合法、绑定指向已登记模块与配置块。
+ * 通过包公开入口加载组合根，避免依赖构建产物。
  * 禁止启动服务、打开存储或修改任何模块。
  */
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse } from "yaml";
+import { assemblyDescriptorSchema } from "@ai-npc/contracts";
+import { serverModuleDefinitions } from "@ai-npc/app-server";
 
-
-
-const module = await import("@ai-npc/app-server") as {
-  readonly serverModuleDefinitions?: readonly { readonly id: string }[];
-};
-const definitions = module.serverModuleDefinitions;
-if (definitions === undefined || definitions.length === 0) {
-  throw new Error("server module catalog 未导出 serverModuleDefinitions");
-}
+const definitions = serverModuleDefinitions;
 const ids = new Set<string>();
 for (const definition of definitions) {
   if (ids.has(definition.id)) {
@@ -22,12 +17,21 @@ for (const definition of definitions) {
   }
   ids.add(definition.id);
 }
+
 const assemblyDir = join(process.cwd(), "config/assemblies");
 if (existsSync(assemblyDir)) {
   for (const file of readdirSync(assemblyDir).filter((name) => name.endsWith(".yaml"))) {
-    const text = await import("node:fs/promises").then(async (fs) => fs.readFile(join(assemblyDir, file), "utf8"));
-    if (text.trim().length === 0) {
-      throw new Error(`装配文件为空: ${file}`);
+    const text = readFileSync(join(assemblyDir, file), "utf8");
+    const assembly = assemblyDescriptorSchema.parse(parse(text));
+    for (const realm of [assembly.realms.server, assembly.realms.client, assembly.realms.console]) {
+      for (const binding of realm.bindings) {
+        if (!ids.has(binding.moduleId)) {
+          throw new Error(`装配 ${file} 引用了未登记模块 ${binding.moduleId}`);
+        }
+        if (binding.configRef !== null && !(binding.configRef in assembly.configs)) {
+          throw new Error(`装配 ${file} 引用了缺失配置块 ${binding.configRef}`);
+        }
+      }
     }
   }
 }
