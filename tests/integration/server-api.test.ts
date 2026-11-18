@@ -99,11 +99,11 @@ async function appFor(harness: GameHarness) {
     assembly,
     projection: () => projection(clockView(harness)),
     clock: () => clockView(harness),
-    pause: (operationId, expected) => {
+    pause: (operationId: string, expected: number) => {
       void operationId;
       return setClockMode(harness, "paused", expected);
     },
-    resume: (operationId, expected) => {
+    resume: (operationId: string, expected: number) => {
       void operationId;
       return setClockMode(harness, "running", expected);
     },

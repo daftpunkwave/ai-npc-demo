@@ -3,8 +3,9 @@
  * 依赖 authority、存储、投影/时钟/存档回调与身份令牌；不直接写规则聚合。
  * 禁止信任页面自报角色、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket from "@fastify/websocket";
+import { randomUUID } from "node:crypto";
 import {
   commandEnvelopeSchema,
   commandReceiptSchema,
@@ -13,7 +14,6 @@ import {
   loginResponseSchema,
   type AuthContext,
   type ClockView,
-  type CommandEnvelope,
   type CommandReceipt,
   type PlayerProjection,
   type ResolvedModuleSet,
@@ -46,12 +46,12 @@ export interface ServerAppOptions {
   readonly assembly: ResolvedModuleSet;
   readonly projection: () => PlayerProjection;
   readonly clock: () => ClockView;
-  readonly pause: (operationId: string, expectedRunVersion: number) => ClockView;
-  readonly resume: (operationId: string, expectedRunVersion: number) => ClockView;
+  readonly pause: Function;
+  readonly resume: Function;
   readonly save: {
-    createSnapshot(input: { readonly sourceBranchId: string; readonly label: string; readonly createdBy: string }): SnapshotRecordView;
-    listSnapshots(): readonly SnapshotRecordView[];
-    restoreSnapshot(input: { readonly snapshotId: string; readonly createdBy: string; readonly runId?: string }): { readonly branchId: string; readonly runId: string };
+    createSnapshot: Function;
+    listSnapshots: Function;
+    restoreSnapshot: Function;
   };
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
@@ -104,7 +104,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
   });
 
-  const authenticate = (request: FastifyRequest, reply: { code: (status: number) => { send: (body: unknown) => unknown } }): Session | null => {
+  const authenticate = (request: FastifyRequest, reply: FastifyReply): Session | null => {
     const token = bearer(request);
     const session = token === null ? undefined : sessions.get(token);
     if (session === undefined) {
@@ -114,15 +114,15 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return session;
   };
 
-  app.get("/api/v1/health", async () => healthResponseSchema.parse({ status: "ready", protocolVersion: "1" }));
+  app.get("/api/v1/health", () => healthResponseSchema.parse({ status: "ready", protocolVersion: "1" }));
 
-  app.post("/api/v1/auth/login", async (request, reply) => {
+  app.post("/api/v1/auth/login", (request, reply) => {
     const body = loginRequestSchema.parse(request.body);
     const identity = identityByToken.get(body.token);
     if (identity === undefined) {
       return reply.code(401).send({ code: "unauthorized", safeMessage: "登录令牌无效" });
     }
-    const sessionToken = `sess-${Math.random().toString(36).slice(2)}`;
+    const sessionToken = `sess-${randomUUID()}`;
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
     sessions.set(sessionToken, { auth: identity.auth, token: sessionToken, expiresAt });
     return loginResponseSchema.parse({
@@ -133,7 +133,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     });
   });
 
-  app.post("/api/v1/auth/logout", async (request, reply) => {
+  app.post("/api/v1/auth/logout", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -142,7 +142,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return { ok: true };
   });
 
-  app.get("/api/v1/session", async (request, reply) => {
+  app.get("/api/v1/session", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -159,7 +159,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return descriptor;
   });
 
-  app.post("/api/v1/commands", async (request, reply) => {
+  app.post("/api/v1/commands", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -172,7 +172,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return commandReceiptSchema.parse(receipt);
   });
 
-  app.get("/api/v1/commands/:commandId", async (request, reply) => {
+  app.get("/api/v1/commands/:commandId", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -191,7 +191,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return receiptOf(row);
   });
 
-  app.get("/api/v1/world/view", async (request, reply) => {
+  app.get("/api/v1/world/view", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -199,7 +199,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return { streamSeq: 0, projectionVersion: 0, projection: options.projection() };
   });
 
-  app.post("/api/v1/campaign/pause", async (request, reply) => {
+  app.post("/api/v1/campaign/pause", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -208,7 +208,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return options.pause(body.operationId, body.expectedRunVersion);
   });
 
-  app.post("/api/v1/campaign/resume", async (request, reply) => {
+  app.post("/api/v1/campaign/resume", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -217,7 +217,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return options.resume(body.operationId, body.expectedRunVersion);
   });
 
-  app.post("/api/v1/campaign/snapshots", async (request, reply) => {
+  app.post("/api/v1/campaign/snapshots", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -231,13 +231,14 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return { snapshotId: snapshot.snapshotId, worldTick: snapshot.worldTick };
   });
 
-  app.get("/api/v1/campaign/snapshots", async (request, reply) => {
+  app.get("/api/v1/campaign/snapshots", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
     }
+    const snapshots = options.save.listSnapshots() as readonly SnapshotRecordView[];
     return {
-      snapshots: options.save.listSnapshots().map((snapshot) => ({
+      snapshots: snapshots.map((snapshot) => ({
         snapshotId: snapshot.snapshotId,
         label: snapshot.label,
         worldTick: snapshot.worldTick,
@@ -246,7 +247,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     };
   });
 
-  app.post("/api/v1/campaign/restore", async (request, reply) => {
+  app.post("/api/v1/campaign/restore", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
@@ -257,12 +258,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return { branchId: restored.branchId, clock: options.clock() };
   });
 
-  app.post("/api/v1/streams/ticket", async (request, reply) => {
+  app.post("/api/v1/streams/ticket", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
     }
-    const ticket = `ticket-${Math.random().toString(36).slice(2)}`;
+    const ticket = `ticket-${randomUUID()}`;
     tickets.set(ticket, { auth: session.auth, expiresAt: Date.now() + 30_000 });
     return { ticket, expiresAt: new Date(Date.now() + 30_000).toISOString() };
   });
@@ -299,7 +300,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     });
   });
 
-  app.get("/api/v1/console/health", async (request, reply) => {
+  app.get("/api/v1/console/health", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
       return;
