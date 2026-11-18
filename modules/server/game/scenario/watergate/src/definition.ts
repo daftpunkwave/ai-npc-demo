@@ -10,6 +10,7 @@ import { z } from "zod";
 const scenarioConfigSchema = z.object({}).strict();
 
 function definition(id: string): ModuleDefinition {
+  const requirements = ["game.world", "game.map", "game.resources", "game.comms", "game.actions"] as const;
   return {
     id,
     realm: "server",
@@ -24,13 +25,11 @@ function definition(id: string): ModuleDefinition {
         instanceScope: "run",
       },
     ],
-    requires: [
-      { capability: capabilityIdSchema.parse("game.world"), cardinality: "exactly-one", instanceScope: "run" },
-      { capability: capabilityIdSchema.parse("game.map"), cardinality: "exactly-one", instanceScope: "run" },
-      { capability: capabilityIdSchema.parse("game.resources"), cardinality: "exactly-one", instanceScope: "run" },
-      { capability: capabilityIdSchema.parse("game.comms"), cardinality: "exactly-one", instanceScope: "run" },
-      { capability: capabilityIdSchema.parse("game.actions"), cardinality: "exactly-one", instanceScope: "run" },
-    ],
+    requires: requirements.map((capability) => ({
+      capability: capabilityIdSchema.parse(capability),
+      cardinality: "exactly-one" as const,
+      instanceScope: "run" as const,
+    })),
     requiresRemote: [],
     configSchema: scenarioConfigSchema,
     defaults: {},
