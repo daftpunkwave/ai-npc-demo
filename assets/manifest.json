@@ -145,8 +145,9 @@
     }
   ],
   "fallback": {
-    "renderer": "client.scene-renderer.null",
-    "vectorOnly": true,
-    "description": "无画面/确定性测试不加载资产；缺图时允许退回等距矢量图元"
+    "renderer": "client.scene-renderer.pixi",
+    "vectorFallback": true,
+    "nullRendererForTests": "client.scene-renderer.null",
+    "description": "缺图时 Pixi 渲染器回退到可点击的等距矢量图元；null renderer 只用于无画面测试"
   }
 }
