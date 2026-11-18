@@ -6,11 +6,11 @@
 
 ## 文档索引
 
-| 文档 | 负责内容 |
-|---|---|
-| [tech-stack.md — 技术栈与约定](tech-stack.md) | 版本、workspace、依赖白名单、file header 与本地命令 |
-| [build-plan.md — 构建计划](build-plan.md) | 逐步产出、前置依赖、测试和完成判据 |
-| [roadmap-and-acceptance.md — 切片验收](roadmap-and-acceptance.md) | A/B/C/M 切片及交付证据 |
+| 文档                                                            | 负责内容                                 |
+| ------------------------------------------------------------- | ------------------------------------ |
+| [tech-stack.md — 技术栈与约定](tech-stack.md)                       | 版本、workspace、依赖白名单、file header 与本地命令 |
+| [build-plan.md — 构建计划](build-plan.md)                         | 逐步产出、前置依赖、测试和完成判据                    |
+| [roadmap-and-acceptance.md — 切片验收](roadmap-and-acceptance.md) | A/B/C/M 切片及交付证据                      |
 
 ## 阅读顺序
 
