@@ -1,0 +1,22 @@
+/**
+ * 创建六节点地图模块实例；地图实现无后台循环，端口在规则事务内按需绑定。
+ * 依赖模块定义与公共契约的模块实例类型。
+ * 禁止在 create 阶段读取内容、打开存储或缓存跨事务状态。
+ */
+import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+
+/** 地图模块没有独立启动资源，返回空生命周期实例。 */
+export async function createMapModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+  return {
+    moduleId: input.moduleId,
+    start: async () => {
+      // 地图实现不启动后台任务；所有查询与写入由规则事务触发。
+    },
+    drain: async () => {
+      // 没有在途写入需要排空。
+    },
+    dispose: async () => {
+      // 没有连接或定时器需要释放。
+    },
+  };
+}

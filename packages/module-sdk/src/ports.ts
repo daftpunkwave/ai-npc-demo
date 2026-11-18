@@ -74,6 +74,15 @@ export interface WorldTx {
 /** 只读事务视图：事件订阅与查询处理器不能登记聚合写入、事件或 job。 */
 export type WorldTxReader = Pick<WorldTx, "worldTick" | "get" | "list">;
 
+/** 按模块 ID 取得同一事务内受该模块写作用域限制的 WorldTx。 */
+export type ScopedWorldTxFactory = (moduleId: string) => WorldTx;
+
+/**
+ * 宿主在每次处理器调用时绑定模块端口：传入的 txFor 与当前事务共享提交与回滚。
+ * 端口实现应在方法内部按自身模块 ID 取 tx，不能跨模块直接写聚合。
+ */
+export type ModuleBinder = (txFor: ScopedWorldTxFactory) => unknown;
+
 /** 规则处理器的结果：接受（可携带结果）或按原因码拒绝，不能伪造 receipt 或异步任务状态。 */
 export type HandlerResult =
   | { readonly kind: "accepted"; readonly result?: Json }

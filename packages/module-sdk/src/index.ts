@@ -15,12 +15,17 @@ export type {
   ApprovedSpeechReader,
   HandlerContext,
   HandlerResult,
+  ModuleBinder,
   OpResult,
   ScopedModelPort,
   ScopedModelScope,
   ScopedStateKey,
   ScopedStoragePort,
   ScopedStorageRecord,
+  ScopedWorldTxFactory,
   WorldTx,
   WorldTxReader,
 } from "./ports";
+export * from "./game-ports";
+export * from "./game-utils";
+export * from "./contributor";

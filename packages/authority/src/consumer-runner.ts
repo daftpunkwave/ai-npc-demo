@@ -14,6 +14,7 @@ import {
 } from "@ai-npc/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
+import { bindModulePorts } from "./module-binding";
 import type { RuleRegistry } from "./rule-registry";
 import { requireStorageNumber } from "./storage-values";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
@@ -96,6 +97,7 @@ export class EventConsumerRunner {
   private readonly modules: unknown;
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
+  private readonly moduleBinder: RuleRuntime["moduleBinder"];
 
   constructor(options: EventConsumerRunnerOptions) {
     this.storage = options.storage;
@@ -104,6 +106,7 @@ export class EventConsumerRunner {
     this.modules = options.modules;
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
+    this.moduleBinder = options.moduleBinder;
   }
 
   /** 按注册顺序推进每个消费者；某个消费者抛错时停止整次运行并向调用方传播。 */
@@ -184,7 +187,18 @@ export class EventConsumerRunner {
     const context = createHandlerContext({
       auth: createSystemAuth(branch.worldId, branchId),
       tx: worldTx,
-      modules: this.modules,
+      modules: bindModulePorts({
+        binder: this.moduleBinder,
+        fallback: this.modules,
+        registry: this.registry,
+        storageTx: tx,
+        worldId: branch.worldId,
+        branchId,
+        worldTick: clock.worldTick,
+        principalId: systemPrincipalId,
+        correlationId: `event:${event.eventId}`,
+        host: this.host,
+      }),
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,

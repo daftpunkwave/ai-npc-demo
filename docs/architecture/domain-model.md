@@ -243,7 +243,7 @@ COMMIT
 | `TaskCompleted` | taskId、taskType、completedAtTick、effects（公开 `{ kind: "transport" \| "escort" \| "rescue" \| "repair" \| "scout" }[]`，渲染见感知 11.4） | principals[dispatcher, ...participants] + faction[team owner] + node[结束节点] |
 | `TaskFailed` / `TaskCancelled` | taskId、reasonCode / byId | principals[dispatcher, ...participants] + faction[team owner] |
 | `ResourcesTransferred` | fromStockpileId、toStockpileId、delta、taskId、dispatcherId | faction[两个库存点的所属派系] + principals[dispatcher] |
-| `ResourcesConsumed` | stockpileId、delta、reason、taskId | faction[所属派系] + principals[dispatcher] |
+| `ResourcesConsumed` | stockpileId、delta、reason、taskId（每日结算为 null） | faction[所属派系] + principals[dispatcher] |
 | `StockpileAdjusted` | stockpileId、delta、reason | faction[所属派系] + node[库存点所在节点] |
 | `CharacterMoved` / `TeamMoved` | id、fromNodeId、toNodeId | public |
 | `CharacterInjured` / `CharacterRecovered` | agentId、untilTick、cause | principals[agentId] + faction[其派系] + node[所在节点] |

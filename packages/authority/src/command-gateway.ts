@@ -27,6 +27,7 @@ import type { HandlerResult } from "@ai-npc/module-sdk";
 import { readBranch, readClock, tryReadClock, type BranchRecord, type ClockRecord } from "./branch-state";
 import { verifyFencing } from "./fencing";
 import { createHandlerContext } from "./handler-context";
+import { bindModulePorts } from "./module-binding";
 import { isCommandIssuerAllowed } from "./issuer-policy";
 import type { RuleRegistry } from "./rule-registry";
 import { requireStorageNumber, requireStorageString } from "./storage-values";
@@ -89,6 +90,7 @@ export class CommandGateway {
   private readonly content: unknown;
   private readonly approvedSpeech: CommandGatewayOptions["approvedSpeech"];
   private readonly allowDirectAgentCommands: boolean;
+  private readonly moduleBinder: CommandGatewayOptions["moduleBinder"];
 
   constructor(options: CommandGatewayOptions) {
     this.storage = options.storage;
@@ -98,6 +100,7 @@ export class CommandGateway {
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
     this.allowDirectAgentCommands = options.allowDirectAgentCommands ?? false;
+    this.moduleBinder = options.moduleBinder;
   }
 
   execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
@@ -272,7 +275,18 @@ export class CommandGateway {
     const handlerContext = createHandlerContext({
       auth,
       tx: handlerTx,
-      modules: this.modules,
+      modules: bindModulePorts({
+        binder: this.moduleBinder,
+        fallback: this.modules,
+        registry: this.registry,
+        storageTx: tx,
+        worldId: auth.worldId,
+        branchId: auth.branchId,
+        worldTick: clock.worldTick,
+        principalId: auth.principalId,
+        correlationId: envelope.commandId,
+        host: this.host,
+      }),
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
@@ -305,7 +319,18 @@ export class CommandGateway {
           const hookContext = createHandlerContext({
             auth,
             tx: hookTx,
-            modules: this.modules,
+            modules: bindModulePorts({
+              binder: this.moduleBinder,
+              fallback: this.modules,
+              registry: this.registry,
+              storageTx: tx,
+              worldId: auth.worldId,
+              branchId: auth.branchId,
+              worldTick: clock.worldTick,
+              principalId: auth.principalId,
+              correlationId: envelope.commandId,
+              host: this.host,
+            }),
             content: this.content,
             approvedSpeech: this.approvedSpeech,
             host: this.host,

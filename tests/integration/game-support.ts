@@ -1,0 +1,238 @@
+/**
+ * 游戏模块集成测试的真实 SQLite 环境、内容适配器与端口绑定。
+ * 依赖 SQLite 存储模块、内容加载器、authority、三个游戏模块与临时目录。
+ * 禁止复用测试之间的数据库，也不在助手里放宽命令校验或伪造世界状态。
+ */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+  AuthContext,
+  CommandEnvelope,
+  CommandType,
+  Json,
+  ModuleCreateInput,
+  StoragePort,
+} from "@ai-npc/contracts";
+import { Authority } from "@ai-npc/authority";
+import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
+import type { GameContent, ModuleBinder } from "@ai-npc/module-sdk";
+import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
+import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
+import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
+import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import { createFakeHost, type FakeHost } from "./authority-support";
+
+export interface GameHarness {
+  readonly dataDir: string;
+  readonly storage: StoragePort;
+  readonly host: FakeHost;
+  readonly authority: Authority;
+  readonly worldId: string;
+  readonly branchId: string;
+  readonly content: ContentPack;
+  readonly gameContent: GameContent;
+  dispose(): Promise<void>;
+}
+
+/** 把已校验内容包收窄为游戏端口视图；保留真实 Map 索引而不复制数据。 */
+export function toGameContent(content: ContentPack): GameContent {
+  return {
+    nodes: content.index.nodes,
+    roads: content.index.roads,
+    factions: content.index.factions,
+    characters: content.index.characters,
+    stockpiles: content.index.stockpiles,
+    teams: content.index.teams,
+    groups: content.index.groups,
+    evidence: content.index.evidence,
+    starts: content.index.starts,
+    migrationRoads: content.map.migrationRoads,
+    medicalFacilities: content.map.medicalFacilities,
+    playerNodeId: content.worldInit.player.nodeId,
+    playerPrincipalId: content.index.playerPrincipalId,
+    chapterId: content.lore.chapter.id,
+    initialMeters: content.worldInit.meters,
+    dutyDelegations: content.worldInit.dutyDelegations,
+  };
+}
+
+function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branchId: string): void {
+  storage.transact((tx) => {
+    const createdAt = host.nowIso();
+    tx.rows("worlds").put({
+      world_id: worldId,
+      pack_id: "earth-2964-v1",
+      content_version: "0.3.0",
+      created_at: createdAt,
+    });
+    tx.rows("branches").put({
+      branch_id: branchId,
+      world_id: worldId,
+      kind: "online",
+      status: "active",
+      parent_branch_id: null,
+      forked_at_world_seq: null,
+      run_id: null,
+      profile_hash: null,
+      created_at: createdAt,
+    });
+    tx.branch(branchId).table("clock").put({
+      world_tick: 0,
+      mode: "running",
+      seconds_per_tick: 10,
+      run_version: 0,
+      step_target_tick: null,
+      updated_at: createdAt,
+    });
+  });
+}
+
+/** 启动真实存储、加载内容、绑定模块端口并注册游戏处理器。 */
+export async function createGameHarness(): Promise<GameHarness> {
+  const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
+  const host = createFakeHost();
+  const worldId = "wld-000000000000";
+  const branchId = "br-000000000000";
+  const signal = new AbortController().signal;
+  const input: ModuleCreateInput = {
+    moduleId: storageModuleDefinition.id,
+    realm: "server",
+    config: { dataDir },
+    scope: {},
+    ports: {},
+    host,
+    signal,
+  };
+  const instance = await storageModuleDefinition.create(input);
+  try {
+    await instance.start(signal);
+    const port = instance.port;
+    if (port === undefined) {
+      throw new Error("存储模块实例没有暴露端口");
+    }
+    const storage = port as StoragePort;
+    seedBranch(storage, host, worldId, branchId);
+    const content = loadContentPack("content", "earth-2964-v1");
+    const gameContent = toGameContent(content);
+    const binder: ModuleBinder = (txFor) => ({
+      "game.map": createMapPort(txFor, gameContent, host.ids),
+      "game.resources": createResourcesPort(txFor, gameContent, { scarceRatio: 0.3, surplusRatio: 1.2 }),
+      "game.world": createWorldPort(txFor, gameContent, host.ids),
+    });
+    const authority = new Authority({
+      storage,
+      host,
+      content: gameContent,
+      moduleBinder: binder,
+      allowDirectAgentCommands: true,
+    });
+    authority.registerModule(createMapContributor());
+    authority.registerModule(createResourcesContributor());
+    authority.registerModule(createWorldContributor());
+    return {
+      dataDir,
+      storage,
+      host,
+      authority,
+      worldId,
+      branchId,
+      content,
+      gameContent,
+      dispose: async () => {
+        await instance.dispose();
+        rmSync(dataDir, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    await instance.dispose();
+    rmSync(dataDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** 设置测试分支的 worldTick 与模式；不改变 runVersion 以外的控制字段。 */
+export function setGameClock(
+  harness: GameHarness,
+  clock: {
+    readonly worldTick: number;
+    readonly mode: "running" | "pausing" | "paused" | "resuming" | "stepping";
+    readonly stepTargetTick?: number | null;
+  },
+): void {
+  harness.storage.transact((tx) => {
+    const table = tx.branch(harness.branchId).table("clock");
+    const row = table.get({});
+    if (row === null) {
+      throw new Error("测试分支没有时钟行");
+    }
+    table.put({
+      ...row,
+      world_tick: clock.worldTick,
+      mode: clock.mode,
+      step_target_tick: clock.stepTargetTick ?? null,
+      run_version: Number(row["run_version"]) + 1,
+      updated_at: harness.host.nowIso(),
+    });
+  });
+}
+
+export function playerAuth(harness: GameHarness): AuthContext {
+  return {
+    principalId: "player-1",
+    kind: "player",
+    roles: ["player"],
+    worldId: harness.worldId,
+    branchId: harness.branchId,
+    actingAsAgentId: null,
+    controllerEpoch: null,
+    turnLeaseEpoch: null,
+    turnId: null,
+  };
+}
+
+export function strategicAuth(harness: GameHarness, agentId = "human-neutral"): AuthContext {
+  return {
+    principalId: agentId,
+    kind: "agent",
+    roles: ["agent"],
+    worldId: harness.worldId,
+    branchId: harness.branchId,
+    actingAsAgentId: null,
+    controllerEpoch: null,
+    turnLeaseEpoch: null,
+    turnId: null,
+  };
+}
+
+export function gameCommandEnvelope(
+  type: CommandType,
+  payload: Json,
+  commandId: string,
+): CommandEnvelope {
+  return { commandId, type, schemaVersion: 1, payload };
+}
+
+/** 读取一个聚合的原始状态，供测试断言初始化与任务写入。 */
+export function readGameAggregate(
+  harness: GameHarness,
+  aggregateType: string,
+  aggregateId: string,
+): Json | null {
+  return harness.storage.transact((tx) => {
+    const row = tx.branch(harness.branchId).table("aggregate_state").get({
+      aggregate_type: aggregateType,
+      aggregate_id: aggregateId,
+    });
+    return row === null ? null : (row["state_json"] as Json);
+  });
+}
+
+/** 读取分支事件类型序列，供断言事件顺序。 */
+export function readGameEventTypes(harness: GameHarness): readonly string[] {
+  return harness.storage.transact((tx) =>
+    tx
+      .all("SELECT type FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC", [harness.branchId])
+      .map((row) => String(row["type"])),
+  );
+}

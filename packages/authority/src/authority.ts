@@ -4,6 +4,7 @@
  * 禁止在组装时启动后台循环、自动扫描模块或把 allowDirectAgentCommands 带进生产默认值。
  */
 import type { CommandType } from "@ai-npc/contracts";
+import type { ModuleBinder } from "@ai-npc/module-sdk";
 import { CommandGateway } from "./command-gateway";
 import { ClockStepRunner } from "./clock-steps";
 import { EventConsumerRunner } from "./consumer-runner";
@@ -20,6 +21,7 @@ export interface AuthorityOptions {
   readonly content?: unknown;
   readonly approvedSpeech?: RuleRuntime["approvedSpeech"];
   readonly allowDirectAgentCommands?: boolean;
+  readonly moduleBinder?: ModuleBinder;
 }
 
 /** 服务端固定机制的组合根：注册贡献后共享同一规则注册表。 */
@@ -38,6 +40,7 @@ export class Authority {
       modules: options.modules ?? {},
       content: options.content ?? null,
       approvedSpeech: options.approvedSpeech ?? emptyApprovedSpeechReader,
+      moduleBinder: options.moduleBinder,
     };
     this.commands = new CommandGateway({
       ...runtime,
