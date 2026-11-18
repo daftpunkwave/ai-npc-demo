@@ -17,6 +17,7 @@ export const agreementStateSchema = z
     responses: z.record(z.string(), z.enum(["accept", "reject", "counter"])),
     status: z.enum(["proposed", "active", "fulfilled", "rejected", "superseded", "expired", "breached"]),
     createdAtTick: z.number().int().nonnegative(),
+    activatedAtTick: z.number().int().nonnegative().nullable(),
     expiresAtTick: z.number().int().nonnegative(),
     supersedesId: z.string().min(1).nullable(),
     supersededBy: z.string().min(1).nullable(),

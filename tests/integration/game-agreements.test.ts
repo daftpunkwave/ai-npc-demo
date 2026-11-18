@@ -129,6 +129,42 @@ describe("协议", () => {
     expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({ status: "expired" });
   });
 
+  it("截止后接受被拒绝", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const proposal = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope(
+        "agreement.propose",
+        {
+          parties: ["player-1", "human-neutral"],
+          terms: [
+            {
+              kind: "deliver",
+              obligorId: "player-1",
+              resource: "supply",
+              amount: 10,
+              fromStockpileId: "sp-commons",
+              toStockpileId: "sp-earth",
+              byTick: 2,
+            },
+          ],
+          expiresInTicks: 10,
+        },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(proposal.commandStatus).toBe("accepted");
+    const agreementId = (proposal.result as { readonly agreementId: string }).agreementId;
+    setGameClock(value, { worldTick: 3, mode: "running" });
+    const accepted = value.authority.commands.execute(
+      strategicAuth(value, "human-neutral"),
+      gameCommandEnvelope("agreement.respond", { agreementId, response: "accept" }, value.host.ids("cmd")),
+    );
+    expect(accepted.commandStatus).toBe("rejected");
+    expect(accepted.reasonCode).toBe("deadline-out-of-range");
+  });
+
   it("运输完成触发条款履约与协议完成", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");

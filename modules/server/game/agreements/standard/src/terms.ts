@@ -80,11 +80,11 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
       return "invalid-terms";
     }
     for (const teamId of term.teamIds) {
-      if (!content.teams.has(teamId)) {
+      if (!content.teams.has(teamId) || !ports["game.world"].canDispatchTeam(term.obligorId, teamId)) {
         return "invalid-terms";
       }
     }
-    if (!content.stockpiles.has(term.stockpileId)) {
+    if (!content.stockpiles.has(term.stockpileId) || ports["game.world"].drawAuthority(term.obligorId, term.stockpileId).kind === "none") {
       return "invalid-terms";
     }
   }

@@ -41,6 +41,7 @@ function initialState(
     responses: { [proposerId]: "accept" },
     status: "proposed",
     createdAtTick: context.tx.worldTick,
+    activatedAtTick: null,
     expiresAtTick,
     supersedesId,
     supersededBy: null,
@@ -101,7 +102,7 @@ function applyActivation(context: AgreementContext, state: AgreementState): void
 }
 
 function activate(context: AgreementContext, state: AgreementState): AgreementState {
-  const activated: AgreementState = { ...state, status: "active" };
+  const activated: AgreementState = { ...state, status: "active", activatedAtTick: context.tx.worldTick };
   applyActivation(context, activated);
   context.tx.put("agreement", activated.agreementId, activated);
   context.tx.emit(
@@ -117,7 +118,7 @@ function activate(context: AgreementContext, state: AgreementState): AgreementSt
   scheduleBreaches(context, activated);
   context.tx.cancelJobs(`agreement-expire:${activated.agreementId}`);
   for (const [index, term] of activated.terms.entries()) {
-    if (term.kind === "grant-passage" || term.kind === "water-allocation" || term.kind === "delegate") {
+    if (term.kind === "delegate") {
       activated.fulfilledTerms = [...new Set([...activated.fulfilledTerms, index])];
       context.tx.emit(
         "AgreementTermFulfilled",
@@ -192,7 +193,8 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
   if (state.status !== "proposed") {
     return { kind: "rejected", reasonCode: "agreement-not-open", safeMessage: "协议已经关闭" };
   }
-  if (state.responses[actor] === "accept") {
+  const responseMap = new Map(Object.entries(state.responses));
+  if (responseMap.get(actor) === "accept") {
     return { kind: "rejected", reasonCode: "already-responded", safeMessage: "已经回复过该提案" };
   }
   context.tx.emit(
@@ -201,7 +203,8 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
     [{ kind: "principals", ids: [...state.parties] }],
   );
   if (input.response === "reject") {
-    context.tx.put("agreement", state.agreementId, { ...state, status: "rejected", responses: { ...state.responses, [actor]: "reject" } });
+    responseMap.set(actor, "reject");
+    context.tx.put("agreement", state.agreementId, { ...state, status: "rejected", responses: Object.fromEntries(responseMap) });
     context.tx.emit("AgreementRejected", { agreementId: state.agreementId, byId: actor }, [{ kind: "public" }]);
     cancelAgreementJobs(context, state);
     return { kind: "accepted" };
@@ -241,10 +244,15 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
     scheduleExpiry(context, next);
     return { kind: "accepted", result: { agreementId: next.agreementId } };
   }
-  const responses = { ...state.responses, [actor]: "accept" as const };
+  const responses = Object.fromEntries(new Map([...Object.entries(state.responses), [actor, "accept" as const]]));
   const next = { ...state, responses };
   context.tx.put("agreement", next.agreementId, next);
-  if (next.parties.every((party) => responses[party] === "accept")) {
+  const acceptedByAll = next.parties.every((party) => new Map(Object.entries(responses)).get(party) === "accept");
+  if (acceptedByAll) {
+    const invalid = validateTerms(context, next.terms, next.parties);
+    if (invalid !== null) {
+      return { kind: "rejected", reasonCode: invalid, safeMessage: "条款在生效前已失效" };
+    }
     activate(context, next);
   }
   return { kind: "accepted" };
@@ -350,19 +358,24 @@ function onTaskCompleted(context: AgreementContext, event: EventEnvelope): void 
     if (state.status !== "active" && state.status !== "breached") {
       continue;
     }
+    if (state.activatedAtTick !== null && (task.completedAtTick as number) < state.activatedAtTick) {
+      continue;
+    }
+    let current = state;
     for (const [index, term] of state.terms.entries()) {
       if (term.kind !== "deliver" || term.byTick < (task.completedAtTick as number) || !taskFulfills(context, term, payload.taskId)) {
         continue;
       }
       const params = task.params as { readonly cargo?: Record<string, number> };
-      const progress = state.progress[index] ?? 0;
+      const progress = current.progress[index] ?? 0;
       const amount = params.cargo?.[term.resource] ?? 0;
       if (progress + amount >= term.amount) {
-        fulfillTerm(context, state, index, [String(event.eventId)]);
+        current = fulfillTerm(context, current, index, [String(event.eventId)]);
       } else if (amount > 0) {
-        const nextProgress = [...state.progress];
+        const nextProgress = [...current.progress];
         nextProgress[index] = progress + amount;
-        context.tx.put("agreement", state.agreementId, { ...state, progress: nextProgress });
+        current = { ...current, progress: nextProgress };
+        context.tx.put("agreement", current.agreementId, current);
       }
     }
     for (const [index, term] of state.terms.entries()) {
@@ -372,7 +385,7 @@ function onTaskCompleted(context: AgreementContext, event: EventEnvelope): void 
       if (term.byTick < (task.completedAtTick as number) || !taskFulfills(context, term, payload.taskId)) {
         continue;
       }
-      fulfillTerm(context, state, index, [String(event.eventId)]);
+      current = fulfillTerm(context, current, index, [String(event.eventId)]);
     }
   }
 }
@@ -388,6 +401,10 @@ function onInformationShared(context: AgreementContext, event: EventEnvelope): v
     if (state.status !== "active" && state.status !== "breached") {
       continue;
     }
+    if (state.activatedAtTick !== null && context.tx.worldTick < state.activatedAtTick) {
+      continue;
+    }
+    let current = state;
     for (const [index, term] of state.terms.entries()) {
       if (
         term.kind === "share-evidence" &&
@@ -396,7 +413,7 @@ function onInformationShared(context: AgreementContext, event: EventEnvelope): v
         payload.audience.includes(term.toPrincipalId) &&
         context.tx.worldTick <= term.byTick
       ) {
-        fulfillTerm(context, state, index, [String(event.eventId)]);
+        current = fulfillTerm(context, current, index, [String(event.eventId)]);
       }
     }
   }
@@ -448,6 +465,26 @@ function expire(context: AgreementContext, agreementId: string): void {
 function breach(context: AgreementContext, agreementId: string, termIndex: number): void {
   const state = readAgreementState(context.tx, agreementId);
   if (state === null) {
+    return;
+  }
+  const term = state.terms[termIndex];
+  if (term === undefined) {
+    return;
+  }
+  if (term.kind === "water-allocation") {
+    if (asPorts(context)["game.world"].meters()?.["watergate.allocation"] === term.policy) {
+      fulfillTerm(context, state, termIndex, []);
+    } else {
+      markBreach(context, state, termIndex);
+    }
+    return;
+  }
+  if (term.kind === "grant-passage") {
+    if (asPorts(context)["game.map"].roadStatus(term.roadId) !== "closed") {
+      fulfillTerm(context, state, termIndex, []);
+    } else {
+      markBreach(context, state, termIndex);
+    }
     return;
   }
   markBreach(context, state, termIndex);
