@@ -1,6 +1,40 @@
 /**
- * 服务端固定的命令网关、事务边界、幂等、版本与 fencing 机制。
- * 依赖 contracts 与 kernel 的公开契约，通过注入的 storage/world 端口工作。
- * 禁止包含水闸、资源或协议等具体游戏规则，也不得吞掉领域拒绝。
+ * 汇总 authority 的公开入口：命令网关、规则注册、job/时钟/消费者执行器与组装门面。
+ * 依赖各固定机制实现与公共类型；调用方只经此入口装配，不导入内部事务细节。
+ * 禁止在此启动运行时、创建存储连接或隐藏处理器注册失败。
  */
 export const packageName = "@ai-npc/authority";
+
+export { Authority } from "./authority";
+export type { AuthorityOptions } from "./authority";
+export { CommandGateway, commandPayloadHash } from "./command-gateway";
+export { ClockStepRunner } from "./clock-steps";
+export type { ClockStepRunnerOptions } from "./clock-steps";
+export { EventConsumerRunner } from "./consumer-runner";
+export type { ConsumerRunOptions, ConsumerRunResult, EventConsumerRunnerOptions } from "./consumer-runner";
+export { JobRunner } from "./job-runner";
+export type { JobRunnerOptions } from "./job-runner";
+export { RuleRegistry } from "./rule-registry";
+export { createSystemAuth, systemPrincipalId } from "./system-auth";
+export { commandIssuerKinds, isCommandIssuerAllowed } from "./issuer-policy";
+export { effectivePrincipalKind } from "./types";
+export type {
+  AfterCommandHook,
+  ClockStepRegistration,
+  CommandGatewayOptions,
+  CommandHandler,
+  ContributorScope,
+  DueJob,
+  EventConsumerRegistration,
+  JobHandler,
+  RegisteredAfterCommand,
+  RegisteredCommand,
+  RegisteredJob,
+  RuleContributor,
+  RuleRuntime,
+  StoredAfterCommandHook,
+  StoredClockStep,
+  StoredCommandHandler,
+  StoredEventConsumer,
+  StoredJobHandler,
+} from "./types";

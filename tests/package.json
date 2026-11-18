@@ -11,6 +11,7 @@
     "@ai-npc/contracts": "workspace:*",
     "@ai-npc/experiment": "workspace:*",
     "@ai-npc/kernel": "workspace:*",
+    "@ai-npc/mod-platform-storage-sqlite": "workspace:*",
     "@ai-npc/module-sdk": "workspace:*",
     "@ai-npc/observability": "workspace:*",
     "@ai-npc/scripts": "workspace:*"

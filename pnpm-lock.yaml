@@ -202,7 +202,14 @@ importers:
 
   packages/agent-runtime: {}
 
-  packages/authority: {}
+  packages/authority:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../module-sdk
 
   packages/client-protocol: {}
 
@@ -292,6 +299,9 @@ importers:
       '@ai-npc/kernel':
         specifier: workspace:*
         version: link:../packages/kernel
+      '@ai-npc/mod-platform-storage-sqlite':
+        specifier: workspace:*
+        version: link:../modules/server/platform/storage/sqlite
       '@ai-npc/module-sdk':
         specifier: workspace:*
         version: link:../packages/module-sdk
