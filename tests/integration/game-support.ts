@@ -20,6 +20,7 @@ import type { GameContent, ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
+import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
@@ -162,6 +163,7 @@ export async function createGameHarness(options: {
       "game.world": createWorldPort(txFor, gameContent, host.ids),
       "game.comms": createCommsPort(txFor, gameContent, host.ids),
       "game.actions": createActionsPort(txFor),
+      "game.agreements": createAgreementsPort(txFor),
     });
     const authority = new Authority({
       storage,
@@ -176,6 +178,7 @@ export async function createGameHarness(options: {
     authority.registerModule(createWorldContributor());
     authority.registerModule(createCommsContributor());
     authority.registerModule(createActionsContributor());
+    authority.registerModule(createAgreementsContributor());
     return {
       dataDir,
       storage,
@@ -272,6 +275,29 @@ export function readGameAggregate(
     });
     return row === null ? null : (row["state_json"] as Json);
   });
+}
+
+/** 创建并登记一个供 afterEach 释放的 harness，减少测试文件重复样板。 */
+export async function createTrackedGameHarness(
+  active: GameHarness[],
+  options: Parameters<typeof createGameHarness>[0] = {},
+): Promise<GameHarness> {
+  const created = await createGameHarness(options);
+  active.push(created);
+  return created;
+}
+
+/** 释放所有已登记的 harness。 */
+export async function disposeTrackedGameHarnesses(active: GameHarness[]): Promise<void> {
+  await Promise.all(active.splice(0).map(async (harness) => harness.dispose()));
+}
+
+/** 以人类中立阵营开局，供各游戏模块测试复用。 */
+export function startNeutralCampaign(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
+  return value.authority.commands.execute(
+    playerAuth(value),
+    gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
+  );
 }
 
 /** 读取分支事件类型序列，供断言事件顺序。 */

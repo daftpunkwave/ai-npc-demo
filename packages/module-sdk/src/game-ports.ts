@@ -447,6 +447,13 @@ export interface AgreementView {
   readonly parties: readonly string[];
 }
 
+/** 协议查询端口；协议聚合由协议模块拥有。 */
+export interface GameAgreementsPort {
+  agreement(agreementId: string): AgreementView | null;
+  agreementsOf(principalId: string): readonly AgreementView[];
+  activeAgreements(): readonly AgreementView[];
+}
+
 /** 通信端口：送达计算、知识授权与剧情/对白写入。 */
 export interface CommsPostResult {
   readonly eventId: string;

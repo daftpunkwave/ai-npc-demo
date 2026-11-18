@@ -12,6 +12,7 @@
     "@ai-npc/experiment": "workspace:*",
     "@ai-npc/kernel": "workspace:*",
     "@ai-npc/mod-game-actions-standard": "workspace:*",
+    "@ai-npc/mod-game-agreements-standard": "workspace:*",
     "@ai-npc/mod-game-clock-controlled": "workspace:*",
     "@ai-npc/mod-game-comms-standard": "workspace:*",
     "@ai-npc/mod-game-map-six-nodes": "workspace:*",

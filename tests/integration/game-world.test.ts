@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { Json } from "@ai-npc/contracts";
+import { createSystemAuth } from "@ai-npc/authority";
 import { createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import {
   createGameHarness,
@@ -205,7 +206,7 @@ describe("世界核心", () => {
       ownsAggregates: [],
       commands: [
         {
-          type: "agreement.propose",
+          type: "probe.ask",
           handler: (context) => {
             const ports = context.modules as {
               readonly "game.world": { moveCharacter(agentId: string, nodeId: string): unknown };
@@ -217,8 +218,8 @@ describe("世界核心", () => {
       ],
     });
     const receipt = value.authority.commands.execute(
-      playerAuth(value),
-      gameCommandEnvelope("agreement.propose", { parties: ["player-1", "npc-cenyan"], terms: [{ kind: "repair-relay", obligorId: "player-1", byTick: 100 }] }, value.host.ids("cmd")),
+      createSystemAuth(value.worldId, value.branchId),
+      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000001", agentId: "npc-cenyan", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("accepted");
     expect(receipt.acceptedEventIds.length).toBeGreaterThan(0);
@@ -234,7 +235,7 @@ describe("世界核心", () => {
       ownsAggregates: [],
       commands: [
         {
-          type: "agreement.propose",
+          type: "probe.ask",
           handler: (context) => {
             const ports = context.modules as {
               readonly "game.world": { moveCharacter(agentId: string, nodeId: string): unknown };
@@ -247,8 +248,8 @@ describe("世界核心", () => {
     });
     const before = readGameAggregate(value, "character", "npc-cenyan");
     const receipt = value.authority.commands.execute(
-      playerAuth(value),
-      gameCommandEnvelope("agreement.propose", { parties: ["player-1", "npc-cenyan"], terms: [{ kind: "repair-relay", obligorId: "player-1", byTick: 100 }] }, value.host.ids("cmd")),
+      createSystemAuth(value.worldId, value.branchId),
+      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000002", agentId: "npc-cenyan", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("rejected");
     expect(readGameAggregate(value, "character", "npc-cenyan")).toEqual(before);
