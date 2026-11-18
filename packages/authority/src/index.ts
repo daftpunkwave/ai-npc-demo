@@ -16,6 +16,8 @@ export { JobRunner } from "./job-runner";
 export type { JobRunnerOptions } from "./job-runner";
 export { RuleRegistry } from "./rule-registry";
 export { createSystemAuth, systemPrincipalId } from "./system-auth";
+export { TransactionWorldTx } from "./world-tx";
+export type { WorldTxOptions } from "./world-tx";
 export { commandIssuerKinds, isCommandIssuerAllowed } from "./issuer-policy";
 export { effectivePrincipalKind } from "./types";
 export type {

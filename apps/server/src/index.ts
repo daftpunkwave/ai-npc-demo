@@ -5,3 +5,6 @@
 export { createServerApp } from "./app";
 export type { ServerAppOptions, ServerIdentity } from "./app";
 export { buildPlayerProjection } from "./projection";
+export { startHost } from "./host";
+export type { HostOptions, RunningHost } from "./host";
+export { serverModuleDefinitions } from "./host/module-catalog";

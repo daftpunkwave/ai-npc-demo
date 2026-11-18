@@ -185,6 +185,9 @@ importers:
         specifier: ^5.12.8
         version: 5.12.8
     devDependencies:
+      '@ai-npc/app-server':
+        specifier: workspace:*
+        version: link:apps/server
       '@types/node':
         specifier: ^26
         version: 26.6.6
@@ -206,6 +209,39 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@ai-npc/experiment':
+        specifier: workspace:*
+        version: link:../../packages/experiment
+      '@ai-npc/mod-game-actions-standard':
+        specifier: workspace:*
+        version: link:../../modules/server/game/actions/standard
+      '@ai-npc/mod-game-agreements-standard':
+        specifier: workspace:*
+        version: link:../../modules/server/game/agreements/standard
+      '@ai-npc/mod-game-clock-controlled':
+        specifier: workspace:*
+        version: link:../../modules/server/game/clock/controlled
+      '@ai-npc/mod-game-comms-standard':
+        specifier: workspace:*
+        version: link:../../modules/server/game/comms/standard
+      '@ai-npc/mod-game-map-six-nodes':
+        specifier: workspace:*
+        version: link:../../modules/server/game/map/six-nodes
+      '@ai-npc/mod-game-resources-light':
+        specifier: workspace:*
+        version: link:../../modules/server/game/resources/light
+      '@ai-npc/mod-game-save-sqlite':
+        specifier: workspace:*
+        version: link:../../modules/server/game/save/sqlite
+      '@ai-npc/mod-game-scenario-watergate':
+        specifier: workspace:*
+        version: link:../../modules/server/game/scenario/watergate
+      '@ai-npc/mod-game-world-slg-light':
+        specifier: workspace:*
+        version: link:../../modules/server/game/world/slg-light
+      '@ai-npc/mod-platform-storage-sqlite':
+        specifier: workspace:*
+        version: link:../../modules/server/platform/storage/sqlite
       '@ai-npc/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
