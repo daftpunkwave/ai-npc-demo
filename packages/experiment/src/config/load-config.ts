@@ -16,6 +16,7 @@ export type ConfigDraftKind = "assembly" | "model-layout" | "profile" | "toolset
 
 /** 数据库草稿读取器：返回最新版本的 JSON 值，没有草稿时返回 null。 */
 export interface ConfigDraftReader {
+  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars -- 参数名只用于表达读取契约。
   read: (kind: ConfigDraftKind, configId: string) => unknown;
 }
 

@@ -18,6 +18,7 @@ export function uniqueById<T>(
   pathOf: (index: number) => string,
 ): Map<string, T> {
   const map = new Map<string, T>();
+  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars -- index 与 item 在循环体内使用。
   for (const [index, item] of items.entries()) {
     const id = idOf(item);
     if (map.has(id)) {
