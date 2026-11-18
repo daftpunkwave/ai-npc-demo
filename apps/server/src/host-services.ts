@@ -3,8 +3,25 @@
  * 依赖 Node 标准库；不读取配置、不打开存储。
  * 禁止把 Math.random 用于规则随机或安全凭据。
  */
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { HostServices, Json } from "@ai-npc/contracts";
+
+const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
+
+function runtimeIdBody(): string {
+  let body = "";
+  while (body.length < 12) {
+    for (const byte of randomBytes(16)) {
+      if (byte < 224) {
+        body += idAlphabet[byte % idAlphabet.length];
+      }
+      if (body.length === 12) {
+        break;
+      }
+    }
+  }
+  return body;
+}
 
 function deterministicRng(seed: string): () => number {
   let state = 0x811c9dc5;
@@ -31,16 +48,23 @@ const tracer = {
 /** 创建生产宿主服务；ID 使用随机 UUID 后缀。 */
 export function createHostServices(): HostServices {
   return {
-    ids: (prefix) => `${prefix}-${randomUUID().replaceAll("-", "").slice(0, 12)}`,
+    ids: (prefix) => `${prefix}-${runtimeIdBody()}`,
     nowIso: () => new Date().toISOString(),
     monotonicMs: () => performance.now(),
     sleep: async (ms, signal) => {
+      if (signal?.aborted === true) {
+        throw new Error("sleep aborted");
+      }
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, ms);
-        signal?.addEventListener("abort", () => {
+        const onAbort = (): void => {
           clearTimeout(timer);
           reject(new Error("sleep aborted"));
-        }, { once: true });
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, ms);
+        signal?.addEventListener("abort", onAbort, { once: true });
       });
     },
     rng: (...parts) => deterministicRng(parts.join(":")),

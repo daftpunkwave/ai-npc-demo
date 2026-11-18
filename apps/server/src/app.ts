@@ -92,6 +92,7 @@ export interface ServerAppOptions {
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: typeof onBranchChangedHook;
+  readonly healthStatus?: () => "starting" | "ready" | "degraded";
 }
 
 interface Session {
@@ -163,7 +164,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     return session;
   };
 
-  app.get("/api/v1/health", () => healthResponseSchema.parse({ status: "ready", protocolVersion: "1" }));
+  app.get("/api/v1/health", () => healthResponseSchema.parse({ status: options.healthStatus?.() ?? "ready", protocolVersion: "1" }));
 
   app.post("/api/v1/auth/login", (request, reply) => {
     const body = loginRequestSchema.parse(request.body);
