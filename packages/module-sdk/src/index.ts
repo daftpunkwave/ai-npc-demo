@@ -6,6 +6,7 @@
 export const packageName = "@ai-npc/module-sdk";
 
 export { defineModule } from "./define-module";
+export { createStatelessModule } from "./lifecycle";
 
 export { createScopedStateKey } from "./ports";
 export type {

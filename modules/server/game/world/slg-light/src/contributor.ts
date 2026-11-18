@@ -242,7 +242,7 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
           if (record === null || record.state.injuredUntilTick === null) {
             return;
           }
-          if (record.state.injuredUntilTick > context.tx.worldTick) {
+          if ((record?.state.injuredUntilTick ?? 0) > context.tx.worldTick) {
             return;
           }
           context.tx.put("character", agentId, { ...record.state, injuredUntilTick: null });

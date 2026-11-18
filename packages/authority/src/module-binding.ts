@@ -3,6 +3,7 @@
  * 依赖规则注册表、存储事务与 WorldTx；端口只能通过返回的 txFor 取得目标模块的写作用域。
  * 禁止把调用方自己的 WorldTx 直接交给其他模块，或在模块未注册时静默降级为无写入端口。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import { DomainError, type HostServices, type StorageTransaction } from "@ai-npc/contracts";
 import type { ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
 import type { RuleRegistry } from "./rule-registry";

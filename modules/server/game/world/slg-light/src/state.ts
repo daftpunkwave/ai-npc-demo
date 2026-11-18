@@ -3,18 +3,10 @@
  * 依赖 zod 与公共契约的领域值；所有状态只允许世界模块写入。
  * 禁止在这里执行 campaign 初始化、每日结算或任务规则。
  */
-import { numericMeterIdSchema, taskTypeSchema, watergateAllocationSchema } from "@ai-npc/contracts";
+import { numericMeterIdSchema, resourceAmountsSchema, taskTypeSchema, watergateAllocationSchema } from "@ai-npc/contracts";
 import { DomainError } from "@ai-npc/contracts";
 import type { WorldTx } from "@ai-npc/module-sdk";
 import { z } from "zod";
-
-const amountsSchema = z
-  .object({
-    supply: z.number().int().nonnegative(),
-    energy: z.number().int().nonnegative(),
-    medical: z.number().int().nonnegative(),
-  })
-  .strict();
 
 export const campaignStateSchema = z
   .object({
@@ -80,8 +72,8 @@ export const delegationStateSchema = z
     granteeId: z.string().min(1),
     teamIds: z.array(z.string().min(1)),
     stockpileId: z.string().min(1),
-    remaining: amountsSchema,
-    limit: amountsSchema,
+    remaining: resourceAmountsSchema,
+    limit: resourceAmountsSchema,
     untilTick: z.number().int().nonnegative(),
   })
   .strict();

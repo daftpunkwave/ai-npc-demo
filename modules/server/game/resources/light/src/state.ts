@@ -3,32 +3,24 @@
  * 依赖 zod 与 module-sdk 的 WorldTx；状态只能由资源模块写入。
  * 禁止在这里执行预留、扣减或计算展示等级。
  */
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError, resourceAmountsSchema } from "@ai-npc/contracts";
 import type { WorldTx } from "@ai-npc/module-sdk";
 import { z } from "zod";
-
-const amountsSchema = z
-  .object({
-    supply: z.number().int().nonnegative(),
-    energy: z.number().int().nonnegative(),
-    medical: z.number().int().nonnegative(),
-  })
-  .strict();
 
 export const stockpileStateSchema = z
   .object({
     stockpileId: z.string().min(1),
     nodeId: z.string().min(1),
     ownerFactionId: z.string().min(1),
-    amount: amountsSchema,
-    reserved: amountsSchema,
-    baseline: amountsSchema,
+    amount: resourceAmountsSchema,
+    reserved: resourceAmountsSchema,
+    baseline: resourceAmountsSchema,
     reservations: z
       .array(
         z
           .object({
             taskId: z.string().min(1),
-            amount: amountsSchema,
+            amount: resourceAmountsSchema,
           })
           .strict(),
       )

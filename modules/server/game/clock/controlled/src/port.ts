@@ -45,10 +45,10 @@ class ControlledClockPort implements GameClockPort {
     this.nowIso = nowIso;
   }
 
-  private readRow(branchId: string): { readonly row: Readonly<Record<string, unknown>>; readonly clock: ClockState } {
+  private readRow(branchId: string): ClockState {
     return this.storage.transact((tx) => {
       const row = tx.branch(branchId).table("clock").get({});
-      return { row: row ?? {}, clock: parseClock(row, branchId) };
+      return parseClock(row, branchId);
     });
   }
 
@@ -84,7 +84,7 @@ class ControlledClockPort implements GameClockPort {
   }
 
   read(branchId: string): ClockState {
-    return this.readRow(branchId).clock;
+    return this.readRow(branchId);
   }
 
   start(branchId: string, expectedRunVersion?: number): ControlResult {

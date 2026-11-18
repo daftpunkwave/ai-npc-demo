@@ -4,20 +4,17 @@
  * 禁止用失真的夹具替代内容包，也不把未执行 job 的 tick 当作已结算。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { loadContentPack } from "@ai-npc/experiment";
 import type { Json } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
-import { createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import {
   createGameHarness,
+  createMemoryTx,
   gameCommandEnvelope,
   playerAuth,
   readGameAggregate,
   readGameEventTypes,
   setGameClock,
   strategicAuth,
-  toGameContent,
   type GameHarness,
 } from "./game-support";
 
@@ -259,86 +256,6 @@ describe("世界核心", () => {
   });
 });
 
-function fakeMapTx(): WorldTx {
-  const cells = new Map<string, Map<string, Json>>();
-  let eventSeq = 0;
-  const tx: WorldTx = {
-    worldTick: 0,
-    get<TState>(aggregateType: string, aggregateId: string) {
-      const state = cells.get(aggregateType)?.get(aggregateId);
-      return state === undefined ? null : ({ version: 1, state: state as TState });
-    },
-    list<TState>(aggregateType: string) {
-      return [...(cells.get(aggregateType) ?? new Map<string, Json>()).entries()].map(
-        ([id, state]) => ({ id, version: 1, state: state as TState }),
-      );
-    },
-    put(aggregateType: string, aggregateId: string, state: Json) {
-      const bucket = cells.get(aggregateType) ?? new Map<string, Json>();
-      bucket.set(aggregateId, state);
-      cells.set(aggregateType, bucket);
-    },
-    remove(aggregateType: string, aggregateId: string) {
-      cells.get(aggregateType)?.delete(aggregateId);
-    },
-    emit() {
-      eventSeq += 1;
-      return `evt-${String(eventSeq).padStart(12, "0")}`;
-    },
-    schedule() {
-      // 地图测试不创建 job。
-    },
-    cancelJobs() {
-      // 地图测试不取消 job。
-    },
-  };
-  return tx;
-}
-
-describe("六节点地图", () => {
-  const content = toGameContent(loadContentPack("content", "earth-2964-v1"));
-
-  it("按行程与货物加成求最短路", () => {
-    const tx = fakeMapTx();
-    const map = createMapPort(() => tx, content, (prefix) => `${prefix}-000000000001`);
-    expect(map.findRoute({ fromNodeId: "grayharbor", toNodeId: "orchard", factionId: "human-neutral", atTick: 0, withCargo: false })).toEqual({
-      roadIds: ["r-gh-or"],
-      travelTicks: 5,
-    });
-    expect(map.findRoute({ fromNodeId: "grayharbor", toNodeId: "orchard", factionId: "human-neutral", atTick: 0, withCargo: true })).toEqual({
-      roadIds: ["r-gh-or"],
-      travelTicks: 6,
-    });
-  });
-
-  it("受控道路在无通行许可时不可达，授予后可通行", () => {
-    const tx = fakeMapTx();
-    const map = createMapPort(() => tx, content, (prefix) => `${prefix}-000000000002`);
-    expect(map.findRoute({ fromNodeId: "anchor", toNodeId: "grayharbor", factionId: "human-alien-accord", atTick: 0, withCargo: false })).toBeNull();
-    expect(map.grantPassage({
-      roadId: "r-gh-an",
-      granteeFactionId: "human-alien-accord",
-      untilTick: 100,
-      byId: "species-extraterrestrial",
-    })).toMatchObject({ ok: true });
-    expect(map.findRoute({ fromNodeId: "anchor", toNodeId: "grayharbor", factionId: "human-alien-accord", atTick: 0, withCargo: false })).toEqual({
-      roadIds: ["r-gh-an"],
-      travelTicks: 5,
-    });
-  });
-
-  it("控制方可以关闭道路，非控制方被拒绝", () => {
-    const tx = fakeMapTx();
-    const map = createMapPort(() => tx, content, (prefix) => `${prefix}-000000000003`);
-    expect(map.setRoadStatus("r-gh-ps", "closed", "human-neutral")).toMatchObject({ ok: false, reasonCode: "no-authority" });
-    expect(map.setRoadStatus("r-gh-ps", "closed", "human-independent")).toMatchObject({ ok: true });
-    expect(map.findRoute({ fromNodeId: "grayharbor", toNodeId: "pass", factionId: "human-neutral", atTick: 0, withCargo: false })).toEqual({
-      roadIds: ["r-gh-ar", "r-ps-ar"],
-      travelTicks: 9,
-    });
-  });
-});
-
 describe("世界端口", () => {
   it("能读取初始化后的角色与队伍", async () => {
     const value = await harness();
@@ -347,7 +264,7 @@ describe("世界端口", () => {
     const capture: Json[] = [];
     value.storage.transact((tx) => {
       const world = createWorldPort(() => ({
-        ...fakeMapTx(),
+        ...createMemoryTx(),
         worldTick: 0,
         get: (type, id) => {
           const row = tx.branch(value.branchId).table("aggregate_state").get({ aggregate_type: type, aggregate_id: id });

@@ -16,12 +16,48 @@ import type {
 } from "@ai-npc/contracts";
 import { Authority } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
-import type { GameContent, ModuleBinder } from "@ai-npc/module-sdk";
+import type { GameContent, ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
+
+/** 内存 WorldTx：供不依赖 authority 的模块端口测试使用。 */
+export function createMemoryTx(worldTick = 0): WorldTx {
+  const cells = new Map<string, Map<string, Json>>();
+  let seq = 0;
+  return {
+    worldTick,
+    get<TState>(aggregateType: string, aggregateId: string) {
+      const state = cells.get(aggregateType)?.get(aggregateId);
+      return state === undefined ? null : { version: 1, state: state as TState };
+    },
+    list<TState>(aggregateType: string) {
+      return [...(cells.get(aggregateType) ?? new Map<string, Json>()).entries()].map(
+        ([id, state]) => ({ id, version: 1, state: state as TState }),
+      );
+    },
+    put(aggregateType: string, aggregateId: string, state: Json) {
+      const bucket = cells.get(aggregateType) ?? new Map<string, Json>();
+      bucket.set(aggregateId, state);
+      cells.set(aggregateType, bucket);
+    },
+    remove(aggregateType: string, aggregateId: string) {
+      cells.get(aggregateType)?.delete(aggregateId);
+    },
+    emit() {
+      seq += 1;
+      return `evt-${String(seq).padStart(12, "0")}`;
+    },
+    schedule() {
+      // 端口测试不创建 job。
+    },
+    cancelJobs() {
+      // 端口测试不取消 job。
+    },
+  };
+}
 
 export interface GameHarness {
   readonly dataDir: string;

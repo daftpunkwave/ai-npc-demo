@@ -3,11 +3,13 @@
  * 依赖内容视图、地图聚合状态与注入的 scoped WorldTx；所有写入与事件都进入调用方事务。
  * 禁止读取其他模块聚合、使用 Math.random 决定路径或在未受控道路上伪造控制权。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { ReasonCode, RoadStatus } from "@ai-npc/contracts";
 import { DomainError } from "@ai-npc/contracts";
 import {
   gameModuleIds,
   type GameContent,
+  type GameIdFactory,
   type GameMapPort,
   type GameRoad,
   type RouteQuery,
@@ -45,9 +47,9 @@ function pushAdjacent(adjacency: Map<string, { readonly road: GameRoad; readonly
 class SixNodeMapPort implements GameMapPort {
   private readonly txFor: ScopedWorldTxFactory;
   private readonly content: GameContent;
-  private readonly ids: (prefix: string) => string;
+  private readonly ids: GameIdFactory;
 
-  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: (prefix: string) => string) {
+  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: GameIdFactory) {
     this.txFor = txFor;
     this.content = content;
     this.ids = ids;
@@ -211,7 +213,7 @@ class SixNodeMapPort implements GameMapPort {
 export function createMapPort(
   txFor: ScopedWorldTxFactory,
   content: GameContent,
-  ids: (prefix: string) => string,
+  ids: GameIdFactory,
 ): GameMapPort {
   return new SixNodeMapPort(txFor, content, ids);
 }

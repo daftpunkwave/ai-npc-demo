@@ -3,6 +3,7 @@
  * 依赖内容初始值、世界聚合状态、指标阈值与注入的 scoped WorldTx。
  * 禁止写入地图或库存聚合，也禁止在失败操作中留下部分状态变化。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { MeterChange, MeterChangeCause, NumericMeterId, ReasonCode, ResourceAmounts, WatergateAllocation } from "@ai-npc/contracts";
 import {
   addAmounts,
@@ -17,6 +18,7 @@ import {
   type DelegationView,
   type DrawAuthority,
   type GameContent,
+  type GameIdFactory,
   type GameWorldPort,
   type GroupView,
   type MetersView,
@@ -86,9 +88,9 @@ function setMeter(view: MetersView, meter: NumericMeterId, value: number): Meter
 class SlgWorldPort implements GameWorldPort {
   private readonly txFor: ScopedWorldTxFactory;
   private readonly content: GameContent;
-  private readonly ids: (prefix: string) => string;
+  private readonly ids: GameIdFactory;
 
-  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: (prefix: string) => string) {
+  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: GameIdFactory) {
     this.txFor = txFor;
     this.content = content;
     this.ids = ids;
@@ -466,7 +468,7 @@ class SlgWorldPort implements GameWorldPort {
 export function createWorldPort(
   txFor: ScopedWorldTxFactory,
   content: GameContent,
-  ids: (prefix: string) => string,
+  ids: GameIdFactory,
 ): GameWorldPort {
   return new SlgWorldPort(txFor, content, ids);
 }

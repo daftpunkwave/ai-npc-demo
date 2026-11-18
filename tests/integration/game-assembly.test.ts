@@ -5,48 +5,13 @@
  */
 import { describe, expect, it } from "vitest";
 import { loadContentPack } from "@ai-npc/experiment";
-import type { Json, ModuleCreateInput } from "@ai-npc/contracts";
+import type { ModuleCreateInput } from "@ai-npc/contracts";
 import type { GameContent, WorldTx } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
-import { toGameContent } from "./game-support";
+import { createMemoryTx, toGameContent } from "./game-support";
 import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
 import { resourcesModuleDefinition } from "@ai-npc/mod-game-resources-light";
 import { worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
-
-function memoryTx(): WorldTx {
-  const cells = new Map<string, Map<string, Json>>();
-  let seq = 0;
-  return {
-    worldTick: 0,
-    get<TState>(aggregateType: string, aggregateId: string) {
-      const state = cells.get(aggregateType)?.get(aggregateId);
-      return state === undefined ? null : { version: 1, state: state as TState };
-    },
-    list<TState>(aggregateType: string) {
-      return [...(cells.get(aggregateType) ?? new Map<string, Json>()).entries()].map(
-        ([id, state]) => ({ id, version: 1, state: state as TState }),
-      );
-    },
-    put(aggregateType: string, aggregateId: string, state: Json) {
-      const bucket = cells.get(aggregateType) ?? new Map<string, Json>();
-      bucket.set(aggregateId, state);
-      cells.set(aggregateType, bucket);
-    },
-    remove(aggregateType: string, aggregateId: string) {
-      cells.get(aggregateType)?.delete(aggregateId);
-    },
-    emit() {
-      seq += 1;
-      return `evt-${String(seq).padStart(12, "0")}`;
-    },
-    schedule() {
-      // 组装测试不创建 job。
-    },
-    cancelJobs() {
-      // 组装测试不取消 job。
-    },
-  };
-}
 
 function input(definition: { readonly id: string }, host: ReturnType<typeof createFakeHost>): ModuleCreateInput {
   return {
@@ -71,7 +36,7 @@ describe("模块实例端口", () => {
         findRoute(query: { fromNodeId: string; toNodeId: string; factionId: string; atTick: number; withCargo: boolean }): unknown;
       };
     };
-    const map = port.bind(() => memoryTx(), content, host.ids);
+    const map = port.bind(() => createMemoryTx(), content, host.ids);
     expect(map.findRoute({ fromNodeId: "grayharbor", toNodeId: "orchard", factionId: "human-neutral", atTick: 0, withCargo: false })).toEqual({
       roadIds: ["r-gh-or"],
       travelTicks: 5,
@@ -86,7 +51,7 @@ describe("模块实例端口", () => {
         available(stockpileId: string, resource: "supply"): number;
       };
     };
-    const tx = memoryTx();
+    const tx = createMemoryTx();
     const resources = port.bind(() => tx);
     resources.initializeCampaign(content);
     expect(resources.available("sp-commons", "supply")).toBe(60);
@@ -100,7 +65,7 @@ describe("模块实例端口", () => {
         meters(): unknown;
       };
     };
-    const world = port.bind(() => memoryTx(), content, host.ids);
+    const world = port.bind(() => createMemoryTx(), content, host.ids);
     expect(world.campaign()).toBeNull();
     expect(world.meters()).toBeNull();
   });

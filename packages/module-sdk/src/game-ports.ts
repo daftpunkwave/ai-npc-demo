@@ -16,6 +16,9 @@ import type {
   WatergateAllocation,
 } from "@ai-npc/contracts";
 
+/** 宿主 ID 生成器的游戏端口视图；参数为 ID 前缀。 */
+export type GameIdFactory = (...args: [string]) => string;
+
 /** 首版游戏模块的稳定模块 ID；端口实现与装配共享同一组常量。 */
 export const gameModuleIds = {
   world: "game.world.slg-light",
