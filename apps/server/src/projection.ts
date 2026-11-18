@@ -19,15 +19,10 @@ function level(value: number): "critical" | "strained" | "stable" {
   return value <= 39 ? "strained" : "stable";
 }
 
-function meters(world: GameWorldPort): PlayerMetersView {
+function meters(world: GameWorldPort): PlayerMetersView | null {
   const value = world.meters();
   if (value === null) {
-    return {
-      relayStability: { value: 0, level: "critical" },
-      orchardWater: { value: 0, level: "critical" },
-      migrationSafety: { value: 0, level: "critical" },
-      watergateAllocation: "harbor-first",
-    };
+    return null;
   }
   return {
     relayStability: { value: value["relay.stability"], level: level(value["relay.stability"]) },
@@ -62,6 +57,10 @@ export function buildPlayerProjection(input: {
     status: map.roadStatus(road.roadId) ?? "open",
   }));
   const tasks: PlayerTaskView[] = [];
+  const meterView = meters(world);
+  if (meterView === null) {
+    throw new Error("世界指标尚未初始化，不能构建玩家投影");
+  }
   return playerProjectionSchema.parse({
     campaign: campaign === null
       ? null
@@ -76,7 +75,7 @@ export function buildPlayerProjection(input: {
         },
     clock,
     map: { nodes: nodeViews, roads: roadViews },
-    meters: meters(world),
+    meters: meterView,
     stockpiles: [],
     teams: [],
     characters: [],

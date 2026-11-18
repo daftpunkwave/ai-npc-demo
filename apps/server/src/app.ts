@@ -42,13 +42,13 @@ export interface ServerIdentity {
 function pauseHook(operationId: string, expectedRunVersion: number): ClockView {
   void operationId;
   void expectedRunVersion;
-  throw new Error("pause hook 未注入");
+  throw new Error(`pause hook 未注入: ${operationId}:${expectedRunVersion}`);
 }
 
 function resumeHook(operationId: string, expectedRunVersion: number): ClockView {
   void operationId;
   void expectedRunVersion;
-  throw new Error("resume hook 未注入");
+  throw new Error(`resume hook 未注入: ${operationId}:${expectedRunVersion}`);
 }
 
 interface SnapshotCreateArgs {
@@ -65,12 +65,12 @@ interface SnapshotRestoreArgs {
 
 function createSnapshotHook(input: SnapshotCreateArgs): SnapshotRecordView {
   void input;
-  throw new Error("save hook 未注入");
+  throw new Error(`save hook 未注入: ${input.sourceBranchId}`);
 }
 
 function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string; readonly runId: string } {
   void input;
-  throw new Error("save hook 未注入");
+  throw new Error(`restore hook 未注入: ${input.snapshotId}`);
 }
 
 export interface ServerAppOptions {
@@ -90,6 +90,7 @@ export interface ServerAppOptions {
   };
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
+  readonly onBranchChanged?: (branchId: string) => void;
 }
 
 interface Session {
@@ -128,7 +129,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
   await app.register(websocket);
   const sessions = new Map<string, Session>();
   const tickets = new Map<string, { readonly auth: AuthContext; readonly expiresAt: number }>();
-  const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://127.0.0.1:5174"]);
+  const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
 
@@ -139,11 +140,28 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     }
   });
 
+  app.addHook("onSend", async (request, reply, payload) => {
+    const origin = request.headers.origin;
+    if (typeof origin === "string" && allowedOrigins.has(origin)) {
+      reply.header("access-control-allow-origin", origin);
+      reply.header("access-control-allow-headers", "authorization,content-type");
+      reply.header("access-control-allow-methods", "GET,POST,OPTIONS");
+    }
+    return payload;
+  });
+
+  app.options("/*", async (_request, reply) => reply.code(204).send());
+
   const authenticate = (request: FastifyRequest, reply: FastifyReply): Session | null => {
     const token = bearer(request);
     const session = token === null ? undefined : sessions.get(token);
     if (session === undefined) {
       reply.code(401).send({ code: "unauthorized", safeMessage: "缺少或无效会话" });
+      return null;
+    }
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      sessions.delete(session.token);
+      reply.code(401).send({ code: "unauthorized", safeMessage: "会话已过期" });
       return null;
     }
     return session;
@@ -290,6 +308,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
     const body = request.body as { readonly snapshotId: string };
     const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId });
     branchId = restored.branchId;
+    options.onBranchChanged?.(restored.branchId);
     return { branchId: restored.branchId, clock: options.clock() };
   });
 
@@ -321,7 +340,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
         return;
       }
       const value = message as { readonly type?: string; readonly channel?: string };
-      if (value.type !== "subscribe" || value.channel !== "player") {
+      if (typeof message !== "object" || message === null || value.type !== "subscribe" || value.channel !== "player") {
         socket.send(JSON.stringify({ type: "error", code: "invalid-channel", safeMessage: "频道不可用" }));
         return;
       }
@@ -348,8 +367,11 @@ export async function createServerApp(options: ServerAppOptions): Promise<Fastif
 
   app.setErrorHandler((error, _request, reply) => {
     const value = error as { readonly statusCode?: number; readonly message?: string };
-    const status = typeof value.statusCode === "number" ? value.statusCode : 400;
-    reply.code(status).send({ code: "invalid-request", safeMessage: value.message ?? "请求不合法" });
+    const status = typeof value.statusCode === "number" ? value.statusCode : 500;
+    reply.code(status).send({
+      code: status >= 500 ? "internal-error" : "invalid-request",
+      safeMessage: status >= 500 ? "服务器内部错误" : (value.message ?? "请求不合法"),
+    });
   });
 
   return app;

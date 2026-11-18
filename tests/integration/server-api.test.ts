@@ -172,5 +172,8 @@ describe("服务端 API", () => {
     const consoleSession = await login(app, "console-token");
     const allowed = await app.inject({ method: "GET", url: "/api/v1/console/health", headers: { authorization: `Bearer ${consoleSession}` } });
     expect(allowed.statusCode).toBe(200);
+    const preflight = await app.inject({ method: "OPTIONS", url: "/api/v1/commands", headers: { origin: "http://127.0.0.1:5173" } });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
   });
 });
