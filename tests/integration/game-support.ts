@@ -19,6 +19,7 @@ import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
 import type { GameContent, ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
+import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
@@ -160,6 +161,7 @@ export async function createGameHarness(options: {
       "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
       "game.world": createWorldPort(txFor, gameContent, host.ids),
       "game.comms": createCommsPort(txFor, gameContent, host.ids),
+      "game.actions": createActionsPort(txFor),
     });
     const authority = new Authority({
       storage,
@@ -173,6 +175,7 @@ export async function createGameHarness(options: {
     authority.registerModule(createResourcesContributor());
     authority.registerModule(createWorldContributor());
     authority.registerModule(createCommsContributor());
+    authority.registerModule(createActionsContributor());
     return {
       dataDir,
       storage,
