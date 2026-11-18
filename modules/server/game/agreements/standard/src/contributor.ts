@@ -6,7 +6,6 @@
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；数组索引来自内部 terms/progress，资源键来自受限枚举。 */
 import type { EventEnvelope, Json, ReasonCode, Term } from "@ai-npc/contracts";
 import {
-  coversAmounts,
   effectivePrincipalId,
   gameModuleIds,
   requireGameContent,
@@ -16,99 +15,12 @@ import {
   type HandlerResult,
 } from "@ai-npc/module-sdk";
 import { readAgreementState, type AgreementState } from "./state";
+import { termDeadline, validateTerms } from "./terms";
 
 type AgreementContext = HandlerContext<GameModulePorts, unknown>;
 
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
   return context.modules as GameModulePorts;
-}
-
-function termDeadline(term: Term): number | null {
-  if (term.kind === "grant-passage" || term.kind === "water-allocation") {
-    return term.untilTick;
-  }
-  if (term.kind === "delegate") {
-    return null;
-  }
-  return term.byTick;
-}
-
-function validateTerm(context: AgreementContext, term: Term, parties: readonly string[]): ReasonCode | null {
-  const content = requireGameContent(context.content);
-  const ports = asPorts(context);
-  if (!parties.includes(term.obligorId)) {
-    return "obligor-not-party";
-  }
-  const deadline = termDeadline(term);
-  if (deadline !== null && (deadline <= context.tx.worldTick || deadline > context.tx.worldTick + 168)) {
-    return "deadline-out-of-range";
-  }
-  if (term.kind === "deliver") {
-    if (
-      !content.stockpiles.has(term.fromStockpileId) ||
-      !content.stockpiles.has(term.toStockpileId)
-    ) {
-      return "invalid-terms";
-    }
-    const authority = ports["game.world"].drawAuthority(term.obligorId, term.fromStockpileId);
-    if (authority.kind === "none") {
-      return "invalid-terms";
-    }
-    if (authority.kind === "delegation") {
-      const requested = { supply: 0, energy: 0, medical: 0, [term.resource]: term.amount } as never;
-      if (!coversAmounts(authority.remaining, requested)) {
-        return "draw-limit-exceeded";
-      }
-    }
-  } else if (term.kind === "escort") {
-    if (!content.roads.has(term.roadId)) {
-      return "invalid-terms";
-    }
-  } else if (term.kind === "rescue") {
-    const group = ports["game.world"].group(term.groupId);
-    if (group === null || group.status === "rescued") {
-      return "invalid-terms";
-    }
-  } else if (term.kind === "share-evidence") {
-    if (!ports["game.comms"].holds(term.obligorId, term.evidenceId)) {
-      return "invalid-terms";
-    }
-  } else if (term.kind === "grant-passage") {
-    const road = content.roads.get(term.roadId);
-    if (road === undefined || road.controlledBy === undefined) {
-      return "invalid-terms";
-    }
-    if (ports["game.world"].principalFaction(term.obligorId) !== road.controlledBy) {
-      return "invalid-terms";
-    }
-  } else if (term.kind === "water-allocation") {
-    if (term.obligorId !== "human-neutral") {
-      return "invalid-terms";
-    }
-  } else if (term.kind === "delegate") {
-    if (term.stockpileId === null) {
-      return "invalid-terms";
-    }
-    for (const teamId of term.teamIds) {
-      if (!content.teams.has(teamId)) {
-        return "invalid-terms";
-      }
-    }
-    if (!content.stockpiles.has(term.stockpileId)) {
-      return "invalid-terms";
-    }
-  }
-  return null;
-}
-
-function validateTerms(context: AgreementContext, terms: readonly Term[], parties: readonly string[]): ReasonCode | null {
-  for (const term of terms) {
-    const invalid = validateTerm(context, term, parties);
-    if (invalid !== null) {
-      return invalid;
-    }
-  }
-  return null;
 }
 
 function initialState(
