@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { Json } from "@ai-npc/contracts";
 import type { RuleContributor } from "@ai-npc/authority";
+import type { ApprovedSpeech } from "@ai-npc/module-sdk";
 import {
   agentAuth,
   commandEnvelope,
@@ -21,10 +22,26 @@ import {
   taskCancelEnvelope,
   campaignStartEnvelope,
   type AuthorityHarness,
+  type AuthorityHarnessOptions,
 } from "./authority-support";
 
 interface TestState {
   failOnEventCount: number | null;
+}
+
+const speechArtifactRef = "art-000000000000";
+
+function approvedSpeechFixture(overrides: Partial<ApprovedSpeech> = {}): ApprovedSpeech {
+  return {
+    text: "我会处理。",
+    agentId: "npc-wenyuan",
+    turnId: "turn-000000000000",
+    branchId: "br-000000000000",
+    audience: ["npc-cenyuan"],
+    channel: "dialogue",
+    approved: true,
+    ...overrides,
+  };
 }
 
 function incrementCounter(context: {
@@ -98,8 +115,11 @@ function counterModule(state: TestState): RuleContributor {
       {
         kind: "test.job",
         handler: (context, job) => {
-          const current = context.tx.get<{ readonly order: readonly string[] }>("job-log", "job-log");
           const taskId = (job.payload as { readonly taskId: string }).taskId;
+          if (taskId === "task-000000000011") {
+            throw new Error("simulated job failure");
+          }
+          const current = context.tx.get<{ readonly order: readonly string[] }>("job-log", "job-log");
           context.tx.put("job-log", "job-log", { order: [...(current?.state.order ?? []), taskId] });
         },
       },
@@ -153,7 +173,7 @@ function auditModule(): RuleContributor {
 
 async function withHarness(
   run: (harness: AuthorityHarness, state: TestState) => Promise<void>,
-  options: { readonly allowDirectAgentCommands?: boolean } = {},
+  options: AuthorityHarnessOptions = {},
 ): Promise<void> {
   const harness = await createAuthorityHarness(options);
   const state: TestState = { failOnEventCount: null };
@@ -330,7 +350,7 @@ describe("authority command gateway", () => {
           channel: "dialogue" as const,
           conversationId: null,
           audience: ["npc-cenyuan"],
-          approvedSpeechArtifactRef: "art-000000000000",
+          approvedSpeechArtifactRef: speechArtifactRef,
           intentKind: "none" as const,
           replyToId: null,
         };
@@ -351,7 +371,37 @@ describe("authority command gateway", () => {
         expect(countBranchRows(harness, "speech_commits")).toBe(1);
         expect(countBranchRows(harness, "domain_events")).toBe(1);
       },
-      { allowDirectAgentCommands: true },
+      {
+        allowDirectAgentCommands: true,
+        approvedSpeech: { read: () => approvedSpeechFixture() },
+      },
+    );
+  });
+
+  it("rejects an unapproved speech artifact before any world write", async () => {
+    await withHarness(
+      async (harness) => {
+        const payload = {
+          channel: "dialogue" as const,
+          conversationId: null,
+          audience: ["npc-cenyuan"],
+          approvedSpeechArtifactRef: speechArtifactRef,
+          intentKind: "none" as const,
+          replyToId: null,
+        };
+        const receipt = harness.authority.commands.execute(
+          agentAuth(harness),
+          commandEnvelope("speech.commit", payload, "cmd-000000000017"),
+        );
+        expect(receipt.commandStatus).toBe("rejected");
+        expect(receipt.reasonCode).toBe("speech-not-approved");
+        expect(countBranchRows(harness, "speech_commits")).toBe(0);
+        expect(countBranchRows(harness, "domain_events")).toBe(0);
+      },
+      {
+        allowDirectAgentCommands: true,
+        approvedSpeech: { read: () => approvedSpeechFixture({ approved: false }) },
+      },
     );
   });
 
@@ -399,6 +449,52 @@ describe("authority command gateway", () => {
       expect(rejected.commandStatus).toBe("rejected");
       expect(rejected.reasonCode).toBe("stale-turn");
       expect(readAggregate(harness, "counter", "counter")?.state).toEqual({ count: 1 });
+    });
+  });
+
+  it("rejects expired controller and turn leases", async () => {
+    await withHarness(async (harness) => {
+      const expiredAt = "2025-01-01T00:00:00.000Z";
+      seedAgentController(harness, "npc-wenyuan", 2, "agent", expiredAt);
+      const auth = agentAuth(harness, {
+        controllerEpoch: 2,
+        turnLeaseEpoch: 2,
+        turnId: "turn-000000000002",
+      });
+      const expiredController = harness.authority.commands.execute(
+        auth,
+        taskCancelEnvelope(harness, "task-000000000001", "cmd-000000000018"),
+      );
+      expect(expiredController.commandStatus).toBe("rejected");
+      expect(expiredController.reasonCode).toBe("stale-controller");
+
+      seedAgentController(harness, "npc-wenyuan", 2, "agent");
+      seedTurnRun(harness, "turn-000000000002", "npc-wenyuan", 2, 2, "executing", expiredAt);
+      const expiredTurn = harness.authority.commands.execute(
+        auth,
+        taskCancelEnvelope(harness, "task-000000000002", "cmd-000000000019"),
+      );
+      expect(expiredTurn.commandStatus).toBe("rejected");
+      expect(expiredTurn.reasonCode).toBe("stale-turn");
+      expect(readAggregate(harness, "counter", "counter")).toBeNull();
+    });
+  });
+
+  it("rejects duplicate module and command registrations", async () => {
+    await withHarness(async (harness) => {
+      expectDomainCode(
+        () => harness.authority.registerModule({ moduleId: "test.counter", ownsAggregates: [] }),
+        "assembly-incompatible",
+      );
+      expectDomainCode(
+        () =>
+          harness.authority.registerModule({
+            moduleId: "test.extra",
+            ownsAggregates: [],
+            commands: [{ type: "task.cancel", handler: () => ({ kind: "accepted" }) }],
+          }),
+        "assembly-incompatible",
+      );
     });
   });
 });
@@ -450,6 +546,19 @@ describe("authority job runner", () => {
       expect(harness.authority.jobs.runDue(harness.branchId, 5)).toBe(0);
     });
   });
+
+  it("rolls back a failed job and keeps it scheduled", async () => {
+    await withHarness(async (harness) => {
+      harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000011", "cmd-000000000025"),
+      );
+      setClock(harness, { worldTick: 5, mode: "running" });
+      expect(() => harness.authority.jobs.runDue(harness.branchId, 5)).toThrow("simulated job failure");
+      expect(countBranchRows(harness, "jobs", { status: "scheduled" })).toBe(1);
+      expect(readAggregate(harness, "job-log", "job-log")).toBeNull();
+    });
+  });
 });
 
 describe("authority event consumers", () => {
@@ -489,6 +598,39 @@ describe("authority event consumers", () => {
       expect(replay.processed).toBe(0);
       expect(replay.scanned).toBe(1);
       expect(readAggregate(harness, "consumed", "consumed")?.state).toEqual({ count: 1 });
+    });
+  });
+
+  it("continues from the next existing worldSeq when the log has a gap", async () => {
+    await withHarness(async (harness) => {
+      harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000001", "cmd-000000000033"),
+      );
+      expect(harness.authority.consumers.run(harness.branchId).processed).toBe(1);
+      expect(readAggregate(harness, "consumed", "consumed")?.state).toEqual({ count: 1 });
+
+      harness.storage.transact((tx) => {
+        tx.branch(harness.branchId)
+          .table("domain_events")
+          .put({
+            world_seq: 3,
+            event_id: "evt-000000000003",
+            world_tick: 0,
+            type: "TestCounterChanged",
+            schema_version: 1,
+            principal_id: "player-1",
+            causation_ids_json: [],
+            correlation_id: "test-gap",
+            audience_json: [{ kind: "public" }],
+            payload_json: { count: 3, taskId: "task-000000000003" },
+            committed_at: harness.host.nowIso(),
+          });
+      });
+      const resumed = harness.authority.consumers.run(harness.branchId);
+      expect(resumed.processed).toBe(1);
+      expect(resumed.scanned).toBe(1);
+      expect(readAggregate(harness, "consumed", "consumed")?.state).toEqual({ count: 2 });
     });
   });
 });

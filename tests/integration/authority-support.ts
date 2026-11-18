@@ -21,6 +21,7 @@ import {
 } from "@ai-npc/contracts";
 import { Authority } from "@ai-npc/authority";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
 
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
 const startIso = "2026-01-01T00:00:00.000Z";
@@ -108,10 +109,13 @@ export interface AuthorityHarness {
   dispose(): Promise<void>;
 }
 
-/** 启动真实存储并初始化一个在线分支与时钟。 */
-export async function createAuthorityHarness(options: {
+export interface AuthorityHarnessOptions {
   readonly allowDirectAgentCommands?: boolean;
-} = {}): Promise<AuthorityHarness> {
+  readonly approvedSpeech?: ApprovedSpeechReader;
+}
+
+/** 启动真实存储并初始化一个在线分支与时钟。 */
+export async function createAuthorityHarness(options: AuthorityHarnessOptions = {}): Promise<AuthorityHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-authority-test-"));
   const host = createFakeHost();
   const worldId = "wld-000000000000";
@@ -139,6 +143,7 @@ export async function createAuthorityHarness(options: {
       storage,
       host,
       allowDirectAgentCommands: options.allowDirectAgentCommands,
+      approvedSpeech: options.approvedSpeech,
     });
     return {
       dataDir,
@@ -265,6 +270,7 @@ export function seedAgentController(
   agentId: string,
   controllerEpoch: number,
   kind: "agent" | "human" = "agent",
+  leaseExpiresAt: string | null = null,
 ): void {
   harness.storage.transact((tx) => {
     tx.branch(harness.branchId)
@@ -274,7 +280,7 @@ export function seedAgentController(
         controller_kind: kind,
         controller_principal_id: null,
         controller_epoch: controllerEpoch,
-        lease_expires_at: null,
+        lease_expires_at: leaseExpiresAt,
       });
   });
 }
@@ -286,6 +292,7 @@ export function seedTurnRun(
   controllerEpoch: number,
   turnLeaseEpoch: number,
   status: "queued" | "executing" | "completed" | "failed" | "cancelled" | "budget-exhausted",
+  leaseExpiresAt: string | null = null,
 ): void {
   harness.storage.transact((tx) => {
     tx.rows("turn_runs").put({
@@ -301,7 +308,7 @@ export function seedTurnRun(
       profile_hash: "test-profile",
       controller_epoch: controllerEpoch,
       turn_lease_epoch: turnLeaseEpoch,
-      lease_expires_at: null,
+      lease_expires_at: leaseExpiresAt,
       terminal_reason: null,
       effective_json: null,
       created_at: harness.host.nowIso(),

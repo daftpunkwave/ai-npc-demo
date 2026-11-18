@@ -4,7 +4,7 @@
  * 禁止在测试开关之外放过缺失或过期代次，也禁止把 turn 终态当作仍可提交。
  */
 import type { AuthContext, ReasonCode, StorageTransaction } from "@ai-npc/contracts";
-import { requireStorageNumber, requireStorageString } from "./storage-values";
+import { optionalStorageString, requireStorageNumber, requireStorageString } from "./storage-values";
 
 /** fencing 校验结果：失败只返回 receipt 原因码，不抛通用异常。 */
 export type FencingResult =
@@ -22,7 +22,7 @@ function controllerLease(
   tx: StorageTransaction,
   branchId: string,
   agentId: string,
-): { readonly controllerEpoch: number; readonly controllerKind: string } | null {
+): { readonly controllerEpoch: number; readonly controllerKind: string; readonly expiresAt: string | null } | null {
   const row = tx.branch(branchId).table("controller_leases").get({ agent_id: agentId });
   if (row === null) {
     return null;
@@ -30,10 +30,21 @@ function controllerLease(
   return {
     controllerEpoch: requireStorageNumber(row, "controller_leases", "controller_epoch"),
     controllerKind: requireStorageString(row, "controller_leases", "controller_kind"),
+    expiresAt: optionalStorageString(row, "controller_leases", "lease_expires_at"),
   };
 }
 
-function verifyAgentTurn(tx: StorageTransaction, auth: AuthContext): FencingResult {
+/** 过期时间只接受可解析的 ISO 字符串；损坏时间按过期处理，避免放过旧控制者。 */
+function isExpired(expiresAt: string | null, nowIso: string): boolean {
+  if (expiresAt === null) {
+    return false;
+  }
+  const expires = Date.parse(expiresAt);
+  const now = Date.parse(nowIso);
+  return !Number.isFinite(expires) || !Number.isFinite(now) || expires <= now;
+}
+
+function verifyAgentTurn(tx: StorageTransaction, auth: AuthContext, nowIso: string): FencingResult {
   if (auth.controllerEpoch === null) {
     return { ok: false, reasonCode: "stale-controller" };
   }
@@ -41,7 +52,8 @@ function verifyAgentTurn(tx: StorageTransaction, auth: AuthContext): FencingResu
   if (
     lease === null ||
     lease.controllerEpoch !== auth.controllerEpoch ||
-    lease.controllerKind !== "agent"
+    lease.controllerKind !== "agent" ||
+    isExpired(lease.expiresAt, nowIso)
   ) {
     return { ok: false, reasonCode: "stale-controller" };
   }
@@ -57,19 +69,21 @@ function verifyAgentTurn(tx: StorageTransaction, auth: AuthContext): FencingResu
   const turnLeaseEpoch = requireStorageNumber(turn, "turn_runs", "turn_lease_epoch");
   const controllerEpoch = requireStorageNumber(turn, "turn_runs", "controller_epoch");
   const status = requireStorageString(turn, "turn_runs", "status");
+  const expiresAt = optionalStorageString(turn, "turn_runs", "lease_expires_at");
   if (
     branchId !== auth.branchId ||
     agentId !== auth.principalId ||
     turnLeaseEpoch !== auth.turnLeaseEpoch ||
     controllerEpoch !== auth.controllerEpoch ||
-    terminalTurnStatuses.has(status)
+    terminalTurnStatuses.has(status) ||
+    isExpired(expiresAt, nowIso)
   ) {
     return { ok: false, reasonCode: "stale-turn" };
   }
   return { ok: true };
 }
 
-function verifyActingAgent(tx: StorageTransaction, auth: AuthContext): FencingResult {
+function verifyActingAgent(tx: StorageTransaction, auth: AuthContext, nowIso: string): FencingResult {
   if (auth.actingAsAgentId === null) {
     return { ok: true };
   }
@@ -80,7 +94,8 @@ function verifyActingAgent(tx: StorageTransaction, auth: AuthContext): FencingRe
   if (
     lease === null ||
     lease.controllerEpoch !== auth.controllerEpoch ||
-    lease.controllerKind !== "human"
+    lease.controllerKind !== "human" ||
+    isExpired(lease.expiresAt, nowIso)
   ) {
     return { ok: false, reasonCode: "stale-controller" };
   }
@@ -95,12 +110,13 @@ export function verifyFencing(
   tx: StorageTransaction,
   auth: AuthContext,
   allowDirectAgentCommands: boolean,
+  nowIso: string,
 ): FencingResult {
   if (auth.kind === "agent" && !(allowDirectAgentCommands && auth.turnId === null)) {
-    const agentResult = verifyAgentTurn(tx, auth);
+    const agentResult = verifyAgentTurn(tx, auth, nowIso);
     if (!agentResult.ok) {
       return agentResult;
     }
   }
-  return verifyActingAgent(tx, auth);
+  return verifyActingAgent(tx, auth, nowIso);
 }

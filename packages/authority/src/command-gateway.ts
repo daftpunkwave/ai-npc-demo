@@ -23,7 +23,7 @@ import {
   type ScopedBranchStorage,
   type StorageTransaction,
 } from "@ai-npc/contracts";
-import type { HandlerResult } from "@ai-npc/module-sdk";
+import type { ApprovedSpeech, HandlerResult } from "@ai-npc/module-sdk";
 import { readBranch, readClock, tryReadClock, type BranchRecord, type ClockRecord } from "./branch-state";
 import { verifyFencing } from "./fencing";
 import { createHandlerContext } from "./handler-context";
@@ -186,7 +186,7 @@ export class CommandGateway {
         clock,
       );
     }
-    const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands);
+    const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso());
     if (!fencing.ok) {
       return this.writeRejection(
         branchStorage,
@@ -251,7 +251,22 @@ export class CommandGateway {
     }
 
     const payload = parsedRequest.data.payload as Json;
-    const speechArtifactRef = type === "speech.commit" ? approvedSpeechArtifactRef(payload) : null;
+    const speechPayload = type === "speech.commit" ? readSpeechCommitPayload(payload) : null;
+    if (speechPayload !== null) {
+      const speech = this.approvedSpeech.read(speechPayload.approvedSpeechArtifactRef);
+      if (!isApprovedSpeechUsable(speech, auth, speechPayload)) {
+        return this.writeRejection(
+          branchStorage,
+          auth,
+          envelope,
+          payloadHash,
+          "speech-not-approved",
+          "已批准对白不可用或与提交内容不匹配",
+          clock,
+        );
+      }
+    }
+    const speechArtifactRef = speechPayload?.approvedSpeechArtifactRef ?? null;
     const handlerTx = this.createWorldTx(tx, auth, envelope, registration.owner, clock);
     const handlerContext = createHandlerContext({
       auth,
@@ -490,14 +505,55 @@ export function commandPayloadHash(envelope: CommandEnvelope): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-/** 从已通过 schema 校验的 speech.commit payload 中取出批准结果引用。 */
-function approvedSpeechArtifactRef(payload: Json): string {
+/** 从已通过 schema 校验的 speech.commit payload 中取出批准结果与提交目标。 */
+interface SpeechCommitPayload {
+  readonly approvedSpeechArtifactRef: string;
+  readonly channel: "dialogue" | "message" | "broadcast";
+  readonly audience: readonly string[];
+}
+
+function readSpeechCommitPayload(payload: Json): SpeechCommitPayload {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     throw new DomainError("invalid-state", "speech.commit payload 不是对象");
   }
   const ref = payload["approvedSpeechArtifactRef"];
+  const channel = payload["channel"];
+  const audience = payload["audience"];
   if (typeof ref !== "string" || ref.length === 0) {
     throw new DomainError("invalid-state", "speech.commit payload 缺少批准结果引用");
   }
-  return ref;
+  if (channel !== "dialogue" && channel !== "message" && channel !== "broadcast") {
+    throw new DomainError("invalid-state", "speech.commit payload 的 channel 不合法");
+  }
+  if (!Array.isArray(audience) || audience.some((item) => typeof item !== "string")) {
+    throw new DomainError("invalid-state", "speech.commit payload 的 audience 不合法");
+  }
+  return { approvedSpeechArtifactRef: ref, channel, audience: audience as string[] };
+}
+
+function normalizedAudience(values: readonly string[]): readonly string[] {
+  return [...new Set(values)].sort();
+}
+
+function sameAudience(left: readonly string[], right: readonly string[]): boolean {
+  const leftValues = normalizedAudience(left);
+  const rightValues = normalizedAudience(right);
+  return leftValues.length === rightValues.length && leftValues.every((value, index) => value === rightValues[index]);
+}
+
+function isApprovedSpeechUsable(
+  speech: ApprovedSpeech | null,
+  auth: AuthContext,
+  payload: SpeechCommitPayload,
+): boolean {
+  if (speech === null || !speech.approved || speech.branchId !== auth.branchId) {
+    return false;
+  }
+  if (speech.channel !== payload.channel || !sameAudience(speech.audience, payload.audience)) {
+    return false;
+  }
+  if (auth.kind !== "system" && speech.agentId !== (auth.actingAsAgentId ?? auth.principalId)) {
+    return false;
+  }
+  return auth.turnId === null || speech.turnId === auth.turnId;
 }
