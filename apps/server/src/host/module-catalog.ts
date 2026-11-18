@@ -18,8 +18,23 @@ import { createScenarioPort, scenarioModuleDefinition, escalatingScenarioModuleD
 import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
 import { accessPolicyModuleDefinition } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
+import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
+import { transportModuleDefinition, transportConfigSchema, type TransportConfig, type TransportPort } from "@ai-npc/mod-transport-http-ws-fastify";
 
 export { toGameContent } from "./content-adapter";
+
+/** 创建运营编排服务；宿主注入时钟/存档/分支回调。 */
+export function createOperationsService(driver: OperationsDriver): OperationsService {
+  return new OperationsService(driver);
+}
+
+/** 解析并校验传输配置。 */
+export function parseTransportConfig(config: unknown): TransportConfig {
+  return transportConfigSchema.parse(config);
+}
+
+export type { OperationsDriver, TransportPort };
+export { transportModuleDefinition };
 
 /** 绑定全部游戏端口；txFor 由 authority/宿主事务提供。 */
 export function createGamePorts(txFor: ScopedWorldTxFactory, content: GameContent, host: HostServices): GameModulePorts {
@@ -71,4 +86,6 @@ export const serverModuleDefinitions = [
   saveModuleDefinition,
   accessPolicyModuleDefinition,
   secretsModuleDefinition,
+  operationsModuleDefinition,
+  transportModuleDefinition,
 ] as const;

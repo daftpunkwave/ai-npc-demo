@@ -1,0 +1,15 @@
+{
+  "name": "@ai-npc/mod-transport-http-ws-fastify",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./definition": "./src/definition.ts"
+  },
+  "dependencies": {
+    "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/module-sdk": "workspace:*",
+    "zod": "^4"
+  }
+}

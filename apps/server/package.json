@@ -1,31 +1,33 @@
 {
-  "name": "@ai-npc/app-server",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts",
-    "./content": "./src/host/content-adapter.ts"
-  },
-  "dependencies": {
-    "@ai-npc/authority": "workspace:*",
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/experiment": "workspace:*",
-    "@ai-npc/mod-game-actions-standard": "workspace:*",
-    "@ai-npc/mod-game-agreements-standard": "workspace:*",
-    "@ai-npc/mod-game-clock-controlled": "workspace:*",
-    "@ai-npc/mod-game-comms-standard": "workspace:*",
-    "@ai-npc/mod-game-map-six-nodes": "workspace:*",
-    "@ai-npc/mod-game-resources-light": "workspace:*",
-    "@ai-npc/mod-game-save-sqlite": "workspace:*",
-    "@ai-npc/mod-game-scenario-watergate": "workspace:*",
-    "@ai-npc/mod-game-world-slg-light": "workspace:*",
-    "@ai-npc/mod-platform-storage-sqlite": "workspace:*",
-    "@ai-npc/mod-platform-access-policy-roster": "workspace:*",
-    "@ai-npc/mod-platform-secrets-env": "workspace:*",
-    "@ai-npc/module-sdk": "workspace:*",
-    "@fastify/cors": "^11",
-    "@fastify/websocket": "^11",
-    "fastify": "^5"
-  }
+    "name":  "@ai-npc/app-server",
+    "version":  "0.1.0",
+    "private":  true,
+    "type":  "module",
+    "exports":  {
+                    ".":  "./src/index.ts",
+                    "./content":  "./src/host/content-adapter.ts"
+                },
+    "dependencies":  {
+                         "@ai-npc/authority":  "workspace:*",
+                         "@ai-npc/contracts":  "workspace:*",
+                         "@ai-npc/experiment":  "workspace:*",
+                         "@ai-npc/mod-game-actions-standard":  "workspace:*",
+                         "@ai-npc/mod-game-agreements-standard":  "workspace:*",
+                         "@ai-npc/mod-game-clock-controlled":  "workspace:*",
+                         "@ai-npc/mod-game-comms-standard":  "workspace:*",
+                         "@ai-npc/mod-game-map-six-nodes":  "workspace:*",
+                         "@ai-npc/mod-game-resources-light":  "workspace:*",
+                         "@ai-npc/mod-game-save-sqlite":  "workspace:*",
+                         "@ai-npc/mod-game-scenario-watergate":  "workspace:*",
+                         "@ai-npc/mod-game-world-slg-light":  "workspace:*",
+                         "@ai-npc/mod-platform-storage-sqlite":  "workspace:*",
+                         "@ai-npc/mod-platform-access-policy-roster":  "workspace:*",
+                         "@ai-npc/mod-platform-secrets-env":  "workspace:*",
+                         "@ai-npc/module-sdk":  "workspace:*",
+                         "@fastify/cors":  "^11",
+                         "@fastify/websocket":  "^11",
+                         "fastify":  "^5",
+                         "@ai-npc/mod-platform-operations-standard":  "workspace:*",
+                         "@ai-npc/mod-transport-http-ws-fastify":  "workspace:*"
+                     }
 }

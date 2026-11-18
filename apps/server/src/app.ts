@@ -64,12 +64,12 @@ interface SnapshotRestoreArgs {
   readonly runId?: string;
 }
 
-function createSnapshotHook(input: SnapshotCreateArgs): SnapshotRecordView {
+function createSnapshotHook(input: SnapshotCreateArgs): { readonly snapshotId: string; readonly worldTick: number } {
   void input;
   throw new Error(`save hook 未注入: ${input.sourceBranchId}`);
 }
 
-function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string; readonly runId: string } {
+function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string } {
   void input;
   throw new Error(`restore hook 未注入: ${input.snapshotId}`);
 }

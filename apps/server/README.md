@@ -8,7 +8,8 @@
 - 首次与后续启动都把在线时钟置为 `paused`；快照接口先暂停再保存；`POST /api/v1/campaign/reset` 先存快照，再创建空在线分支、归档旧分支并切换别名。
 - `createServerApp`：Fastify 应用工厂，提供登录、会话、命令、回执查询、世界视图、暂停/继续、快照、恢复、流票据与玩家 WS 快照。
 - `buildPlayerProjection`：从世界/地图端口与内容索引构建严格玩家投影；缺失指标时拒绝构建，不合成数值。
-- `module-catalog`：唯一模块组合根，显式登记 11 个 server 模块定义、端口与规则贡献。
+- `module-catalog`：唯一模块组合根，显式登记 15 个 server 模块定义、端口与规则贡献。
+- 宿主通过 `transport.http-ws.fastify` 的配置端口获取监听地址与允许 Origin，通过 `platform.operations.standard` 的快照/恢复/重开编排调用存档。
 - `pnpm dev:server`：读取 `PORT`/`HOST`/`DATA_DIR`/`CONTENT_ROOT`/`CONTENT_PACK`/`PLAYER_TOKEN`/`CONSOLE_TOKEN`，默认监听 `127.0.0.1:3000`，打印玩家与控制台登录地址。
 - WS 玩家频道：订阅快照、命令后的顶层 delta、按 `fromStreamSeq` 补发最近 200 条增量；缺口回退快照。
 - `config/assemblies/*.yaml`：标准与升级剧情两份 server 装配；`check:catalog` 解析 schema、校验模块与配置引用。

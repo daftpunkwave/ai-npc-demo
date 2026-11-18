@@ -17,9 +17,13 @@ import {
   createGameContributors,
   createGamePorts,
   createModuleBinder,
+  createOperationsService,
   createSaveService,
+  parseTransportConfig,
   serverModuleDefinitions,
   toGameContent,
+  transportModuleDefinition,
+  type TransportPort,
 } from "./host/module-catalog";
 
 export interface HostOptions {
@@ -28,12 +32,16 @@ export interface HostOptions {
   readonly packId?: string;
   readonly playerToken: string;
   readonly consoleToken: string;
+  readonly transportHost?: string;
+  readonly transportPort?: number;
+  readonly allowedOrigins?: readonly string[];
 }
 
 export interface RunningHost {
   readonly app: FastifyInstance;
   readonly branchId: string;
   readonly worldId: string;
+  readonly transport: import("./host/module-catalog").TransportPort;
   close(): Promise<void>;
 }
 
@@ -248,6 +256,37 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     activeBranchId = nextBranchId;
     return { branchId: nextBranchId, clock: clockView(clockState()) };
   };
+
+  const transportConfig = parseTransportConfig({
+    host: options.transportHost ?? "127.0.0.1",
+    port: options.transportPort ?? 3000,
+    allowedOrigins: options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://127.0.0.1:3000"],
+  });
+  const transportInstance = await transportModuleDefinition.create({
+    moduleId: "transport.http-ws.fastify",
+    realm: "server",
+    config: transportConfig,
+    scope: {},
+    ports: {},
+    host,
+    signal,
+  });
+  const transport = transportInstance.port as TransportPort;
+  await transportInstance.start(signal);
+
+  const operations = createOperationsService({
+    clock: () => clockState(),
+    pause: (expected) => control("pause", expected),
+    resume: (expected) => control("start", expected),
+    snapshot: (input) => save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy }),
+    restore: (input) => {
+      const restored = save.restoreSnapshot({ snapshotId: input.snapshotId, createdBy: input.createdBy });
+      activeBranchId = restored.branchId;
+      return restored;
+    },
+    reset: resetOnline,
+  });
+
   const app = await createServerApp({
     authority,
     storage,
@@ -256,24 +295,21 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     assembly: { realm: "server", protocolVersion: "1", modules: [], capabilities: [], assemblyHash: "runtime" },
     projection,
     clock: () => clockView(clockState()),
-    pause: (_operationId, expected) => control("pause", expected),
-    resume: (_operationId, expected) => control("start", expected),
-    save: {
-      createSnapshot: (input) => {
-        const current = clockState();
-        if (current.mode === "running") {
-          control("pause", current.runVersion);
-        }
-        return save.createSnapshot(input);
-      },
-      listSnapshots: () => save.listSnapshots(),
-      restoreSnapshot: (input) => {
-        const restored = save.restoreSnapshot(input);
-        activeBranchId = restored.branchId;
-        return restored;
-      },
+    pause: (operationId, expected) => {
+      void operationId;
+      return operations.pause(expected);
     },
-    reset: resetOnline,
+    resume: (operationId, expected) => {
+      void operationId;
+      return operations.resume(expected);
+    },
+    save: {
+      createSnapshot: (input) => operations.snapshot(input.label, input.createdBy),
+      listSnapshots: () => save.listSnapshots(),
+      restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy),
+    },
+    reset: () => operations.reset(),
+    allowedOrigins: [...transport.allowedOrigins],
     onBranchChanged: (nextBranchId) => {
       activeBranchId = nextBranchId;
     },
@@ -331,12 +367,14 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     app,
     branchId: activeBranchId,
     worldId: activeWorldId,
+    transport,
     close: async () => {
       workerFailed = true;
       if (timer !== null) {
         clearTimeout(timer);
       }
       await app.close();
+      await transportInstance.dispose();
       await storageInstance.dispose();
     },
   };

@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import type { HostServices, Json, ModuleCreateInput } from "@ai-npc/contracts";
 import { accessPolicyModuleDefinition, type AccessPolicyPort } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition, type SecretsPort } from "@ai-npc/mod-platform-secrets-env";
+import { OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
+import { transportModuleDefinition, type TransportPort } from "@ai-npc/mod-transport-http-ws-fastify";
 
 const host: HostServices = {
   ids: (prefix) => `${prefix}-000000000000`,
@@ -31,6 +33,47 @@ describe("platform 模块", () => {
     expect(port.authorize({ principalId: "player-1", role: "player", action: "command", commandType: "policy.set" })).toMatchObject({ allowed: false });
     expect(port.authorize({ principalId: "operator-1", role: "operator", action: "console" })).toMatchObject({ allowed: true });
     expect(port.authorize({ principalId: "player-1", role: "player", action: "console" })).toMatchObject({ allowed: false });
+  });
+
+  it("运营服务在快照前暂停", () => {
+    const calls: string[] = [];
+    const clock = { worldTick: 2, day: 1, hour: 2, mode: "running" as const, runVersion: 3 };
+    const driver: OperationsDriver = {
+      clock: () => ({ mode: clock.mode, runVersion: clock.runVersion }),
+      pause: (expected) => {
+        calls.push(`pause:${expected}`);
+        return { ...clock, mode: "paused", runVersion: expected + 1 };
+      },
+      resume: (expected) => {
+        calls.push(`resume:${expected}`);
+        return { ...clock, mode: "running", runVersion: expected + 1 };
+      },
+      snapshot: (input) => {
+        calls.push(`snapshot:${input.label}`);
+        return { snapshotId: "snap-1", worldTick: clock.worldTick };
+      },
+      restore: (input) => {
+        calls.push(`restore:${input.snapshotId}`);
+        return { branchId: "br-1" };
+      },
+      reset: () => {
+        calls.push("reset");
+        return { branchId: "br-2", clock };
+      },
+    };
+    const service = new OperationsService(driver);
+    expect(service.snapshot("manual", "operator-1")).toMatchObject({ snapshotId: "snap-1" });
+    expect(calls).toEqual(["pause:3", "snapshot:manual"]);
+    expect(service.reset()).toMatchObject({ branchId: "br-2" });
+    expect(calls).toContain("reset");
+  });
+
+  it("传输模块只接受回环地址与合法端口", async () => {
+    const instance = await transportModuleDefinition.create(input("transport.http-ws.fastify", { port: 3000 }));
+    const port = instance.port as TransportPort;
+    expect(port.host).toBe("127.0.0.1");
+    expect(port.port).toBe(3000);
+    await expect(transportModuleDefinition.create(input("transport.http-ws.fastify", { host: "0.0.0.0" }))).rejects.toThrow();
   });
 
   it("只解析 allowlist 中的环境变量", async () => {

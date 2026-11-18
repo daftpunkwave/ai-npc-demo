@@ -26,6 +26,8 @@
                          "@ai-npc/observability":  "workspace:*",
                          "@ai-npc/scripts":  "workspace:*",
                          "@ai-npc/mod-platform-access-policy-roster":  "workspace:*",
-                         "@ai-npc/mod-platform-secrets-env":  "workspace:*"
+                         "@ai-npc/mod-platform-secrets-env":  "workspace:*",
+                         "@ai-npc/mod-platform-operations-standard":  "workspace:*",
+                         "@ai-npc/mod-transport-http-ws-fastify":  "workspace:*"
                      }
 }
