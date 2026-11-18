@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="地生共约徽记">
+  <title>地生共约徽记</title>
+  <desc>穿过年轮与电路环的麦穗，象征共治与生态补偿。</desc>
+  
+  <defs>
+    <radialGradient id="bg" cx=".4" cy=".3" r=".8"><stop stop-color="#1d3327"/><stop offset="1" stop-color="#0b1210"/></radialGradient>
+    <linearGradient id="leaf" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#1f5d3a"/><stop offset=".6" stop-color="#63b56d"/><stop offset="1" stop-color="#d8e8a5"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c6d9b0"/><stop offset=".5" stop-color="#6d8d62"/><stop offset="1" stop-color="#26392d"/></linearGradient>
+    <filter id="g"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="8"/><feColorMatrix values="0 0 0 0 .5 0 0 0 0 .8 0 0 0 0 .5 0 0 0 .1 0"/></filter>
+  </defs>
+  <circle cx="128" cy="128" r="118" fill="url(#bg)" stroke="url(#rim)" stroke-width="6"/>
+  <circle cx="128" cy="128" r="98" fill="none" stroke="#27ae60" stroke-opacity=".4" stroke-width="2" stroke-dasharray="1 9"/>
+  <g stroke="#7fae7d" stroke-width="2" opacity=".7" fill="none">
+    <circle cx="128" cy="134" r="62"/><circle cx="128" cy="134" r="76"/>
+    <path d="M128 56v18M128 194v18M50 134h18M188 134h18"/>
+  </g>
+  <path d="M128 188V94" stroke="#a8c77b" stroke-width="6" stroke-linecap="round"/>
+  <path d="M128 122c-26-4-42-22-46-42 26 2 44 16 46 42zM128 150c28-2 44-20 48-40-26 0-46 16-48 40zM128 112c-14-14-14-34-4-48 12 12 14 32 4 48z" fill="url(#leaf)" stroke="#d8e8a5" stroke-opacity=".55" stroke-width="1.5"/>
+  <g fill="#f0d878">
+    <circle cx="128" cy="90" r="4"/><circle cx="114" cy="78" r="3"/><circle cx="142" cy="76" r="3"/><circle cx="152" cy="92" r="2.5"/>
+    <circle cx="104" cy="94" r="2.5"/>
+  </g>
+  <path d="M104 194c8-20 16-30 24-30s16 10 24 30" fill="none" stroke="#4d7a4d" stroke-width="3"/>
+  <text x="128" y="220" text-anchor="middle" font-family="Georgia, serif" font-size="12" letter-spacing="4" fill="#bcd3a0">共生</text>
+  <rect width="256" height="256" filter="url(#g)" opacity=".45"/>
+</svg>

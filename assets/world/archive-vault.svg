@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">战前档案库</title>
+  <desc id="desc">地下混凝土档案库，圆形气密门、成排档案架、树根与尘埃光柱，终端微光照亮地面。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#171c1b"/><stop offset=".55" stop-color="#2d3632"/><stop offset="1" stop-color="#0c100f"/></linearGradient>
+    <linearGradient id="concrete" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5f6257"/><stop offset=".55" stop-color="#3b403b"/><stop offset="1" stop-color="#1d2321"/></linearGradient>
+    <linearGradient id="door" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7f7d6b"/><stop offset=".5" stop-color="#4c5048"/><stop offset="1" stop-color="#222826"/></linearGradient>
+    <linearGradient id="dust" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#f0dba8" stop-opacity=".5"/><stop offset="1" stop-color="#f0dba8" stop-opacity="0"/></linearGradient>
+    <radialGradient id="terminal" cx=".5" cy=".4" r=".6"><stop stop-color="#a9f0d2" stop-opacity=".9"/><stop offset=".4" stop-color="#4abf98" stop-opacity=".45"/><stop offset="1" stop-color="#1d5c4a" stop-opacity="0"/></radialGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="17"/><feColorMatrix values="0 0 0 0 .04 0 0 0 0 .06 0 0 0 0 .05 0 0 0 .18 0"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="6"/></filter>
+    <radialGradient id="vig" cx=".5" cy=".45" r=".7"><stop offset=".45" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".7"/></radialGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)"/>
+
+  <!-- vault wall -->
+  <path d="M0 60h800v330H0z" fill="url(#concrete)"/>
+  <path d="M0 60h800v18H0z" fill="#76786a" opacity=".5"/>
+  <path d="M0 380h800v10H0z" fill="#101514"/>
+  <g stroke="#262d29" stroke-width="3" opacity=".6">
+    <path d="M0 118h800M0 176h800M0 236h800M0 296h800M0 356h800"/>
+    <path d="M96 60v330M192 60v330M288 60v330M704 60v330"/>
+  </g>
+  <g fill="#222824" opacity=".55">
+    <rect x="20" y="130" width="52" height="30"/><rect x="20" y="250" width="42" height="24"/>
+    <rect x="740" y="140" width="42" height="30"/><rect x="740" y="260" width="44" height="26"/>
+  </g>
+
+  <!-- circular vault door -->
+  <g>
+    <circle cx="400" cy="238" r="132" fill="#1a201e" stroke="#6d6c5b" stroke-width="5"/>
+    <circle cx="400" cy="238" r="114" fill="url(#door)" stroke="#a7a48e" stroke-width="3"/>
+    <circle cx="400" cy="238" r="92" fill="none" stroke="#2b302c" stroke-width="3"/>
+    <g stroke="#30352f" stroke-width="10">
+      <path d="M400 124v228M286 238h228M320 158l160 160M480 158L320 318"/>
+    </g>
+    <circle cx="400" cy="238" r="34" fill="#232925" stroke="#8d8a72" stroke-width="4"/>
+    <circle cx="400" cy="238" r="13" fill="#101513"/>
+    <g fill="#c7a76b">
+      <circle cx="400" cy="146" r="5"/><circle cx="492" cy="238" r="5"/><circle cx="400" cy="330" r="5"/><circle cx="308" cy="238" r="5"/>
+    </g>
+    <path d="M400 124l-14 20h28zM400 352l-14-20h28z" fill="#b26a4a" opacity=".8"/>
+    <path d="M286 238l20-14v28zM514 238l-20-14v28z" fill="#b26a4a" opacity=".8"/>
+    <circle cx="400" cy="238" r="142" fill="none" stroke="#b08a56" stroke-width="1.5" opacity=".4" stroke-dasharray="3 8"/>
+  </g>
+
+  <!-- archive shelves -->
+  <g fill="#1a211e">
+    <path d="M42 214h92v14H42zM42 258h92v14H42zM42 302h92v14H42zM666 214h92v14h-92zM666 258h92v14h-92zM666 302h92v14h-92z"/>
+  </g>
+  <g fill="#6f6a51" opacity=".75">
+    <rect x="50" y="222" width="9" height="30"/><rect x="64" y="218" width="7" height="34"/><rect x="76" y="224" width="12" height="28"/>
+    <rect x="94" y="216" width="6" height="36"/><rect x="106" y="222" width="10" height="30"/>
+    <rect x="674" y="220" width="8" height="32"/><rect x="688" y="216" width="12" height="36"/><rect x="706" y="224" width="7" height="28"/>
+    <rect x="720" y="218" width="10" height="34"/>
+  </g>
+  <g fill="#2f4a3d">
+    <rect x="54" y="268" width="10" height="28"/><rect x="70" y="264" width="8" height="32"/><rect x="86" y="270" width="12" height="26"/>
+    <rect x="676" y="266" width="9" height="30"/><rect x="692" y="262" width="11" height="34"/>
+  </g>
+
+  <!-- tree roots breaking through ceiling -->
+  <g stroke="#3b3226" fill="none" stroke-linecap="round">
+    <path d="M118 60c26 34 20 60 54 74s50 0 60 26" stroke-width="8"/>
+    <path d="M164 104c-18 10-22 24-16 38M186 130c18 4 28 16 30 30" stroke-width="4"/>
+    <path d="M702 60c-16 30-6 52-32 66s-44 4-52 28" stroke-width="7"/>
+    <path d="M668 112c14 10 16 22 10 36" stroke-width="3"/>
+  </g>
+  <g fill="#6b7f54" opacity=".7">
+    <path d="M128 96c-14-6-20-16-18-28 12 2 20 12 18 28zM148 116c18-4 28-14 30-26-14-2-26 8-30 26zM652 108c-16-4-24-14-24-26 14 0 24 10 24 26z"/>
+  </g>
+
+  <!-- dust light shafts -->
+  <path d="M250 60l120 0 70 330H214z" fill="url(#dust)" opacity=".5" filter="url(#soft)"/>
+  <path d="M560 60h70l100 330H600z" fill="url(#dust)" opacity=".3" filter="url(#soft)"/>
+
+  <!-- terminal -->
+  <g>
+    <path d="M344 360h112v18H344z" fill="#202825"/>
+    <path d="M358 330h84v30h-84z" fill="#141c1a"/>
+    <rect x="368" y="338" width="64" height="14" fill="#4abf98" opacity=".65"/>
+    <path d="M400 330v-12" stroke="#39443c" stroke-width="3"/>
+    <circle cx="400" cy="334" r="34" fill="url(#terminal)" opacity=".65"/>
+  </g>
+  <g fill="#a9f0d2" opacity=".7">
+    <rect x="376" y="342" width="30" height="2"/><rect x="376" y="346" width="44" height="2"/><rect x="410" y="342" width="14" height="2"/>
+  </g>
+
+  <!-- floor and debris -->
+  <path d="M0 390h800v60H0z" fill="#131917"/>
+  <path d="M0 390h800v8H0z" fill="#5d5a48" opacity=".3"/>
+  <g stroke="#2b312b" stroke-width="2"><path d="M0 416h800M0 438h800M120 398v52M300 398v52M500 398v52M680 398v52"/></g>
+  <g fill="#2b2b22">
+    <path d="M100 384l22-12 18 8-16 10zM690 386l20-14 14 10-18 8z"/>
+  </g>
+
+  <rect width="800" height="450" filter="url(#grain)" opacity=".55"/>
+  <rect width="800" height="450" fill="url(#vig)"/>
+</svg>

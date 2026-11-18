@@ -1,33 +1,35 @@
 {
-    "name":  "ai-npc-demo",
-    "version":  "0.1.0",
-    "private":  true,
-    "type":  "module",
-    "packageManager":  "pnpm@12.21.0",
-    "engines":  {
-                    "node":  "\u003e=24"
-                },
-    "scripts":  {
-                    "typecheck":  "tsc -p tsconfig.server.json \u0026\u0026 tsc -p tsconfig.browser.json",
-                    "test":  "vitest run",
-                    "check:docs":  "tsx scripts/check-docs.ts",
-                    "check:boundaries":  "tsx scripts/check-boundaries.ts",
-                    "check:catalog":  "tsx scripts/check-catalog.ts",
-                    "dev:server":  "tsx apps/server/src/main.ts",
-                    "check":  "pnpm typecheck \u0026\u0026 pnpm test \u0026\u0026 pnpm check:boundaries \u0026\u0026 pnpm check:catalog \u0026\u0026 pnpm check:docs"
-                },
-    "devDependencies":  {
-                            "@types/node":  "^26",
-                            "tsx":  "^4",
-                            "typescript":  "^7",
-                            "vitest":  "^5",
-                            "@ai-npc/app-server":  "workspace:*",
-                            "yaml":  "^2.9.1",
-                            "@ai-npc/contracts":  "workspace:*"
-                        },
-    "dependencies":  {
-                         "@fastify/cors":  "^11.4.3",
-                         "@fastify/websocket":  "^11.3.7",
-                         "fastify":  "^5.12.8"
-                     }
+    "name": "ai-npc-demo",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@12.21.0",
+    "engines": {
+        "node": ">=24"
+    },
+    "scripts": {
+        "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json",
+        "test": "vitest run",
+        "check:docs": "tsx scripts/check-docs.ts",
+        "check:boundaries": "tsx scripts/check-boundaries.ts",
+        "check:catalog": "tsx scripts/check-catalog.ts",
+        "dev:server": "tsx apps/server/src/main.ts",
+        "check": "pnpm typecheck && pnpm test && pnpm check:boundaries && pnpm check:catalog && pnpm check:assets && pnpm check:docs",
+        "check:assets": "tsx scripts/check-assets.ts"
+    },
+    "devDependencies": {
+        "@ai-npc/app-server": "workspace:*",
+        "@ai-npc/contracts": "workspace:*",
+        "@types/node": "^26",
+        "fast-xml-parser": "^5.12.1",
+        "tsx": "^4",
+        "typescript": "^7",
+        "vitest": "^5",
+        "yaml": "^2.9.1"
+    },
+    "dependencies": {
+        "@fastify/cors": "^11.4.3",
+        "@fastify/websocket": "^11.3.7",
+        "fastify": "^5.12.8"
+    }
 }

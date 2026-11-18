@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">降落锚区</title>
+  <desc id="desc">外星降落锚矗立在环坑中央，轨道缆绳伸向极光夜空，人类前哨与生物荧光围绕锚体。</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#050b18"/><stop offset=".5" stop-color="#12263b"/><stop offset=".75" stop-color="#1f4b55"/><stop offset="1" stop-color="#5a7469"/></linearGradient>
+    <linearGradient id="tether" x1="0" y1="1" x2="0" y2="0"><stop stop-color="#d8f5ff"/><stop offset=".5" stop-color="#6da7c9" stop-opacity=".5"/><stop offset="1" stop-color="#6da7c9" stop-opacity="0"/></linearGradient>
+    <linearGradient id="monolith" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1118"/><stop offset=".45" stop-color="#1b2b35"/><stop offset="1" stop-color="#05090c"/></linearGradient>
+    <linearGradient id="crater" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#3d4a44"/><stop offset=".5" stop-color="#23302e"/><stop offset="1" stop-color="#0a1111"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5"><stop stop-color="#7ff2d0" stop-opacity=".9"/><stop offset=".4" stop-color="#3bbf9f" stop-opacity=".45"/><stop offset="1" stop-color="#1e7a6b" stop-opacity="0"/></radialGradient>
+    <filter id="aurora" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency=".005 .012" numOctaves="4" seed="27"/><feColorMatrix values="0 0 0 0 .25 0 0 0 0 .9 0 0 0 0 .65 0 0 0 .4 0"/><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="14"/><feColorMatrix values="0 0 0 0 .04 0 0 0 0 .09 0 0 0 0 .1 0 0 0 .17 0"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="5"/></filter>
+    <radialGradient id="vig" cx=".5" cy=".45" r=".72"><stop offset=".45" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".65"/></radialGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <g fill="#d9f2ff" opacity=".7">
+    <circle cx="76" cy="52" r="1.5"/><circle cx="140" cy="86" r="1"/><circle cx="220" cy="40" r="1.2"/><circle cx="310" cy="70" r="1"/>
+    <circle cx="420" cy="34" r="1.3"/><circle cx="520" cy="82" r="1"/><circle cx="610" cy="42" r="1.5"/><circle cx="700" cy="72" r="1.2"/>
+    <circle cx="748" cy="130" r="1"/><circle cx="60" cy="140" r="1"/>
+  </g>
+  <rect width="800" height="230" filter="url(#aurora)" opacity=".42"/>
+  <g fill="none" stroke="#75d9c1" stroke-width="2" opacity=".3">
+    <path d="M-20 100c90-34 160 12 250-8s150-30 240-8 160 28 250 6 90-16 110-14"/>
+    <path d="M-20 146c100-22 170 10 260-6s160-22 250-6 150 20 230 2"/>
+  </g>
+  <circle cx="650" cy="92" r="34" fill="#9ec9c7" opacity=".15" filter="url(#soft)"/>
+  <circle cx="650" cy="92" r="14" fill="#d7e7df" opacity=".65"/>
+
+  <!-- crater -->
+  <path d="M0 300c90-60 220-86 400-86s310 26 400 86v150H0z" fill="url(#crater)"/>
+  <path d="M0 300c90-58 220-84 400-84s310 26 400 84" fill="none" stroke="#88978c" stroke-width="3" opacity=".5"/>
+  <g fill="none" stroke="#9fb2a3" stroke-width="2" opacity=".25">
+    <path d="M80 326c90-38 208-56 320-56s230 18 320 56"/>
+    <path d="M150 352c80-28 176-42 250-42s170 14 250 42"/>
+    <path d="M230 380c60-18 116-26 170-26s110 8 170 26"/>
+  </g>
+
+  <!-- monolith -->
+  <g>
+    <path d="M366 300l18-190h32l18 190z" fill="url(#monolith)"/>
+    <path d="M384 110l-6-34h40l-6 34" fill="#0a1015"/>
+    <path d="M390 76V44h28v32" fill="#111a21"/>
+    <path d="M366 300h68l10 22H356z" fill="#0c1215"/>
+    <path d="M382 146l14 10-10 24 18 12-8 30 14 14" fill="none" stroke="#7ff2d0" stroke-width="2.5" opacity=".8"/>
+    <g fill="#a9ffe8" opacity=".85">
+      <circle cx="400" cy="118" r="3"/><circle cx="390" cy="196" r="2"/><circle cx="410" cy="248" r="2.5"/>
+    </g>
+    <path d="M400 44V0" stroke="url(#tether)" stroke-width="3"/>
+    <path d="M400 0v44" stroke="#d9fbff" stroke-width="1" opacity=".7"/>
+    <g stroke="#8fe9da" stroke-width="1" opacity=".35">
+      <path d="M400 30l-42 18m42-18l38 16m-38-16l-16 34"/>
+    </g>
+  </g>
+
+  <!-- alien rings and growth -->
+  <g>
+    <ellipse cx="400" cy="326" rx="146" ry="30" fill="none" stroke="#5ed9bd" stroke-width="3" opacity=".55"/>
+    <ellipse cx="400" cy="326" rx="184" ry="38" fill="none" stroke="#3fae9a" stroke-width="1.5" opacity=".3"/>
+    <g fill="#7ff2d0" opacity=".8">
+      <circle cx="262" cy="318" r="4"/><circle cx="322" cy="344" r="3"/><circle cx="480" cy="348" r="4"/><circle cx="540" cy="318" r="3"/>
+    </g>
+    <g fill="none" stroke="#6fe0c4" stroke-width="2" opacity=".5">
+      <path d="M262 318c-18 8-28 26-24 44M322 344c-8 14-4 28 8 36M480 348c10 12 8 26-4 36M540 318c18 10 26 24 22 40"/>
+    </g>
+  </g>
+
+  <!-- human outpost -->
+  <g>
+    <path d="M580 320h104v40H580z" fill="#2a302b"/>
+    <path d="M590 300h84v20h-84z" fill="#3b3f34"/>
+    <path d="M608 288h48v12h-48z" fill="#242a25"/>
+    <path d="M580 360h104v8H580z" fill="#141a17"/>
+    <rect x="602" y="312" width="14" height="10" fill="#ffc377" opacity=".8"/>
+    <rect x="632" y="312" width="14" height="10" fill="#ffc377" opacity=".7"/>
+    <rect x="662" y="312" width="14" height="10" fill="#ffc377" opacity=".6"/>
+    <path d="M684 288V244" stroke="#8a9487" stroke-width="2"/>
+    <path d="M690 248l24 8-24 10z" fill="#b45b3e"/>
+    <circle cx="684" cy="240" r="3" fill="#ff7c52"/>
+  </g>
+  <g fill="#121a18">
+    <circle cx="558" cy="344" r="5"/><path d="M550 350h16l4 18h-24zM552 368h6v8h-6zM562 368h6v8h-6z"/>
+    <circle cx="530" cy="354" r="4"/><path d="M523 360h14l3 14h-20z"/>
+  </g>
+  <path d="M566 352l-18 10m20-4l14 8" stroke="#121a18" stroke-width="2"/>
+
+  <!-- foreground rocks -->
+  <path d="M0 414l58-28 42 16 36-24 48 36 38-12 44 36H0z" fill="#101918"/>
+  <path d="M800 414l-48-24-34 14-44-20-38 34-30-10-36 30h230z" fill="#0d1514"/>
+
+  <rect width="800" height="450" filter="url(#grain)" opacity=".5"/>
+  <rect width="800" height="450" fill="url(#vig)"/>
+</svg>

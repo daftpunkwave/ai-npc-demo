@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">旧堤水闸</title>
+  <desc id="desc">旧文明混凝土水闸横跨水库，锈蚀闸门、控制舱与警示灯在冷雾中发光。</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101d24"/>
+      <stop offset=".5" stop-color="#38535a"/>
+      <stop offset=".8" stop-color="#6f7d76"/>
+      <stop offset="1" stop-color="#a68e70"/>
+    </linearGradient>
+    <linearGradient id="reservoir" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4b6564"/>
+      <stop offset=".55" stop-color="#21383b"/>
+      <stop offset="1" stop-color="#0d191b"/>
+    </linearGradient>
+    <linearGradient id="concrete" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#767568"/>
+      <stop offset=".5" stop-color="#4d514b"/>
+      <stop offset="1" stop-color="#292f2d"/>
+    </linearGradient>
+    <linearGradient id="rust" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9a5a37"/>
+      <stop offset=".45" stop-color="#6e3b27"/>
+      <stop offset="1" stop-color="#2d201a"/>
+    </linearGradient>
+    <radialGradient id="lamp" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fff0b8"/>
+      <stop offset=".3" stop-color="#ffb14e" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#ff8f2e" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="fog" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency=".008 .018" numOctaves="4" seed="19"/>
+      <feColorMatrix values="0 0 0 0 .6  0 0 0 0 .65  0 0 0 0 .63  0 0 0 .5 0"/>
+      <feGaussianBlur stdDeviation="11"/>
+    </filter>
+    <filter id="grain" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".75" numOctaves="2" seed="5"/>
+      <feColorMatrix values="0 0 0 0 .04  0 0 0 0 .06  0 0 0 0 .05  0 0 0 .18 0"/>
+    </filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="5"/></filter>
+    <pattern id="rain" width="30" height="52" patternUnits="userSpaceOnUse" patternTransform="skewX(-10)">
+      <path d="M5 0v30M21 14v32" stroke="#cfd9d2" stroke-width="1" opacity=".22"/>
+    </pattern>
+    <radialGradient id="vig" cx=".5" cy=".45" r=".72">
+      <stop offset=".5" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".58"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <g fill="#16242a" opacity=".42">
+    <path d="M0 188h56l18-42 22 42h48l16-26 20 26h62l24-54 30 54h74l18-32 22 32h92l20-46 26 46h74l22-28 20 28h72v22H0z"/>
+  </g>
+  <g stroke="#d8c3a0" stroke-width="2" opacity=".18" fill="none">
+    <path d="M-20 92c90-18 150 6 240-4s160-20 250-4 170 18 250 0"/>
+    <path d="M-20 120c100-10 170 12 260 2s170-16 250-2 130 12 190 2"/>
+  </g>
+  <circle cx="646" cy="96" r="26" fill="#e9d6b0" opacity=".25" filter="url(#soft)"/>
+
+  <!-- reservoir -->
+  <rect y="214" width="800" height="236" fill="url(#reservoir)"/>
+  <g stroke="#a7b4a8" stroke-opacity=".22" stroke-width="2">
+    <path d="M0 236c80 8 140-4 220 2s150 10 240 4 180-8 340 2"/>
+    <path d="M0 258c90 6 160-2 250 2s160 8 250 2 180-6 300 2"/>
+    <path d="M0 284c80 4 150-2 230 2s150 6 240 0 170-4 330 4"/>
+    <path d="M0 316c100 4 170-2 260 2s150 4 250 0 180-2 290 4"/>
+  </g>
+
+  <!-- dam wall across frame -->
+  <path d="M0 250h800v122H0z" fill="url(#concrete)"/>
+  <path d="M0 250h800v12H0z" fill="#9a9788" opacity=".5"/>
+  <path d="M0 356h800v16H0z" fill="#1a211f" opacity=".8"/>
+  <g stroke="#222b29" stroke-width="3" opacity=".55">
+    <path d="M0 288h800M0 326h800M0 340h800"/>
+    <path d="M80 262v94m120-94v94m120-94v94m120-94v94m120-94v94m120-94v94"/>
+  </g>
+  <g fill="#151d1c" opacity=".6">
+    <path d="M32 270h40v10H32zM120 300h64v8h-64zM690 280h58v10h-58zM610 336h70v8h-70z"/>
+  </g>
+
+  <!-- sluice gates -->
+  <g>
+    <path d="M102 250h186v104H102z" fill="#1a2322"/>
+    <path d="M116 256h74v92h-74zM204 256h70v92h-70z" fill="url(#rust)"/>
+    <g stroke="#2b1d16" stroke-width="4">
+      <path d="M116 278h74M116 300h74M116 322h74M204 278h70M204 300h70M204 322h70"/>
+    </g>
+    <g stroke="#d19056" stroke-width="2" opacity=".5">
+      <path d="M124 262v80M148 262v80M172 262v80M214 262v80M238 262v80M258 262v80"/>
+    </g>
+    <path d="M116 256h74v8h-74zM204 256h70v8h-70z" fill="#c7c2ad" opacity=".35"/>
+    <path d="M160 250v-14m64 14v-14" stroke="#282f2c" stroke-width="8"/>
+    <circle cx="160" cy="232" r="10" fill="#3b3a30" stroke="#8b7b60" stroke-width="2"/>
+    <circle cx="224" cy="232" r="10" fill="#3b3a30" stroke="#8b7b60" stroke-width="2"/>
+    <path d="M160 232l-16 12m80-12l16 12" stroke="#6f604a" stroke-width="3"/>
+  </g>
+
+  <!-- water spill -->
+  <g opacity=".75">
+    <path d="M122 348h70v30h-70zM210 348h58v30h-58z" fill="#8b9d94"/>
+    <path d="M122 350c12 8 20 4 30 12s20 4 30 10M210 350c10 6 18 4 26 10s18 4 24 8" stroke="#d7dfd5" stroke-width="3" fill="none"/>
+    <path d="M120 372c18 8 30 2 44 10s30 2 44 8M206 372c14 6 24 2 36 8s22 2 30 6" stroke="#aebbb1" stroke-width="2" fill="none" filter="url(#soft)"/>
+  </g>
+
+  <!-- control cabin and catwalk -->
+  <g>
+    <path d="M512 214h154v38H512z" fill="#2a3330"/>
+    <path d="M524 196h118v20H524z" fill="#3b423a"/>
+    <path d="M534 180h96v16h-96z" fill="#242d2b"/>
+    <path d="M512 252h154v8H512z" fill="#121a19"/>
+    <g fill="#ffc270" opacity=".8">
+      <rect x="548" y="206" width="18" height="10"/>
+      <rect x="584" y="206" width="18" height="10"/>
+      <rect x="620" y="206" width="18" height="10"/>
+    </g>
+    <path d="M512 214h-42v30h42" fill="#303a36"/>
+    <path d="M470 244v54M560 244v54" stroke="#1a2220" stroke-width="5"/>
+    <path d="M470 298h90" stroke="#1a2220" stroke-width="5"/>
+    <circle cx="512" cy="170" r="4" fill="#ff6b45"/>
+    <path d="M512 166v-28" stroke="#9aa69a" stroke-width="2"/>
+    <circle cx="512" cy="134" r="14" fill="url(#lamp)" opacity=".7"/>
+  </g>
+
+  <!-- catwalk and railings -->
+  <path d="M0 334h470v8H0z" fill="#222b28"/>
+  <g stroke="#1b2421" stroke-width="3">
+    <path d="M0 318h470M0 306h470"/>
+    <path d="M28 306v28m44-28v28m44-28v28m44-28v28m44-28v28m44-28v28m44-28v28m44-28v28m44-28v28m44-28v28m44-28v28"/>
+  </g>
+  <path d="M0 338h470" stroke="#7f7b68" stroke-width="2" opacity=".4"/>
+
+  <!-- maintenance figure -->
+  <g fill="#111715">
+    <circle cx="410" cy="300" r="6"/>
+    <path d="M402 308h16l4 20h-24zM404 328h6v10h-6zM414 328h6v10h-6z"/>
+    <path d="M418 312l18 8" stroke="#111715" stroke-width="3"/>
+  </g>
+  <circle cx="444" cy="322" r="3" fill="#ffd08a" opacity=".8"/>
+
+  <!-- rust stains and warning stripes -->
+  <g stroke="#8c5a3a" stroke-width="3" opacity=".35">
+    <path d="M96 258c6 18 2 34 8 50s2 30 0 48"/>
+    <path d="M290 260c-4 20 2 32-2 50s2 30 0 46"/>
+    <path d="M500 254c4 16 0 28 4 42"/>
+  </g>
+  <g fill="#d1a24f" opacity=".55">
+    <path d="M332 360h28l-10 22h-28zM372 360h28l-10 22h-28z"/>
+  </g>
+
+  <!-- mist, rain, grain -->
+  <rect y="190" width="800" height="170" filter="url(#fog)" opacity=".6"/>
+  <rect width="800" height="450" fill="url(#rain)" opacity=".45"/>
+  <rect width="800" height="450" filter="url(#grain)" opacity=".5"/>
+  <rect width="800" height="450" fill="url(#vig)"/>
+</svg>

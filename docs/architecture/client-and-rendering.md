@@ -126,7 +126,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 
 ### 8.4 场景绘制（`client.scene-renderer.pixi`）
 
-首版不使用美术资源，全部用 PixiJS 的 `Graphics` 与 `Text` 绘制：
+场景默认使用版本化世界资产包（`assets/manifest.json`，设计与冲突记录见 [美术方向](../game/art-direction.md)）；以下 PixiJS `Graphics`/`Text` 画法作为缺图、无画面测试与确定性 fallback 保留：
 
 | 元素 | 画法 |
 |---|---|
