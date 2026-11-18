@@ -38,6 +38,41 @@ export interface ServerIdentity {
   readonly auth: AuthContext;
 }
 
+/** 注入钩子的类型锚点；实现体不会被调用，只用于保留参数与返回类型。 */
+function pauseHook(operationId: string, expectedRunVersion: number): ClockView {
+  void operationId;
+  void expectedRunVersion;
+  throw new Error("pause hook 未注入");
+}
+
+function resumeHook(operationId: string, expectedRunVersion: number): ClockView {
+  void operationId;
+  void expectedRunVersion;
+  throw new Error("resume hook 未注入");
+}
+
+interface SnapshotCreateArgs {
+  readonly sourceBranchId: string;
+  readonly label: string;
+  readonly createdBy: string;
+}
+
+interface SnapshotRestoreArgs {
+  readonly snapshotId: string;
+  readonly createdBy: string;
+  readonly runId?: string;
+}
+
+function createSnapshotHook(input: SnapshotCreateArgs): SnapshotRecordView {
+  void input;
+  throw new Error("save hook 未注入");
+}
+
+function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string; readonly runId: string } {
+  void input;
+  throw new Error("save hook 未注入");
+}
+
 export interface ServerAppOptions {
   readonly authority: Authority;
   readonly storage: StoragePort;
@@ -46,16 +81,12 @@ export interface ServerAppOptions {
   readonly assembly: ResolvedModuleSet;
   readonly projection: () => PlayerProjection;
   readonly clock: () => ClockView;
-  readonly pause: (...args: [operationId: string, expectedRunVersion: number]) => ClockView & { readonly __args?: typeof args };
-  readonly resume: (...args: [operationId: string, expectedRunVersion: number]) => ClockView & { readonly __args?: typeof args };
+  readonly pause: typeof pauseHook;
+  readonly resume: typeof resumeHook;
   readonly save: {
-    createSnapshot: (
-      ...args: [input: { readonly sourceBranchId: string; readonly label: string; readonly createdBy: string }]
-    ) => SnapshotRecordView & { readonly __args?: typeof args };
+    createSnapshot: typeof createSnapshotHook;
     listSnapshots: () => readonly SnapshotRecordView[];
-    restoreSnapshot: (
-      ...args: [input: { readonly snapshotId: string; readonly createdBy: string; readonly runId?: string }]
-    ) => { readonly branchId: string; readonly runId: string } & { readonly __args?: typeof args };
+    restoreSnapshot: typeof restoreSnapshotHook;
   };
   readonly identities: readonly ServerIdentity[];
   readonly allowedOrigins?: readonly string[];
