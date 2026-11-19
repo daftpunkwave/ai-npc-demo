@@ -77,6 +77,76 @@ function consumedOf(value: GameHarness, taskId: string): ReturnType<typeof readG
   );
 }
 
+type ResourceTriple = { readonly supply: number; readonly energy: number; readonly medical: number };
+
+/**
+ * 直接改写库存预留明细，用于注入可预测的第二个扣减或释放失败。
+ * 只改测试分支的聚合状态，仍由规则处理器决定是否提交或回滚。
+ */
+function injectReservation(
+  value: GameHarness,
+  stockpileId: string,
+  reserved: ResourceTriple,
+  reservations: readonly { readonly taskId: string; readonly amount: ResourceTriple }[],
+): void {
+  value.storage.transact((tx) => {
+    const table = tx.branch(value.branchId).table("aggregate_state");
+    const row = table.get({ aggregate_type: "stockpile", aggregate_id: stockpileId });
+    if (row === null) {
+      throw new Error(`库存 ${stockpileId} 不存在`);
+    }
+    const state = row["state_json"] as Record<string, unknown>;
+    const details = reservations.map((entry) => ({
+      taskId: entry.taskId,
+      amount: { supply: entry.amount.supply, energy: entry.amount.energy, medical: entry.amount.medical },
+    }));
+    table.put({ ...row, state_json: { ...state, reserved, reservations: details } });
+  });
+}
+
+/** 取消指定前缀的已调度 job，用于把修复材料留到完成 job 再结算。 */
+function cancelScheduledJobs(value: GameHarness, prefix: string): void {
+  value.storage.transact((tx) => {
+    const table = tx.branch(value.branchId).table("jobs");
+    for (const row of table.list({ status: "scheduled" })) {
+      if (String(row["idempotency_key"]).startsWith(prefix)) {
+        table.put({ ...row, status: "cancelled" });
+      }
+    }
+  });
+}
+
+/** 读取分支 job 的幂等键、状态与到期 tick。 */
+function jobStates(value: GameHarness): readonly {
+  readonly idempotencyKey: string;
+  readonly status: string;
+  readonly dueTick: number;
+}[] {
+  return value.storage.transact((tx) =>
+    tx
+      .branch(value.branchId)
+      .table("jobs")
+      .list({})
+      .map((row) => ({
+        idempotencyKey: String(row["idempotency_key"]),
+        status: String(row["status"]),
+        dueTick: Number(row["due_tick"]),
+      })),
+  );
+}
+
+/** 读取委托聚合的余额与上限。 */
+function delegationBalance(
+  value: GameHarness,
+  delegationId: string,
+): { readonly remaining: ResourceTriple; readonly limit: ResourceTriple } {
+  const state = readGameAggregate(value, "delegation", delegationId);
+  if (state === null) {
+    throw new Error(`委托 ${delegationId} 不存在`);
+  }
+  return state as unknown as { readonly remaining: ResourceTriple; readonly limit: ResourceTriple };
+}
+
 function start(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
   return value.authority.commands.execute(
     playerAuth(value),
@@ -748,5 +818,275 @@ describe("风险结果的公布时机", () => {
       busyUntilTick: 37,
     });
     expect(eventsOf(value, "CharacterInjured")).toHaveLength(0);
+  });
+});
+
+describe("任务资源写入失败的事务边界", () => {
+  it("修复完成时第二个扣减失败：job 回滚、任务可重试，不提交 TaskFailed 或部分扣减", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    // 先让 team-commons 运货到隘口，使修复需要先赶回灰港，工作与完成落在不同 job。
+    const move = dispatchAs(value, playerAuth(value), {
+      taskType: "transport",
+      teamId: "team-commons",
+      params: {
+        fromStockpileId: "sp-commons",
+        toStockpileId: "sp-rubble",
+        cargo: { supply: 1, energy: 0, medical: 0 },
+      },
+    });
+    expect(move.commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 1, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 1);
+    setGameClock(value, { worldTick: 20, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 20);
+    expect(readGameAggregate(value, "team", "team-commons")).toMatchObject({ nodeId: "pass", status: "idle" });
+
+    const repair = dispatchAs(value, strategicAuth(value, "human-neutral"), {
+      taskType: "repair",
+      teamId: "team-commons",
+      departAfterTicks: 1,
+      params: { target: "relay", energyStockpileId: "sp-commons", supplyStockpileId: "sp-commons" },
+    });
+    expect(repair.commandStatus).toBe("accepted");
+    const taskId = (repair.result as { readonly taskId: string }).taskId;
+    setGameClock(value, { worldTick: 21, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 21);
+    const departed = readGameAggregate(value, "task", taskId) as unknown as {
+      readonly status: string;
+      readonly nominalCompletionTick: number;
+      readonly riskOutcome: { readonly delayTicks: number };
+    };
+    expect(departed.status).toBe("running");
+    const completionTick = departed.nominalCompletionTick + departed.riskOutcome.delayTicks;
+
+    // 取消工作 job，让材料留到完成 job 结算；把供给预留挂到另一任务，
+    // 使能源先扣成功、供给第二个扣减失败。预留总量与明细保持一致。
+    cancelScheduledJobs(value, `task-work:${taskId}`);
+    injectReservation(value, "sp-commons", { supply: 5, energy: 10, medical: 0 }, [
+      { taskId, amount: { supply: 0, energy: 10, medical: 0 } },
+      { taskId: "task-supply-blocker", amount: { supply: 5, energy: 0, medical: 0 } },
+    ]);
+    // 先跑完 tick 26、30 的剧情卡 job，让失败调用只包含完成 job。
+    setGameClock(value, { worldTick: 27, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 27);
+    setGameClock(value, { worldTick: 31, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 31);
+    if (departed.riskOutcome.delayTicks > 0) {
+      setGameClock(value, { worldTick: departed.nominalCompletionTick, mode: "running" });
+      value.authority.jobs.runDue(value.branchId, departed.nominalCompletionTick);
+      expect(eventsOf(value, "TaskDelayed")).toHaveLength(1);
+    }
+
+    const taskBefore = readGameAggregate(value, "task", taskId);
+    const stockBefore = readGameAggregate(value, "stockpile", "sp-commons");
+    const teamBefore = readGameAggregate(value, "team", "team-commons");
+    const eventsBefore = readGameEvents(value).length;
+
+    setGameClock(value, { worldTick: completionTick, mode: "running" });
+    expect(() => value.authority.jobs.runDue(value.branchId, completionTick)).toThrow();
+
+    expect(readGameAggregate(value, "task", taskId)).toEqual(taskBefore);
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toEqual(stockBefore);
+    expect(readGameAggregate(value, "team", "team-commons")).toEqual(teamBefore);
+    expect(readGameEvents(value)).toHaveLength(eventsBefore);
+    expect(eventsOf(value, "TaskFailed")).toHaveLength(0);
+    expect(consumedOf(value, taskId)).toHaveLength(0);
+    expect(
+      eventsOf(value, "TaskCompleted").filter(
+        (event) => (event.payload as { readonly taskId?: string }).taskId === taskId,
+      ),
+    ).toHaveLength(0);
+    expect(
+      jobStates(value).some(
+        (job) => job.idempotencyKey.startsWith(`task-complete:${taskId}`) && job.status === "scheduled",
+      ),
+    ).toBe(true);
+
+    // 恢复正确的预留后重试同一完成 job：材料恰好扣一次，任务完成且没有 TaskFailed。
+    injectReservation(value, "sp-commons", { supply: 5, energy: 10, medical: 0 }, [
+      { taskId, amount: { supply: 5, energy: 10, medical: 0 } },
+    ]);
+    expect(value.authority.jobs.runDue(value.branchId, completionTick)).toBeGreaterThan(0);
+    expect(readGameAggregate(value, "task", taskId)).toMatchObject({
+      status: "completed",
+      materialsConsumed: true,
+      completedAtTick: completionTick,
+    });
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 54, energy: 2 },
+      reserved: { supply: 0, energy: 0 },
+    });
+    expect(consumedOf(value, taskId)).toHaveLength(2);
+    expect(eventsOf(value, "TaskFailed")).toHaveLength(0);
+    expect(
+      eventsOf(value, "TaskCompleted").filter(
+        (event) => (event.payload as { readonly taskId?: string }).taskId === taskId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("取消时释放预留失败：命令 rejected，任务与库存保持原状态", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const dispatch = dispatchTransport(value);
+    expect(dispatch.commandStatus).toBe("accepted");
+    const taskId = (dispatch.result as { readonly taskId: string }).taskId;
+    const draws = (readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly { readonly delegationId: string }[];
+    }).delegationDraws;
+    expect(draws).toHaveLength(1);
+    const delegationId = draws[0]!.delegationId;
+    // 清空预留明细：释放 10 时找不到对应预留，资源端口返回 invalid-params。
+    injectReservation(value, "sp-commons", { supply: 0, energy: 0, medical: 0 }, []);
+    const taskBefore = readGameAggregate(value, "task", taskId);
+    const stockBefore = readGameAggregate(value, "stockpile", "sp-commons");
+    const balanceBefore = delegationBalance(value, delegationId).remaining;
+    const eventsBefore = readGameEvents(value).length;
+
+    const cancel = cancelAs(value, playerAuth(value), taskId);
+    expect(cancel.commandStatus).toBe("rejected");
+    expect(cancel.reasonCode).toBe("invalid-params");
+    expect(readGameAggregate(value, "task", taskId)).toEqual(taskBefore);
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toEqual(stockBefore);
+    expect(delegationBalance(value, delegationId).remaining).toEqual(balanceBefore);
+    expect(readGameEvents(value)).toHaveLength(eventsBefore);
+    expect(readGameAggregate(value, "team", "team-commons")).toMatchObject({ status: "assigned" });
+  });
+
+  it("取消时委托回补失败：命令 rejected，预留与任务保持原状态", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const dispatch = dispatchTransport(value);
+    expect(dispatch.commandStatus).toBe("accepted");
+    const taskId = (dispatch.result as { readonly taskId: string }).taskId;
+    const draws = (readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly { readonly delegationId: string }[];
+    }).delegationDraws;
+    expect(draws).toHaveLength(1);
+    // 删除记录中的委托：释放成功、回补失败，命令必须整体回滚。
+    value.storage.transact((tx) =>
+      tx
+        .branch(value.branchId)
+        .table("aggregate_state")
+        .delete({ aggregate_type: "delegation", aggregate_id: draws[0]!.delegationId }),
+    );
+    const stockBefore = readGameAggregate(value, "stockpile", "sp-commons");
+    const eventsBefore = readGameEvents(value).length;
+
+    const cancel = cancelAs(value, playerAuth(value), taskId);
+    expect(cancel.commandStatus).toBe("rejected");
+    expect(cancel.reasonCode).toBe("invalid-params");
+    expect(readGameAggregate(value, "task", taskId)).toMatchObject({ status: "pending" });
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toEqual(stockBefore);
+    expect(readGameEvents(value)).toHaveLength(eventsBefore);
+  });
+
+  it("委托回补只退回实际扣减的那笔，不按主体与库存点重选", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const proposal = value.authority.commands.execute(
+      strategicAuth(value, "human-neutral"),
+      gameCommandEnvelope(
+        "agreement.propose",
+        {
+          parties: ["human-neutral", "player-1"],
+          terms: [
+            {
+              kind: "delegate",
+              obligorId: "human-neutral",
+              granteeId: "player-1",
+              teamIds: ["team-commons"],
+              stockpileId: "sp-commons",
+              maxDraw: { supply: 7, energy: 0, medical: 0 },
+              untilTick: 100,
+            },
+          ],
+        },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(proposal.commandStatus).toBe("accepted");
+    const agreementId = (proposal.result as { readonly agreementId: string }).agreementId;
+    expect(
+      value.authority.commands.execute(
+        playerAuth(value),
+        gameCommandEnvelope("agreement.respond", { agreementId, response: "accept" }, value.host.ids("cmd")),
+      ).commandStatus,
+    ).toBe("accepted");
+    const playerDelegations = eventsOf(value, "DelegationCreated")
+      .map((event) => event.payload as {
+        readonly delegationId: string;
+        readonly granteeId: string;
+        readonly stockpileId: string | null;
+      })
+      .filter((payload) => payload.granteeId === "player-1" && payload.stockpileId === "sp-commons");
+    expect(playerDelegations).toHaveLength(2);
+
+    const dispatch = dispatchAs(value, playerAuth(value), {
+      taskType: "transport",
+      teamId: "team-commons",
+      params: {
+        fromStockpileId: "sp-commons",
+        toStockpileId: "sp-earth",
+        cargo: { supply: 5, energy: 0, medical: 0 },
+      },
+    });
+    expect(dispatch.commandStatus).toBe("accepted");
+    const taskId = (dispatch.result as { readonly taskId: string }).taskId;
+    const draws = (readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly {
+        readonly delegationId: string;
+        readonly stockpileId: string;
+        readonly amount: ResourceTriple;
+      }[];
+    }).delegationDraws;
+    expect(draws).toHaveLength(1);
+    expect(draws[0]).toMatchObject({ stockpileId: "sp-commons", amount: { supply: 5 } });
+    const drawnId = draws[0]!.delegationId;
+    const other = playerDelegations.find((payload) => payload.delegationId !== drawnId);
+    expect(other).toBeDefined();
+    const drawnBefore = delegationBalance(value, drawnId);
+    expect(drawnBefore.remaining.supply).toBe(drawnBefore.limit.supply - 5);
+
+    // 让另一笔同主体同库存委托的余额低于上限；旧实现按主体重查时可能退到它。
+    const otherBefore = delegationBalance(value, other!.delegationId);
+    value.storage.transact((tx) => {
+      const table = tx.branch(value.branchId).table("aggregate_state");
+      const row = table.get({ aggregate_type: "delegation", aggregate_id: other!.delegationId });
+      if (row === null) {
+        throw new Error("另一笔委托不存在");
+      }
+      const state = row["state_json"] as Record<string, unknown>;
+      const remaining = state["remaining"] as ResourceTriple;
+      table.put({
+        ...row,
+        state_json: {
+          ...state,
+          remaining: { ...remaining, supply: Math.max(0, remaining.supply - 3) },
+        },
+      });
+    });
+    const otherBalance = delegationBalance(value, other!.delegationId);
+
+    // 取消前让被扣减的委托过期：旧实现会按主体与库存点重选到另一笔，新实现按记录回补。
+    setGameClock(value, { worldTick: 1, mode: "running" });
+    value.storage.transact((tx) => {
+      const table = tx.branch(value.branchId).table("aggregate_state");
+      const row = table.get({ aggregate_type: "delegation", aggregate_id: drawnId });
+      if (row === null) {
+        throw new Error("被扣减的委托不存在");
+      }
+      table.put({
+        ...row,
+        state_json: { ...(row["state_json"] as Record<string, unknown>), untilTick: 0 },
+      });
+    });
+
+    const cancel = cancelAs(value, playerAuth(value), taskId);
+    expect(cancel.commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "task", taskId)).toMatchObject({ status: "cancelled" });
+    expect(delegationBalance(value, drawnId).remaining.supply).toBe(drawnBefore.limit.supply);
+    expect(delegationBalance(value, other!.delegationId).remaining).toEqual(otherBalance.remaining);
   });
 });

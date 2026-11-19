@@ -402,14 +402,15 @@ export interface GameWorldPort {
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   claimGroup(groupId: string, taskId: string): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   releaseGroup(groupId: string, taskId: string): void;
+  /** 扣减覆盖该库存点的委托余额，并返回实际扣减的委托，供回补时按记录定位。 */
   drawDelegation(
     principalId: string,
     stockpileId: string,
     delta: ResourceAmounts,
-  ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  ): { readonly ok: true; readonly delegationId: string } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  /** 按实际扣减过的委托 ID 回补余额；不得按主体与库存点重新查找委托。 */
   refundDelegation(
-    principalId: string,
-    stockpileId: string,
+    delegationId: string,
     delta: ResourceAmounts,
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   createDelegation(spec: {

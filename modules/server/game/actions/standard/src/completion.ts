@@ -1,6 +1,7 @@
 /**
  * 结算任务完成效果：资源转移/消耗、队伍与角色移动、指标变化、侦察报告和证据发现。
  * 依赖世界/资源/地图/通信端口、内容索引与任务状态；写入都在 authority 事务内。
+ * 修复材料由调用方在完成 job 开头结算，这里只应用完成效果。
  * 禁止在这里重算风险或把未满足条件的任务标记为成功；伤势只在完成事务内应用并公开。
  */
 /* eslint-disable @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态字段误判为 unknown。 */
@@ -13,7 +14,6 @@ import {
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
-import { settleRepairMaterials } from "./reservations";
 import type { TaskState } from "./state";
 
 type CompletionContext = HandlerContext<GameModulePorts, unknown>;
@@ -116,7 +116,6 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
   if (workNodeId === undefined || workNodeId === null) {
     return { ok: false, reasonCode: "invalid-params", safeMessage: "任务缺少工作节点" };
   }
-  let current = task;
   if (task.taskType === "transport") {
     if (task.fromStockpileId === null || task.toStockpileId === null) {
       return { ok: false, reasonCode: "invalid-params", safeMessage: "运输任务缺少库存点" };
@@ -149,12 +148,7 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     ports["game.world"].setGroupStatus(params.groupId, "rescued", null, 0, workNodeId);
     ports["game.world"].changeMeter("migration.safety", 10, "task");
   } else if (task.taskType === "repair") {
-    // 材料在工作开始时结算；这里复用同一幂等函数，已标记则不会重复扣减。
-    const settled = settleRepairMaterials(context, task);
-    if (!settled.ok) {
-      return { ok: false, reasonCode: settled.reasonCode, safeMessage: "修复材料消耗失败" };
-    }
-    current = settled.task;
+    // 材料已在完成 job 开头结算（失败会回滚整个 job），这里只应用完成效果。
     const teamStar = task.teamId === "team-star";
     let delta = teamStar ? 40 : 25;
     if (task.participants.includes("npc-shenli")) {
@@ -173,10 +167,10 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
       ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
     }
   }
-  moveTeamAndParticipants(context, current, workNodeId, completedAt);
-  applyRiskInjuries(context, current, completedAt);
+  moveTeamAndParticipants(context, task, workNodeId, completedAt);
+  applyRiskInjuries(context, task, completedAt);
   const next: TaskState = {
-    ...current,
+    ...task,
     status: "completed",
     completedAtTick: completedAt,
     phase: "working",

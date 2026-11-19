@@ -4,9 +4,16 @@
  * 禁止用失真的夹具替代内容包，也不把未执行 job 的 tick 当作已结算。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { Json } from "@ai-npc/contracts";
-import { createSystemAuth } from "@ai-npc/authority";
-import { createWorldPort } from "@ai-npc/mod-game-world-slg-light";
+import { DomainError, type Json } from "@ai-npc/contracts";
+import { Authority, createSystemAuth } from "@ai-npc/authority";
+import type { GameModulePorts, GameResourcesPort, ModuleBinder } from "@ai-npc/module-sdk";
+import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
+import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
+import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
+import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
+import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
+import { createScenarioContributor, createScenarioPort } from "@ai-npc/mod-game-scenario-watergate";
+import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import {
   createGameHarness,
   createMemoryTx,
@@ -40,6 +47,48 @@ function start(harnessValue: GameHarness): ReturnType<GameHarness["authority"]["
       harnessValue.host.ids("cmd"),
     ),
   );
+}
+
+/**
+ * 在同一测试存储上重建 authority，并包装资源端口以注入每日供给扣减失败。
+ * 只用于让时钟步骤走可预测的失败路径；命令仍由主 harness 的 authority 提交。
+ */
+function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: boolean }): Authority {
+  const binder: ModuleBinder = (txFor) => {
+    const resources = createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 });
+    const failingResources = Object.assign(Object.create(resources) as GameResourcesPort, {
+      consume: (input: Parameters<GameResourcesPort["consume"]>[0]) => {
+        if (control.fail && input.reason === "daily-consumption") {
+          return { ok: false as const, reasonCode: "insufficient-resource" as const };
+        }
+        return resources.consume(input);
+      },
+    });
+    return {
+      "game.map": createMapPort(txFor, value.gameContent, value.host.ids),
+      "game.resources": failingResources,
+      "game.world": createWorldPort(txFor, value.gameContent, value.host.ids),
+      "game.comms": createCommsPort(txFor, value.gameContent, value.host.ids),
+      "game.actions": createActionsPort(txFor),
+      "game.agreements": createAgreementsPort(txFor),
+      "game.scenario": createScenarioPort(txFor),
+    } satisfies GameModulePorts;
+  };
+  const authority = new Authority({
+    storage: value.storage,
+    host: value.host,
+    content: value.gameContent,
+    moduleBinder: binder,
+    allowDirectAgentCommands: true,
+  });
+  authority.registerModule(createMapContributor());
+  authority.registerModule(createResourcesContributor());
+  authority.registerModule(createWorldContributor());
+  authority.registerModule(createCommsContributor());
+  authority.registerModule(createActionsContributor());
+  authority.registerModule(createAgreementsContributor());
+  authority.registerModule(createScenarioContributor({ escalating: false }));
+  return authority;
 }
 
 describe("世界核心", () => {
@@ -112,6 +161,30 @@ describe("世界核心", () => {
       amount: { supply: 54, energy: 12, medical: 8 },
     });
     expect(readGameEventTypes(value)).toContain("DayPassed");
+  });
+
+  it("每日供给扣减失败时回滚整次结算，重试成功后恰好提交一次 DayPassed", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const control = { fail: true };
+    const authority = authorityWithFailingDailyConsume(value, control);
+    setGameClock(value, { worldTick: 24, mode: "running" });
+
+    expect(() => authority.clock.run(value.branchId)).toThrow(DomainError);
+    expect(readGameEventTypes(value)).not.toContain("DayPassed");
+    expect(readGameEventTypes(value)).not.toContain("MetersChanged");
+    expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ lastDailyTick: null });
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({ amount: { supply: 60 } });
+
+    // 修复注入条件后重试同一 tick：结算成功且只提交一次 DayPassed。
+    control.fail = false;
+    expect(authority.clock.run(value.branchId)).toBe(2);
+    expect(readGameEventTypes(value).filter((type) => type === "DayPassed")).toHaveLength(1);
+    expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ lastDailyTick: 24 });
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({ amount: { supply: 54 } });
+
+    authority.clock.run(value.branchId);
+    expect(readGameEventTypes(value).filter((type) => type === "DayPassed")).toHaveLength(1);
   });
 
   it("群体期限 job 将伤员标记为恶化并降低迁徙安全", async () => {

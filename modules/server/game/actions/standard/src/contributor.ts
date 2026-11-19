@@ -1,10 +1,12 @@
 /**
  * 注册任务派遣、邀请应答、取消与出发/工作/完成/返回 job，串起风险、资源和世界状态。
  * 依赖计划校验、完成结算、世界/资源/地图/通信端口与 authority 事务上下文。
+ * 命令处理器在资源写入失败时返回 rejected，由命令网关回滚 SAVEPOINT；
+ * job 处理器在资源写入失败时抛 DomainError，由 job 事务回滚并保留原任务状态等待重试。
  * 禁止在处理器中使用真实时间、随机 ID 作为种子或越过资源预留直接结算。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态与泛型端口字段误判为 unknown。 */
-import type { AudienceSpec, Json, ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
+import { DomainError, type AudienceSpec, type Json, type ReasonCode, type ResourceAmounts } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   factionAudience,
@@ -21,9 +23,17 @@ import { refundDelegation, releaseReserved, settleRepairMaterials } from "./rese
 import { planDispatch, type DispatchInput } from "./plan";
 import { rollRisk } from "./risk";
 import { computeTaskRoute } from "./routes";
-import { readTaskState, type InvitationState, type TaskState } from "./state";
+import { readTaskState, type DelegationDraw, type InvitationState, type TaskState } from "./state";
 
 type ActionContext = HandlerContext<GameModulePorts, unknown>;
+
+/** job 内可失败写入的失败出口：抛 DomainError 回滚整个 job 事务，任务停在失败前状态等待重试。 */
+function failJobWrite(action: string, reasonCode: ReasonCode): never {
+  throw new DomainError("invalid-state", `${action}失败，job 事务已回滚`, {
+    retryable: true,
+    details: { reasonCode },
+  });
+}
 
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
   return context.modules as GameModulePorts;
@@ -66,8 +76,7 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     return { kind: "rejected", reasonCode: plan.reasonCode, safeMessage: plan.safeMessage };
   }
   const taskId = context.ids("task");
-  const reserved: { readonly stockpileId: string; readonly amount: ResourceAmounts }[] = [];
-  for (const [index, stockpile] of plan.plan.stockpiles.entries()) {
+  for (const stockpile of plan.plan.stockpiles) {
     const reservedResult = asPorts(context)["game.resources"].reserve({
       stockpileId: stockpile.stockpileId,
       delta: stockpile.amount,
@@ -75,19 +84,11 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
       byId: effectivePrincipalId(context.auth),
     });
     if (!reservedResult.ok) {
-      for (const previous of reserved.slice(0, index)) {
-        asPorts(context)["game.resources"].release({
-          stockpileId: previous.stockpileId,
-          delta: previous.amount,
-          taskId,
-          byId: effectivePrincipalId(context.auth),
-        });
-      }
+      // 返回 rejected 后命令网关回滚整个 SAVEPOINT，之前登记的预留不会提交。
       return { kind: "rejected", reasonCode: reservedResult.reasonCode, safeMessage: "资源预留失败" };
     }
-    reserved.push(stockpile);
   }
-  const drawn: { readonly stockpileId: string; readonly amount: ResourceAmounts }[] = [];
+  const delegationDraws: DelegationDraw[] = [];
   for (const stockpile of plan.plan.stockpiles) {
     const authority = asPorts(context)["game.world"].drawAuthority(
       effectivePrincipalId(context.auth),
@@ -102,24 +103,14 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
       stockpile.amount,
     );
     if (!result.ok) {
-      for (const item of drawn) {
-        asPorts(context)["game.world"].refundDelegation(
-          effectivePrincipalId(context.auth),
-          item.stockpileId,
-          item.amount,
-        );
-      }
-      for (const item of plan.plan.stockpiles) {
-        asPorts(context)["game.resources"].release({
-          stockpileId: item.stockpileId,
-          delta: item.amount,
-          taskId,
-          byId: effectivePrincipalId(context.auth),
-        });
-      }
       return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "委托余额不足" };
     }
-    drawn.push(stockpile);
+    // 记录实际扣减的委托，任务取消或出发失败时按记录回补，不再按主体与库存点重查。
+    delegationDraws.push({
+      delegationId: result.delegationId,
+      stockpileId: stockpile.stockpileId,
+      amount: stockpile.amount,
+    });
   }
   const rescueParams = plan.plan.taskType === "rescue"
     ? plan.plan.params as { readonly groupId: string }
@@ -127,21 +118,6 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
   if (rescueParams !== null) {
     const claimed = asPorts(context)["game.world"].claimGroup(rescueParams.groupId, taskId);
     if (!claimed.ok) {
-      for (const item of drawn) {
-        asPorts(context)["game.world"].refundDelegation(
-          effectivePrincipalId(context.auth),
-          item.stockpileId,
-          item.amount,
-        );
-      }
-      for (const item of plan.plan.stockpiles) {
-        asPorts(context)["game.resources"].release({
-          stockpileId: item.stockpileId,
-          delta: item.amount,
-          taskId,
-          byId: effectivePrincipalId(context.auth),
-        });
-      }
       return { kind: "rejected", reasonCode: claimed.reasonCode, safeMessage: "救援群体已被其他任务占用" };
     }
   }
@@ -162,6 +138,7 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     reserved: plan.plan.reserved,
     fromStockpileId: plan.plan.fromStockpileId,
     toStockpileId: plan.plan.toStockpileId,
+    delegationDraws,
     patrolStartTick: plan.plan.patrolStartTick,
     patrolEndTick: plan.plan.patrolEndTick,
     workStartTick: plan.plan.workStartTick,
@@ -252,9 +229,17 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
   if (task.status !== "pending" && task.status !== "running") {
     return { kind: "rejected", reasonCode: "task-not-cancellable", safeMessage: "任务已结束" };
   }
+  let current = task;
   if (task.status === "pending") {
-    releaseReserved(context, task);
-    refundDelegation(context, task);
+    // 释放或回补失败时返回 rejected：命令网关回滚 SAVEPOINT，任务保持 pending，库存与委托不变。
+    const released = releaseReserved(context, task);
+    if (!released.ok) {
+      return { kind: "rejected", reasonCode: released.reasonCode, safeMessage: "释放任务预留失败" };
+    }
+    const refunded = refundDelegation(context, task);
+    if (!refunded.ok) {
+      return { kind: "rejected", reasonCode: refunded.reasonCode, safeMessage: "委托余额回补失败" };
+    }
     if (task.taskType === "rescue") {
       const params = task.params as { readonly groupId: string };
       asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
@@ -287,10 +272,21 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
       (task.materialsConsumed ||
         (task.workStartTick !== null && context.tx.worldTick >= task.workStartTick));
     if (workingRepair) {
-      settleRepairMaterials(context, task);
+      const settled = settleRepairMaterials(context, task);
+      if (!settled.ok) {
+        return { kind: "rejected", reasonCode: settled.reasonCode, safeMessage: "修复材料结算失败" };
+      }
+      // 保留「材料已消耗」标记，避免取消状态把刚结算的标记覆盖回未结算。
+      current = settled.task;
     } else {
-      releaseReserved(context, task);
-      refundDelegation(context, task);
+      const released = releaseReserved(context, task);
+      if (!released.ok) {
+        return { kind: "rejected", reasonCode: released.reasonCode, safeMessage: "释放任务预留失败" };
+      }
+      const refunded = refundDelegation(context, task);
+      if (!refunded.ok) {
+        return { kind: "rejected", reasonCode: refunded.reasonCode, safeMessage: "委托余额回补失败" };
+      }
     }
     if (task.taskType === "rescue") {
       const params = task.params as { readonly groupId: string };
@@ -310,7 +306,7 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
     }
   }
   context.tx.put("task", task.taskId, {
-    ...task,
+    ...current,
     status: "cancelled",
     canceledAtTick: context.tx.worldTick,
     completedAtTick: context.tx.worldTick,
@@ -323,9 +319,19 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
   return { kind: "accepted" };
 }
 
+/**
+ * job 内让任务失败：先释放预留并回补委托，再提交 TaskFailed。
+ * 清理写入失败时抛 DomainError，job 事务整体回滚，任务保持 pending 等待重试。
+ */
 function failDeparture(context: ActionContext, task: TaskState, reasonCode: ReasonCode): void {
-  releaseReserved(context, task);
-  refundDelegation(context, task);
+  const released = releaseReserved(context, task);
+  if (!released.ok) {
+    failJobWrite("释放任务预留", released.reasonCode);
+  }
+  const refunded = refundDelegation(context, task);
+  if (!refunded.ok) {
+    failJobWrite("回补委托余额", refunded.reasonCode);
+  }
   if (task.taskType === "rescue") {
     const params = task.params as { readonly groupId: string };
     asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
@@ -457,10 +463,10 @@ function depart(context: ActionContext, taskId: string): void {
   ports["game.world"].setTeamStatus(task.teamId, "traveling", nominalCompletionTick, task.taskId);
   if (running.workStartTick !== null && running.workStartTick <= departedAt) {
     // 出发时已在该任务的工作节点：同一事务内立即结算已预留的修复材料。
+    // 结算失败不可改写成 TaskFailed（那会与已扣的能源并存），必须回滚整个出发 job。
     const settled = settleRepairMaterials(context, running);
     if (!settled.ok) {
-      failDeparture(context, running, settled.reasonCode);
-      return;
+      failJobWrite("结算修复材料", settled.reasonCode);
     }
   } else if (running.workStartTick !== null) {
     context.tx.schedule("task.work", running.workStartTick, `task-work:${taskId}`, { taskId });
@@ -473,7 +479,7 @@ function depart(context: ActionContext, taskId: string): void {
   context.tx.schedule("task.complete", nominalCompletionTick, `task-complete:${taskId}:${nominalCompletionTick}`, { taskId });
 }
 
-/** 到达工作起点时结算修复材料；材料已结算则幂等跳过。 */
+/** 到达工作起点时结算修复材料；材料已结算则幂等跳过，失败时回滚 job 事务等待重试。 */
 function work(context: ActionContext, taskId: string): void {
   const task = readTaskState(context.tx, taskId);
   if (task === null || task.status !== "running" || task.taskType !== "repair") {
@@ -481,9 +487,7 @@ function work(context: ActionContext, taskId: string): void {
   }
   const settled = settleRepairMaterials(context, task);
   if (!settled.ok) {
-    releaseReserved(context, task);
-    refundDelegation(context, task);
-    failTask(context, task, settled.reasonCode);
+    failJobWrite("结算修复材料", settled.reasonCode);
   }
 }
 
@@ -505,15 +509,32 @@ function complete(context: ActionContext, taskId: string): void {
     asPorts(context)["game.world"].setTeamStatus(task.teamId, "traveling", newCompletion, taskId);
     return;
   }
-  const result = completeTask(context, task);
-  if (!result.ok) {
-    releaseReserved(context, task);
-    refundDelegation(context, task);
-    if (task.taskType === "rescue") {
-      const params = task.params as { readonly groupId: string };
-      asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
+  let current = task;
+  if (task.taskType === "repair" && !task.materialsConsumed) {
+    // 完成时仍需扣减预留材料；失败必须回滚整个完成 job，不能提交 TaskFailed 掩盖先扣的能源。
+    const settled = settleRepairMaterials(context, task);
+    if (!settled.ok) {
+      failJobWrite("结算修复材料", settled.reasonCode);
     }
-    failTask(context, task, result.reasonCode);
+    current = settled.task;
+  }
+  const result = completeTask(context, current);
+  if (!result.ok) {
+    // 业务结算条件不满足：先释放可退还的预留并回补委托，再提交 TaskFailed。
+    // 清理写入失败时抛 DomainError，整个 job 回滚，不留下部分释放或失败任务。
+    const released = releaseReserved(context, current);
+    if (!released.ok) {
+      failJobWrite("释放任务预留", released.reasonCode);
+    }
+    const refunded = refundDelegation(context, current);
+    if (!refunded.ok) {
+      failJobWrite("回补委托余额", refunded.reasonCode);
+    }
+    if (current.taskType === "rescue") {
+      const params = current.params as { readonly groupId: string };
+      asPorts(context)["game.world"].releaseGroup(params.groupId, current.taskId);
+    }
+    failTask(context, current, result.reasonCode);
   }
 }
 

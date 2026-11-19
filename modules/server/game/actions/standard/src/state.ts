@@ -16,6 +16,15 @@ const riskOutcomeSchema = z
   })
   .strict();
 
+/** 实际扣减过的委托记录；回补按这里的委托 ID 进行，不再按主体与库存点重新查找。 */
+const delegationDrawSchema = z
+  .object({
+    delegationId: z.string().min(1),
+    stockpileId: z.string().min(1),
+    amount: resourceAmountsSchema,
+  })
+  .strict();
+
 export const taskStateSchema = z
   .object({
     taskId: z.string().min(1),
@@ -34,6 +43,8 @@ export const taskStateSchema = z
     reserved: resourceAmountsSchema,
     fromStockpileId: z.string().min(1).nullable(),
     toStockpileId: z.string().min(1).nullable(),
+    /** 实际扣减的委托余额；只有委托身份动用库存点时才有记录。 */
+    delegationDraws: z.array(delegationDrawSchema),
     patrolStartTick: z.number().int().nonnegative().nullable(),
     patrolEndTick: z.number().int().nonnegative().nullable(),
     workStartTick: z.number().int().nonnegative().nullable(),
@@ -58,6 +69,7 @@ export const invitationStateSchema = z
   .strict();
 
 export type TaskState = z.infer<typeof taskStateSchema>;
+export type DelegationDraw = z.infer<typeof delegationDrawSchema>;
 export type InvitationState = z.infer<typeof invitationStateSchema>;
 
 /** 读取并校验任务聚合；缺失返回 null，损坏直接报错。 */
