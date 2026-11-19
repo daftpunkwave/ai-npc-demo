@@ -8,9 +8,9 @@
 
 同一个 modelId 可服务多个 Agent 与多个 purpose；共享的是连接、参数配置及资源额度，消息、记忆、工具集、供应商会话和私密上下文必须分别隔离。
 
-首版有 5 个人类派系、3 个非人类势力、12 个角色，最多 20 个活跃 gameplay 身份。模型池并发上限是另一组资源约束，不因配置 20 个 Agent 就默认启动 20 路请求。
+序章有 8 名公社支持者、4 名 AI 党魁、3 名外域 Agent，最多 15 个活跃 gameplay 身份。模型池并发上限是另一组资源约束，不因配置 15 个 Agent 就默认启动 15 路请求。
 
-在线与实验活跃身份合计不得超过 20；完整 20 个 Agent 的对比实验要暂停在线运行，再逐分支执行。改变挂载不改变 Agent 身份，memory-maintenance 和 speech 也不另占身份。
+在线与实验活跃身份合计不得超过 15；完整 15 个 Agent 的对比实验要暂停在线运行，再逐分支执行。改变挂载不改变 Agent 身份，memory-maintenance 和 speech 也不另占身份。
 
 ## 2. 三类配置职责
 
@@ -43,7 +43,7 @@ evaluation 由独立 evaluator 配置引用 modelId，调用主体类型为 eval
 
 ## 4. 目标配置示例
 
-下例展示同一模型挂载全部 20 个 Agent（文件 `config/model-layouts/shared-model-layout-v1.yaml`），参数仅为设计起点；endpoint 与外部模型名由 `.env` 提供并需通过连接测试，不代表真实可用供应商。各适配器的字段含义见 [模型传输](model-transport.md)。
+下例展示同一模型挂载全部 15 个 Agent（文件 `config/model-layouts/shared-model-layout-v1.yaml`），参数仅为设计起点；endpoint 与外部模型名由 `.env` 提供并需通过连接测试，不代表真实可用供应商。各适配器的字段含义见 [模型传输](model-transport.md)。
 
 ~~~yaml
 schemaVersion: 1
@@ -131,12 +131,12 @@ models:
     limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
     maxOutputTokensByPurpose: { decision: 16000, speech: 4000, memory-maintenance: 4000 }
 mounts:
-  - { modelId: npc-claude, agentIds: [<the same 20 agent ids as above>], purposes: [decision] }
-  - { modelId: npc-chat, agentIds: [<the same 20 agent ids as above>], purposes: [speech, memory-maintenance] }
+  - { modelId: npc-claude, agentIds: [<the same 15 agent ids as above>], purposes: [decision] }
+  - { modelId: npc-chat, agentIds: [<the same 15 agent ids as above>], purposes: [speech, memory-maintenance] }
 evaluator: { enabled: false, principalId: evaluator-judge, modelId: npc-chat }
 ~~~
 
-（`<the same 20 agent ids as above>` 在实际文件里要写出完整列表，与上例相同。）`deterministic-model-layout-v1.yaml` 只有一个连接 `fixtures`（`adapterId: platform.model-transport.deterministic`、`fixtureFiles: [tests/fixtures/model/default.jsonl]`，见 [模型传输](model-transport.md) 第 5 节）与一个模型 `npc-fixture`（`externalModel: deterministic-v1`，`maxOutputTokensByPurpose` 与 npc-chat 相同），全部 20 个 Agent 的 decision、speech、memory-maintenance 都挂到 `npc-fixture`。
+（`<the same 15 agent ids as above>` 在实际文件里要写出完整列表，与上例相同。）`deterministic-model-layout-v1.yaml` 只有一个连接 `fixtures`（`adapterId: platform.model-transport.deterministic`、`fixtureFiles: [tests/fixtures/model/default.jsonl]`，见 [模型传输](model-transport.md) 第 5 节）与一个模型 `npc-fixture`（`externalModel: deterministic-v1`，`maxOutputTokensByPurpose` 与 npc-chat 相同），全部 15 个 Agent 的 decision、speech、memory-maintenance 都挂到 `npc-fixture`。
 
 让 npc-cenyan 使用另一模型时，在 models 增加一次定义，并从原挂载的对应 purpose 移除该身份，再新增指向新 modelId 的挂载。不能保留重叠挂载后再依赖“最后一条优先”。
 
@@ -221,7 +221,7 @@ memory 实验固定解析后的路由、参数、池限额和预算；轮换运�
 
 ## 11. 参考边界
 
-借鉴 deepseek-harness 的 [可替换 LLM 服务与适配器](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts)。集中 models/mounts、NPC purpose 路由、公平队列和 20 个身份限制是本项目设计，不声称参考框架已经提供这一游戏模型池。
+借鉴 deepseek-harness 的 [可替换 LLM 服务与适配器](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/llm/llm/src/index.ts)。集中 models/mounts、NPC purpose 路由、公平队列和 15 个身份限制是本项目设计，不声称参考框架已经提供这一游戏模型池。
 
 ## 12. 首版实现规格：`agent.model-pool.shared`
 

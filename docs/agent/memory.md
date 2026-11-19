@@ -6,7 +6,7 @@
 
 memory 接收角色已经获准感知的观察，形成可修订、可检索、可遗忘的主观记录；向 decision/context 提供证据包。世界事件库全集、可见性判断、完整 prompt 组装和游戏动作执行都不在它的职责内。
 
-scope 固定为 `worldId/branchId/agentId`；每个实验 run 独占一个 branch。单玩家从五个人类派系中选择开局，不改变 NPC 记忆归属，也不把该派系的全部记忆自动授予玩家。角色表见 [角色设计](../game/characters.md)。
+scope 固定为 `worldId/branchId/agentId`；每个实验 run 独占一个 branch。设计支持五个人类席位；本切片玩家是公社党魁，不改变 NPC 记忆归属，也不把该派的全部记忆自动授予玩家。角色表见 [角色设计](../game/characters.md)。
 
 世界 authority 维护库存、位置、权限、正式协议及其履约状态；policy 决定是否合作、提醒、拒绝或履约。NPC 忘记约定不会删除正式协议，规则服务知道履约事实也不代表 NPC 已知。
 
@@ -134,7 +134,7 @@ memory:
 
 审计记录保留用于研究，不属于 NPC 可读记忆；memory TTL 不能删除模型档案或世界事实。由来源权限合成的摘要只能按保守范围传播，公开输出还要由 speech context 重新过滤。
 
-切换记忆模块新建 run/branch，并明确冷启动、从合法历史重建或迁移。重建只消费该角色在切换点之前获准感知的观察；受全平台 20 个 gameplay Agent 总激活配额的约束，满额时先暂停在线运行，再逐分支执行，不能隐藏新增的整理 Agent。
+切换记忆模块新建 run/branch，并明确冷启动、从合法历史重建或迁移。重建只消费该角色在切换点之前获准感知的观察；受全平台 15 个 gameplay Agent 总激活配额的约束，满额时先暂停在线运行，再逐分支执行，不能隐藏新增的整理 Agent。
 
 ## 10. 验收用例
 
@@ -301,7 +301,7 @@ value(dim, t) = baseline(dim) + Σ delta_i × 0.5 ^ ((t − t0_i) / halfLife_i)
 `retrieve` 返回的 `relationSummary` 只含本次查询的 counterpart：`causes` 是当前权重 ≥ 0.1 的修正项的 cause 去重列表，`reasonMemoryIds` 是绝对贡献最大的两项对应的记忆。context 把它渲染成文字行（`relationInput: enabled` 时，排在记忆段的核心块之后、条目之前）：
 
 ```text
-- 对特派员：信任 7（信任），亲近 2，戒备 0；主要原因：[mem-…] 按约送达供给；[mem-…] 拒绝过我的邀请
+- 对党魁：信任 7（信任），亲近 2，戒备 0；主要原因：[mem-…] 按约送达供给；[mem-…] 拒绝过我的邀请
 ```
 
 数值到文字（数值先四舍五入到整数，`labels.trust`）：≥ 8 深信、3–7 信任、−2–2 一般、−7–−3 戒备、≤ −8 敌视。`agent.decision.deterministic` 直接读取数值与 `causes`。没有关系账本的实现（M0、M2）返回空数组。

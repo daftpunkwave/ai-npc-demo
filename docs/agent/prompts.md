@@ -15,7 +15,7 @@
 ### 2.1 system 模板
 
 ```text
-你是《最后的中继》中的{{kindLabel}}「{{name}}」（ID：{{agentId}}）。你只能以这个身份行动和说话。
+你是《炉边议会》中的{{kindLabel}}「{{name}}」（ID：{{agentId}}）。你只能以这个身份行动和说话。
 
 【规则】
 1. 你只知道下面列出的信息。没有列出的事你不知道；不要编造人物、地点、数量或已经发生的事。
@@ -68,10 +68,10 @@
 | 段 | 每行格式 | 例子 |
 |---|---|---|
 | 局势 | `- <名称>：<值或等级>（截至第 d 天 h 时）`；之后列出持有的证据 `- [<evidenceId>] 证据《标题》：正文` 与秘密 `- [<secretId>] 只有你知道（不可外传）：正文` | `- 中继稳定度：28，降级（截至第 4 天 0 时）` |
-| 事务 | `- [<ID>] <类型>：<摘要>；状态：<状态>` | `- [agr-…] 协议（与特派员）：特派员在 tick 36 前从灰港运 8 点供给到隘口；状态：生效中，未履约` |
-| 记忆 | `- [<memoryId>] <摘要>（<证据地位>·第 d 天）` | `- [mem-…] 特派员答应在第 2 天结束前送 8 点供给，但没有送到。（确有其事·第 2 天）` |
-| 对话 | `- [<dialogueId>] <说话人>：<原文>` | `- [dlg-…] 特派员：我需要你派人护送隘口那条路。` |
-| 本次输入 | `- [<observationId>] <渠道与来源>：<内容>` | `- [obs-…] 特派员当面对你说：“我需要你派人护送隘口那条路，能帮忙吗？”` |
+| 事务 | `- [<ID>] <类型>：<摘要>；状态：<状态>` | `- [agr-…] 协议（与党魁）：党魁在 tick 36 前从灰港运 8 点供给到隘口；状态：生效中，未履约` |
+| 记忆 | `- [<memoryId>] <摘要>（<证据地位>·第 d 天）` | `- [mem-…] 党魁答应在第 2 天结束前送 8 点供给，但没有送到。（确有其事·第 2 天）` |
+| 对话 | `- [<dialogueId>] <说话人>：<原文>` | `- [dlg-…] 党魁：我需要你派人护送隘口那条路。` |
+| 本次输入 | `- [<observationId>] <渠道与来源>：<内容>` | `- [obs-…] 党魁当面对你说：“我需要你派人护送隘口那条路，能帮忙吗？”` |
 
 证据地位标签：`verified-event` 为“确有其事”，`reported-claim` 为“有人声称”，`inference` 为“我的看法”。观察的获知方式标签：`witnessed` 为“亲眼所见”，`reported` 为“听说（来源：X）”，`inferred` 为“推断”。
 
@@ -128,7 +128,7 @@ const DecisionSubmit = z.object({
 | `day`、`hour`、`worldTick` | 冻结 frontier 的 worldTick |
 | `locationLine` | 角色：“你在{节点名}。”（受伤时再加“你有伤在身。”）；战略 Agent：“你在派系驻地处理事务，不在地图上。” |
 | `worldViewLines`、`affairsLines`、`memoryLines`、`historyLines`、`inputLines` | 各段按上表渲染；`labels.epistemic`、`labels.channels` 提供“确有其事/有人声称/我的看法”“亲眼所见/听说”等标签 |
-| `audienceNames`、`audienceLines` | 受众主体的 `name`（玩家为“特派员”）；`audienceLines` 每人一行：名字、身份、与说话者的关系等级 |
+| `audienceNames`、`audienceLines` | 受众主体的 `name`（玩家为“党魁”）；`audienceLines` 每人一行：名字、身份、与说话者的关系等级 |
 | `intentLabel`、`toneLabel`、`reasonLabel` | `labels.intents.<kind>`、`labels.tones.<tone>`、`labels.reasons.<reasonCode>` |
 | `subjectLine` | `subjectRef` 指向的协议、任务、邀请或证据的一句话摘要（协议用 `termTemplates` 渲染）；为 null 时写“无” |
 | `maxChars` | speech 输出的字数上限：profile 的 `speech.maxChars`（[配置](../platform/configuration.md) 第 10.2 节），默认 80 |

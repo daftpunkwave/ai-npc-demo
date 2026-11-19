@@ -14,7 +14,7 @@
 
 同一个 profile 可挂到多个身份；同一个模型池条目可服务多个 Agent；同一个工具定义可绑定给多个主体。可复用定义与主体可写状态是不同层次：复用配置不等于共享记忆、会话、权限或预算。
 
-标准 roster 为 5 个人类派系战略 Agent、3 个非人类势力战略 Agent、12 个角色 Agent，总计 20。首版一个玩家、一个在线权威世界；战略与角色是可组合主体类型，不是两套 runtime。
+标准 roster 为 8 名公社支持者、4 名 AI 党魁、3 名外域 Agent，总计 15。首版一个玩家、一个在线权威世界；党魁、外域与支持者是同一 runtime 的可组合主体类型，不是两套 runtime。
 
 装配覆盖游戏、认知、平台、传输与 UI 的全部职能，不以 profile 的记忆选项代替全局模块选择。宿主只执行固定守卫及唯一管线协调；替换 provider 不得复制 runtime 或绕过安全/事务边界。源码与包依赖按 [技术栈](../delivery/tech-stack.md) 第 2 节检查，运行时 `requires` / `requiresRemote` 由能力图和握手校验，二者不能互相代替。
 
@@ -24,7 +24,7 @@
 |---|---|---|---|
 | 模块目录 | 仓库/部署可用的全部可信模块 | 新增 `memory.stream-reflection` | 构建时快照，注册后不可静默改 |
 | 平台装配 | 三 realm 的必需/默认模块、能力绑定与适配器 | 换 `game.clock`、换 PixiJS renderer、换 SQLite | 新宿主启动或新 run |
-| 内容包 | lore、地图、角色、事件卡、UI/音频资源 | 新首章、新地图 | 内容版本 + 新 run |
+| 内容包 | lore、地图、角色、事件卡、UI/音频资源 | 新序章、新地图 | 内容版本 + 新 run |
 | roster/profile | 激活身份与 Agent 策略子配方 | 换 memory、context、decision | 新 run/后继 branch |
 | 实验 variant patch | 只改变声明的比较轴 | 只替换 memory 或 recallTopK | 新 run；冻结 manifest |
 
@@ -59,7 +59,7 @@ Agent profile 只选择 Agent 作用域的认知策略（perception/memory/conte
 
 模型配置集中在 `models`；挂载列表为 `mounts`，每条包含 `modelId + agentIds + purposes`。启动解析后形成只读索引：由 `(agentId, purpose)` 解析出唯一 `modelId`。配置一个条目后选择多个 Agent 挂载，不要求逐人复制连接配置。
 
-gameplay mounts 的 purpose 统一为 `decision`、`speech`、`memory-maintenance`、`compression`、`embedding`。仅实际启用的能力必须有对应挂载；memory.none 不因为存在该 purpose 就自动调用反思模型。`evaluation` 由独立 evaluator 主体配置引用 modelId，不进入 gameplay mounts 或 20 个身份 roster，也没有游戏行动权限。
+gameplay mounts 的 purpose 统一为 `decision`、`speech`、`memory-maintenance`、`compression`、`embedding`。仅实际启用的能力必须有对应挂载；memory.none 不因为存在该 purpose 就自动调用反思模型。`evaluation` 由独立 evaluator 主体配置引用 modelId，不进入 gameplay mounts 或 15 个身份 roster，也没有游戏行动权限。
 
 同一 Agent 可以让 decision 和 speech 使用同一条目，让 memory-maintenance 使用另一条目。embedding 是独立能力：文本生成 endpoint 可用，不代表它能生成向量。模型池先校验条目的 provider adapter 与能力，再校验挂载覆盖；未知 Agent、未知 modelId、purpose 不支持、同一索引键冲突或必需 purpose 缺失均拒绝启动；不能默默使用“默认第一个模型”。
 
@@ -91,7 +91,7 @@ ToolBinding 允许进一步限制可作用对象、行动种类、调用预算�
 
 dry-run 只执行解析与校验，展示将创建什么、还缺什么，不创建活动 Agent、调用模型或修改在线状态。需要连通性探测时，作为明确有预算的测试操作单独记录。
 
-全平台活动 gameplay Agent 总数上限为 20，在线和实验共同计数。满员在线运行时可以编辑实验草稿和预检；完整 20 个 Agent 闭环实验需要暂停在线运行并释放实例，按变体顺序激活与释放。不得为并行对比扩大 Agent 配额上限。
+全平台活动 gameplay Agent 总数上限为 15，在线和实验共同计数。满员在线运行时可以编辑实验草稿和预检；完整 15 个 Agent 闭环实验需要暂停在线运行并释放实例，按变体顺序激活与释放。不得为并行对比扩大 Agent 配额上限。
 
 ## 8. 一次 memory 实验怎样组合
 

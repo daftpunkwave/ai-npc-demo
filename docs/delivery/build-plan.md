@@ -29,7 +29,7 @@ Step SNN <title>
 |---|---|---|---|
 | S00 | `typecheck`、`test`、`check:docs`、`check`（= typecheck + test + check:docs） | `.env.example` | — |
 | S03 | `check:boundaries`（并加入 `check`） | — | — |
-| S05 | — | `config/rosters/standard-20.yaml`、`core-3.yaml`、`config/runs/online-default.yaml` | — |
+| S05 | — | `config/rosters/standard-15.yaml`、`core-3.yaml`、`config/runs/online-default.yaml` | — |
 | S09 | `dev:server`、`check:catalog`（并加入 `check`） | 两份主装配首次创建 | server：九个 game 绑定（scenario 为 `game.scenario.watergate`）、`platform.storage.sqlite`、`platform.secrets.env`、`platform.access-policy.roster`、`platform.operations.standard`、`transport.http-ws.fastify`；无 `agentSlots`；client、console 的 bindings 为空 |
 | S10 | `dev:client`、`dev`、`build`、`start`、`test:e2e` | — | client：第 5 节全部 client 绑定（标准用 `client.scene-renderer.pixi`，测试用 `client.scene-renderer.null`） |
 | S11 | `dev`、`build` 加入 console 构建 | — | server：`platform.observability.sqlite`、`platform.module-admin.standard`；console：health、module-admin、`console.observability.standard` |
@@ -68,7 +68,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 | Agent 管线 | S13–S18 | 感知与调度、记忆 M0/M1、上下文与工具网关、turn 主循环、模型池、两个真实适配器 | A |
 | 切片 A 验收 | S19 | 三核心角色闭环 | A |
 | 记忆对比 | S20–S21 | M2、M3、实验与探针、评估页面 | B |
-| 完整首版 | S22–S23 | 20 个身份、五派开局、运营与剧情页面 | C |
+| 完整切片 | S22–S23 | 15 个身份、公社单席、运营与剧情页面 | C |
 | 可插拔验收 | S24–S25 | 两个第二实现、替换证据、交付包 | M |
 
 ## 2. 工程骨架
@@ -184,7 +184,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S13 感知、trigger 与调度
 
 - **先读**：[运行时](../agent/runtime.md) 第 2–4、9、13.1–13.2 节、[感知](../agent/perception.md) 全文、[领域模型](../architecture/domain-model.md) 第 7 节。
-- **产出**：`packages/agent-runtime` 的 trigger 存储、调度器宿主、turn 记录与租约、控制权与 epoch、名册激活与 20 个身份的配额（含 `campaign.start` 的激活钩子）；模块 `agent.perception.local`、`agent.scheduling.fair`。
+- **产出**：`packages/agent-runtime` 的 trigger 存储、调度器宿主、turn 记录与租约、控制权与 epoch、名册激活与 15 个身份的配额（含 `campaign.start` 的激活钩子）；模块 `agent.perception.local`、`agent.scheduling.fair`。
 - **测试**：感知第 11.2 节的渠道表逐行断言；未授权事件只推进扫描游标；带 `deliverAtTick` 的观察在到期 tick 才写入；`AgentsSummoned` 生成 `scenario` trigger；trigger 去重；调度的优先级、老化、合并、冷却与“每个身份一个活动 turn”；被取消的 turn 释放 trigger；human 控制的身份不被调度；第 21 个身份激活被拒绝。
 - **完成判据**：`pnpm check` 通过。
 
@@ -262,15 +262,15 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S22 二十个身份与运营功能
 
 - **先读**：[角色册](../game/characters.md)、[玩法](../game/gameplay.md)、[运营](../platform/operations.md) 全文、[两个端口](../architecture/two-endpoints.md) 第 10 节、本文 0.3 节 S22 行。
-- **产出**：`standard-20` 名册的完整运行（8 个战略 Agent 使用 `strategic-default`，`human-neutral` 使用 `strategic-broadcaster`，伊诺使用 `character-broadcaster`）；五个开局全部可选；0.3 节分配给 S22 的路由；`console.faction-ops.standard` 的席位接管、席位视图、席位命令与运行申请审批；`console.scenario-editor.standard`；`console.audit.standard`；客户端设置里的测试 preset 申请；`platform.operations.standard` 的接管 epoch、租约续期与过期处理；`config/presets/*.yaml`。
+- **产出**：`standard-15` 名册的完整运行（8 名公社支持者、4 名 AI 党魁、3 名外域；`human-neutral` 是玩家席位，不创建 AI 党魁；伊诺使用 `character-broadcaster`）；公社单席可选；0.3 节分配给 S22 的路由；`console.faction-ops.standard` 的席位接管、席位视图、席位命令与运行申请审批；`console.scenario-editor.standard`；`console.audit.standard`；客户端设置里的测试 preset 申请；`platform.operations.standard` 的接管 epoch、租约续期与过期处理；`config/presets/*.yaml`。
 - **测试**：路线第 4 节表格的工程断言；接管发生在模型返回前，旧 epoch 的命令被拒绝；租约过期后该席位不再产生自主提案；草稿卡不可感知、发布幂等、补偿有来源、覆盖标记污染；导出包里没有密钥。
 - **完成判据**：`pnpm check` 通过。
 
 ### S23 切片 C 验收
 
 - **先读**：[路线与验收](roadmap-and-acceptance.md) 第 4、7 节。
-- **产出**：`tests/scenarios/slice-c.test.ts`（测试装配、`standard-20`）：五个开局都能进入首章并产生不同的初始委托与消息；十二个角色每人至少一次可接触的交互；第 21 个身份被拒绝；战略 Agent 的每日巡检不造成无界推理；路线第 7 节故障注入表逐行覆盖（模型故障用确定性传输注入）。e2e `tests/e2e/console-ops.spec.ts`：席位接管与交还、发布一张草稿卡、查看一个 turn 详情。
-- **完成判据**：`pnpm check`、`pnpm test:e2e` 通过；用真实模型以 `standard-20` 运行至少一个游戏日，把队列积压、延迟、token 与失败率记录进完成报告。
+- **产出**：`tests/scenarios/slice-c.test.ts`（测试装配、`standard-15`）：公社席进入序章并产生初始委托与消息；15 个身份每人至少一次可接触的交互；第 16 个身份被拒绝；AI 党魁的每日巡检不造成无界推理；路线第 7 节故障注入表逐行覆盖（模型故障用确定性传输注入）。e2e `tests/e2e/console-ops.spec.ts`：席位接管与交还、发布一张草稿卡、查看一个 turn 详情。
+- **完成判据**：`pnpm check`、`pnpm test:e2e` 通过；用真实模型以 `standard-15` 运行至少一个游戏日，把队列积压、延迟、token 与失败率记录进完成报告。
 
 ## 9. 可插拔验收（切片 M）
 

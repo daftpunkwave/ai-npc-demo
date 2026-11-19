@@ -57,7 +57,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `game.actions.standard` | service | run | `game.actions` | 任务与邀请 | 运输、护送、救援、修复、侦察的结算 |
 | `game.agreements.standard` | service | run | `game.agreements` | 协议、条款状态 | 正式协议真值与主观承诺分开 |
 | `game.comms.standard` | service | run | `game.comms` | 会话、消息投递、知识授权 | 对话、消息、广播、证据分享与 `speech.commit` |
-| `game.scenario.watergate` | service | run | `game.scenario` | 剧情卡状态 | 首章卡片按内容包的 `atTick` 触发；草稿不可感知，发布后走标准命令 |
+| `game.scenario.watergate` | service | run | `game.scenario` | 剧情卡状态 | 序章卡片按内容包的 `atTick` 触发；草稿不可感知，发布后走标准命令 |
 | `game.scenario.watergate-escalating` | service | run | `game.scenario` | 同上 | 模块替换演示用的第二实现：同一份卡片，节奏加快并带额外压力（[内容包](../game/content-pack.md) 第 9 节） |
 | `game.save.sqlite` | service | run | `game.save` | 快照记录 | 静默、分支复制与恢复预检（[存储](storage.md) 第 3 节）；通过 `platform.storage` 读写 |
 
@@ -108,12 +108,12 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 ## 5. 客户端模块
 
-客户端是玩家域，只消费授权投影，不持有世界权威与密钥。默认装配如下；slot 名称与客户端宿主一致，见 [客户端与 2.5D](client-and-rendering.md)。
+客户端是玩家域，只消费授权投影，不持有世界权威与密钥。默认装配如下；slot 名称与客户端宿主一致，见 [客户端与场景适配](client-and-rendering.md)。
 
 | 模块 ID | 类别 | 实例作用域 | 提供能力/贡献 | 必需性 | 说明 |
 |---|---|---|---|---|---|
 | `client.world-view.standard` | service | session | `client.world-view` | required | 网络投影 reducer，合并快照/增量与游标 |
-| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 2.5D 等距场景 |
+| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 2.5D 等距灰盒；3D 渲染器实现同一端口 |
 | `client.scene-renderer.null` | adapter | session | `client.scene-renderer` | 仅测试装配 | 不绘制画面，只记录收到的场景视图，用于 CI 跑规则场景 |
 | `client.camera.standard` | service | session | `client.camera` | required | 平移/缩放/跟随，不读世界库 |
 | `client.screen-projection.isometric` | service | session | `client.screen-projection` | required | 世界坐标与屏幕坐标互转、命中转换 |
@@ -121,7 +121,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `client.hud.standard` | contributor | session | `client.hud`（`hud` slot） | required | 局势、资源、任务、承诺与时钟状态，文字与数值完整显示 |
 | `client.hud.compact` | contributor | session | `client.hud`（`hud` slot） | 替换演示 | 第二实现：只显示图标与等级，可折叠；与 standard 二选一 |
 | `client.dialogue.standard` | contributor | session | `client.dialogue`（`dialogue` slot） | required | 已提交对白、证据卡、提案入口 |
-| `client.faction-start.standard` | contributor | session | `client.faction-start`（`boot.screen` slot） | required（新 campaign） | 五个人类派系开局选择与初始化确认 |
+| `client.faction-start.standard` | contributor | session | `client.faction-start`（`boot.screen` slot） | required（新 campaign） | 席位开局选择与初始化确认；本切片只开放公社席 |
 | `client.characters.standard` | contributor | session | `client.characters`（`sidebar` slot） | default | 人物册、公开主张、已知经历 |
 | `client.settings.standard` | contributor | session | `client.settings`（`settings.section` slot） | default | 语言、显示、声音、镜头、输入、图形、暂停/保存；测试 preset 申请入口 |
 | `client.notifications.standard` | contributor | session | `client.notifications`（`notification` slot） | default | 紧急任务、承诺到期、邀请、公共消息 |

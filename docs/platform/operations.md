@@ -1,5 +1,7 @@
 # 运营控制台、保存与三势力席位
 
+> **设计权威（2026-11-20）：** 多人的席位、托管、权威与运营口径见 [design/multiplayer/02-authority-economy-fairness.md](../design/multiplayer/02-authority-economy-fairness.md)。本文保留 Demo 单人运营口径；冲突时以 `docs/design/` 为准。
+
 > 状态：目标规范，接口尚未实现。范围和身份数量以 [00](../00-scope-and-invariants.md) 为准；本文定义玩家暂停/恢复、三个非人类势力导演席位、内容发布及故障操作。控制台运行在服务端 `:3000/console`，由 `console` 域模块贡献页面，见 [两个本地端口](../architecture/two-endpoints.md)。
 
 ## 1. 操作身份
@@ -113,7 +115,7 @@
 | 重启/租约过期 | 恢复持久 jobs，重新认领并 fencing；旧结果不能重复提交 |
 | artifact 写入失败 | 保留错误并标记观测完整性；必需证据缺失的实验无效 |
 
-在线与实验活动 gameplay 身份共用 20 上限。满员时先暂停正式世界、保存在线实例并释放名额，再逐分支实验；结束后释放实验实例再恢复在线。只暂停画面而不释放实例不产生新配额。
+在线与实验活动 gameplay 身份共用 **15** 上限。满员时先暂停正式世界、保存在线实例并释放名额，再逐分支实验；结束后释放实验实例再恢复在线。只暂停画面而不释放实例不产生新配额。
 
 运营页面的模块可替换，但暂停/保存/接管/发布的服务端语义与审计不可替换；替换页面不得绕过过期 checkpoint、引用了过期 epoch 的 handover 或未校验的发布。恢复、接管和发布的并发/故障验收见 [roadmap-and-acceptance](../delivery/roadmap-and-acceptance.md)。
 
@@ -123,7 +125,7 @@
 |---|---|
 | 第一次启动（数据库里没有 `world_aliases('online')`） | 创建 world（内容包 `earth-2964-v1`）、一个 `kind = online` 的分支（时钟 `paused`、`worldTick = 0`）、一个 `mode = live` 的 run，其 RunSpec 取 `config/runs/online-default.yaml`，并用环境变量 `NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 覆盖其中的 `moduleAssemblyRef`、`modelLayoutRef`、`rosterRef`；`seed` 在此时随机生成并写入 RunSpec 与 manifest；`world_aliases('online')` 指向该分支 |
 | 之后每次启动 | 沿用在线别名指向的分支与 run；时钟一律置为 `paused`（离线不推进），由玩家或运营手动继续 |
-| `campaign.start` 被接受 | 在线分支写入 campaign 与初态；按名册激活 Agent（`agent_activations` 置为 active，计入 20 的配额，配额不足时命令被拒绝，原因码 `budget-exhausted`） |
+| `campaign.start` 被接受 | 在线分支写入 campaign 与初态；按名册激活 Agent（`agent_activations` 置为 active，计入 15 的配额，配额不足时命令被拒绝，原因码 `budget-exhausted`） |
 | 玩家“重新开局” | `POST /api/v1/campaign/reset`：先存一个快照，再创建新的空在线分支与新的 live run，旧分支设为 archived；玩家随后重新选择开局 |
 | 从存档恢复 | 见第 4 节；恢复出的后继分支沿用原 live run 的 RunSpec 与 seed，生成新的 run 记录，并按名册重新激活 Agent |
 
@@ -135,7 +137,7 @@ id: online-default
 moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
-rosterRef: standard-20
+rosterRef: standard-15
 modelLayoutRef: shared-model-layout-v1
 player: { principalId: player-1, factionId: null }   # chosen by campaign.start
 mode: live

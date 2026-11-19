@@ -1,6 +1,8 @@
 # 来源、借鉴边界与关键决策
 
-> 核验记录：2026-11-17/18。参考项目只能证明其被读到的机制，不能证明本仓库已具备相同能力。所有正式范围以 [首版基线](../00-scope-and-invariants.md) 为准。
+ > **权威：** 完整参考、取舍与审查记录见 [design/sources-and-review.md](../design/sources-and-review.md) 与 [design/REVIEW.md](../design/REVIEW.md)。冲突时以 `docs/design/` 为准。
+
+> 核验记录：2026-11-17/18。参考项目只能证明其被读到的机制，不能证明本仓库已具备相同能力。所有正式范围以 [序章切片范围](../00-scope-and-invariants.md) 为准。
 
 ## 1. 实际依据
 
@@ -58,11 +60,11 @@
 | OSGi《OSGi Specifications》索引 | https://docs.osgi.org/specification/ | bundle + 服务注册表 + 版本化依赖的模块化范本；本次只核实索引页，具体规范条款未逐条阅读 |
 | Official Factorio Wiki《Modding》 | https://wiki.factorio.com/Modding | mod 以目录/zip 即插即用；依赖分必需/可选/不兼容三类；startup 与 data 阶段分离，启示“装配阶段 vs 运行阶段” |
 
-借鉴边界：这些来源支持“宿主 + 声明式模块 + 生命周期 + 版本依赖”的总体方向，不证明本项目的游戏规则、双端口控制台或 20 个 Agent 配额设计；本项目还新增模块实例作用域、realm 隔离、requested/resolved/effective 与观测/评估证据要求。
+借鉴边界：这些来源支持“宿主 + 声明式模块 + 生命周期 + 版本依赖”的总体方向，不证明本项目的游戏规则、双端口控制台或 15 个 Agent 配额设计；本项目还新增模块实例作用域、realm 隔离、requested/resolved/effective 与观测/评估证据要求。
 
 ### 场景渲染
 
-PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。本方案据此选择等距精灵场景作为 2.5D 的实现起点；不宣称它直接提供 SLG 规则、服务器寻路或 Agent 系统。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
+PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。本方案据此选择等距精灵作为**序章灰盒**的实现起点；正式表现是 3D 斜俯视（见 [assets/02](../design/assets/02-modeling-spec.md)）。不宣称 PixiJS 直接提供 SLG 规则、服务器寻路或 Agent 系统。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
 
 ## 2. 本项目关键决策
 
@@ -72,8 +74,8 @@ PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。
 | 宿主保留 + 全职能模块可插拔 | 需求方明确要求“像主机插 USB”；不只 memory，游戏规则、UI、控制台页面、存储与模型传输都可替换 |
 | 严格解耦优先于内聚 | 当“高内聚大模块”会阻碍替换时拆开；模块内部仍按单一职责组织，必要协议依赖显式声明 |
 | 两个本地端口、三个运行域 | 客户端 `:5173`、服务端 `:3000`（含 `/console`）；避免第三套 Web 服务与权限漂移，控制台同源但仍需鉴权 |
-| 20 个身份由 8 个战略 Agent 和 12 个角色 Agent 组成 | 需求要求增加 NPC；在一个 runtime 中表达不同主体，不用额外导演 Agent 补位；玩家不是第 21 个 Agent |
-| 三个非人类势力运营席位 | 巡裔、根庭、泊星者可 agent/human 控制，经控制台与标准 command；不影响 20 个身份计数 |
+| 15 个身份由 8 名公社支持者、4 名 AI 党魁和 3 名外域 Agent 组成 | 需求要求增加 NPC；在一个 runtime 中表达不同主体，不用额外导演 Agent 补位；玩家不是第 16 个 Agent |
+| 三个外域运营席位 | 巡裔、根庭、泊星者可 agent/human 控制，经控制台与标准 command；不影响 15 个身份计数 |
 | 集中模型池、Agent 挂载 | 复用连接、模型参数和资源预算；按 (agent,purpose) 严格解析，避免逐角色复制配置 |
 | ToolDefinition 一次、ToolBinding 多处 | 复用行为逻辑，主体差异由授权/目标约束表达；执行处仍校验当前权限 |
 | 模块/插件/组合各有专篇 | 分别约束职责与依赖、打包注册与生命周期、装配与生效；术语不混用 |
@@ -86,7 +88,7 @@ PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。
 | decision 以 `decision_submit` 工具收尾 | 两种协议都能稳定支持“工具调用”，而“工具 + JSON 输出格式”的组合在各供应商之间差异大；Claude Opus 5.5 也不接受强制 tool_choice |
 | 工具循环内历史只追加、压缩只在首轮前 | Anthropic 的思考块要求历史前缀不变；两种协议统一遵守，保证实验条件一致 |
 | 内置 `node:sqlite`，不用原生扩展 | 本机验证 Node 26 无需参数即可使用，避免原生编译；同步 API 让“事务内不 await”自然成立 |
-| 快照、恢复与实验分支都用整分支复制 | 首章数据只有数千行，整表复制最简单、最不易出错；记忆用行版本保存不可变 revision |
+| 快照、恢复与实验分支都用整分支复制 | 序章数据只有数千行，整表复制最简单、最不易出错；记忆用行版本保存不可变 revision |
 | 替换演示固定为剧情节奏、HUD、观测页与 memory | 把“可插拔”的验收落到四个具体的第二实现上，避免“至少替换一个”含义不清 |
 | 场景默认使用版本化资产包，矢量图元兜底 | 用户明确要求有世界观特色的美术资源；资产包改善表现，矢量兜底保留无画面测试与确定性渲染 |
 | 本地令牌登录 | 不做账号系统，但保留会话、角色与 Origin 校验，满足“本机访问不等于授权” |

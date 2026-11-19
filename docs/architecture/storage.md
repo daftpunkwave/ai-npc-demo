@@ -530,7 +530,7 @@ CREATE TABLE probe_results (
 
 ## 3. 分支复制 `forkBranch`
 
-快照、恢复、实验分支和开环沙盒都用同一个操作：把源分支的全部分支级数据拷贝到一个新的 `branch_id`。数据规模很小（首章数千行），整表拷贝足够快，也最不容易出错。
+快照、恢复、实验分支和开环沙盒都用同一个操作：把源分支的全部分支级数据拷贝到一个新的 `branch_id`。数据规模很小（序章数千行），整表拷贝足够快，也最不容易出错。
 
 ```ts
 // all branch-scoped tables, in this order

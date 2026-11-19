@@ -1,5 +1,7 @@
 # 领域模型：命令、事件、状态与投影
 
+> **设计权威（2026-11-20）：** 多人的 `seatId`、`actorId`、投影与命令网关要求见 [design/multiplayer/02-authority-economy-fairness.md](../design/multiplayer/02-authority-economy-fairness.md)。本文的字段与受众规则继续有效；冲突时以 `docs/design/` 为准。
+
 > 状态：实现规范。本文是世界写入路径的“数据字典”：每个命令谁能发、payload 是什么、由哪个模块处理、产生哪些事件；每个事件的 payload 与受众；每类状态归哪个模块所有；玩家与 Agent 各自能看到什么。数值规则见 [规则](../game/rules.md)；信封、receipt、错误码等通用结构见 [公共契约](contracts.md)；事务与恢复语义见 [事件与状态](events-and-state.md)；表结构见 [存储](storage.md)。下文类型写成 TypeScript 示意，实现时在 `packages/contracts` 用 Zod 定义，字段名与本文保持一致。
 
 ## 1. ID 前缀
@@ -298,7 +300,7 @@ type AudienceSpec =
 | `clock` | worldTick、day、hour、mode、runVersion | 公开 |
 | `map` | 节点（名称、坐标、设施）、道路（端点、行程、风险、当前状态） | 公开 |
 | `meters` | 三个指标的数值与等级（[规则](../game/rules.md) 第 4 节）、水闸分配 | 公开 |
-| `stockpiles` | 每个库存点的节点、所属、三种资源等级；玩家持有委托的库存点给出精确数量与委托余额 | 等级公开；精确值仅限委托 |
+| `stockpiles` | 每个库存点的节点、所属、三种已结算资源（供给/能源/医疗）等级；玩家持有委托的库存点给出精确数量与委托余额 | 等级公开；精确值仅限委托；材料/食物/水在序章不出现 |
 | `teams` | 位置、所属、状态；玩家委托的队伍标 `delegatedToMe` | 位置与状态公开 |
 | `characters` | 名称、派系、职责、所在节点、是否受伤、公开主张（人格 `values` 的第一条） | 公开 |
 | `tasks` | 玩家派遣或参与的任务：taskType、队伍、参与者、参数、受理状态、任务状态、出发 tick、名义完成 tick、是否已公布延误；其他任务只给出“某队伍在路上”及其路线 | 不含风险抽样结果 |
@@ -348,5 +350,5 @@ receipt 与 `TaskFailed` 的 `reasonCode` 只能取下表的值；同一个码�
 - 角色 `factionId` 存在；`initialRelations.targetId` 指向存在的主体；`trust ∈ [-2, 2]`。
 - 开局与职责委托引用的队伍、库存点都属于委托方派系。
 - 剧情卡效果只使用允许的 `kind`；`speakerId`、`from`、`to`、`aboutIds` 都是存在的主体或 `src-*` 来源。
-- 名册中的 `agentId` 都是存在的派系或角色，且总数不超过 20。
+- 名册中的 `agentId` 都是存在的派系或角色，且总数不超过 15。
 - 模板与词表覆盖完整（[内容包](../game/content-pack.md) 第 12 节）。

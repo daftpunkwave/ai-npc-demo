@@ -1,5 +1,7 @@
 # 游戏职能模块与规则边界
 
+> **设计权威（2026-11-20）：** 游戏设计意图见 [design/gameplay/11-agent-actions.md](../design/gameplay/11-agent-actions.md) 与 [14-agent-society.md](../design/gameplay/14-agent-society.md)。模块边界继续有效；与设计冲突时以 `docs/design/` 为准。
+
 > 状态：目标设计。游戏只是全平台模块组合之一，地图、时钟、资源、行动、协议、通信、剧情与玩家授权均由可替换 provider 实现；宿主不固化这些游戏职能。本文只定义职能边界与不变量；首版的具体规则、数值与结算顺序见 [规则](rules.md)，初始数据见 [内容包](content-pack.md)，命令与事件见 [领域模型](../architecture/domain-model.md)。
 
 ## 1. 主体、接口与实现
@@ -47,7 +49,7 @@
 
 ## 4. 轻资源与行动的首版实现
 
-起始规则使用供给、能源、医疗材料三类有限资源；情报以证据与授权表达，不作为可刷货币。UI 模块优先显示短缺/可维持/有余量和可执行事项，内部整数用于一致性。
+设计共有能源、材料、食物、供给、医疗、水六种资源；**序章只结算供给、能源、医疗三种库存**，材料、食物、水在 t168 按设计初值出现，不参与序章的预留、日耗与任务成本。情报以证据与授权表达，不作为可刷货币。UI 模块优先显示短缺/可维持/有余量和可执行事项，内部整数用于一致性。
 
 提案、命令与任务分层：commandStatus=accepted/rejected 表示不可变受理结果；接受时可创建资源预留和任务。taskStatus 取 pending、running、completed、failed 或 cancelled；受阻以 failed 和 reasonCode 表达。工具的 executionStatus 与这些业务状态分开，见 [公共契约](../architecture/contracts.md)。
 

@@ -39,7 +39,7 @@ id: watergate-memory-ledger
 moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
-rosterRef: standard-20
+rosterRef: standard-15
 modelLayoutRef: shared-model-layout-v1
 seed: run-seed-001
 player:
@@ -92,11 +92,11 @@ Agent 策略参数、游戏规则模块参数、剧情策略、调度参数、�
 
 ToolDefinition 实现只登记一次，toolset/binding 引用定义并收窄能力；工具面板展示 effective permissions 与 viewConstraints。切换 UI 不得改执行权限，编辑 binding 不能将角色提升为势力控制器。
 
-玩家五派开局与 roster preset 在新 campaign 或明确的分支边界处选择。standard-20 是完整 roster，core-3 仅用于开发与诊断，不能把关闭面板等同于主体未激活。
+公社单席开局（设计支持五席）与 roster preset 在新 campaign 或明确的分支边界处选择。standard-15 是序章完整 roster，core-3 仅用于开发与诊断，不能把关闭面板等同于主体未激活。
 
 ## 6. 预检和预览
 
-1. 校验单玩家、内容引用、20 个 gameplay 身份的总配额和正式世界的唯一别名；确认只有两个本地端口。
+1. 校验单玩家、内容引用、15 个 gameplay 身份的总配额和正式世界的唯一别名；确认只有两个本地端口。
 2. 解析全平台 assembly：三 realm 实现存在、API/port 版本相容、连接 cardinality 正确、无依赖环，必需能力有唯一或显式有序 provider；catalog 快照 hash 与 assembly hash 可复算。
 3. 校验 client/console 贡献的 slot、requiredCapabilities、remote 依赖与运行侧；浏览器模块不能要求服务端内存对象或凭据。
 4. 解析 Agent profile、模型挂载和工具 binding；缺用途、能力不兼容、超模型窗口或越权约束均拒绝。
@@ -346,7 +346,7 @@ title: 体验：没有长期记忆的 NPC
 summary: 从当前存档创建一个实验分支，所有角色改用 M0（只记得最近 8 句对话）。
 runSpecTemplate:
   moduleAssemblyRef: local-slg-standard-v1
-  rosterRef: standard-20
+  rosterRef: standard-15
   modelLayoutRef: shared-model-layout-v1
   mode: live
   variant: { id: m0-window, profilePatchRefs: [memory-m0-window], agentIds: null }
