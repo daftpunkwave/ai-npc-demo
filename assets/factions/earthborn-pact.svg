@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="地生共约徽记">
   <title>地生共约徽记</title>
   <desc>穿过年轮与电路环的麦穗，象征共治与生态补偿。</desc>
-  
   <defs>
     <radialGradient id="bg" cx=".4" cy=".3" r=".8"><stop stop-color="#1d3327"/><stop offset="1" stop-color="#0b1210"/></radialGradient>
     <linearGradient id="leaf" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#1f5d3a"/><stop offset=".6" stop-color="#63b56d"/><stop offset="1" stop-color="#d8e8a5"/></linearGradient>
