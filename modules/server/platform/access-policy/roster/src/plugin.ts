@@ -76,7 +76,7 @@ export class AccessPolicyPort {
         return consoleSessionRoles.has(request.role) ? allow() : deny();
       case "channel": {
         const roles = channelRoles[request.channel ?? ""];
-        return roles !== undefined && roles.includes(request.role) ? allow() : deny();
+        return roles?.includes(request.role) === true ? allow() : deny();
       }
       default:
         return deny("unknown-role");

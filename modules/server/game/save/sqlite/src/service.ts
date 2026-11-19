@@ -113,6 +113,7 @@ function objectValue(value: StorageCell | undefined, column: string): Json {
   if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
     throw new Error(`${column} 不是 JSON 对象`);
   }
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 未解析 workspace 的 Json 联合，把断言误判为 any。
   return value as Json;
 }
 

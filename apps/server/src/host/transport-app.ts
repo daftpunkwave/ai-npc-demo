@@ -107,8 +107,14 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       assembly: input.assembly,
       sessionAssembly: input.sessionAssembly,
       starts: () => startOptions(gameContent),
-      conversation: reads.conversation,
-      projection: reads.projection,
+      conversation: {
+        worldTick: () => reads.conversation.worldTick(),
+        conversationsOf: (principalId) => reads.conversation.conversationsOf(principalId),
+        conversationMessages: (conversationId, limit) =>
+          reads.conversation.conversationMessages(conversationId, limit),
+        speakerName: (principalId) => reads.conversation.speakerName(principalId),
+      },
+      projection: () => reads.projection(),
       clock: () => clockView(lifecycle.clockState()),
       pause: (operationId, expected, principalId) =>
         operations.pause(expected, { operationId, principalId }),

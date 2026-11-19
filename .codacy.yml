@@ -19,3 +19,5 @@ exclude_paths:
   - "**/*.e2e.ts"
   - "**/fixtures/**"
   - "**/__fixtures__/**"
+  # 迁移是 SQLite 方言，TSQL 规则会误判；迁移由仓库测试执行验证。
+  - "modules/server/platform/storage/sqlite/migrations/**"

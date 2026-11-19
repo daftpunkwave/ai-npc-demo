@@ -40,7 +40,7 @@ export function cancel(context: ActionContext, payload: Json): HandlerResult {
       const params = task.params as { readonly groupId: string };
       asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
     }
-    context.tx.cancelJobs(`task-depart:${task.taskId}`);
+    context.tx.cancelJobs(`task-depart:${String(task.taskId)}`);
     asPorts(context)["game.world"].setTeamStatus(task.teamId, "idle", null, null);
     for (const invitation of context.tx.list<InvitationState>("task-invitation")) {
       if (invitation.state.taskId === task.taskId && invitation.state.response === "pending") {
@@ -88,11 +88,11 @@ export function cancel(context: ActionContext, payload: Json): HandlerResult {
       const params = task.params as { readonly groupId: string };
       asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
     }
-    context.tx.cancelJobs(`task-work:${task.taskId}`);
-    context.tx.cancelJobs(`task-complete:${task.taskId}`);
-    context.tx.cancelJobs(`task-return:${task.taskId}`);
+    context.tx.cancelJobs(`task-work:${String(task.taskId)}`);
+    context.tx.cancelJobs(`task-complete:${String(task.taskId)}`);
+    context.tx.cancelJobs(`task-return:${String(task.taskId)}`);
     if (task.taskType === "transport") {
-      context.tx.schedule("task.return", task.nominalCompletionTick, `task-return:${task.taskId}`, { taskId: task.taskId });
+      context.tx.schedule("task.return", task.nominalCompletionTick, `task-return:${String(task.taskId)}`, { taskId: task.taskId });
       asPorts(context)["game.world"].setTeamStatus(task.teamId, "traveling", task.nominalCompletionTick, task.taskId);
     } else {
       asPorts(context)["game.world"].setTeamStatus(task.teamId, "idle", null, null);

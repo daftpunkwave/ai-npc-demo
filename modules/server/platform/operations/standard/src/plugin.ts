@@ -3,6 +3,7 @@
  * 依赖调用方注入的时钟/存档/分支回调；不直接写存储。
  * 禁止跳过暂停保存快照，或把恢复/重开实现成覆盖旧分支。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口方法参数名用于表达运营调用契约。 */
 import type { ClockView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
 import { operationsConfigSchema } from "./definition";

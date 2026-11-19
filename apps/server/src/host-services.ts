@@ -29,8 +29,8 @@ function runtimeIdBody(): string {
  * kernel 摘要端口：输入已是规范 JSON 文本，只在这里执行具体哈希算法。
  * 装配、目录、模块配置与 manifest 摘要都经同一入口，保证键顺序无关且算法一致。
  */
-export async function canonicalHasher(canonicalJsonText: string): Promise<string> {
-  return createHash("sha256").update(canonicalJsonText).digest("hex");
+export function canonicalHasher(canonicalJsonText: string): Promise<string> {
+  return Promise.resolve(createHash("sha256").update(canonicalJsonText).digest("hex"));
 }
 
 const logger = {
