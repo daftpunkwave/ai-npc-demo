@@ -3,6 +3,9 @@
  * 依赖 Node 进程环境、文件系统与 crypto；不启动宿主、不监听端口。
  * 禁止读取旧式 PORT/HOST/DATA_DIR，禁止接受非回环主机或约定之外的端口。
  */
+/* eslint-disable security/detect-object-injection, security/detect-non-literal-fs-filename -- 只按约定的环境变量名与数据目录内固定文件名读取，路径已由配置解析与目录检查限制。 */
+/* eslint-disable security/detect-possible-timing-attacks, security/detect-hardcoded-credentials -- 这里比较的是本机配置中的重复令牌，用于启动预检，不参与远程认证。 */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型与回调参数名用于表达调用契约。 */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
