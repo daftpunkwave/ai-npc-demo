@@ -170,18 +170,24 @@ function environmentMap(env: Readonly<Record<string, string | undefined>>): Read
   return map;
 }
 
-/** 读取、解析、替换 env: 并校验任意配置文档。 */
+/**
+ * 读取、解析、替换 env: 并校验任意配置文档。
+ * transform 在 schema 校验前执行，供宿主把运行时选择（如在线 seed 与实际装配引用）并入模板；
+ * 变换后的结果仍必须通过严格 schema，不能借此跳过校验。
+ */
 export function loadConfigDocument<T>(
   configRef: string,
   schema: z.ZodType<T>,
   context: ConfigLoadContext,
   draftKind?: ConfigDraftKind,
+  transform?: (value: unknown) => unknown,
 ): LoadedConfig<T> {
   const reference = resolveConfigReference(configRef, context, draftKind);
   const source = reference.kind === "file" ? reference.path : `draft:${draftKind ?? "unknown"}:${configRef}`;
   const raw = reference.kind === "file" ? parseYamlText(reference.text, source) : reference.value;
   const resolved = resolveEnvValue(raw, [], source, environmentMap(context.env ?? {}));
-  const result = schema.safeParse(resolved);
+  const transformed = transform === undefined ? resolved : transform(resolved);
+  const result = schema.safeParse(transformed);
   if (!result.success) {
     throw schemaLoadingError(source, result.error);
   }
@@ -202,9 +208,39 @@ export function loadRoster(configRef: string, context: ConfigLoadContext): Loade
   return loaded;
 }
 
+/**
+ * 宿主在加载 RunSpec 时覆盖的字段：在线世界用环境变量选择实际装配、名册、
+ * 模型布局，并在首次启动时注入随机 seed。未给出的字段保留模板值。
+ */
+export type RunSpecOverrides = Partial<
+  Pick<RunSpec, "moduleAssemblyRef" | "worldPackRef" | "rosterRef" | "modelLayoutRef" | "seed">
+>;
+
+/** 把已定义的覆盖字段并入模板文档；undefined 不覆盖，非对象交由 schema 拒绝。 */
+function applyRunSpecOverrides(value: unknown, overrides: RunSpecOverrides): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const entries = Object.entries(overrides).filter(([, item]) => item !== undefined);
+  if (entries.length === 0) {
+    return value;
+  }
+  return { ...(value as Record<string, unknown>), ...Object.fromEntries(entries) };
+}
+
 /** 加载 RunSpec；文档 ID 必须与引用一致，引用存在性由 validateRunSpec 负责。 */
-export function loadRunSpec(configRef: string, context: ConfigLoadContext): LoadedConfig<RunSpec> {
-  const loaded = loadConfigDocument(configRef, runSpecSchema, context);
+export function loadRunSpec(
+  configRef: string,
+  context: ConfigLoadContext,
+  overrides: RunSpecOverrides = {},
+): LoadedConfig<RunSpec> {
+  const loaded = loadConfigDocument(
+    configRef,
+    runSpecSchema,
+    context,
+    undefined,
+    (value) => applyRunSpecOverrides(value, overrides),
+  );
   if (loaded.value.id !== configRef) {
     throw new LoadingError({
       code: "reference",

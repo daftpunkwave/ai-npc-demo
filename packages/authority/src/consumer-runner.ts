@@ -98,6 +98,7 @@ export class EventConsumerRunner {
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
   private readonly moduleBinder: RuleRuntime["moduleBinder"];
+  private readonly runSeed: RuleRuntime["runSeed"];
 
   constructor(options: EventConsumerRunnerOptions) {
     this.storage = options.storage;
@@ -107,6 +108,7 @@ export class EventConsumerRunner {
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
     this.moduleBinder = options.moduleBinder;
+    this.runSeed = options.runSeed;
   }
 
   /** 按注册顺序推进每个消费者；某个消费者抛错时停止整次运行并向调用方传播。 */
@@ -202,6 +204,7 @@ export class EventConsumerRunner {
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
+      runSeed: this.runSeed,
     });
     const outcome = consumer.handler(context, event);
     assertSynchronous(outcome, `事件消费者 ${consumer.consumerId}`);

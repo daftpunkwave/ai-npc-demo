@@ -11,6 +11,8 @@ const credentials = resolveCredentials(config);
 const running = await startHost({
   dataDir: config.dataDir,
   assemblyRef: config.assemblyRef,
+  rosterRef: config.rosterRef,
+  modelLayoutRef: config.modelLayoutRef,
   playerToken: credentials.tokens.player,
   consoleToken: credentials.tokens.console,
   ...(credentials.tokens.operator === undefined ? {} : { operatorToken: credentials.tokens.operator }),

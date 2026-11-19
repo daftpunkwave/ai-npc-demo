@@ -47,6 +47,7 @@ export type {
   ConfigLoadContext,
   LoadedConfig,
   ResolvedConfigReference,
+  RunSpecOverrides,
 } from "./config/load-config";
 export { configRefSchema, rosterSchema, runSpecSchema } from "./config/schema";
 export type { Roster, RunSpec } from "./config/schema";

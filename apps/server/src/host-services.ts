@@ -1,10 +1,11 @@
 /**
  * 提供宿主时间、随机、ID、哈希、日志与 tracer 的最小实现。
- * 依赖 Node 标准库；不读取配置、不打开存储。
- * 禁止把 Math.random 用于规则随机或安全凭据。
+ * 依赖 Node 标准库、公共契约的规范 JSON 与规则随机源；不读取配置、不打开存储。
+ * 禁止把 Math.random 用于规则随机或安全凭据，也禁止用原始 JSON.stringify 计算摘要。
  */
 import { createHash, randomBytes } from "node:crypto";
-import type { HostServices, Json } from "@ai-npc/contracts";
+import { canonicalJson, type HostServices, type Json } from "@ai-npc/contracts";
+import { rngFromHostParts } from "./host/random";
 
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
 
@@ -23,16 +24,12 @@ function runtimeIdBody(): string {
   return body;
 }
 
-function deterministicRng(seed: string): () => number {
-  let state = 0x811c9dc5;
-  for (const char of seed) {
-    state ^= char.codePointAt(0) ?? 0;
-    state = Math.imul(state, 0x01000193) >>> 0;
-  }
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 0x100000000;
-  };
+/**
+ * kernel 摘要端口：输入已是规范 JSON 文本，只在这里执行具体哈希算法。
+ * 装配、目录、模块配置与 manifest 摘要都经同一入口，保证键顺序无关且算法一致。
+ */
+export async function canonicalHasher(canonicalJsonText: string): Promise<string> {
+  return createHash("sha256").update(canonicalJsonText).digest("hex");
 }
 
 const logger = {
@@ -45,7 +42,7 @@ const tracer = {
   span: <T>(_name: string, _attrs: Json, fn: () => T): T => fn(),
 };
 
-/** 创建生产宿主服务；ID 使用随机 UUID 后缀。 */
+/** 创建生产宿主服务；ID 使用随机 UUID 后缀，哈希统一走规范 JSON。 */
 export function createHostServices(): HostServices {
   return {
     ids: (prefix) => `${prefix}-${runtimeIdBody()}`,
@@ -67,8 +64,8 @@ export function createHostServices(): HostServices {
         signal?.addEventListener("abort", onAbort, { once: true });
       });
     },
-    rng: (...parts) => deterministicRng(parts.join(":")),
-    hash: (value) => Promise.resolve(createHash("sha256").update(JSON.stringify(value)).digest("hex")),
+    rng: (...parts) => rngFromHostParts(parts),
+    hash: (value) => canonicalHasher(canonicalJson(value)),
     logger,
     tracer,
   };

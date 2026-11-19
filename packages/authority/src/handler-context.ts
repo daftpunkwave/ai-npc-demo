@@ -1,5 +1,5 @@
 /**
- * 为一类规则处理器构造事务内 HandlerContext，统一注入认证、WorldTx、模块端口与宿主随机源。
+ * 为一类规则处理器构造事务内 HandlerContext，统一注入认证、WorldTx、模块端口与绑定 runSeed 的随机源。
  * 依赖公共契约的认证/宿主类型与 module-sdk 的处理器上下文；不持有连接或跨事务缓存。
  * 禁止把未绑定所有权的 WorldTx、原始存储事务或模型凭据塞进上下文。
  */
@@ -16,6 +16,8 @@ export interface HandlerContextOptions {
   readonly content: unknown;
   readonly approvedSpeech: ApprovedSpeechReader;
   readonly host: HostServices;
+  /** 当前 run 的随机种子；给出时作为 host.rng 的第一个参数，规则模块只传语义字段。 */
+  readonly runSeed?: string;
 }
 
 /** 构造处理器上下文；rng 只把语义字段交给宿主，不自行生成种子。 */
@@ -26,7 +28,10 @@ export function createHandlerContext(options: HandlerContextOptions): HandlerCon
     modules: options.modules,
     approvedSpeech: options.approvedSpeech,
     content: options.content,
-    rng: (...seedParts) => options.host.rng(...seedParts),
+    rng: (...seedParts) =>
+      options.runSeed === undefined
+        ? options.host.rng(...seedParts)
+        : options.host.rng(options.runSeed, ...seedParts),
     ids: (prefix) => options.host.ids(prefix),
   };
 }

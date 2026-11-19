@@ -26,6 +26,7 @@ export class ClockStepRunner {
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
   private readonly moduleBinder: RuleRuntime["moduleBinder"];
+  private readonly runSeed: RuleRuntime["runSeed"];
 
   constructor(options: ClockStepRunnerOptions) {
     this.storage = options.storage;
@@ -35,6 +36,7 @@ export class ClockStepRunner {
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
     this.moduleBinder = options.moduleBinder;
+    this.runSeed = options.runSeed;
   }
 
   /** 在分支当前 worldTick 上执行全部命中步骤，每个步骤一个事务；返回执行条数。 */
@@ -98,6 +100,7 @@ export class ClockStepRunner {
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
+      runSeed: this.runSeed,
     });
     const outcome = step.handler(context, clock.worldTick);
     assertSynchronous(outcome, `时钟步骤 ${step.stepId}`);

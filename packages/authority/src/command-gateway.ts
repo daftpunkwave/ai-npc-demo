@@ -91,6 +91,7 @@ export class CommandGateway {
   private readonly approvedSpeech: CommandGatewayOptions["approvedSpeech"];
   private readonly allowDirectAgentCommands: boolean;
   private readonly moduleBinder: CommandGatewayOptions["moduleBinder"];
+  private readonly runSeed: CommandGatewayOptions["runSeed"];
 
   constructor(options: CommandGatewayOptions) {
     this.storage = options.storage;
@@ -101,6 +102,7 @@ export class CommandGateway {
     this.approvedSpeech = options.approvedSpeech;
     this.allowDirectAgentCommands = options.allowDirectAgentCommands ?? false;
     this.moduleBinder = options.moduleBinder;
+    this.runSeed = options.runSeed;
   }
 
   execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
@@ -292,6 +294,7 @@ export class CommandGateway {
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
+      runSeed: this.runSeed,
     });
     let acceptedResult: HandlerResult | null = null;
     let rejection: CommandRejected | null = null;
@@ -333,6 +336,7 @@ export class CommandGateway {
             content: this.content,
             approvedSpeech: this.approvedSpeech,
             host: this.host,
+            runSeed: this.runSeed,
           });
           const hookOutcome = hook.hook(hookContext, payload, envelope);
           assertSynchronous(hookOutcome, `命令 ${type} 后续钩子`);

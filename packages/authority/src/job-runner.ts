@@ -30,6 +30,7 @@ export class JobRunner {
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
   private readonly moduleBinder: RuleRuntime["moduleBinder"];
+  private readonly runSeed: RuleRuntime["runSeed"];
 
   constructor(options: JobRunnerOptions) {
     this.storage = options.storage;
@@ -39,6 +40,7 @@ export class JobRunner {
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
     this.moduleBinder = options.moduleBinder;
+    this.runSeed = options.runSeed;
   }
 
   /** 执行所有 due_tick 不大于 tick 的 scheduled job，返回实际执行条数。 */
@@ -130,6 +132,7 @@ export class JobRunner {
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
+      runSeed: this.runSeed,
     });
     const outcome = registration.handler(context, dueJob);
     assertSynchronous(outcome, `job ${kind} 处理器`);

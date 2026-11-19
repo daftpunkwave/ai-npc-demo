@@ -22,6 +22,8 @@ export interface AuthorityOptions {
   readonly approvedSpeech?: RuleRuntime["approvedSpeech"];
   readonly allowDirectAgentCommands?: boolean;
   readonly moduleBinder?: ModuleBinder;
+  /** 当前 run 的随机种子；在线世界取冻结 RunSpec 的 seed，测试可省略。 */
+  readonly runSeed?: string;
 }
 
 /** 服务端固定机制的组合根：注册贡献后共享同一规则注册表。 */
@@ -41,6 +43,7 @@ export class Authority {
       content: options.content ?? null,
       approvedSpeech: options.approvedSpeech ?? emptyApprovedSpeechReader,
       moduleBinder: options.moduleBinder,
+      runSeed: options.runSeed,
     };
     this.commands = new CommandGateway({
       ...runtime,

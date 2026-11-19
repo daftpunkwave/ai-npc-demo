@@ -119,6 +119,10 @@ export interface HandlerContext<TModulePorts, TContentIndex> {
   readonly modules: TModulePorts;
   readonly approvedSpeech: ApprovedSpeechReader;
   readonly content: TContentIndex;
+  /**
+   * 确定性随机源：宿主已绑定本次 run 的 seed，规则只传语义字段（tick、agentId、teamId、roadId 等）。
+   * 不得把 taskId、turnId 等随机生成的 ID 作为输入。
+   */
   readonly rng: (...seedParts: string[]) => () => number;
   readonly ids: (prefix: string) => string;
 }

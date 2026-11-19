@@ -3,7 +3,19 @@
  * 不启动服务、不打开存储。
  */
 export { createServerApp } from "./host/module-catalog";
-export { loadAssembly, loadRunSpec, resolveServerModules } from "./host/assembly";
+export { loadAssembly, resolveServerAssembly, resolveServerModules } from "./host/assembly";
+export type { ResolvedServerAssembly } from "./host/assembly";
+export { buildRunManifest, readFrozenManifest } from "./host/manifest";
+export type {
+  BuiltRunManifest,
+  BuildRunManifestInput,
+  FrozenManifestFacts,
+  RunManifest,
+  RunManifestModule,
+  RunManifestSelection,
+} from "./host/manifest";
+export { generateRunSeed, rngFor } from "./host/random";
+export { canonicalHasher } from "./host-services";
 export {
   createGameContributorsFromAssembly,
   createGamePortsFromAssembly,

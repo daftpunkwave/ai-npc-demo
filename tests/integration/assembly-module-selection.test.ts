@@ -36,12 +36,14 @@ describe("装配驱动模块选择", () => {
     expect(() => createGameContributorsFromAssembly(assembly)).toThrow("未实现");
   });
 
-  it("已解析模块集按配置内容生成稳定哈希", () => {
+  it("已解析模块集按配置内容生成稳定哈希", async () => {
     const assembly = loadAssembly("local-slg-standard-v1");
-    const first = resolveServerModules(assembly, serverModuleDefinitions);
-    const second = resolveServerModules(assembly, serverModuleDefinitions);
+    const first = await resolveServerModules(assembly, serverModuleDefinitions);
+    const second = await resolveServerModules(assembly, serverModuleDefinitions);
     expect(first).toEqual(second);
     expect(first.capabilities.length).toBeGreaterThan(0);
-    expect(first.modules.every((module) => module.configHash.length === 16)).toBe(true);
+    expect(first.modules.every((module) => module.configHash.length === 64)).toBe(true);
+    expect(first.assemblyHash).not.toBe(assembly.assemblyId);
+    expect(first.assemblyHash.length).toBe(64);
   });
 });
