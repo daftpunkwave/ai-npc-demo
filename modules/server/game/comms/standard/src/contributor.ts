@@ -228,7 +228,7 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
 export function createCommsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.comms,
-    ownsAggregates: ["conversation", "knowledge-grant"],
+    ownsAggregates: ["conversation", "knowledge-grant", "share"],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
       { type: "speech.commit", handler: (context, payload) => speechCommit(context as CommsContext, payload) },

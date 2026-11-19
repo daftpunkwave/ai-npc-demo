@@ -1,5 +1,5 @@
 /**
- * 定义世界模块拥有的 campaign、指标、角色、队伍、群体、委托、证据位置与章节统计状态。
+ * 定义世界模块拥有的 campaign、指标、角色、队伍、群体、委托与证据位置状态。
  * 依赖 zod 与公共契约的领域值；所有状态只允许世界模块写入。
  * 禁止在这里执行 campaign 初始化、每日结算或任务规则。
  */
@@ -87,13 +87,6 @@ export const evidencePlacementStateSchema = z
   })
   .strict();
 
-export const chapterStatsStateSchema = z
-  .object({
-    fulfilled: z.number().int().nonnegative(),
-    breached: z.number().int().nonnegative(),
-  })
-  .strict();
-
 export type CampaignState = z.infer<typeof campaignStateSchema>;
 export type MetersState = z.infer<typeof metersStateSchema>;
 export type CharacterState = z.infer<typeof characterStateSchema>;
@@ -101,7 +94,6 @@ export type TeamState = z.infer<typeof teamStateSchema>;
 export type GroupState = z.infer<typeof groupStateSchema>;
 export type DelegationState = z.infer<typeof delegationStateSchema>;
 export type EvidencePlacementState = z.infer<typeof evidencePlacementStateSchema>;
-export type ChapterStatsState = z.infer<typeof chapterStatsStateSchema>;
 
 /** 指标 ID 的稳定顺序，用于未达标列表与变化数组。 */
 export const numericMeterIds = numericMeterIdSchema.options;

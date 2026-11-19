@@ -1,5 +1,5 @@
 /**
- * 定义通信模块拥有的会话与知识授权聚合状态。
+ * 定义通信模块拥有的会话、知识授权与证据分享聚合状态。
  * 依赖 zod 与 module-sdk 的 WorldTx；只做状态校验与读取。
  * 禁止在这里计算送达、生成事件或写入投影。
  */
@@ -25,8 +25,20 @@ export const knowledgeGrantStateSchema = z
   })
   .strict();
 
+/** 一次已提交的证据分享；sharedAtTick 是分享被接受的 tick，供协议按期限复核。 */
+export const shareStateSchema = z
+  .object({
+    shareId: z.string().min(1),
+    fromId: z.string().min(1),
+    evidenceId: z.string().min(1),
+    audience: z.array(z.string().min(1)),
+    sharedAtTick: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export type ConversationState = z.infer<typeof conversationStateSchema>;
 export type KnowledgeGrantState = z.infer<typeof knowledgeGrantStateSchema>;
+export type ShareState = z.infer<typeof shareStateSchema>;
 
 /** 读取并校验通信聚合；缺失返回 null，损坏直接报错。 */
 export function readCommsState<T>(

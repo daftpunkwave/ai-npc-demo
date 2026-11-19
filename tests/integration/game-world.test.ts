@@ -20,6 +20,7 @@ import {
   gameCommandEnvelope,
   playerAuth,
   readGameAggregate,
+  readGameEvents,
   readGameEventTypes,
   setGameClock,
   strategicAuth,
@@ -211,6 +212,93 @@ describe("世界核心", () => {
       outcome: "equilibrium",
     });
     expect(readGameEventTypes(value)).toContain("ChapterStageEvaluated");
+  });
+
+  it("章节评估按已提交事实统计协议，同协议多条款只计一次违约", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const propose = (terms: readonly Json[]): ReturnType<GameHarness["authority"]["commands"]["execute"]> =>
+      value.authority.commands.execute(
+        playerAuth(value),
+        gameCommandEnvelope("agreement.propose", { parties: ["player-1", "human-neutral"], terms: [...terms] }, value.host.ids("cmd")),
+      );
+    const acceptByNeutral = (agreementId: string): ReturnType<GameHarness["authority"]["commands"]["execute"]> =>
+      value.authority.commands.execute(
+        strategicAuth(value, "human-neutral"),
+        gameCommandEnvelope("agreement.respond", { agreementId, response: "accept" }, value.host.ids("cmd")),
+      );
+    const deliverTerm = (resource: "supply" | "energy", byTick: number): Json => ({
+      kind: "deliver",
+      obligorId: "player-1",
+      resource,
+      amount: resource === "supply" ? 10 : 5,
+      fromStockpileId: "sp-commons",
+      toStockpileId: "sp-earth",
+      byTick,
+    });
+
+    // 履约：tick 168 完成的运输；事件消费者尚未追平也要计入。
+    const delivered = propose([deliverTerm("supply", 168)]);
+    expect(delivered.commandStatus).toBe("accepted");
+    const deliveredId = (delivered.result as { readonly agreementId: string }).agreementId;
+    expect(acceptByNeutral(deliveredId).commandStatus).toBe("accepted");
+
+    // 违约：同一协议两条水闸条款被一次政策变更命中，按协议只计 1 份违约。
+    const watered = propose([
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 20 },
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 40 },
+    ]);
+    expect(watered.commandStatus).toBe("accepted");
+    const wateredId = (watered.result as { readonly agreementId: string }).agreementId;
+    expect(acceptByNeutral(wateredId).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    const policy = value.authority.commands.execute(
+      strategicAuth(value),
+      gameCommandEnvelope("policy.set", { key: "watergate.allocation", value: "rotation" }, value.host.ids("cmd")),
+    );
+    expect(policy.commandStatus).toBe("accepted");
+    value.authority.consumers.run(value.branchId);
+    expect(readGameAggregate(value, "agreement", wateredId)).toMatchObject({ status: "breached", breachedTerms: [0, 1] });
+
+    // 未满足：条款期限未到且没有履约事实，不计。
+    setGameClock(value, { worldTick: 12, mode: "running" });
+    const pending = propose([deliverTerm("energy", 180)]);
+    expect(pending.commandStatus).toBe("accepted");
+    const pendingId = (pending.result as { readonly agreementId: string }).agreementId;
+    expect(acceptByNeutral(pendingId).commandStatus).toBe("accepted");
+    // 未生效：只提出、未接受，不计。
+    expect(propose([deliverTerm("energy", 180)]).commandStatus).toBe("accepted");
+
+    // 运输在 tick 168 抵达；出发 job 按到期 tick 执行，完成 job 与章节评估同一 tick。
+    setGameClock(value, { worldTick: 161, mode: "running" });
+    const dispatch = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope(
+        "task.dispatch",
+        {
+          taskType: "transport",
+          teamId: "team-commons",
+          params: { fromStockpileId: "sp-commons", toStockpileId: "sp-earth", cargo: { supply: 10, energy: 0, medical: 0 } },
+        },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(dispatch.commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 162, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 162);
+    setGameClock(value, { worldTick: 168, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 168);
+    value.authority.clock.run(value.branchId);
+
+    const chapters = readGameEvents(value).filter((event) => event.type === "ChapterStageEvaluated");
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0]?.payload).toMatchObject({ fulfilledCount: 1, breachedCount: 1 });
+    // 两份计数只来自协议模块的同步统计，世界不再保留事件累计副本。
+    expect(
+      value.storage.transact((tx) =>
+        tx.branch(value.branchId).table("aggregate_state").count({ aggregate_type: "chapter-stats" }),
+      ),
+    ).toBe(0);
   });
 
   it("非零启动 tick 时按 startTick 计算每日与章节边界", async () => {

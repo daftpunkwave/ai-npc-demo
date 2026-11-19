@@ -11,11 +11,9 @@ import { requireGameContent, type MetersView } from "@ai-npc/module-sdk";
 import { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
 import {
   campaignStateSchema,
-  chapterStatsStateSchema,
   metersStateSchema,
   readWorldState,
   type CampaignState,
-  type ChapterStatsState,
   type MetersState,
 } from "./state";
 
@@ -210,7 +208,8 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
   if (record === null || record.state.status === "evaluated") {
     return;
   }
-  const elapsed = context.tx.worldTick - record.state.startTick;
+  const tick = context.tx.worldTick;
+  const elapsed = tick - record.state.startTick;
   if (elapsed < chapterLengthTicks) {
     return;
   }
@@ -219,8 +218,8 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
     return;
   }
   const meters = metersView(meterRecord.state);
-  const statsRecord = readWorldState(context.tx, "chapter-stats", "chapter-stats", chapterStatsStateSchema);
-  const stats: ChapterStatsState = statsRecord?.state ?? { fulfilled: 0, breached: 0 };
+  // 协议计数由协议模块按已提交事实同步给出，不再读取异步事件的累计副本。
+  const counts = context.modules["game.agreements"].countsAsOf(tick);
   const unmet: NumericMeterId[] = [];
   if (meters["relay.stability"] < 40) {
     unmet.push("relay.stability");
@@ -238,8 +237,8 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
       outcome,
       meters: metersSnapshot(meters),
       unmet,
-      fulfilledCount: stats.fulfilled,
-      breachedCount: stats.breached,
+      fulfilledCount: counts.fulfilled,
+      breachedCount: counts.breached,
     },
     [{ kind: "public" }],
   );

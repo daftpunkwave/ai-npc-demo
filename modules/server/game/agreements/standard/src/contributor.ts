@@ -1,6 +1,8 @@
 /**
  * 注册协议提出、回复、还价、生效、过期与违约/履约订阅。
  * 依赖协议聚合、内容索引、世界/地图/行动/通信端口与 authority 事务上下文。
+ * 履约与违约一律按事实发生的 tick 判定：事件消费用 event.worldTick，任务类用权威完成 tick；
+ * 期限 job 先按已提交事实复核，再按政策/道路状态判定持续义务。
  * 禁止替当事人记忆承诺，也禁止用未提交的任务事实提前判定履约。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；数组索引来自内部 terms/progress，资源键来自受限枚举。 */
@@ -14,7 +16,17 @@ import {
   type GameRuleContributor,
   type HandlerContext,
   type HandlerResult,
+  type ShareQuery,
 } from "@ai-npc/module-sdk";
+import {
+  cargoAmount,
+  hasOpenSustainedObligation,
+  isSustainedTerm,
+  isTermSatisfied,
+  taskMatchesTerm,
+  taskServesObligor,
+  type FulfillmentFacts,
+} from "./fulfillment";
 import { readAgreementState, type AgreementState } from "./state";
 import { termDeadline, validateTerms } from "./terms";
 
@@ -22,6 +34,24 @@ type AgreementContext = HandlerContext<GameModulePorts, unknown>;
 
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
   return context.modules as GameModulePorts;
+}
+
+/** 队伍所属派系；内容包里没有的队伍返回 null，按「不属于义务人」处理。 */
+function teamOwnerFaction(context: AgreementContext, teamId: string): string | null {
+  return requireGameContent(context.content).teams.get(teamId)?.ownerFactionId ?? null;
+}
+
+/**
+ * 本事务内的已提交履约事实：已完成任务来自行动端口，分享来自通信端口。
+ * 只读端口，不改写其他模块聚合。
+ */
+function fulfillmentFacts(context: AgreementContext): FulfillmentFacts {
+  const ports = asPorts(context);
+  return {
+    completedTasks: ports["game.actions"].completedTasks(),
+    hasShare: (query: ShareQuery) => ports["game.comms"].hasShare(query),
+    factionOfTeam: (teamId) => teamOwnerFaction(context, teamId),
+  };
 }
 
 function initialState(
@@ -61,6 +91,7 @@ function scheduleExpiry(context: AgreementContext, state: AgreementState): void 
 function scheduleBreaches(context: AgreementContext, state: AgreementState): void {
   for (const [index, term] of state.terms.entries()) {
     // delegate 生效即履约，首版没有撤销命令，不安排违约检查。
+    // 其余条款在期限 +1 的 job 上复核；通行与水闸的期限是 untilTick，该 job 同时负责收尾。
     if (term.kind === "delegate") {
       continue;
     }
@@ -136,7 +167,8 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
   scheduleBreaches(context, activated);
   context.tx.cancelJobs(`agreement-expire:${activated.agreementId}`);
   for (const [index, term] of activated.terms.entries()) {
-    if (term.kind === "delegate") {
+    // 委托没有撤销命令；通行与水闸生效即履约，持续义务由 untilTick 后的期限 job 收尾。
+    if (term.kind === "delegate" || isSustainedTerm(term)) {
       activated.fulfilledTerms = [...new Set([...activated.fulfilledTerms, index])];
       context.tx.emit(
         "AgreementTermFulfilled",
@@ -150,8 +182,17 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
   return { ok: true };
 }
 
+/** 义务期尚未结束的通行/水闸条款仍可能违约，协议此时不能整体标为 fulfilled。 */
+function hasOpenObligation(context: AgreementContext, state: AgreementState): boolean {
+  return hasOpenSustainedObligation(state, context.tx.worldTick);
+}
+
 function finishIfFulfilled(context: AgreementContext, state: AgreementState): AgreementState {
-  if (state.fulfilledTerms.length !== state.terms.length) {
+  // 只有仍然生效的协议能收尾；已违约或已关闭的协议不再被后续履约改写。
+  if (state.status !== "active") {
+    return state;
+  }
+  if (state.fulfilledTerms.length !== state.terms.length || hasOpenObligation(context, state)) {
     return state;
   }
   const fulfilled: AgreementState = { ...state, status: "fulfilled" };
@@ -281,21 +322,30 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
   return { kind: "accepted" };
 }
 
-function markBreach(context: AgreementContext, state: AgreementState, index: number): void {
-  if (state.status !== "active" && state.status !== "breached") {
-    return;
+/**
+ * 记录一条条款违约并返回最新状态。
+ * 同一事件可能命中同一协议的多条条款，调用方必须串联返回值，不能各自基于旧状态写入。
+ */
+function markBreach(context: AgreementContext, state: AgreementState, index: number): AgreementState {
+  if (state.status !== "active" && state.status !== "breached" && state.status !== "fulfilled") {
+    return state;
   }
-  if (state.fulfilledTerms.includes(index) || state.breachedTerms.includes(index)) {
-    return;
+  if (state.breachedTerms.includes(index)) {
+    return state;
   }
   const term = state.terms[index];
   if (term === undefined) {
-    return;
+    return state;
+  }
+  // 通行与水闸条款生效即记为履约，但义务期内的违反仍要记录；其余条款履约后不再违约。
+  if (state.fulfilledTerms.includes(index) && !isSustainedTerm(term)) {
+    return state;
   }
   const next: AgreementState = {
     ...state,
     status: "breached",
     breachedTerms: [...state.breachedTerms, index],
+    fulfilledTerms: state.fulfilledTerms.filter((value) => value !== index),
   };
   context.tx.put("agreement", next.agreementId, next);
   context.tx.emit(
@@ -303,10 +353,15 @@ function markBreach(context: AgreementContext, state: AgreementState, index: num
     { agreementId: next.agreementId, termIndex: index, obligorId: term.obligorId, term },
     principalsAudience(next.parties),
   );
+  return next;
 }
 
 function fulfillTerm(context: AgreementContext, state: AgreementState, index: number, evidenceEventIds: readonly string[]): AgreementState {
-  if (state.fulfilledTerms.includes(index)) {
+  // 已关闭的协议不再记录新的履约；已记录的违约是不可回退的事实，后续履约证据不能把它改写成履约。
+  if (state.status !== "active" && state.status !== "breached") {
+    return state;
+  }
+  if (state.fulfilledTerms.includes(index) || state.breachedTerms.includes(index)) {
     return state;
   }
   const term = state.terms[index];
@@ -326,72 +381,35 @@ function fulfillTerm(context: AgreementContext, state: AgreementState, index: nu
   return finishIfFulfilled(context, next);
 }
 
-function obligorMatchesTask(context: AgreementContext, obligorId: string, taskId: string): boolean {
-  const task = asPorts(context)["game.actions"].task(taskId);
-  if (task === null) {
-    return false;
-  }
-  if (task.dispatcherId === obligorId) {
-    return true;
-  }
-  const team = requireGameContent(context.content).teams.get(task.teamId);
-  return team?.ownerFactionId === obligorId;
-}
-
-function taskFulfills(context: AgreementContext, term: Term, taskId: string): boolean {
-  const task = asPorts(context)["game.actions"].task(taskId);
-  if (task === null || task.status !== "completed" || task.completedAtTick === null || !obligorMatchesTask(context, term.obligorId, taskId)) {
-    return false;
-  }
-  if (term.kind === "deliver") {
-    if (task.taskType !== "transport") {
-      return false;
-    }
-    const params = task.params as {
-      readonly fromStockpileId?: string;
-      readonly toStockpileId?: string;
-      readonly cargo?: Record<string, number>;
-    };
-    return (
-      params.fromStockpileId === term.fromStockpileId &&
-      params.toStockpileId === term.toStockpileId &&
-      (params.cargo?.[term.resource] ?? 0) > 0
-    );
-  }
-  if (term.kind === "escort") {
-    return task.taskType === "escort" && (task.params as { readonly roadId?: string }).roadId === term.roadId;
-  }
-  if (term.kind === "rescue") {
-    return task.taskType === "rescue" && (task.params as { readonly groupId?: string }).groupId === term.groupId;
-  }
-  if (term.kind === "repair-relay") {
-    return task.taskType === "repair";
-  }
-  return false;
-}
-
 function onTaskCompleted(context: AgreementContext, event: EventEnvelope): void {
   const payload = event.payload as { readonly taskId: string };
   const task = asPorts(context)["game.actions"].task(payload.taskId);
   if (task === null || task.completedAtTick === null) {
     return;
   }
+  // 任务的 completedAtTick 是权威完成 tick，与消费者何时追平无关。
+  const completedAtTick = task.completedAtTick;
+  const factionOfTeam = (teamId: string) => teamOwnerFaction(context, teamId);
   for (const entry of context.tx.list<AgreementState>("agreement")) {
     const state = entry.state;
     if (state.status !== "active" && state.status !== "breached") {
       continue;
     }
-    if (state.activatedAtTick !== null && (task.completedAtTick as number) < state.activatedAtTick) {
+    if (state.activatedAtTick !== null && completedAtTick < state.activatedAtTick) {
       continue;
     }
     let current = state;
-    for (const [index, term] of state.terms.entries()) {
-      if (term.kind !== "deliver" || term.byTick < (task.completedAtTick as number) || !taskFulfills(context, term, payload.taskId)) {
+    for (const [index, term] of current.terms.entries()) {
+      if (
+        term.kind !== "deliver" ||
+        completedAtTick > term.byTick ||
+        !taskMatchesTerm(term, task) ||
+        !taskServesObligor(term.obligorId, task, factionOfTeam)
+      ) {
         continue;
       }
-      const params = task.params as { readonly cargo?: Record<string, number> };
+      const amount = cargoAmount(task, term.resource);
       const progress = current.progress[index] ?? 0;
-      const amount = params.cargo?.[term.resource] ?? 0;
       if (progress + amount >= term.amount) {
         current = fulfillTerm(context, current, index, [String(event.eventId)]);
       } else if (amount > 0) {
@@ -401,11 +419,20 @@ function onTaskCompleted(context: AgreementContext, event: EventEnvelope): void 
         context.tx.put("agreement", current.agreementId, current);
       }
     }
-    for (const [index, term] of state.terms.entries()) {
-      if (term.kind === "deliver" || term.kind === "grant-passage" || term.kind === "water-allocation" || term.kind === "delegate") {
+    for (const [index, term] of current.terms.entries()) {
+      if (
+        term.kind === "deliver" ||
+        term.kind === "grant-passage" ||
+        term.kind === "water-allocation" ||
+        term.kind === "delegate"
+      ) {
         continue;
       }
-      if (term.byTick < (task.completedAtTick as number) || !taskFulfills(context, term, payload.taskId)) {
+      if (
+        completedAtTick > term.byTick ||
+        !taskMatchesTerm(term, task) ||
+        !taskServesObligor(term.obligorId, task, factionOfTeam)
+      ) {
         continue;
       }
       current = fulfillTerm(context, current, index, [String(event.eventId)]);
@@ -424,22 +451,51 @@ function onInformationShared(context: AgreementContext, event: EventEnvelope): v
     if (state.status !== "active" && state.status !== "breached") {
       continue;
     }
-    if (state.activatedAtTick !== null && context.tx.worldTick < state.activatedAtTick) {
+    // 分享发生在生效前或期限后都不算履约；用事件自己的 worldTick，不用消费时钟。
+    if (state.activatedAtTick !== null && event.worldTick < state.activatedAtTick) {
       continue;
     }
     let current = state;
-    for (const [index, term] of state.terms.entries()) {
-      if (
-        term.kind === "share-evidence" &&
-        term.obligorId === payload.fromId &&
-        term.evidenceId === payload.evidenceId &&
-        payload.audience.includes(term.toPrincipalId) &&
-        context.tx.worldTick <= term.byTick
-      ) {
-        current = fulfillTerm(context, current, index, [String(event.eventId)]);
+    for (const [index, term] of current.terms.entries()) {
+      if (term.kind !== "share-evidence") {
+        continue;
       }
+      if (
+        term.obligorId !== payload.fromId ||
+        term.evidenceId !== payload.evidenceId ||
+        !payload.audience.includes(term.toPrincipalId) ||
+        event.worldTick > term.byTick
+      ) {
+        continue;
+      }
+      current = fulfillTerm(context, current, index, [String(event.eventId)]);
     }
   }
+}
+
+/** 政策事件是否构成某条水闸/通行条款在义务期内的违约。 */
+function policyBreachAt(
+  term: Term,
+  payload: { readonly key: string; readonly newValue: string; readonly byId: string },
+  eventTick: number,
+): boolean {
+  if (term.kind === "water-allocation") {
+    return (
+      payload.key === "watergate.allocation" &&
+      term.obligorId === payload.byId &&
+      payload.newValue !== term.policy &&
+      eventTick <= term.untilTick
+    );
+  }
+  if (term.kind === "grant-passage") {
+    return (
+      payload.key === `road.status:${term.roadId}` &&
+      term.obligorId === payload.byId &&
+      payload.newValue === "closed" &&
+      eventTick <= term.untilTick
+    );
+  }
+  return false;
 }
 
 function onPolicyChanged(context: AgreementContext, event: EventEnvelope): void {
@@ -450,27 +506,17 @@ function onPolicyChanged(context: AgreementContext, event: EventEnvelope): void 
   };
   for (const entry of context.tx.list<AgreementState>("agreement")) {
     const state = entry.state;
-    if (state.status !== "active" && state.status !== "breached") {
+    if (state.status !== "active" && state.status !== "breached" && state.status !== "fulfilled") {
       continue;
     }
-    for (const [index, term] of state.terms.entries()) {
-      if (
-        term.kind === "water-allocation" &&
-        term.obligorId === payload.byId &&
-        payload.key === "watergate.allocation" &&
-        payload.newValue !== term.policy &&
-        context.tx.worldTick <= term.untilTick
-      ) {
-        markBreach(context, state, index);
-      }
-      if (
-        term.kind === "grant-passage" &&
-        term.obligorId === payload.byId &&
-        payload.key === `road.status:${term.roadId}` &&
-        payload.newValue === "closed" &&
-        context.tx.worldTick <= term.untilTick
-      ) {
-        markBreach(context, state, index);
+    if (state.activatedAtTick !== null && event.worldTick < state.activatedAtTick) {
+      continue;
+    }
+    // 一次政策事件可能命中同一协议的多条条款，按最新状态逐条累积，不能互相覆盖。
+    let current = state;
+    for (const [index, term] of current.terms.entries()) {
+      if (policyBreachAt(term, payload, event.worldTick)) {
+        current = markBreach(context, current, index);
       }
     }
   }
@@ -485,6 +531,17 @@ function expire(context: AgreementContext, agreementId: string): void {
   context.tx.emit("AgreementExpired", { agreementId, byId: null }, principalsAudience(state.parties));
 }
 
+/** 通行与水闸的持续义务：义务期内义务人改了政策或关闭道路即为违约。 */
+function sustainedObligationViolated(context: AgreementContext, term: Term): boolean {
+  if (term.kind === "water-allocation") {
+    return asPorts(context)["game.world"].meters()?.["watergate.allocation"] !== term.policy;
+  }
+  if (term.kind === "grant-passage") {
+    return asPorts(context)["game.map"].roadStatus(term.roadId) === "closed";
+  }
+  return false;
+}
+
 function breach(context: AgreementContext, agreementId: string, termIndex: number): void {
   const state = readAgreementState(context.tx, agreementId);
   if (state === null) {
@@ -494,23 +551,14 @@ function breach(context: AgreementContext, agreementId: string, termIndex: numbe
   if (term === undefined) {
     return;
   }
-  if (term.kind === "water-allocation") {
-    if (asPorts(context)["game.world"].meters()?.["watergate.allocation"] === term.policy) {
-      fulfillTerm(context, state, termIndex, []);
-    } else {
-      markBreach(context, state, termIndex);
-    }
-    return;
+  let current = state;
+  // 期限 job 可能先于消费者处理已提交的履约证据：先用已提交事实复核，满足即补记履约。
+  if (sustainedObligationViolated(context, term) || !isTermSatisfied(term, fulfillmentFacts(context))) {
+    current = markBreach(context, current, termIndex);
+  } else {
+    current = fulfillTerm(context, current, termIndex, []);
   }
-  if (term.kind === "grant-passage") {
-    if (asPorts(context)["game.map"].roadStatus(term.roadId) !== "closed") {
-      fulfillTerm(context, state, termIndex, []);
-    } else {
-      markBreach(context, state, termIndex);
-    }
-    return;
-  }
-  markBreach(context, state, termIndex);
+  finishIfFulfilled(context, current);
 }
 
 /** 协议模块的规则贡献。 */

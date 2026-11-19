@@ -1,5 +1,5 @@
 /**
- * 实现通信模块的送达计算、会话/知识写入、消息与证据分享。
+ * 实现通信模块的送达计算、会话/知识写入、消息、证据分享与分享事实查询。
  * 依赖世界指标与角色位置、通信聚合和注入的 scoped WorldTx。
  * 禁止绕过中继状态、向未授权主体投递或改写已冻结的投递名单。
  */
@@ -13,12 +13,14 @@ import {
   type GameContent,
   type GameIdFactory,
   type ScopedWorldTxFactory,
+  type ShareQuery,
 } from "@ai-npc/module-sdk";
 import {
   conversationStateSchema,
   readCommsState,
   type ConversationState,
   type KnowledgeGrantState,
+  type ShareState,
 } from "./state";
 
 type Delivery = { readonly principalId: string; readonly deliverAtTick: number };
@@ -176,6 +178,19 @@ class StandardCommsPort implements GameCommsPort {
       .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
   }
 
+  /** 已提交的分享事实：分享者、证据、受众与提交 tick，均在同一事务内读取。 */
+  hasShare(query: ShareQuery): boolean {
+    return this.tx()
+      .list<ShareState>("share")
+      .some(
+        (entry) =>
+          entry.state.fromId === query.fromId &&
+          entry.state.evidenceId === query.evidenceId &&
+          entry.state.audience.includes(query.toPrincipalId) &&
+          entry.state.sharedAtTick <= query.byTick,
+      );
+  }
+
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean {
     const existing = readCommsState(this.tx(), "conversation", conversationId, conversationStateSchema);
     if (existing === null) {
@@ -313,6 +328,16 @@ class StandardCommsPort implements GameCommsPort {
       throw new DomainError("invalid-state", "中继中断时不能分享证据");
     }
     const shareId = this.ids("shr");
+    const sharedAtTick = this.tx().worldTick;
+    // 分享聚合同事务写入：协议期限 job 与章节统计据此复核已提交的分享事实。
+    const share: ShareState = {
+      shareId,
+      fromId: input.fromId,
+      evidenceId: input.evidenceId,
+      audience: [...input.audience],
+      sharedAtTick,
+    };
+    this.tx().put("share", shareId, share);
     const eventId = this.tx().emit(
       "InformationShared",
       {

@@ -88,6 +88,22 @@ function dispatchEscort(value: GameHarness): Receipt {
   );
 }
 
+/** 以人类中立战略 Agent 设置水闸分配。 */
+function setAllocation(value: GameHarness, policy: string): Receipt {
+  return value.authority.commands.execute(
+    strategicAuth(value, "human-neutral"),
+    gameCommandEnvelope("policy.set", { key: "watergate.allocation", value: policy }, value.host.ids("cmd")),
+  );
+}
+
+/** 以道路控制方战略 Agent 设置道路状态。 */
+function setRoadStatus(value: GameHarness, roadId: string, status: string): Receipt {
+  return value.authority.commands.execute(
+    strategicAuth(value, "human-independent"),
+    gameCommandEnvelope("policy.set", { key: `road.status:${roadId}`, value: status }, value.host.ids("cmd")),
+  );
+}
+
 function delegateTerm(overrides: {
   readonly obligorId: string;
   readonly granteeId: string;
@@ -358,5 +374,139 @@ describe("协议委托与授权", () => {
     expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({ status: "active" });
     expect(eventPayloads(value, "AgreementActivated")).toHaveLength(1);
     expect(eventPayloads(value, "PolicyChanged")).toHaveLength(0);
+  });
+
+  it("义务期内记录的持续义务违约在政策恢复后保持 breached", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    const water = propose(value, ["player-1", "human-neutral"], [
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 20 },
+    ]);
+    expect(water.commandStatus).toBe("accepted");
+    const waterId = (water.result as { readonly agreementId: string }).agreementId;
+    expect(accept(value, waterId, "human-neutral").commandStatus).toBe("accepted");
+    // 生效即记为履约，但义务期未结束，协议仍然是 active。
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({
+      status: "active",
+      fulfilledTerms: [0],
+      breachedTerms: [],
+    });
+    const passage = proposeAs(value, strategicAuth(value, "human-independent"), ["human-independent", "player-1"], [
+      {
+        kind: "grant-passage",
+        obligorId: "human-independent",
+        roadId: "r-gh-ps",
+        granteeFactionId: "species-fauna",
+        untilTick: 20,
+      },
+    ]);
+    expect(passage.commandStatus).toBe("accepted");
+    const passageId = (passage.result as { readonly agreementId: string }).agreementId;
+    expect(respondAccept(value, playerAuth(value), passageId).commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({
+      status: "active",
+      fulfilledTerms: [0],
+      breachedTerms: [],
+    });
+
+    // 义务期内改变分配并关闭道路：两条持续义务分别违约。
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    expect(setAllocation(value, "rotation").commandStatus).toBe("accepted");
+    expect(setRoadStatus(value, "r-gh-ps", "closed").commandStatus).toBe("accepted");
+    value.authority.consumers.run(value.branchId);
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({ status: "breached", breachedTerms: [0] });
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({ status: "breached", breachedTerms: [0] });
+
+    // 政策与道路恢复不是履约证据：违约事实保留。
+    setGameClock(value, { worldTick: 10, mode: "running" });
+    expect(setAllocation(value, "harbor-first").commandStatus).toBe("accepted");
+    expect(setRoadStatus(value, "r-gh-ps", "open").commandStatus).toBe("accepted");
+    value.authority.consumers.run(value.branchId);
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({ status: "breached", breachedTerms: [0] });
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({ status: "breached", breachedTerms: [0] });
+
+    // 义务期结束的期限 job 也不能把已违约条款改写成履约。
+    setGameClock(value, { worldTick: 21, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 21);
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({ status: "breached", breachedTerms: [0] });
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({ status: "breached", breachedTerms: [0] });
+    expect(eventPayloads(value, "AgreementBreached")).toHaveLength(2);
+    expect(eventPayloads(value, "AgreementFulfilled")).toHaveLength(0);
+  });
+
+  it("一次政策变更同时命中同一协议的多条水闸条款", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    const proposal = propose(value, ["player-1", "human-neutral"], [
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 20 },
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 40 },
+    ]);
+    expect(proposal.commandStatus).toBe("accepted");
+    const agreementId = (proposal.result as { readonly agreementId: string }).agreementId;
+    expect(accept(value, agreementId, "human-neutral").commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({
+      status: "active",
+      fulfilledTerms: [0, 1],
+    });
+
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    expect(setAllocation(value, "rotation").commandStatus).toBe("accepted");
+    value.authority.consumers.run(value.branchId);
+    // 同一事件命中两条条款：两条都要记录，不能互相覆盖。
+    expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({
+      status: "breached",
+      breachedTerms: [0, 1],
+    });
+    expect(eventPayloads<{ readonly termIndex: number }>(value, "AgreementBreached").map((entry) => entry.termIndex)).toEqual([0, 1]);
+
+    // 两条条款的期限 job 都到期后仍不重复记录，也不把协议改回 fulfilled。
+    setGameClock(value, { worldTick: 41, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 41);
+    expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({
+      status: "breached",
+      breachedTerms: [0, 1],
+    });
+    expect(eventPayloads(value, "AgreementBreached")).toHaveLength(2);
+    expect(eventPayloads(value, "AgreementFulfilled")).toHaveLength(0);
+  });
+
+  it("水闸与通行条款在义务期结束前保持 active，期满未违约才 fulfilled", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    const water = propose(value, ["player-1", "human-neutral"], [
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 20 },
+    ]);
+    expect(water.commandStatus).toBe("accepted");
+    const waterId = (water.result as { readonly agreementId: string }).agreementId;
+    expect(accept(value, waterId, "human-neutral").commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({ status: "active", fulfilledTerms: [0] });
+
+    const passage = proposeAs(value, strategicAuth(value, "human-independent"), ["human-independent", "player-1"], [
+      {
+        kind: "grant-passage",
+        obligorId: "human-independent",
+        roadId: "r-gh-ps",
+        granteeFactionId: "species-fauna",
+        untilTick: 20,
+      },
+    ]);
+    expect(passage.commandStatus).toBe("accepted");
+    const passageId = (passage.result as { readonly agreementId: string }).agreementId;
+    expect(respondAccept(value, playerAuth(value), passageId).commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({ status: "active", fulfilledTerms: [0] });
+
+    // 义务期最后一天仍未到期，协议不能整体标为 fulfilled。
+    setGameClock(value, { worldTick: 20, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 20);
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({ status: "active" });
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({ status: "active" });
+    expect(eventPayloads(value, "AgreementFulfilled")).toHaveLength(0);
+
+    // untilTick + 1 的期限 job 确认义务期结束且未违约后才收尾。
+    setGameClock(value, { worldTick: 21, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 21);
+    expect(readGameAggregate(value, "agreement", waterId)).toMatchObject({ status: "fulfilled", fulfilledTerms: [0] });
+    expect(readGameAggregate(value, "agreement", passageId)).toMatchObject({ status: "fulfilled", fulfilledTerms: [0] });
+    expect(eventPayloads(value, "AgreementFulfilled")).toHaveLength(2);
   });
 });
