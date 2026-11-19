@@ -492,6 +492,8 @@ export interface CommsPostResult {
 
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
+  /** 两个主体此刻是否在同一节点；无位置主体（战略 Agent、未知主体）与任何人都不同节点。 */
+  sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean;
@@ -509,6 +511,8 @@ export interface GameCommsPort {
     readonly intentKind: MessageIntentKind;
     readonly speechArtifactRef?: string | null;
     readonly audience?: readonly string[];
+    /** 广播的发布位置；缺省用发送者当前位置，中继中断时只送达与该位置同节点的主体。 */
+    readonly originNodeId?: string;
   }): CommsPostResult;
   postDialogue(input: {
     readonly speakerId: string;

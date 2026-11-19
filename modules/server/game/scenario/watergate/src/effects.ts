@@ -4,7 +4,7 @@
  * 禁止修改指标或道路状态（覆盖效果除外），也禁止调用模型生成正文。
  */
 import type { CardEffect, OverrideEffect } from "@ai-npc/contracts";
-import { principalsAudience, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
+import { principalsAudience, requireGameContent, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
 import { DomainError } from "@ai-npc/contracts";
 
 type EffectContext = HandlerContext<GameModulePorts, unknown>;
@@ -14,12 +14,14 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
   const ports = context.modules;
   for (const effect of effects) {
     if (effect.kind === "broadcast") {
+      // 剧情卡广播按规则视为在 grayharbor（玩家节点）发布：中继中断时只送达该节点主体。
       ports["game.comms"].postMessage({
         fromId: effect.speakerId,
         to: ["public"],
         text: effect.text,
         channel: "broadcast",
         intentKind: "scenario",
+        originNodeId: requireGameContent(context.content).playerNodeId,
       });
     } else if (effect.kind === "message") {
       ports["game.comms"].postMessage({
