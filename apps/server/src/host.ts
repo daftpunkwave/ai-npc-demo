@@ -12,6 +12,7 @@ import { loadContentPack } from "@ai-npc/experiment";
 import type { ClockState } from "@ai-npc/module-sdk";
 import { createHostServices } from "./host-services";
 import { buildPlayerProjection } from "./projection";
+import { advanceWorldTick, catchUpWorldTick } from "./tick";
 import { loadAssembly, loadRunSpec, resolveServerModules } from "./host/assembly";
 import {
   createGameContributorsFromAssembly,
@@ -269,13 +270,19 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   });
 
   const save = createSaveService(storage, host);
+  const createDrainedSnapshot = (
+    input: { readonly label: string; readonly createdBy: string },
+  ): ReturnType<typeof save.createSnapshot> => {
+    catchUpWorldTick({ storage, authority, host, branchId: activeBranchId });
+    return save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy });
+  };
   const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
     const current = clockState();
     if (current.mode === "running") {
       control("pause", current.runVersion);
     }
     const label = `reset-${current.worldTick}`;
-    save.createSnapshot({ sourceBranchId: activeBranchId, label, createdBy: "operator-1" });
+    createDrainedSnapshot({ label, createdBy: "operator-1" });
     const nextBranchId = host.ids("br");
     storage.transact((tx) => {
       const now = host.nowIso();
@@ -376,7 +383,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     clock: () => clockState(),
     pause: (expected) => control("pause", expected),
     resume: (expected) => control("start", expected),
-    snapshot: (input) => save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy }),
+    snapshot: (input) => createDrainedSnapshot({ label: input.label, createdBy: input.createdBy }),
     restore: (input) => {
       const restored = save.restoreSnapshot({ snapshotId: input.snapshotId, createdBy: input.createdBy, ...(input.runId === undefined ? {} : { runId: input.runId }) });
       activeBranchId = restored.branchId;
@@ -422,6 +429,15 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   let workerFailed = false;
   let workerBusy = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    catchUpWorldTick({ storage, authority, host, branchId: activeBranchId });
+  } catch (error) {
+    workerFailed = true;
+    host.logger.error("host 启动补完当前 tick 失败，已停止推进", {
+      message: error instanceof Error ? error.message : String(error),
+      branchId: activeBranchId,
+    });
+  }
   const schedule = (): void => {
     if (workerFailed) {
       return;
@@ -438,16 +454,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     try {
       const clock = clockState();
       if (clock.mode === "running") {
-        storage.transact((tx) => {
-          const table = tx.branch(activeBranchId).table("clock");
-          const row = table.get({});
-          if (row !== null) {
-            table.put({ ...row, world_tick: clock.worldTick + 1, updated_at: host.nowIso() });
-          }
-        });
-        authority.clock.run(activeBranchId);
-        authority.jobs.runDue(activeBranchId, clock.worldTick + 1);
-        authority.consumers.run(activeBranchId);
+        advanceWorldTick({ storage, authority, host, branchId: activeBranchId, targetTick: clock.worldTick + 1 });
         app.notifyWorldChanged();
       }
     } catch (error) {
