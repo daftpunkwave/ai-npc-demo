@@ -1,10 +1,11 @@
 /**
- * 存档服务：把在线分支复制为冻结快照，并在同一存储事务内从快照切换到后继在线分支。
- * 依赖 SQLite 存储端口的分支复制、快照/runs/world_aliases 表与宿主 ID/时间服务；不暂停时钟或排空 job。
- * 禁止在未暂停时保存、覆盖已有分支、在快照上继续写入，也禁止恢复失败时留下部分写入。
- * 对外方法自行开启事务；InTransaction 变体供宿主把幂等记录等相邻写入并入同一事务。
+ * 存档服务：把在线分支复制为冻结快照，并在同一存储事务内从快照切换到后继在线分支；
+ * 同时提供当前 campaign 的快照列表、恢复 dry-run 与可并入调用方事务的 InTransaction 变体。
+ * 依赖 StoragePort 的分支复制，snapshots/branches/runs/world_aliases 与分支内 clock、事件表，
+ * 以及宿主 ID/时间服务；不暂停时钟、不排空 job，也不校验时钟模式。
+ * 暂停与排空由调用方在调用前完成；禁止覆盖已有分支、在冻结快照上继续写入、
+ * 复用已存在的 run，或在失败时留下部分写入。
  */
-/* eslint-disable security/detect-object-injection -- 行访问只使用本文件固定的列名。 */
 import {
   DomainError,
   canonicalJson,

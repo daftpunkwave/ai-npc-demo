@@ -1,0 +1,231 @@
+/**
+ * 宿主生命周期：时钟控制、运营生命周期审计、断线自动暂停、在线 tick worker 与关闭释放。
+ * 依赖时钟 provider、authority 的 tick 推进、存储事务、传输应用通知与组合根提供的释放回调。
+ * 禁止在 worker 失败后继续推进时钟、跳过断线宽限或在关闭时跳过资源释放。
+ */
+import { DomainError, canonicalJson, type Json, type StoragePort } from "@ai-npc/contracts";
+import type { Authority } from "@ai-npc/authority";
+import type { ClockState } from "@ai-npc/module-sdk";
+import type { HostServices } from "@ai-npc/contracts";
+import { advanceWorldTick, catchUpWorldTick } from "../tick";
+import { clockView } from "./clock-view";
+import type { LiveRunState } from "./live-state";
+import type { ServerApp, ServerRuntime } from "./module-catalog";
+
+export interface LifecycleInput {
+  readonly host: HostServices;
+  readonly storage: StoragePort;
+  readonly runtime: ServerRuntime;
+  readonly authority: Authority;
+  readonly active: LiveRunState;
+  /** 时钟 provider 的有效配置：全部玩家断线后自动暂停的阈值。 */
+  readonly autoPauseAfterDisconnectMs: number;
+  /** 关闭时释放存储、模块与传输；传输实例在 attachApp 后可用。 */
+  readonly disposeResources: (app: ServerApp | null) => Promise<void>;
+}
+
+/** 宿主生命周期接口；组装完成后由组合根 attachApp 并 start。 */
+export interface HostLifecycle {
+  attachApp(app: ServerApp): void;
+  clockState(): ClockState;
+  control(mode: "pause" | "start", expectedRunVersion: number): ReturnType<typeof clockView>;
+  handlePlayerConnections(connected: number): void;
+  healthStatus(): "ready" | "degraded";
+  start(): void;
+  close(): Promise<void>;
+}
+
+/**
+ * 创建生命周期管理器：worker 与自动暂停都只操作当前在线分支，
+ * 失败后停止推进并让健康状态变为 degraded。
+ */
+export function createLifecycle(input: LifecycleInput): HostLifecycle {
+  const { host, storage, runtime, authority, active, autoPauseAfterDisconnectMs } = input;
+  let app: ServerApp | null = null;
+  let playerConnections = 0;
+  let autoPauseTimer: ReturnType<typeof setTimeout> | null = null;
+  let workerTimer: ReturnType<typeof setTimeout> | null = null;
+  let workerFailed = false;
+  let workerBusy = false;
+  let closePromise: Promise<void> | null = null;
+
+  const clockState = (): ClockState => runtime.clock.read(active.branchId);
+
+  /**
+   * 记录运营性生命周期事件（自动暂停等）；与领域事件分离。
+   * 审计写入失败只记日志，不覆盖触发它的业务结果。
+   */
+  const recordLifecycleEvent = (type: string, subjectId: string, payload: Json): void => {
+    try {
+      storage.transact((tx) => {
+        const branch = tx.rows("branches").get({ branch_id: active.branchId });
+        const runId = branch !== null && typeof branch["run_id"] === "string" ? branch["run_id"] : null;
+        tx.run(
+          "INSERT INTO lifecycle_events (run_id, branch_id, type, subject_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [runId, active.branchId, type, subjectId, canonicalJson(payload), host.nowIso()],
+        );
+      });
+    } catch (error) {
+      host.logger.error("生命周期审计写入失败", {
+        type,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  /** 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。 */
+  const control = (mode: "pause" | "start", expectedRunVersion: number) => {
+    const result = mode === "pause"
+      ? runtime.clock.pause(active.branchId, expectedRunVersion)
+      : runtime.clock.start(active.branchId, expectedRunVersion);
+    if (!result.ok) {
+      throw result.reasonCode === "version-conflict"
+        ? new DomainError("version-conflict", "时钟版本冲突")
+        : new DomainError("invalid-state", "时钟控制参数非法");
+    }
+    // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时。
+    if (mode === "start" && playerConnections === 0) {
+      scheduleAutoPause();
+    }
+    return clockView(result.clock);
+  };
+
+  const clearAutoPauseTimer = (): void => {
+    if (autoPauseTimer !== null) {
+      clearTimeout(autoPauseTimer);
+      autoPauseTimer = null;
+    }
+  };
+
+  /**
+   * 全部玩家连接断开后启动一次自动暂停计时；阈值来自时钟装配配置。
+   * 计时器 unref，重连或关闭时取消；暂停后 tick 不再推进，离线时间不补算。
+   */
+  function scheduleAutoPause(): void {
+    if (autoPauseTimer !== null || playerConnections > 0 || workerFailed) {
+      return;
+    }
+    autoPauseTimer = setTimeout(() => {
+      autoPauseTimer = null;
+      if (playerConnections > 0) {
+        return;
+      }
+      const clock = clockState();
+      if (clock.mode !== "running") {
+        return;
+      }
+      const paused = runtime.clock.pause(active.branchId, clock.runVersion);
+      if (!paused.ok) {
+        host.logger.warn("玩家断线超时但自动暂停未生效", {
+          branchId: active.branchId,
+          reason: paused.reasonCode,
+        });
+        return;
+      }
+      host.logger.warn("玩家全部断开超过阈值，已自动暂停时钟", {
+        branchId: active.branchId,
+        afterMs: autoPauseAfterDisconnectMs,
+        worldTick: clock.worldTick,
+      });
+      recordLifecycleEvent("ClockAutoPaused", "system:offline-timeout", {
+        reason: "players-disconnected",
+        afterMs: autoPauseAfterDisconnectMs,
+        worldTick: clock.worldTick,
+        runVersion: paused.clock.runVersion,
+      });
+      app?.notifyWorldChanged();
+    }, autoPauseAfterDisconnectMs);
+    autoPauseTimer.unref();
+  }
+
+  /** 玩家连接数变化：重连取消计时；从在线变为全断时开始计时。 */
+  function handlePlayerConnections(connected: number): void {
+    const previouslyConnected = playerConnections > 0;
+    playerConnections = connected;
+    if (connected > 0) {
+      clearAutoPauseTimer();
+      return;
+    }
+    if (previouslyConnected) {
+      scheduleAutoPause();
+    }
+  }
+
+  /** 按 provider 的 tick 间隔安排下一次推进；unref 避免阻止进程退出。 */
+  const schedule = (): void => {
+    if (workerFailed) {
+      return;
+    }
+    const delay = Math.max(1000, clockState().secondsPerTick * 1000);
+    workerTimer = setTimeout(runWorker, delay);
+    workerTimer.unref();
+  };
+
+  /** 单次推进：保持 busy 标记避免重入，失败后停止后续推进。 */
+  function runWorker(): void {
+    if (workerBusy) {
+      return;
+    }
+    workerBusy = true;
+    try {
+      const clock = clockState();
+      if (clock.mode === "running") {
+        advanceWorldTick({
+          storage,
+          clock: runtime.clock,
+          authority,
+          branchId: active.branchId,
+          targetTick: clock.worldTick + 1,
+        });
+        app?.notifyWorldChanged();
+      }
+    } catch (error) {
+      workerFailed = true;
+      host.logger.error("host worker 失败，已停止推进", { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      workerBusy = false;
+      if (!workerFailed) {
+        schedule();
+      }
+    }
+  }
+
+  return {
+    attachApp(next: ServerApp): void {
+      app = next;
+    },
+    clockState,
+    control,
+    handlePlayerConnections,
+    healthStatus: () => (workerFailed ? "degraded" : "ready"),
+    start(): void {
+      try {
+        // 重启或恢复后先补完当前 tick，再开始按间隔推进。
+        catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
+      } catch (error) {
+        workerFailed = true;
+        host.logger.error("host 启动补完当前 tick 失败，已停止推进", {
+          message: error instanceof Error ? error.message : String(error),
+          branchId: active.branchId,
+        });
+      }
+      schedule();
+    },
+    close: async (): Promise<void> => {
+      if (closePromise !== null) {
+        return closePromise;
+      }
+      closePromise = (async () => {
+        workerFailed = true;
+        if (workerTimer !== null) {
+          clearTimeout(workerTimer);
+          workerTimer = null;
+        }
+        clearAutoPauseTimer();
+        // 关闭按传输、模块、存储的逆序释放；任一步抛错仍继续，最后汇总错误。
+        await input.disposeResources(app);
+      })();
+      return closePromise;
+    },
+  };
+}

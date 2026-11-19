@@ -1,8 +1,9 @@
 /**
- * 验证 SQLite 存档：冻结快照复制源分支、快照列表限定当前 campaign，
- * 以及恢复在同一事务内建立后继 run、结束旧 run、归档旧分支并切换在线别名。
- * 依赖真实 SQLite 分支持久化与游戏 harness 的种子分支。
- * 禁止直接改快照行或别名模拟恢复，也禁止用假存储替代回滚验证。
+ * 验证 SQLite 存档：创建快照时复制源分支为冻结分支、快照列表只含当前 campaign，
+ * 恢复在同一事务内沿用源 run 的 RunSpec 与 manifest、结束旧 run、归档旧分支并切换在线别名；
+ * 另覆盖快照不完整时的 dry-run 拒绝、调用方事务回滚与别名写入失败注入后零残留。
+ * 依赖真实 SQLite 分支存储、宿主 ID/时间服务与游戏 harness 的种子分支和时钟。
+ * 禁止用改写快照行或别名的方式伪造恢复成功，也禁止用假存储替代回滚验证。
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { Json, StoragePort, StorageTable, StorageTransaction } from "@ai-npc/contracts";

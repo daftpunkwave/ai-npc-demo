@@ -35,30 +35,6 @@ export interface RestoreInput {
   readonly runId?: string;
 }
 
-function clockHook(): { readonly mode: string; readonly runVersion: number } {
-  return { mode: "paused", runVersion: 0 };
-}
-
-function pauseHook(expectedRunVersion: number): ClockView {
-  throw new Error(`pause hook 未注入: ${expectedRunVersion}`);
-}
-
-function resumeHook(expectedRunVersion: number): ClockView {
-  throw new Error(`resume hook 未注入: ${expectedRunVersion}`);
-}
-
-function snapshotHook(input: SnapshotInput): SnapshotView {
-  throw new Error(`snapshot hook 未注入: ${input.label}:${input.createdBy}`);
-}
-
-function restoreHook(input: RestoreInput): RestoreOutcome {
-  throw new Error(`restore hook 未注入: ${input.snapshotId}:${input.createdBy}`);
-}
-
-function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
-  throw new Error("reset hook 未注入");
-}
-
 /**
  * 幂等执行入口：宿主按认证主体、operationId 与请求内容哈希识别重试，并把首次结果与业务写入
  * 在同一事务内持久化。未提供时，运营服务退回原有的非幂等回调。
@@ -71,13 +47,14 @@ export interface IdempotentOperationsDriver {
   reset(operation: OperationRequest): { readonly branchId: string; readonly clock: ClockView };
 }
 
+/** 宿主注入的时钟/存档/分支回调；运营服务不直接读写存储。 */
 export interface OperationsDriver {
-  readonly clock: typeof clockHook;
-  readonly pause: typeof pauseHook;
-  readonly resume: typeof resumeHook;
-  readonly snapshot: typeof snapshotHook;
-  readonly restore: typeof restoreHook;
-  readonly reset: typeof resetHook;
+  readonly clock: () => { readonly mode: string; readonly runVersion: number };
+  readonly pause: (expectedRunVersion: number) => ClockView;
+  readonly resume: (expectedRunVersion: number) => ClockView;
+  readonly snapshot: (input: SnapshotInput) => SnapshotView;
+  readonly restore: (input: RestoreInput) => RestoreOutcome;
+  readonly reset: () => { readonly branchId: string; readonly clock: ClockView };
   /** 可选的幂等执行入口；提供后运营服务按 operationId 转发。 */
   readonly idempotent?: IdempotentOperationsDriver;
 }

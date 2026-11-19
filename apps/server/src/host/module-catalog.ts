@@ -49,17 +49,20 @@ import {
 
 export { toGameContent } from "./content-adapter";
 
-/** 创建运营编排服务；宿主注入时钟/存档/分支回调。 */
-export function createOperationsService(driver: OperationsDriver): OperationsService {
-  return new OperationsService(driver);
-}
-
-/** 解析并校验传输配置。 */
+/** 解析并校验传输配置；宿主只在这里接触传输模块的配置 schema。 */
 export function parseTransportConfig(config: unknown): TransportConfig {
   return transportConfigSchema.parse(config);
 }
 
 export type { OperationsDriver, TransportPort };
+export type {
+  IdempotentOperationsDriver,
+  OperationRequest,
+  RestoreInput,
+  RestoreOutcome,
+  SnapshotInput,
+  SnapshotView,
+} from "@ai-npc/mod-platform-operations-standard";
 export { transportModuleDefinition, operationsModuleDefinition, createServerApp };
 export type {
   AuthorityPort,

@@ -1,6 +1,6 @@
 /**
- * 提供宿主时间、随机、ID、哈希、日志与 tracer 的最小实现。
- * 依赖 Node 标准库、公共契约的规范 JSON 与规则随机源；不读取配置、不打开存储。
+ * 提供宿主时间、随机、ID、哈希、日志与 tracer 的最小实现，供 kernel 与模块在注入边界内使用。
+ * 依赖 Node 标准库、公共契约的规范 JSON 与规则随机源；不读取配置、不打开存储、不启动监听。
  * 禁止把 Math.random 用于规则随机或安全凭据，也禁止用原始 JSON.stringify 计算摘要。
  */
 import { createHash, randomBytes } from "node:crypto";
@@ -9,6 +9,7 @@ import { rngFromHostParts } from "./host/random";
 
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
 
+/** ID 主体：丢弃 ≥224 的字节以消除取模偏差，其余按模 32 映射到 32 元字符集，够 12 位即停止。 */
 function runtimeIdBody(): string {
   let body = "";
   while (body.length < 12) {
@@ -42,7 +43,7 @@ const tracer = {
   span: <T>(_name: string, _attrs: Json, fn: () => T): T => fn(),
 };
 
-/** 创建生产宿主服务；ID 使用随机 UUID 后缀，哈希统一走规范 JSON。 */
+/** 创建生产宿主服务；ID 主体为 12 位小写 base32，哈希统一走规范 JSON。 */
 export function createHostServices(): HostServices {
   return {
     ids: (prefix) => `${prefix}-${runtimeIdBody()}`,
