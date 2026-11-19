@@ -28,6 +28,7 @@ const expectedCommandTypes = [
   "task.respond",
   "task.cancel",
   "policy.set",
+  "scenario.draft",
   "scenario.publish",
   "scenario.withdraw",
   "scenario.compensate",
@@ -55,7 +56,7 @@ const broadcastEffect = {
   text: "中继读数持续下降。",
 };
 
-/** 16 种命令的合法 payload，键必须与目录一一对应。 */
+/** 17 种命令的合法 payload，键必须与目录一一对应。 */
 const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
   "campaign.start": { factionId: "human-neutral" },
   "dialogue.say": { targetAgentId: agentId, text: "你好" },
@@ -100,6 +101,13 @@ const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
   "task.respond": { taskId, response: "accept", reasonCode: "busy" },
   "task.cancel": { taskId },
   "policy.set": { key: "watergate.allocation", value: "rotation" },
+  "scenario.draft": {
+    cardId: "card-relay-alarm",
+    version: 1,
+    triggerAtTick: 6,
+    effects: [broadcastEffect],
+    note: "运营草稿",
+  },
   "scenario.publish": { cardId: "card-relay-alarm", version: 1, triggerAtTick: 2 },
   "scenario.withdraw": { cardId: "card-relay-alarm" },
   "scenario.compensate": { cardId: "card-relay-alarm", effects: [broadcastEffect], note: "补偿" },

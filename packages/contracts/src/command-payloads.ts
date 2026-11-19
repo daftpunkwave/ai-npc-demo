@@ -124,6 +124,16 @@ export const policySetPayloadSchema = z
   })
   .strict();
 
+export const scenarioDraftPayloadSchema = z
+  .object({
+    cardId: contentIdSchemas.card,
+    version: z.number().int().positive(),
+    triggerAtTick: z.number().int().nonnegative(),
+    effects: z.array(cardEffectSchema).min(1),
+    note: z.string().min(1),
+  })
+  .strict();
+
 export const scenarioPublishPayloadSchema = z
   .object({
     cardId: contentIdSchemas.card,
