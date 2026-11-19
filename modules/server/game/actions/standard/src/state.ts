@@ -43,16 +43,17 @@ export const taskStateSchema = z
     reserved: resourceAmountsSchema,
     fromStockpileId: z.string().min(1).nullable(),
     toStockpileId: z.string().min(1).nullable(),
-    /** 实际扣减的委托余额；只有委托身份动用库存点时才有记录。 */
-    delegationDraws: z.array(delegationDrawSchema),
+    /** 实际扣减的委托余额；只有委托身份动用库存点时才有记录，旧任务行按空数组补齐。 */
+    delegationDraws: z.array(delegationDrawSchema).default([]),
     patrolStartTick: z.number().int().nonnegative().nullable(),
     patrolEndTick: z.number().int().nonnegative().nullable(),
     workStartTick: z.number().int().nonnegative().nullable(),
     workNodeId: z.string().min(1).nullable(),
-    riskOutcome: riskOutcomeSchema,
+    /** 出发时抽样的风险结果；旧任务行没有该字段时按无延误、无伤势补齐。 */
+    riskOutcome: riskOutcomeSchema.default({ delayTicks: 0, injuredAgentIds: [], teamInjured: false }),
     delayNoticeSent: z.boolean(),
-    /** 修复材料已结算标记：完成与工作中取消共用同一幂等结算。 */
-    materialsConsumed: z.boolean(),
+    /** 修复材料已结算标记：完成与工作中取消共用同一幂等结算；旧任务行没有该字段时按未结算补齐。 */
+    materialsConsumed: z.boolean().default(false),
     failureReason: z.string().min(1).nullable(),
     canceledAtTick: z.number().int().nonnegative().nullable(),
   })
