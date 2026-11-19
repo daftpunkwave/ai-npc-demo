@@ -295,13 +295,13 @@ export interface CampaignView {
   readonly outcome: "equilibrium" | "strained" | null;
 }
 
-/** 委托快照；remaining 是各资源的剩余可动用额度。 */
+/** 委托快照；stockpileId 为 null 表示只委托队伍，remaining 是各资源的剩余可动用额度。 */
 export interface DelegationView {
   readonly delegationId: string;
   readonly grantorFactionId: string;
   readonly granteeId: string;
   readonly teamIds: readonly string[];
-  readonly stockpileId: string;
+  readonly stockpileId: string | null;
   readonly remaining: ResourceAmounts;
   readonly untilTick: number;
 }
@@ -416,7 +416,7 @@ export interface GameWorldPort {
     readonly grantorFactionId: string;
     readonly granteeId: string;
     readonly teamIds: readonly string[];
-    readonly stockpileId: string;
+    readonly stockpileId: string | null;
     readonly maxDraw: ResourceAmounts;
     readonly untilTick: number;
   }): { readonly ok: true; readonly delegationId: string };

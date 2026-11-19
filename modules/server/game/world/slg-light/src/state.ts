@@ -71,7 +71,8 @@ export const delegationStateSchema = z
     grantorFactionId: z.string().min(1),
     granteeId: z.string().min(1),
     teamIds: z.array(z.string().min(1)),
-    stockpileId: z.string().min(1),
+    // null 表示只委托队伍，不附带库存动用权。
+    stockpileId: z.string().min(1).nullable(),
     remaining: resourceAmountsSchema,
     limit: resourceAmountsSchema,
     untilTick: z.number().int().nonnegative(),

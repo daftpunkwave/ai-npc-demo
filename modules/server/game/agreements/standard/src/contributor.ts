@@ -4,7 +4,7 @@
  * 禁止替当事人记忆承诺，也禁止用未提交的任务事实提前判定履约。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；数组索引来自内部 terms/progress，资源键来自受限枚举。 */
-import type { EventEnvelope, Json, Term } from "@ai-npc/contracts";
+import type { EventEnvelope, Json, ReasonCode, Term } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
@@ -60,13 +60,13 @@ function scheduleExpiry(context: AgreementContext, state: AgreementState): void 
 
 function scheduleBreaches(context: AgreementContext, state: AgreementState): void {
   for (const [index, term] of state.terms.entries()) {
-    const deadline = termDeadline(term);
-    if (deadline === null) {
+    // delegate 生效即履约，首版没有撤销命令，不安排违约检查。
+    if (term.kind === "delegate") {
       continue;
     }
     context.tx.schedule(
       "agreement.breach",
-      deadline + 1,
+      termDeadline(term) + 1,
       `agreement-breach:${state.agreementId}:${index}`,
       { agreementId: state.agreementId, termIndex: index },
     );
@@ -78,20 +78,33 @@ function cancelAgreementJobs(context: AgreementContext, state: AgreementState): 
   context.tx.cancelJobs(`agreement-breach:${state.agreementId}`);
 }
 
-function applyActivation(context: AgreementContext, state: AgreementState): void {
+/** 生效写入的结果；失败由 respond 转成拒绝，命令网关回滚整个保存点。 */
+type ActivationResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reasonCode: ReasonCode; readonly safeMessage: string };
+
+function applyActivation(context: AgreementContext, state: AgreementState): ActivationResult {
+  const ports = asPorts(context);
   for (const term of state.terms) {
     if (term.kind === "grant-passage") {
-      asPorts(context)["game.map"].grantPassage({
+      const granted = ports["game.map"].grantPassage({
         roadId: term.roadId,
         granteeFactionId: term.granteeFactionId,
         untilTick: term.untilTick,
         byId: term.obligorId,
       });
+      if (!granted.ok) {
+        return { ok: false, reasonCode: granted.reasonCode, safeMessage: "通行许可未能创建" };
+      }
     } else if (term.kind === "water-allocation") {
-      asPorts(context)["game.world"].setAllocation(term.policy, term.obligorId);
-    } else if (term.kind === "delegate" && term.stockpileId !== null) {
-      asPorts(context)["game.world"].createDelegation({
-        grantorFactionId: asPorts(context)["game.world"].principalFaction(term.obligorId) ?? term.obligorId,
+      const applied = ports["game.world"].setAllocation(term.policy, term.obligorId);
+      // no-change 表示当前分配已等于条款值，条款本已符合，不算写入失败。
+      if (!applied.ok && applied.reasonCode !== "no-change") {
+        return { ok: false, reasonCode: applied.reasonCode, safeMessage: "水闸分配未能写入" };
+      }
+    } else if (term.kind === "delegate") {
+      ports["game.world"].createDelegation({
+        grantorFactionId: ports["game.world"].principalFaction(term.obligorId) ?? term.obligorId,
         granteeId: term.granteeId,
         teamIds: term.teamIds,
         stockpileId: term.stockpileId,
@@ -100,11 +113,15 @@ function applyActivation(context: AgreementContext, state: AgreementState): void
       });
     }
   }
+  return { ok: true };
 }
 
-function activate(context: AgreementContext, state: AgreementState): AgreementState {
+function activate(context: AgreementContext, state: AgreementState): ActivationResult {
   const activated: AgreementState = { ...state, status: "active", activatedAtTick: context.tx.worldTick };
-  applyActivation(context, activated);
+  const applied = applyActivation(context, activated);
+  if (!applied.ok) {
+    return applied;
+  }
   context.tx.put("agreement", activated.agreementId, activated);
   context.tx.emit(
     "AgreementActivated",
@@ -129,7 +146,8 @@ function activate(context: AgreementContext, state: AgreementState): AgreementSt
     }
   }
   context.tx.put("agreement", activated.agreementId, activated);
-  return finishIfFulfilled(context, activated);
+  finishIfFulfilled(context, activated);
+  return { ok: true };
 }
 
 function finishIfFulfilled(context: AgreementContext, state: AgreementState): AgreementState {
@@ -254,7 +272,11 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
     if (invalid !== null) {
       return { kind: "rejected", reasonCode: invalid, safeMessage: "条款在生效前已失效" };
     }
-    activate(context, next);
+    // 生效写入失败时按该原因码拒绝，保存点回滚后不保留回复与部分生效写入。
+    const activation = activate(context, next);
+    if (!activation.ok) {
+      return { kind: "rejected", reasonCode: activation.reasonCode, safeMessage: activation.safeMessage };
+    }
   }
   return { kind: "accepted" };
 }

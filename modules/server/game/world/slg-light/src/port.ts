@@ -211,12 +211,14 @@ class SlgWorldPort implements GameWorldPort {
     };
   }
 
+  /** 查找覆盖该库存点的有效委托；stockpileId 为 null 的仅队伍委托不提供动用权。 */
   private findDelegation(principalId: string, stockpileId: string): DelegationState | null {
     const candidates = this.tx()
       .list<DelegationState>("delegation")
       .filter(
         (entry) =>
           entry.state.granteeId === principalId &&
+          entry.state.stockpileId !== null &&
           entry.state.stockpileId === stockpileId &&
           entry.state.untilTick >= this.tx().worldTick,
       );
@@ -376,7 +378,7 @@ class SlgWorldPort implements GameWorldPort {
     readonly grantorFactionId: string;
     readonly granteeId: string;
     readonly teamIds: readonly string[];
-    readonly stockpileId: string;
+    readonly stockpileId: string | null;
     readonly maxDraw: ResourceAmounts;
     readonly untilTick: number;
   }): { readonly ok: true; readonly delegationId: string } {

@@ -14,13 +14,10 @@ import {
 
 type TermContext = HandlerContext<GameModulePorts, unknown>;
 
-/** 条款的截止 tick；delegate 无违约检查。 */
-export function termDeadline(term: Term): number | null {
-  if (term.kind === "grant-passage" || term.kind === "water-allocation") {
+/** 条款的截止 tick；八种条款都有期限，delegate 的期限只用于校验，不安排违约检查。 */
+export function termDeadline(term: Term): number {
+  if (term.kind === "grant-passage" || term.kind === "water-allocation" || term.kind === "delegate") {
     return term.untilTick;
-  }
-  if (term.kind === "delegate") {
-    return null;
   }
   return term.byTick;
 }
@@ -33,7 +30,7 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
     return "obligor-not-party";
   }
   const deadline = termDeadline(term);
-  if (deadline !== null && (deadline <= context.tx.worldTick || deadline > context.tx.worldTick + 168)) {
+  if (deadline <= context.tx.worldTick || deadline > context.tx.worldTick + 168) {
     return "deadline-out-of-range";
   }
   if (term.kind === "deliver") {
@@ -68,7 +65,8 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
     if (road === undefined || road.controlledBy === undefined) {
       return "invalid-terms";
     }
-    if (ports["game.world"].principalFaction(term.obligorId) !== road.controlledBy) {
+    // 地图端口按战略 Agent 主体的 ID 判断控制权，不接受同派系的角色或玩家代签。
+    if (road.controlledBy !== term.obligorId) {
       return "invalid-terms";
     }
   } else if (term.kind === "water-allocation") {
@@ -76,16 +74,22 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
       return "invalid-terms";
     }
   } else if (term.kind === "delegate") {
-    if (term.stockpileId === null) {
+    // 义务人必须是队伍/库存点所属派系的战略 Agent；普通受托人的可使用授权不能再次签发。
+    if (!content.factions.has(term.obligorId)) {
       return "invalid-terms";
     }
     for (const teamId of term.teamIds) {
-      if (!content.teams.has(teamId) || !ports["game.world"].canDispatchTeam(term.obligorId, teamId)) {
+      const team = content.teams.get(teamId);
+      if (team === undefined || team.ownerFactionId !== term.obligorId) {
         return "invalid-terms";
       }
     }
-    if (!content.stockpiles.has(term.stockpileId) || ports["game.world"].drawAuthority(term.obligorId, term.stockpileId).kind === "none") {
-      return "invalid-terms";
+    // stockpileId 为 null 表示只委托队伍，不附带任何库存动用权。
+    if (term.stockpileId !== null) {
+      const stockpile = content.stockpiles.get(term.stockpileId);
+      if (stockpile === undefined || stockpile.ownerFactionId !== term.obligorId) {
+        return "invalid-terms";
+      }
     }
   }
   return null;
