@@ -45,6 +45,7 @@ import { filterPlan, loadAssembly, resolveServerAssembly, resolveSessionAssembli
 import { buildRunManifest, readFrozenManifest, type RunManifest } from "./host/manifest";
 import { generateRunSeed } from "./host/random";
 import {
+  clockConfigOf,
   createServerRuntime,
   parseTransportConfig,
   plannedModuleForCapability,
@@ -107,6 +108,41 @@ function clockView(clock: ClockState): ClockView {
     mode: clock.mode,
     runVersion: clock.runVersion,
   };
+}
+
+/** 单个待释放资源：标签只用于错误汇总与日志，不参与资源寻址。 */
+export interface DisposalStep {
+  readonly label: string;
+  readonly dispose: () => Promise<void>;
+}
+
+/**
+ * 按传入顺序的逆序释放资源；任一步失败都继续释放其余实例，最后把全部错误汇总抛出。
+ * 启动失败路径用日志保留原始启动错误，关闭路径用 AggregateError 让调用方看到未完成的清理。
+ */
+export async function disposeInReverse(steps: readonly DisposalStep[]): Promise<void> {
+  const failures: { readonly label: string; readonly error: unknown }[] = [];
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index];
+    if (step === undefined) {
+      continue;
+    }
+    try {
+      await step.dispose();
+    } catch (error) {
+      failures.push({ label: step.label, error });
+    }
+  }
+  if (failures.length === 0) {
+    return;
+  }
+  const detail = failures
+    .map((failure) => `${failure.label}: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`)
+    .join("；");
+  throw new AggregateError(
+    failures.map((failure) => failure.error),
+    `宿主清理未全部完成：${detail}`,
+  );
 }
 
 /**
@@ -739,19 +775,61 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       }
     }
   } catch (error) {
-    await activeStarted?.dispose();
-    await storageStarted.dispose();
+    // 启动失败时逆序释放已创建实例；清理失败只记日志，保留原始启动错误。
+    try {
+      await disposeInReverse([
+        { label: "存储", dispose: () => storageStarted.dispose() },
+        {
+          label: "已启动模块",
+          dispose: async () => {
+            await activeStarted?.dispose();
+          },
+        },
+      ]);
+    } catch (cleanupError) {
+      host.logger.error("启动失败后的清理未全部完成", {
+        message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
     throw error;
   }
   if (activeStarted === null || serverRuntime === null || sessionAssemblies === null) {
-    await storageStarted.dispose();
+    await disposeInReverse([{ label: "存储", dispose: () => storageStarted.dispose() }]);
     throw new Error("宿主运行时未初始化");
   }
   const runtime = serverRuntime;
   const startedModules = activeStarted;
   const sessionAssembly = sessionAssemblies;
+  /** 在线装配声明的时钟配置；断线自动暂停阈值取 provider 的有效配置。 */
+  const clockConfig = clockConfigOf(activeStartup.plan);
+  const autoPauseAfterDisconnectMs = clockConfig.autoPauseAfterDisconnectMs;
+  let playerConnections = 0;
+  let autoPauseTimer: ReturnType<typeof setTimeout> | null = null;
+  let closePromise: Promise<void> | null = null;
 
   const clockState = () => runtime.clock.read(activeBranchId);
+
+  /**
+   * 记录运营性生命周期事件（自动暂停等）；与领域事件分离。
+   * 审计写入失败只记日志，不覆盖触发它的业务结果。
+   */
+  const recordLifecycleEvent = (type: string, subjectId: string, payload: Json): void => {
+    try {
+      storage.transact((tx) => {
+        const branch = tx.rows("branches").get({ branch_id: activeBranchId });
+        const runId = branch !== null && typeof branch["run_id"] === "string" ? branch["run_id"] : null;
+        tx.run(
+          "INSERT INTO lifecycle_events (run_id, branch_id, type, subject_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [runId, activeBranchId, type, subjectId, canonicalJson(payload), host.nowIso()],
+        );
+      });
+    } catch (error) {
+      host.logger.error("生命周期审计写入失败", {
+        type,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   const control = (mode: "pause" | "start", expectedRunVersion: number): ClockView => {
     const result = mode === "pause"
@@ -761,6 +839,10 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       throw result.reasonCode === "version-conflict"
         ? new DomainError("version-conflict", "时钟版本冲突")
         : new DomainError("invalid-state", "时钟控制参数非法");
+    }
+    // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时。
+    if (mode === "start" && playerConnections === 0) {
+      scheduleAutoPause();
     }
     return clockView(result.clock);
   };
@@ -1249,6 +1331,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       onBranchChanged: (nextBranchId) => {
         activeBranchId = nextBranchId;
       },
+      // 传输层只上报玩家连接数；暂停策略与审计留在宿主。
+      onPlayerConnectionsChanged: (connected) => handlePlayerConnections(connected),
       identities: [
         createIdentity(options.playerToken, "player-1", "player", ["player"], activeWorldId, activeBranchId),
         createIdentity(options.consoleToken, "console-admin", "operator", ["operator", "researcher", "evaluator"], activeWorldId, activeBranchId),
@@ -1267,9 +1351,81 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       healthStatus: () => (workerFailed ? "degraded" : "ready"),
     });
   } catch (error) {
-    await startedModules.dispose();
-    await storageStarted.dispose();
+    // 创建传输应用失败：先释放已启动模块，再释放存储；清理失败只记日志。
+    try {
+      await disposeInReverse([
+        { label: "存储", dispose: () => storageStarted.dispose() },
+        { label: "已启动模块", dispose: () => startedModules.dispose() },
+      ]);
+    } catch (cleanupError) {
+      host.logger.error("传输创建失败后的清理未全部完成", {
+        message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
     throw error;
+  }
+
+  const serverApp = app;
+
+  const clearAutoPauseTimer = (): void => {
+    if (autoPauseTimer !== null) {
+      clearTimeout(autoPauseTimer);
+      autoPauseTimer = null;
+    }
+  };
+
+  /**
+   * 全部玩家连接断开后启动一次自动暂停计时；阈值来自时钟装配配置。
+   * 计时器 unref，重连或关闭时取消；暂停后 tick 不再推进，离线时间不补算。
+   */
+  function scheduleAutoPause(): void {
+    if (autoPauseTimer !== null || playerConnections > 0 || workerFailed) {
+      return;
+    }
+    autoPauseTimer = setTimeout(() => {
+      autoPauseTimer = null;
+      if (playerConnections > 0) {
+        return;
+      }
+      const clock = clockState();
+      if (clock.mode !== "running") {
+        return;
+      }
+      const paused = runtime.clock.pause(activeBranchId, clock.runVersion);
+      if (!paused.ok) {
+        host.logger.warn("玩家断线超时但自动暂停未生效", {
+          branchId: activeBranchId,
+          reason: paused.reasonCode,
+        });
+        return;
+      }
+      host.logger.warn("玩家全部断开超过阈值，已自动暂停时钟", {
+        branchId: activeBranchId,
+        afterMs: autoPauseAfterDisconnectMs,
+        worldTick: clock.worldTick,
+      });
+      recordLifecycleEvent("ClockAutoPaused", "system:offline-timeout", {
+        reason: "players-disconnected",
+        afterMs: autoPauseAfterDisconnectMs,
+        worldTick: clock.worldTick,
+        runVersion: paused.clock.runVersion,
+      });
+      serverApp.notifyWorldChanged();
+    }, autoPauseAfterDisconnectMs);
+    autoPauseTimer.unref();
+  }
+
+  /** 玩家连接数变化：重连取消计时；从在线变为全断时开始计时。 */
+  function handlePlayerConnections(connected: number): void {
+    const previouslyConnected = playerConnections > 0;
+    playerConnections = connected;
+    if (connected > 0) {
+      clearAutoPauseTimer();
+      return;
+    }
+    if (previouslyConnected) {
+      scheduleAutoPause();
+    }
   }
 
   try {
@@ -1304,7 +1460,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
           branchId: activeBranchId,
           targetTick: clock.worldTick + 1,
         });
-        app.notifyWorldChanged();
+        serverApp.notifyWorldChanged();
       }
     } catch (error) {
       workerFailed = true;
@@ -1319,7 +1475,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   schedule();
 
   return {
-    app,
+    app: serverApp,
     storage,
     authority,
     // 在线分支切换后仍反映当前在线入口，调用方不需要重新启动宿主即可读取。
@@ -1330,16 +1486,26 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       return activeWorldId;
     },
     transport: runtime.transport,
-    listen: () => runtime.transport.listen(app),
+    listen: () => runtime.transport.listen(serverApp),
     close: async () => {
-      workerFailed = true;
-      if (timer !== null) {
-        clearTimeout(timer);
+      if (closePromise !== null) {
+        return closePromise;
       }
-      // 监听与关闭都经传输端口完成，宿主不依赖具体传输实现。
-      await runtime.transport.close(app);
-      await startedModules.dispose();
-      await storageStarted.dispose();
+      closePromise = (async () => {
+        workerFailed = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        clearAutoPauseTimer();
+        // 关闭按传输、模块、存储的逆序释放；任一步抛错仍继续，最后汇总错误。
+        await disposeInReverse([
+          { label: "存储", dispose: () => storageStarted.dispose() },
+          { label: "已启动模块", dispose: () => startedModules.dispose() },
+          { label: "传输", dispose: () => runtime.transport.close(serverApp) },
+        ]);
+      })();
+      return closePromise;
     },
   };
 }

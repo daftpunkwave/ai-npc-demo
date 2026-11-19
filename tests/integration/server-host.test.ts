@@ -1,15 +1,15 @@
 /**
- * 验证服务端宿主 bootstrap：真实存储、内容、authority、在线分支、HTTP 应用、多角色令牌与监听失败。
+ * 验证服务端宿主 bootstrap：真实存储、内容、authority、在线分支、HTTP 应用、多角色令牌、监听失败、断线自动暂停与启动/关闭清理。
  * 依赖临时数据目录、content 包与冻结的 RunSpec/manifest；不监听固定端口。
  * 禁止用假存储替代首次启动路径，也禁止用当前入参覆盖已冻结的在线 run。
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssemblyDescriptor, AuthContext, Json, StorageCell } from "@ai-npc/contracts";
+import type { AssemblyDescriptor, AuthContext, Json, ModuleDefinition, StorageCell } from "@ai-npc/contracts";
 import {
   campaignResponseSchema,
   capabilityIdSchema,
@@ -19,7 +19,10 @@ import {
 } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { clockConfigSchema } from "@ai-npc/mod-game-clock-controlled";
+import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import { transportModuleDefinition } from "@ai-npc/mod-transport-http-ws-fastify";
 import {
+  disposeInReverse,
   loadAssembly,
   serverModuleDefinitions,
   startHost,
@@ -238,6 +241,28 @@ function configuredAssembly(overrides: {
       server: { ...base.realms.server, bindings },
     },
   };
+}
+
+/** 等待条件成立；服务端异步事件（WS 关闭、计时器）没有同步信号。 */
+async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error("等待条件超时");
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+}
+
+/** 读取在线分支时钟行；测试只经 StoragePort 访问。 */
+function clockRow(host: RunningHost): Readonly<Record<string, StorageCell>> {
+  const row = host.storage.transact((tx) => tx.branch(host.branchId).table("clock").get({}));
+  if (row === null) {
+    throw new Error("在线分支缺少时钟行");
+  }
+  return row;
 }
 
 describe("服务端宿主", () => {
@@ -1060,6 +1085,176 @@ describe("服务端宿主", () => {
     } finally {
       await new Promise<void>((resolve) => { blocker.close(() => resolve()); });
     }
+  }, 30_000);
+
+  it("全部玩家断线超过阈值后自动暂停且不补算，重连取消计时并写审计", async () => {
+    const port = await freePort();
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      transportPort: port,
+      assembly: configuredAssembly({ clock: { secondsPerTick: 1, autoPauseAfterDisconnectMs: 600 } }),
+    });
+    hosts.push(host);
+    await host.listen();
+    const session = await loginSession(host, "player-token");
+    const mode = (): string => String(clockRow(host)["mode"]);
+    const tick = (): number => Number(clockRow(host)["world_tick"]);
+
+    const first = connectStream(`ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(await ticketFor(host, session))}`);
+    expect(await first.next()).toMatchObject({ type: "hello" });
+    const headers = { authorization: `Bearer ${session}` };
+    const resumed = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/resume",
+      headers,
+      payload: { operationId: "op-000000000901", expectedRunVersion: Number(clockRow(host)["run_version"]) },
+    });
+    expect(resumed.statusCode).toBe(200);
+    await waitFor(() => mode() === "running");
+
+    // 断线后计时开始；阈值内重连取消计时，时钟继续运行。
+    first.close();
+    await waitFor(() => host.app.streamStats().connections === 0);
+    const second = connectStream(`ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(await ticketFor(host, session))}`);
+    expect(await second.next()).toMatchObject({ type: "hello" });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 500);
+    });
+    expect(mode()).toBe("running");
+
+    // 再次断线并超过阈值：自动暂停，之后 tick 不再推进。
+    second.close();
+    await waitFor(() => mode() === "paused", 3000);
+    const pausedTick = tick();
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 1200);
+    });
+    expect(tick()).toBe(pausedTick);
+
+    const audit = host.storage.transact((tx) =>
+      tx.all(
+        "SELECT type, payload_json FROM lifecycle_events WHERE branch_id = ? AND type = 'ClockAutoPaused' ORDER BY seq",
+        [host.branchId],
+      ),
+    );
+    expect(audit).toHaveLength(1);
+    expect(JSON.parse(String(audit[0]?.["payload_json"]))).toMatchObject({
+      reason: "players-disconnected",
+      afterMs: 600,
+    });
+  }, 30_000);
+
+  it("逆序释放时单步抛错仍继续其余步骤并汇总错误", async () => {
+    const order: string[] = [];
+    await expect(
+      disposeInReverse([
+        { label: "存储", dispose: async () => { order.push("storage"); } },
+        {
+          label: "已启动模块",
+          dispose: async () => {
+            order.push("modules");
+            throw new Error("模块关闭失败");
+          },
+        },
+        { label: "传输", dispose: async () => { order.push("transport"); } },
+      ]),
+    ).rejects.toThrow(/模块关闭失败/);
+    expect(order).toEqual(["transport", "modules", "storage"]);
+  });
+
+  it("关闭时某一步抛错仍释放其余实例、清理定时器并可重新绑定端口", async () => {
+    const port = await freePort();
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      transportPort: port,
+    });
+    await host.listen();
+    const session = await loginSession(host, "player-token");
+    // 恢复时钟并确保 worker 定时器已安排；关闭后必须清除。
+    const resumed = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/resume",
+      headers: { authorization: `Bearer ${session}` },
+      payload: { operationId: "op-000000000902", expectedRunVersion: Number(clockRow(host)["run_version"]) },
+    });
+    expect(resumed.statusCode).toBe(200);
+
+    const originalClose = host.transport.close.bind(host.transport);
+    const closeSpy = vi.spyOn(host.transport, "close").mockImplementation(async (app) => {
+      await originalClose(app);
+      throw new Error("注入关闭失败");
+    });
+    try {
+      await expect(host.close()).rejects.toThrow(/注入关闭失败/);
+    } finally {
+      closeSpy.mockRestore();
+    }
+    // 存储已关闭，继续访问会失败。
+    expect(() => host.storage.transact((tx) => tx.rows("branches").list())).toThrow();
+
+    // 监听端口已释放，可以重新绑定。
+    const rebind = createServer();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        rebind.once("error", reject);
+        rebind.listen(port, "127.0.0.1", () => resolve());
+      });
+    } finally {
+      await new Promise<void>((resolve) => {
+        rebind.close(() => resolve());
+      });
+    }
+  }, 30_000);
+
+  it("启动中途失败时逆序释放已创建的存储与模块，并可重试启动", async () => {
+    const dataDir = tempDataDir();
+    const created: string[] = [];
+    const disposed: string[] = [];
+    const definitions: ModuleDefinition[] = serverModuleDefinitions.map((definition): ModuleDefinition => {
+      if (definition.id === transportModuleDefinition.id) {
+        return {
+          ...definition,
+          create: async () => {
+            throw new Error("注入传输启动失败");
+          },
+        };
+      }
+      const label = definition.id === storageModuleDefinition.id ? "storage" : definition.id;
+      return {
+        ...definition,
+        create: async (input) => {
+          created.push(label);
+          const instance = await definition.create(input);
+          return {
+            ...instance,
+            dispose: async () => {
+              disposed.push(label);
+              await instance.dispose();
+            },
+          };
+        },
+      };
+    });
+
+    await expect(
+      startHost({
+        dataDir,
+        playerToken: "player-token",
+        consoleToken: "console-token",
+        moduleDefinitions: definitions,
+      }),
+    ).rejects.toThrow("注入传输启动失败");
+    // 存储最先创建、最后释放；其余已创建实例按创建逆序释放。
+    expect(created[0]).toBe("storage");
+    expect(disposed).toEqual([...created].reverse());
+
+    // 残留定时器或未关闭的存储会阻塞重试；使用真实定义在同一目录重新启动。
+    const retried = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(retried);
   }, 30_000);
 
   it("测试主装配可启动并提供健康状态", async () => {

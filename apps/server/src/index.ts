@@ -24,6 +24,7 @@ export type {
 export { generateRunSeed, rngFor } from "./host/random";
 export { canonicalHasher } from "./host-services";
 export {
+  clockConfigOf,
   createSaveService,
   createServerRuntime,
   plannedModuleForCapability,
@@ -48,8 +49,8 @@ export type {
   WorldTickContext,
   WorldTickResult,
 } from "./tick";
-export { startHost } from "./host";
-export type { HostOptions, RunningHost } from "./host";
+export { disposeInReverse, startHost } from "./host";
+export type { DisposalStep, HostOptions, RunningHost } from "./host";
 export {
   assertDistinctTokens,
   credentialsFileName,

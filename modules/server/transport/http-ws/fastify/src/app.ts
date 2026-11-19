@@ -1,16 +1,15 @@
 /**
  * 创建 Fastify HTTP/WS 应用：登录、会话、装配握手、玩家读接口、命令与回执、时钟控制、存档、玩家流与统一错误响应。
- * 依赖 authority、装配的权限端口、回执只读查询端口、投影/会话/开局/时钟/存档回调与身份令牌；不直接查存储表。
+ * 依赖 authority、装配的权限端口、回执只读查询端口、投影/会话/开局/时钟/存档回调与身份令牌；不直接查存储表，会话、票据、增量与重放由 StreamHub 管理。
  * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
-import websocket, { type WebSocket } from "@fastify/websocket";
+import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import {
   campaignResetRequestSchema,
   campaignResetResponseSchema,
   campaignResponseSchema,
-  clientStreamMessageSchema,
   clockControlRequestSchema,
   clockResponseSchema,
   commandEnvelopeSchema,
@@ -39,13 +38,13 @@ import {
   type ConversationResponse,
   type ErrorCode,
   type Json,
-  type PlayerNotificationView,
   type PlayerProjection,
   type ResolvedModuleSet,
   type SessionDescriptor,
   type StartOption,
   type StreamChannel,
 } from "@ai-npc/contracts";
+import { StreamHub, type StreamSession, type StreamSocket, type StreamStats } from "./stream-hub";
 
 /** 传输层需要的命令网关视图；不依赖 authority 实现包。 */
 function executeCommandHook(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
@@ -231,51 +230,12 @@ export interface ServerAppOptions {
   readonly tokens: typeof tokenHook;
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: typeof onBranchChangedHook;
+  /** 玩家 WS 连接数变化；宿主据此在全部玩家断线超时后自动暂停。 */
+  readonly onPlayerConnectionsChanged?: (connected: number) => void;
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
   /** 认证、票据与过期判断使用的当前毫秒时间；默认 Date.now，测试可注入。 */
   readonly now?: () => number;
 }
-
-/** 会话的稳定身份；令牌只用于 HTTP 认证，撤销按 sessionId 匹配。 */
-interface Session {
-  readonly sessionId: string;
-  readonly auth: AuthContext;
-  readonly token: string;
-  readonly expiresAt: number;
-}
-
-/** 一次性 WS 票据，只记录绑定的会话与失效时间。 */
-interface StreamTicket {
-  readonly sessionId: string;
-  readonly expiresAt: number;
-}
-
-/** 重放缓冲中的一条玩家投影增量。 */
-interface ReplayFrame {
-  readonly streamSeq: number;
-  readonly projectionVersion: number;
-  readonly set: Record<string, unknown>;
-}
-
-/** 每个 (session, channel) 独立的有界重放缓冲，绑定分支与代次。 */
-interface ReplayBuffer {
-  readonly sessionId: string;
-  readonly channel: StreamChannel;
-  generation: number;
-  branchId: string;
-  readonly frames: ReplayFrame[];
-}
-
-/** 已握手连接；只有订阅集合内的频道才接收推送。 */
-interface Connection {
-  readonly sessionId: string;
-  readonly subscriptions: Set<StreamChannel>;
-}
-
-const playerChannel: StreamChannel = "player";
-const replayLimit = 200;
-const sessionTtlMs = 12 * 60 * 60 * 1000;
-const ticketTtlMs = 30_000;
 
 /**
  * 按策略端口与会话角色计算可订阅频道。
@@ -311,60 +271,6 @@ function bearer(request: FastifyRequest): string | null {
 
 /** 会话分页未指定 limit 时取投影同样的窗口；上限由公共 schema 固定为 100。 */
 const defaultConversationLimit = 50;
-
-/**
- * append 帧的单条内容：只携带新增的一条对白或提醒，不复制整份投影。
- * 投影本身仍由 snapshot/delta 维护；重连按快照与增量重建，不重放 append。
- */
-interface AppendItem {
-  readonly kind: "dialogue" | "notification";
-  readonly item: ConversationLine | PlayerNotificationView;
-}
-
-/** 提醒的稳定键；派生提醒的 worldTick 会随 tick 重算，不参与同一提醒的识别。 */
-function notificationKey(item: PlayerNotificationView): string {
-  return `${item.kind}\u0000${item.text}`;
-}
-
-/**
- * 找出上次发布后新增的对白与提醒。
- * 对白按 dialogueId 去重；提醒按稳定键做多重集差，避免同一持续状态在每个 tick 重复推送。
- */
-function appendedItems(previous: PlayerProjection, next: PlayerProjection): readonly AppendItem[] {
-  const known = new Set(previous.conversations.map((line) => line.dialogueId));
-  const items: AppendItem[] = [];
-  for (const line of next.conversations) {
-    if (known.has(line.dialogueId)) {
-      continue;
-    }
-    items.push({ kind: "dialogue", item: line });
-  }
-  const previousCounts = new Map<string, number>();
-  for (const notification of previous.notifications) {
-    const key = notificationKey(notification);
-    previousCounts.set(key, (previousCounts.get(key) ?? 0) + 1);
-  }
-  const groups = new Map<string, PlayerNotificationView[]>();
-  for (const notification of next.notifications) {
-    const key = notificationKey(notification);
-    const group = groups.get(key);
-    if (group === undefined) {
-      groups.set(key, [notification]);
-    } else {
-      group.push(notification);
-    }
-  }
-  for (const [key, group] of groups) {
-    const added = group.length - (previousCounts.get(key) ?? 0);
-    if (added <= 0) {
-      continue;
-    }
-    for (const notification of group.slice(group.length - added)) {
-      items.push({ kind: "notification", item: notification });
-    }
-  }
-  return items;
-}
 
 /** 解析会话分页查询；只接受非负整数，非法值返回 null 由路由按 400 处理。 */
 function conversationQueryOf(query: unknown): ConversationQuery | null {
@@ -481,6 +387,8 @@ export interface ServerApp {
   notifyWorldChanged(): void;
   /** 当前监听地址；尚未监听时返回 null，供测试建立真实连接。 */
   address(): { readonly host: string; readonly port: number } | null;
+  /** 流会话、票据、连接与重放缓冲的计数；用于确认后台对象有界。 */
+  streamStats(): StreamStats;
 }
 
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
@@ -490,18 +398,25 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
   const now = options.now ?? (() => Date.now());
-  const sessions = new Map<string, Session>();
-  const sessionById = new Map<string, Session>();
-  const tickets = new Map<string, StreamTicket>();
-  const connections = new Map<WebSocket, Connection>();
-  const replayBuffers = new Map<string, ReplayBuffer>();
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   let branchId = options.branchId;
-  let generation = 0;
-  let streamSeq = 0;
-  let projectionVersion = 0;
-  /** 最近一次成功发布的投影；用于识别新增对白与提醒。分支切换后重新建立基线。 */
-  let lastProjection: PlayerProjection | null = options.projection();
+  const hub = new StreamHub({
+    projection: () => options.projection(),
+    channelsFor: (auth) => channelsFor(options.accessPolicy, auth),
+    ids: (prefix) => options.ids(prefix),
+    tokens: (kind) => options.tokens(kind),
+    now,
+    ...(options.onPlayerConnectionsChanged === undefined
+      ? {}
+      : { onPlayerConnectionsChanged: options.onPlayerConnectionsChanged }),
+    onBranchChanged: (nextBranchId) => {
+      branchId = nextBranchId;
+      options.onBranchChanged?.(nextBranchId);
+    },
+  });
+  hub.setBranch(branchId);
+  /** HTTP 会话视图复用流中心的会话结构；分支在认证时按当前在线入口刷新。 */
+  type Session = StreamSession;
 
   /** 错误码到 HTTP 状态的唯一映射；业务规则拒绝仍返回 200 与 rejected receipt。 */
   const statusByErrorCode: Readonly<Record<ErrorCode, number>> = {
@@ -630,254 +545,6 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
         }).allowed,
     );
 
-  /** 关闭连接；对已关闭或半关闭的连接不抛错。 */
-  const closeSocket = (socket: WebSocket, code: number, reason: string): void => {
-    try {
-      socket.close(code, reason);
-    } catch {
-      socket.terminate();
-    }
-  };
-
-  const sendPayload = (socket: WebSocket, payload: string): void => {
-    try {
-      socket.send(payload);
-    } catch {
-      closeSocket(socket, 1012, "stream unavailable");
-    }
-  };
-
-  const sendMessage = (socket: WebSocket, message: Record<string, unknown>): void => {
-    sendPayload(socket, JSON.stringify(message));
-  };
-
-  const sendError = (socket: WebSocket, code: ErrorCode, safeMessage: string): void => {
-    sendMessage(socket, { type: "error", code, safeMessage });
-  };
-
-  const bufferKey = (sessionId: string, channel: StreamChannel): string => `${sessionId}\u0000${channel}`;
-
-  const resetReplayBuffer = (buffer: ReplayBuffer): void => {
-    buffer.generation = generation;
-    buffer.branchId = branchId;
-    buffer.frames.length = 0;
-  };
-
-  const ensureReplayBuffer = (sessionId: string, channel: StreamChannel): ReplayBuffer => {
-    const key = bufferKey(sessionId, channel);
-    const existing = replayBuffers.get(key);
-    if (existing !== undefined) {
-      if (existing.generation !== generation || existing.branchId !== branchId) {
-        resetReplayBuffer(existing);
-      }
-      return existing;
-    }
-    const created: ReplayBuffer = { sessionId, channel, generation, branchId, frames: [] };
-    replayBuffers.set(key, created);
-    return created;
-  };
-
-  /** 按当前分支、代次与最新序号筛选连续增量；不满足时返回 null，由调用方改发快照。 */
-  const selectReplay = (buffer: ReplayBuffer, fromStreamSeq: number | null): readonly ReplayFrame[] | null => {
-    if (fromStreamSeq === null || buffer.generation !== generation || buffer.branchId !== branchId) {
-      return null;
-    }
-    const frames = buffer.frames.filter((frame) => frame.streamSeq > fromStreamSeq);
-    const first = frames.at(0);
-    const last = frames.at(-1);
-    if (first === undefined || last === undefined) {
-      return null;
-    }
-    if (first.streamSeq !== fromStreamSeq + 1 || last.streamSeq !== streamSeq) {
-      return null;
-    }
-    return frames;
-  };
-
-  /**
-   * 撤销会话：删除会话与绑定票据，关闭该会话的全部连接并丢弃重放缓冲。
-   * 同一会话重复注销时直接返回，不抛错。
-   */
-  const revokeSession = (sessionId: string, reason: string): void => {
-    const session = sessionById.get(sessionId);
-    if (session !== undefined) {
-      sessionById.delete(sessionId);
-      if (sessions.get(session.token) === session) {
-        sessions.delete(session.token);
-      }
-    }
-    for (const [ticketValue, ticket] of [...tickets]) {
-      if (ticket.sessionId === sessionId) {
-        tickets.delete(ticketValue);
-      }
-    }
-    for (const [socket, connection] of [...connections]) {
-      if (connection.sessionId !== sessionId) {
-        continue;
-      }
-      connections.delete(socket);
-      closeSocket(socket, 4401, reason);
-    }
-    for (const [key, buffer] of [...replayBuffers]) {
-      if (buffer.sessionId === sessionId) {
-        replayBuffers.delete(key);
-      }
-    }
-  };
-
-  /** 返回仍有效的会话；已过期或已注销时返回 null，并顺带撤销过期会话。 */
-  const activeSession = (sessionId: string): Session | null => {
-    const session = sessionById.get(sessionId);
-    if (session === undefined) {
-      return null;
-    }
-    if (session.expiresAt <= now()) {
-      revokeSession(sessionId, "session expired");
-      return null;
-    }
-    return session;
-  };
-
-  const sendSnapshot = (socket: WebSocket, channel: StreamChannel): void => {
-    if (channel !== playerChannel) {
-      // 控制台频道没有投影快照，订阅后等待增量事件。
-      return;
-    }
-    let projection: PlayerProjection;
-    try {
-      projection = options.projection();
-    } catch {
-      closeSocket(socket, 1012, "projection unavailable");
-      return;
-    }
-    sendMessage(socket, { type: "snapshot", channel, streamSeq, projectionVersion, data: projection });
-  };
-
-  const publishDelta = (): boolean => {
-    let projection: PlayerProjection;
-    try {
-      projection = options.projection();
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("尚未初始化")) {
-        return false;
-      }
-      throw error;
-    }
-    const appends = lastProjection === null ? [] : appendedItems(lastProjection, projection);
-    lastProjection = projection;
-    streamSeq += 1;
-    projectionVersion += 1;
-    const set = { ...projection } as Record<string, unknown>;
-    const frame: ReplayFrame = { streamSeq, projectionVersion, set };
-    for (const buffer of replayBuffers.values()) {
-      if (buffer.channel !== playerChannel) {
-        continue;
-      }
-      if (buffer.generation !== generation || buffer.branchId !== branchId) {
-        resetReplayBuffer(buffer);
-      }
-      buffer.frames.push(frame);
-      if (buffer.frames.length > replayLimit) {
-        buffer.frames.shift();
-      }
-    }
-    const payload = JSON.stringify({ type: "delta", channel: playerChannel, ...frame });
-    for (const [socket, connection] of [...connections]) {
-      if (!connection.subscriptions.has(playerChannel) || activeSession(connection.sessionId) === null) {
-        continue;
-      }
-      sendPayload(socket, payload);
-    }
-    // 新对白与新提醒按单条推送；同一 streamSeq 是与本次投影发布对应的版本。
-    for (const append of appends) {
-      const appendPayload = JSON.stringify({
-        type: "append",
-        channel: playerChannel,
-        streamSeq,
-        kind: append.kind,
-        item: append.item,
-      });
-      for (const [socket, connection] of [...connections]) {
-        if (!connection.subscriptions.has(playerChannel) || activeSession(connection.sessionId) === null) {
-          continue;
-        }
-        sendPayload(socket, appendPayload);
-      }
-    }
-    return true;
-  };
-
-  /** 分支切换：递增代次与序号，清空旧分支缓冲，并向已订阅连接强制发送快照。 */
-  const applyBranchChange = (nextBranchId: string): void => {
-    branchId = nextBranchId;
-    generation += 1;
-    streamSeq += 1;
-    projectionVersion += 1;
-    // 旧分支的投影不再可作为新增判断基线。
-    lastProjection = null;
-    for (const buffer of replayBuffers.values()) {
-      resetReplayBuffer(buffer);
-    }
-    options.onBranchChanged?.(nextBranchId);
-    for (const [socket, connection] of [...connections]) {
-      if (activeSession(connection.sessionId) === null) {
-        continue;
-      }
-      for (const channel of [...connection.subscriptions]) {
-        sendSnapshot(socket, channel);
-      }
-    }
-  };
-
-  const handleStreamMessage = (socket: WebSocket, data: Buffer): void => {
-    const connection = connections.get(socket);
-    if (connection === undefined) {
-      return;
-    }
-    let message: unknown;
-    try {
-      message = JSON.parse(data.toString());
-    } catch {
-      sendError(socket, "validation", "消息不是 JSON");
-      return;
-    }
-    const parsed = clientStreamMessageSchema.safeParse(message);
-    if (!parsed.success) {
-      sendError(socket, "validation", "消息格式不合法");
-      return;
-    }
-    const value = parsed.data;
-    if (value.type === "ping") {
-      sendMessage(socket, { type: "pong" });
-      return;
-    }
-    if (value.type === "ack") {
-      return;
-    }
-    const session = activeSession(connection.sessionId);
-    if (session === null) {
-      closeSocket(socket, 4401, "session expired");
-      return;
-    }
-    // 订阅前按当前会话角色重新询问策略端口；被拒频道不加入订阅集合，也不接收后续推送。
-    if (!channelsFor(options.accessPolicy, session.auth).includes(value.channel)) {
-      sendError(socket, "forbidden", "频道不可用");
-      return;
-    }
-    const buffer = ensureReplayBuffer(connection.sessionId, value.channel);
-    const replay = selectReplay(buffer, value.fromStreamSeq);
-    connection.subscriptions.add(value.channel);
-    if (replay === null) {
-      // 无可连续补发的增量时以完整快照重建基线。
-      buffer.frames.length = 0;
-      sendSnapshot(socket, value.channel);
-      return;
-    }
-    for (const frame of replay) {
-      sendPayload(socket, JSON.stringify({ type: "delta", channel: value.channel, ...frame }));
-    }
-  };
-
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
@@ -887,17 +554,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
 
   const authenticate = (request: FastifyRequest, reply: FastifyReply): Session | null => {
     const token = bearer(request);
-    const session = token === null ? undefined : sessions.get(token);
-    if (session === undefined) {
+    const session = token === null ? null : hub.authenticate(token);
+    if (session === null) {
       sendHttpError(reply, "unauthenticated", "缺少或无效会话");
       return null;
     }
-    if (session.expiresAt <= now()) {
-      revokeSession(session.sessionId, "session expired");
-      sendHttpError(reply, "unauthenticated", "会话已过期");
-      return null;
-    }
-    return { ...session, auth: { ...session.auth, branchId } };
+    return session;
   };
 
   app.get("/api/v1/health", () => healthResponseSchema.parse({ status: options.healthStatus?.() ?? "ready", protocolVersion: "1" }));
@@ -911,14 +573,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (identity === undefined) {
       return sendHttpError(reply, "unauthenticated", "登录令牌无效");
     }
-    const session: Session = {
-      sessionId: options.ids("ses"),
-      auth: identity.auth,
-      token: options.tokens("session"),
-      expiresAt: now() + sessionTtlMs,
-    };
-    sessions.set(session.token, session);
-    sessionById.set(session.sessionId, session);
+    const session = hub.login(identity);
     return loginResponseSchema.parse({
       sessionToken: session.token,
       principalId: identity.auth.principalId,
@@ -933,10 +588,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return sendHttpError(reply, "unauthenticated", "缺少或无效会话");
     }
     // 注销按会话身份撤销且幂等：并发或重复注销不报错。
-    const session = sessions.get(token);
-    if (session !== undefined) {
-      revokeSession(session.sessionId, "logged out");
-    }
+    hub.logout(token);
     return { ok: true };
   });
 
@@ -998,7 +650,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return sendHttpError(reply, "idempotency-conflict", receipt.safeMessage ?? "命令 ID 已被不同内容使用");
     }
     try {
-      publishDelta();
+      hub.publish();
     } catch (error) {
       app.log.error(error, "投影发布失败");
     }
@@ -1030,7 +682,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    return { streamSeq, projectionVersion, projection: options.projection() };
+    const state = hub.streamState();
+    return { streamSeq: state.streamSeq, projectionVersion: state.projectionVersion, projection: options.projection() };
   });
 
   app.get("/api/v1/campaign", (request, reply) => {
@@ -1094,7 +747,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return sendHttpError(reply, "validation", "时钟控制请求结构不合法");
     }
     const clock = options.pause(body.data.operationId, body.data.expectedRunVersion, session.auth.principalId);
-    publishDelta();
+    hub.publish();
     return clockResponseSchema.parse(clock);
   });
 
@@ -1111,7 +764,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return sendHttpError(reply, "validation", "时钟控制请求结构不合法");
     }
     const clock = options.resume(body.data.operationId, body.data.expectedRunVersion, session.auth.principalId);
-    publishDelta();
+    hub.publish();
     return clockResponseSchema.parse(clock);
   });
 
@@ -1176,7 +829,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     });
     // 幂等重放可能返回已经不在线的首次后继分支；只有真正切换时才更新传输层分支与推送快照。
     if (restored.branchId !== branchId) {
-      applyBranchChange(restored.branchId);
+      hub.applyBranchChange(restored.branchId);
     }
     return snapshotRestoreResponseSchema.parse({
       branchId: restored.branchId,
@@ -1198,7 +851,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     const reset = options.reset(body.data.operationId, session.auth.principalId);
     if (reset.branchId !== branchId) {
-      applyBranchChange(reset.branchId);
+      hub.applyBranchChange(reset.branchId);
     }
     return campaignResetResponseSchema.parse({ branchId: reset.branchId });
   });
@@ -1209,47 +862,15 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
-    const ticket = options.tokens("ticket");
-    const expiresAt = now() + ticketTtlMs;
-    tickets.set(ticket, { sessionId: session.sessionId, expiresAt });
-    return { ticket, expiresAt: new Date(expiresAt).toISOString() };
+    const ticket = hub.issueTicket(session.sessionId);
+    return { ticket: ticket.ticket, expiresAt: new Date(ticket.expiresAt).toISOString() };
   });
 
   app.get("/api/v1/streams", { websocket: true }, (socket, request) => {
     const query = request.query as { readonly ticket?: string };
     const ticketValue = typeof query.ticket === "string" ? query.ticket : undefined;
-    const ticket = ticketValue === undefined ? undefined : tickets.get(ticketValue);
-    if (ticketValue !== undefined) {
-      // 票据一次性使用：无论后续校验是否通过都不再可用。
-      tickets.delete(ticketValue);
-    }
-    if (ticket === undefined || ticket.expiresAt <= now()) {
-      closeSocket(socket, 4401, "invalid ticket");
-      return;
-    }
-    // 握手时重新确认会话仍存在且未过期，并按当前角色重算可用频道。
-    const session = activeSession(ticket.sessionId);
-    if (session === null) {
-      closeSocket(socket, 4401, "invalid ticket");
-      return;
-    }
-    const channels = channelsFor(options.accessPolicy, session.auth);
-    connections.set(socket, { sessionId: session.sessionId, subscriptions: new Set() });
-    socket.on("close", () => {
-      connections.delete(socket);
-    });
-    socket.on("error", () => {
-      connections.delete(socket);
-    });
-    socket.on("message", (data: Buffer) => {
-      handleStreamMessage(socket, data);
-    });
-    sendMessage(socket, {
-      type: "hello",
-      protocolVersion: "1",
-      principalId: session.auth.principalId,
-      channels,
-    });
+    // 票据一次性使用与握手校验都由流中心完成；失败以 4401 关闭连接。
+    hub.accept(socket as unknown as StreamSocket, ticketValue);
   });
 
   app.get("/api/v1/console/health", (request, reply) => {
@@ -1287,7 +908,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   };
 
   const close = async (): Promise<void> => {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      // 即使框架关闭抛错也要清除流中心的低频定时器与后台对象。
+      hub.close();
+    }
   };
 
   const inject = async (injectOptions: ServerAppInjectOptions): Promise<ServerAppInjectResponse> => {
@@ -1311,8 +937,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     close,
     inject,
     notifyWorldChanged: () => {
-      publishDelta();
+      hub.publish();
     },
     address,
+    streamStats: () => hub.stats(),
   };
 }

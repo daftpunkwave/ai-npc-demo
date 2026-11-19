@@ -11,7 +11,7 @@ export const clockConfigSchema = z
   .object({
     secondsPerTick: z.number().int().positive().default(10),
     maxStepTicks: z.number().int().min(1).max(24).default(24),
-    // 断线自动暂停阈值属于装配声明；当前只参与配置校验与冻结，worker 暂停策略尚未接入。
+    // 断线自动暂停阈值属于装配声明；宿主读取该配置，在全部玩家连接断开超时后暂停 running 时钟。
     autoPauseAfterDisconnectMs: z.number().int().positive().default(60_000),
   })
   .strict();

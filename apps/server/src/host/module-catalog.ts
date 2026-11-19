@@ -21,7 +21,7 @@ import type {
   ScopedWorldTxFactory,
 } from "@ai-npc/module-sdk";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import { clockModuleDefinition } from "@ai-npc/mod-game-clock-controlled";
+import { clockConfigSchema, clockModuleDefinition, type ClockConfig } from "@ai-npc/mod-game-clock-controlled";
 import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
 import { resourcesModuleDefinition } from "@ai-npc/mod-game-resources-light";
 import { worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
@@ -176,6 +176,19 @@ export function plannedModuleForCapability(plan: ResolvedRealmPlan, capability: 
     throw new Error(`解析计划缺少能力 ${capability} 的提供者`);
   }
   return planned;
+}
+
+/**
+ * 读取在线装配中时钟 provider 的有效配置；默认值已由描述符 schema 填充。
+ * 宿主据此驱动 worker 间隔与断线自动暂停阈值，不自行解析 clock 行。
+ */
+export function clockConfigOf(plan: ResolvedRealmPlan): Required<ClockConfig> {
+  const config = clockConfigSchema.parse(plannedModuleForCapability(plan, "game.clock").config);
+  return {
+    secondsPerTick: config.secondsPerTick,
+    maxStepTicks: config.maxStepTicks,
+    autoPauseAfterDisconnectMs: config.autoPauseAfterDisconnectMs ?? 60_000,
+  };
 }
 
 function runningInstanceFor(

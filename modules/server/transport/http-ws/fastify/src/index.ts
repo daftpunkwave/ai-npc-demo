@@ -8,6 +8,15 @@ export { transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";
 export { TransportPort } from "./plugin";
 export { createServerApp } from "./app";
+export { StreamHub } from "./stream-hub";
+export type {
+  StreamHubOptions,
+  StreamIdentity,
+  StreamSession,
+  StreamSocket,
+  StreamState,
+  StreamStats,
+} from "./stream-hub";
 export type {
   AccessAction,
   AccessDecision,

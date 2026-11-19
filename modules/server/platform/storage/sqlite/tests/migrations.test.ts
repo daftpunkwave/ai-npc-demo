@@ -1,5 +1,5 @@
 /**
- * 验证迁移与表目录：表数量、版本记录、重复打开幂等、PRAGMA 生效、分支级表清单与运营幂等表部署级身份。
+ * 验证迁移与表目录：表数量、版本记录、重复打开幂等、PRAGMA 生效、job 推进索引、分支级表清单与运营幂等表部署级身份。
  * 依赖存储模块测试助手与迁移推导的分支级表常量。
  * 禁止连接真实数据库文件、跳过失败迁移断言或把运行级表当作分支级表。
  */
@@ -43,7 +43,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
       }
@@ -61,7 +61,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -101,6 +101,40 @@ describe("初始迁移", () => {
       expect(columns).toContain("result_json");
       expect(columns).not.toContain("branch_id");
       expect(deriveBranchTables(harness.port)).not.toContain(OPERATION_IDEMPOTENCY_TABLE);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("job 推进使用 scheduled 部分索引，按 (status, due_tick, seq) 取最早候选", async () => {
+    const harness = await openStorageHarness();
+    try {
+      // 0003 用只含 scheduled 行的部分索引替换 0001 的全状态索引，避免已完成历史行扩大索引。
+      const indexes = harness.port.transact((tx) =>
+        tx.all("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'jobs' ORDER BY name"),
+      );
+      const index = indexes.find((row) => row["name"] === "jobs_status_due_seq");
+      expect(index).toBeDefined();
+      expect(String(index?.["sql"])).toContain("WHERE status = 'scheduled'");
+      expect(indexes.map((row) => row["name"])).not.toContain("jobs_due");
+
+      const columns = harness.port
+        .transact((tx) => tx.all("SELECT name FROM pragma_index_info('jobs_status_due_seq') ORDER BY seqno"))
+        .map((row) => String(row["name"]));
+      expect(columns).toEqual(["branch_id", "status", "due_tick", "seq"]);
+
+      // 与 JobRunner 完全相同的查询形状；计划必须是索引查找而不是全表扫描。
+      const plan = harness.port
+        .transact((tx) =>
+          tx.all(
+            "EXPLAIN QUERY PLAN SELECT * FROM jobs WHERE branch_id = ? AND status = ? ORDER BY due_tick ASC, seq ASC LIMIT 1",
+            ["br-000000000000", "scheduled"],
+          ),
+        )
+        .map((row) => String(row["detail"]))
+        .join("\n");
+      expect(plan).toContain("jobs_status_due_seq");
+      expect(plan).not.toContain("SCAN jobs");
     } finally {
       await harness.dispose();
     }

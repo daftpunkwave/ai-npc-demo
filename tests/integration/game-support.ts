@@ -153,6 +153,11 @@ export async function createGameHarness(options: {
   readonly runSeed?: string;
   /** 记录每次规则随机源调用收到的参数，用于断言输入只含语义字段。 */
   readonly onRng?: (parts: readonly string[]) => void;
+  /**
+   * 可选的存储包装：测试用它记录读路径或注入故障。
+   * 包装必须完整转发 StoragePort，不得改变事务、分支 scope 与读写语义。
+   */
+  readonly storageWrapper?: (storage: StoragePort) => StoragePort;
 } = {}): Promise<GameHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
   const baseHost = createFakeHost();
@@ -185,7 +190,7 @@ export async function createGameHarness(options: {
     if (port === undefined) {
       throw new Error("存储模块实例没有暴露端口");
     }
-    const storage = port as StoragePort;
+    const storage = options.storageWrapper?.(port as StoragePort) ?? (port as StoragePort);
     seedBranch(storage, host, worldId, branchId);
     const clock = createClockPort(
       storage,

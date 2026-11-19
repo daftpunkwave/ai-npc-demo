@@ -7,7 +7,7 @@ import { DomainError } from "@ai-npc/contracts";
 
 /**
  * 时钟配置；与模块描述符的 strict schema 对齐。
- * autoPauseAfterDisconnectMs 当前只参与装配校验，断线自动暂停尚未接入 worker。
+ * autoPauseAfterDisconnectMs 由宿主装配读取，用于全部玩家断线后的自动暂停。
  */
 export interface ClockConfig {
   readonly secondsPerTick: number;

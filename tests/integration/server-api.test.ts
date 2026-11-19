@@ -1,6 +1,6 @@
 /**
  * 验证服务端 Fastify 应用的登录、会话、装配握手、玩家读接口、命令、回执、世界视图与访问控制。
- * 依赖真实 authority/存储与注入的投影/时钟/存档回调；WS 用例在真实监听端口上连接并验证订阅、重放、撤销与 append。
+ * 依赖真实 authority/存储与注入的投影/时钟/存档回调；WS 用例在真实监听端口上连接并验证订阅、重放、撤销、增量字段与后台对象清理。
  * 禁止用静态回执替代命令网关，也不在用例间复用连接或服务器。
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -423,6 +423,19 @@ async function listen(app: Awaited<ReturnType<typeof createServerApp>>): Promise
     throw new Error("没有监听端口");
   }
   return address.port;
+}
+
+/** 等待服务端处理完异步事件（如 WS 关闭）；超时明确失败。 */
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error("等待条件超时");
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
 }
 
 async function ticketFor(app: Awaited<ReturnType<typeof createServerApp>>, session: string): Promise<string> {
@@ -1280,6 +1293,85 @@ describe("服务端 API", () => {
     expect(await client.next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 1 });
   });
 
+  it("订阅后 delta 只携带变化顶层字段与版本号，未变化时为空", async () => {
+    const value = await createTrackedGameHarness(active);
+    let current = projection(clockView(value));
+    const app = await appFor(value, { projection: () => current });
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+    client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+    expect(await client.next()).toMatchObject({ type: "snapshot", streamSeq: 0, projectionVersion: 0 });
+
+    current = { ...current, clock: { ...current.clock, worldTick: 5 } };
+    app.notifyWorldChanged();
+    const delta = await client.next();
+    expect(delta).toMatchObject({
+      type: "delta",
+      channel: "player",
+      streamSeq: 1,
+      projectionVersion: 1,
+    });
+    expect(Object.keys(delta["set"] as Record<string, unknown>)).toEqual(["clock"]);
+    expect((delta["set"] as { readonly clock: unknown }).clock).toMatchObject({ worldTick: 5 });
+    // 帧里不再出现完整投影。
+    expect(delta).not.toHaveProperty("data");
+    expect(JSON.stringify(delta["set"]).length).toBeLessThan(JSON.stringify(current).length);
+
+    app.notifyWorldChanged();
+    const heartbeat = await client.next();
+    expect(heartbeat).toMatchObject({ type: "delta", streamSeq: 2, set: {} });
+  });
+
+  it("过期票据、断线重放缓冲与过期会话按上限清理且重连可恢复", async () => {
+    const value = await createTrackedGameHarness(active);
+    let current = Date.parse("2026-01-01T00:00:00.000Z");
+    const app = await appFor(value, { now: () => current });
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const unusedTicket = await ticketFor(app, session);
+    expect(app.streamStats()).toMatchObject({ sessions: 1, tickets: 1 });
+
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+    client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+    expect(await client.next()).toMatchObject({ type: "snapshot", streamSeq: 0 });
+    app.notifyWorldChanged();
+    expect(await client.next()).toMatchObject({ type: "delta", streamSeq: 1 });
+    client.close();
+    await client.closed();
+    await waitFor(() => app.streamStats().connections === 0);
+
+    // 超过票据有效期与断线重放保留时间；下一次发布附带低频清理。
+    current += 6 * 60 * 1000;
+    app.notifyWorldChanged();
+    expect(app.streamStats()).toMatchObject({ tickets: 0, replayBuffers: 0, connections: 0 });
+    // 会话仍在 12 小时有效期内。
+    expect(app.streamStats().sessions).toBe(1);
+
+    // 旧游标的增量已被清理，重连仍按完整快照恢复。
+    const reconnect = openStream(port, await ticketFor(app, session));
+    expect(await reconnect.next()).toMatchObject({ type: "hello" });
+    reconnect.send({ type: "subscribe", channel: "player", fromStreamSeq: 1 });
+    expect(await reconnect.next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 2 });
+
+    // 未消费票据已过期，握手失败。
+    const expired = openStream(port, unusedTicket);
+    expect((await expired.closed()).code).toBe(4401);
+
+    // 会话过期后由清理移除，旧令牌立即失效。
+    current += 13 * 60 * 60 * 1000;
+    app.notifyWorldChanged();
+    expect(app.streamStats().sessions).toBe(0);
+    const rejected = await app.inject({
+      method: "GET",
+      url: "/api/v1/session",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(rejected.statusCode).toBe(401);
+  });
+
   it("未订阅时世界变化不推送，订阅后收到快照与增量", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value);
@@ -1599,6 +1691,7 @@ describe("服务端 API", () => {
         calls.push("notify");
       },
       address: () => null,
+      streamStats: () => ({ sessions: 0, tickets: 0, connections: 0, replayBuffers: 0 }),
     };
     const transport = new TransportPort({
       host: "127.0.0.1",
