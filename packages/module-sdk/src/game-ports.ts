@@ -16,6 +16,7 @@ import type {
   RoadStatus,
   TaskStatus,
   TaskType,
+  Term,
   WatergateAllocation,
 } from "@ai-npc/contracts";
 
@@ -443,10 +444,19 @@ export interface TaskView {
   readonly taskType: TaskType;
   readonly teamId: string;
   readonly dispatcherId: string;
+  /** 受邀角色；受邀者在出发前用 task.respond 回复后才进入 participants。 */
+  readonly invitees: readonly string[];
   readonly participants: readonly string[];
   readonly status: TaskStatus;
   readonly params: unknown;
+  /** 出发时按路径算出的道路顺序；玩家投影只把「其他任务」的路线给到最小摘要。 */
+  readonly route: readonly string[];
+  readonly departTick: number;
+  /** 不含延误的名义完成 tick；延误只进任务内部状态。 */
+  readonly nominalCompletionTick: number;
   readonly completedAtTick: number | null;
+  /** 是否已经为延误提交过 TaskDelayed；玩家投影据此显示延误提醒。 */
+  readonly delayNoticeSent: boolean;
 }
 
 /** 行动模块查询端口；协议履约判定与剧情订阅复用已完成任务事实。 */
@@ -464,8 +474,19 @@ export interface GameActionsPort {
 /** 协议查询端口；条款状态由协议模块拥有。 */
 export interface AgreementView {
   readonly agreementId: string;
+  readonly version: number;
+  readonly proposerId: string;
   readonly status: "proposed" | "active" | "fulfilled" | "rejected" | "superseded" | "expired" | "breached";
   readonly parties: readonly string[];
+  readonly terms: readonly Term[];
+  readonly createdAtTick: number;
+  readonly expiresAtTick: number;
+  readonly supersedesId: string | null;
+  /** 已履约与已违约的条款下标；其余条款状态为 open。 */
+  readonly fulfilledTerms: readonly number[];
+  readonly breachedTerms: readonly number[];
+  /** 与 terms 同下标的累计进度；没有进度概念的条款为 0。 */
+  readonly progress: readonly number[];
 }
 
 /** 截至某个 tick 的协议计数；同一协议只计一次，供章节评估使用。 */
@@ -517,12 +538,54 @@ export interface ShareQuery {
   readonly byTick: number;
 }
 
+/** 通信日志的渠道；reported 是剧情卡下发的传闻，来源不是在地主体。 */
+export type CommsMessageChannel = "message" | "broadcast" | "seat" | "opening" | "reported";
+
+/** 一条已提交的通信日志；deliverAtTick 是该主体被冻结的送达 tick。 */
+export interface CommsMessageView {
+  readonly messageId: string;
+  readonly fromId: string;
+  readonly to: readonly string[];
+  readonly channel: CommsMessageChannel;
+  readonly text: string;
+  readonly intentKind: MessageIntentKind;
+  readonly committedAtTick: number;
+  readonly deliverAtTick: number;
+  readonly conversationId: string | null;
+}
+
+/** 一条已固化的对白；deliveries 是提交时冻结的逐主体送达 tick。 */
+export interface CommsDialogueLineView {
+  readonly seq: number;
+  readonly dialogueId: string;
+  readonly speakerId: string;
+  readonly text: string;
+  readonly channel: "face-to-face" | "relay";
+  readonly worldTick: number;
+  readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
+}
+
+/** 一条知识授权；itemId 指向内容包的证据或秘密。 */
+export interface CommsKnowledgeView {
+  readonly itemId: string;
+  readonly via: "start" | "share" | "discovery" | "setup";
+  readonly grantedAtTick: number;
+}
+
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
   /** 两个主体此刻是否在同一节点；无位置主体（战略 Agent、未知主体）与任何人都不同节点。 */
   sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
+  /** 已送达给该主体的通信日志：只含投递名单里有该主体且已到送达 tick 的记录，按提交 tick 升序取最近 limit 条。 */
+  messagesFor(principalId: string, limit: number): readonly CommsMessageView[];
+  /** 该主体参与的会话 ID，按 ID 升序。 */
+  conversationsOf(principalId: string): readonly string[];
+  /** 会话最近 limit 条对白，按 seq 升序。 */
+  conversationMessages(conversationId: string, limit: number): readonly CommsDialogueLineView[];
+  /** 该主体持有的知识授权，按授予 tick 与 itemId 升序。 */
+  knowledgeOf(principalId: string): readonly CommsKnowledgeView[];
   /** 是否存在由 fromId 在 sinceTick 到 byTick 之间提交、受众包含 toPrincipalId 的证据分享。 */
   hasShare(query: ShareQuery): boolean;
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean;

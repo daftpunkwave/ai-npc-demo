@@ -148,6 +148,11 @@ export const playerMetersViewSchema = z
 
 export type PlayerMetersView = z.infer<typeof playerMetersViewSchema>;
 
+/** 库存资源等级（规则第 3 节）：短缺、可维持、有余量；与局势指标的展示等级不同。 */
+export const resourceLevelSchema = z.enum(["scarce", "adequate", "surplus"]);
+
+export type ResourceLevel = z.infer<typeof resourceLevelSchema>;
+
 /** 委托余额：按资源记录剩余可动用数量。 */
 export const delegationBalanceSchema = z
   .object({
@@ -164,9 +169,9 @@ export const stockpileViewSchema = z
     stockpileId: contentIdSchemas.sp,
     nodeId: contentIdSchemas.node,
     ownerFactionId: z.string().min(1),
-    supplyLevel: meterDisplayLevelSchema,
-    energyLevel: meterDisplayLevelSchema,
-    medicalLevel: meterDisplayLevelSchema,
+    supplyLevel: resourceLevelSchema,
+    energyLevel: resourceLevelSchema,
+    medicalLevel: resourceLevelSchema,
     amounts: resourceAmountsSchema.nullable(),
     delegation: delegationBalanceSchema.nullable(),
   })
@@ -372,7 +377,8 @@ export const playerProjectionSchema = z
     campaign: campaignViewSchema.nullable(),
     clock: clockViewSchema,
     map: playerMapViewSchema,
-    meters: playerMetersViewSchema,
+    /** 世界指标随 campaign.start 初始化；开局前没有指标，用 null 表示尚未可知。 */
+    meters: playerMetersViewSchema.nullable(),
     stockpiles: z.array(stockpileViewSchema),
     teams: z.array(teamViewSchema),
     characters: z.array(characterViewSchema),

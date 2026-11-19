@@ -9,6 +9,9 @@ import { DomainError } from "@ai-npc/contracts";
 import {
   gameModuleIds,
   principalsAudience,
+  type CommsDialogueLineView,
+  type CommsKnowledgeView,
+  type CommsMessageView,
   type GameCommsPort,
   type GameContent,
   type GameIdFactory,
@@ -18,8 +21,10 @@ import {
 import {
   conversationStateSchema,
   readCommsState,
+  type ConversationLineState,
   type ConversationState,
   type KnowledgeGrantState,
+  type MessageState,
   type ShareState,
 } from "./state";
 
@@ -159,15 +164,22 @@ class StandardCommsPort implements GameCommsPort {
     return output;
   }
 
-  private saveConversation(conversationId: string, participants: readonly string[]): ConversationState {
+  /** 追加一条已固化的对白；序号从 0 开始，lastSeq 记录下一条对白的序号。 */
+  private appendConversationLine(
+    conversationId: string,
+    participants: readonly string[],
+    line: Omit<ConversationLineState, "seq" | "deliveries"> & {
+      readonly deliveries: readonly Delivery[];
+    },
+  ): ConversationState {
     const existing = readCommsState(this.tx(), "conversation", conversationId, conversationStateSchema);
-    const next: ConversationState = existing === null
-      ? { conversationId, participants: [...new Set(participants)], lastSeq: 1 }
-      : {
-          conversationId,
-          participants: [...new Set([...existing.participants, ...participants])],
-          lastSeq: existing.lastSeq + 1,
-        };
+    const seq = existing === null ? 0 : existing.lastSeq;
+    const next: ConversationState = {
+      conversationId,
+      participants: [...new Set([...(existing?.participants ?? []), ...participants])],
+      lastSeq: seq + 1,
+      lines: [...(existing?.lines ?? []), { ...line, seq, deliveries: [...line.deliveries] }],
+    };
     this.tx().put("conversation", conversationId, next);
     return next;
   }
@@ -176,6 +188,84 @@ class StandardCommsPort implements GameCommsPort {
     return this.tx()
       .list<KnowledgeGrantState>("knowledge-grant")
       .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
+  }
+
+  /** 已送达给该主体的通信日志；未到送达 tick 或不在投递名单里的记录照常保留在聚合中但不返回。 */
+  messagesFor(principalId: string, limit: number): readonly CommsMessageView[] {
+    const limitValue = Math.max(0, Math.trunc(limit));
+    if (limitValue === 0) {
+      return [];
+    }
+    const tick = this.tx().worldTick;
+    const delivered: CommsMessageView[] = [];
+    for (const entry of this.tx().list<MessageState>("message")) {
+      const state = entry.state;
+      const delivery = state.deliveries.find((candidate) => candidate.principalId === principalId);
+      if (delivery === undefined || delivery.deliverAtTick > tick) {
+        continue;
+      }
+      delivered.push({
+        messageId: state.messageId,
+        fromId: state.fromId,
+        to: state.to,
+        channel: state.channel,
+        text: state.text,
+        intentKind: state.intentKind,
+        committedAtTick: state.committedAtTick,
+        deliverAtTick: delivery.deliverAtTick,
+        conversationId: state.conversationId,
+      });
+    }
+    return delivered
+      .sort(
+        (left, right) =>
+          left.committedAtTick - right.committedAtTick || left.messageId.localeCompare(right.messageId),
+      )
+      .slice(-limitValue);
+  }
+
+  conversationsOf(principalId: string): readonly string[] {
+    return this.tx()
+      .list<ConversationState>("conversation")
+      .map((entry) => entry.state)
+      .filter((state) => state.participants.includes(principalId))
+      .map((state) => state.conversationId)
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  conversationMessages(conversationId: string, limit: number): readonly CommsDialogueLineView[] {
+    const limitValue = Math.max(0, Math.trunc(limit));
+    if (limitValue === 0) {
+      return [];
+    }
+    const state = readCommsState(this.tx(), "conversation", conversationId, conversationStateSchema);
+    if (state === null) {
+      return [];
+    }
+    return [...state.lines]
+      .sort((left, right) => left.seq - right.seq)
+      .slice(-limitValue)
+      .map((line) => ({
+        seq: line.seq,
+        dialogueId: line.dialogueId,
+        speakerId: line.speakerId,
+        text: line.text,
+        channel: line.channel,
+        worldTick: line.worldTick,
+        deliveries: line.deliveries,
+      }));
+  }
+
+  knowledgeOf(principalId: string): readonly CommsKnowledgeView[] {
+    return this.tx()
+      .list<KnowledgeGrantState>("knowledge-grant")
+      .map((entry) => entry.state)
+      .filter((state) => state.principalId === principalId)
+      .sort(
+        (left, right) =>
+          left.grantedAtTick - right.grantedAtTick || left.itemId.localeCompare(right.itemId),
+      )
+      .map((state) => ({ itemId: state.itemId, via: state.via, grantedAtTick: state.grantedAtTick }));
   }
 
   /** 已提交的分享事实：分享者、证据、受众与提交 tick，均在同一事务内读取；只认 sinceTick 之后的分享。 */
@@ -280,6 +370,19 @@ class StandardCommsPort implements GameCommsPort {
       },
       audience,
     );
+    // 通信日志与事件同事务落库：读接口与投影只读这份日志，不回放事件。
+    const message: MessageState = {
+      messageId,
+      fromId: input.fromId,
+      to: publicBroadcast ? ["public"] : [...input.to],
+      channel: input.channel,
+      text: input.text,
+      intentKind: input.intentKind,
+      deliveries: deliveries.map((delivery) => ({ ...delivery })),
+      committedAtTick: this.tx().worldTick,
+      conversationId: null,
+    };
+    this.tx().put("message", messageId, message);
     return { eventId, messageId, deliveries };
   }
 
@@ -296,12 +399,20 @@ class StandardCommsPort implements GameCommsPort {
     if (!this.canJoinConversation(conversationId, [input.speakerId, ...input.audience])) {
       throw new DomainError("forbidden", "主体不在该会话中，不能追加对白");
     }
-    this.saveConversation(conversationId, [input.speakerId, ...input.audience]);
     const deliveries = this.deliveries("dialogue", input.speakerId, input.audience);
     if (deliveries === null) {
       throw new DomainError("invalid-state", "中继中断时不能提交对白");
     }
     const dialogueId = this.ids("dlg");
+    // 会话聚合按 seq 固化正文与冻结投递；读接口与投影据此还原玩家收到的对白。
+    this.appendConversationLine(conversationId, [input.speakerId, ...input.audience], {
+      dialogueId,
+      speakerId: input.speakerId,
+      text: input.text,
+      channel: input.channelKind,
+      worldTick: this.tx().worldTick,
+      deliveries,
+    });
     const eventId = this.tx().emit(
       "DialogueSubmitted",
       {

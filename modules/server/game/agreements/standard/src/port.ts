@@ -28,10 +28,15 @@ const committedTaskSchema = z.object({
   taskType: taskTypeSchema,
   teamId: z.string().min(1),
   dispatcherId: z.string().min(1),
+  invitees: z.array(z.string().min(1)),
   participants: z.array(z.string().min(1)),
   status: z.enum(["pending", "running", "completed", "failed", "cancelled"]),
   params: z.unknown(),
+  route: z.array(z.string().min(1)),
+  departTick: z.number().int().nonnegative(),
+  nominalCompletionTick: z.number().int().nonnegative(),
   completedAtTick: z.number().int().nonnegative().nullable(),
+  delayNoticeSent: z.boolean(),
 });
 
 const committedShareSchema = z.object({
@@ -62,8 +67,17 @@ const METERS_AGGREGATE_ID = "meters";
 function toView(state: AgreementState): AgreementView {
   return {
     agreementId: state.agreementId,
+    version: state.version,
+    proposerId: state.proposerId,
     status: state.status,
     parties: state.parties,
+    terms: state.terms,
+    createdAtTick: state.createdAtTick,
+    expiresAtTick: state.expiresAtTick,
+    supersedesId: state.supersedesId,
+    fulfilledTerms: state.fulfilledTerms,
+    breachedTerms: state.breachedTerms,
+    progress: state.progress,
   };
 }
 

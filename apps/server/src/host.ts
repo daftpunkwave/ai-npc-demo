@@ -98,6 +98,7 @@ const allAggregates = new Set([
   "conversation",
   "knowledge-grant",
   "share",
+  "message",
   "agreement",
   "scenario-card",
   "scenario-run",
@@ -475,7 +476,16 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   const projection = () => storage.transact((tx) => {
     const gameTx = txFor(tx, "read");
     const ports = createGamePortsFromAssembly(activeAssembly, gameTx, gameContent, host);
-    return buildPlayerProjection({ content: gameContent, world: ports["game.world"], map: ports["game.map"], clock: clockView(readClockTx(tx, activeBranchId)) });
+    return buildPlayerProjection({
+      content: gameContent,
+      world: ports["game.world"],
+      map: ports["game.map"],
+      clock: clockView(readClockTx(tx, activeBranchId)),
+      comms: ports["game.comms"],
+      resources: ports["game.resources"],
+      actions: ports["game.actions"],
+      agreements: ports["game.agreements"],
+    });
   });
 
   const save = createSaveService(storage, host);
