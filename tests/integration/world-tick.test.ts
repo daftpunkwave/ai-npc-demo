@@ -1,5 +1,5 @@
 /**
- * 验证在线世界 tick 的固定执行顺序、阶段失败后的幂等补完与快照前的排空。
+ * 验证在线世界 tick 的固定执行顺序、阶段失败后的幂等补完、快照前的排空与 job 受控扫描顺序。
  * 依赖真实 SQLite 游戏环境、服务端宿主、运营快照入口与 authority 执行器。
  * 禁止跳过到期 job 直接断言结算，也禁止用内存夹具替代真实持久化。
  */
@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { StoragePort, StorageRawRow } from "@ai-npc/contracts";
+import type { StoragePort, StorageRawRow, StorageTransaction } from "@ai-npc/contracts";
 import {
   advanceWorldTick,
   catchUpWorldTick,
@@ -20,6 +20,7 @@ import {
   disposeTrackedGameHarnesses,
   gameCommandEnvelope,
   readGameAggregate,
+  setGameClock,
   startNeutralCampaign,
   type GameHarness,
 } from "./game-support";
@@ -124,7 +125,7 @@ function advanceRange(value: GameHarness, fromTick: number, toTick: number): rea
       advanceWorldTick({
         storage: value.storage,
         authority: value.authority,
-        host: value.host,
+        clock: value.clock,
         branchId: value.branchId,
         targetTick: tick,
       }),
@@ -174,6 +175,54 @@ function setHostClock(host: RunningHost, branchId: string, worldTick: number): v
   });
 }
 
+/**
+ * 包装真实存储并统计 job 表的读取次数与返回行数。
+ * 只观察 JobRunner 的查询形状，其余事务与表访问原样转发，避免测试夹具改变持久化语义。
+ */
+function countingJobReads(
+  storage: StoragePort,
+  counts: { calls: number; rows: number },
+): StoragePort {
+  const wrapTransaction = (tx: StorageTransaction): StorageTransaction => ({
+    get: (sql, params) => tx.get(sql, params),
+    all: (sql, params) => tx.all(sql, params),
+    run: (sql, params) => tx.run(sql, params),
+    rows: (table) => tx.rows(table),
+    savepoint: (name, fn) => tx.savepoint(name, fn),
+    branch: (branchId) => {
+      const scoped = tx.branch(branchId);
+      return {
+        branchId: scoped.branchId,
+        table: (name) => {
+          const table = scoped.table(name);
+          if (name !== "jobs") {
+            return table;
+          }
+          return {
+            table: table.table,
+            get: (key) => table.get(key),
+            list: (filter, options) => {
+              const rows = table.list(filter, options);
+              counts.calls += 1;
+              counts.rows += rows.length;
+              return rows;
+            },
+            put: (row) => table.put(row),
+            delete: (key) => table.delete(key),
+            count: (filter) => table.count(filter),
+            max: (column, filter) => table.max(column, filter),
+          };
+        },
+      };
+    },
+  });
+  return {
+    transact: (fn) => storage.transact((tx) => fn(wrapTransaction(tx))),
+    forkBranch: (tx, request) => storage.forkBranch(tx, request),
+    backup: (options) => storage.backup(options),
+  };
+}
+
 describe("在线 tick 顺序", () => {
   it("tick 72 的剧情卡 job 早于同一 tick 的每日结算", { timeout: 30_000 }, async () => {
     const value = await createTrackedGameHarness(active);
@@ -217,7 +266,7 @@ describe("在线 tick 顺序", () => {
     const catchUp = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(catchUp.worldTick).toBe(168);
@@ -238,7 +287,7 @@ describe("在线 tick 顺序", () => {
       advanceWorldTick({
         storage: value.storage,
         authority: value.authority,
-        host: value.host,
+        clock: value.clock,
         branchId: value.branchId,
         targetTick: 72,
       }),
@@ -261,7 +310,7 @@ describe("在线 tick 顺序", () => {
     const recovered = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(recovered.worldTick).toBe(72);
@@ -274,7 +323,7 @@ describe("在线 tick 顺序", () => {
     const repeated = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(repeated.executedJobs).toBe(0);
@@ -306,7 +355,7 @@ describe("在线 tick 顺序", () => {
       advanceWorldTick({
         storage: value.storage,
         authority: value.authority,
-        host: value.host,
+        clock: value.clock,
         branchId: value.branchId,
         targetTick: 24,
       }),
@@ -319,12 +368,78 @@ describe("在线 tick 顺序", () => {
     const recovered = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(recovered.worldTick).toBe(24);
     events = readEvents(value.storage, value.branchId);
     expect(events.filter((event) => event.worldTick === 24 && event.type === "DayPassed")).toHaveLength(1);
+  });
+  it("到期 job 严格按 (dueTick, seq) 执行，每次推进只读取下一候选", { timeout: 30_000 }, async () => {
+    const counts = { calls: 0, rows: 0 };
+    const value = await createTrackedGameHarness(active, {
+      storageWrapper: (storage) => countingJobReads(storage, counts),
+    });
+    const order: string[] = [];
+    value.authority.registerModule({
+      moduleId: "test.job-order",
+      ownsAggregates: [],
+      jobs: [
+        {
+          kind: "test.job-order",
+          handler: (_context, job) => {
+            order.push(job.jobId);
+          },
+        },
+      ],
+    });
+    // 四种到期/创建顺序：due 3 最早；due 5 由 seq 决定；due 9 本次不执行。
+    value.storage.transact((tx) => {
+      const table = tx.branch(value.branchId).table("jobs");
+      const rows = [
+        { job_id: "job-late", seq: 4, due_tick: 9, idempotency_key: "test-key-4" },
+        { job_id: "job-same-first", seq: 2, due_tick: 5, idempotency_key: "test-key-2" },
+        { job_id: "job-early", seq: 1, due_tick: 3, idempotency_key: "test-key-1" },
+        { job_id: "job-same-second", seq: 3, due_tick: 5, idempotency_key: "test-key-3" },
+      ];
+      for (const row of rows) {
+        table.put({
+          ...row,
+          kind: "test.job-order",
+          status: "scheduled",
+          payload_json: {},
+          attempts: 0,
+          last_error: null,
+        });
+      }
+    });
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    const scheduledBefore = value.storage.transact(
+      (tx) =>
+        tx
+          .branch(value.branchId)
+          .table("jobs")
+          .list({ status: "scheduled" }, { orderBy: [{ column: "due_tick" }, { column: "seq" }] }).length,
+    );
+    expect(scheduledBefore).toBe(4);
+    // 上面的基线查询也经过计数包装；从推进前重新计数。
+    counts.calls = 0;
+    counts.rows = 0;
+
+    const executed = value.authority.jobs.runDue(value.branchId, 5);
+    expect(executed).toBe(3);
+    expect(order).toEqual(["job-early", "job-same-first", "job-same-second"]);
+    // 每次受控查询最多返回一条候选：3 条执行 + 1 条未到期候选。
+    expect(counts.calls).toBe(4);
+    expect(counts.rows).toBe(4);
+    // 旧实现每步全量读取并排序 scheduled 行，同样推进需要读取 4+3+2+1=10 行。
+    expect(counts.rows).toBeLessThan((scheduledBefore * (scheduledBefore + 1)) / 2);
+
+    const remaining = value.storage.transact((tx) =>
+      tx.branch(value.branchId).table("jobs").list({ status: "scheduled" }),
+    );
+    expect(remaining.map((row) => String(row["job_id"]))).toEqual(["job-late"]);
+    expect(Number(remaining[0]?.["attempts"])).toBe(0);
   });
 });
 
@@ -359,7 +474,7 @@ describe("快照排空", () => {
       method: "POST",
       url: "/api/v1/campaign/snapshots",
       headers: { authorization: `Bearer ${session}` },
-      payload: { label: "tick-72" },
+      payload: { operationId: "op-000000000001", label: "tick-72" },
     });
     expect(response.statusCode).toBe(200);
     const body = response.json() as { readonly snapshotId: string; readonly worldTick: number };

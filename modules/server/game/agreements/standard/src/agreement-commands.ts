@@ -1,0 +1,239 @@
+/**
+ * 协议命令处理器：提出、接受/拒绝/还价，以及全部当事人接受后的生效写入。
+ * 依赖条款校验、协议聚合、世界/地图端口与事务上下文；不评估期限后的履约或违约。
+ * 禁止替当事人应答、跳过生效前校验，或在写入失败时保留部分生效结果。
+ */
+import type { Json, ReasonCode, Term } from "@ai-npc/contracts";
+import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@ai-npc/module-sdk";
+import { isSustainedTerm } from "./fulfillment";
+import { finishIfFulfilled } from "./agreement-lifecycle";
+import { cancelAgreementJobs, scheduleBreaches, scheduleExpiry } from "./agreement-schedule";
+import { asPorts, type AgreementContext } from "./agreement-shared";
+import { readAgreementState, type AgreementState } from "./state";
+import { validateTerms } from "./terms";
+
+/** 新提案的初始状态；提出者默认已接受，其余当事人待回复。 */
+function initialState(
+  context: AgreementContext,
+  terms: readonly Term[],
+  parties: readonly string[],
+  proposerId: string,
+  supersedesId: string | null,
+  version: number,
+  expiresAtTick: number,
+): AgreementState {
+  return {
+    agreementId: context.ids("agr"),
+    version,
+    proposerId,
+    parties: [...parties],
+    terms: [...terms],
+    responses: { [proposerId]: "accept" },
+    status: "proposed",
+    createdAtTick: context.tx.worldTick,
+    activatedAtTick: null,
+    expiresAtTick,
+    supersedesId,
+    supersededBy: null,
+    fulfilledTerms: [],
+    breachedTerms: [],
+    progress: terms.map(() => 0),
+  };
+}
+
+/** 生效写入的结果；失败由 respond 转成拒绝，命令网关回滚整个保存点。 */
+type ActivationResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reasonCode: ReasonCode; readonly safeMessage: string };
+
+/** 按条款创建授权：通行许可、水闸分配与队伍/库存委托。 */
+function applyActivation(context: AgreementContext, state: AgreementState): ActivationResult {
+  const ports = asPorts(context);
+  for (const term of state.terms) {
+    if (term.kind === "grant-passage") {
+      const granted = ports["game.map"].grantPassage({
+        roadId: term.roadId,
+        granteeFactionId: term.granteeFactionId,
+        untilTick: term.untilTick,
+        byId: term.obligorId,
+      });
+      if (!granted.ok) {
+        return { ok: false, reasonCode: granted.reasonCode, safeMessage: "通行许可未能创建" };
+      }
+    } else if (term.kind === "water-allocation") {
+      const applied = ports["game.world"].setAllocation(term.policy, term.obligorId);
+      // no-change 表示当前分配已等于条款值，条款本已符合，不算写入失败。
+      if (!applied.ok && applied.reasonCode !== "no-change") {
+        return { ok: false, reasonCode: applied.reasonCode, safeMessage: "水闸分配未能写入" };
+      }
+    } else if (term.kind === "delegate") {
+      ports["game.world"].createDelegation({
+        grantorFactionId: ports["game.world"].principalFaction(term.obligorId) ?? term.obligorId,
+        granteeId: term.granteeId,
+        teamIds: term.teamIds,
+        stockpileId: term.stockpileId,
+        maxDraw: term.maxDraw,
+        untilTick: term.untilTick,
+      });
+    }
+  }
+  return { ok: true };
+}
+
+/** 生效：写状态、发布激活事件、安排违约检查，并把生效即履约的条款记为履约。 */
+function activate(context: AgreementContext, state: AgreementState): ActivationResult {
+  const activated: AgreementState = { ...state, status: "active", activatedAtTick: context.tx.worldTick };
+  const applied = applyActivation(context, activated);
+  if (!applied.ok) {
+    return applied;
+  }
+  context.tx.put("agreement", activated.agreementId, activated);
+  context.tx.emit(
+    "AgreementActivated",
+    {
+      agreementId: activated.agreementId,
+      version: activated.version,
+      parties: [...activated.parties],
+      terms: [...activated.terms],
+    },
+    principalsAudience(activated.parties),
+  );
+  scheduleBreaches(context, activated);
+  context.tx.cancelJobs(`agreement-expire:${activated.agreementId}`);
+  for (const [index, term] of activated.terms.entries()) {
+    // 委托没有撤销命令；通行与水闸生效即履约，持续义务由 untilTick 后的期限 job 收尾。
+    if (term.kind === "delegate" || isSustainedTerm(term)) {
+      activated.fulfilledTerms = [...new Set([...activated.fulfilledTerms, index])];
+      context.tx.emit(
+        "AgreementTermFulfilled",
+        { agreementId: activated.agreementId, termIndex: index, obligorId: term.obligorId, term, evidenceEventIds: [] },
+        principalsAudience(activated.parties),
+      );
+    }
+  }
+  context.tx.put("agreement", activated.agreementId, activated);
+  finishIfFulfilled(context, activated);
+  return { ok: true };
+}
+
+/** 提出协议：提出者必须是当事人，条款需通过校验，期限上限为 168 tick。 */
+export function propose(context: AgreementContext, payload: Json): HandlerResult {
+  const input = payload as unknown as {
+    readonly parties: readonly string[];
+    readonly terms: readonly Term[];
+    readonly expiresInTicks?: number;
+  };
+  const proposerId = effectivePrincipalId(context.auth);
+  if (!input.parties.includes(proposerId)) {
+    return { kind: "rejected", reasonCode: "not-a-party", safeMessage: "提出者必须是当事人" };
+  }
+  const invalid = validateTerms(context, input.terms, input.parties);
+  if (invalid !== null) {
+    return { kind: "rejected", reasonCode: invalid, safeMessage: "协议条款不合法" };
+  }
+  const expiresAtTick = context.tx.worldTick + Math.min(input.expiresInTicks ?? 24, 168);
+  const state = initialState(context, input.terms, input.parties, proposerId, null, 1, expiresAtTick);
+  context.tx.put("agreement", state.agreementId, state);
+  context.tx.emit(
+    "AgreementProposed",
+    {
+      agreementId: state.agreementId,
+      version: state.version,
+      proposerId,
+      parties: [...state.parties],
+      terms: [...state.terms],
+      expiresAtTick,
+      supersedesId: null,
+    },
+    principalsAudience(state.parties),
+  );
+  scheduleExpiry(context, state);
+  return { kind: "accepted", result: { agreementId: state.agreementId } };
+}
+
+/** 应答协议：拒绝关闭提案，还价生成新版本，最后一位接受者触发生效。 */
+export function respond(context: AgreementContext, payload: Json): HandlerResult {
+  const input = payload as unknown as {
+    readonly agreementId: string;
+    readonly response: "accept" | "reject" | "counter";
+    readonly counterTerms?: readonly Term[];
+  };
+  const actor = effectivePrincipalId(context.auth);
+  const state = readAgreementState(context.tx, input.agreementId);
+  if (state === null) {
+    return { kind: "rejected", reasonCode: "not-a-party", safeMessage: "协议不存在" };
+  }
+  if (!state.parties.includes(actor)) {
+    return { kind: "rejected", reasonCode: "not-a-party", safeMessage: "当前主体不是当事人" };
+  }
+  if (state.status !== "proposed") {
+    return { kind: "rejected", reasonCode: "agreement-not-open", safeMessage: "协议已经关闭" };
+  }
+  const responseMap = new Map(Object.entries(state.responses));
+  if (responseMap.get(actor) === "accept") {
+    return { kind: "rejected", reasonCode: "already-responded", safeMessage: "已经回复过该提案" };
+  }
+  context.tx.emit(
+    "AgreementResponded",
+    { agreementId: state.agreementId, partyId: actor, response: input.response },
+    principalsAudience(state.parties),
+  );
+  if (input.response === "reject") {
+    responseMap.set(actor, "reject");
+    context.tx.put("agreement", state.agreementId, { ...state, status: "rejected", responses: Object.fromEntries(responseMap) });
+    context.tx.emit("AgreementRejected", { agreementId: state.agreementId, byId: actor }, principalsAudience(state.parties));
+    cancelAgreementJobs(context, state);
+    return { kind: "accepted" };
+  }
+  if (input.response === "counter") {
+    const terms = input.counterTerms ?? [];
+    const invalid = validateTerms(context, terms, state.parties);
+    if (invalid !== null) {
+      return { kind: "rejected", reasonCode: invalid, safeMessage: "还价条款不合法" };
+    }
+    const next = initialState(
+      context,
+      terms,
+      state.parties,
+      actor,
+      state.agreementId,
+      state.version + 1,
+      context.tx.worldTick + 24,
+    );
+    context.tx.put("agreement", state.agreementId, { ...state, status: "superseded", supersededBy: next.agreementId });
+    context.tx.put("agreement", next.agreementId, next);
+    context.tx.emit("AgreementSuperseded", { agreementId: state.agreementId, byId: actor }, principalsAudience(state.parties));
+    context.tx.emit(
+      "AgreementProposed",
+      {
+        agreementId: next.agreementId,
+        version: next.version,
+        proposerId: actor,
+        parties: [...next.parties],
+        terms: [...next.terms],
+        expiresAtTick: next.expiresAtTick,
+        supersedesId: state.agreementId,
+      },
+      principalsAudience(next.parties),
+    );
+    cancelAgreementJobs(context, state);
+    scheduleExpiry(context, next);
+    return { kind: "accepted", result: { agreementId: next.agreementId } };
+  }
+  const responses = Object.fromEntries(new Map([...Object.entries(state.responses), [actor, "accept" as const]]));
+  const next = { ...state, responses };
+  context.tx.put("agreement", next.agreementId, next);
+  const acceptedByAll = next.parties.every((party) => new Map(Object.entries(responses)).get(party) === "accept");
+  if (acceptedByAll) {
+    const invalid = validateTerms(context, next.terms, next.parties);
+    if (invalid !== null) {
+      return { kind: "rejected", reasonCode: invalid, safeMessage: "条款在生效前已失效" };
+    }
+    // 生效写入失败时按该原因码拒绝，保存点回滚后不保留回复与部分生效写入。
+    const activation = activate(context, next);
+    if (!activation.ok) {
+      return { kind: "rejected", reasonCode: activation.reasonCode, safeMessage: activation.safeMessage };
+    }
+  }
+  return { kind: "accepted" };
+}

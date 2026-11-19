@@ -7,4 +7,12 @@ export const packageName = "@ai-npc/mod-platform-operations-standard";
 export { operationsConfigSchema, operationsModuleDefinition } from "./definition";
 export type { OperationsConfig } from "./definition";
 export { OperationsService } from "./plugin";
-export type { OperationsDriver, SnapshotView } from "./plugin";
+export type {
+  IdempotentOperationsDriver,
+  OperationRequest,
+  OperationsDriver,
+  RestoreInput,
+  RestoreOutcome,
+  SnapshotInput,
+  SnapshotView,
+} from "./plugin";

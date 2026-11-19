@@ -54,6 +54,7 @@ export function orderSlotContributions<T extends ContributionRef>(
   const result: Record<string, readonly T[]> = {};
   for (const slot of [...groups.keys()].sort(compareText)) {
     const group = groups.get(slot) ?? [];
+    // eslint-disable-next-line security/detect-object-injection -- 槽位来自本函数遍历的 groups 键。
     result[slot] = Object.freeze([...group].sort(compareContribution).map((item) => item.value));
   }
   return result;

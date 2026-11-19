@@ -8,4 +8,29 @@ export { transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";
 export { TransportPort } from "./plugin";
 export { createServerApp } from "./app";
-export type { AuthorityPort, ServerApp, ServerAppOptions, ServerIdentity } from "./app";
+export { StreamHub } from "./stream-hub";
+export type {
+  StreamHubOptions,
+  StreamIdentity,
+  StreamSession,
+  StreamSocket,
+  StreamState,
+  StreamStats,
+} from "./stream-hub";
+export type {
+  AccessAction,
+  AccessDecision,
+  AccessPolicy,
+  AccessRequest,
+  AuthorityPort,
+  CommandReceiptReadPort,
+  ConversationReadPort,
+  ConversationReadQuery,
+  ConversationSourceLine,
+  ServerApp,
+  ServerAppInjectMethod,
+  ServerAppInjectOptions,
+  ServerAppInjectResponse,
+  ServerAppOptions,
+  ServerIdentity,
+} from "./app";

@@ -114,6 +114,7 @@ class TableAccess implements StorageTable {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   get(key: StorageFilter): StorageRow | null {
     this.assertKey(key);
     const where = this.buildWhere(key);
@@ -180,6 +181,7 @@ class TableAccess implements StorageTable {
       requireColumn(this.info, column);
     }
     if (this.branchId !== null) {
+      // eslint-disable-next-line security/detect-object-injection -- 列名来自表结构与本文件的主键清单，索引不来自外部输入。
       const providedBranch = row[BRANCH_COLUMN];
       if (providedBranch !== undefined && providedBranch !== this.branchId) {
         validationFailure("写入行的 branch_id 与 scope 不一致", {
@@ -189,6 +191,7 @@ class TableAccess implements StorageTable {
       }
     }
     for (const column of this.keyColumns()) {
+      // eslint-disable-next-line security/detect-object-injection -- 列名来自表结构与本文件的主键清单，索引不来自外部输入。
       if (!(column in row) || row[column] === undefined) {
         validationFailure(`表 ${this.table} 的写入行缺少主键列 ${column}`, { table: this.table, column });
       }
@@ -202,6 +205,7 @@ class TableAccess implements StorageTable {
         values.push(this.branchId);
         continue;
       }
+      // eslint-disable-next-line security/detect-object-injection -- 列名来自表结构与本文件的主键清单，索引不来自外部输入。
       const value = row[column];
       values.push(encodeCell(this.info, column, value));
     }

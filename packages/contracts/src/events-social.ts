@@ -22,7 +22,9 @@ export type Delivery = z.infer<typeof deliverySchema>;
 export const deliveryListSchema = z.array(deliverySchema).superRefine((deliveries, context) => {
   for (let index = 1; index < deliveries.length; index += 1) {
     const previous = deliveries[index - 1];
+    // eslint-disable-next-line security/detect-object-injection -- 数组下标来自本文件循环。
     const current = deliveries[index];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (previous !== undefined && current !== undefined && previous.principalId >= current.principalId) {
       context.addIssue({
         code: "custom",

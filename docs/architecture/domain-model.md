@@ -71,8 +71,9 @@ interface AuthContext {            // always built by the host, never taken from
 | `stockpile` | stockpileId | `game.resources.light` | nodeId、ownerFactionId、amount、reserved、baseline |
 | `task` | taskId | `game.actions.standard` | taskType、teamId、dispatcherId、invitees、participants、params、status、departTick、nominalCompletionTick、completionTick、riskOutcome（内部）、delayNoticeSent、reservations |
 | `agreement` | agreementId | `game.agreements.standard` | version、proposerId、parties、responses（提出者在提出时即为 accept）、terms（含每条状态与累计进度）、status、expiresAtTick、supersedesId |
-| `conversation` | conversationId | `game.comms.standard` | participants、lastSeq |
+| `conversation` | conversationId | `game.comms.standard` | participants、lastSeq、lines（按 seq 固化的对白与冻结投递） |
 | `knowledge-grant` | grantId | `game.comms.standard` | principalId、itemId（证据或秘密）、via、grantedAtTick |
+| `message` | messageId | `game.comms.standard` | fromId、to、channel（message/broadcast/seat/opening/reported）、text、intentKind、deliveries、committedAtTick、conversationId |
 | `share` | shareId | `game.comms.standard` | fromId、evidenceId、audience、sharedAtTick |
 | `scenario-card` | cardId | `game.scenario.*` | version、status（scheduled/triggered/withdrawn）、triggerAtTick、triggeredAtTick |
 
@@ -130,7 +131,7 @@ type OpResult = { readonly ok: true } | { readonly ok: false; readonly reasonCod
 | `game.resources` | `stockpile(id)`、`available(id)`、`level(id)` | `reserve(stockpileId, delta, taskId)`、`release(stockpileId, delta, taskId)`、`consume(stockpileId, delta, reason, taskId)`、`transfer(fromId, toId, delta, taskId)`、`adjust(stockpileId, delta, reason)` |
 | `game.actions` | `task(id)`、`tasksOf(principalId)`、`completedTasks()` | — |
 | `game.agreements` | `agreement(id)`、`agreementsOf(principalId)`、`countsAsOf(tick)` | — |
-| `game.comms` | `relayState()`、`sameNode(fromId, toId)`、`deliverAt(channel, fromId, toId)`（按 [规则](../game/rules.md) 第 9 节计算送达 tick 或返回 `relay-down`）、`holds(principalId, itemId)`、`hasShare({ fromId, evidenceId, toPrincipalId, sinceTick, byTick })` | `postMessage(spec)`、`postDialogue(spec)`、`grantKnowledge({ principalId, itemId, via })` |
+| `game.comms` | `relayState()`、`sameNode(fromId, toId)`、`deliverAt(channel, fromId, toId)`（按 [规则](../game/rules.md) 第 9 节计算送达 tick 或返回 `relay-down`）、`holds(principalId, itemId)`、`hasShare({ fromId, evidenceId, toPrincipalId, sinceTick, byTick })`、`messagesFor(principalId, limit)`、`conversationsOf(principalId)`、`conversationMessages(conversationId, limit)`、`knowledgeOf(principalId)` | `postMessage(spec)`、`postDialogue(spec)`、`grantKnowledge({ principalId, itemId, via })` |
 | `game.scenario` | `cards()` | — |
 
 ops 修改所有者自己的聚合并发出对应事件（例如 `resources.reserve` 发出 `ResourcesReserved`）；不满足条件时返回 `{ ok: false, reasonCode }`，调用方应直接以该原因码返回 `rejected`。

@@ -53,6 +53,7 @@ const instanceScopeRank: Readonly<Record<InstanceScope, number>> = {
  * 提供者必须不窄于消费方要求的生命周期，跨作用域的窄提供者会留下悬空实例。
  */
 export function isInstanceScopeCompatible(providerScope: InstanceScope, requiredScope: InstanceScope): boolean {
+  // eslint-disable-next-line security/detect-object-injection -- 作用域来自 InstanceScope 受限枚举。
   return instanceScopeRank[providerScope] <= instanceScopeRank[requiredScope];
 }
 

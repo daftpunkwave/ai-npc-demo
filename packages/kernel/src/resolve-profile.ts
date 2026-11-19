@@ -66,6 +66,7 @@ function formatIssues(issues: readonly { readonly path: readonly PropertyKey[]; 
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 function isJsonObject(value: Json | undefined): value is { readonly [key: string]: Json } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -140,14 +141,17 @@ function mergeChain(chain: readonly ProfileDocument[]): {
       if (profileMetadataKeys.has(key)) {
         continue;
       }
+      // eslint-disable-next-line security/detect-object-injection -- 键来自内容包配置的字段与槽位清单，只读合并。
       const value = document[key];
       if (value !== undefined) {
+        // eslint-disable-next-line security/detect-object-injection -- 键来自内容包配置的字段与槽位清单，只读合并。
         settings[key] = value;
       }
     }
     const declaredSlots = document.slots;
     if (declaredSlots !== undefined) {
       for (const [slot, rawSelection] of Object.entries(declaredSlots)) {
+        // eslint-disable-next-line security/detect-object-injection -- 键来自内容包配置的字段与槽位清单，只读合并。
         slots[slot] = normalizeSlot(document.profileId, slot, rawSelection);
       }
     }
@@ -182,6 +186,7 @@ function applyVariantPatch(
         failProfile(`variant profile ${document.profileId} 的 patch.slots 必须是对象`, { profileId: document.profileId });
       }
       for (const [slot, rawSelection] of Object.entries(value)) {
+        // eslint-disable-next-line security/detect-object-injection -- 键来自内容包配置的字段与槽位清单，只读合并。
         slots[slot] = normalizeSlot(document.profileId, slot, rawSelection);
       }
       continue;
@@ -192,6 +197,7 @@ function applyVariantPatch(
         key,
       });
     }
+    // eslint-disable-next-line security/detect-object-injection -- 键来自内容包配置的字段与槽位清单，只读合并。
     settings[key] = value;
   }
 }
@@ -201,6 +207,7 @@ export function resolveProfile(input: ResolveProfileInput): ResolvedProfile {
   const byId = indexProfiles(input.profiles);
   const chain = resolveInheritanceChain(byId, input.profileId);
   const requested = chain[chain.length - 1];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
   if (requested === undefined) {
     failProfile(`profile ${input.profileId} 未解析出继承链`, { profileId: input.profileId });
   }

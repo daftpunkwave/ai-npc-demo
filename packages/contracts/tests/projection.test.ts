@@ -136,9 +136,9 @@ const playerProjection = {
       stockpileId: "sp-commons",
       nodeId: "grayharbor",
       ownerFactionId: "human-neutral",
-      supplyLevel: "stable",
-      energyLevel: "stable",
-      medicalLevel: "stable",
+      supplyLevel: "adequate",
+      energyLevel: "adequate",
+      medicalLevel: "adequate",
       amounts: { supply: 60, energy: 12, medical: 8 },
       delegation: { remaining: { supply: 15, energy: 6, medical: 4 }, untilTick: 168 },
     },
@@ -273,6 +273,17 @@ const agentWorldView = {
 describe("PlayerProjection", () => {
   it("接受完整玩家投影", () => {
     expectValid(playerProjectionSchema, playerProjection);
+  });
+
+  it("开局前允许没有世界指标", () => {
+    expectValid(playerProjectionSchema, { ...playerProjection, meters: null });
+  });
+
+  it("库存等级使用资源等级而不是指标展示等级", () => {
+    expectInvalid(playerProjectionSchema, {
+      ...playerProjection,
+      stockpiles: [{ ...playerProjection.stockpiles[0], supplyLevel: "stable" }],
+    });
   });
 
   it("拒绝非法字段与多余字段", () => {

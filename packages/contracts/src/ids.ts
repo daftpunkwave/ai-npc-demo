@@ -3,6 +3,7 @@
  * 依赖 zod 的正则校验；供信封、领域对象与 API DTO 约束标识符。
  * 禁止在此生成 ID 或读取时间/随机源，ID 由宿主注入的服务生成。
  */
+/* eslint-disable security/detect-non-literal-regexp, security-node/non-literal-reg-expr -- 正则只由本文件的常量前缀与固定 base32 字母表拼接，模式片段不受外部输入控制。 */
 import { z } from "zod";
 
 /**

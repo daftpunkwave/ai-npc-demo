@@ -18,10 +18,15 @@ function toView(state: TaskState): TaskView {
     taskType: state.taskType,
     teamId: state.teamId,
     dispatcherId: state.dispatcherId,
+    invitees: state.invitees,
     participants: state.participants,
     status: state.status,
     params: state.params,
+    route: state.route,
+    departTick: state.departTick,
+    nominalCompletionTick: state.nominalCompletionTick,
     completedAtTick: state.completedAtTick,
+    delayNoticeSent: state.delayNoticeSent,
   };
 }
 

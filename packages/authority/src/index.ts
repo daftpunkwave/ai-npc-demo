@@ -8,6 +8,8 @@ export const packageName = "@ai-npc/authority";
 export { Authority } from "./authority";
 export type { AuthorityOptions } from "./authority";
 export { CommandGateway, commandPayloadHash } from "./command-gateway";
+export { createScopedWorldTxFactory } from "./module-binding";
+export type { ModuleBindingInput, ModuleScopeInput } from "./module-binding";
 export { ClockStepRunner } from "./clock-steps";
 export type { ClockStepRunnerOptions } from "./clock-steps";
 export { EventConsumerRunner } from "./consumer-runner";

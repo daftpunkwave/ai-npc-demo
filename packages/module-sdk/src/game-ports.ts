@@ -1,6 +1,6 @@
 /**
  * 定义服务端游戏模块之间共享的查询与操作端口，以及模块绑定的内容索引视图。
- * 依赖公共契约的领域值、资源量与原因码；端口方法在调用方事务内同步执行。
+ * 依赖公共契约的领域值、资源量与原因码，以及本包的事务端口类型；端口方法在调用方事务内同步执行。
  * 禁止在这里实现规则、读取存储或让端口绕过所属模块的聚合所有权。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
@@ -14,10 +14,16 @@ import type {
   ResourceDelta,
   ResourceId,
   RoadStatus,
+  StorageTransaction,
   TaskStatus,
   TaskType,
+  Term,
   WatergateAllocation,
 } from "@ai-npc/contracts";
+import type { WorldTx } from "./ports";
+
+/** 只取调用模块自己作用域事务的工厂；模块端口不得借它读取或改写其他模块的聚合。 */
+export type OwnWorldTxFactory = () => WorldTx;
 
 /** 宿主 ID 生成器的游戏端口视图；参数为 ID 前缀。 */
 export type GameIdFactory = (...args: [string]) => string;
@@ -195,6 +201,16 @@ export interface ClockState {
 /** 时钟控制端口；面向宿主 API，不属于规则事务内的写入路径。 */
 export interface GameClockPort {
   read(branchId: string): ClockState;
+  /**
+   * 在调用方已打开的事务内读取时钟；宿主投影与规则事务用同一快照，避免嵌套事务。
+   * 端口只读该事务，不提交、不回滚，也不缓存结果。
+   */
+  readInTransaction(tx: StorageTransaction, branchId: string): ClockState;
+  /**
+   * 在调用方事务内为一个新分支写入初始时钟行（0 tick、暂停、版本 0），
+   * 秒数取自 provider 自己的有效配置；已有时钟行时拒绝覆盖。
+   */
+  initializeInTransaction(tx: StorageTransaction, branchId: string): ClockState;
   start(branchId: string, expectedRunVersion?: number): { readonly ok: true; readonly clock: ClockState } | { readonly ok: false; readonly reasonCode: "version-conflict" | "invalid-params" };
   pause(branchId: string, expectedRunVersion?: number): { readonly ok: true; readonly clock: ClockState } | { readonly ok: false; readonly reasonCode: "version-conflict" | "invalid-params" };
   step(
@@ -437,16 +453,31 @@ export interface GameWorldPort {
   }): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
 }
 
+/**
+ * 通信模块读取世界事实的最小只读视图：指标与角色位置。
+ * 组合根注入已绑定的世界端口；通信模块不再按世界模块 ID 直接读取聚合。
+ */
+export type CommsWorldFacts = Pick<GameWorldPort, "meters" | "character">;
+
 /** 任务查询端口；任务聚合由行动模块拥有。 */
 export interface TaskView {
   readonly taskId: string;
   readonly taskType: TaskType;
   readonly teamId: string;
   readonly dispatcherId: string;
+  /** 受邀角色；受邀者在出发前用 task.respond 回复后才进入 participants。 */
+  readonly invitees: readonly string[];
   readonly participants: readonly string[];
   readonly status: TaskStatus;
   readonly params: unknown;
+  /** 出发时按路径算出的道路顺序；玩家投影只把「其他任务」的路线给到最小摘要。 */
+  readonly route: readonly string[];
+  readonly departTick: number;
+  /** 不含延误的名义完成 tick；延误只进任务内部状态。 */
+  readonly nominalCompletionTick: number;
   readonly completedAtTick: number | null;
+  /** 是否已经为延误提交过 TaskDelayed；玩家投影据此显示延误提醒。 */
+  readonly delayNoticeSent: boolean;
 }
 
 /** 行动模块查询端口；协议履约判定与剧情订阅复用已完成任务事实。 */
@@ -464,8 +495,19 @@ export interface GameActionsPort {
 /** 协议查询端口；条款状态由协议模块拥有。 */
 export interface AgreementView {
   readonly agreementId: string;
+  readonly version: number;
+  readonly proposerId: string;
   readonly status: "proposed" | "active" | "fulfilled" | "rejected" | "superseded" | "expired" | "breached";
   readonly parties: readonly string[];
+  readonly terms: readonly Term[];
+  readonly createdAtTick: number;
+  readonly expiresAtTick: number;
+  readonly supersedesId: string | null;
+  /** 已履约与已违约的条款下标；其余条款状态为 open。 */
+  readonly fulfilledTerms: readonly number[];
+  readonly breachedTerms: readonly number[];
+  /** 与 terms 同下标的累计进度；没有进度概念的条款为 0。 */
+  readonly progress: readonly number[];
 }
 
 /** 截至某个 tick 的协议计数；同一协议只计一次，供章节评估使用。 */
@@ -517,12 +559,54 @@ export interface ShareQuery {
   readonly byTick: number;
 }
 
+/** 通信日志的渠道；reported 是剧情卡下发的传闻，来源不是在地主体。 */
+export type CommsMessageChannel = "message" | "broadcast" | "seat" | "opening" | "reported";
+
+/** 一条已提交的通信日志；deliverAtTick 是该主体被冻结的送达 tick。 */
+export interface CommsMessageView {
+  readonly messageId: string;
+  readonly fromId: string;
+  readonly to: readonly string[];
+  readonly channel: CommsMessageChannel;
+  readonly text: string;
+  readonly intentKind: MessageIntentKind;
+  readonly committedAtTick: number;
+  readonly deliverAtTick: number;
+  readonly conversationId: string | null;
+}
+
+/** 一条已固化的对白；deliveries 是提交时冻结的逐主体送达 tick。 */
+export interface CommsDialogueLineView {
+  readonly seq: number;
+  readonly dialogueId: string;
+  readonly speakerId: string;
+  readonly text: string;
+  readonly channel: "face-to-face" | "relay";
+  readonly worldTick: number;
+  readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
+}
+
+/** 一条知识授权；itemId 指向内容包的证据或秘密。 */
+export interface CommsKnowledgeView {
+  readonly itemId: string;
+  readonly via: "start" | "share" | "discovery" | "setup";
+  readonly grantedAtTick: number;
+}
+
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
   /** 两个主体此刻是否在同一节点；无位置主体（战略 Agent、未知主体）与任何人都不同节点。 */
   sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
+  /** 已送达给该主体的通信日志：只含投递名单里有该主体且已到送达 tick 的记录，按提交 tick 升序取最近 limit 条。 */
+  messagesFor(principalId: string, limit: number): readonly CommsMessageView[];
+  /** 该主体参与的会话 ID，按 ID 升序。 */
+  conversationsOf(principalId: string): readonly string[];
+  /** 会话最近 limit 条对白，按 seq 升序。 */
+  conversationMessages(conversationId: string, limit: number): readonly CommsDialogueLineView[];
+  /** 该主体持有的知识授权，按授予 tick 与 itemId 升序。 */
+  knowledgeOf(principalId: string): readonly CommsKnowledgeView[];
   /** 是否存在由 fromId 在 sinceTick 到 byTick 之间提交、受众包含 toPrincipalId 的证据分享。 */
   hasShare(query: ShareQuery): boolean;
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean;
@@ -559,6 +643,17 @@ export interface GameCommsPort {
   }): CommsPostResult;
 }
 
+/**
+ * 协议统计读取的其他模块只读事实：已完成任务、证据分享、世界指标/队伍与道路状态。
+ * 由组合根按已声明能力注入；协议端口不再按实现 ID 读取对方私有聚合。
+ */
+export interface AgreementQueryPorts {
+  readonly actions: Pick<GameActionsPort, "completedTasks">;
+  readonly comms: Pick<GameCommsPort, "hasShare">;
+  readonly world: Pick<GameWorldPort, "meters" | "teams">;
+  readonly map: Pick<GameMapPort, "roadStatus">;
+}
+
 /** 游戏模块绑定的全部端口；宿主按能力解析后注入处理器上下文。 */
 export interface GameModulePorts {
   readonly "game.map": GameMapPort;
@@ -568,6 +663,14 @@ export interface GameModulePorts {
   readonly "game.agreements": GameAgreementsPort;
   readonly "game.scenario": GameScenarioPort;
   readonly "game.comms": GameCommsPort;
+}
+
+/**
+ * 组合根绑定模块端口时提供的已绑定端口快照。
+ * 绑定器按依赖顺序构造端口，只能经能力取用已声明的类型端口，不得借此读取对方聚合。
+ */
+export interface GamePortBindContext {
+  readonly ports: Readonly<Partial<GameModulePorts>>;
 }
 
 /** 可空的操作结果；成功时允许携带结果数据。 */

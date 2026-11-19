@@ -3,6 +3,7 @@
  * 只读取 pnpm workspace 声明、package.json 与手写源码文本，不执行被检查代码。
  * 禁止扫描依赖目录、生成产物或测试夹具，也禁止在缺少清单时静默返回空结果。
  */
+/* eslint-disable security/detect-object-injection, security/detect-non-literal-fs-filename -- 只读取仓库根目录与 workspace/package.json 清单，键与路径均来自固定清单或 readdir 结果。 */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { HEADER_LANGUAGE_BY_EXTENSION } from "./constants";
@@ -50,6 +51,7 @@ function readWorkspaceGlobs(root: string): string[] {
     if (!inPackagesSection) {
       continue;
     }
+    // eslint-disable-next-line security/detect-unsafe-regex -- 输入是 workspace 清单的单行文本，模式无嵌套量词。
     const match = /^\s*-\s*["']?([^"'\s#]+)["']?\s*(?:#.*)?$/.exec(line);
     const glob = match?.[1];
     if (glob !== undefined) {
@@ -142,6 +144,7 @@ export function scanRepository(root: string): BoundaryCheckInput {
     .map((directory) => readPackageManifest(absoluteRoot, directory));
   const files: BoundarySourceFile[] = [];
   for (const relativePath of walkRepositoryFiles(absoluteRoot)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (HEADER_LANGUAGE_BY_EXTENSION[extname(relativePath).toLowerCase()] === undefined) {
       continue;
     }

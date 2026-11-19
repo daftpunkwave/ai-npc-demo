@@ -37,6 +37,7 @@ export interface ScopedStorageRecord {
  */
 export interface ScopedStoragePort {
   readonly scope: ScopedStateKey;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   read(recordId: string): Json | null;
   write(recordId: string, value: Json): void;
   remove(recordId: string): void;
@@ -119,6 +120,10 @@ export interface HandlerContext<TModulePorts, TContentIndex> {
   readonly modules: TModulePorts;
   readonly approvedSpeech: ApprovedSpeechReader;
   readonly content: TContentIndex;
+  /**
+   * 确定性随机源：宿主已绑定本次 run 的 seed，规则只传语义字段（tick、agentId、teamId、roadId 等）。
+   * 不得把 taskId、turnId 等随机生成的 ID 作为输入。
+   */
   readonly rng: (...seedParts: string[]) => () => number;
   readonly ids: (prefix: string) => string;
 }

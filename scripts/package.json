@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./check-assets": "./check-assets.ts",
-    "./check-boundaries": "./check-boundaries.ts"
+    "./check-boundaries": "./check-boundaries.ts",
+    "./check-catalog": "./check-catalog.ts"
   }
 }

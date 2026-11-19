@@ -1,10 +1,13 @@
 /**
- * 加载并校验 server 装配与在线 RunSpec；宿主只经此文件读取配置。
- * 依赖 yaml、契约 schema 与组合根模块定义；不启动模块、不打开存储。
- * 禁止接受任意路径或未登记模块。
+ * 加载并解析 server 装配：严格读取装配目录，按 kernel 解析计划校验绑定、能力闭包、作用域、
+ * 拓扑与模块配置，并计算规范化摘要；部署期配置覆盖只用于启动计划，不进入冻结摘要。
+ * 依赖 yaml、契约 schema、kernel 解析/摘要与组合根模块定义；不启动模块、不打开存储。
+ * 禁止接受任意路径、未登记模块，也禁止用模块 ID、原始 JSON.stringify 或截断摘要代替规范化哈希。
  */
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
+/* eslint-disable security/detect-non-literal-fs-filename -- 只读取 config/assemblies 目录，且每个文件都经 realpath 越界与普通文件检查。 */
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import {
   assemblyDescriptorSchema,
@@ -15,70 +18,216 @@ import {
   type ModuleRef,
   type ResolvedModuleSet,
 } from "@ai-npc/contracts";
+import {
+  computeAssemblyHash,
+  computeCatalogHash,
+  computeConfigHash,
+  createModuleRegistry,
+  resolveRealmPlan,
+  type CanonicalHasher,
+  type ResolvedRealmPlan,
+} from "@ai-npc/kernel";
+import { canonicalHasher } from "../host-services";
+import { serverRequiredCapabilities } from "./module-catalog";
 
-/** 读取已登记装配；未知 ref 直接失败。 */
-export function loadAssembly(ref: string): AssemblyDescriptor {
-  const text = (() => {
-    switch (ref) {
-      case "local-slg-standard-v1":
-        return readFileSync("config/assemblies/local-slg-standard-v1.yaml", "utf8");
-      case "local-slg-escalating-v1":
-        return readFileSync("config/assemblies/local-slg-escalating-v1.yaml", "utf8");
-      default:
-        throw new Error(`未知 server 装配: ${ref}`);
+/** 装配目录固定为项目根下的 config/assemblies；测试可传入不同根目录。 */
+function assemblyDirectory(root: string = process.cwd()): string {
+  return resolve(root, "config/assemblies");
+}
+
+/**
+ * 按 assemblyId 在装配目录中读取唯一装配。
+ * 目录内每个 YAML 都必须通过装配 schema；损坏文件直接报告文件名，不静默跳过。
+ */
+export function loadAssembly(ref: string, root: string = process.cwd()): AssemblyDescriptor {
+  if (ref.trim().length === 0 || ref.includes("/") || ref.includes("\\")) {
+    throw new Error(`未知 server 装配: ${ref}`);
+  }
+  const directory = assemblyDirectory(root);
+  let fileNames: string[];
+  try {
+    fileNames = readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    throw new Error(`无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`);
+  }
+  const matches: AssemblyDescriptor[] = [];
+  const realDirectory = realpathSync(directory);
+  for (const fileName of fileNames) {
+    const filePath = join(directory, fileName);
+    // 拒绝符号链接与越界路径：realpath 必须仍位于固定的装配目录内，且目标是普通文件。
+    const realFile = realpathSync(filePath);
+    if (!realFile.startsWith(`${realDirectory}${sep}`) || !statSync(realFile).isFile()) {
+      throw new Error(`装配文件越出目录或不是普通文件: ${fileName}`);
     }
-  })();
-  return assemblyDescriptorSchema.parse(parse(text));
+    const text = readFileSync(realFile, "utf8");
+    let parsed: unknown;
+    try {
+      parsed = parse(text);
+    } catch (error) {
+      throw new Error(`装配文件 ${fileName} 不是合法 YAML：${error instanceof Error ? error.message : String(error)}`);
+    }
+    const result = assemblyDescriptorSchema.safeParse(parsed);
+    if (!result.success) {
+      throw new Error(
+        `装配文件 ${fileName} 不符合装配 schema：${result.error.issues.map((issue) => issue.message).join("；")}`,
+      );
+    }
+    if (result.data.assemblyId === ref) {
+      matches.push(result.data);
+    }
+  }
+  if (matches.length === 0) {
+    throw new Error(`未知 server 装配: ${ref}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`装配目录中存在多个 assemblyId=${ref} 的文件；装配 ID 必须唯一`);
+  }
+  return matches[0] as AssemblyDescriptor;
 }
 
-/** 解析 RunSpec；首版只要求可解析对象，字段由后续评估步骤扩展。 */
-export function loadRunSpec(ref: string): Json {
-  if (ref !== "online-default") {
-    throw new Error(`未知 RunSpec: ${ref}`);
-  }
-  const value = parse(readFileSync("config/runs/online-default.yaml", "utf8")) as unknown;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("online-default RunSpec 不是对象");
-  }
-  return value as Json;
+/** 解析 server 装配的选项：摘要端口与不进入摘要的部署期配置覆盖。 */
+export interface ResolveServerAssemblyOptions {
+  readonly hash?: CanonicalHasher;
+  readonly configOverrides?: Readonly<Record<string, Json>>;
 }
 
-/** 把装配绑定解析为会话可见的已解析模块集。 */
-export function resolveServerModules(
+/** 一个 server 装配的解析结果：会话握手用的模块集、实例计划与两类规范化摘要。 */
+export interface ResolvedServerAssembly {
+  readonly plan: ResolvedRealmPlan;
+  readonly modules: ResolvedModuleSet;
+  readonly assemblyHash: string;
+  readonly catalogHash: string;
+}
+
+/** 从装配绑定生成对外的能力清单；只公布实际绑定的能力，不公布模块额外提供的实现。 */
+function boundCapabilities(
+  assembly: AssemblyDescriptor,
+  plan: ResolvedRealmPlan,
+  realm: "server" | "client" | "console",
+): CapabilityRef[] {
+  const byModuleId = new Map(plan.modules.map((module) => [module.moduleId, module.definition]));
+  const capabilities: CapabilityRef[] = [];
+  const seen = new Set<string>();
+  // eslint-disable-next-line security/detect-object-injection -- realm 是受限字面量联合，只索引装配中已声明的三个 realm。
+  for (const binding of assembly.realms[realm].bindings) {
+    const definition = byModuleId.get(binding.moduleId);
+    const provided = definition?.provides.find((item) => item.capability === binding.capability);
+    if (provided === undefined) {
+      continue;
+    }
+    const key = `${provided.capability}:${provided.instanceScope}:${provided.cardinality}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    capabilities.push(provided);
+  }
+  return capabilities;
+}
+
+/** 构造一个 realm 的模块引用摘要列表；调用前实例计划已完成全部校验。 */
+async function moduleRefs(
+  plan: ResolvedRealmPlan,
+  hash: CanonicalHasher,
+): Promise<ModuleRef[]> {
+  const modules: ModuleRef[] = [];
+  for (const module of plan.modules) {
+    modules.push({
+      moduleId: module.moduleId,
+      version: module.version,
+      apiVersion: module.apiVersion,
+      configHash: await computeConfigHash(module.config, hash),
+    });
+  }
+  return modules;
+}
+
+/**
+ * 按 kernel 的统一解析规则构造 server 实例计划，并计算配置、目录与装配哈希。
+ * 无 Agent 槽位时 plan.agentSlots 为空，宿主据此跳过 profile、toolset 与模型布局解析。
+ */
+export async function resolveServerAssembly(
   assembly: AssemblyDescriptor,
   definitions: readonly ModuleDefinition[],
-): ResolvedModuleSet {
-  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
-  const modules: ModuleRef[] = [];
-  const capabilities: CapabilityRef[] = [];
-  const capabilityKeys = new Set<string>();
-  for (const binding of assembly.realms.server.bindings) {
-    const definition = byId.get(binding.moduleId);
-    if (definition === undefined) {
-      throw new Error(`装配引用未登记模块: ${binding.moduleId}`);
-    }
-    modules.push({
-      moduleId: definition.id,
-      version: definition.version,
-      apiVersion: definition.apiVersion,
-      configHash: createHash("sha256")
-        .update(JSON.stringify(binding.configRef === null ? {} : assembly.configs[binding.configRef]))
-        .digest("hex")
-        .slice(0, 16),
-    });
-    for (const provided of definition.provides) {
-      const key = `${provided.capability}:${provided.instanceScope}:${provided.cardinality}`;
-      if (!capabilityKeys.has(key)) {
-        capabilityKeys.add(key);
-        capabilities.push(provided);
-      }
-    }
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 CanonicalHasher 判为 any。
+  options: ResolveServerAssemblyOptions | CanonicalHasher = {},
+): Promise<ResolvedServerAssembly> {
+  const normalized = typeof options === "function" ? { hash: options } : options;
+  const hash = normalized.hash ?? canonicalHasher;
+  const registry = createModuleRegistry();
+  for (const definition of definitions) {
+    registry.register(definition);
   }
-  return {
+  const catalog = registry.snapshot();
+  const plan = resolveRealmPlan({
+    assembly,
     realm: "server",
-    protocolVersion: "1",
-    modules,
-    capabilities,
-    assemblyHash: assembly.assemblyId,
+    catalog,
+    requiredCapabilities: serverRequiredCapabilities,
+    ...(normalized.configOverrides === undefined ? {} : { configOverrides: normalized.configOverrides }),
+  });
+  const modules = await moduleRefs(plan, hash);
+  const assemblyHash = await computeAssemblyHash({ assembly, realm: "server", plan, hash });
+  return {
+    plan,
+    modules: {
+      realm: "server",
+      protocolVersion: "1",
+      modules,
+      capabilities: boundCapabilities(assembly, plan, "server"),
+      assemblyHash,
+    },
+    assemblyHash,
+    catalogHash: await computeCatalogHash(catalog, hash),
+  };
+}
+
+/** 浏览器 realm 的会话装配；与 server 共用同一解析器，空绑定得到空模块集。 */
+export async function resolveSessionAssemblies(
+  assembly: AssemblyDescriptor,
+  definitions: readonly ModuleDefinition[],
+  options: ResolveServerAssemblyOptions = {},
+): Promise<{ readonly client: ResolvedModuleSet; readonly console: ResolvedModuleSet }> {
+  const hash = options.hash ?? canonicalHasher;
+  const registry = createModuleRegistry();
+  for (const definition of definitions) {
+    registry.register(definition);
+  }
+  const catalog = registry.snapshot();
+  const resolveRealm = async (realm: "client" | "console"): Promise<ResolvedModuleSet> => {
+    const plan = resolveRealmPlan({ assembly, realm, catalog });
+    const modules = await moduleRefs(plan, hash);
+    return {
+      realm,
+      protocolVersion: "1",
+      modules,
+      capabilities: boundCapabilities(assembly, plan, realm),
+      assemblyHash: await computeAssemblyHash({ assembly, realm, plan, hash }),
+    };
+  };
+  return { client: await resolveRealm("client"), console: await resolveRealm("console") };
+}
+
+
+/** 会话握手与装配测试只需要的模块集视图。 */
+export async function resolveServerModules(
+  assembly: AssemblyDescriptor,
+  definitions: readonly ModuleDefinition[],
+  options: ResolveServerAssemblyOptions = {},
+): Promise<ResolvedModuleSet> {
+  return (await resolveServerAssembly(assembly, definitions, options)).modules;
+}
+
+/** 从解析计划中取只含指定模块的子计划；模块的 requires 仍引用原提供者，由启动方补齐。 */
+export function filterPlan(
+  plan: ResolvedRealmPlan,
+  predicate: (moduleId: string) => boolean,
+): ResolvedRealmPlan {
+  return {
+    ...plan,
+    modules: plan.modules.filter((module) => predicate(module.moduleId)),
   };
 }

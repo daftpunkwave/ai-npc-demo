@@ -23,7 +23,13 @@ const saveDefinition: ModuleDefinition = {
       instanceScope: "run",
     },
   ],
-  requires: [],
+  requires: [
+    {
+      capability: capabilityIdSchema.parse("platform.storage"),
+      cardinality: "exactly-one",
+      instanceScope: "deployment",
+    },
+  ],
   requiresRemote: [],
   configSchema: saveConfigSchema,
   defaults: {},

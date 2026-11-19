@@ -16,5 +16,5 @@ export function createClockModule(input: ModuleCreateInput): Promise<ModuleInsta
     throw new DomainError("assembly-incompatible", "受控时钟缺少 platform.storage 端口");
   }
   const storage = rawStorage as StoragePort;
-  return createStatelessModule(input, createClockPort(storage, config, input.host.nowIso));
+  return createStatelessModule(input, createClockPort(storage, config, () => input.host.nowIso()));
 }

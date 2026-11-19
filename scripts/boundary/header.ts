@@ -3,6 +3,7 @@
  * 按扩展名选择语言原生注释；注释里只允许解释代码本身，判定为启发式后仍需人工复核。
  * 禁止修改被检查文件、把数据配置当成源码或因为目录可写而放宽格式要求。
  */
+/* eslint-disable security/detect-object-injection -- 索引均来自本文件扫描的源文本字符下标或固定映射表，不来自外部输入。 */
 import { extname } from "node:path";
 import { FORBIDDEN_COMMENT_PATTERNS } from "./header-comments";
 import { HEADER_LANGUAGE_BY_EXTENSION, RULE_SOURCE_HEADER } from "./constants";
@@ -170,6 +171,7 @@ function collectLineCommentSpans(source: string, marker: "--" | "#"): CommentSpa
 /** 扫描块注释（含 HTML 注释），并跳过字符串字面量。 */
 function collectDelimitedCommentSpans(source: string, language: HeaderLanguage): CommentSpan[] {
   const spans: CommentSpan[] = [];
+  // eslint-disable-next-line xss/no-mixed-html -- html 是布尔判定变量，不是 HTML 片段。
   const html = language === "html";
   type Mode = "code" | "line" | "block" | "html" | "single" | "double" | "template";
   let mode: Mode = "code";
@@ -271,6 +273,7 @@ function compactHeaderDescription(headerText: string): string {
  */
 export function checkFileHeader(filePath: string, content: string): readonly BoundaryViolation[] {
   const language = HEADER_LANGUAGE_BY_EXTENSION[extname(filePath).toLowerCase()];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
   if (language === undefined) {
     return [];
   }
@@ -331,7 +334,7 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
           RULE_SOURCE_HEADER,
           forbidden.code,
           filePath,
-          lineAt(source, span.start + (match.index ?? 0)),
+          lineAt(source, span.start + match.index),
           `注释引用无法被代码本身解释的${forbidden.label}，只应说明代码职责与约束。`,
         ),
       );

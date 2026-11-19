@@ -16,7 +16,7 @@ const PRAGMA_STATEMENTS = [
 
 function readPragmaValue(database: DatabaseSync, name: string): unknown {
   const row = database.prepare(`PRAGMA ${name}`).get();
-  if (row === undefined || row === null) {
+  if (row === undefined) {
     return undefined;
   }
   return Object.values(row)[0];

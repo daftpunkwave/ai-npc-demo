@@ -1,10 +1,9 @@
 /**
  * 暴露已校验的传输监听配置；Fastify 路由由应用组合根实现。
- * 依赖严格配置；无 I/O。
- * 禁止在此监听端口或放宽 Origin。
+ * 依赖严格配置与最小应用接口；宿主只经本端口监听与关闭，不接触具体框架类型。
+ * 禁止在此放宽 Origin、绕过最小接口直接操作框架实例或让宿主依赖 Fastify。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { FastifyInstance } from "fastify";
 import { createStatelessModule } from "@ai-npc/module-sdk";
 import { transportConfigSchema, type TransportConfig } from "./definition";
 import { createServerApp, type ServerApp, type ServerAppOptions } from "./app";
@@ -20,14 +19,19 @@ export class TransportPort {
     this.allowedOrigins = config.allowedOrigins;
   }
 
-  /** 按 provider 配置创建 Fastify 应用；Origin 白名单不允许调用方覆盖。 */
+  /** 按 provider 配置创建应用；Origin 白名单不允许调用方覆盖。 */
   createApp(options: Omit<ServerAppOptions, "allowedOrigins">): Promise<ServerApp> {
     return createServerApp({ ...options, allowedOrigins: this.allowedOrigins });
   }
 
-  /** 按 provider 配置监听；端口占用由 Fastify 抛出。 */
-  async listen(app: FastifyInstance): Promise<void> {
+  /** 按 provider 配置监听；端口占用由传输实现抛出。 */
+  async listen(app: ServerApp): Promise<void> {
     await app.listen({ host: this.host, port: this.port });
+  }
+
+  /** 关闭应用；宿主只经本端口触发，不直接依赖框架的关闭语义。 */
+  async close(app: ServerApp): Promise<void> {
+    await app.close();
   }
 }
 

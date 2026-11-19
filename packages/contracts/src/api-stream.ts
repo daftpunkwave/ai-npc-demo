@@ -1,6 +1,7 @@
 /**
  * 定义 WebSocket 文本帧消息：hello、subscribe、snapshot、delta、append、ack、ping/pong 与 error。
  * 依赖统一错误码、主体 ID 与 JSON 校验；服务端推送与客户端发送分别用判别联合。
+ * delta 的 set 只含发生变化的顶层字段；空对象只表示版本推进（心跳），不再重发整份投影。
  * 禁止在此建立连接、管理订阅或重放缓存的增量。
  */
 import { z } from "zod";
@@ -45,13 +46,19 @@ export const streamSnapshotMessageSchema = z
 
 export type StreamSnapshotMessage = z.infer<typeof streamSnapshotMessageSchema>;
 
+/** 投影增量补丁：键为玩家投影的顶层字段名，值为该字段的新值；空对象只表示版本推进。 */
+export const streamProjectionDeltaSchema = z.record(z.string().min(1), jsonValueSchema);
+
+export type StreamProjectionDelta = z.infer<typeof streamProjectionDeltaSchema>;
+
 export const streamDeltaMessageSchema = z
   .object({
     type: z.literal("delta"),
     channel: streamChannelSchema,
     streamSeq: z.number().int().nonnegative(),
     projectionVersion: z.number().int().nonnegative(),
-    set: z.record(z.string().min(1), jsonValueSchema),
+    /** 只包含本次发布中发生变化的顶层字段，首次订阅与缺口由 snapshot 补齐。 */
+    set: streamProjectionDeltaSchema,
   })
   .strict();
 

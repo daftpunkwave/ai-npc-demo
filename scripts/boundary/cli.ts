@@ -16,11 +16,13 @@ export function formatViolation(item: BoundaryViolation): string {
 
 function isDirectExecution(moduleUrl: string): boolean {
   const entryPath = process.argv[1];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- process.argv[1] 在仓库 noUncheckedIndexedAccess 下可能为 undefined；Codacy 未开启该选项。
   if (entryPath === undefined) {
     return false;
   }
   const modulePath = fileURLToPath(moduleUrl);
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 只比较仓库内固定入口文件的 realpath，不是外部路径。
     return realpathSync(resolve(entryPath)) === realpathSync(modulePath);
   } catch {
     return resolve(entryPath) === modulePath;

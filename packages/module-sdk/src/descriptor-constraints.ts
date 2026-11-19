@@ -75,6 +75,7 @@ export function validateCapabilityRefs(
       descriptorFailure("assembly-incompatible", moduleId, field, `重复声明能力 ${capability}`);
     }
     seen.add(capability);
+    // eslint-disable-next-line security/detect-object-injection -- realm 来自 zod 受限枚举。
     if (!REALM_NAMESPACES[realm].includes(leadingNamespace(capability))) {
       const hint =
         realm === "server"
@@ -134,6 +135,7 @@ export function isStrictConfigSchema(value: unknown): value is StrictConfigSchem
   }
   let probe: unknown;
   try {
+    // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
     probe = (candidate.safeParse as (input: unknown) => unknown)({ [UNKNOWN_CONFIG_PROBE_KEY]: true });
   } catch {
     return false;

@@ -81,9 +81,10 @@ function makeTempConfigDir(): string {
 
 describe("配置加载", () => {
   it("从仓库 config/ 加载 online-default 与 core-3", () => {
-    const run = loadRunSpec("online-default", { configDir });
+    const run = loadRunSpec("online-default", { configDir }, { seed: "online-seed-test" });
     expect(run.value.id).toBe("online-default");
     expect(run.source.endsWith("online-default.yaml")).toBe(true);
+    expect(run.value.seed).toBe("online-seed-test");
 
     const roster = loadRoster("core-3", { configDir });
     expect(roster.value.rosterId).toBe("core-3");
@@ -105,7 +106,7 @@ describe("配置加载", () => {
       const filePath = join(profilesDir, "sample-run.yaml");
       writeFileSync(filePath, runSpecYaml("from-file"), "utf8");
       const draftRun: RunSpec = {
-        ...loadRunSpec("online-default", { configDir }).value,
+        ...loadRunSpec("online-default", { configDir }, { seed: "online-seed-test" }).value,
         id: "from-draft",
       };
       const drafts: ConfigDraftReader = {
@@ -219,7 +220,25 @@ describe("配置加载", () => {
 
 describe("RunSpec 交叉检查", () => {
   const content = loadContentPack(contentRoot, "earth-2964-v1");
-  const run = loadRunSpec("online-default", { configDir });
+  const run = loadRunSpec("online-default", { configDir }, { seed: "online-seed-test" });
+
+  it("宿主可把实际启动选择并入模板并仍按严格 schema 校验", () => {
+    const loaded = loadRunSpec("online-default", { configDir }, {
+      seed: "run-seed-1",
+      moduleAssemblyRef: "local-slg-escalating-v1",
+      worldPackRef: "earth-2964-v1",
+      rosterRef: "core-3",
+      modelLayoutRef: "deterministic-model-layout-v1",
+    });
+    expect(loaded.value).toMatchObject({
+      seed: "run-seed-1",
+      moduleAssemblyRef: "local-slg-escalating-v1",
+      rosterRef: "core-3",
+      modelLayoutRef: "deterministic-model-layout-v1",
+    });
+    expect(() => loadRunSpec("online-default", { configDir }, { seed: "" })).toThrow();
+    expect(() => loadRunSpec("online-default", { configDir })).toThrow();
+  });
 
   it("online-default 的引用与内容一致", () => {
     expect(() => validateRunSpec(run.value, content)).not.toThrow();

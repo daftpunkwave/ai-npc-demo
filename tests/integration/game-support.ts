@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   AuthContext,
+  ClockView,
   CommandEnvelope,
   CommandType,
   Json,
@@ -15,9 +16,18 @@ import type {
   StoragePort,
   StorageRawRow,
 } from "@ai-npc/contracts";
-import { Authority } from "@ai-npc/authority";
+import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
-import type { GameContent, ModuleBinder, WorldTx } from "@ai-npc/module-sdk";
+import {
+  gameModuleIds,
+  type GameClockPort,
+  type GameContent,
+  type GameModulePorts,
+  type ModuleBinder,
+  type ScopedWorldTxFactory,
+  type WorldTx,
+} from "@ai-npc/module-sdk";
+import { createClockPort } from "@ai-npc/mod-game-clock-controlled";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
@@ -67,6 +77,7 @@ export function createMemoryTx(worldTick = 0): WorldTx {
 export interface GameHarness {
   readonly dataDir: string;
   readonly storage: StoragePort;
+  readonly clock: GameClockPort;
   readonly host: FakeHost;
   readonly authority: Authority;
   readonly worldId: string;
@@ -79,6 +90,29 @@ export interface GameHarness {
 /** 把已校验内容包收窄为游戏端口视图；复用服务端宿主的唯一适配器。 */
 import { toGameContent } from "@ai-npc/app-server/content";
 export { toGameContent };
+
+/** 绑定全部游戏端口；集成测试与投影读取共用同一组实现。 */
+function bindGamePorts(
+  txFor: ScopedWorldTxFactory,
+  gameContent: GameContent,
+  host: FakeHost,
+): GameModulePorts {
+  // 按依赖顺序构造：世界端口先于通信，通信/世界/行动/地图先于协议统计。
+  const map = createMapPort(txFor, gameContent, host.ids);
+  const resources = createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 });
+  const world = createWorldPort(txFor, gameContent, host.ids);
+  const comms = createCommsPort(() => txFor(gameModuleIds.comms), gameContent, host.ids, world);
+  const actions = createActionsPort(txFor);
+  return {
+    "game.map": map,
+    "game.resources": resources,
+    "game.world": world,
+    "game.comms": comms,
+    "game.actions": actions,
+    "game.agreements": createAgreementsPort(() => txFor(gameModuleIds.agreements), { actions, comms, world, map }),
+    "game.scenario": createScenarioPort(txFor),
+  };
+}
 
 function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branchId: string): void {
   storage.transact((tx) => {
@@ -115,9 +149,28 @@ function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branc
 export async function createGameHarness(options: {
   readonly approvedSpeech?: import("@ai-npc/module-sdk").ApprovedSpeechReader;
   readonly scenarioEscalating?: boolean;
+  /** 可选 runSeed；给出时 authority 会把它绑定为 host.rng 的第一个参数。 */
+  readonly runSeed?: string;
+  /** 记录每次规则随机源调用收到的参数，用于断言输入只含语义字段。 */
+  readonly onRng?: (parts: readonly string[]) => void;
+  /**
+   * 可选的存储包装：测试用它记录读路径或注入故障。
+   * 包装必须完整转发 StoragePort，不得改变事务、分支 scope 与读写语义。
+   */
+  readonly storageWrapper?: (storage: StoragePort) => StoragePort;
 } = {}): Promise<GameHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
-  const host = createFakeHost();
+  const baseHost = createFakeHost();
+  const host: FakeHost =
+    options.onRng === undefined
+      ? baseHost
+      : {
+        ...baseHost,
+        rng: (...parts) => {
+          options.onRng?.([...parts]);
+          return baseHost.rng(...parts);
+        },
+      };
   const worldId = "wld-000000000000";
   const branchId = "br-000000000000";
   const signal = new AbortController().signal;
@@ -137,19 +190,16 @@ export async function createGameHarness(options: {
     if (port === undefined) {
       throw new Error("存储模块实例没有暴露端口");
     }
-    const storage = port as StoragePort;
+    const storage = options.storageWrapper?.(port as StoragePort) ?? (port as StoragePort);
     seedBranch(storage, host, worldId, branchId);
+    const clock = createClockPort(
+      storage,
+      { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 },
+      host.nowIso,
+    );
     const content = loadContentPack("content", "earth-2964-v1");
     const gameContent = toGameContent(content);
-    const binder: ModuleBinder = (txFor) => ({
-      "game.map": createMapPort(txFor, gameContent, host.ids),
-      "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
-      "game.world": createWorldPort(txFor, gameContent, host.ids),
-      "game.comms": createCommsPort(txFor, gameContent, host.ids),
-      "game.actions": createActionsPort(txFor),
-      "game.agreements": createAgreementsPort(txFor),
-      "game.scenario": createScenarioPort(txFor),
-    });
+    const binder: ModuleBinder = (txFor) => bindGamePorts(txFor, gameContent, host);
     const authority = new Authority({
       storage,
       host,
@@ -157,6 +207,7 @@ export async function createGameHarness(options: {
       moduleBinder: binder,
       allowDirectAgentCommands: true,
       approvedSpeech: options.approvedSpeech,
+      ...(options.runSeed === undefined ? {} : { runSeed: options.runSeed }),
     });
     authority.registerModule(createMapContributor());
     authority.registerModule(createResourcesContributor());
@@ -168,6 +219,7 @@ export async function createGameHarness(options: {
     return {
       dataDir,
       storage,
+      clock,
       host,
       authority,
       worldId,
@@ -366,4 +418,66 @@ export function readBranchWorldRows(storage: StoragePort, branchId: string): Bra
 export function readGameEventAudience(harness: GameHarness, type: string): Json | null {
   const event = readGameEvents(harness).find((candidate) => candidate.type === type);
   return event === undefined ? null : event.audience;
+}
+
+/** 只读投影事务可读的聚合类型全集；与宿主读取作用域一致，新增聚合类型时同步。 */
+const projectionAggregateTypes = [
+  "campaign",
+  "meters",
+  "character",
+  "team",
+  "group",
+  "delegation",
+  "evidence-placement",
+  "road",
+  "passage-grant",
+  "stockpile",
+  "task",
+  "task-invitation",
+  "conversation",
+  "knowledge-grant",
+  "share",
+  "message",
+  "agreement",
+  "scenario-card",
+  "scenario-run",
+] as const;
+
+/** 读取当前分支的时钟视图；与宿主 clockView 使用同一规则。 */
+export function readGameClock(harness: GameHarness): ClockView {
+  const row = harness.storage.transact((tx) => tx.branch(harness.branchId).table("clock").get({}));
+  if (row === null) {
+    throw new Error("测试分支缺少 clock");
+  }
+  const tick = Number(row["world_tick"]);
+  return {
+    worldTick: tick,
+    day: Math.floor(tick / 24) + 1,
+    hour: tick % 24,
+    mode: String(row["mode"]) as ClockView["mode"],
+    runVersion: Number(row["run_version"]),
+  };
+}
+
+/**
+ * 在单个只读事务内绑定全部游戏端口，供投影与后续读接口复用。
+ * 事务作用域覆盖全部聚合类型，但调用方只能经端口读取；helper 本身不写聚合。
+ */
+export function withGamePorts<T>(harness: GameHarness, run: (ports: GameModulePorts) => T): T {
+  return harness.storage.transact((storageTx) => {
+    const clockRow = storageTx.all("SELECT world_tick FROM clock WHERE branch_id = ?", [harness.branchId])[0];
+    const worldTick = clockRow === undefined ? 0 : Number(clockRow["world_tick"]);
+    const txFor: ScopedWorldTxFactory = (moduleId) =>
+      new TransactionWorldTx({
+        storageTx,
+        worldId: harness.worldId,
+        branchId: harness.branchId,
+        worldTick,
+        principalId: "player-1",
+        correlationId: `test:projection-read:${moduleId}`,
+        scope: { moduleId: "test.projection-read", ownsAggregates: new Set(projectionAggregateTypes), order: 0 },
+        host: harness.host,
+      });
+    return run(bindGamePorts(txFor, harness.gameContent, harness.host));
+  });
 }

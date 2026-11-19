@@ -4,6 +4,7 @@
  * 禁止掩盖原始 create/start 错误、跳过逆序释放或重复执行释放动作。
  */
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import type { HostServices, ModuleScope } from "@ai-npc/contracts";
 import {
   createModuleRegistry,
@@ -246,5 +247,57 @@ describe("实例生命周期", () => {
       "plugin-failed",
     );
     expect(fixture.events).toEqual(["create:storage", "dispose:storage"]);
+  });
+
+  it("复用调用方已启动的提供者 port，且不归本次句柄释放", async () => {
+    const fixture = buildFixture();
+    const storagePlan: ResolvedRealmPlan = {
+      ...fixture.plan,
+      modules: fixture.plan.modules.filter((module) => module.moduleId === "platform.storage.sqlite"),
+    };
+    const worldPlan: ResolvedRealmPlan = {
+      ...fixture.plan,
+      modules: fixture.plan.modules.filter((module) => module.moduleId === "game.world.slg-light"),
+    };
+    const storageStarted = await startInstances(storagePlan, { host: fixture.host, scope: fixture.scope });
+    const worldStarted = await startInstances(worldPlan, {
+      host: fixture.host,
+      scope: fixture.scope,
+      running: storageStarted.instances,
+    });
+    expect(fixture.events).toEqual(["create:storage", "start:storage", "create:world", "start:world"]);
+    expect(fixture.worldPorts()).toEqual({ "platform.storage": storagePort });
+    await worldStarted.dispose();
+    expect(fixture.events).not.toContain("dispose:storage");
+    await storageStarted.dispose();
+    expect(fixture.events).toContain("dispose:storage");
+  });
+
+  it("把解析计划中的有效配置传给模块 create", async () => {
+    const configSchema = z.strictObject({ secondsPerTick: z.number().int().positive().default(10) });
+    let createdConfig: unknown;
+    const clock = fakeModule({
+      id: "game.clock.controlled",
+      instanceScope: "run",
+      provides: [capability("game.clock", "exactly-one", "run")],
+      configSchema,
+      onCreate: (input) => {
+        createdConfig = input.config;
+      },
+    });
+    const registry = createModuleRegistry();
+    registry.register(clock);
+    const assembly = makeAssembly({
+      configs: { clock: { secondsPerTick: 10 } },
+      server: { bindings: [binding("game.clock", "game.clock.controlled", "clock")] },
+    });
+    const plan = resolveRealmPlan({
+      assembly,
+      realm: "server",
+      catalog: registry.snapshot(),
+      configOverrides: { "game.clock.controlled": { secondsPerTick: 7 } },
+    });
+    await startInstances(plan, { host: fakeHostServices(), scope: {} });
+    expect(createdConfig).toEqual({ secondsPerTick: 7 });
   });
 });

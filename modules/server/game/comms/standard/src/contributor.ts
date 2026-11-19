@@ -16,6 +16,7 @@ import {
   type HandlerResult,
 } from "@ai-npc/module-sdk";
 import type { ApprovedSpeech } from "@ai-npc/module-sdk";
+import type { MessageState } from "./state";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -224,11 +225,44 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
   return { kind: "accepted" };
 }
 
+/**
+ * 把公开传闻物化为通信日志，供投影的收件箱读取。
+ * 传闻不是定向通信，没有冻结的逐主体延迟：提交 tick 立即送达全部在地与战略主体。
+ * 聚合 ID 直接复用 rumorId，同一事件重复消费也不会产生第二条记录。
+ */
+function recordRumor(context: CommsContext, payload: Json): void {
+  const input = payload as unknown as {
+    readonly rumorId: string;
+    readonly sourceId: string;
+    readonly aboutIds: readonly string[];
+    readonly text: string;
+  };
+  const content = requireGameContent(context.content);
+  const tick = context.tx.worldTick;
+  const principalIds = [
+    content.playerPrincipalId,
+    ...content.factions.keys(),
+    ...content.characters.keys(),
+  ].sort((left, right) => left.localeCompare(right));
+  const state: MessageState = {
+    messageId: input.rumorId,
+    fromId: input.sourceId,
+    to: ["public"],
+    channel: "reported",
+    text: input.text,
+    intentKind: "scenario",
+    deliveries: principalIds.map((principalId) => ({ principalId, deliverAtTick: tick })),
+    committedAtTick: tick,
+    conversationId: null,
+  };
+  context.tx.put("message", input.rumorId, state);
+}
+
 /** 通信模块的规则贡献。 */
 export function createCommsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.comms,
-    ownsAggregates: ["conversation", "knowledge-grant", "share"],
+    ownsAggregates: ["conversation", "knowledge-grant", "share", "message"],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
       { type: "speech.commit", handler: (context, payload) => speechCommit(context as CommsContext, payload) },
@@ -259,10 +293,10 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
     ],
     consumers: [
       {
-        consumerId: "comms-audit",
-        eventTypes: ["DialogueSubmitted", "MessageSent", "InformationShared"],
-        handler: () => {
-          // 通信事件自身已经携带冻结投递名单；保留消费者用于后续投影与审计扩展。
+        consumerId: "comms-rumor-log",
+        eventTypes: ["RumorSpread"],
+        handler: (context, event) => {
+          recordRumor(context as CommsContext, event.payload);
         },
       },
     ],

@@ -3,6 +3,7 @@
  * 依赖 node:fs、node:path、node:url 读取迁移文件，node:sqlite 执行 SQL，公共契约的领域错误与日志端口。
  * 禁止跳过缺失或失败迁移、修改已发布迁移文件，或从迁移目录之外加载 SQL。
  */
+/* eslint-disable security/detect-non-literal-fs-filename -- 迁移目录来自模块常量或测试注入的临时目录，文件名由 readdir 结果按固定正则筛选。 */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,6 +36,7 @@ export function loadMigrations(directory: string = MIGRATIONS_DIRECTORY): readon
       migrationFailure(`迁移文件名无法解析：${fileName}`);
     }
     const version = Number(match[1]);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 正则已保证分组存在，但仓库开启 noUncheckedIndexedAccess 后索引访问仍可能为 undefined；Codacy 未开启该选项。
     const name = match[2] ?? "";
     const filePath = join(directory, fileName);
     return { version, name, filePath, sql: readFileSync(filePath, "utf8") };

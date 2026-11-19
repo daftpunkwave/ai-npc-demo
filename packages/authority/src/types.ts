@@ -149,6 +149,8 @@ export interface RuleRuntime {
   readonly content: unknown;
   readonly approvedSpeech: ApprovedSpeechReader;
   readonly moduleBinder?: ModuleBinder;
+  /** 当前 run 的随机种子；给出后由 createHandlerContext 绑定到 host.rng 的第一个参数。 */
+  readonly runSeed?: string;
 }
 
 /** 允许直接提交 Agent 命令的测试开关只在构造时给出，生产装配不开启。 */

@@ -224,7 +224,7 @@ export function advanceToTick(harness: GameHarness, targetTick: number): void {
     const result = advanceWorldTick({
       storage: harness.storage,
       authority: harness.authority,
-      host: harness.host,
+      clock: harness.clock,
       branchId: harness.branchId,
       targetTick: tick,
     });

@@ -1,0 +1,23 @@
+# Codacy 分析范围：排除测试文件与测试目录，避免测试夹具和用例触发生产代码规则。
+# 规则、工具与依赖配置仍由仓库根目录的其它配置文件维护，这里只声明排除路径。
+---
+exclude_paths:
+  - "tests/**"
+  - "test/**"
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/__tests__/**"
+  - "**/__test__/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.test.js"
+  - "**/*.test.jsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/*.spec.js"
+  - "**/*.spec.jsx"
+  - "**/*.e2e.ts"
+  - "**/fixtures/**"
+  - "**/__fixtures__/**"
+  # 迁移是 SQLite 方言，TSQL 规则会误判；迁移由仓库测试执行验证。
+  - "modules/server/platform/storage/sqlite/migrations/**"

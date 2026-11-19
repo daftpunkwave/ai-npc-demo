@@ -221,6 +221,9 @@ importers:
       '@ai-npc/experiment':
         specifier: workspace:*
         version: link:../../packages/experiment
+      '@ai-npc/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@ai-npc/mod-game-actions-standard':
         specifier: workspace:*
         version: link:../../modules/server/game/actions/standard

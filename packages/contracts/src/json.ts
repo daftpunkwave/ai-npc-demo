@@ -54,7 +54,9 @@ export function canonicalJson(value: Json): string {
   }
   const entries = Object.keys(value).sort();
   const serialized = entries.map((key) => {
+    // eslint-disable-next-line security/detect-object-injection -- 键来自 Object.keys(value) 的同一对象。
     const item = (value as { [key: string]: Json })[key];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (item === undefined) {
       throw new TypeError("规范化 JSON 拒绝 undefined 属性值");
     }

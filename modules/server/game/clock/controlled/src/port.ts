@@ -4,7 +4,7 @@
  * 禁止在 running 之外自行推进 tick、重复打开事务或绕过乐观版本校验。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 方法签名中的参数名只用于表达调用契约。 */
-import { DomainError, type StoragePort } from "@ai-npc/contracts";
+import { DomainError, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
 import type { ClockState, GameClockPort } from "@ai-npc/module-sdk";
 import { requireClockNumber, requireClockString, type ClockConfig } from "./state";
 
@@ -47,9 +47,26 @@ class ControlledClockPort implements GameClockPort {
   }
 
   private readRow(branchId: string): ClockState {
-    return this.storage.transact((tx) => {
-      const row = tx.branch(branchId).table("clock").get({});
-      return parseClock(row, branchId);
+    return this.storage.transact((tx) => this.readInTransaction(tx, branchId));
+  }
+
+  readInTransaction(tx: StorageTransaction, branchId: string): ClockState {
+    return parseClock(tx.branch(branchId).table("clock").get({}), branchId);
+  }
+
+  initializeInTransaction(tx: StorageTransaction, branchId: string): ClockState {
+    const table = tx.branch(branchId).table("clock");
+    if (table.get({}) !== null) {
+      throw new DomainError("invalid-state", `分支 ${branchId} 已有时钟行，拒绝覆盖`, {
+        details: { branchId },
+      });
+    }
+    return this.commit(table, {
+      worldTick: 0,
+      mode: "paused",
+      secondsPerTick: this.config.secondsPerTick,
+      runVersion: 0,
+      stepTargetTick: null,
     });
   }
 

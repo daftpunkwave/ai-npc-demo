@@ -3,11 +3,14 @@
  * 依赖真实 SQLite、世界/行动/协议模块与 authority；消费者显式推进。
  * 禁止直接改协议状态或跳过事件消费者。
  */
-import type { Term } from "@ai-npc/contracts";
+import type { Json, Term } from "@ai-npc/contracts";
+import type { AgreementQueryPorts, TaskView } from "@ai-npc/module-sdk";
+import { createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
 import { describe, expect, it } from "vitest";
 import {
   acceptAgreement,
   advanceTo,
+  createMemoryTx,
   dispatchTask,
   executeCommand,
   expectAgreement,
@@ -237,4 +240,153 @@ describe("协议", () => {
     expect(types.filter((type) => type === "AgreementFulfilled")).toHaveLength(1);
     expect(types).not.toContain("AgreementBreached");
   });
+
+  it("替换行动、通信、世界与地图查询端口后协议统计仍正确", () => {
+    const tx = createMemoryTx(30);
+    tx.put(
+      "agreement",
+      "agr-000000000001",
+      activeAgreement({ agreementId: "agr-000000000001", terms: [deliveryTerm(30)] }),
+    );
+    tx.put(
+      "agreement",
+      "agr-000000000002",
+      activeAgreement({
+        agreementId: "agr-000000000002",
+        terms: [
+          {
+            kind: "share-evidence",
+            obligorId: "player-1",
+            evidenceId: "ev-water-ledger",
+            toPrincipalId: "human-neutral",
+            byTick: 40,
+          },
+        ],
+      }),
+    );
+    tx.put(
+      "agreement",
+      "agr-000000000003",
+      activeAgreement({
+        agreementId: "agr-000000000003",
+        terms: [
+          {
+            kind: "water-allocation",
+            obligorId: "human-neutral",
+            policy: "harbor-first",
+            untilTick: 10,
+          },
+        ],
+      }),
+    );
+    tx.put(
+      "agreement",
+      "agr-000000000004",
+      activeAgreement({
+        agreementId: "agr-000000000004",
+        terms: [
+          {
+            kind: "grant-passage",
+            obligorId: "human-neutral",
+            roadId: "r-gh-ps",
+            granteeFactionId: "human-neutral",
+            untilTick: 40,
+          },
+        ],
+      }),
+    );
+
+    const completedTask: TaskView = {
+      taskId: "task-000000000001",
+      taskType: "transport",
+      teamId: "team-commons",
+      dispatcherId: "player-1",
+      invitees: [],
+      participants: [],
+      status: "completed",
+      params: {
+        fromStockpileId: "sp-commons",
+        toStockpileId: "sp-earth",
+        cargo: { supply: 10, energy: 0, medical: 0 },
+      },
+      route: ["r-gh-or"],
+      departTick: 1,
+      nominalCompletionTick: 5,
+      completedAtTick: 5,
+      delayNoticeSent: false,
+    };
+    let shareQueries = 0;
+    let roadQueries = 0;
+    const queries: AgreementQueryPorts = {
+      actions: { completedTasks: () => [completedTask] },
+      comms: {
+        hasShare: (query) => {
+          shareQueries += 1;
+          return (
+            query.fromId === "player-1" &&
+            query.evidenceId === "ev-water-ledger" &&
+            query.toPrincipalId === "human-neutral" &&
+            query.sinceTick === 0 &&
+            query.byTick === 40
+          );
+        },
+      },
+      world: {
+        meters: () => ({
+          "relay.stability": 45,
+          "orchard.water": 50,
+          "migration.safety": 50,
+          "watergate.allocation": "harbor-first",
+        }),
+        teams: () => [
+          {
+            teamId: "team-commons",
+            ownerFactionId: "human-neutral",
+            nodeId: "grayharbor",
+            capabilities: ["transport"],
+            capacity: 2,
+            status: "idle",
+            busyUntilTick: null,
+            currentTaskId: null,
+          },
+        ],
+      },
+      map: {
+        roadStatus: (roadId) => {
+          roadQueries += 1;
+          return roadId === "r-gh-ps" ? "closed" : "open";
+        },
+      },
+    };
+    const port = createAgreementsPort(() => tx, queries);
+    // 三条由替换端口提供的事实满足：完成任务、证据分享、水闸分配；
+    // 仍在义务期的通行条款因道路关闭计为违约。
+    expect(port.countsAsOf(30)).toEqual({ fulfilled: 3, breached: 1 });
+    expect(shareQueries).toBe(1);
+    expect(roadQueries).toBe(1);
+  });
 });
+
+/** 构造一份已生效的协议状态；统计只读取这些已提交字段。 */
+function activeAgreement(input: {
+  readonly agreementId: string;
+  readonly terms: readonly Term[];
+}): Json {
+  return {
+    agreementId: input.agreementId,
+    version: 1,
+    proposerId: "player-1",
+    parties: ["player-1", "human-neutral"],
+    terms: [...input.terms],
+    responses: { "player-1": "accept", "human-neutral": "accept" },
+    status: "active",
+    createdAtTick: 0,
+    activatedAtTick: 0,
+    expiresAtTick: 100,
+    supersedesId: null,
+    supersededBy: null,
+    fulfilledTerms: [],
+    breachedTerms: [],
+    progress: input.terms.map(() => 0),
+  } as unknown as Json;
+}

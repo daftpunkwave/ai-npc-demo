@@ -30,6 +30,7 @@ export class JobRunner {
   private readonly content: unknown;
   private readonly approvedSpeech: RuleRuntime["approvedSpeech"];
   private readonly moduleBinder: RuleRuntime["moduleBinder"];
+  private readonly runSeed: RuleRuntime["runSeed"];
 
   constructor(options: JobRunnerOptions) {
     this.storage = options.storage;
@@ -39,6 +40,7 @@ export class JobRunner {
     this.content = options.content;
     this.approvedSpeech = options.approvedSpeech;
     this.moduleBinder = options.moduleBinder;
+    this.runSeed = options.runSeed;
   }
 
   /** 执行所有 due_tick 不大于 tick 的 scheduled job，返回实际执行条数。 */
@@ -75,15 +77,18 @@ export class JobRunner {
       });
     }
     const jobsTable = tx.branch(branchId).table("jobs");
+    // 迁移 0003 的 jobs_status_due_seq 按 (branch_id, status, due_tick, seq) 排序；
+    // 每次只取最早一条候选，避免按 job 数重复读取并排序全部 scheduled 行。
     const scheduled = jobsTable.list(
       { status: "scheduled" },
-      { orderBy: [{ column: "due_tick" }, { column: "seq" }] },
+      { orderBy: [{ column: "due_tick" }, { column: "seq" }], limit: 1 },
     );
-    const row = scheduled.find((candidate) => {
-      const dueTick = requireStorageNumber(candidate, "jobs", "due_tick");
-      return dueTick <= tick;
-    });
+    const row = scheduled[0];
     if (row === undefined) {
+      return false;
+    }
+    // 最早候选仍晚于本次 tick 时，其余 scheduled job 都未到期。
+    if (requireStorageNumber(row, "jobs", "due_tick") > tick) {
       return false;
     }
     const jobId = requireStorageString(row, "jobs", "job_id");
@@ -130,6 +135,7 @@ export class JobRunner {
       content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
+      runSeed: this.runSeed,
     });
     const outcome = registration.handler(context, dueJob);
     assertSynchronous(outcome, `job ${kind} 处理器`);

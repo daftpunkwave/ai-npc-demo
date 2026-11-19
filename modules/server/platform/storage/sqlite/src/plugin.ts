@@ -8,23 +8,28 @@ import { storageConfigSchema } from "./definition";
 import { SqliteStorage } from "./sqlite/storage";
 
 /** 模块工厂：配置已由宿主按 schema 校验，这里再解析一次以获得默认值后的强类型配置。 */
-export async function createSqliteStorageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+export function createSqliteStorageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = storageConfigSchema.parse(input.config);
   const storage = new SqliteStorage(config, input.host);
-  return {
+  return Promise.resolve({
     moduleId: input.moduleId,
-    start: async (signal) => {
+    start: (signal) => {
       if (signal.aborted) {
-        throw new DomainError("cancelled", "存储适配器启动已取消");
+        // 以异步拒绝表达取消：DomainError 继承 Error，避免把错误构造成非 Error 的拒绝值。
+        return Promise.resolve().then(() => {
+          throw new DomainError("cancelled", "存储适配器启动已取消");
+        });
       }
       storage.open();
+      return Promise.resolve();
     },
     drain: async () => {
       // 存储适配器没有需要排空的在途任务：所有写入都在宿主事务内同步完成。
     },
-    dispose: async () => {
+    dispose: () => {
       storage.close();
+      return Promise.resolve();
     },
     port: storage,
-  };
+  });
 }

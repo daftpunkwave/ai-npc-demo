@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { CapabilityRef, ModuleDefinition, Realm } from "@ai-npc/contracts";
 import { createModuleRegistry, resolveRealmPlan, type CatalogSnapshot } from "../src/index";
-import { binding, capability, fakeModule, makeAssembly } from "./support";
+import { binding, capability, expectDomainError, fakeModule, makeAssembly } from "./support";
 
 function catalogOf(...definitions: readonly ModuleDefinition[]): CatalogSnapshot {
   const registry = createModuleRegistry();
@@ -228,5 +228,43 @@ describe("装配解析成功路径", () => {
       requiredCapabilities,
     });
     expect(plan.modules.map((module) => module.moduleId)).toEqual(["platform.storage.sqlite"]);
+  });
+
+  it("部署配置覆盖并入装配配置并重新经过 schema 校验", () => {
+    const plan = resolveRealmPlan({
+      assembly: standardAssembly,
+      realm: "server",
+      catalog: catalogOf(world, storage, clock),
+      configOverrides: { "game.clock.controlled": { secondsPerTick: 7 } },
+    });
+    const clockPlan = plan.modules.find((module) => module.moduleId === "game.clock.controlled");
+    expect(clockPlan?.config).toEqual({ secondsPerTick: 7 });
+    expect(clockPlan?.configRef).toBe("clock");
+  });
+
+  it("部署配置覆盖未装配模块时报错", () => {
+    expectDomainError(
+      () =>
+        resolveRealmPlan({
+          assembly: standardAssembly,
+          realm: "server",
+          catalog: catalogOf(world, storage, clock),
+          configOverrides: { "game.comms.standard": {} },
+        }),
+      "assembly-incompatible",
+    );
+  });
+
+  it("部署配置覆盖不是 JSON 对象时报错", () => {
+    expectDomainError(
+      () =>
+        resolveRealmPlan({
+          assembly: standardAssembly,
+          realm: "server",
+          catalog: catalogOf(world, storage, clock),
+          configOverrides: { "game.clock.controlled": [] },
+        }),
+      "assembly-incompatible",
+    );
   });
 });

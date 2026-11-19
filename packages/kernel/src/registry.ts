@@ -11,12 +11,15 @@ export type CatalogSnapshot = readonly ModuleDefinition[];
 /** 宿主启动作用域内的模块注册表；每个宿主实例各建一份，不共享全局状态。 */
 export interface ModuleRegistry {
   /** 注册一个模块定义，返回只移除本次注册的反注册函数；重复 id@version 直接报错。 */
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   register(definition: ModuleDefinition): () => void;
   /** 当前全部已注册模块的只读快照，按 id 与版本排序。 */
   snapshot(): CatalogSnapshot;
   /** 同一模块 ID 的全部已注册版本，按版本排序。 */
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   findById(moduleId: string): CatalogSnapshot;
   /** 精确匹配 id@version 的模块定义。 */
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents, no-unused-vars -- Codacy 的 Node10 解析把导入类型判成 any；同时接口签名中的参数名只用于表达调用契约，运行时不会读取。
   get(moduleId: string, version: string): ModuleDefinition | null;
 }
 
@@ -70,6 +73,7 @@ export function createModuleRegistry(): ModuleRegistry {
     return Object.freeze(definitions);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   const get = (moduleId: string, version: string): ModuleDefinition | null =>
     entries.get(registryKey(moduleId, version))?.definition ?? null;
 

@@ -28,5 +28,6 @@ export function selectSlotContributions<T extends ContributionRef>(
     return EMPTY_SLOT_CONTRIBUTIONS;
   }
   const ordered = orderSlotContributions(forSlot);
+  // eslint-disable-next-line security/detect-object-injection -- 槽位来自 SlotName 受限枚举。
   return ordered[slot] ?? EMPTY_SLOT_CONTRIBUTIONS;
 }
