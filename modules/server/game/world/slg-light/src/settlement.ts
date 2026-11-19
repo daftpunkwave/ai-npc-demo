@@ -101,6 +101,7 @@ function planDeduction(
   if (stockpile === null) {
     return null;
   }
+  // eslint-disable-next-line security/detect-object-injection -- 资源键来自受限枚举 ResourceId，金额记录使用固定键。
   const available = stockpile.amount[resource] - stockpile.reserved[resource];
   return Math.min(limit, Math.max(0, available));
 }

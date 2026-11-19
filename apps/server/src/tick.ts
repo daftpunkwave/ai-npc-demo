@@ -3,6 +3,7 @@
  * 依赖存储事务、authority 的 job/时钟/消费者执行器与宿主时间服务；每个阶段各自提交事务。
  * 禁止把整个 tick 合并进一个事务、跳过命中阶段或吞掉阶段异常；补完入口不得推进 tick。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名用于表达调用契约。 */
 import { DomainError, type HostServices, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
 
 /** 一次 tick 需要的 authority 入口；结构类型让宿主与测试共用同一顺序。 */
