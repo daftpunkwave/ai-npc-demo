@@ -9,6 +9,10 @@ export type { TransportConfig } from "./definition";
 export { TransportPort } from "./plugin";
 export { createServerApp } from "./app";
 export type {
+  AccessAction,
+  AccessDecision,
+  AccessPolicy,
+  AccessRequest,
   AuthorityPort,
   ConversationReadPort,
   ConversationReadQuery,

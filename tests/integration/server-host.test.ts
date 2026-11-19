@@ -9,11 +9,12 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssemblyDescriptor, Json, StorageCell } from "@ai-npc/contracts";
+import type { AssemblyDescriptor, AuthContext, Json, StorageCell } from "@ai-npc/contracts";
 import {
   campaignResponseSchema,
   capabilityIdSchema,
   conversationResponseSchema,
+  errorResponseSchema,
   sessionAssemblyResponseSchema,
 } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
@@ -203,6 +204,7 @@ function connectStream(url: string): StreamClient {
 function configuredAssembly(overrides: {
   readonly clock?: Readonly<Record<string, Json>>;
   readonly resources?: Readonly<Record<string, Json>>;
+  readonly accessPolicy?: Readonly<Record<string, Json>>;
 }): AssemblyDescriptor {
   const base = loadAssembly("local-slg-standard-v1");
   const configs: Record<string, Json> = { ...base.configs };
@@ -213,6 +215,9 @@ function configuredAssembly(overrides: {
     if (binding.capability === "game.resources" && overrides.resources !== undefined) {
       return { ...binding, configRef: "resources" };
     }
+    if (binding.capability === "platform.access-policy" && overrides.accessPolicy !== undefined) {
+      return { ...binding, configRef: "access-policy" };
+    }
     return binding;
   });
   if (overrides.clock !== undefined) {
@@ -220,6 +225,9 @@ function configuredAssembly(overrides: {
   }
   if (overrides.resources !== undefined) {
     configs["resources"] = { ...overrides.resources };
+  }
+  if (overrides.accessPolicy !== undefined) {
+    configs["access-policy"] = { ...overrides.accessPolicy };
   }
   return {
     ...base,
@@ -390,6 +398,175 @@ describe("服务端宿主", () => {
     });
     expect(consoleDenied.statusCode).toBe(403);
   }, 20_000);
+
+  it("实际宿主按会话角色与 X-Active-Role 授权玩家、控制台与 WS 频道", async () => {
+    const port = await freePort();
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      transportPort: port,
+    });
+    hosts.push(host);
+    await host.listen();
+    const playerSession = await loginSession(host, "player-token");
+    const consoleSession = await loginSession(host, "console-token");
+    const playerHeaders = { authorization: `Bearer ${playerSession}` };
+    const consoleHeaders = { authorization: `Bearer ${consoleSession}` };
+
+    // 控制台会话访问玩家接口一律 403；被拒命令不进入网关。
+    for (const request of [
+      { method: "GET" as const, url: "/api/v1/campaign" },
+      { method: "GET" as const, url: "/api/v1/world/view" },
+      { method: "GET" as const, url: "/api/v1/conversations/npc-wenyuan" },
+    ]) {
+      const denied = await host.app.inject({ ...request, headers: consoleHeaders });
+      expect(denied.statusCode).toBe(403);
+      expect(errorResponseSchema.parse(denied.json()).error.code).toBe("forbidden");
+    }
+    const deniedCommand = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: consoleHeaders,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000401"),
+    });
+    expect(deniedCommand.statusCode).toBe(403);
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("command_receipts").list())).toEqual([]);
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("domain_events").list())).toEqual([]);
+
+    // 玩家会话即使自报控制台角色也没有持有该角色；缺少请求头与非法角色同样 403。
+    const playerConsole = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...playerHeaders, "x-active-role": "operator" },
+    });
+    expect(playerConsole.statusCode).toBe(403);
+    const missingRole = await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers: consoleHeaders });
+    expect(missingRole.statusCode).toBe(403);
+    expect(errorResponseSchema.parse(missingRole.json()).error.safeMessage).toContain("X-Active-Role");
+    const invalidRole = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "admin" },
+    });
+    expect(invalidRole.statusCode).toBe(403);
+    // 默认名册授权 operator 与 researcher；会话未持有的 evaluator 角色仍被拒绝。
+    const researcherAllowed = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(researcherAllowed.statusCode).toBe(200);
+    const evaluatorDenied = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "evaluator" },
+    });
+    expect(evaluatorDenied.statusCode).toBe(403);
+    const allowed = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json()).toMatchObject({ status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } });
+
+    // WS：玩家 hello 只含 player 频道，控制台角色也不能订阅玩家频道。
+    const playerTicket = await ticketFor(host, playerSession);
+    const playerClient = connectStream(
+      `ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(playerTicket)}`,
+    );
+    try {
+      expect(await playerClient.next()).toMatchObject({ type: "hello", principalId: "player-1", channels: ["player"] });
+      playerClient.send({ type: "subscribe", channel: "console.health", fromStreamSeq: null });
+      expect(await playerClient.next()).toMatchObject({ type: "error", code: "forbidden" });
+      host.app.notifyWorldChanged();
+      // 被拒订阅没有加入推送集合，世界变化不推送。
+      await expect(playerClient.next(100)).rejects.toThrow("等待 WS 消息超时");
+    } finally {
+      playerClient.close();
+    }
+
+    const consoleTicket = await ticketFor(host, consoleSession);
+    const consoleClient = connectStream(
+      `ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(consoleTicket)}`,
+    );
+    try {
+      expect(await consoleClient.next()).toMatchObject({
+        type: "hello",
+        channels: ["console.health", "console.timeline", "console.turns"],
+      });
+      consoleClient.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+      expect(await consoleClient.next()).toMatchObject({ type: "error", code: "forbidden" });
+      host.app.notifyWorldChanged();
+      await expect(consoleClient.next(100)).rejects.toThrow("等待 WS 消息超时");
+    } finally {
+      consoleClient.close();
+    }
+  }, 30_000);
+
+  it("生产宿主使用默认 fencing 拒绝无 turn 的 Agent 命令", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const clockBefore = host.storage.transact((tx) => tx.branch(host.branchId).table("clock").get({}));
+    const auth: AuthContext = {
+      principalId: "npc-wenyuan",
+      kind: "agent",
+      roles: ["agent"],
+      worldId: host.worldId,
+      branchId: host.branchId,
+      actingAsAgentId: null,
+      controllerEpoch: null,
+      turnLeaseEpoch: null,
+      turnId: null,
+    };
+    const receipt = host.authority.commands.execute(
+      auth,
+      gameCommandEnvelope("information.share", {}, "cmd-000000000402"),
+    );
+    // 无 controllerEpoch 与 turn 租约的命令在网关内被 fencing 拒绝，不产生领域事件。
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("stale-controller");
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("domain_events").list())).toEqual([]);
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("aggregate_state").list())).toEqual([]);
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("clock").get({}))).toEqual(clockBefore);
+  });
+
+  it("装配中的 access-policy 配置决定玩家命令与控制台角色裁决", async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      assembly: configuredAssembly({
+        accessPolicy: { playerCommands: ["dialogue.say"], consoleRoles: ["researcher"] },
+      }),
+    });
+    hosts.push(host);
+    const playerSession = await loginSession(host, "player-token");
+    const denied = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: { authorization: `Bearer ${playerSession}` },
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000403"),
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("command_receipts").list())).toEqual([]);
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("domain_events").list())).toEqual([]);
+
+    const consoleSession = await loginSession(host, "console-token");
+    const operatorDenied = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" },
+    });
+    expect(operatorDenied.statusCode).toBe(403);
+    const researcherAllowed = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "researcher" },
+    });
+    expect(researcherAllowed.statusCode).toBe(200);
+  });
 
   it("首次启动生成 seed 与 manifest，重启沿用同一 run、seed 与装配", async () => {
     const dataDir = tempDataDir();

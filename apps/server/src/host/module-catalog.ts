@@ -32,7 +32,10 @@ import {
   scenarioModuleDefinition,
 } from "@ai-npc/mod-game-scenario-watergate";
 import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
-import { accessPolicyModuleDefinition } from "@ai-npc/mod-platform-access-policy-roster";
+import {
+  accessPolicyModuleDefinition,
+  type AccessPolicyPort,
+} from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
 import {
@@ -149,6 +152,8 @@ export interface ServerRuntime {
   readonly storage: StoragePort;
   readonly clock: GameClockPort;
   readonly transport: TransportPort;
+  /** 装配声明的权限端口；宿主把它交给传输层裁决玩家、控制台与频道访问。 */
+  readonly accessPolicy: AccessPolicyPort;
   readonly operations: OperationsFactory;
   readonly save: SqliteSaveService;
   readonly binder: ModuleBinder;
@@ -253,6 +258,7 @@ export function createServerRuntime(input: {
     storage: portFor<StoragePort>(plan, instances, "platform.storage"),
     clock: portFor<GameClockPort>(plan, instances, "game.clock"),
     transport: portFor<TransportPort>(plan, instances, "transport.http-ws"),
+    accessPolicy: portFor<AccessPolicyPort>(plan, instances, "platform.access-policy"),
     operations: portFor<OperationsFactory>(plan, instances, "platform.operations"),
     save: savePort.save,
     binder,

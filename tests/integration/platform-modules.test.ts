@@ -33,6 +33,15 @@ describe("platform 模块", () => {
     expect(port.authorize({ principalId: "player-1", role: "player", action: "command", commandType: "policy.set" })).toMatchObject({ allowed: false });
     expect(port.authorize({ principalId: "operator-1", role: "operator", action: "console" })).toMatchObject({ allowed: true });
     expect(port.authorize({ principalId: "player-1", role: "player", action: "console" })).toMatchObject({ allowed: false });
+    expect(port.authorize({ principalId: "player-1", role: "player", action: "player" })).toMatchObject({ allowed: true });
+    expect(port.authorize({ principalId: "operator-1", role: "operator", action: "player" })).toMatchObject({ allowed: false });
+    expect(port.authorize({ principalId: "researcher-1", role: "researcher", action: "console-session" })).toMatchObject({ allowed: true });
+    expect(port.authorize({ principalId: "player-1", role: "player", action: "console-session" })).toMatchObject({ allowed: false });
+    expect(port.authorize({ principalId: "player-1", role: "player", action: "channel", channel: "player" })).toMatchObject({ allowed: true });
+    expect(port.authorize({ principalId: "operator-1", role: "operator", action: "channel", channel: "player" })).toMatchObject({ allowed: false });
+    expect(port.authorize({ principalId: "researcher-1", role: "researcher", action: "channel", channel: "console.timeline" })).toMatchObject({ allowed: true });
+    expect(port.authorize({ principalId: "operator-1", role: "operator", action: "channel", channel: "console.timeline" })).toMatchObject({ allowed: false });
+    expect(port.authorize({ principalId: "player-1", role: "player", action: "channel", channel: "unknown" })).toMatchObject({ allowed: false });
   });
 
   it("运营服务在快照前暂停", () => {

@@ -6,4 +6,4 @@ export const packageName = "@ai-npc/mod-platform-access-policy-roster";
 
 export { accessPolicyConfigSchema, accessPolicyModuleDefinition } from "./definition";
 export type { AccessPolicyConfig } from "./definition";
-export type { AccessDecision, AccessPolicyPort, AccessRequest } from "./plugin";
+export type { AccessAction, AccessDecision, AccessPolicyPort, AccessRequest } from "./plugin";

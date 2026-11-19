@@ -14,11 +14,16 @@ import {
   sessionAssemblyResponseSchema,
   streamAppendMessageSchema,
   type ClockView,
+  type Json,
   type PlayerProjection,
   type ResolvedModuleSet,
   type StartOption,
 } from "@ai-npc/contracts";
 import { buildPlayerProjection, createServerApp } from "@ai-npc/app-server";
+import {
+  accessPolicyModuleDefinition,
+  type AccessPolicyPort,
+} from "@ai-npc/mod-platform-access-policy-roster";
 import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
 import type {
   ConversationReadPort,
@@ -75,6 +80,17 @@ function setClockMode(harness: GameHarness, mode: ClockView["mode"], expected: n
     table.put({ ...row, mode, run_version: Number(row["run_version"]) + 1, updated_at: harness.host.nowIso() });
   });
   return clockView(harness);
+}
+
+/** 分支业务表快照：验证授权拒绝发生在网关之前，没有回执、事件或世界状态写入。 */
+function branchBusinessRows(harness: GameHarness) {
+  return harness.storage.transact((tx) => ({
+    receipts: tx.branch(harness.branchId).table("command_receipts").list(),
+    events: tx.branch(harness.branchId).table("domain_events").list(),
+    aggregates: tx.branch(harness.branchId).table("aggregate_state").list(),
+    jobs: tx.branch(harness.branchId).table("jobs").list(),
+    clock: tx.branch(harness.branchId).table("clock").get({}),
+  }));
 }
 
 function projection(clock: ClockView): PlayerProjection {
@@ -175,12 +191,30 @@ interface AppOverrides {
   readonly starts?: () => readonly StartOption[];
   readonly conversation?: ConversationReadPort;
   readonly sessionAssembly?: { readonly client: ResolvedModuleSet; readonly console: ResolvedModuleSet };
+  /** 覆盖名册权限配置，用于验证裁决确实来自装配的 provider。 */
+  readonly accessPolicyConfig?: Json;
+}
+
+/** 用真实名册模块与给定配置构造权限端口；传输层只经端口裁决。 */
+async function accessPolicyFor(harness: GameHarness, config: Json = {}): Promise<AccessPolicyPort> {
+  const instance = await accessPolicyModuleDefinition.create({
+    moduleId: "platform.access-policy.roster",
+    realm: "server",
+    config,
+    scope: {},
+    ports: {},
+    host: harness.host,
+    signal: new AbortController().signal,
+  });
+  return instance.port as AccessPolicyPort;
 }
 
 async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
   const save = new SqliteSaveService(harness.storage, harness.host);
+  const accessPolicy = await accessPolicyFor(harness, overrides.accessPolicyConfig ?? {});
   const app = await createServerApp({
     authority: harness.authority,
+    accessPolicy,
     storage: harness.storage,
     worldId: harness.worldId,
     branchId: harness.branchId,
@@ -690,6 +724,142 @@ describe("服务端 API", () => {
     expect(errorResponseSchema.parse(unwired.json()).error.code).toBe("not-ready");
   });
 
+  it("玩家入口在网关前按会话角色与命令类型裁决，被拒请求零写入", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const playerSession = await login(app, "player-token");
+    const playerHeaders = { authorization: `Bearer ${playerSession}` };
+    const consoleSession = await login(app, "console-token");
+    const consoleHeaders = { authorization: `Bearer ${consoleSession}` };
+    const before = branchBusinessRows(value);
+
+    // 控制台会话不能读取玩家投影、会话或执行 campaign 控制。
+    for (const url of ["/api/v1/campaign", "/api/v1/world/view", "/api/v1/conversations/npc-wenyuan"]) {
+      const denied = await app.inject({ method: "GET", url, headers: consoleHeaders });
+      expect(denied.statusCode).toBe(403);
+      expect(errorResponseSchema.parse(denied.json()).error.code).toBe("forbidden");
+    }
+    const consoleCommand = gameCommandEnvelope(
+      "campaign.start",
+      { factionId: "human-neutral" },
+      value.host.ids("cmd"),
+    );
+    const deniedCommand = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: consoleHeaders,
+      payload: consoleCommand,
+    });
+    expect(deniedCommand.statusCode).toBe(403);
+    const deniedPause = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/pause",
+      headers: consoleHeaders,
+      payload: { operationId: "op-000000000901", expectedRunVersion: 0 },
+    });
+    expect(deniedPause.statusCode).toBe(403);
+    expect(branchBusinessRows(value)).toEqual(before);
+
+    // 玩家角色也不允许不在 playerCommands 中的命令；裁决早于网关，不写回执与事件。
+    const forbiddenType = gameCommandEnvelope("policy.set", {}, value.host.ids("cmd"));
+    const deniedType = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: playerHeaders,
+      payload: forbiddenType,
+    });
+    expect(deniedType.statusCode).toBe(403);
+    expect(errorResponseSchema.parse(deniedType.json()).error.code).toBe("forbidden");
+    expect(branchBusinessRows(value)).toEqual(before);
+
+    // 同一 commandId 没有留下任何回执。
+    const missing = await app.inject({
+      method: "GET",
+      url: `/api/v1/commands/${forbiddenType.commandId}`,
+      headers: playerHeaders,
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it("控制台入口要求会话持有的 X-Active-Role，并按装配策略放行", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const consoleSession = await login(app, "console-token");
+    const consoleHeaders = { authorization: `Bearer ${consoleSession}` };
+
+    const missing = await app.inject({ method: "GET", url: "/api/v1/console/health", headers: consoleHeaders });
+    expect(missing.statusCode).toBe(403);
+    expect(errorResponseSchema.parse(missing.json()).error.safeMessage).toContain("X-Active-Role");
+
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "admin" },
+    });
+    expect(invalid.statusCode).toBe(403);
+
+    // 会话未持有的角色不能通过请求头自报。
+    const notHeld = await app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(notHeld.statusCode).toBe(403);
+
+    // 默认名册只授权 operator；响应字段保持现有契约。
+    const allowed = await app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json()).toMatchObject({ status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } });
+
+    // 换装配配置后，同一入口按新名册拒绝 operator、放行 researcher。
+    const customApp = await appFor(value, { accessPolicyConfig: { consoleRoles: ["researcher"] } });
+    const customConsoleSession = await login(customApp, "console-token");
+    const deniedOperator = await customApp.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { authorization: `Bearer ${customConsoleSession}`, "x-active-role": "operator" },
+    });
+    expect(deniedOperator.statusCode).toBe(403);
+    const researcherSession = await login(customApp, "researcher-token");
+    const allowedResearcher = await customApp.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { authorization: `Bearer ${researcherSession}`, "x-active-role": "researcher" },
+    });
+    expect(allowedResearcher.statusCode).toBe(200);
+  });
+
+  it("装配中的 playerCommands 改变命令裁决", async () => {
+    const value = await createTrackedGameHarness(active);
+    const restricted = await appFor(value, { accessPolicyConfig: { playerCommands: ["dialogue.say"] } });
+    const restrictedSession = await login(restricted, "player-token");
+    const before = branchBusinessRows(value);
+    const denied = await restricted.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: { authorization: `Bearer ${restrictedSession}` },
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(branchBusinessRows(value)).toEqual(before);
+
+    // 默认名册下同一条命令被受理，证明差异来自装配的策略配置。
+    const standard = await appFor(value);
+    const standardSession = await login(standard, "player-token");
+    const accepted = await standard.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: { authorization: `Bearer ${standardSession}` },
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ commandStatus: "accepted" });
+  });
+
   it("WS 推送新对白与提醒的 append 帧，未订阅连接收不到", async () => {
     const speeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
       "art-000000000101": {
@@ -884,6 +1054,11 @@ describe("服务端 API", () => {
     expect(await consoleClient.next()).toMatchObject({ type: "hello", channels: ["console.health"] });
     consoleClient.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
     expect(await consoleClient.next()).toMatchObject({ type: "error", code: "forbidden" });
+    // operator 不持有研究时间线频道；被拒订阅不进入推送集合。
+    consoleClient.send({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null });
+    expect(await consoleClient.next()).toMatchObject({ type: "error", code: "forbidden" });
+    app.notifyWorldChanged();
+    await consoleClient.expectNoMessage(100);
 
     const researcherSession = await login(app, "researcher-token");
     const researcherClient = openStream(port, await ticketFor(app, researcherSession));
@@ -1113,10 +1288,19 @@ describe("服务端 API", () => {
     const badOrigin = await app.inject({ method: "POST", url: "/api/v1/auth/login", headers: { origin: "http://evil.example" }, payload: { token: "player-token" } });
     expect(badOrigin.statusCode).toBe(403);
     const session = await login(app, "player-token");
-    const forbidden = await app.inject({ method: "GET", url: "/api/v1/console/health", headers: { authorization: `Bearer ${session}` } });
+    // 玩家即使自报控制台角色也没有持有该角色，控制台入口按 403 拒绝。
+    const forbidden = await app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { authorization: `Bearer ${session}`, "x-active-role": "operator" },
+    });
     expect(forbidden.statusCode).toBe(403);
     const consoleSession = await login(app, "console-token");
-    const allowed = await app.inject({ method: "GET", url: "/api/v1/console/health", headers: { authorization: `Bearer ${consoleSession}` } });
+    const allowed = await app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" },
+    });
     expect(allowed.statusCode).toBe(200);
     const preflight = await app.inject({
       method: "OPTIONS",

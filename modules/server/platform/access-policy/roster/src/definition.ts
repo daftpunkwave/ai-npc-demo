@@ -18,7 +18,7 @@ export const accessPolicyConfigSchema = z
       "task.dispatch",
       "task.cancel",
     ]),
-    consoleRoles: z.array(z.enum(["operator", "researcher", "evaluator"])).default(["operator"]),
+    consoleRoles: z.array(z.enum(["operator", "researcher", "evaluator"])).default(["operator", "researcher"]),
   })
   .strict();
 

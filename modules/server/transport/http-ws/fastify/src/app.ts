@@ -1,7 +1,7 @@
 /**
  * 创建 Fastify HTTP/WS 应用：登录、会话、装配握手、玩家读接口、命令与回执、时钟控制、存档与玩家流。
- * 依赖 authority、存储、投影/会话/开局/时钟/存档回调与身份令牌；不直接写规则聚合或查存储表。
- * 禁止信任页面自报角色、绕过 Origin 校验或把内部错误细节返回给客户端。
+ * 依赖 authority、装配的权限端口、存储、投影/会话/开局/时钟/存档回调与身份令牌；不直接写规则聚合或查存储表。
+ * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket, { type WebSocket } from "@fastify/websocket";
@@ -11,6 +11,7 @@ import {
   clientStreamMessageSchema,
   commandEnvelopeSchema,
   commandReceiptSchema,
+  consoleActiveRoleSchema,
   conversationQuerySchema,
   conversationResponseSchema,
   errorResponseSchema,
@@ -19,6 +20,7 @@ import {
   loginResponseSchema,
   sessionAssemblyQuerySchema,
   sessionAssemblyResponseSchema,
+  streamChannelSchema,
   type AuthContext,
   type ClockView,
   type CommandEnvelope,
@@ -53,6 +55,31 @@ export interface AuthorityPort {
   readonly commands: {
     execute: typeof executeCommandHook;
   };
+}
+
+/** 需要裁决的动作：玩家入口、命令、控制台接口、控制台会话握手与 WS 频道。 */
+export type AccessAction = "player" | "command" | "console" | "console-session" | "channel";
+
+/**
+ * 权限裁决请求：主体与角色始终来自服务端会话，调用方只补充动作与目标。
+ * 这里的结构与 platform.access-policy 端口一致，传输层不依赖具体实现包。
+ */
+export interface AccessRequest {
+  readonly principalId: string;
+  readonly role: string;
+  readonly action: AccessAction;
+  readonly commandType?: string;
+  readonly channel?: string;
+}
+
+export interface AccessDecision {
+  readonly allowed: boolean;
+  readonly reason: string;
+}
+
+/** 权限端口最小视图；角色白名单由装配的 provider 维护，传输层不内置。 */
+export interface AccessPolicy {
+  authorize(request: AccessRequest): AccessDecision;
 }
 
 /** 存档服务在传输层使用的最小视图；具体实现由 host/module-catalog 绑定。 */
@@ -145,6 +172,8 @@ export interface ConversationReadPort {
 
 export interface ServerAppOptions {
   readonly authority: AuthorityPort;
+  /** 装配的权限端口；玩家、控制台与 WS 频道的裁决都经此端口。 */
+  readonly accessPolicy: AccessPolicy;
   readonly storage: StoragePort;
   readonly worldId: string;
   readonly branchId: string;
@@ -212,7 +241,6 @@ interface ReplayBuffer {
 /** 已握手连接；只有订阅集合内的频道才接收推送。 */
 interface Connection {
   readonly sessionId: string;
-  readonly channels: readonly StreamChannel[];
   readonly subscriptions: Set<StreamChannel>;
 }
 
@@ -221,20 +249,22 @@ const replayLimit = 200;
 const sessionTtlMs = 12 * 60 * 60 * 1000;
 const ticketTtlMs = 30_000;
 
-/** 按会话角色计算可订阅频道；玩家会话只允许玩家频道。 */
-function channelsFor(auth: AuthContext): StreamChannel[] {
-  if (auth.kind === "player") {
-    return [playerChannel];
-  }
-  const channels = new Set<StreamChannel>();
-  if (auth.roles.includes("operator") || auth.roles.includes("researcher")) {
-    channels.add("console.health");
-  }
-  if (auth.roles.includes("researcher")) {
-    channels.add("console.timeline");
-    channels.add("console.turns");
-  }
-  return [...channels];
+/**
+ * 按策略端口与会话角色计算可订阅频道。
+ * 候选频道取自公共契约枚举，逐个频道询问 provider；未获准的频道不进入 hello，也不能订阅。
+ */
+function channelsFor(policy: AccessPolicy, auth: AuthContext): StreamChannel[] {
+  return streamChannelSchema.options.filter((channel) =>
+    auth.roles.some(
+      (role) =>
+        policy.authorize({
+          principalId: auth.principalId,
+          role,
+          action: "channel",
+          channel,
+        }).allowed,
+    ),
+  );
 }
 
 function onBranchChangedHook(nextBranchId: string): void {
@@ -242,16 +272,6 @@ function onBranchChangedHook(nextBranchId: string): void {
     throw new Error("分支 ID 不能为空");
   }
 }
-
-const playerCommandTypes = new Set([
-  "campaign.start",
-  "dialogue.say",
-  "information.share",
-  "agreement.propose",
-  "agreement.respond",
-  "task.dispatch",
-  "task.cancel",
-]);
 
 function bearer(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
@@ -440,18 +460,96 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       }),
     );
 
-  /** 玩家接口只接受玩家会话；控制台角色统一按 403 拒绝。 */
+  /**
+   * 玩家入口：会话持有的角色中任一角色经策略端口获准 player 动作才放行。
+   * 控制台角色不会因同源地址或页面自报身份获得玩家入口。
+   */
   const requirePlayer = (session: Session, reply: FastifyReply): boolean => {
-    if (session.auth.kind === "player") {
+    const allowed = session.auth.roles.some(
+      (role) =>
+        options.accessPolicy.authorize({
+          principalId: session.auth.principalId,
+          role,
+          action: "player",
+        }).allowed,
+    );
+    if (allowed) {
       return true;
     }
     sendHttpError(reply, 403, "forbidden", "当前角色无权访问玩家接口");
     return false;
   };
 
-  /** 控制台会话：持有任一控制台角色；玩家会话不能读取控制台装配。 */
+  /**
+   * 命令入口在调用网关前裁决：同一角色须同时获准玩家入口与命令类型。
+   * 被拒请求不进入 authority，因此不写 receipt、不产生事件、不推进世界状态。
+   */
+  const requireCommand = (session: Session, commandType: string, reply: FastifyReply): boolean => {
+    const allowed = session.auth.roles.some((role) => {
+      const principalId = session.auth.principalId;
+      return (
+        options.accessPolicy.authorize({ principalId, role, action: "player" }).allowed &&
+        options.accessPolicy.authorize({
+          principalId,
+          role,
+          action: "command",
+          commandType,
+        }).allowed
+      );
+    });
+    if (allowed) {
+      return true;
+    }
+    sendHttpError(reply, 403, "forbidden", "当前角色不能使用该命令");
+    return false;
+  };
+
+  /**
+   * 控制台入口：X-Active-Role 必须存在、属于该会话持有的角色，并由策略端口按当前角色裁决。
+   * 请求头只用于选择会话内角色，不能扩大会话权限；缺失、非法或不匹配统一返回 403。
+   */
+  const requireConsole = (
+    request: FastifyRequest,
+    session: Session,
+    reply: FastifyReply,
+  ): boolean => {
+    const header = request.headers["x-active-role"];
+    const value = Array.isArray(header) ? header[0] : header;
+    if (typeof value !== "string" || value.trim().length === 0) {
+      sendHttpError(reply, 403, "forbidden", "控制台请求缺少 X-Active-Role");
+      return false;
+    }
+    const parsed = consoleActiveRoleSchema.safeParse(value.trim());
+    if (!parsed.success) {
+      sendHttpError(reply, 403, "forbidden", "X-Active-Role 不是控制台角色");
+      return false;
+    }
+    if (!session.auth.roles.includes(parsed.data)) {
+      sendHttpError(reply, 403, "forbidden", "当前会话不持有请求的角色");
+      return false;
+    }
+    const decision = options.accessPolicy.authorize({
+      principalId: session.auth.principalId,
+      role: parsed.data,
+      action: "console",
+    });
+    if (!decision.allowed) {
+      sendHttpError(reply, 403, "forbidden", "当前角色无权访问控制台接口");
+      return false;
+    }
+    return true;
+  };
+
+  /** 控制台装配握手：会话持有的任一角色获准 console-session 动作即可读取。 */
   const isConsoleSession = (session: Session): boolean =>
-    session.auth.roles.some((role) => role === "operator" || role === "researcher" || role === "evaluator");
+    session.auth.roles.some(
+      (role) =>
+        options.accessPolicy.authorize({
+          principalId: session.auth.principalId,
+          role,
+          action: "console-session",
+        }).allowed,
+    );
 
   /** 关闭连接；对已关闭或半关闭的连接不抛错。 */
   const closeSocket = (socket: WebSocket, code: number, reason: string): void => {
@@ -677,11 +775,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (value.type === "ack") {
       return;
     }
-    if (activeSession(connection.sessionId) === null) {
+    const session = activeSession(connection.sessionId);
+    if (session === null) {
       closeSocket(socket, 4401, "session expired");
       return;
     }
-    if (!connection.channels.includes(value.channel)) {
+    // 订阅前按当前会话角色重新询问策略端口；被拒频道不加入订阅集合，也不接收后续推送。
+    if (!channelsFor(options.accessPolicy, session.auth).includes(value.channel)) {
       sendError(socket, "forbidden", "频道不可用");
       return;
     }
@@ -800,9 +900,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
     const envelope = commandEnvelopeSchema.parse(request.body);
-    if (session.auth.kind === "player" && !playerCommandTypes.has(envelope.type)) {
-      return sendHttpError(reply, 403, "forbidden", "玩家不能使用该命令");
+    if (!requireCommand(session, envelope.type, reply)) {
+      return;
     }
     const receipt = options.authority.commands.execute(session.auth, envelope);
     try {
@@ -816,6 +919,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.get("/api/v1/commands/:commandId", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
+      return;
+    }
+    if (!requirePlayer(session, reply)) {
       return;
     }
     const params = request.params as { readonly commandId: string };
@@ -835,6 +941,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.get("/api/v1/world/view", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
+      return;
+    }
+    if (!requirePlayer(session, reply)) {
       return;
     }
     return { streamSeq, projectionVersion, projection: options.projection() };
@@ -893,6 +1002,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
     const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
     const clock = options.pause(body.operationId, body.expectedRunVersion);
     publishDelta();
@@ -904,6 +1016,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
     const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
     const clock = options.resume(body.operationId, body.expectedRunVersion);
     publishDelta();
@@ -913,6 +1028,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.post("/api/v1/campaign/snapshots", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
+      return;
+    }
+    if (!requirePlayer(session, reply)) {
       return;
     }
     const body = request.body as { readonly label: string };
@@ -927,6 +1045,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.get("/api/v1/campaign/snapshots", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
+      return;
+    }
+    if (!requirePlayer(session, reply)) {
       return;
     }
     const snapshots = options.save.listSnapshots() as readonly SnapshotRecordView[];
@@ -945,6 +1066,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
     const body = request.body as { readonly snapshotId: string; readonly runId?: string };
     const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId, ...(body.runId === undefined ? {} : { runId: body.runId }) });
     applyBranchChange(restored.branchId);
@@ -956,11 +1080,15 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
     const reset = options.reset();
     applyBranchChange(reset.branchId);
     return { branchId: reset.branchId, clock: reset.clock };
   });
 
+  // 票据与控制台共用：API 第 6 节对全部会话开放；可订阅频道在握手与订阅时另行裁决。
   app.post("/api/v1/streams/ticket", (request, reply) => {
     const session = authenticate(request, reply);
     if (session === null) {
@@ -990,8 +1118,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       closeSocket(socket, 4401, "invalid ticket");
       return;
     }
-    const channels = channelsFor(session.auth);
-    connections.set(socket, { sessionId: session.sessionId, channels, subscriptions: new Set() });
+    const channels = channelsFor(options.accessPolicy, session.auth);
+    connections.set(socket, { sessionId: session.sessionId, subscriptions: new Set() });
     socket.on("close", () => {
       connections.delete(socket);
     });
@@ -1014,9 +1142,10 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (session === null) {
       return;
     }
-    if (session.auth.kind === "player") {
-      return sendHttpError(reply, 403, "forbidden", "玩家不能访问控制台");
+    if (!requireConsole(request, session, reply)) {
+      return;
     }
+    // 完整字段与队列数据由后续控制台验收；本次只补授权，不用伪造数据填充模块与队列。
     return { status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } };
   });
 

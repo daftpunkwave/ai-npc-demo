@@ -83,6 +83,8 @@ export interface HostOptions {
 export interface RunningHost {
   readonly app: ServerApp;
   readonly storage: StoragePort;
+  /** 命令网关；嵌入式宿主与测试可以按生产装配直接提交命令。 */
+  readonly authority: Authority;
   readonly branchId: string;
   readonly worldId: string;
   readonly transport: TransportPort;
@@ -568,12 +570,12 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
 
   const binder = runtime.binder;
+  // 生产装配使用默认 fencing：Agent 命令必须带有效 turn 租约，测试辅助方可显式放开直连。
   const authority = new Authority({
     storage,
     host,
     content: gameContent,
     moduleBinder: binder,
-    allowDirectAgentCommands: true,
     runSeed: runSpec.seed,
   });
   for (const contributor of runtime.contributors) {
@@ -788,6 +790,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   try {
     app = await runtime.transport.createApp({
       authority,
+      accessPolicy: runtime.accessPolicy,
       storage,
       worldId: activeWorldId,
       branchId: activeBranchId,
@@ -886,6 +889,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   return {
     app,
     storage,
+    authority,
     // 在线分支切换后仍反映当前在线入口，调用方不需要重新启动宿主即可读取。
     get branchId(): string {
       return activeBranchId;
