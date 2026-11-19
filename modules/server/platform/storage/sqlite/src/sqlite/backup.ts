@@ -3,6 +3,7 @@
  * 依赖 node:fs 创建目录与读取文件大小、node:sqlite 执行 VACUUM INTO、公共契约的备份类型。
  * 禁止复制正在写入的库文件、在事务内执行备份或覆盖已有备份文件。
  */
+/* eslint-disable security/detect-non-literal-fs-filename -- 备份目录由配置的 dataDir 推导，label 已由 backupOptionsSchema 限定为小写字母/数字/连字符。 */
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";

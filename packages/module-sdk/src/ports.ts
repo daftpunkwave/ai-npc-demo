@@ -37,6 +37,7 @@ export interface ScopedStorageRecord {
  */
 export interface ScopedStoragePort {
   readonly scope: ScopedStateKey;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   read(recordId: string): Json | null;
   write(recordId: string, value: Json): void;
   remove(recordId: string): void;

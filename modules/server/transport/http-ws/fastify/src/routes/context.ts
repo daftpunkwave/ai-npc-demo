@@ -71,6 +71,7 @@ export function sendHttpError(
   safeMessage: string,
   retryable = false,
 ): FastifyReply {
+  // eslint-disable-next-line security/detect-object-injection -- 错误码是内部 ErrorCode 枚举，索引来自受限字面量联合。
   return reply.code(statusByErrorCode[code]).send(
     errorResponseSchema.parse({
       error: { code, retryable, safeMessage, traceId: null, detailsArtifactRef: null },
@@ -222,6 +223,7 @@ export function isConsoleSession(context: RouteContext, session: HttpSession): b
 export const defaultConversationLimit = 50;
 
 /** 解析会话分页查询；只接受非负整数，非法值返回 null 由路由按 400 处理。 */
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 export function conversationQueryOf(query: unknown): ConversationQuery | null {
   if (typeof query !== "object" || query === null || Array.isArray(query)) {
     return null;
@@ -257,6 +259,7 @@ export function conversationQueryOf(query: unknown): ConversationQuery | null {
 export function readPlayerConversation(
   port: ConversationReadPort,
   query: ConversationReadQuery,
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 ): ConversationResponse | null {
   const ownConversations = new Set(port.conversationsOf(query.principalId));
   let selectedConversationId: string | null = null;

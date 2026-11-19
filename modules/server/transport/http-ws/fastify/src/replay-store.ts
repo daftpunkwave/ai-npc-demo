@@ -15,6 +15,7 @@ export interface ReplayStoreOptions {
   readonly maxReplayBuffers: number;
   readonly retentionMs: number;
   /** 判断会话是否仍有活动连接；用于优先淘汰离线缓冲。 */
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly hasActiveConnection: (sessionId: string) => boolean;
 }
 

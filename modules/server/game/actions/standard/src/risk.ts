@@ -39,6 +39,7 @@ export function rollRisk(
     if (injured) {
       if (participants.length > 0) {
         const victim = participants[Math.floor(rng() * participants.length)] ?? participants[0];
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
         if (victim !== undefined) {
           injuredAgentIds.add(victim);
         }

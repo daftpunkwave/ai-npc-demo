@@ -3,6 +3,7 @@
  * 不构建完整语法树，只保证 import 判定不会被注释或字符串字面量干扰。
  * 禁止在此执行被检查代码、解析模块语义或决定依赖白名单。
  */
+/* eslint-disable security/detect-object-injection -- 索引均来自本文件扫描的源码字符下标，不来自外部输入。 */
 import { lineAt } from "./paths";
 import type { ImportRecord, StringSpan, StrippedSource } from "./types";
 
@@ -99,13 +100,15 @@ export function collectImports(source: string): ImportRecord[] {
   const stripped = stripComments(source);
   const records: ImportRecord[] = [];
 
+  // eslint-disable-next-line security/detect-unsafe-regex -- 输入是仓库内源码文本，模式为线性扫描，无可控的嵌套回溯。
   const fromPattern = /\b(import|export)\s+((?:type\s+)?[^;'"]*?)\bfrom\s*["']([^"']+)["']/g;
   for (const match of stripped.code.matchAll(fromPattern)) {
-    const matchIndex = match.index ?? 0;
+    const matchIndex = match.index;
     if (isInsideString(stripped.stringSpans, matchIndex)) {
       continue;
     }
     const specifier = match[3];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (specifier === undefined || specifier === "") {
       continue;
     }
@@ -113,14 +116,16 @@ export function collectImports(source: string): ImportRecord[] {
       specifier,
       line: lineAt(source, matchIndex),
       kind: match[1] === "export" ? "re-export" : "static",
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
       typeOnly: /^type\s/.test(match[2] ?? ""),
     });
   }
 
   const sideEffectPattern = /\bimport\s*["']([^"']+)["']/g;
   for (const match of stripped.code.matchAll(sideEffectPattern)) {
-    const matchIndex = match.index ?? 0;
+    const matchIndex = match.index;
     const specifier = match[1];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (specifier === undefined || specifier === "" || isInsideString(stripped.stringSpans, matchIndex)) {
       continue;
     }
@@ -129,12 +134,12 @@ export function collectImports(source: string): ImportRecord[] {
 
   const dynamicPattern = /\bimport\s*\(\s*/g;
   for (const match of stripped.code.matchAll(dynamicPattern)) {
-    const matchIndex = match.index ?? 0;
+    const matchIndex = match.index;
     if (isInsideString(stripped.stringSpans, matchIndex)) {
       continue;
     }
     const line = lineAt(source, matchIndex);
-    const specifierStart = matchIndex + (match[0]?.length ?? 0);
+    const specifierStart = matchIndex + match[0].length;
     const opening = stripped.code[specifierStart];
     if (opening === '"' || opening === "'") {
       const closing = stripped.code.indexOf(opening, specifierStart + 1);

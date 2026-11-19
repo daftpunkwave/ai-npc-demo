@@ -3,6 +3,7 @@
  * 依赖公共契约的命令、时钟、投影与会话类型，以及流中心会话与统计类型；不依赖 Fastify。
  * 禁止在这里实现路由、访问裁决或会话存储，也不把宿主回调写成需要调用方推断的匿名类型。
  */
+/* eslint-disable no-unused-vars -- 本文件是传输层类型契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import type {
   AuthContext,
   ClockView,
@@ -63,6 +64,7 @@ export interface SnapshotRecordView {
  * 未找到返回 null，由路由按资源不存在处理；端口不暴露写入或表结构。
  */
 export interface CommandReceiptReadPort {
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   read(principalId: string, branchId: string, commandId: string): CommandReceipt | null;
 }
 

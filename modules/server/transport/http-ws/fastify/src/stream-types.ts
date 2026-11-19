@@ -3,6 +3,7 @@
  * 依赖公共契约的投影与消息类型；不持有可变状态、不发送消息。
  * 禁止在这里引入 Fastify、读写会话存储或按连接做 I/O。
  */
+/* eslint-disable no-unused-vars -- 本文件的未使用参数只出现在 StreamSocket/StreamHubOptions 等接口签名中，名称用于表达调用契约。 */
 import type {
   AuthContext,
   ConversationLine,
@@ -130,6 +131,7 @@ export function notificationKey(item: PlayerNotificationView): string {
 /** 上次发布后新增的对白与提醒；对白按 dialogueId 去重，提醒按稳定键做多重集差。 */
 export interface AppendedItem {
   readonly kind: "dialogue" | "notification";
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   readonly item: ConversationLine | PlayerNotificationView;
 }
 
@@ -178,6 +180,7 @@ export function appendedItems(previous: PlayerProjection, next: PlayerProjection
  * 返回发生变化的字段与新的字段文本基线，调用方自行保存基线。
  */
 export function changedFields(
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   previous: PlayerProjection | null,
   previousTexts: ReadonlyMap<string, string> | null,
   projection: PlayerProjection,
@@ -188,6 +191,7 @@ export function changedFields(
   for (const [key, value] of Object.entries(values)) {
     const previousText = previousTexts?.get(key);
     if (previous !== null && previousText !== undefined) {
+      // eslint-disable-next-line security/detect-object-injection -- 键来自投影对象的固定顶层字段。
       const previousValue = (previous as unknown as Record<string, Json>)[key];
       if (Object.is(previousValue, value)) {
         texts.set(key, previousText);
@@ -197,6 +201,7 @@ export function changedFields(
     const text = JSON.stringify(value);
     texts.set(key, text);
     if (previousText !== text) {
+      // eslint-disable-next-line security/detect-object-injection -- 键来自投影对象的固定顶层字段。
       changed[key] = value;
     }
   }

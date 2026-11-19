@@ -3,6 +3,7 @@
  * 只依赖 Node 内置文件系统与路径模块，从文档所在位置解析目标。
  * 禁止修改文档、访问网络或把外部绝对 URL 当成必须可达的本地目标。
  */
+/* eslint-disable security/detect-non-literal-fs-filename -- 只扫描仓库内的文档目录与文档内相对链接，路径均由仓库根目录解析。 */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +70,7 @@ function maskCode(lines: readonly string[]): string[] {
     const fenceMatch = /^(`{3,}|~{3,})/.exec(trimmed);
 
     if (fenceMarker !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
       if (fenceMatch?.[1]?.startsWith(fenceMarker[0] ?? "")) {
         fenceMarker = null;
       }
@@ -113,6 +115,7 @@ function extractLinkTargets(line: string): string[] {
 
   for (const match of line.matchAll(linkPattern)) {
     const rawTarget = match[1];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (rawTarget === undefined) {
       continue;
     }

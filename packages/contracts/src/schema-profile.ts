@@ -55,7 +55,9 @@ export function isModelToolName(value: string): boolean {
 export interface ToolNameRegistry {
   readonly toolIds: readonly string[];
   readonly wireNames: readonly string[];
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   toWireName(toolId: string): string;
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   toToolId(wireName: string): string | undefined;
 }
 
@@ -123,12 +125,14 @@ function resolveJsonPointer(root: Json, ref: string): Json {
       if (!Number.isInteger(index) || index < 0 || index >= current.length) {
         throw new TypeError(`schema 引用路径不存在: ${ref}`);
       }
+      // eslint-disable-next-line security/detect-object-injection -- 索引来自本文件遍历的 schema 键与引用路径，只读访问。
       current = current[index] as Json;
       continue;
     }
     if (!isJsonObject(current) || !Object.hasOwn(current, decoded)) {
       throw new TypeError(`schema 引用路径不存在: ${ref}`);
     }
+    // eslint-disable-next-line security/detect-object-injection -- 索引来自本文件遍历的 schema 键与引用路径，只读访问。
     current = current[decoded] as Json;
   }
   return current;
@@ -206,10 +210,12 @@ function cleanNode(node: Json, path: string): Json {
       continue;
     }
     if (allowedKeywordSet.has(key)) {
+      // eslint-disable-next-line security/detect-object-injection -- 索引来自本文件遍历的 schema 键与引用路径，只读访问。
       cleaned[key] = value;
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
   const hasProperties = cleaned.properties !== undefined;
   const isObjectType = cleaned.type === "object" || hasProperties;
   if (isObjectType) {

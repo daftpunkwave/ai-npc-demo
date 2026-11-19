@@ -32,6 +32,7 @@ export function lineAt(source: string, index: number): number {
   let line = 1;
   const limit = Math.min(index, source.length);
   for (let position = 0; position < limit; position += 1) {
+    // eslint-disable-next-line security/detect-object-injection -- 字符下标来自本文件循环。
     if (source[position] === "\n") {
       line += 1;
     }

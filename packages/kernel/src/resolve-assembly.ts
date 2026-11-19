@@ -76,6 +76,7 @@ interface ModuleConfigResolution {
 
 const compareText = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 function isJsonObject(value: Json | undefined): value is { readonly [key: string]: Json } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -87,8 +88,11 @@ function isJsonObject(value: Json | undefined): value is { readonly [key: string
 function mergeConfigOverride(
   definition: ModuleDefinition,
   configRef: string | null,
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   raw: Json | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   override: Json | undefined,
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 ): Json | undefined {
   if (override === undefined) {
     return raw;
@@ -173,6 +177,7 @@ function resolveAgentSlotCandidates(
     return { candidates, slots };
   }
   for (const slot of agentSlotNames) {
+    // eslint-disable-next-line security/detect-object-injection -- 槽位、realm 与配置引用来自固定清单与受限枚举。
     const moduleIds = declared[slot];
     if (moduleIds === undefined) {
       continue;
@@ -186,6 +191,7 @@ function resolveAgentSlotCandidates(
       const definition = pickDefinition(catalogIndex, moduleId, realm, { slot });
       candidates.set(definition.id, definition);
     }
+    // eslint-disable-next-line security/detect-object-injection -- 槽位、realm 与配置引用来自固定清单与受限枚举。
     slots[slot] = [...moduleIds];
   }
   return { candidates, slots };
@@ -197,12 +203,14 @@ function findDependencyCycle(
   dependencies: ReadonlyMap<string, ReadonlySet<string>>,
 ): readonly string[] {
   const start = [...remaining].sort(compareText)[0];
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
   if (start === undefined) {
     return [];
   }
   const path: string[] = [];
   const positions = new Map<string, number>();
   let current: string | undefined = start;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 循环内会重新给 current 赋值，运行期仍可能为 undefined；类型收窄在循环边界失效。
   while (current !== undefined) {
     const position = positions.get(current);
     if (position !== undefined) {
@@ -247,6 +255,7 @@ function sortByDependencies(
 export function resolveRealmPlan(input: ResolveRealmInput): ResolvedRealmPlan {
   const { assembly, realm } = input;
   const catalogIndex = indexCatalog(input.catalog);
+  // eslint-disable-next-line security/detect-object-injection -- 槽位、realm 与配置引用来自固定清单与受限枚举。
   const bindings = assembly.realms[realm].bindings;
   const moduleConfigs = new Map<string, ModuleConfigResolution>();
   const bindingResolutions = new Map<string, BindingResolution>();
@@ -283,6 +292,7 @@ export function resolveRealmPlan(input: ResolveRealmInput): ResolvedRealmPlan {
     const configRef = binding.configRef;
     let moduleConfig = moduleConfigs.get(definition.id);
     if (moduleConfig === undefined) {
+      // eslint-disable-next-line security/detect-object-injection -- 槽位、realm 与配置引用来自固定清单与受限枚举。
       const rawConfig = configRef === null ? undefined : assembly.configs[configRef];
       if (configRef !== null && rawConfig === undefined) {
         throw new DomainError("assembly-incompatible", `模块 ${definition.id} 引用了不存在的配置块 ${configRef}`, {

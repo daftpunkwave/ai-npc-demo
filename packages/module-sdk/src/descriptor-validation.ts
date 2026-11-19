@@ -3,6 +3,7 @@
  * 依赖本包字段校验原语与迁移路径校验，以及公共契约的模块/能力 schema；不加载实现或创建资源。
  * 禁止跳过任一字段的校验，也禁止在校验失败后返回部分描述符。
  */
+/* eslint-disable xss/no-mixed-html -- descriptorFailure 的 <未知 ID> 与字段名只是诊断占位符，不参与 HTML 输出。 */
 import {
   instanceScopeSchema,
   moduleIdSchema,
@@ -45,6 +46,7 @@ export function validateModuleDefinition(definition: ModuleDefinition): void {
     descriptorFailure("assembly-incompatible", moduleId, "realm", "必须是 server、client 或 console");
   }
   const realm = realmResult.data;
+  // eslint-disable-next-line security/detect-object-injection -- realm 来自 zod 受限枚举。
   const namespaces = REALM_NAMESPACES[realm];
   if (!namespaces.includes(leadingNamespace(moduleId))) {
     descriptorFailure(

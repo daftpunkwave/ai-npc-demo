@@ -21,10 +21,12 @@ export interface ReceiptInput {
   readonly auth: AuthContext;
   readonly envelope: CommandEnvelope;
   readonly commandStatus: "accepted" | "rejected";
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   readonly reasonCode: ReasonCode | null;
   readonly safeMessage: string | null;
   readonly acceptedEventIds: readonly string[];
   readonly resultingVersions: Readonly<Record<string, number>>;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   readonly result: Json | null;
   readonly worldTick: number;
 }

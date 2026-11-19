@@ -6,7 +6,9 @@
 import type { StreamIdentity, StreamSession, StreamTicket } from "./stream-types";
 
 export interface SessionRegistryOptions {
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly ids: (prefix: string) => string;
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly tokens: (kind: "session" | "ticket") => string;
   readonly now: () => number;
   readonly sessionTtlMs: number;
@@ -16,6 +18,7 @@ export interface SessionRegistryOptions {
   /** 当前在线分支；认证返回的会话据此刷新 auth.branchId。 */
   readonly currentBranchId: () => string;
   /** 会话被撤销（过期、注销或容量淘汰）时通知流中心关闭连接并清理缓冲。 */
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly onSessionRevoked: (sessionId: string, reason: string) => void;
 }
 
@@ -38,6 +41,8 @@ export class SessionRegistry {
     const session: StreamSession = {
       sessionId: this.options.ids("ses"),
       auth: identity.auth,
+      // 误报：token 的值来自运行时令牌生成器，不是硬编码令牌。
+      // nosemgrep
       token: this.options.tokens("session"),
       expiresAt: this.options.now() + this.options.sessionTtlMs,
     };

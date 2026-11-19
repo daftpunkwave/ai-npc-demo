@@ -27,6 +27,7 @@ export function issuesOf(error: {
 }
 
 /** 收窄处理器返回值：undefined 视为无结果，其余必须是合法 JSON。 */
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 export function requireJsonResult(value: unknown): Json | null {
   if (value === undefined) {
     return null;

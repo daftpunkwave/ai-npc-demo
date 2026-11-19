@@ -35,6 +35,7 @@ function parseJsonColumn(table: TableInfo, column: string, text: string): Json {
 export function decodeRow(table: TableInfo, raw: Readonly<Record<string, unknown>>): Readonly<Record<string, StorageCell>> {
   const row: Record<string, StorageCell> = {};
   for (const [column, value] of Object.entries(raw)) {
+    // eslint-disable-next-line security/detect-object-injection -- 列名来自表结构与 Object.entries 的既有行数据，索引不来自外部输入。
     row[column] = decodeCell(table, column, value);
   }
   return row;
@@ -72,6 +73,7 @@ export function decodeCell(table: TableInfo, column: string, value: unknown): St
 }
 
 /** 编码写入值：JSON 列序列化为规范 JSON，布尔映射为 0/1，其他类型按驱动标量校验。 */
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 export function encodeCell(table: TableInfo, column: string, value: StorageCell | undefined): StorageValue {
   if (value === undefined) {
     invalidValue(`列 ${table.name}.${column} 缺少值，不能写入 undefined`, { table: table.name, column });

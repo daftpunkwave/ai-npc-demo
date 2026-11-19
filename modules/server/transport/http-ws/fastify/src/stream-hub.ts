@@ -51,6 +51,7 @@ export class StreamHub {
   private streamSeq = 0;
   private projectionVersion = 0;
   /** 上一份投影的顶层只读副本；用于识别新增对白与提醒。 */
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   private lastProjection: PlayerProjection | null;
   /** 上一份投影各顶层字段的序列化文本；不可变且避免每次递归深比较。 */
   private lastFieldText: Map<string, string> | null;
@@ -241,6 +242,7 @@ export class StreamHub {
       }
       if (connection.needsSnapshot) {
         this.sender.flushPendingSnapshot(connection);
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- flushPendingSnapshot 会清除 needsSnapshot，TypeScript 的属性收窄不感知跨方法修改。
         if (connection.needsSnapshot) {
           continue;
         }
@@ -277,6 +279,7 @@ export class StreamHub {
     this.lastFieldText = null;
     this.replay.resetAll(nextBranchId, this.generation);
     this.options.onBranchChanged?.(nextBranchId);
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
     let projection: PlayerProjection | null = null;
     try {
       projection = this.options.projection();

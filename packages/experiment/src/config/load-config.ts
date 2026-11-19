@@ -180,6 +180,7 @@ export function loadConfigDocument<T>(
   schema: z.ZodType<T>,
   context: ConfigLoadContext,
   draftKind?: ConfigDraftKind,
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   transform?: (value: unknown) => unknown,
 ): LoadedConfig<T> {
   const reference = resolveConfigReference(configRef, context, draftKind);
@@ -221,6 +222,7 @@ function applyRunSpecOverrides(value: unknown, overrides: RunSpecOverrides): unk
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return value;
   }
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 覆盖字段显式传入 undefined 时不应覆盖模板值；Object.entries 的静态类型不体现运行期 undefined。
   const entries = Object.entries(overrides).filter(([, item]) => item !== undefined);
   if (entries.length === 0) {
     return value;

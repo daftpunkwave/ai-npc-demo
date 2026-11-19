@@ -21,6 +21,7 @@ import type { CatalogSnapshot } from "./registry";
 import type { ResolvedRealmPlan } from "./resolve-assembly";
 
 /** 注入的哈希端口：接收规范 JSON 字符串并返回摘要，具体算法由服务端或浏览器宿主提供。 */
+// eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
 export type CanonicalHasher = (canonicalJson: string) => Promise<string>;
 
 /** 计算装配摘要所需输入：装配描述符、realm 与该 realm 已解析的实例计划。 */
@@ -111,14 +112,17 @@ function bindingJson(binding: CapabilityBinding): Json {
   return entry;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 function agentSlotsJson(declared: AgentSlotImplementations | undefined): Json {
   if (declared === undefined) {
     return null;
   }
   const entry: { [key: string]: Json } = {};
   for (const slot of agentSlotNames) {
+    // eslint-disable-next-line security/detect-object-injection -- 槽位来自固定 agentSlotNames 清单，realm 来自受限枚举。
     const moduleIds = declared[slot];
     if (moduleIds !== undefined) {
+      // eslint-disable-next-line security/detect-object-injection -- 槽位来自固定 agentSlotNames 清单，realm 来自受限枚举。
       entry[slot] = [...moduleIds];
     }
   }
@@ -173,6 +177,7 @@ export async function computeAssemblyHash(input: ComputeAssemblyHashInput): Prom
     schemaVersion: assembly.schemaVersion,
     realm,
     modules,
+    // eslint-disable-next-line security/detect-object-injection -- 槽位来自固定 agentSlotNames 清单，realm 来自受限枚举。
     bindings: assembly.realms[realm].bindings.map(bindingJson),
   };
   if (realm === "server") {

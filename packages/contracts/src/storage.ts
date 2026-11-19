@@ -3,6 +3,7 @@
  * 依赖 JSON 值与 Zod 校验；只声明宿主固定机制需要的存储边界，不暴露 SQLite 驱动类型或连接句柄。
  * 禁止跨分支读写分支级表、在事务内 await、把原始连接泄漏给业务模块或吞掉写入失败。
  */
+/* eslint-disable no-unused-vars -- 本文件是存储端口契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import { z } from "zod";
 import { type Json } from "./json";
 

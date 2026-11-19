@@ -3,6 +3,7 @@
  * 依赖连接集合、会话注册表、重放缓冲、发送器与频道准入回调；不注册连接、不维护定时器。
  * 禁止向未订阅频道推送、跨分支补发旧序号，或在会话失效后继续处理新订阅。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名参数名用于表达频道准入契约。 */
 import { clientStreamMessageSchema, type AuthContext, type StreamChannel } from "@ai-npc/contracts";
 import type { ReplayStore } from "./replay-store";
 import type { SessionRegistry } from "./session-registry";

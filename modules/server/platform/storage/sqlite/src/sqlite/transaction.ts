@@ -30,8 +30,10 @@ function toRawRow(raw: Readonly<Record<string, unknown>>): StorageRawRow {
   const row: Record<string, StorageValue> = {};
   for (const [column, value] of Object.entries(raw)) {
     if (value === null || value === undefined) {
+      // eslint-disable-next-line security/detect-object-injection -- 列名来自 Object.entries 的既有行数据，索引不来自外部输入。
       row[column] = null;
     } else if (value instanceof Uint8Array || typeof value === "string" || typeof value === "number") {
+      // eslint-disable-next-line security/detect-object-injection -- 列名来自 Object.entries 的既有行数据，索引不来自外部输入。
       row[column] = value;
     } else if (typeof value === "bigint") {
       const numeric = Number(value);
@@ -40,6 +42,7 @@ function toRawRow(raw: Readonly<Record<string, unknown>>): StorageRawRow {
           details: { column },
         });
       }
+      // eslint-disable-next-line security/detect-object-injection -- 列名来自 Object.entries 的既有行数据，索引不来自外部输入。
       row[column] = numeric;
     } else {
       throw new DomainError("invalid-state", "存储查询返回了不支持的标量类型", {
@@ -89,6 +92,7 @@ export class SqliteTransaction implements StorageTransaction {
     return prepared;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   get(sql: string, params: readonly StorageValue[] = []): StorageRawRow | null {
     this.assertActive();
     const raw = this.statement(sql).get(...params);

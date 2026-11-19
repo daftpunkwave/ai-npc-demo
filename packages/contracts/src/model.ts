@@ -3,6 +3,7 @@
  * 依赖 JSON 与 ID 校验；适配器只做一次尝试，重试与路由由模型池负责。
  * 禁止在此发起网络请求、读取密钥或写入供应商专有类型。
  */
+/* eslint-disable no-unused-vars -- 本文件是模型传输端口契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import { z } from "zod";
 import { jsonValueSchema, type Json, type JsonSchema } from "./json";
 import { idSchemas, principalIdSchema } from "./ids";

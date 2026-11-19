@@ -76,7 +76,8 @@ export class AccessPolicyPort {
         return consoleSessionRoles.has(request.role) ? allow() : deny();
       case "channel": {
         const roles = channelRoles[request.channel ?? ""];
-        return roles?.includes(request.role) === true ? allow() : deny();
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引结果可能为 undefined；Codacy 项目未开启该选项。
+        return roles?.includes(request.role) ? allow() : deny();
       }
       default:
         return deny("unknown-role");

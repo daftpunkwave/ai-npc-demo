@@ -4,6 +4,7 @@
  * 依赖 auth、玩家、运营、流与控制台路由模块，装配的权限端口与身份令牌；不直接查存储表。
  * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名与回调参数名用于表达调用契约。 */
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";

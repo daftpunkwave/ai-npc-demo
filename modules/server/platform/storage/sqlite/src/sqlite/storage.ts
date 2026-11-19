@@ -50,6 +50,7 @@ export class SqliteStorage implements StoragePort {
       return;
     }
     const dataDir = resolve(this.config.dataDir);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 数据库路径由宿主注入的 dataDir 推导，不是请求入参。
     mkdirSync(dataDir, { recursive: true });
     const databasePath = join(dataDir, "ai-npc.db");
     const database = openDatabase(databasePath);
@@ -98,6 +99,7 @@ export class SqliteStorage implements StoragePort {
     return this.catalog;
   }
 
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   transact<T>(fn: (tx: StorageTransaction) => T): T {
     const database = this.requireDatabase();
     const catalog = this.requireCatalog();

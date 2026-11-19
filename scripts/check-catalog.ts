@@ -23,6 +23,7 @@ function isDirectExecution(moduleUrl: string): boolean {
   }
   const modulePath = fileURLToPath(moduleUrl);
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 只比较仓库内固定入口文件的 realpath，不是外部路径。
     return realpathSync(resolve(entryPath)) === realpathSync(modulePath);
   } catch {
     return resolve(entryPath) === modulePath;

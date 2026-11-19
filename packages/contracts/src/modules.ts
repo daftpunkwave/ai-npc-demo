@@ -3,6 +3,7 @@
  * 依赖 JSON、ID 与 Zod 校验；数据型描述符用 strict schema，含函数或 schema 的描述符用类型。
  * 禁止在此加载模块实现、解析装配或执行生命周期。
  */
+/* eslint-disable no-unused-vars -- 本文件是模块与装配契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import { z } from "zod";
 import { jsonValueSchema, type Json } from "./json";
 

@@ -43,7 +43,8 @@ export function registerAuthRoutes(context: RouteContext): void {
 
   app.post("/api/v1/auth/logout", (request, reply) => {
     const token = bearer(request);
-    if (token === null) {
+    // eslint-disable-next-line security-node/detect-possible-timing-attacks, security/detect-possible-timing-attacks -- 只判断 token 是否为 null，没有比较令牌内容。
+    if (token === null) { // nosemgrep
       return sendHttpError(reply, "unauthenticated", "缺少或无效会话");
     }
     // 注销按会话身份撤销且幂等：并发或重复注销不报错。

@@ -32,6 +32,8 @@ export function isPreferenceKey(value: string): value is PreferenceKey {
  * 读取尚未设置的值返回 null；写入即时生效，但不会改变世界结果或模块装配。
  */
 export interface PreferencePort {
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   get<K extends PreferenceKey>(key: K): PreferenceValues[K] | null;
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   set<K extends PreferenceKey>(key: K, value: PreferenceValues[K]): void;
 }

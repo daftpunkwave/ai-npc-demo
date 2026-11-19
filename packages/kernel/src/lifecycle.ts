@@ -38,6 +38,7 @@ export interface RunningInstance {
 /** 运行中的实例集合；drain 与 dispose 都幂等，并各自按创建的逆序执行。 */
 export interface StartedInstances {
   readonly instances: readonly RunningInstance[];
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   drain(deadlineMs: number): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -72,6 +73,7 @@ function buildPorts(
       continue;
     }
     const provider = providers[0];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (provider !== undefined) {
       ports[requirement.capability] = provider.port;
     }
@@ -80,8 +82,11 @@ function buildPorts(
 }
 
 async function rollback(created: readonly RunningInstance[], host: HostServices): Promise<void> {
+  // eslint-disable-next-line security-node/detect-unhandled-async-errors -- 每个 await 都在 try/catch 内处理，规则只检查函数体顶层语句。
   for (let index = created.length - 1; index >= 0; index -= 1) {
+    // eslint-disable-next-line security/detect-object-injection -- 数组下标来自本文件循环。
     const running = created[index];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (running === undefined) {
       continue;
     }
@@ -101,12 +106,15 @@ async function rollback(created: readonly RunningInstance[], host: HostServices)
 
 async function closeInReverse(
   instances: readonly RunningInstance[],
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   close: (running: RunningInstance) => Promise<void>,
 ): Promise<void> {
   let failed = false;
   let firstError: unknown;
   for (let index = instances.length - 1; index >= 0; index -= 1) {
+    // eslint-disable-next-line security/detect-object-injection -- 数组下标来自本文件循环。
     const running = instances[index];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
     if (running === undefined) {
       continue;
     }
@@ -119,6 +127,7 @@ async function closeInReverse(
       }
     }
   }
+  // eslint-disable-next-line security-node/detect-unhandled-async-errors -- 每个 await 都在 try/catch 内处理，规则只检查函数体顶层语句。
   if (failed) {
     throw firstError;
   }

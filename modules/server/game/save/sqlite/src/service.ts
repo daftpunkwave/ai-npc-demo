@@ -109,11 +109,11 @@ function stringValue(value: unknown, column: string): string {
   return value;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 function objectValue(value: StorageCell | undefined, column: string): Json {
   if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
     throw new Error(`${column} 不是 JSON 对象`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 未解析 workspace 的 Json 联合，把断言误判为 any。
   return value as Json;
 }
 

@@ -32,6 +32,7 @@ export interface ModuleScopeInput {
   readonly branchId: string;
   readonly worldTick: number;
   readonly principalId: string;
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly correlationId: (moduleId: string) => string;
   readonly host: HostServices;
   readonly collector?: TxCollector;
