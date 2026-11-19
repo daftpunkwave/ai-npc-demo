@@ -21,4 +21,28 @@ export type {
 } from "./tick";
 export { startHost } from "./host";
 export type { HostOptions, RunningHost } from "./host";
+export {
+  assertDistinctTokens,
+  credentialsFileName,
+  fixedClientPort,
+  fixedServerHost,
+  fixedServerPort,
+  loadDeploymentConfig,
+  loadEnvFileIfPresent,
+  loginLinks,
+  parseDeploymentConfig,
+  resolveCredentials,
+  startupLogLines,
+  tokenEnvNames,
+} from "./config";
+export type {
+  DeploymentConfig,
+  DeploymentConfigInput,
+  LoginLinks,
+  NamedToken,
+  ResolvedCredentials,
+  RoleTokens,
+  StartupLogInput,
+  TokenRole,
+} from "./config";
 export { serverModuleDefinitions } from "./host/module-catalog";

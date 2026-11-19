@@ -12,7 +12,7 @@
 - `buildPlayerProjection`：从世界/地图端口与内容索引构建严格玩家投影；缺失指标时拒绝构建，不合成数值。
 - `module-catalog`：唯一模块组合根，显式登记 15 个 server 模块定义、端口与规则贡献。
 - 宿主通过 `transport.http-ws.fastify` 的 `createApp/listen` 获取应用与监听，通过 `platform.operations.standard` 的快照/恢复/重开编排调用存档。
-- `pnpm dev:server`：读取 `PORT`/`HOST`/`DATA_DIR`/`CONTENT_ROOT`/`CONTENT_PACK`/`PLAYER_TOKEN`/`CONSOLE_TOKEN`，默认监听 `127.0.0.1:3000`，打印玩家与控制台登录地址。
+- `pnpm dev:server`：先加载项目根 `.env`（进程环境中的同名变量优先），再读取 `NPC_SERVER_HOST`、`NPC_SERVER_PORT`、`NPC_CLIENT_PORT`、`NPC_DATA_DIR`、`NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 与角色令牌；只监听 `127.0.0.1:3000`，玩家登录地址使用 `5173`，控制台登录地址使用 `3000/console/`。缺省的玩家与控制台令牌生成后写入 `<NPC_DATA_DIR>/dev-tokens.json`，只在生成当次打印带令牌的登录地址。
 - WS 玩家频道：订阅快照、命令后的顶层 delta、按 `fromStreamSeq` 补发最近 200 条增量；缺口回退快照。
 - `config/assemblies/*.yaml`：标准与升级剧情两份 server 装配；`check:catalog` 解析 schema、校验模块与配置引用。
 

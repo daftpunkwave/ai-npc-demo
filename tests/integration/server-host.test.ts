@@ -1,10 +1,11 @@
 /**
- * 验证服务端宿主 bootstrap：真实存储、内容、authority、在线分支、HTTP 应用与开局投影。
- * 依赖临时数据目录与 content 包；不监听端口。
+ * 验证服务端宿主 bootstrap：真实存储、内容、authority、在线分支、HTTP 应用、多角色令牌与监听失败。
+ * 依赖临时数据目录与 content 包；不监听固定端口。
  * 禁止用假存储替代首次启动路径。
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startHost, type RunningHost } from "@ai-npc/app-server";
@@ -20,10 +21,15 @@ afterEach(async () => {
   }
 });
 
+function tempDataDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ai-npc-host-test-"));
+  dirs.push(dir);
+  return dir;
+}
+
 describe("服务端宿主", () => {
   it("首次启动创建在线分支并可开局", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-host-test-"));
-    dirs.push(dataDir);
+    const dataDir = tempDataDir();
     const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);
     const health = await host.app.inject({ method: "GET", url: "/api/v1/health" });
@@ -72,9 +78,59 @@ describe("服务端宿主", () => {
 
 
   it("未知装配在打开存储前失败", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-host-test-"));
-    dirs.push(dataDir);
+    const dataDir = tempDataDir();
     await expect(startHost({ dataDir, playerToken: "test-player", consoleToken: "test-console", assemblyRef: "missing-assembly" })).rejects.toThrow("未知 server 装配");
     expect(existsSync(join(dataDir, "ai-npc.db"))).toBe(false);
   });
+
+  it("玩家与控制台令牌相同时拒绝启动且不打开存储", async () => {
+    const dataDir = tempDataDir();
+    await expect(startHost({ dataDir, playerToken: "same-token", consoleToken: "same-token" }))
+      .rejects.toThrow("登录令牌重复");
+    expect(existsSync(join(dataDir, "ai-npc.db"))).toBe(false);
+  });
+
+  it("单角色令牌只发放对应控制台角色", async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      operatorToken: "operator-token",
+      researcherToken: "researcher-token",
+      evaluatorToken: "evaluator-token",
+    });
+    hosts.push(host);
+    const login = async (token: string) => {
+      const response = await host.app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { token } });
+      expect(response.statusCode).toBe(200);
+      return response.json() as { readonly principalId: string; readonly roles: readonly string[] };
+    };
+    expect(await login("console-token")).toMatchObject({ principalId: "console-admin", roles: ["operator", "researcher", "evaluator"] });
+    expect(await login("operator-token")).toMatchObject({ principalId: "console-operator", roles: ["operator"] });
+    expect(await login("researcher-token")).toMatchObject({ principalId: "console-researcher", roles: ["researcher"] });
+    expect(await login("evaluator-token")).toMatchObject({ principalId: "console-evaluator", roles: ["evaluator"] });
+    const unknown = await host.app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { token: "unknown-token" } });
+    expect(unknown.statusCode).toBe(401);
+  }, 20_000);
+
+  it("监听端口被占用时 listen 失败", async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve) => { blocker.listen(0, "127.0.0.1", () => resolve()); });
+    const address = blocker.address();
+    try {
+      expect(typeof address).toBe("object");
+      const port = typeof address === "object" && address !== null ? address.port : 0;
+      expect(port).toBeGreaterThan(0);
+      const host = await startHost({
+        dataDir: tempDataDir(),
+        playerToken: "player-token",
+        consoleToken: "console-token",
+        transportPort: port,
+      });
+      hosts.push(host);
+      await expect(host.listen()).rejects.toThrow(/EADDRINUSE/);
+    } finally {
+      await new Promise<void>((resolve) => { blocker.close(() => resolve()); });
+    }
+  }, 30_000);
 });

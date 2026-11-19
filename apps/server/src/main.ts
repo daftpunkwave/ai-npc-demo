@@ -1,30 +1,23 @@
 /**
- * 服务端进程入口：读取环境变量、启动宿主、监听 127.0.0.1:3000 并打印登录地址。
- * 依赖 startHost 与 Node 进程信号；不启动客户端。
- * 禁止监听非回环地址、静默更换端口或吞掉启动失败。
+ * 服务端进程入口：加载部署配置与登录令牌、启动宿主、监听回环服务端口并打印登录地址。
+ * 依赖部署配置解析与宿主启动；不启动客户端，也不直接读写存储。
+ * 禁止监听非回环地址、更换约定端口、吞掉监听失败或重复打印已配置令牌。
  */
-import { randomUUID } from "node:crypto";
+import { loadDeploymentConfig, resolveCredentials, startupLogLines } from "./config";
 import { startHost } from "./host";
 
-const port = Number(process.env.PORT ?? "3000");
-const hostname = process.env.HOST ?? "127.0.0.1";
-if (hostname !== "127.0.0.1") {
-  throw new Error("HOST 只允许 127.0.0.1");
-}
-if (!Number.isSafeInteger(port) || port <= 0 || port > 65535) {
-  throw new Error("端口不合法");
-}
-
-const playerToken = process.env.PLAYER_TOKEN ?? `player-${randomUUID()}`;
-const consoleToken = process.env.CONSOLE_TOKEN ?? `console-${randomUUID()}`;
+const config = loadDeploymentConfig();
+const credentials = resolveCredentials(config);
 const running = await startHost({
-  dataDir: process.env.DATA_DIR ?? ".data",
-  contentRoot: process.env.CONTENT_ROOT ?? "content",
-  packId: process.env.CONTENT_PACK ?? "earth-2964-v1",
-  playerToken,
-  consoleToken,
-  transportHost: hostname,
-  transportPort: port,
+  dataDir: config.dataDir,
+  assemblyRef: config.assemblyRef,
+  playerToken: credentials.tokens.player,
+  consoleToken: credentials.tokens.console,
+  ...(credentials.tokens.operator === undefined ? {} : { operatorToken: credentials.tokens.operator }),
+  ...(credentials.tokens.researcher === undefined ? {} : { researcherToken: credentials.tokens.researcher }),
+  ...(credentials.tokens.evaluator === undefined ? {} : { evaluatorToken: credentials.tokens.evaluator }),
+  transportHost: config.serverHost,
+  transportPort: config.serverPort,
 });
 try {
   await running.listen();
@@ -33,9 +26,9 @@ try {
   throw new Error(`监听 ${running.transport.host}:${running.transport.port} 失败: ${error instanceof Error ? error.message : String(error)}`);
 }
 
-console.info(`server ready: http://${running.transport.host}:${running.transport.port}`);
-console.info(`player login: http://${running.transport.host}:${running.transport.port}/#token=${playerToken}`);
-console.info(`console login: http://${running.transport.host}:${running.transport.port}/console/#token=${consoleToken}`);
+for (const line of startupLogLines({ config, tokens: credentials.tokens, generated: credentials.generated })) {
+  console.info(line);
+}
 
 const shutdown = async (): Promise<void> => {
   await running.close();

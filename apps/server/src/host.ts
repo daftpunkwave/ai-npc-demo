@@ -1,15 +1,16 @@
 /**
  * 打开服务端宿主：存储、内容、authority、游戏端口、存档、HTTP/WS 应用与时钟 worker。
- * 依赖组合根、存储模块、实验内容加载与 authority；不启动浏览器端。
+ * 依赖组合根、存储模块、实验内容加载、部署配置校验与 authority；不启动浏览器端。
  * 禁止在这里绕过模块 catalog 直接引用游戏模块实现。
  */
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ClockView, ModuleCreateInput, StoragePort, StorageTransaction } from "@ai-npc/contracts";
+import type { AuthContext, ClockView, ModuleCreateInput, StoragePort, StorageTransaction } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { createSystemAuth, systemPrincipalId } from "@ai-npc/authority";
 import { loadContentPack } from "@ai-npc/experiment";
 import type { ClockState } from "@ai-npc/module-sdk";
+import { assertDistinctTokens } from "./config";
 import { createHostServices } from "./host-services";
 import { buildPlayerProjection } from "./projection";
 import { advanceWorldTick, catchUpWorldTick } from "./tick";
@@ -28,6 +29,7 @@ import {
   operationsModuleDefinition,
   type TransportPort,
   type ServerApp,
+  type ServerIdentity,
 } from "./host/module-catalog";
 
 export interface HostOptions {
@@ -38,6 +40,10 @@ export interface HostOptions {
   readonly runSpecRef?: string;
   readonly playerToken: string;
   readonly consoleToken: string;
+  /** 可选的单角色控制台令牌；只发放对应角色。 */
+  readonly operatorToken?: string;
+  readonly researcherToken?: string;
+  readonly evaluatorToken?: string;
   readonly transportHost?: string;
   readonly transportPort?: number;
   readonly allowedOrigins?: readonly string[];
@@ -84,12 +90,44 @@ function clockView(clock: ClockState): ClockView {
   };
 }
 
+/** 按启动令牌构造传输层身份；主体和角色只来自宿主配置。 */
+function createIdentity(
+  token: string,
+  principalId: string,
+  kind: AuthContext["kind"],
+  roles: readonly string[],
+  worldId: string,
+  branchId: string,
+): ServerIdentity {
+  return {
+    token,
+    auth: {
+      principalId,
+      kind,
+      roles: [...roles],
+      worldId,
+      branchId,
+      actingAsAgentId: null,
+      controllerEpoch: null,
+      turnLeaseEpoch: null,
+      turnId: null,
+    },
+  };
+}
+
 function createOperations(driver: import("./host/module-catalog").OperationsDriver): ReturnType<typeof createOperationsService> {
   return createOperationsService(driver);
 }
 
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
 export async function startHost(options: HostOptions): Promise<RunningHost> {
+  assertDistinctTokens([
+    { label: "玩家令牌", token: options.playerToken },
+    { label: "控制台令牌", token: options.consoleToken },
+    { label: "operator 单角色令牌", token: options.operatorToken },
+    { label: "researcher 单角色令牌", token: options.researcherToken },
+    { label: "evaluator 单角色令牌", token: options.evaluatorToken },
+  ]);
   const dataDir = resolve(options.dataDir);
   if (dataDir.length <= 3 || /^[A-Za-z]:\\?$/.test(dataDir)) {
     throw new Error("DATA_DIR 必须是具体目录，不能是磁盘根目录");
@@ -418,8 +456,17 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       activeBranchId = nextBranchId;
     },
     identities: [
-      { token: options.playerToken, auth: { principalId: "player-1", kind: "player", roles: ["player"], worldId: activeWorldId, branchId: activeBranchId, actingAsAgentId: null, controllerEpoch: null, turnLeaseEpoch: null, turnId: null } },
-      { token: options.consoleToken, auth: { principalId: "operator-1", kind: "operator", roles: ["operator"], worldId: activeWorldId, branchId: activeBranchId, actingAsAgentId: null, controllerEpoch: null, turnLeaseEpoch: null, turnId: null } },
+      createIdentity(options.playerToken, "player-1", "player", ["player"], activeWorldId, activeBranchId),
+      createIdentity(options.consoleToken, "console-admin", "operator", ["operator", "researcher", "evaluator"], activeWorldId, activeBranchId),
+      ...(options.operatorToken === undefined
+        ? []
+        : [createIdentity(options.operatorToken, "console-operator", "operator", ["operator"], activeWorldId, activeBranchId)]),
+      ...(options.researcherToken === undefined
+        ? []
+        : [createIdentity(options.researcherToken, "console-researcher", "researcher", ["researcher"], activeWorldId, activeBranchId)]),
+      ...(options.evaluatorToken === undefined
+        ? []
+        : [createIdentity(options.evaluatorToken, "console-evaluator", "evaluator", ["evaluator"], activeWorldId, activeBranchId)]),
     ],
     ids: (prefix) => host.ids(prefix),
     tokens: (kind) => `${kind}-${randomUUID()}`,
