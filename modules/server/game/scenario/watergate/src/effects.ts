@@ -6,7 +6,6 @@
 import type { AudienceSpec, CardEffect, OverrideEffect } from "@ai-npc/contracts";
 import {
   principalsAudience,
-  requireGameContent,
   type GameContent,
   type GameModulePorts,
   type HandlerContext,
@@ -15,19 +14,22 @@ import { DomainError } from "@ai-npc/contracts";
 
 type EffectContext = HandlerContext<GameModulePorts, unknown>;
 
+/** 规则第 9 节规定剧情卡广播视为在 grayharbor 发布，与玩家当前起点无关。 */
+const scenarioBroadcastOriginNodeId = "grayharbor";
+
 /** 应用标准剧情卡效果。 */
 export function applyCardEffects(context: EffectContext, cardId: string, effects: readonly CardEffect[]): void {
   const ports = context.modules;
   for (const effect of effects) {
     if (effect.kind === "broadcast") {
-      // 剧情卡广播按规则视为在 grayharbor（玩家节点）发布：中继中断时只送达该节点主体。
+      // 中继中断时只送达该发布节点的主体，正常与降级时远端按规则延迟。
       ports["game.comms"].postMessage({
         fromId: effect.speakerId,
         to: ["public"],
         text: effect.text,
         channel: "broadcast",
         intentKind: "scenario",
-        originNodeId: requireGameContent(context.content).playerNodeId,
+        originNodeId: scenarioBroadcastOriginNodeId,
       });
     } else if (effect.kind === "message") {
       ports["game.comms"].postMessage({
