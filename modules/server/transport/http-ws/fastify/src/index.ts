@@ -8,4 +8,12 @@ export { transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";
 export { TransportPort } from "./plugin";
 export { createServerApp } from "./app";
-export type { AuthorityPort, ServerApp, ServerAppOptions, ServerIdentity } from "./app";
+export type {
+  AuthorityPort,
+  ConversationReadPort,
+  ConversationReadQuery,
+  ConversationSourceLine,
+  ServerApp,
+  ServerAppOptions,
+  ServerIdentity,
+} from "./app";

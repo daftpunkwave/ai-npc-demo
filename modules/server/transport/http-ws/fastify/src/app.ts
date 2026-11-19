@@ -1,26 +1,37 @@
 /**
- * 创建 Fastify HTTP/WS 应用：登录、会话、命令、回执、世界视图、时钟控制、存档与玩家流。
- * 依赖 authority、存储、投影/时钟/存档回调与身份令牌；不直接写规则聚合。
+ * 创建 Fastify HTTP/WS 应用：登录、会话、装配握手、玩家读接口、命令与回执、时钟控制、存档与玩家流。
+ * 依赖 authority、存储、投影/会话/开局/时钟/存档回调与身份令牌；不直接写规则聚合或查存储表。
  * 禁止信任页面自报角色、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket, { type WebSocket } from "@fastify/websocket";
 import cors from "@fastify/cors";
 import {
+  campaignResponseSchema,
   clientStreamMessageSchema,
   commandEnvelopeSchema,
   commandReceiptSchema,
+  conversationQuerySchema,
+  conversationResponseSchema,
+  errorResponseSchema,
   healthResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
+  sessionAssemblyQuerySchema,
+  sessionAssemblyResponseSchema,
   type AuthContext,
   type ClockView,
   type CommandEnvelope,
   type CommandReceipt,
+  type ConversationLine,
+  type ConversationQuery,
+  type ConversationResponse,
   type ErrorCode,
+  type PlayerNotificationView,
   type PlayerProjection,
   type ResolvedModuleSet,
   type SessionDescriptor,
+  type StartOption,
   type StoragePort,
   type StreamChannel,
 } from "@ai-npc/contracts";
@@ -99,12 +110,55 @@ function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
   throw new Error("reset hook 未注入");
 }
 
+/** 玩家会话读取请求：认证主体、对方主体与分页游标都由调用方给出。 */
+export interface ConversationReadQuery {
+  readonly principalId: string;
+  readonly agentId: string;
+  readonly beforeSeq: number | null;
+  readonly limit: number;
+}
+
+/** 一条会话对白的只读来源；附带逐主体送达 tick，供传输层按调用主体过滤未送达内容。 */
+export interface ConversationSourceLine {
+  readonly seq: number;
+  readonly dialogueId: string;
+  readonly speakerId: string;
+  readonly text: string;
+  readonly channel: "face-to-face" | "relay";
+  readonly worldTick: number;
+  readonly deliveries: readonly {
+    readonly principalId: string;
+    readonly deliverAtTick: number;
+  }[];
+}
+
+/**
+ * 会话读取端口：宿主为每个方法绑定只读事务与已授权的通信端口。
+ * 选择会话、分页与送达过滤都在传输层完成，端口本身不裁决可见性。
+ */
+export interface ConversationReadPort {
+  worldTick(): number;
+  conversationsOf(principalId: string): readonly string[];
+  conversationMessages(conversationId: string, limit: number): readonly ConversationSourceLine[];
+  speakerName(principalId: string): string;
+}
+
 export interface ServerAppOptions {
   readonly authority: AuthorityPort;
   readonly storage: StoragePort;
   readonly worldId: string;
   readonly branchId: string;
+  /** 服务端 realm 的已解析装配；只含模块身份与能力，不含模块配置。 */
   readonly assembly: ResolvedModuleSet;
+  /** 浏览器 realm 的已解析装配；未接线时按装配资源不存在处理。 */
+  readonly sessionAssembly?: {
+    readonly client: ResolvedModuleSet;
+    readonly console: ResolvedModuleSet;
+  };
+  /** 玩家可选开局；未接线时不返回开局选项。 */
+  readonly starts?: () => readonly StartOption[];
+  /** 玩家会话读取端口；未接线时返回服务未就绪。 */
+  readonly conversation?: ConversationReadPort;
   readonly projection: () => PlayerProjection;
   readonly clock: () => ClockView;
   readonly pause: typeof pauseHook;
@@ -213,6 +267,147 @@ function receiptOf(row: Record<string, unknown>): CommandReceipt {
   return commandReceiptSchema.parse(value);
 }
 
+/** 会话分页未指定 limit 时取投影同样的窗口；上限由公共 schema 固定为 100。 */
+const defaultConversationLimit = 50;
+
+/**
+ * append 帧的单条内容：只携带新增的一条对白或提醒，不复制整份投影。
+ * 投影本身仍由 snapshot/delta 维护；重连按快照与增量重建，不重放 append。
+ */
+interface AppendItem {
+  readonly kind: "dialogue" | "notification";
+  readonly item: ConversationLine | PlayerNotificationView;
+}
+
+/** 提醒的稳定键；派生提醒的 worldTick 会随 tick 重算，不参与同一提醒的识别。 */
+function notificationKey(item: PlayerNotificationView): string {
+  return `${item.kind}\u0000${item.text}`;
+}
+
+/**
+ * 找出上次发布后新增的对白与提醒。
+ * 对白按 dialogueId 去重；提醒按稳定键做多重集差，避免同一持续状态在每个 tick 重复推送。
+ */
+function appendedItems(previous: PlayerProjection, next: PlayerProjection): readonly AppendItem[] {
+  const known = new Set(previous.conversations.map((line) => line.dialogueId));
+  const items: AppendItem[] = [];
+  for (const line of next.conversations) {
+    if (known.has(line.dialogueId)) {
+      continue;
+    }
+    items.push({ kind: "dialogue", item: line });
+  }
+  const previousCounts = new Map<string, number>();
+  for (const notification of previous.notifications) {
+    const key = notificationKey(notification);
+    previousCounts.set(key, (previousCounts.get(key) ?? 0) + 1);
+  }
+  const groups = new Map<string, PlayerNotificationView[]>();
+  for (const notification of next.notifications) {
+    const key = notificationKey(notification);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, [notification]);
+    } else {
+      group.push(notification);
+    }
+  }
+  for (const [key, group] of groups) {
+    const added = group.length - (previousCounts.get(key) ?? 0);
+    if (added <= 0) {
+      continue;
+    }
+    for (const notification of group.slice(group.length - added)) {
+      items.push({ kind: "notification", item: notification });
+    }
+  }
+  return items;
+}
+
+/** 解析会话分页查询；只接受非负整数，非法值返回 null 由路由按 400 处理。 */
+function conversationQueryOf(query: unknown): ConversationQuery | null {
+  if (typeof query !== "object" || query === null || Array.isArray(query)) {
+    return null;
+  }
+  const record = query as { readonly beforeSeq?: unknown; readonly limit?: unknown };
+  const numberValue = (value: unknown): number | undefined | null => {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : null;
+  };
+  const beforeSeq = numberValue(record.beforeSeq);
+  const limit = numberValue(record.limit);
+  if (beforeSeq === null || limit === null) {
+    return null;
+  }
+  const parsed = conversationQuerySchema.safeParse({
+    ...(beforeSeq === undefined ? {} : { beforeSeq }),
+    ...(limit === undefined ? {} : { limit }),
+  });
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * 读取玩家与指定主体最近一次交换所在的会话。
+ * 只选择双方共同参与且由最近一次交换确定的会话，再按 seq 游标与送达 tick 裁剪对白；
+ * 找不到共同会话时返回 null，由路由按资源不存在处理。
+ */
+function readPlayerConversation(port: ConversationReadPort, query: ConversationReadQuery): ConversationResponse | null {
+  const ownConversations = new Set(port.conversationsOf(query.principalId));
+  let selectedConversationId: string | null = null;
+  let selectedLastLine: ConversationSourceLine | null = null;
+  for (const conversationId of port.conversationsOf(query.agentId)) {
+    if (!ownConversations.has(conversationId)) {
+      continue;
+    }
+    const lastLine = port.conversationMessages(conversationId, 1).at(-1);
+    if (lastLine === undefined) {
+      continue;
+    }
+    if (
+      selectedLastLine === null ||
+      lastLine.worldTick > selectedLastLine.worldTick ||
+      (lastLine.worldTick === selectedLastLine.worldTick && conversationId > (selectedConversationId ?? ""))
+    ) {
+      selectedConversationId = conversationId;
+      selectedLastLine = lastLine;
+    }
+  }
+  if (selectedConversationId === null || selectedLastLine === null) {
+    return null;
+  }
+  const tick = port.worldTick();
+  const total = selectedLastLine.seq + 1;
+  const before = query.beforeSeq ?? total;
+  // 端口只支持从尾部读取；seq 从 0 连续递增，按尾部窗口回退到游标之前。
+  const window = Math.max(0, total - before) + query.limit;
+  const lines: ConversationLine[] = [];
+  for (const line of port.conversationMessages(selectedConversationId, window)) {
+    if (line.seq >= before) {
+      continue;
+    }
+    const delivery = line.deliveries.find((candidate) => candidate.principalId === query.principalId);
+    if (delivery === undefined || delivery.deliverAtTick > tick) {
+      continue;
+    }
+    lines.push({
+      seq: line.seq,
+      dialogueId: line.dialogueId,
+      speakerId: line.speakerId,
+      speakerName: port.speakerName(line.speakerId),
+      text: line.text,
+      worldTick: line.worldTick,
+      channel: line.channel,
+    });
+  }
+  return { conversationId: selectedConversationId, lines: lines.slice(-query.limit) };
+}
+
 export interface ServerApp extends FastifyInstance {
   notifyWorldChanged(): void;
 }
@@ -234,6 +429,29 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   let generation = 0;
   let streamSeq = 0;
   let projectionVersion = 0;
+  /** 最近一次成功发布的投影；用于识别新增对白与提醒。分支切换后重新建立基线。 */
+  let lastProjection: PlayerProjection | null = options.projection();
+
+  /** 统一非 2xx 载荷：错误码、可重试标记与安全文案；不含内部细节或敏感上下文。 */
+  const sendHttpError = (reply: FastifyReply, status: number, code: ErrorCode, safeMessage: string): FastifyReply =>
+    reply.code(status).send(
+      errorResponseSchema.parse({
+        error: { code, retryable: false, safeMessage, traceId: null, detailsArtifactRef: null },
+      }),
+    );
+
+  /** 玩家接口只接受玩家会话；控制台角色统一按 403 拒绝。 */
+  const requirePlayer = (session: Session, reply: FastifyReply): boolean => {
+    if (session.auth.kind === "player") {
+      return true;
+    }
+    sendHttpError(reply, 403, "forbidden", "当前角色无权访问玩家接口");
+    return false;
+  };
+
+  /** 控制台会话：持有任一控制台角色；玩家会话不能读取控制台装配。 */
+  const isConsoleSession = (session: Session): boolean =>
+    session.auth.roles.some((role) => role === "operator" || role === "researcher" || role === "evaluator");
 
   /** 关闭连接；对已关闭或半关闭的连接不抛错。 */
   const closeSocket = (socket: WebSocket, code: number, reason: string): void => {
@@ -368,6 +586,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       }
       throw error;
     }
+    const appends = lastProjection === null ? [] : appendedItems(lastProjection, projection);
+    lastProjection = projection;
     streamSeq += 1;
     projectionVersion += 1;
     const set = { ...projection } as Record<string, unknown>;
@@ -391,6 +611,22 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       }
       sendPayload(socket, payload);
     }
+    // 新对白与新提醒按单条推送；同一 streamSeq 是与本次投影发布对应的版本。
+    for (const append of appends) {
+      const appendPayload = JSON.stringify({
+        type: "append",
+        channel: playerChannel,
+        streamSeq,
+        kind: append.kind,
+        item: append.item,
+      });
+      for (const [socket, connection] of [...connections]) {
+        if (!connection.subscriptions.has(playerChannel) || activeSession(connection.sessionId) === null) {
+          continue;
+        }
+        sendPayload(socket, appendPayload);
+      }
+    }
     return true;
   };
 
@@ -400,6 +636,8 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     generation += 1;
     streamSeq += 1;
     projectionVersion += 1;
+    // 旧分支的投影不再可作为新增判断基线。
+    lastProjection = null;
     for (const buffer of replayBuffers.values()) {
       resetReplayBuffer(buffer);
     }
@@ -464,7 +702,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
-      await reply.code(403).send({ code: "forbidden", safeMessage: "Origin 不被允许" });
+      sendHttpError(reply, 403, "forbidden", "Origin 不被允许");
     }
   });
 
@@ -472,12 +710,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const token = bearer(request);
     const session = token === null ? undefined : sessions.get(token);
     if (session === undefined) {
-      reply.code(401).send({ code: "unauthorized", safeMessage: "缺少或无效会话" });
+      sendHttpError(reply, 401, "unauthenticated", "缺少或无效会话");
       return null;
     }
     if (session.expiresAt <= now()) {
       revokeSession(session.sessionId, "session expired");
-      reply.code(401).send({ code: "unauthorized", safeMessage: "会话已过期" });
+      sendHttpError(reply, 401, "unauthenticated", "会话已过期");
       return null;
     }
     return { ...session, auth: { ...session.auth, branchId } };
@@ -489,7 +727,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const body = loginRequestSchema.parse(request.body);
     const identity = identityByToken.get(body.token);
     if (identity === undefined) {
-      return reply.code(401).send({ code: "unauthorized", safeMessage: "登录令牌无效" });
+      return sendHttpError(reply, 401, "unauthenticated", "登录令牌无效");
     }
     const session: Session = {
       sessionId: options.ids("ses"),
@@ -510,7 +748,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.post("/api/v1/auth/logout", (request, reply) => {
     const token = bearer(request);
     if (token === null) {
-      return reply.code(401).send({ code: "unauthorized", safeMessage: "缺少或无效会话" });
+      return sendHttpError(reply, 401, "unauthenticated", "缺少或无效会话");
     }
     // 注销按会话身份撤销且幂等：并发或重复注销不报错。
     const session = sessions.get(token);
@@ -532,9 +770,29 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       branchId,
       protocolVersion: "1",
       serverAssembly: options.assembly,
-      clientAssembly: null,
+      clientAssembly: options.sessionAssembly?.client ?? null,
     };
     return descriptor;
+  });
+
+  app.get("/api/v1/session/assembly", (request, reply) => {
+    const session = authenticate(request, reply);
+    if (session === null) {
+      return;
+    }
+    const query = sessionAssemblyQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return sendHttpError(reply, 400, "validation", "realm 必须是 client 或 console");
+    }
+    if (query.data.realm === "console" && !isConsoleSession(session)) {
+      return sendHttpError(reply, 403, "realm-violation", "当前会话不能读取控制台装配");
+    }
+    const assembly =
+      query.data.realm === "client" ? options.sessionAssembly?.client : options.sessionAssembly?.console;
+    if (assembly === undefined) {
+      return sendHttpError(reply, 404, "not-found", "装配资源不存在");
+    }
+    return sessionAssemblyResponseSchema.parse(assembly);
   });
 
   app.post("/api/v1/commands", (request, reply) => {
@@ -544,7 +802,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     const envelope = commandEnvelopeSchema.parse(request.body);
     if (session.auth.kind === "player" && !playerCommandTypes.has(envelope.type)) {
-      return reply.code(403).send({ code: "forbidden", safeMessage: "玩家不能使用该命令" });
+      return sendHttpError(reply, 403, "forbidden", "玩家不能使用该命令");
     }
     const receipt = options.authority.commands.execute(session.auth, envelope);
     try {
@@ -569,7 +827,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       ]),
     );
     if (row === null) {
-      return reply.code(404).send({ code: "not-found", safeMessage: "回执不存在" });
+      return sendHttpError(reply, 404, "not-found", "回执不存在");
     }
     return receiptOf(row);
   });
@@ -580,6 +838,54 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return;
     }
     return { streamSeq, projectionVersion, projection: options.projection() };
+  });
+
+  app.get("/api/v1/campaign", (request, reply) => {
+    const session = authenticate(request, reply);
+    if (session === null) {
+      return;
+    }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
+    // 开局前 projection.campaign 为 null，只返回可选开局；不因缺少 campaign 返回 404。
+    return campaignResponseSchema.parse({
+      campaign: options.projection().campaign,
+      starts: [...(options.starts?.() ?? [])],
+    });
+  });
+
+  app.get("/api/v1/conversations/:agentId", (request, reply) => {
+    const session = authenticate(request, reply);
+    if (session === null) {
+      return;
+    }
+    if (!requirePlayer(session, reply)) {
+      return;
+    }
+    const port = options.conversation;
+    if (port === undefined) {
+      return sendHttpError(reply, 503, "not-ready", "会话读取尚未就绪");
+    }
+    const params = request.params as { readonly agentId?: string };
+    const agentId = params.agentId ?? "";
+    if (agentId.length === 0) {
+      return sendHttpError(reply, 404, "not-found", "会话不存在");
+    }
+    const query = conversationQueryOf(request.query);
+    if (query === null) {
+      return sendHttpError(reply, 400, "validation", "分页参数不合法");
+    }
+    const conversation = readPlayerConversation(port, {
+      principalId: session.auth.principalId,
+      agentId,
+      beforeSeq: query.beforeSeq ?? null,
+      limit: query.limit ?? defaultConversationLimit,
+    });
+    if (conversation === null) {
+      return sendHttpError(reply, 404, "not-found", "会话不存在");
+    }
+    return conversationResponseSchema.parse(conversation);
   });
 
   app.post("/api/v1/campaign/pause", (request, reply) => {
@@ -709,7 +1015,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return;
     }
     if (session.auth.kind === "player") {
-      return reply.code(403).send({ code: "forbidden", safeMessage: "玩家不能访问控制台" });
+      return sendHttpError(reply, 403, "forbidden", "玩家不能访问控制台");
     }
     return { status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } };
   });
