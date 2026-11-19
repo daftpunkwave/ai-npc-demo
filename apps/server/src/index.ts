@@ -61,6 +61,7 @@ export {
   loadEnvFileIfPresent,
   loginLinks,
   parseDeploymentConfig,
+  persistResolvedCredentials,
   resolveCredentials,
   startupLogLines,
   tokenEnvNames,

@@ -261,7 +261,7 @@ function persistCredentials(
  */
 export function resolveCredentials(
   config: DeploymentConfig,
-  options: { readonly generate?: (role: TokenRole) => string } = {},
+  options: { readonly generate?: (role: TokenRole) => string; readonly persist?: boolean } = {},
 ): ResolvedCredentials {
   const generate = options.generate ?? (() => randomBytes(32).toString("base64url"));
   const filePath = join(config.dataDir, credentialsFileName);
@@ -300,14 +300,7 @@ export function resolveCredentials(
   if (player === undefined || consoleToken === undefined) {
     throw new Error("未能解析玩家或控制台令牌");
   }
-  const persistable: Partial<Record<TokenRole, string>> = {};
-  for (const role of generatedTokenRoles) {
-    if (config.configuredTokens[role] === undefined) {
-      persistable[role] = resolved[role];
-    }
-  }
-  persistCredentials(filePath, persistable, stored);
-  return {
+  const credentials: ResolvedCredentials = {
     tokens: {
       player,
       console: consoleToken,
@@ -318,6 +311,25 @@ export function resolveCredentials(
     generated,
     filePath,
   };
+  if (options.persist !== false) {
+    persistResolvedCredentials(config, credentials);
+  }
+  return credentials;
+}
+
+/**
+ * 把本次解析出的生成令牌写入凭据文件；调用方在成功输出登录地址之后再调用，
+ * 避免启动失败时令牌已落盘却从未展示。
+ */
+export function persistResolvedCredentials(config: DeploymentConfig, credentials: ResolvedCredentials): void {
+  const stored = readStoredCredentials(credentials.filePath);
+  const persistable: Partial<Record<TokenRole, string>> = {};
+  for (const role of generatedTokenRoles) {
+    if (config.configuredTokens[role] === undefined) {
+      persistable[role] = credentials.tokens[role];
+    }
+  }
+  persistCredentials(credentials.filePath, persistable, stored);
 }
 
 /** 玩家地址走客户端端口，控制台地址走服务端端口；两者都不指向错误端口。 */

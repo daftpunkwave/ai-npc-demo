@@ -3,11 +3,12 @@
  * 依赖部署配置解析与宿主启动；不启动客户端，也不直接读写存储。
  * 禁止监听非回环地址、更换约定端口、吞掉监听失败或重复打印已配置令牌。
  */
-import { loadDeploymentConfig, resolveCredentials, startupLogLines } from "./config";
+import { loadDeploymentConfig, persistResolvedCredentials, resolveCredentials, startupLogLines } from "./config";
 import { startHost } from "./host";
 
 const config = loadDeploymentConfig();
-const credentials = resolveCredentials(config);
+// 先解析令牌但不落盘：监听成功并打印登录地址后再持久化，避免启动失败时令牌已保存却从未展示。
+const credentials = resolveCredentials(config, { persist: false });
 const running = await startHost({
   dataDir: config.dataDir,
   assemblyRef: config.assemblyRef,
@@ -31,6 +32,7 @@ try {
 for (const line of startupLogLines({ config, tokens: credentials.tokens, generated: credentials.generated })) {
   console.info(line);
 }
+persistResolvedCredentials(config, credentials);
 
 const shutdown = async (): Promise<void> => {
   await running.close();

@@ -5,8 +5,9 @@
  * 禁止接受任意路径、未登记模块，也禁止用模块 ID、原始 JSON.stringify 或截断摘要代替规范化哈希。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+/* eslint-disable security/detect-non-literal-fs-filename -- 只读取 config/assemblies 目录，且每个文件都经 realpath 越界与普通文件检查。 */
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import {
   assemblyDescriptorSchema,
@@ -45,7 +46,6 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
   const directory = assemblyDirectory(root);
   let fileNames: string[];
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 只读取由配置解析得到的装配目录，不是请求入参。
     fileNames = readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
       .map((entry) => entry.name)
@@ -54,9 +54,15 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
     throw new Error(`无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`);
   }
   const matches: AssemblyDescriptor[] = [];
+  const realDirectory = realpathSync(directory);
   for (const fileName of fileNames) {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 文件名来自同目录 readdir 结果，已过滤为 YAML。
-    const text = readFileSync(join(directory, fileName), "utf8");
+    const filePath = join(directory, fileName);
+    // 拒绝符号链接与越界路径：realpath 必须仍位于固定的装配目录内，且目标是普通文件。
+    const realFile = realpathSync(filePath);
+    if (!realFile.startsWith(`${realDirectory}${sep}`) || !statSync(realFile).isFile()) {
+      throw new Error(`装配文件越出目录或不是普通文件: ${fileName}`);
+    }
+    const text = readFileSync(realFile, "utf8");
     let parsed: unknown;
     try {
       parsed = parse(text);

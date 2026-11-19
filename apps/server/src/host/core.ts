@@ -289,6 +289,11 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     if (storedHash.length === 0) {
       throw new Error("在线 run 缺少 manifest_hash，拒绝按当前入参重建");
     }
+    // 先校验保存的 manifest 自身摘要，防止冻结配置或名册被改动后仅靠重建摘要仍通过。
+    const storedManifestDigest = await host.hash(manifestValue as Json);
+    if (storedManifestDigest !== storedHash) {
+      throw new Error("冻结 manifest 内容与 manifest_hash 不一致：运行记录被修改");
+    }
     if (rebuilt.manifestHash !== storedHash) {
       throw new Error("冻结 manifest 无法复算：装配、名册或内容版本与 run 记录不一致");
     }

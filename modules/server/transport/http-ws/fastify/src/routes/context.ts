@@ -287,26 +287,34 @@ export function readPlayerConversation(
   const tick = port.worldTick();
   const total = selectedLastLine.seq + 1;
   const before = query.beforeSeq ?? total;
-  // 端口只支持从尾部读取；seq 从 0 连续递增，按尾部窗口回退到游标之前。
-  const window = Math.max(0, total - before) + query.limit;
-  const lines: ConversationLine[] = [];
-  for (const line of port.conversationMessages(selectedConversationId, window)) {
-    if (line.seq >= before) {
-      continue;
+  // 端口只支持从尾部读取；先按主体与送达时间过滤，再取分页窗口。
+  // 尾部可能有尚未送达的对白，逐次扩大窗口直到凑满 limit 或到达会话开头。
+  let window = Math.min(total, Math.max(query.limit * 2, 20));
+  let lines: ConversationLine[] = [];
+  for (;;) {
+    lines = [];
+    for (const line of port.conversationMessages(selectedConversationId, window)) {
+      if (line.seq >= before) {
+        continue;
+      }
+      const delivery = line.deliveries.find((candidate) => candidate.principalId === query.principalId);
+      if (delivery === undefined || delivery.deliverAtTick > tick) {
+        continue;
+      }
+      lines.push({
+        seq: line.seq,
+        dialogueId: line.dialogueId,
+        speakerId: line.speakerId,
+        speakerName: port.speakerName(line.speakerId),
+        text: line.text,
+        worldTick: line.worldTick,
+        channel: line.channel,
+      });
     }
-    const delivery = line.deliveries.find((candidate) => candidate.principalId === query.principalId);
-    if (delivery === undefined || delivery.deliverAtTick > tick) {
-      continue;
+    if (lines.length >= query.limit || window >= total) {
+      break;
     }
-    lines.push({
-      seq: line.seq,
-      dialogueId: line.dialogueId,
-      speakerId: line.speakerId,
-      speakerName: port.speakerName(line.speakerId),
-      text: line.text,
-      worldTick: line.worldTick,
-      channel: line.channel,
-    });
+    window = Math.min(total, window * 2);
   }
   return { conversationId: selectedConversationId, lines: lines.slice(-query.limit) };
 }
