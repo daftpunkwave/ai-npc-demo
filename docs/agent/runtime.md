@@ -4,11 +4,11 @@
 
 ## 1. 运行边界
 
-首版是单玩家、单权威世界；玩家从五个人类派系中选择立场。世界观统一，动态知识按主体授权，选择派系不会复制世界真值或 NPC 人格。
+首版是单玩家、单权威世界；本切片玩家是公社党魁，其余四席由 AI 党魁运行。世界观统一，动态知识按主体授权，选择派系不会复制世界真值或 NPC 人格。
 
-完整 roster 为 5 个人类派系战略 Agent、3 个非人类势力战略 Agent、12 个角色 Agent，共 20 个。在线世界与实验分支的活跃身份合计不得超过 20；20 个身份不等于同时发出 20 个模型请求。
+完整 roster 为 8 名公社支持者、4 名 AI 党魁、3 名外域 Agent，共 15 个。在线世界与实验分支的活跃身份合计不得超过 15；15 个身份不等于同时发出 15 个模型请求。
 
-完整 20 个 Agent 实验需要暂停在线运行，再逐分支执行。休眠快照不占活跃名额，恢复前原子预留名额；policy、speech 和记忆整理属于同一身份的任务，不额外创造 Agent。
+完整 15 个 Agent 实验需要暂停在线运行，再逐分支执行。休眠快照不占活跃名额，恢复前原子预留名额；policy、speech 和记忆整理属于同一身份的任务，不额外创造 Agent。
 
 Runtime 负责推进统一管线、预算、租约和证据；模块（插件）实现各阶段策略。世界服务独立裁决行动，renderer 只显示结果，模型响应不能直接改 SQLite 世界状态。感知、记忆、上下文、压缩、工具视图与决策都通过与其他职能相同的 ModuleDefinition/catalog 注册，实例作用域为 agent；调度作用在整次 run 上，实例作用域为 run。runtime 本身是宿主固定管线，不在模块目录中。
 
@@ -184,7 +184,7 @@ worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不�
 
 ## 12. 参考边界
 
-借鉴 deepseek-harness 的 [运行与事件分域](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/docs/architecture.md) 和 [可重建 session log](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/README.md)。世界事务、NPC 私有知识、双阶段对白和 20 个身份调度是本平台设计，不是对参考仓库既有游戏能力的描述。
+借鉴 deepseek-harness 的 [运行与事件分域](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/docs/architecture.md) 和 [可重建 session log](https://github.com/deepseek-ai/deepseek-harness/blob/39163dd30f703a79079e2d2446545cff3c453738/packages/core/session/README.md)。世界事务、NPC 私有知识、双阶段对白和 15 个身份调度是本平台设计，不是对参考仓库既有游戏能力的描述。
 
 插件生命周期、最终 guard 和可支持实验能力统一遵循 [插件规范](../architecture/plugins.md)；没有完成实现与运行验证前，不把本文状态机或故障行为写成已上线能力。
 

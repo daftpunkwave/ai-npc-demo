@@ -91,7 +91,7 @@ ai-npc-demo/
   config/
     assemblies/                  # local-slg-standard-v1, local-slg-test-v1, and the three swap-demo assemblies
     profiles/                    # platform baseline, scene profile, agent profiles, memory variant patches
-    rosters/                     # standard-20, core-3
+    rosters/                     # standard-15, core-3
     model-layouts/               # shared-, claude-, deterministic-model-layout-v1
     toolsets/                    # character-default, character-broadcaster, strategic-default
     presets/                     # test presets players may request
@@ -231,9 +231,9 @@ modules/server/agent/memory/ledger/
 | `tests/contract` | 跨域 schema、port、生命周期、scope、迁移、effective 参数 |
 | `tests/integration` | 事务/outbox/inbox、模型池、工具绑定、fencing、恢复与取消竞态 |
 | `tests/catalog` | 模块目录快照、能力闭包、冲突、realm 兼容、装配 diff |
-| `tests/scenarios` | 单玩家多轮交涉、承诺后果、20 个 Agent 运行与隔离变体对比 |
+| `tests/scenarios` | 单玩家多轮交涉、承诺后果、15 个 Agent 运行与隔离变体对比 |
 | `tests/e2e` | 两个端口启动、玩家关键路径、控制台页面权限与模型挂载 |
 
-一次扩展的验收包包含源码 revision、锁文件、内容版本、冻结 manifest、输入脚本、断言结果、授权 artifact、失败记录和实测限制。每个实验 run 独占 branch；在线与实验的活动身份合计不超过 20。
+一次扩展的验收包包含源码 revision、锁文件、内容版本、冻结 manifest、输入脚本、断言结果、授权 artifact、失败记录和实测限制。每个实验 run 独占 branch；在线与实验的活动身份合计不超过 15。
 
 完整交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)；观测字段与查询权限见 [可观测性](../platform/observability.md)。

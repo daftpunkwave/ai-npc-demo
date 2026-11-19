@@ -1,5 +1,7 @@
 # 共享 Tool：一次实现，多主体受限注册
 
+> **设计权威（2026-11-20）：** 设计层的工具目录见 [design/gameplay/11-agent-actions.md](../design/gameplay/11-agent-actions.md)。本文是实现层的 ToolDefinition/ToolBinding 规范；冲突时以 `docs/design/` 为准。
+
 > 状态：待实现规范。ToolDefinition 是实现目录，ToolBinding 是 Agent 授权装配；工具实现不随 Agent 数量复制。
 
 ## 1. 定义、绑定与执行
@@ -92,9 +94,9 @@ decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；
 
 ## 5. 角色授权矩阵
 
-下表是角色类的权限上限模板，实际每次仍取交集。12 个角色不因同属 character 就获得相同资产或私聊权限。
+下表是角色类的权限上限模板，实际每次仍取交集。8 名支持者与 4 名 AI 党魁、3 名外域 Agent 不因同属一个名册就获得相同资产或私聊权限。
 
-| 工具组 | 5 个人类派系战略 Agent | 3 个非人类势力战略 Agent | 12 个角色 Agent |
+| 工具组 | 4 名 AI 党魁 | 3 名外域 Agent | 8 名公社支持者 |
 |---|---|---|---|
 | world/route.inspect | 本派已知区域 | 本种族已知区域 | 个人已知与被授予区域 |
 | task/operation.inspect | 自己及受委托任务 | 自己及受委托任务 | 自己参与或可观察任务 |
@@ -107,9 +109,9 @@ decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；
 | task.cancel | 自己有撤销权的任务 | 自己有撤销权的任务 | 自己有撤销权的任务 |
 | policy.set | 本派系拥有的政策 | 本种族拥有的政策 | 无 |
 
-玩家选择五个人类派系之一，改变开局关系、已知信息和有限授权，不直接继承该派战略 Agent 全部工具权限。三个非人类势力真人运营席位也走同一 command pipeline，控制方式见 [运营控制](../platform/operations.md)。
+设计支持五个人类席位；本切片玩家是公社党魁，席位改变开局关系、已知信息和有限授权，不直接继承该派 AI 党魁全部工具权限。三个非人类势力真人运营席位也走同一 command pipeline，控制方式见 [运营控制](../platform/operations.md)。
 
-研究评估器没有 gameplay binding；读取评估证据走独立研究权限。全平台 20 个活跃 gameplay 身份上限与工具并发/调用限额分别管理。
+研究评估器没有 gameplay binding；读取评估证据走独立研究权限。全平台 15 个活跃 gameplay 身份上限与工具并发/调用限额分别管理。
 
 ## 6. 数据化模板与组件复用
 

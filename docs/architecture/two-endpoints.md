@@ -1,6 +1,6 @@
 # 两个本地端口与三运行域
 
-> 状态：目标设计，尚未实现。端口、origin、运行域、玩家设置与服务端控制台的部署边界以本文为准。模块清单见 [模块目录](module-catalog.md)，客户端渲染见 [客户端与 2.5D](client-and-rendering.md)，观测与评估界面见 [观测](../platform/observability.md) 与 [评估](../platform/evaluation.md)。
+> 状态：目标设计，尚未实现。端口、origin、运行域、玩家设置与服务端控制台的部署边界以本文为准。模块清单见 [模块目录](module-catalog.md)，客户端渲染见 [场景适配](client-and-rendering.md)，观测与评估界面见 [观测](../platform/observability.md) 与 [评估](../platform/evaluation.md)。
 >
 > 这里的“端口”指网络监听端口；模块之间通过 capability port（能力端口）交互，见 [模块边界](modules.md) 与 [公共契约](contracts.md)，两者不是同一概念。
 
@@ -8,7 +8,7 @@
 
 | 端口 | 归属 | 谁访问 | 承载 |
 |---|---|---|---|
-| `127.0.0.1:5173` | 玩家客户端 host（浏览器 realm） | 玩家 | 2.5D 场景、交互、对话、人物册、开局、必要设置 |
+| `127.0.0.1:5173` | 玩家客户端 host（浏览器 realm） | 玩家 | 2.5D 灰盒场景、交互、对话、人物册、开局、必要设置 |
 | `127.0.0.1:3000` | 服务端 host（Node server realm） | 玩家客户端、控制台浏览器 | 权威世界、模型池、REST API、WebSocket、控制台静态资源与 API |
 
 控制台不是第三个服务：它的静态资源由服务端 `:3000` 的 `/console/*` 提供，浏览器页面通过同源 API/WS 与服务端通信。开发期的客户端热更新也只使用 `:5173` 同一端口，不得为方便另开后台端口。

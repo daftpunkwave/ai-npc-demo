@@ -1,10 +1,12 @@
-# 玩家客户端、UI 模块与 2.5D 场景
+# 玩家客户端、UI 模块与场景适配
+
+> **权威：** 目标表现是 **3D 斜俯视**，见 [design/gameplay/06-player-experience.md](../design/gameplay/06-player-experience.md) 与 [design/assets/02-modeling-spec.md](../design/assets/02-modeling-spec.md)。本文的 2.5D/PixiJS 是**序章灰盒**：验证交互、可读性与端口契约，不是最终渲染，也不作为美术验收。3D 渲染器必须实现同一个 `SceneRenderer` 端口，见第 5 节。
 
 > 目标设计。玩家访问 http://127.0.0.1:5173，世界权威、模型和后台管理在 http://127.0.0.1:3000。两个端口是固定的部署边界，详见 [双端口拓扑](two-endpoints.md)。客户端宿主与可替换功能的规则由本文维护，图形界面不是不可拆的游戏主体。控制台页面是同一套模块机制在 `console` realm 的另一个宿主，见 [模块目录](module-catalog.md)。
 
 ## 1. 客户端宿主保留什么
 
-apps/client 只保留启动、模块装载、依赖与能力校验、扩展槽容器、生命周期、错误边界和协议客户端接入。地图、渲染、镜头、输入、HUD、对话、角色册、派系开局、设置、通知、音频这些功能都由 ModuleDefinition 注册，不写死在宿主页面里。宿主不提供模块可以绕过的“全局 store”，也不提供直接注入 DOM 的入口。
+apps/client 只保留启动、模块装载、依赖与能力校验、扩展槽容器、生命周期、错误边界和协议客户端接入。地图、渲染、镜头、输入、HUD、对话、角色册、席位开局、设置、通知、音频这些功能都由 ModuleDefinition 注册，不写死在宿主页面里。宿主不提供模块可以绕过的“全局 store”，也不提供直接注入 DOM 的入口。
 
 模块之间按 contracts 里的 typed port 交互，不直接 import 另一个模块的实现，也不靠全局可写 store 找隐式依赖。宿主只把模块声明所需的 capability handle 注入实例；跨客户端与服务端的调用只能走 client-protocol 和授权网络协议，不能跨进程注入服务端对象。
 
@@ -19,7 +21,7 @@ apps/client 只保留启动、模块装载、依赖与能力校验、扩展槽�
 | projection/input | 坐标变换、命中、交互意图 | renderer hit port、command client | 不直接宣布移动/任务成功 |
 | hud | 局势、资源等级、任务状态 | 授权 world/task view | 不内嵌经济或战斗结算 |
 | dialogue | 已提交对话、证据卡、提案入口 | conversation view、command client | 不持有私密 decision context |
-| character/faction | 人物册、派系开局 | 已授权角色内容、campaign client | 不复制模型编辑器或阵营规则 |
+| character/faction | 人物册、席位开局 | 已授权角色内容、campaign client | 不复制模型编辑器或阵营规则 |
 | settings | 允许的玩家偏好 | preference port | 不直接修改运行中的 module assembly |
 | notifications/audio | 提醒、声音与反馈 | 已授权 presentation events | 不把提示声音当作世界事实 |
 
@@ -31,7 +33,7 @@ apps/client 只保留启动、模块装载、依赖与能力校验、扩展槽�
 
 | 地址 | 玩家能看到/请求什么 | 不提供什么 |
 |---|---|---|
-| 127.0.0.1:5173 | 游戏场景、交谈/任务、人物册、派系开局、必要设置 | 模型凭据、全知 trace、导演席位管理 |
+| 127.0.0.1:5173 | 游戏场景、交谈/任务、人物册、席位开局、必要设置 | 模型凭据、全知 trace、导演席位管理 |
 | 127.0.0.1:3000/console/* | 按角色授权的模型挂载、三势力剧情运营、观测、评估、调试、模块装配 | 不因本地访问就跳过鉴权 |
 | 127.0.0.1:3000/api/v1/* | 玩家或后台获准使用的 REST API | 未授权原始世界日志/记忆 |
 | 127.0.0.1:3000/api/v1/streams | 有会话与 channel scope 的 WebSocket | 无限制广播所有角色私密事件 |
@@ -48,9 +50,11 @@ SceneSnapshot/SceneDelta 只包含玩家已知的节点、可见角色、获准�
 
 角色点选先转成实体或世界坐标的意图，再提交标准 command；最终是否合法由服务端的模块组合处理，并经宿主提交关口验证。客户端只显示 accepted 和后续任务状态，不把精灵移动当作行动已经完成。
 
-## 5. 2.5D 渲染适配
+## 5. 场景适配：3D 目标与 2.5D 灰盒
 
-React 是首版的 UI 适配目标，PixiJS 是首版的场景适配目标，两者都不构成宿主契约。PixiJS 官方定位是面向 Web 的 2D 渲染器，支持 WebGL 和可选的 WebGPU；本项目在它之上用等距精灵表现 2.5D，不依赖完整的 3D 物理。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
+React 是序章的 UI 适配目标，PixiJS 是序章的**灰盒场景适配**；两者都不构成宿主契约。PixiJS 是面向 Web 的 2D 渲染器，支持 WebGL 和可选的 WebGPU；序章在它之上用等距精灵表现 2.5D，不依赖完整的 3D 物理。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
+
+**3D 目标不改变端口。** 正式渲染器（three.js/Babylon 或自研）实现同一个 `SceneRenderer` 端口：输入授权 `SceneView`、`CameraState` 与选择状态，输出 `entity-picked` / `location-picked` 意图；它有自己的相机、材质、LOD 与光照，但不得把世界坐标、通行或位置判定搬到客户端。第 5 节后半的等距投影公式只属于灰盒，3D 渲染器不复用。
 
 SceneRenderer port 接收授权场景、相机和选择状态，输出 entity-picked/location-picked 这类意图。projection 负责世界与屏幕的变换，input 负责命中和交互，renderer 负责资源与显示；三者可以分别提供实现，但在 assembly 中必须满足相容的坐标、命中和视口契约。
 
@@ -124,9 +128,9 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 
 `SceneView` 由 world-view 从投影派生：节点、道路（含当前状态）、角色与队伍的位置、在途任务（路线与出发/到达 tick）、当前选择。
 
-### 8.4 场景绘制（`client.scene-renderer.pixi`）
+### 8.4 灰盒场景绘制（`client.scene-renderer.pixi`）
 
-场景默认使用版本化世界资产包（`assets/manifest.json`，设计与冲突记录见 [美术方向](../game/art-direction.md)）；以下 PixiJS `Graphics`/`Text` 画法作为缺图、无画面测试与确定性 fallback 保留：
+灰盒使用版本化世界资产包（`assets/manifest.json`，设计与冲突记录见 [美术方向](../game/art-direction.md)）；以下 PixiJS `Graphics`/`Text` 画法作为缺图、无画面测试与确定性 fallback 保留。**这些画法不是 3D 资产规格**，3D 建模按 [design/assets/02](../design/assets/02-modeling-spec.md)：
 
 | 元素 | 画法 |
 |---|---|
@@ -167,7 +171,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 | 时间与时钟 | “第 3 天 14 时 · 运行中”+ 暂停/继续按钮 | 时钟图标 + 天数 |
 | 三个指标 | 名称、数值、等级色条（等级阈值见 [规则](../game/rules.md) 第 4 节） | 三个彩色圆点（危急红、紧张黄、稳定绿），悬停显示数值 |
 | 水闸分配 | 文字 | 图标 |
-| 我的委托余额 | 三种资源的剩余数量 | 隐藏，点击展开 |
+| 我的委托余额 | 三种已结算资源（供给/能源/医疗）的剩余数量 | 隐藏，点击展开 |
 | 提醒、设置、保存 | 按钮 | 按钮（可整体折叠成一行） |
 
 两者读取同一个 `ProjectionPort`，发出同样的命令；替换时只改装配里的一行绑定。

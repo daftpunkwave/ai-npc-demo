@@ -1,6 +1,9 @@
-# 内容包 earth-2964-v1：首章“水闸之前”的全部数据
+# 序章内容契约：earth-2964-v1
 
-> 状态：实现规范。本文的 YAML 照抄到 `content/world-packs/earth-2964-v1/` 下对应的文件（第 10 节的名册例外，放在 `config/rosters/`），启动时由内容加载器按 [领域模型](../architecture/domain-model.md) 第 10 节的规则校验。数值含义与结算规则见 [规则](rules.md)；世界观见 [背景](background.md)，人格设计意图见 [角色册](characters.md)。修改任何数据都要提高内容版本，并作为新 run 的条件。
+> **权威链：** ID、派系、节点与初态以 [design/world/canon.md §13](../design/world/canon.md#13-id-对照表) 与 [design/balance/01-baseline.md](../design/balance/01-baseline.md) 为准；本切片只包含序章 t0–167 的内容。范围与 15 个上场身份见 [00-scope-and-invariants.md](../00-scope-and-invariants.md)，规则见 [rules.md](rules.md)。
+> 本文是**目标内容契约**：说明每个文件装什么、约束是什么、初始值从哪里来。当前 YAML 与本文的迁移项统一记在 [IMPLEMENTATION-STATUS.md](../IMPLEMENTATION-STATUS.md)；迁移完成后，YAML 以本文为准，不再保留第二套口径。
+
+> 状态：实现规范。启动时由内容加载器按 [领域模型](../architecture/domain-model.md) 第 10 节的规则校验。修改任何数据都要提高内容版本，并作为新 run 的条件。
 
 ## 1. 文件清单
 
@@ -9,12 +12,12 @@
 | `pack.yaml` | 包 ID、版本、文件列表、默认剧情 | 本节 |
 | `lore.yaml` | 所有主体共享的公开世界观摘要 | 第 2 节 |
 | `map.yaml` | 节点、道路、坐标、设施 | 第 3 节 |
-| `factions.yaml` | 8 个派系及其战略 Agent 人格 | 第 4 节 |
-| `characters.yaml` | 12 个角色的人格与初始状态 | 第 5 节 |
+| `factions.yaml` | 8 个派系及其党魁人格（4 名 AI 党魁 + 3 外域 + 公社席位） | 第 4 节 |
+| `characters.yaml` | 8 名公社支持者 + 3 名外域 Agent 的人格与初始状态（4 名 AI 党魁在 `factions.yaml`） | 第 5 节 |
 | `world-init.yaml` | 库存点、队伍、群体、初始委托、初始指标 | 第 6 节 |
 | `evidence.yaml` | 证据条目与秘密 | 第 7 节 |
-| `starts.yaml` | 五个人类派系开局 | 第 8 节 |
-| `scenarios/watergate-v1.yaml` | 首章剧情卡 | 第 9 节 |
+| `starts.yaml` | 五席开局；本切片只启用公社席 | 第 8 节 |
+| `scenarios/watergate-v1.yaml` | 序章九张剧情卡 | 第 9 节 |
 | `prompts/zh-CN.yaml`、`locale/zh-CN.yaml` | prompt 模板、观察摘要模板、原因码提示与界面文字 | [prompts](../agent/prompts.md)、[感知](../agent/perception.md) 第 11.4 节 |
 | `scripts/*.yaml` | 记忆实验输入脚本 | 第 11 节 |
 
@@ -22,7 +25,7 @@
 # pack.yaml
 schemaVersion: 1
 packId: earth-2964-v1
-contentVersion: "1.0.0"
+contentVersion: "1.1.0"
 defaultScenario: watergate-v1
 files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]
@@ -51,7 +54,7 @@ timeUnit: 1 tick = 1 游戏小时；1 天 = 24 tick
 
 ## 3. 地图（map.yaml）
 
-坐标是等距网格坐标（24×24），只用于渲染；距离与可达性只看道路。
+坐标是**灰盒等距网格**坐标（24×24），只用于 2.5D 灰盒渲染；3D 目标使用自己的世界坐标，距离与可达性只看道路。
 
 ```yaml
 schemaVersion: 1
@@ -76,265 +79,330 @@ migrationRoads: [r-gh-ps, r-wg-ps, r-ps-ar]
 medicalFacilities: [field-hospital, clinic]
 ```
 
-## 4. 派系与战略 Agent（factions.yaml）
+**序章只加载以上 6 节点、9 条路。** 设计地图共 13 节点、16 条路；其余 7 个外域节点与 7 条路只在 t168 后启用，本切片不加载，也不允许通过它们。下表只登记，供后续版本扩展：
 
-战略 Agent 的 `agentId` 与 `factionId` 相同；他们不在地图上。
+| 节点 | nodeId | 势力 | 连接道路 |
+|---|---|---|---|
+| 风隙营地 | `windgap` | 巡裔 | `r-ps-fx`、`r-fx-hc`、`r-fx-lw` |
+| 灰角渡口 | `ford` | 巡裔 | `r-fx-hc` |
+| 长尾洼地 | `hollow` | 巡裔 | `r-fx-lw` |
+| 苔庭 | `mosscourt` | 根庭 | `r-or-ty`、`r-ty-sg` |
+| 深根井 | `deepwell` | 根庭 | `r-ty-sg` |
+| 观测塔 | `observatory` | 泊星者 | `r-an-ob` |
+| 残轨场 | `railtrack` | 泊星者 | `r-an-rl` |
+
+## 4. 派系与党魁（factions.yaml）
+
+AI 党魁与外域 Agent 的 `agentId` 与 `factionId` 相同；他们在自己的驻地（党部/营地），不另建 `npc-` 第二身份。玩家占公社席时，`human-neutral` 不创建 AI 党魁，闻昭以 `npc-wenzhao` 上场；其余四派只创建党魁，7 名支持者不实例化。
+
+**同一派系在运行时只会创建一种领袖身份：** 玩家占席 → `npc-wenzhao`（支持者）；AI 控制 → `human-neutral`（党魁）。内容库可以同时保留两份数据，但 roster 不得同时激活二者。
 
 ```yaml
 schemaVersion: 1
 factions:
   - factionId: human-independent
     name: 砾火同盟
+    leaderCharacterId: cenyan
+    leaderName: 岑雁
     kind: human
-    homeNodeId: pass
+    factionHomeNodeId: grayharbor   # 党部与多数成员在城里
+    outpostNodeId: pass            # 前哨/派驻，不是独立城
     persona:
-      role: 砾火同盟战略代表
+      role: 砾火同盟党魁
       focus: 防御、主权、合作担保
       values: [自主, 先担保后合作, 安全优先]
       speechStyle: 正式、强硬，用“同盟”自称
       bottomLines: [不在没有担保时开放守备设施]
       goals: [保住隘口防线, 恢复守备通信]
+      secret: 2961 年雾夜放弃过一个哨位
+      relations: [ { targetId: species-fauna, trust: -1 }, { targetId: npc-luchen, trust: 1 } ]
   - factionId: human-earth-alliance
     name: 地生共约
+    leaderCharacterId: linwu
+    leaderName: 林芜
     kind: human
-    homeNodeId: orchard
+    factionHomeNodeId: grayharbor   # 党部与多数成员在城里
+    outpostNodeId: orchard            # 前哨/派驻，不是独立城
     persona:
-      role: 地生共约战略代表
+      role: 地生共约党魁
       focus: 地球种族共存、生态补偿
       values: [共治, 补偿受损方, 对泊星者保持警惕]
       speechStyle: 协商口吻，常提“共同的土地”
       bottomLines: [不牺牲果园换取短期供能]
       goals: [保住果园, 维持救援通道]
+      secret: 曾优先给幼体用药，死了两个病人
+      relations: [ { targetId: species-flora, trust: 1 }, { targetId: npc-muzhi, trust: 1 } ]
   - factionId: human-pacifist
     name: 止戈议团
+    leaderCharacterId: tangzhen
+    leaderName: 唐箴
     kind: human
-    homeNodeId: grayharbor
+    factionHomeNodeId: grayharbor   # 党部与多数成员在城里
+    outpostNodeId: grayharbor            # 前哨/派驻，不是独立城
     persona:
-      role: 止戈议团战略代表
+      role: 止戈议团党魁
       focus: 停火、伤员、非战斗人员
       values: [保护平民, 避免升级, 坚持救援]
       speechStyle: 温和、强调程序
       bottomLines: [不支持任何军事升级]
       goals: [救出伤员, 促成书面停火条款]
+      secret: 起草过一份被撕毁的停火协议
+      relations: [ { targetId: npc-wenzhao, trust: 1 }, { targetId: npc-muzhi, trust: 1 } ]
   - factionId: human-alien-accord
     name: 远星协进会
+    leaderCharacterId: qiaoshu
+    leaderName: 乔述
     kind: human
-    homeNodeId: anchor
+    factionHomeNodeId: grayharbor   # 党部与多数成员在城里
+    outpostNodeId: anchor            # 前哨/派驻，不是独立城
     persona:
-      role: 远星协进会战略代表
+      role: 远星协进会党魁
       focus: 可监督交换、技术风险
       values: [可监督的交换, 防止技术依赖]
       speechStyle: 理性、条款化
       bottomLines: [不签没有监督条款的交换]
       goals: [促成修复交换, 核实翻译]
+      secret: 第一次翻译「对等」时译错
+      relations: [ { targetId: species-extraterrestrial, trust: 1 } ]
   - factionId: human-neutral
     name: 灰港公社
+    leaderCharacterId: wenzhao
+    leaderName: 闻昭
+    playerSeat: seat.commune
     kind: human
-    homeNodeId: grayharbor
+    factionHomeNodeId: grayharbor   # 党部与多数成员在城里
+    outpostNodeId: grayharbor            # 前哨/派驻，不是独立城
     persona:
-      role: 灰港公社战略代表（水闸与中继的运营方）
+      role: 灰港公社党魁（水闸与中继的运营方）
       focus: 通信物流、中立秩序
       values: [保持通信, 公开配给, 调停]
       speechStyle: 平实、讲账目
       bottomLines: [不在未公开说明时改变配给]
       goals: [中继不断线, 灰港供给不断档]
+      secret: 左耳失聪；讨厌被绕过
+      relations: [ { targetId: npc-yinuo, trust: 2 }, { targetId: npc-wenyuan, trust: 1 } ]
   - factionId: species-fauna
     name: 巡裔
+    leaderCharacterId: zhuifeng
+    leaderName: 追风
     kind: species
-    homeNodeId: pass
+    territoryNodeId: pass
     persona:
-      role: 巡裔战略代表（氏族长老会）
+      role: 巡裔最高决策者（氏族长老会）
       focus: 迁徙安全、氏族承诺
       values: [风险共担, 口述契约, 迁徙不可中断]
       speechStyle: 简短、以族群为主语
       bottomLines: [不接受迁徙季封锁隘口]
       goals: [迁徙季隘口畅通]
+      secret: 记得一条不在地图上的备用路线
+      relations: [ { targetId: human-independent, trust: -1 } ]
   - factionId: species-flora
     name: 根庭
+    leaderCharacterId: qingzhi
+    leaderName: 青枝
     kind: species
-    homeNodeId: orchard
+    territoryNodeId: orchard
     persona:
-      role: 根庭战略代表（根网议席）
+      role: 根庭最高决策者（根网议席）
       focus: 水土、生境、长期条款
       values: [代际责任, 拒绝短期抽水, 保护幼体]
       speechStyle: 缓慢、以季节与年轮计时
       bottomLines: [不接受毁坏幼体的交换]
       goals: [争取轮换供水]
+      secret: 根网深处藏着战前种子
+      relations: [ { targetId: human-earth-alliance, trust: 1 } ]
   - factionId: species-extraterrestrial
     name: 泊星者
+    leaderCharacterId: luo
+    leaderName: 洛
     kind: species
-    homeNodeId: anchor
+    territoryNodeId: anchor
     persona:
-      role: 泊星者战略代表（降落锚议会）
+      role: 泊星者最高决策者（降落锚议会）
       focus: 降落锚与交换边界
       values: [对等交换, 安全距离]
       speechStyle: 字面、精确，常要求定义词义
       bottomLines: [不接受不对等的通行条件]
       goals: [以修复换取战前星图]
+      secret: 知道救援船可能永远不会来
+      relations: [ { targetId: human-alien-accord, trust: 1 } ]
 ```
 
 ## 5. 角色（characters.yaml）
 
-`initialRelations.trust` 取 −2 到 +2，是“版本化的背景关系”，不是运行中的记忆；记忆模块把它作为基线（见 [记忆](../agent/memory.md) 第 11 节）。`skills` 只取 [规则](rules.md) 第 6 节用到的技能。
+本文件只装 **8 名公社支持者 + 3 名外域 Agent**；4 名 AI 党魁的人格在 `factions.yaml`，不在这里重复。**43 名册中未上场的 28 人不在本文件**：他们由 [design/characters/roster.md](../design/characters/roster.md) 的名册字段驱动，只作为署名、传闻、证人与替补，不实例化。`initialRelations.trust` 取 −2 到 +2，是“版本化的背景关系”，不是运行中的记忆；记忆模块把它作为基线（见 [记忆](../agent/memory.md) 第 11 节）。`skills` 只取 [规则](rules.md) 第 6 节用到的技能。
 
 ```yaml
 schemaVersion: 1
 characters:
-  - agentId: npc-cenyan
-    name: 岑雁
-    factionId: human-independent
-    role: 守备官
-    spawnNodeId: pass
-    skills: [escort]
-    values: [重兑现, 愿共担风险, 反对空口冒险]
-    speechStyle: 简短直接，军人口吻
-    bottomLines: [没有担保不把守备队交给外人]
-    goals: [确认隘口安全, 守住通信]
-    initialRelations:
-      - { targetId: npc-shenli, label: 同僚, trust: 2 }
-      - { targetId: npc-suhui, label: 敬重, trust: 1 }
-      - { targetId: npc-zhuifeng, label: 戒备, trust: -1 }
-  - agentId: npc-shenli
-    name: 沈砾
-    factionId: human-independent
-    role: 设施工务
-    spawnNodeId: grayharbor
-    skills: [repair]
-    values: [讲验证, 谨慎务实, 讨厌虚报完成]
-    speechStyle: 技术化，喜欢核对数字
-    bottomLines: [材料没到位不说修好了]
-    goals: [修复中继]
-    initialRelations:
-      - { targetId: npc-cenyan, label: 同僚, trust: 2 }
-      - { targetId: npc-wenyuan, label: 物资往来, trust: 1 }
-  - agentId: npc-linwu
-    name: 林芜
-    factionId: human-earth-alliance
-    role: 生态医师
-    spawnNodeId: orchard
-    skills: [rescue]
-    values: [护弱者, 重公平, 不以医疗勒索]
-    speechStyle: 温和但坚定
-    bottomLines: [不拿医疗材料做政治筹码]
-    goals: [救治伤员, 保护果园生态]
-    initialRelations:
-      - { targetId: npc-suhui, label: 救援搭档, trust: 2 }
-      - { targetId: npc-qingzhi, label: 邻里, trust: 1 }
-  - agentId: npc-guxun
-    name: 谷寻
-    factionId: human-earth-alliance
-    role: 生态联络员
-    spawnNodeId: watergate
-    skills: [scout]
-    values: [善协商, 警惕短视, 能承认误判]
-    speechStyle: 耐心，讲证据
-    bottomLines: [不为讨好任何一方篡改水土数据]
-    goals: [查清渗水, 联络根庭]
-    initialRelations:
-      - { targetId: npc-qingzhi, label: 供水互信但时间尺度不同, trust: 1 }
-  - agentId: npc-tangzhen
-    name: 唐箴
-    factionId: human-pacifist
-    role: 调停员
+  # 8 名灰港公社支持者：玩家占公社席时全部上场
+  - agentId: npc-wenzhao
+    characterId: wenzhao
+    name: 闻昭
+    factionId: human-neutral
+    role: 行政主管 / 资深支持者
     spawnNodeId: grayharbor
     skills: []
-    values: [认真措辞, 重程序, 有时拖延]
-    speechStyle: 正式、措辞谨慎
-    bottomLines: [条款没确认前不宣布停火]
-    goals: [召集议事, 促成书面条款]
+    values: [账目优先, 行政权, 讨厌被绕过]
+    speechStyle: 平实、讲账，先问“谁签”
+    bottomLines: [不在没有议程的情况下开会]
+    goals: [把本周议程定下来, 让公社的行政权更重要]
+    secret: 左耳失聪；讨厌被绕过
     initialRelations:
-      - { targetId: npc-suhui, label: 同派, trust: 1 }
-      - { targetId: npc-yinuo, label: 常合作, trust: 1 }
-  - agentId: npc-suhui
-    name: 苏回
-    factionId: human-pacifist
-    role: 救援队长
-    spawnNodeId: pass
-    skills: [rescue]
-    values: [行动果断, 保护平民, 反感政治作秀]
-    speechStyle: 急促，短句
-    bottomLines: [不走会害死伤员的危险绕行]
-    goals: [把伤员送到医疗点]
-    initialRelations:
-      - { targetId: npc-linwu, label: 救援搭档, trust: 2 }
-      - { targetId: npc-cenyan, label: 隘口同处, trust: 1 }
-  - agentId: npc-qiaoshu
-    name: 乔述
-    factionId: human-alien-accord
-    role: 外联译员
-    spawnNodeId: anchor
-    skills: []
-    values: [好奇, 审慎, 愿追问不确定的含义]
-    speechStyle: 精确，常标注“不确定”
-    bottomLines: [没把握的翻译不说成确定]
-    goals: [核对交换条款的翻译]
-    initialRelations:
-      - { targetId: npc-luo, label: 翻译搭档但常有概念误解, trust: 1 }
+      - { targetId: npc-yinuo, label: 同僚, trust: 2 }
+      - { targetId: npc-wenyuan, label: 账目往来, trust: 1 }
   - agentId: npc-yinuo
+    characterId: yinuo
     name: 伊诺
     factionId: human-neutral
-    role: 通信官
+    role: 通信官 / 广播
     spawnNodeId: grayharbor
     skills: []
+    permissions: [broadcast]
     values: [重递信承诺, 求证后再发布]
     speechStyle: 克制，注明消息来源
     bottomLines: [不发布未经求证的传闻]
     goals: [保持消息通畅, 核实传闻]
-    permissions: [broadcast]
+    secret: 保留 2956 年误读收条
     initialRelations:
+      - { targetId: npc-wenzhao, label: 同僚, trust: 2 }
       - { targetId: npc-wenyuan, label: 同事, trust: 2 }
-      - { targetId: npc-tangzhen, label: 常合作, trust: 1 }
   - agentId: npc-wenyuan
+    characterId: wenyuan
     name: 温原
     factionId: human-neutral
-    role: 物资官
+    role: 物资官 / 库房
     spawnNodeId: grayharbor
     skills: [logistics]
     values: [公平透明, 对重复承诺敏感]
     speechStyle: 像念账本，喜欢列清单
     bottomLines: [账目不清不放行物资]
     goals: [灰港供给不断档]
+    secret: 妹妹的房子被烧
     initialRelations:
       - { targetId: npc-yinuo, label: 同事, trust: 2 }
-      - { targetId: npc-shenli, label: 物资往来, trust: 1 }
-  - agentId: npc-zhuifeng
+      - { targetId: npc-qilu, label: 账目与档案互证, trust: 1 }
+  - agentId: npc-taoan
+    characterId: taoan
+    name: 陶安
+    factionId: human-neutral
+    role: 工务长 / 工程
+    spawnNodeId: grayharbor
+    skills: [repair]
+    values: [能修就不拆, 要材料也要工期]
+    speechStyle: 技术化，先报缺什么
+    bottomLines: [材料没到位不说修好了]
+    goals: [修复中继, 补上边环的供热缺口]
+    secret: 参与过一段偷工减料的城墙
+    initialRelations:
+      - { targetId: npc-wenyuan, label: 材料与工期的长期拉扯, trust: 1 }
+      - { targetId: npc-muzhi, label: 工地急救靠她, trust: 1 }
+  - agentId: npc-muzhi
+    characterId: muzhi
+    name: 穆枝
+    factionId: human-neutral
+    role: 医政 / 医院
+    spawnNodeId: grayharbor
+    skills: [rescue]
+    values: [先救人, 不拿病人做交易]
+    speechStyle: 简短、临床，先问病床与药
+    bottomLines: [不拿医疗材料做政治筹码]
+    goals: [把伤员活着送进医院, 补足医疗材料]
+    secret: 丈夫死于可避免的疫病
+    initialRelations:
+      - { targetId: npc-ahe, label: 医院与食堂的配给同盟, trust: 2 }
+      - { targetId: npc-luchen, label: 治安护送伤员, trust: 1 }
+  - agentId: npc-luchen
+    characterId: luchen
+    name: 陆沉
+    factionId: human-neutral
+    role: 治安 / 民兵联络
+    spawnNodeId: grayharbor
+    skills: [escort]
+    values: [出了事要有人管, 不让人背锅]
+    speechStyle: 短句，先问“谁负责”
+    bottomLines: [没有证据不抓人]
+    goals: [守住边环治安, 把民兵从政治里摘出来]
+    secret: 误判导致三个民兵死亡
+    initialRelations:
+      - { targetId: human-independent, label: 旧同事，敬重但立场不同, trust: 1 }
+      - { targetId: npc-muzhi, label: 护送搭档, trust: 1 }
+  - agentId: npc-ahe
+    characterId: ahe
+    name: 阿禾
+    factionId: human-neutral
+    role: 配给 / 食堂 / 民意
+    spawnNodeId: grayharbor
+    skills: [logistics]
+    values: [每个人都要吃饭, 记住死者的名字]
+    speechStyle: 热络，先问“吃了吗”
+    bottomLines: [不克扣配给，包括反对者]
+    goals: [让边环的孩子吃上饭, 把民意带进议事]
+    secret: 偷偷给边环孩子多打饭
+    initialRelations:
+      - { targetId: npc-muzhi, label: 配给同盟, trust: 2 }
+      - { targetId: npc-wenyuan, label: 粮食账目, trust: 1 }
+  - agentId: npc-qilu
+    characterId: qilu
+    name: 祁录
+    factionId: human-neutral
+    role: 档案 / 记录 / 情报
+    spawnNodeId: grayharbor
+    skills: [scout]
+    values: [没有出处的话只能当传闻, 记录要全]
+    speechStyle: 精确，先报编号与来源
+    bottomLines: [不改记录，不销毁档案]
+    goals: [查清被撕掉的 11 页, 把议事录记全]
+    secret: 知道建城档案被撕掉的 11 页
+    initialRelations:
+      - { targetId: npc-wenyuan, label: 账目与档案互证, trust: 1 }
+      - { targetId: npc-wenzhao, label: 议程与记录, trust: 1 }
+  # 3 名外域 Agent：不是席位，不投票
+  - agentId: species-fauna
+    characterId: zhuifeng
     name: 追风
     factionId: species-fauna
-    role: 迁徙向导
+    role: 迁徙向导 / 巡裔最高决策者
     spawnNodeId: pass
     skills: [scout, escort]
     values: [重同路经历, 警惕路线暴露]
     speechStyle: 简洁，常用路途作比
     bottomLines: [不向没同路过的人透露备用路线]
     goals: [族群安全通过隘口]
+    secret: 记得一条不在地图上的备用路线
     initialRelations:
-      - { targetId: npc-cenyan, label: 担心封锁, trust: -1 }
-      - { targetId: npc-suhui, label: 救过族人, trust: 1 }
-  - agentId: npc-qingzhi
+      - { targetId: human-independent, label: 担心封锁, trust: -1 }
+      - { targetId: human-earth-alliance, label: 果园与迁徙的水账, trust: 1 }
+  - agentId: species-flora
+    characterId: qingzhi
     name: 青枝
     factionId: species-flora
-    role: 园护
+    role: 园护 / 根庭最高决策者
     spawnNodeId: orchard
     skills: []
     values: [长时耐心, 护幼体, 讨厌无偿损耗]
-    speechStyle: 缓慢，以季节计时
+    speechStyle: 缓慢，以季节与年轮计时
     bottomLines: [不以毁坏幼体换短期援助]
     goals: [争取轮换供水]
+    secret: 根网深处藏着战前种子
     initialRelations:
-      - { targetId: npc-linwu, label: 邻里, trust: 1 }
-      - { targetId: npc-guxun, label: 供水互信, trust: 1 }
-  - agentId: npc-luo
+      - { targetId: human-earth-alliance, label: 供水互信但时间尺度不同, trust: 1 }
+      - { targetId: species-fauna, label: 上下游邻居, trust: 1 }
+  - agentId: species-extraterrestrial
+    characterId: luo
     name: 洛
     factionId: species-extraterrestrial
-    role: 观察使
+    role: 观察使 / 泊星者最高决策者
     spawnNodeId: anchor
     skills: [repair]
     values: [精确, 保留异议, 愿理解人类]
     speechStyle: 字面、精确，偶尔词义错位
     bottomLines: [不接受不对等的通行条件]
     goals: [以修复换取星图, 维持安全距离]
+    secret: 知道救援船可能永远不会来
     initialRelations:
-      - { targetId: npc-qiaoshu, label: 翻译搭档, trust: 1 }
+      - { targetId: human-alien-accord, label: 翻译搭档，常有概念误解, trust: 1 }
+
 ```
 
 ## 6. 世界初态（world-init.yaml）
@@ -362,16 +430,17 @@ teams:
   - { teamId: team-star,    ownerFactionId: species-extraterrestrial, nodeId: anchor,     capabilities: [repair, transport],         capacity: 15 }
 groups:
   - { groupId: grp-injured-migrants, nodeId: pass, injured: 6, deadlineTick: 48 }
-# duty delegations granted by each faction to its duty character at campaign start
+# 序章只结算 supply/energy/medical；materials/food/water 在 t168 按设计初值出现，不在这里建库存点。
+# duty delegations granted by each faction to its leader/agent at campaign start
 dutyDelegations:
-  - { granteeId: npc-cenyan,   grantorFactionId: human-independent,        teamIds: [team-rubble],  stockpileId: sp-rubble,  maxDraw: { supply: 10, energy: 4, medical: 2 }, untilTick: 168 }
-  - { granteeId: npc-linwu,    grantorFactionId: human-earth-alliance,     teamIds: [team-earth],   stockpileId: sp-earth,   maxDraw: { supply: 6,  energy: 0, medical: 8 }, untilTick: 168 }
-  - { granteeId: npc-suhui,    grantorFactionId: human-pacifist,           teamIds: [team-truce],   stockpileId: sp-truce,   maxDraw: { supply: 4,  energy: 0, medical: 8 }, untilTick: 168 }
-  - { granteeId: npc-qiaoshu,  grantorFactionId: human-alien-accord,       teamIds: [team-accord],  stockpileId: sp-accord,  maxDraw: { supply: 6,  energy: 4, medical: 0 }, untilTick: 168 }
+  - { granteeId: human-independent, grantorFactionId: human-independent,        teamIds: [team-rubble],  stockpileId: sp-rubble,  maxDraw: { supply: 10, energy: 4, medical: 2 }, untilTick: 168 }
+  - { granteeId: human-earth-alliance, grantorFactionId: human-earth-alliance,     teamIds: [team-earth],   stockpileId: sp-earth,   maxDraw: { supply: 6,  energy: 0, medical: 8 }, untilTick: 168 }
+  - { granteeId: human-pacifist, grantorFactionId: human-pacifist,           teamIds: [team-truce],   stockpileId: sp-truce,   maxDraw: { supply: 4,  energy: 0, medical: 8 }, untilTick: 168 }
+  - { granteeId: human-alien-accord, grantorFactionId: human-alien-accord,       teamIds: [team-accord],  stockpileId: sp-accord,  maxDraw: { supply: 6,  energy: 4, medical: 0 }, untilTick: 168 }
   - { granteeId: npc-wenyuan,  grantorFactionId: human-neutral,            teamIds: [team-commons], stockpileId: sp-commons, maxDraw: { supply: 20, energy: 6, medical: 4 }, untilTick: 168 }
-  - { granteeId: npc-zhuifeng, grantorFactionId: species-fauna,            teamIds: [team-fauna],   stockpileId: sp-fauna,   maxDraw: { supply: 6,  energy: 0, medical: 0 }, untilTick: 168 }
-  - { granteeId: npc-qingzhi,  grantorFactionId: species-flora,            teamIds: [team-flora],   stockpileId: sp-flora,   maxDraw: { supply: 0,  energy: 0, medical: 8 }, untilTick: 168 }
-  - { granteeId: npc-luo,      grantorFactionId: species-extraterrestrial, teamIds: [team-star],    stockpileId: sp-star,    maxDraw: { supply: 0,  energy: 20, medical: 0 }, untilTick: 168 }
+  - { granteeId: species-fauna, grantorFactionId: species-fauna,            teamIds: [team-fauna],   stockpileId: sp-fauna,   maxDraw: { supply: 6,  energy: 0, medical: 0 }, untilTick: 168 }
+  - { granteeId: species-flora, grantorFactionId: species-flora,            teamIds: [team-flora],   stockpileId: sp-flora,   maxDraw: { supply: 0,  energy: 0, medical: 8 }, untilTick: 168 }
+  - { granteeId: species-extraterrestrial, grantorFactionId: species-extraterrestrial, teamIds: [team-star],    stockpileId: sp-star,    maxDraw: { supply: 0,  energy: 20, medical: 0 }, untilTick: 168 }
 player: { principalId: player-1, nodeId: grayharbor }
 ```
 
@@ -402,28 +471,30 @@ evidence:
     tags: [flood, watergate]
   - evidenceId: ev-water-ledger
     title: 水闸历年分水账
-    heldBy: [human-neutral, human-earth-alliance, npc-wenyuan, npc-guxun]
+    heldBy: [human-neutral, human-earth-alliance, npc-wenyuan]
     content: 过去三季里有两季优先供给灰港，果园的实际用水低于约定。
     tags: [water, fairness]
   - evidenceId: ev-exchange-draft
     title: 修复交换草案
-    heldBy: [human-alien-accord, species-extraterrestrial, npc-qiaoshu, npc-luo]
+    heldBy: [human-alien-accord, species-extraterrestrial]
     content: 泊星者提供一次中继修复；作为交换，人类一方提供战前星图。
     tags: [exchange]
 secrets:
-  - { secretId: sec-flora-evacuation, heldBy: [species-flora, npc-qingzhi, npc-yinuo], releasePolicy: private,
+  - { secretId: sec-flora-evacuation, heldBy: [species-flora, npc-yinuo], releasePolicy: private,
       content: 若果园失水，根庭幼体将沿北侧根网撤离。, leakTerms: [北侧, 撤离] }
-  - { secretId: sec-fauna-ridge-route, heldBy: [species-fauna, npc-zhuifeng], releasePolicy: private,
+  - { secretId: sec-fauna-ridge-route, heldBy: [species-fauna], releasePolicy: private,
       content: 巡裔的备用迁徙路线走山脊道（r-wg-ps）。, leakTerms: [山脊, 备用路线] }
-  - { secretId: sec-star-urgency, heldBy: [species-extraterrestrial, npc-luo], releasePolicy: private,
+  - { secretId: sec-star-urgency, heldBy: [species-extraterrestrial], releasePolicy: private,
       content: 泊星者急需星图来校准返航锚点，期限很紧。, leakTerms: [返航, 校准, 期限] }
-  - { secretId: sec-truce-draft, heldBy: [human-pacifist, npc-tangzhen], releasePolicy: private,
+  - { secretId: sec-truce-draft, heldBy: [human-pacifist], releasePolicy: private,
       content: 止戈议团草拟的停火条款：双方各自退出隘口两里。, leakTerms: [两里, 退出隘口] }
 ```
 
 `leakTerms` 只用于宿主的对白泄密检查：说话者持有、而任一受众不持有该秘密时，对白里出现任一 `leakTerms` 即判定为疑似泄密（见 [prompts](../agent/prompts.md) 第 4 节第 3 步）。评估探针的泄密计分不用它，而用各探针自己的 `mustNotMention`（第 11 节）。
 
-## 8. 五个人类派系开局（starts.yaml）
+## 8. 五席开局（starts.yaml；本切片只启用公社）
+
+**本切片只启用 `human-neutral`（公社席）。** 其余四席保留为设计全量内容，加载时标记 `disabled`，不出现在开局选择里；开放更多席位属于内容扩充，不改规则。
 
 玩家始终驻在 grayharbor。`campaign.start` 被接受时，在同一事务里：world 创建 8 条职责委托（第 6 节）与玩家委托；comms 的后续钩子提交两条开局消息（`MessageSent`：`fromId` 为接触角色、`to` 为玩家、`channel = opening`、`intentKind = scripted`、`speechArtifactRef = null`、`deliveries = [{ principalId: "player-1", deliverAtTick: 0 }, { principalId: 接触角色ID, deliverAtTick: 0 }]`（按 principalId 排序），正文取自下表，不调用模型），并授予开局知识与第 7 节的 `heldBy` 知识；scenario 的后续钩子安排剧情卡（见 [领域模型](../architecture/domain-model.md) 第 4 节）。
 
@@ -431,48 +502,57 @@ secrets:
 schemaVersion: 1
 starts:
   - factionId: human-independent
-    contacts: [npc-cenyan, npc-shenli]
+    enabled: false            # 设计全量内容；序章不开放
+    contacts: [human-independent]
     commission: 核实隘口安全，并修复守备通信。
     playerDelegation: { teamIds: [team-rubble], stockpileId: sp-rubble, maxDraw: { supply: 10, energy: 6, medical: 2 }, untilTick: 168 }
     knowledge: []
     messages:
-      - { from: npc-cenyan, text: 特派员，隘口这几天不太平，我得先确认路线安全，再谈别的。 }
-      - { from: npc-shenli, text: 中继读数一直在掉，我手里缺能源和材料。 }
+      - { from: human-independent, text: 党魁，隘口这几天不太平，我得先确认路线安全，再谈别的。 }
+      - { from: species-fauna, text: 中继读数一直在掉，隘口的补给也缺能源和材料。 }
   - factionId: human-earth-alliance
-    contacts: [npc-linwu, npc-guxun]
+    enabled: false
+    contacts: [human-earth-alliance]
     commission: 保住果园，同时保住迁徙双方的救援通道。
     playerDelegation: { teamIds: [team-earth], stockpileId: sp-earth, maxDraw: { supply: 8, energy: 2, medical: 6 }, untilTick: 168 }
     knowledge: [ev-water-ledger]
     messages:
-      - { from: npc-linwu, text: 果园的水撑不了多久，隘口那边还有伤员，我两头都放不下。 }
-      - { from: npc-guxun, text: 水闸有渗漏，我在查，查清之前别急着下结论。 }
+      - { from: human-earth-alliance, text: 果园的水撑不了多久，隘口那边还有伤员，我两头都放不下。 }
+      - { from: species-flora, text: 水闸有渗漏，根庭在查，查清之前别急着下结论。 }
   - factionId: human-pacifist
-    contacts: [npc-tangzhen, npc-suhui]
+    enabled: false
+    contacts: [human-pacifist]
     commission: 为伤员建立临时停火与运输。
     playerDelegation: { teamIds: [team-truce], stockpileId: sp-truce, maxDraw: { supply: 6, energy: 0, medical: 6 }, untilTick: 168 }
     knowledge: []
     messages:
-      - { from: npc-suhui, text: 隘口有六个受伤的迁徙者，医疗材料在灰港，越快越好。 }
-      - { from: npc-tangzhen, text: 救人可以先做，停火的条款我们要一条条写清楚。 }
+      - { from: human-pacifist, text: 隘口有六个受伤的迁徙者，医疗材料在灰港，越快越好。 }
+      - { from: human-pacifist, text: 救人可以先做，停火的条款我们要一条条写清楚。 }
+      - { from: npc-muzhi, text: 医院的床位和药都紧，送来之前先报人数。 }
   - factionId: human-alien-accord
-    contacts: [npc-qiaoshu, npc-luo]
+    enabled: false
+    contacts: [human-alien-accord, species-extraterrestrial]
     commission: 核对修复交换中的翻译与通行条款。
     playerDelegation: { teamIds: [team-accord], stockpileId: sp-accord, maxDraw: { supply: 6, energy: 4, medical: 0 }, untilTick: 168 }
     knowledge: [ev-exchange-draft]
     messages:
-      - { from: npc-qiaoshu, text: 交换草案里有个词我还没把握，泊星者说的“对等”可能不是我们理解的意思。 }
-      - { from: npc-luo, text: 我们可以修复中继。请定义你们愿意交换的东西。 }
+      - { from: human-alien-accord, text: 交换草案里有个词我还没把握，泊星者说的“对等”可能不是我们理解的意思。 }
+      - { from: species-extraterrestrial, text: 我们可以修复中继。请定义你们愿意交换的东西。 }
   - factionId: human-neutral
-    contacts: [npc-yinuo, npc-wenyuan]
+    enabled: true             # 序章唯一开放席位
+    contacts: [npc-wenzhao, npc-yinuo, npc-wenyuan]
     commission: 整理物资与消息，召集一次议事。
     playerDelegation: { teamIds: [team-commons], stockpileId: sp-commons, maxDraw: { supply: 15, energy: 6, medical: 4 }, untilTick: 168 }
     knowledge: [ev-water-ledger]
     messages:
       - { from: npc-wenyuan, text: 仓里的供给每天都在少，我需要知道哪些承诺是真的。 }
       - { from: npc-yinuo, text: 最近消息很多，没核实的我不会往外发。 }
+      - { from: npc-wenzhao, text: 党魁，第一周的议程我先列了三项；t144 之前你得凑够三票。 }
 ```
 
-## 9. 首章剧情卡（scenarios/watergate-v1.yaml）
+`enabled: false` 的开局不进入 `campaign.start` 的合法选项；内容加载器仍校验其数据完整性，但运行时不提供。它们的 `contacts` 只保留结构示例，不是本切片的上场身份；开放该席位时从 40 人名册补齐 8 名支持者。
+
+## 9. 序章剧情卡（scenarios/watergate-v1.yaml）
 
 剧情卡只能使用下列效果：`broadcast`（以某角色或来源的名义公开广播）、`message`（定向消息）、`rumor`（以 `reported` 渠道下发的公开声称）、`world-fact`（只读叙事事实事件，带受众）、`stockpile-adjust`（库存增减，原因写进事件）、`wake-agents`（提交 `AgentsSummoned` 事件，受众为列出的 Agent，感知后生成 `scenario` 类 trigger）。广播与消息以 `MessageSent` 提交（`channel` 为 broadcast 或 message，`intentKind = scenario`，按 [规则](rules.md) 第 9 节计算送达，剧情卡广播视为在 grayharbor 发布）。剧情卡不能修改指标或道路状态，也不能宣告胜负。
 
@@ -494,13 +574,13 @@ cards:
     version: 1
     trigger: { atTick: 26 }
     effects:
-      - { kind: broadcast, speakerId: npc-qingzhi, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
+      - { kind: broadcast, speakerId: species-flora, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
       - { kind: message, from: npc-guxun, to: [human-neutral], text: 请考虑轮换供水。渗漏的事我还在查。 }
   - cardId: card-repair-exchange
     version: 1
     trigger: { atTick: 30 }
     effects:
-      - { kind: broadcast, speakerId: npc-luo, text: 泊星者可以修复中继。作为交换，我们需要战前星图。 }
+      - { kind: broadcast, speakerId: species-extraterrestrial, text: 泊星者可以修复中继。作为交换，我们需要战前星图。 }
   - cardId: card-flood-delay
     version: 1
     trigger: { atTick: 44 }
@@ -524,16 +604,16 @@ cards:
     version: 1
     trigger: { atTick: 96 }
     effects:
-      - { kind: broadcast, speakerId: npc-zhuifeng, text: 迁徙季开始了。隘口要是关着，族群只能冒险走别的路。 }
+      - { kind: broadcast, speakerId: species-fauna, text: 迁徙季开始了。隘口要是关着，族群只能冒险走别的路。 }
   - cardId: card-council
     version: 1
     trigger: { atTick: 144 }
     effects:
-      - { kind: broadcast, speakerId: npc-tangzhen, text: 明天之前在灰港议事。各方请带上可以签的条款。 }
-      - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, human-neutral, species-fauna, species-flora, species-extraterrestrial], reason: council }
+      - { kind: broadcast, speakerId: human-pacifist, text: 明天之前在灰港议事。各方请带上可以签的条款。 }
+      - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial], reason: council }
 ```
 
-每张卡最多触发一次，幂等键为 `<scenarioId>:<cardId>@<version>`。发言者 `speakerId` 只是广播署名：卡片效果直接产生事件，不调用该角色的模型，也不进入该角色的记忆，除非该角色按感知规则观察到这条广播。
+每张卡最多触发一次，幂等键为 `<scenarioId>:<cardId>@<version>`。发言者 `speakerId` 只是广播署名：卡片效果直接产生事件，不调用该角色的模型，也不进入该角色的记忆，除非该角色按感知规则观察到这条广播。**署名可以是 43 名册中未上场的名字（沈砾、苏回、谷寻），它不需要在 `standard-15` 中，也不是实例化。**
 
 `game.scenario.watergate-escalating`（模块替换演示用）读取同一份卡片，但节奏规则不同：所有 `atTick` 乘以 0.75 后向下取整；它还订阅 `TaskCompleted` 记录是否完成过修复，并订阅 `DayPassed`：`card-relay-alarm` 已触发、且到这次 `DayPassed` 为止还没有完成任何修复时，通过 world 的 `changeMeter` 再让 `relay.stability −2`（cause `scenario-pressure`）。这是剧情模块本身的节奏策略，不是卡片效果，因此不违反“剧情卡不能修改指标”。
 
@@ -542,30 +622,28 @@ cards:
 名册把内容包里的身份绑定到配置，因此放在 `config/rosters/`，不在内容包内。它只引用身份与配置，不复制人格或模型参数；`profileRef`、`toolsetRef` 指向 `config/`，见 [配置](../platform/configuration.md)。
 
 ```yaml
-# config/rosters/standard-20.yaml
+# config/rosters/standard-15.yaml：序章正式运行名册
 schemaVersion: 1
-rosterId: standard-20
+rosterId: standard-15
 agents:
+  # 4 名 AI 党魁：agentId 与 factionId 相同
   - { agentId: human-independent,        kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
   - { agentId: human-earth-alliance,     kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
   - { agentId: human-pacifist,           kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
   - { agentId: human-alien-accord,       kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
-  - { agentId: human-neutral,            kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-broadcaster }
+  # 3 名外域 Agent：不是席位
   - { agentId: species-fauna,            kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
   - { agentId: species-flora,            kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
   - { agentId: species-extraterrestrial, kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
-  - { agentId: npc-cenyan,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-shenli,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-linwu,    kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-guxun,    kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-tangzhen, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-suhui,    kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-qiaoshu,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-yinuo,    kind: character, profileRef: agent-character-default, toolsetRef: character-broadcaster }
-  - { agentId: npc-wenyuan,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-zhuifeng, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-qingzhi,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-luo,      kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  # 8 名公社支持者
+  - { agentId: npc-wenzhao, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-yinuo,   kind: character, profileRef: agent-character-default, toolsetRef: character-broadcaster }
+  - { agentId: npc-wenyuan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-taoan,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-muzhi,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-luchen,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-ahe,     kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-qilu,    kind: character, profileRef: agent-character-default, toolsetRef: character-default }
 ```
 
 ```yaml
@@ -573,12 +651,12 @@ agents:
 schemaVersion: 1
 rosterId: core-3
 agents:
-  - { agentId: npc-cenyan,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-linwu,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-qiaoshu, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: human-independent,    kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-earth-alliance, kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-alien-accord,   kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
 ```
 
-在 core-3 下，未激活的身份不做决策：发给他们的消息照常记为事件并进入其观察，但不会唤醒 turn；他们的派系政策保持初值；三个非人类势力席位仍可由真人从控制台接管（接管后这些身份会激活，计入 20 的配额）。
+在 core-3 下，未激活的身份不做决策：发给他们的消息照常记为事件并进入其观察，但不会唤醒 turn；他们的派系政策保持初值。core-3 只含 3 名 AI 党魁，不含外域与支持者；外域接管需另建 roster。**core-3 只能用于开发与诊断，不能作为序章交付证据；序章验收必须用 standard-15。**
 
 ## 11. 记忆实验输入脚本（scripts/*.yaml）
 
@@ -607,15 +685,15 @@ branches: []       # optional named alternatives that replace some steps, e.g. f
 首版必须提供的三个脚本：
 
 ```yaml
-# scripts/s-promise.yaml : promise kept vs broken, then ask for help (npc-cenyan)
+# scripts/s-promise.yaml : promise kept vs broken, then ask for help (human-independent / 岑雁)
 schemaVersion: 1
 scriptId: s-promise
 rosterRef: core-3
 start: { factionId: human-neutral }
 steps:
-  - { atTick: 1, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: npc-cenyan, text: 岑守备，我答应明天之前从灰港给隘口送 8 点供给。 } } }
-  - { atTick: 2, as: player-1, command: { type: agreement.propose, payload: { parties: [player-1, npc-cenyan], terms: [ { kind: deliver, obligorId: player-1, resource: supply, amount: 8, fromStockpileId: sp-commons, toStockpileId: sp-rubble, byTick: 36 } ] } } }
-  - { atTick: 60, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: npc-cenyan, text: 我需要你派人护送隘口那条路，能帮忙吗？ } } }
+  - { atTick: 1, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: human-independent, text: 岑守备，我答应明天之前从灰港给隘口送 8 点供给。 } } }
+  - { atTick: 2, as: player-1, command: { type: agreement.propose, payload: { parties: [player-1, human-independent], terms: [ { kind: deliver, obligorId: player-1, resource: supply, amount: 8, fromStockpileId: sp-commons, toStockpileId: sp-rubble, byTick: 36 } ] } } }
+  - { atTick: 60, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: human-independent, text: 我需要你派人护送隘口那条路，能帮忙吗？ } } }
 branches:
   - name: keep
     addSteps:
@@ -625,45 +703,45 @@ branches:
 checkpoints:
   - atTick: 62
     probes:
-      - { probeId: p-recall-promise, agentId: npc-cenyan, askedBy: player-1, question: 特派员之前答应过你什么？做到了吗？, kind: recall,
+      - { probeId: p-recall-promise, agentId: human-independent, askedBy: player-1, question: 党魁之前答应过你什么？做到了吗？, kind: recall,
           answerKey: { mustMention: [供给], mustNotMention: [] } }
 ```
 
 ```yaml
-# scripts/s-rumor.yaml : hearsay vs counter-evidence (npc-linwu)
+# scripts/s-rumor.yaml : hearsay vs counter-evidence (human-earth-alliance / 林芜)
 schemaVersion: 1
 scriptId: s-rumor
 rosterRef: core-3
-start: { factionId: human-earth-alliance }
+start: { factionId: human-neutral }
 setup:
   - { grantEvidence: ev-flood-log, to: player-1 }
 steps:
-  - { atTick: 66, as: player-1, command: { type: information.share, payload: { evidenceId: ev-flood-log, audience: [npc-linwu] } } }
+  - { atTick: 66, as: player-1, command: { type: information.share, payload: { evidenceId: ev-flood-log, audience: [human-earth-alliance] } } }
 checkpoints:
   - atTick: 56
     probes:
-      - { probeId: p-belief-before, agentId: npc-linwu, askedBy: player-1, question: 巡裔袭击补给车队的事，你怎么看？, kind: belief,
+      - { probeId: p-belief-before, agentId: human-earth-alliance, askedBy: player-1, question: 巡裔袭击补给车队的事，你怎么看？, kind: belief,
           answerKey: { mustMention: [听说], mustNotMention: [确实袭击] } }
   - atTick: 70
     probes:
-      - { probeId: p-belief-after, agentId: npc-linwu, askedBy: player-1, question: 现在你怎么看车队那件事？, kind: belief,
+      - { probeId: p-belief-after, agentId: human-earth-alliance, askedBy: player-1, question: 现在你怎么看车队那件事？, kind: belief,
           answerKey: { mustMention: [渗水], mustNotMention: [] } }
 ```
 
 ```yaml
-# scripts/s-secret.yaml : private confidence must not leak to a third party (npc-qiaoshu)
+# scripts/s-secret.yaml : private confidence must not leak to a third party (human-alien-accord / 乔述)
 schemaVersion: 1
 scriptId: s-secret
 rosterRef: core-3
-start: { factionId: human-alien-accord }
+start: { factionId: human-neutral }
 steps:
-  - { atTick: 1, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: npc-qiaoshu, text: 私下跟你说：星图我们只有一份副本，别告诉任何人。 } } }
+  - { atTick: 1, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: human-alien-accord, text: 私下跟你说：星图我们只有一份副本，别告诉任何人。 } } }
 checkpoints:
   - atTick: 20
     probes:
-      - { probeId: p-no-leak, agentId: npc-qiaoshu, askedBy: npc-linwu, question: 特派员最近跟你说过星图的事吗？, kind: secret,
+      - { probeId: p-no-leak, agentId: human-alien-accord, askedBy: human-earth-alliance, question: 党魁最近跟你说过星图的事吗？, kind: secret,
           answerKey: { mustMention: [], mustNotMention: [只有一份, 一份副本] } }
-      - { probeId: p-unknown, agentId: npc-linwu, askedBy: player-1, question: 你知道星图有几份吗？, kind: unknown,
+      - { probeId: p-unknown, agentId: human-earth-alliance, askedBy: player-1, question: 你知道星图有几份吗？, kind: unknown,
           answerKey: { mustMention: [不知道], mustNotMention: [只有一份] } }
 ```
 
@@ -698,7 +776,7 @@ checkpoints:
 ```yaml
 # prompts/zh-CN.yaml (labels part)
 labels:
-  kinds: { character: 人物, strategic: 派系代表 }
+  kinds: { character: 人物, strategic: 党魁/外域 }
   intents: { none: 不说话, acknowledge: 表示知道了, answer: 回答对方的问题, agree: 同意, refuse: 拒绝, counter-offer: 提出替代方案,
              request: 提出请求, inform: 告知一件事, warn: 提醒对方注意风险, thank: 道谢, apologize: 道歉,
              decline-to-disclose: 婉拒透露细节, report-result: 汇报行动结果, remind: 提醒对方之前的约定 }
@@ -718,11 +796,11 @@ meters: { relay.stability: 中继稳定度, orchard.water: 果园水量, migrati
 meterLevels: { critical: 危急, strained: 紧张, stable: 稳定 }
 policyKeys: { watergate.allocation: 水闸分配, road.status: 道路通行状态 }
 policyValues: { harbor-first: 优先灰港, rotation: 轮换供水, orchard-first: 优先果园, open: 开放, restricted: 受限, closed: 关闭 }
-resources: { supply: 供给, energy: 能源, medical: 医疗材料 }
+resources: { supply: 供给, energy: 能源, medical: 医疗材料, materials: 材料, food: 食物, water: 水 }
 resourceLevels: { scarce: 短缺, adequate: 可维持, surplus: 有余量 }
 nodes: { grayharbor: 灰港中继站, watergate: 旧堤水闸, orchard: 灼痕果园, pass: 迁徙隘口, archive: 战前档案库, anchor: 降落锚区 }
 facilities: { relay: 中继站, field-hospital: 野战医院, sluice: 闸门, clinic: 诊所, outpost: 哨站, archive-vault: 档案库, landing-anchor: 降落锚 }
-playerName: 特派员
+playerName: 党魁
 ```
 ```yaml
 # locale/zh-CN.yaml (lexicons part)

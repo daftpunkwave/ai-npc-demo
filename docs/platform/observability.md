@@ -78,7 +78,7 @@
 
 观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
 
-1. 运行总览：分支、模式、配置 hash、20 个 Agent 状态、controller、当前水位、失败与预算。
+1. 运行总览：分支、模式、配置 hash、15 个 Agent 状态、controller、当前水位、失败与预算。
 2. 世界事件时间线：按玩家/Agent/地点筛选，区分公开事实、观察投影和研究员真值。
 3. Agent 检查器：身份与主张、当前可见世界、记忆版本、关系来源、承诺的主观认知。
 4. 调用检查器：有序上下文、原始请求/响应、工具完整结果与 toolView 结果并排查看。

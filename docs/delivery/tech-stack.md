@@ -16,7 +16,7 @@
 | 配置/内容 | YAML | `yaml@^2` | `config/**`、`content/**` 都是 YAML，读入后用 Zod 校验 |
 | 浏览器构建 | Vite | `vite@^8`、`@vitejs/plugin-react` | 客户端与控制台各一个 Vite 配置 |
 | UI | React | `react@^19`、`react-dom@^19` | 不引入状态管理库与 CSS 框架 |
-| 2.5D 场景 | PixiJS | `pixi.js@^8` | 只在 `client.scene-renderer.pixi` 适配器内出现 |
+| 2.5D 灰盒场景 | PixiJS | `pixi.js@^8` | 只在 `client.scene-renderer.pixi` 适配器内出现；3D 目标另实现同一端口 |
 | Claude 调用 | Anthropic 官方 SDK | `@anthropic-ai/sdk@^1` | 只在 `platform.model-transport.anthropic` 适配器内出现 |
 | OpenAI 兼容调用 | 内置 `fetch` | — | `platform.model-transport.openai-compatible` 直接发 HTTP，不引入 SDK |
 | 单元/集成测试 | Vitest | `vitest@^5` | `pnpm test` |
@@ -174,7 +174,7 @@ NPC_LOG_LEVEL=info
 # runtime selection for the online world (operations.md §10)
 NPC_ASSEMBLY=local-slg-standard-v1
 NPC_MODEL_LAYOUT=shared-model-layout-v1
-NPC_ROSTER=standard-20
+NPC_ROSTER=standard-15
 
 # local login tokens; generated and printed once when empty
 NPC_PLAYER_TOKEN=

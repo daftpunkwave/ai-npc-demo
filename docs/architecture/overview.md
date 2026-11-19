@@ -1,6 +1,6 @@
 # 系统架构总览
 
-> 目标设计 v0.3。首版单玩家、统一世界观、标准 20 个 Agent；两个本地端口：玩家客户端 `:5173` 与服务端 `:3000`（含控制台）。技术采用 TypeScript 全栈模块化单体。
+> 目标设计 v0.3。首版单玩家、统一世界观、标准 15 个 Agent；两个本地端口：玩家客户端 `:5173` 与服务端 `:3000`（含控制台）。技术采用 TypeScript 全栈模块化单体。
 
 ## 1. 核心命题：主机保留，职能全部可插拔
 
@@ -86,6 +86,6 @@ HTTP 命令与所有副作用工具共用 command handler。WebSocket 重连只�
 
 ## 6. 与模块专篇的关系
 
-命令、事件与投影的数据字典见 [领域模型](domain-model.md)，表结构见 [存储](storage.md)，接口见 [API](api.md)，首章规则与数据见 [规则](../game/rules.md) 与 [内容包](../game/content-pack.md)。世界写入规则见 [事件与状态](events-and-state.md)；职责与依赖见 [模块边界](modules.md)；模块清单与默认装配见 [模块目录](module-catalog.md)；替换单元与生命周期见 [插件机制](plugins.md)；装配顺序与冻结见 [积木组合](composition.md)。模型请求先解析 [模型池挂载](../agent/model-pool.md)，工具统一走 [共享行为网关](../agent/tools.md)。客户端见 [2.5D 渲染](client-and-rendering.md)，双端部署见 [两个本地端口](two-endpoints.md)，公共协议见 [契约](contracts.md)。
+命令、事件与投影的数据字典见 [领域模型](domain-model.md)，表结构见 [存储](storage.md)，接口见 [API](api.md)，序章规则与数据见 [规则](../game/rules.md) 与 [内容包](../game/content-pack.md)。世界写入规则见 [事件与状态](events-and-state.md)；职责与依赖见 [模块边界](modules.md)；模块清单与默认装配见 [模块目录](module-catalog.md)；替换单元与生命周期见 [插件机制](plugins.md)；装配顺序与冻结见 [积木组合](composition.md)。模型请求先解析 [模型池挂载](../agent/model-pool.md)，工具统一走 [共享行为网关](../agent/tools.md)。客户端见 [场景适配](client-and-rendering.md)，双端部署见 [两个本地端口](two-endpoints.md)，公共协议见 [契约](contracts.md)。
 
 LLM、工具、记忆、压缩和模块内部网络调用都必须进入同一 trace/预算宿主，不允许模块自行创建未记录的外部调用。模型共享资源不共享会话，工具共享实现不共享超出绑定的权限。

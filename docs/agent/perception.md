@@ -6,7 +6,7 @@
 
 权威世界先计算可见性和权限，再将合法候选交给 perception 插件。插件可以在候选范围内筛选、延迟、模糊或聚合；不能读取后台秘密、他人私人记忆、未来事件或未授权世界真值。
 
-单玩家选择五个人类派系之一开局，不会将该派系战略 Agent 的所有感知授予玩家。标准 roster 的 20 个 gameplay Agent 包括 5 个人类派系战略、3 个非人类势力战略和 12 个可交互角色；每个主体都有独立的 scope、位置/职责与授权，详见 [角色](../game/characters.md)。
+序章玩家是公社党魁，不会把公社 AI 党魁的全部感知授予玩家。15 个 gameplay Agent 包括 8 名公社支持者、4 名 AI 党魁和 3 名外域 Agent；每个主体都有独立的 scope、位置/职责与授权，详见 [角色](../game/characters.md)。
 
 perception 不负责记忆的遗忘/检索、情绪持久化、完整 prompt 或行动结算。它给 memory/runtime 提供观察；读取完整世界日志做评分的研究员不属于 NPC 感知链路。
 
@@ -93,7 +93,7 @@ scannedThroughSeq 是内部扫描 frontier，不发送模型；它可跨过没�
 
 回执的 commandStatus 只表示 accepted/rejected，任务推进由独立 taskStatus 投影表达；工具 executionStatus=ok 只表示拿到确定响应，不证明命令获准或任务完成。感知不得混淆这三层状态。
 
-玩家客户端看到的授权地图是玩家投影，不直接作为所有 NPC 的 worldView。视觉渲染遮挡也不是知识权限；2.5D 地图的屏幕位置与游戏世界位置分离，见 [架构](../architecture/overview.md)。
+玩家客户端看到的授权地图是玩家投影，不直接作为所有 NPC 的 worldView。视觉渲染遮挡也不是知识权限；灰盒地图的屏幕位置与游戏世界位置分离，见 [架构](../architecture/overview.md)。
 
 ## 8. 配置维度与示例
 
@@ -260,7 +260,7 @@ interface ObservationContent {
 | `MigrationCrisis` | `迁徙安全出现危机。` |
 | `SupplyShortage` | `供给出现短缺。` |
 | `DayPassed` | `第 {day} 日结算完成。` |
-| `ChapterStageEvaluated` | `首章评估已完成。` |
+| `ChapterStageEvaluated` | `序章评估已完成。` |
 | `ScenarioCardTriggered` | `剧情卡状态已更新。` |
 | `ScenarioCardPublished` | `剧情卡状态已更新。` |
 | `ScenarioCardWithdrawn` | `剧情卡状态已更新。` |
@@ -280,7 +280,7 @@ interface ObservationContent {
 | `water-allocation` | `{obligorName}把水闸分配保持为“{policyName}”，直到 tick {untilTick}` |
 | `delegate` | `{obligorName}把队伍与物资委托给{granteeName}，直到 tick {untilTick}` |
 
-名称（`*Name`）从内容包与 `locale` 取：主体用人格的 `name`（玩家为“特派员”），节点用 `nodes`，道路用“{a 节点}—{b 节点}的道路”。
+名称（`*Name`）从内容包与 `locale` 取：主体用人格的 `name`（玩家为“党魁”），节点用 `nodes`，道路用“{a 节点}—{b 节点}的道路”。
 
 渲染绑定必须在 detail 过滤之后执行，禁止模板从聚合或未授权 artifact 补回字段。`facts` 也只保留同一过滤结果；summary 的任务完成只渲染“任务 {taskId} 完成”，不含 effects。system 事件先被 ACL 排除，不借模板获得可见性。
 

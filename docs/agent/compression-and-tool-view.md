@@ -42,7 +42,7 @@ sourceMap 将每个摘要条目映射到原 segment/sourceRefs；lossReport 区�
 
 触发条件可选输入 token 占比、固定历史组数或任务阶段完成；逻辑时间条件只能使用 worldTick。触发点和阈值进入 resolved profile，不能每次按供应商隐式行为变化。
 
-summary 通过 `(agentId, compression)` mount 请求共享模型池；它是同一 Agent 的辅助调用，计入全 turn/run 费用与并发。没有独立“摘要 Agent”，满 20 个 gameplay Agent 时也不能额外激活自主整理身份。
+summary 通过 `(agentId, compression)` mount 请求共享模型池；它是同一 Agent 的辅助调用，计入全 turn/run 费用与并发。没有独立“摘要 Agent”，满 15 个 gameplay Agent 时也不能额外激活自主整理身份。
 
 ## 4. 不可丢的语义
 

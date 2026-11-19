@@ -1,6 +1,6 @@
 # Coding Agent 工作说明
 
-本项目是 TypeScript 全栈、单玩家 2.5D 轻数值 SLG 与研究控制台。
+本项目是 TypeScript 全栈、单玩家轻数值 SLG 与研究控制台；3D 斜俯视是目标，2.5D 是序章灰盒。
 
 ## 阅读与规格
 
