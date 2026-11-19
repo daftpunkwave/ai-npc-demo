@@ -4,10 +4,12 @@
  * 禁止在处理器中使用真实时间、随机 ID 作为种子或越过资源预留直接结算。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态与泛型端口字段误判为 unknown。 */
-import type { Json, ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
+import type { AudienceSpec, Json, ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
+  factionAudience,
   gameModuleIds,
+  principalsAudience,
   requireGameContent,
   type GameModulePorts,
   type GameRuleContributor,
@@ -37,6 +39,24 @@ function taskEnvelope(task: TaskState): Json {
     taskType: task.taskType,
     params: task.params,
   } as Json;
+}
+
+/** 任务事件受众：主名单加队伍所属派系，需要时再追加节点。 */
+function taskAudience(
+  principals: readonly string[],
+  ownerFactionId: string | null,
+  nodeId?: string,
+): AudienceSpec[] {
+  return [
+    ...principalsAudience(principals),
+    ...(ownerFactionId === null ? [] : [factionAudience(ownerFactionId)]),
+    ...(nodeId === undefined ? [] : [{ kind: "node" as const, nodeId }]),
+  ];
+}
+
+/** 从内容索引读取队伍所属派系；未知队伍返回 null。 */
+function teamOwnerFaction(context: ActionContext, teamId: string): string | null {
+  return requireGameContent(context.content).teams.get(teamId)?.ownerFactionId ?? null;
 }
 
 function dispatch(context: ActionContext, payload: Json): HandlerResult {
@@ -153,7 +173,11 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     canceledAtTick: null,
   };
   context.tx.put("task", taskId, task);
-  context.tx.emit("TaskDispatched", taskEnvelope(task), [{ kind: "public" }]);
+  context.tx.emit(
+    "TaskDispatched",
+    taskEnvelope(task),
+    taskAudience([task.dispatcherId, ...task.invitees], teamOwnerFaction(context, task.teamId)),
+  );
   for (const inviteeId of task.invitees) {
     const invitationId = context.ids("inv");
     const invitation: InvitationState = {
@@ -167,7 +191,7 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     context.tx.emit(
       "TaskInvitationIssued",
       { invitationId, taskId, inviteeId, taskType: task.taskType, departTick: task.departTick },
-      [{ kind: "principals", ids: [inviteeId] }],
+      principalsAudience([inviteeId, task.dispatcherId]),
     );
   }
   asPorts(context)["game.world"].setTeamStatus(task.teamId, "assigned", task.departTick, taskId);
@@ -208,7 +232,7 @@ function respond(context: ActionContext, payload: Json): HandlerResult {
       response: next.response,
       reasonCode: next.reasonCode,
     },
-    [{ kind: "principals", ids: [task.dispatcherId, next.inviteeId] }],
+    principalsAudience([task.dispatcherId, next.inviteeId]),
   );
   return { kind: "accepted" };
 }
@@ -220,7 +244,8 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
     return { kind: "rejected", reasonCode: "invalid-params", safeMessage: "任务不存在" };
   }
   const principalId = effectivePrincipalId(context.auth);
-  const team = requireGameContent(context.content).teams.get(task.teamId);
+  const content = requireGameContent(context.content);
+  const team = content.teams.get(task.teamId);
   if (principalId !== task.dispatcherId && team?.ownerFactionId !== principalId) {
     return { kind: "rejected", reasonCode: "no-authority", safeMessage: "只有派遣者或队伍所属派系可以取消" };
   }
@@ -251,7 +276,7 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
             response: null,
             reasonCode: null,
           },
-          [{ kind: "principals", ids: [invitation.state.inviteeId, task.dispatcherId] }],
+          principalsAudience([invitation.state.inviteeId, task.dispatcherId]),
         );
       }
     }
@@ -288,7 +313,7 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
   context.tx.emit(
     "TaskCancelled",
     { taskId: task.taskId, byId: principalId },
-    [{ kind: "public" }],
+    taskAudience([task.dispatcherId, ...task.participants], team?.ownerFactionId ?? null),
   );
   return { kind: "accepted" };
 }
@@ -346,7 +371,7 @@ function depart(context: ActionContext, taskId: string): void {
           response: null,
           reasonCode: null,
         },
-        [{ kind: "principals", ids: [entry.state.inviteeId, task.dispatcherId] }],
+        principalsAudience([entry.state.inviteeId, task.dispatcherId]),
       );
     }
   }
@@ -425,7 +450,7 @@ function depart(context: ActionContext, taskId: string): void {
   context.tx.emit(
     "TaskDeparted",
     { taskId, participants: [...participants], route: [...running.route], nominalCompletionTick },
-    [{ kind: "public" }],
+    taskAudience([task.dispatcherId, ...participants], team.ownerFactionId, team.nodeId),
   );
   context.tx.schedule("task.complete", nominalCompletionTick, `task-complete:${taskId}:${nominalCompletionTick}`, { taskId });
 }
@@ -438,7 +463,11 @@ function complete(context: ActionContext, taskId: string): void {
   if ((task.delayTicks as number) > 0 && !task.delayNoticeSent) {
     const newCompletion = (task.nominalCompletionTick as number) + (task.delayTicks as number);
     context.tx.put("task", taskId, { ...task, delayNoticeSent: true });
-    context.tx.emit("TaskDelayed", { taskId, newCompletionTick: newCompletion, cause: "road-risk" }, [{ kind: "public" }]);
+    context.tx.emit(
+      "TaskDelayed",
+      { taskId, newCompletionTick: newCompletion, cause: "road-risk" },
+      taskAudience([task.dispatcherId, ...task.participants], teamOwnerFaction(context, task.teamId)),
+    );
     context.tx.schedule("task.complete", newCompletion, `task-complete:${taskId}:${newCompletion}`, { taskId });
     asPorts(context)["game.world"].setTeamStatus(task.teamId, "traveling", newCompletion, taskId);
     return;

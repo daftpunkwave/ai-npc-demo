@@ -4,7 +4,7 @@
  * 禁止修改指标或道路状态（覆盖效果除外），也禁止调用模型生成正文。
  */
 import type { CardEffect, OverrideEffect } from "@ai-npc/contracts";
-import type { GameModulePorts, HandlerContext } from "@ai-npc/module-sdk";
+import { principalsAudience, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
 import { DomainError } from "@ai-npc/contracts";
 
 type EffectContext = HandlerContext<GameModulePorts, unknown>;
@@ -56,7 +56,7 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
       context.tx.emit(
         "AgentsSummoned",
         { agentIds: [...effect.agentIds], reason: effect.reason, cardId },
-        [{ kind: "principals", ids: [...effect.agentIds] }],
+        principalsAudience(effect.agentIds),
       );
     }
   }

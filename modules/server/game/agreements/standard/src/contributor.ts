@@ -8,6 +8,7 @@ import type { EventEnvelope, Json, Term } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
+  principalsAudience,
   requireGameContent,
   type GameModulePorts,
   type GameRuleContributor,
@@ -113,7 +114,7 @@ function activate(context: AgreementContext, state: AgreementState): AgreementSt
       parties: [...activated.parties],
       terms: [...activated.terms],
     },
-    [{ kind: "public" }],
+    principalsAudience(activated.parties),
   );
   scheduleBreaches(context, activated);
   context.tx.cancelJobs(`agreement-expire:${activated.agreementId}`);
@@ -123,7 +124,7 @@ function activate(context: AgreementContext, state: AgreementState): AgreementSt
       context.tx.emit(
         "AgreementTermFulfilled",
         { agreementId: activated.agreementId, termIndex: index, obligorId: term.obligorId, term, evidenceEventIds: [] },
-        [{ kind: "public" }],
+        principalsAudience(activated.parties),
       );
     }
   }
@@ -137,7 +138,7 @@ function finishIfFulfilled(context: AgreementContext, state: AgreementState): Ag
   }
   const fulfilled: AgreementState = { ...state, status: "fulfilled" };
   context.tx.put("agreement", fulfilled.agreementId, fulfilled);
-  context.tx.emit("AgreementFulfilled", { agreementId: fulfilled.agreementId }, [{ kind: "public" }]);
+  context.tx.emit("AgreementFulfilled", { agreementId: fulfilled.agreementId }, principalsAudience(fulfilled.parties));
   cancelAgreementJobs(context, fulfilled);
   return fulfilled;
 }
@@ -170,7 +171,7 @@ function propose(context: AgreementContext, payload: Json): HandlerResult {
       expiresAtTick,
       supersedesId: null,
     },
-    [{ kind: "public" }],
+    principalsAudience(state.parties),
   );
   scheduleExpiry(context, state);
   return { kind: "accepted", result: { agreementId: state.agreementId } };
@@ -200,12 +201,12 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
   context.tx.emit(
     "AgreementResponded",
     { agreementId: state.agreementId, partyId: actor, response: input.response },
-    [{ kind: "principals", ids: [...state.parties] }],
+    principalsAudience(state.parties),
   );
   if (input.response === "reject") {
     responseMap.set(actor, "reject");
     context.tx.put("agreement", state.agreementId, { ...state, status: "rejected", responses: Object.fromEntries(responseMap) });
-    context.tx.emit("AgreementRejected", { agreementId: state.agreementId, byId: actor }, [{ kind: "public" }]);
+    context.tx.emit("AgreementRejected", { agreementId: state.agreementId, byId: actor }, principalsAudience(state.parties));
     cancelAgreementJobs(context, state);
     return { kind: "accepted" };
   }
@@ -226,7 +227,7 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
     );
     context.tx.put("agreement", state.agreementId, { ...state, status: "superseded", supersededBy: next.agreementId });
     context.tx.put("agreement", next.agreementId, next);
-    context.tx.emit("AgreementSuperseded", { agreementId: state.agreementId, byId: actor }, [{ kind: "public" }]);
+    context.tx.emit("AgreementSuperseded", { agreementId: state.agreementId, byId: actor }, principalsAudience(state.parties));
     context.tx.emit(
       "AgreementProposed",
       {
@@ -238,7 +239,7 @@ function respond(context: AgreementContext, payload: Json): HandlerResult {
         expiresAtTick: next.expiresAtTick,
         supersedesId: state.agreementId,
       },
-      [{ kind: "public" }],
+      principalsAudience(next.parties),
     );
     cancelAgreementJobs(context, state);
     scheduleExpiry(context, next);
@@ -278,7 +279,7 @@ function markBreach(context: AgreementContext, state: AgreementState, index: num
   context.tx.emit(
     "AgreementBreached",
     { agreementId: next.agreementId, termIndex: index, obligorId: term.obligorId, term },
-    [{ kind: "public" }],
+    principalsAudience(next.parties),
   );
 }
 
@@ -298,7 +299,7 @@ function fulfillTerm(context: AgreementContext, state: AgreementState, index: nu
   context.tx.emit(
     "AgreementTermFulfilled",
     { agreementId: next.agreementId, termIndex: index, obligorId: term.obligorId, term, evidenceEventIds: [...evidenceEventIds] },
-    [{ kind: "public" }],
+    principalsAudience(next.parties),
   );
   return finishIfFulfilled(context, next);
 }
@@ -459,7 +460,7 @@ function expire(context: AgreementContext, agreementId: string): void {
     return;
   }
   context.tx.put("agreement", agreementId, { ...state, status: "expired" });
-  context.tx.emit("AgreementExpired", { agreementId, byId: null }, [{ kind: "public" }]);
+  context.tx.emit("AgreementExpired", { agreementId, byId: null }, principalsAudience(state.parties));
 }
 
 function breach(context: AgreementContext, agreementId: string, termIndex: number): void {

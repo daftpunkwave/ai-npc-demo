@@ -324,3 +324,9 @@ export function readGameEvents(
       })),
   );
 }
+
+/** 读取指定类型第一条事件的持久化受众；没有该事件时返回 null。 */
+export function readGameEventAudience(harness: GameHarness, type: string): Json | null {
+  const event = readGameEvents(harness).find((candidate) => candidate.type === type);
+  return event === undefined ? null : event.audience;
+}

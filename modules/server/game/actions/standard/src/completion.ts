@@ -4,8 +4,15 @@
  * 禁止在这里重算风险或把未满足条件的任务标记为成功。
  */
 /* eslint-disable @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态字段误判为 unknown。 */
-import type { ReasonCode } from "@ai-npc/contracts";
-import { requireGameContent, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
+import type { AudienceSpec, ReasonCode } from "@ai-npc/contracts";
+import {
+  factionAudience,
+  principalsAudience,
+  requireGameContent,
+  type GameContent,
+  type GameModulePorts,
+  type HandlerContext,
+} from "@ai-npc/module-sdk";
 import type { TaskState } from "./state";
 
 type CompletionContext = HandlerContext<GameModulePorts, unknown>;
@@ -38,11 +45,6 @@ function scoutReport(context: CompletionContext, task: TaskState, nodeId: string
     .map((road) => ({ roadId: road.roadId, status: ports["game.map"].roadStatus(road.roadId) ?? "open" }));
   const characters = ports["game.world"].characters().filter((character) => character.nodeId === nodeId);
   const groups = ports["game.world"].groups().filter((group) => group.nodeId === nodeId);
-  const team = content.teams.get(task.teamId);
-  const audience = [
-    ...taskAudience(task),
-    ...(team === undefined ? [] : [{ kind: "faction" as const, factionId: team.ownerFactionId }]),
-  ];
   context.tx.emit(
     "ScoutReported",
     {
@@ -54,7 +56,7 @@ function scoutReport(context: CompletionContext, task: TaskState, nodeId: string
         groups: groups.map((group) => ({ groupId: group.groupId, status: group.status })),
       },
     },
-    audience,
+    taskAudience(content, task),
   );
   for (const evidence of content.evidence.values()) {
     if (evidence.nodeId !== nodeId || evidence.discoverable !== true) {
@@ -77,8 +79,14 @@ function scoutReport(context: CompletionContext, task: TaskState, nodeId: string
   }
 }
 
-function taskAudience(task: TaskState): { kind: "principals"; ids: string[] }[] {
-  return [{ kind: "principals", ids: [...new Set([task.dispatcherId, ...task.participants])] }];
+/** 任务事件受众：派遣者、参与者、队伍所属派系，可选事件节点。 */
+function taskAudience(content: GameContent, task: TaskState, nodeId?: string): readonly AudienceSpec[] {
+  const ownerFactionId = content.teams.get(task.teamId)?.ownerFactionId;
+  return [
+    ...principalsAudience([task.dispatcherId, ...task.participants]),
+    ...(ownerFactionId === undefined ? [] : [factionAudience(ownerFactionId)]),
+    ...(nodeId === undefined ? [] : [{ kind: "node" as const, nodeId }]),
+  ];
 }
 
 /** 执行任务完成效果并写入 completed 状态；失败时不写完成状态。 */
@@ -175,7 +183,7 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
   context.tx.emit(
     "TaskCompleted",
     { taskId: task.taskId, taskType: task.taskType, completedAtTick: completedAt, effects: [{ kind: task.taskType }] },
-    [{ kind: "public" }],
+    taskAudience(content, task, workNodeId),
   );
   return { ok: true };
 }
@@ -192,7 +200,11 @@ export function failTask(
     failureReason: reasonCode,
     completedAtTick: context.tx.worldTick,
   });
-  context.tx.emit("TaskFailed", { taskId: task.taskId, reasonCode }, [{ kind: "public" }]);
+  context.tx.emit(
+    "TaskFailed",
+    { taskId: task.taskId, reasonCode },
+    taskAudience(requireGameContent(context.content), task),
+  );
   context.modules["game.world"].setTeamStatus(task.teamId, "idle", null, null);
   for (const participant of task.participants) {
     context.modules["game.world"].setCharacterTask(participant, null);

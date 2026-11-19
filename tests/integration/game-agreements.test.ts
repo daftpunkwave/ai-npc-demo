@@ -11,6 +11,7 @@ import {
   playerAuth,
   readGameAggregate,
   readGameEvents,
+  readGameEventAudience,
   setGameClock,
   startNeutralCampaign,
   strategicAuth,
@@ -29,6 +30,16 @@ async function harness(): Promise<GameHarness> {
 
 function start(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
   return startNeutralCampaign(value);
+}
+
+/** 断言协议事件受众只有当事人，不含 public、system 或无关主体。 */
+function expectPartiesOnly(value: GameHarness, type: string, parties: readonly string[]): void {
+  const audience = readGameEventAudience(value, type);
+  expect(audience).toEqual([{ kind: "principals", ids: [...parties] }]);
+  const serialized = JSON.stringify(audience);
+  for (const absent of ["public", "system", "human-independent", "npc-cenyan"]) {
+    expect(serialized).not.toContain(absent);
+  }
 }
 
 function proposeDelivery(value: GameHarness, expiresInTicks?: number): string {
@@ -67,6 +78,7 @@ describe("协议", () => {
       status: "proposed",
       responses: { "player-1": "accept" },
     });
+    expectPartiesOnly(value, "AgreementProposed", ["player-1", "human-neutral"]);
     const self = value.authority.commands.execute(
       playerAuth(value),
       gameCommandEnvelope("agreement.respond", { agreementId, response: "accept" }, value.host.ids("cmd")),
@@ -79,6 +91,8 @@ describe("协议", () => {
     );
     expect(accepted.commandStatus).toBe("accepted");
     expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({ status: "active" });
+    expectPartiesOnly(value, "AgreementResponded", ["player-1", "human-neutral"]);
+    expectPartiesOnly(value, "AgreementActivated", ["player-1", "human-neutral"]);
     expect(readGameEvents(value).filter((event) => event.type === "AgreementActivated")).toHaveLength(1);
   });
 
@@ -118,6 +132,15 @@ describe("协议", () => {
       proposerId: "human-neutral",
       responses: { "human-neutral": "accept" },
     });
+    expectPartiesOnly(value, "AgreementSuperseded", ["player-1", "human-neutral"]);
+    expect(
+      readGameEvents(value)
+        .filter((event) => event.type === "AgreementProposed")
+        .map((event) => event.audience),
+    ).toEqual([
+      [{ kind: "principals", ids: ["player-1", "human-neutral"] }],
+      [{ kind: "principals", ids: ["player-1", "human-neutral"] }],
+    ]);
   });
 
   it("过期 job 关闭未生效提案", async () => {
@@ -127,6 +150,7 @@ describe("协议", () => {
     setGameClock(value, { worldTick: 2, mode: "running" });
     value.authority.jobs.runDue(value.branchId, 2);
     expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({ status: "expired" });
+    expectPartiesOnly(value, "AgreementExpired", ["player-1", "human-neutral"]);
   });
 
   it("截止后接受被拒绝", async () => {
@@ -196,5 +220,22 @@ describe("协议", () => {
     const events = readGameEvents(value).map((event) => event.type);
     expect(events).toContain("AgreementTermFulfilled");
     expect(events).toContain("AgreementFulfilled");
+    expectPartiesOnly(value, "AgreementTermFulfilled", ["player-1", "human-neutral"]);
+    expectPartiesOnly(value, "AgreementFulfilled", ["player-1", "human-neutral"]);
+  });
+
+  it("违约事件只发给当事人并排除无关派系", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const agreementId = proposeDelivery(value);
+    const accepted = value.authority.commands.execute(
+      strategicAuth(value, "human-neutral"),
+      gameCommandEnvelope("agreement.respond", { agreementId, response: "accept" }, value.host.ids("cmd")),
+    );
+    expect(accepted.commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 31, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 31);
+    expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({ status: "breached" });
+    expectPartiesOnly(value, "AgreementBreached", ["player-1", "human-neutral"]);
   });
 });

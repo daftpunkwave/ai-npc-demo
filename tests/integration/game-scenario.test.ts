@@ -11,6 +11,7 @@ import {
   operatorAuth,
   readGameAggregate,
   readGameEvents,
+  readGameEventAudience,
   setGameClock,
   startNeutralCampaign,
   type GameHarness,
@@ -41,6 +42,7 @@ describe("剧情卡", () => {
     const events = readGameEvents(value);
     expect(events.filter((event) => event.type === "ScenarioCardTriggered")).toHaveLength(1);
     expect(events.some((event) => event.type === "MessageSent")).toBe(true);
+    expect(readGameEventAudience(value, "ScenarioCardTriggered")).toEqual([{ kind: "system" }]);
     expect(types(value)).not.toContain("ScenarioCardPublished");
   });
 
@@ -70,12 +72,14 @@ describe("剧情卡", () => {
     );
     expect(publish.commandStatus).toBe("accepted");
     expect(readGameAggregate(value, "scenario-card", "card-draft")).toMatchObject({ status: "published", triggerAtTick: 5 });
+    expect(readGameEventAudience(value, "ScenarioCardPublished")).toEqual([{ kind: "system" }]);
     const withdraw = value.authority.commands.execute(
       operatorAuth(value),
       gameCommandEnvelope("scenario.withdraw", { cardId: "card-draft" }, value.host.ids("cmd")),
     );
     expect(withdraw.commandStatus).toBe("accepted");
     expect(readGameAggregate(value, "scenario-card", "card-draft")).toMatchObject({ status: "withdrawn" });
+    expect(readGameEventAudience(value, "ScenarioCardWithdrawn")).toEqual([{ kind: "system" }]);
     const override = value.authority.commands.execute(
       operatorAuth(value),
       gameCommandEnvelope(
@@ -86,6 +90,7 @@ describe("剧情卡", () => {
     );
     expect(override.commandStatus).toBe("accepted");
     expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ "relay.stability": 20 });
+    expect(readGameEventAudience(value, "ScenarioOverrideApplied")).toEqual([{ kind: "system" }]);
     const compensate = value.authority.commands.execute(
       operatorAuth(value),
       gameCommandEnvelope(
@@ -96,5 +101,45 @@ describe("剧情卡", () => {
     );
     expect(compensate.commandStatus).toBe("accepted");
     expect(readGameEvents(value).some((event) => event.type === "ScenarioCompensationApplied")).toBe(true);
+    expect(readGameEventAudience(value, "ScenarioCompensationApplied")).toEqual([{ kind: "system" }]);
+  });
+
+  it("卡片效果按事件字典公布世界事实与唤醒名单", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 144, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 144);
+    const events = readGameEvents(value);
+    const triggered = events.filter((event) => event.type === "ScenarioCardTriggered");
+    expect(triggered).toHaveLength(9);
+    for (const event of triggered) {
+      expect(event.audience).toEqual([{ kind: "system" }]);
+    }
+    expect(readGameEventAudience(value, "WorldFactRecorded")).toEqual([{ kind: "node", nodeId: "watergate" }]);
+    expect(readGameEventAudience(value, "RumorSpread")).toEqual([{ kind: "public" }]);
+    expect(readGameEventAudience(value, "AgentsSummoned")).toEqual([
+      {
+        kind: "principals",
+        ids: [
+          "human-independent",
+          "human-earth-alliance",
+          "human-pacifist",
+          "human-alien-accord",
+          "human-neutral",
+          "species-fauna",
+          "species-flora",
+          "species-extraterrestrial",
+        ],
+      },
+    ]);
+    const broadcasts = events.filter(
+      (event) =>
+        event.type === "MessageSent" &&
+        (event.payload as { readonly channel?: string }).channel === "broadcast",
+    );
+    expect(broadcasts.length).toBeGreaterThan(0);
+    for (const event of broadcasts) {
+      expect(event.audience).toEqual([{ kind: "public" }]);
+    }
   });
 });

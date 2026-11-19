@@ -84,7 +84,7 @@ function triggerCard(context: ScenarioContext, cardId: string, version: number, 
   }
   const triggered: ScenarioCardState = { ...state, status: "triggered" };
   context.tx.put("scenario-card", cardId, triggered);
-  context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "public" }]);
+  context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "system" }]);
   applyCardEffects(context, cardId, state.effects.length > 0 ? state.effects : (card?.effects ?? []));
   if (cardId === "card-relay-alarm") {
     const run = ensureRunState(context);
@@ -108,7 +108,7 @@ function publish(context: ScenarioContext, payload: Json): HandlerResult {
   }
   const published: ScenarioCardState = { ...state, status: "published", triggerAtTick: input.triggerAtTick };
   context.tx.put("scenario-card", input.cardId, published);
-  context.tx.emit("ScenarioCardPublished", { cardId: input.cardId, version: input.version, note: "published" }, [{ kind: "public" }]);
+  context.tx.emit("ScenarioCardPublished", { cardId: input.cardId, version: input.version, note: "published" }, [{ kind: "system" }]);
   scheduleCard(context, published);
   return { kind: "accepted" };
 }
@@ -130,7 +130,7 @@ function withdraw(context: ScenarioContext, payload: Json): HandlerResult {
   context.tx.emit(
     "ScenarioCardWithdrawn",
     { cardId: input.cardId, version: state.version, note: "withdrawn" },
-    [{ kind: "public" }],
+    [{ kind: "system" }],
   );
   return { kind: "accepted" };
 }
@@ -144,7 +144,7 @@ function compensate(context: ScenarioContext, payload: Json): HandlerResult {
   context.tx.emit(
     "ScenarioCompensationApplied",
     { cardId: input.cardId, version: null, note: input.note },
-    [{ kind: "public" }],
+    [{ kind: "system" }],
   );
   applyCardEffects(context, input.cardId, input.effects);
   return { kind: "accepted" };
@@ -158,7 +158,7 @@ function override(context: ScenarioContext, payload: Json): HandlerResult {
   context.tx.emit(
     "ScenarioOverrideApplied",
     { cardId: null, version: null, note: input.note },
-    [{ kind: "public" }],
+    [{ kind: "system" }],
   );
   applyOverrideEffects(context, input.effects);
   return { kind: "accepted" };
