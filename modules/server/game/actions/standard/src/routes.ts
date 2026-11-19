@@ -6,6 +6,9 @@
 import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
 import type { DispatchInput } from "./plan-types";
 
+/** 追风或谷寻参与侦察时，按内容道路重算逐路行程：每条道路减 1，至少 1 tick。 */
+const scoutGuideAgentIds: readonly string[] = ["npc-zhuifeng", "npc-guxun"];
+
 export interface PlannedRoute {
   readonly roadIds: string[];
   readonly travelTicks: number;
@@ -44,6 +47,22 @@ function join(first: Segment | null, second: Segment | null): Segment | null {
     roadIds: [...first.roadIds, ...second.roadIds],
     travelTicks: first.travelTicks + second.travelTicks,
   };
+}
+
+/**
+ * 用内容道路重算已选路径的行程；只改行程，不改 findRoute 选出的道路序列。
+ * 内容缺少某条道路时退回原行程，避免算出与路径不一致的用时。
+ */
+function guidedTravelTicks(content: GameContent, roadIds: readonly string[], fallback: number): number {
+  let total = 0;
+  for (const roadId of roadIds) {
+    const road = content.roads.get(roadId);
+    if (road === undefined) {
+      return fallback;
+    }
+    total += Math.max(1, road.travelTicks - 1);
+  }
+  return total;
 }
 
 function nearestEndpoint(
@@ -168,9 +187,12 @@ export function computeTaskRoute(
   if (route === null) {
     return null;
   }
+  const guided = participants.some((participant) => scoutGuideAgentIds.includes(participant));
+  const travelTicks = guided ? guidedTravelTicks(content, route.roadIds, route.travelTicks) : route.travelTicks;
   return {
-    ...route,
-    duration: route.travelTicks + 2,
+    roadIds: [...route.roadIds],
+    travelTicks,
+    duration: travelTicks + 2,
     workNodeId: params.nodeId,
     patrolStartTick: null,
     patrolEndTick: null,

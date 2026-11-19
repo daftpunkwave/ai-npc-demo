@@ -7,6 +7,15 @@ import { DomainError, jsonValueSchema, resourceAmountsSchema, taskTypeSchema } f
 import type { WorldTx } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
+/** 出发时抽样得到的内部风险：只写进任务状态，完成时才应用伤势并公布。 */
+const riskOutcomeSchema = z
+  .object({
+    delayTicks: z.number().int().nonnegative(),
+    injuredAgentIds: z.array(z.string().min(1)),
+    teamInjured: z.boolean(),
+  })
+  .strict();
+
 export const taskStateSchema = z
   .object({
     taskId: z.string().min(1),
@@ -29,9 +38,10 @@ export const taskStateSchema = z
     patrolEndTick: z.number().int().nonnegative().nullable(),
     workStartTick: z.number().int().nonnegative().nullable(),
     workNodeId: z.string().min(1).nullable(),
-    delayTicks: z.number().int().nonnegative(),
+    riskOutcome: riskOutcomeSchema,
     delayNoticeSent: z.boolean(),
-    teamInjured: z.boolean(),
+    /** 修复材料已结算标记：完成与工作中取消共用同一幂等结算。 */
+    materialsConsumed: z.boolean(),
     failureReason: z.string().min(1).nullable(),
     canceledAtTick: z.number().int().nonnegative().nullable(),
   })

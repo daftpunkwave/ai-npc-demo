@@ -1,7 +1,7 @@
 /**
  * 结算任务完成效果：资源转移/消耗、队伍与角色移动、指标变化、侦察报告和证据发现。
  * 依赖世界/资源/地图/通信端口、内容索引与任务状态；写入都在 authority 事务内。
- * 禁止在这里重算风险或把未满足条件的任务标记为成功。
+ * 禁止在这里重算风险或把未满足条件的任务标记为成功；伤势只在完成事务内应用并公开。
  */
 /* eslint-disable @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态字段误判为 unknown。 */
 import type { AudienceSpec, ReasonCode } from "@ai-npc/contracts";
@@ -13,6 +13,7 @@ import {
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
+import { settleRepairMaterials } from "./reservations";
 import type { TaskState } from "./state";
 
 type CompletionContext = HandlerContext<GameModulePorts, unknown>;
@@ -21,20 +22,37 @@ type CompletionResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly reasonCode: ReasonCode; readonly safeMessage: string };
 
-function moveTeamAndParticipants(context: CompletionContext, task: TaskState, nodeId: string): void {
+/** 受伤持续 48 tick，从真正完成并公布伤势的 tick 起算。 */
+const injuryTicks = 48;
+/** 队伍受伤后的休整时长。 */
+const teamRecoveryTicks = 24;
+
+function moveTeamAndParticipants(
+  context: CompletionContext,
+  task: TaskState,
+  nodeId: string,
+  completedAt: number,
+): void {
   const ports = context.modules;
   for (const participant of task.participants) {
     ports["game.world"].setCharacterTask(participant, null);
     ports["game.world"].moveCharacter(participant, nodeId);
   }
   ports["game.world"].moveTeam(task.teamId, nodeId);
-  const busyUntil = task.teamInjured ? context.tx.worldTick + 24 : null;
+  const injured = task.riskOutcome.teamInjured;
   ports["game.world"].setTeamStatus(
     task.teamId,
-    task.teamInjured ? "recovering" : "idle",
-    busyUntil,
+    injured ? "recovering" : "idle",
+    injured ? completedAt + teamRecoveryTicks : null,
     null,
   );
+}
+
+/** 完成事务内应用并公开出发时抽到的伤势；出发时不得改变角色伤势。 */
+function applyRiskInjuries(context: CompletionContext, task: TaskState, completedAt: number): void {
+  for (const agentId of task.riskOutcome.injuredAgentIds) {
+    context.modules["game.world"].injureCharacter(agentId, completedAt + injuryTicks, "road-risk");
+  }
 }
 
 function scoutReport(context: CompletionContext, task: TaskState, nodeId: string): void {
@@ -93,11 +111,12 @@ function taskAudience(content: GameContent, task: TaskState, nodeId?: string): r
 export function completeTask(context: CompletionContext, task: TaskState): CompletionResult {
   const content = requireGameContent(context.content);
   const ports = context.modules;
-  const completedAt = (task.nominalCompletionTick as number) + (task.delayTicks as number);
+  const completedAt = task.nominalCompletionTick + task.riskOutcome.delayTicks;
   const workNodeId = task.workNodeId ?? ports["game.world"].team(task.teamId)?.nodeId;
   if (workNodeId === undefined || workNodeId === null) {
     return { ok: false, reasonCode: "invalid-params", safeMessage: "任务缺少工作节点" };
   }
+  let current = task;
   if (task.taskType === "transport") {
     if (task.fromStockpileId === null || task.toStockpileId === null) {
       return { ok: false, reasonCode: "invalid-params", safeMessage: "运输任务缺少库存点" };
@@ -130,30 +149,12 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     ports["game.world"].setGroupStatus(params.groupId, "rescued", null, 0, workNodeId);
     ports["game.world"].changeMeter("migration.safety", 10, "task");
   } else if (task.taskType === "repair") {
-    if (task.fromStockpileId !== null) {
-      const energy = ports["game.resources"].consume({
-        stockpileId: task.fromStockpileId,
-        delta: { supply: 0, energy: task.reserved.energy, medical: 0 },
-        reason: "repair",
-        taskId: task.taskId,
-        byId: task.dispatcherId,
-      });
-      if (!energy.ok) {
-        return { ok: false, reasonCode: energy.reasonCode, safeMessage: "修复能源消耗失败" };
-      }
+    // 材料在工作开始时结算；这里复用同一幂等函数，已标记则不会重复扣减。
+    const settled = settleRepairMaterials(context, task);
+    if (!settled.ok) {
+      return { ok: false, reasonCode: settled.reasonCode, safeMessage: "修复材料消耗失败" };
     }
-    if (task.toStockpileId !== null && task.reserved.supply > 0) {
-      const supply = ports["game.resources"].consume({
-        stockpileId: task.toStockpileId,
-        delta: { supply: task.reserved.supply, energy: 0, medical: 0 },
-        reason: "repair",
-        taskId: task.taskId,
-        byId: task.dispatcherId,
-      });
-      if (!supply.ok) {
-        return { ok: false, reasonCode: supply.reasonCode, safeMessage: "修复供给消耗失败" };
-      }
-    }
+    current = settled.task;
     const teamStar = task.teamId === "team-star";
     let delta = teamStar ? 40 : 25;
     if (task.participants.includes("npc-shenli")) {
@@ -172,9 +173,10 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
       ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
     }
   }
-  moveTeamAndParticipants(context, task, workNodeId);
+  moveTeamAndParticipants(context, current, workNodeId, completedAt);
+  applyRiskInjuries(context, current, completedAt);
   const next: TaskState = {
-    ...task,
+    ...current,
     status: "completed",
     completedAtTick: completedAt,
     phase: "working",

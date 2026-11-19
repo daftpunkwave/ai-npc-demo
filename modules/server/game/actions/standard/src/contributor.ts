@@ -1,5 +1,5 @@
 /**
- * 注册任务派遣、邀请应答、取消与出发/完成/返回 job，串起风险、资源和世界状态。
+ * 注册任务派遣、邀请应答、取消与出发/工作/完成/返回 job，串起风险、资源和世界状态。
  * 依赖计划校验、完成结算、世界/资源/地图/通信端口与 authority 事务上下文。
  * 禁止在处理器中使用真实时间、随机 ID 作为种子或越过资源预留直接结算。
  */
@@ -17,7 +17,7 @@ import {
   type HandlerResult,
 } from "@ai-npc/module-sdk";
 import { completeTask, failTask } from "./completion";
-import { refundDelegation, releaseReserved, consumeWorkingRepair } from "./reservations";
+import { refundDelegation, releaseReserved, settleRepairMaterials } from "./reservations";
 import { planDispatch, type DispatchInput } from "./plan";
 import { rollRisk } from "./risk";
 import { computeTaskRoute } from "./routes";
@@ -166,9 +166,9 @@ function dispatch(context: ActionContext, payload: Json): HandlerResult {
     patrolEndTick: plan.plan.patrolEndTick,
     workStartTick: plan.plan.workStartTick,
     workNodeId: plan.plan.workNodeId,
-    delayTicks: 0,
+    riskOutcome: { delayTicks: 0, injuredAgentIds: [], teamInjured: false },
     delayNoticeSent: false,
-    teamInjured: false,
+    materialsConsumed: false,
     failureReason: null,
     canceledAtTick: null,
   };
@@ -281,17 +281,22 @@ function cancel(context: ActionContext, payload: Json): HandlerResult {
       }
     }
   } else {
-    const workingRepair = task.taskType === "repair" && task.workStartTick !== null && context.tx.worldTick >= task.workStartTick;
-    if (!workingRepair) {
+    // 修复已开始工作（或材料已结算）时按同一幂等函数扣减，不退还；尚未到达则释放预留。
+    const workingRepair =
+      task.taskType === "repair" &&
+      (task.materialsConsumed ||
+        (task.workStartTick !== null && context.tx.worldTick >= task.workStartTick));
+    if (workingRepair) {
+      settleRepairMaterials(context, task);
+    } else {
       releaseReserved(context, task);
       refundDelegation(context, task);
-    } else {
-      consumeWorkingRepair(context, task);
     }
     if (task.taskType === "rescue") {
       const params = task.params as { readonly groupId: string };
       asPorts(context)["game.world"].releaseGroup(params.groupId, task.taskId);
     }
+    context.tx.cancelJobs(`task-work:${task.taskId}`);
     context.tx.cancelJobs(`task-complete:${task.taskId}`);
     context.tx.cancelJobs(`task-return:${task.taskId}`);
     if (task.taskType === "transport") {
@@ -424,9 +429,9 @@ function depart(context: ActionContext, taskId: string): void {
     route: [...route.roadIds],
     departTick: departedAt,
   });
-  for (const injuredAgentId of risk.injuredAgentIds) {
-    ports["game.world"].injureCharacter(injuredAgentId, departedAt + 48, "road-risk");
-  }
+  // 道路延误整体顺延行程，工作起点与完成 tick 使用同一份延误量。
+  const workStartTick = route.workStartTick === null ? null : route.workStartTick + risk.delayTicks;
+  // 出发只持久化内部风险；伤势在完成的结算事务里应用并公开。
   const running: TaskState = {
     ...task,
     participants,
@@ -436,17 +441,30 @@ function depart(context: ActionContext, taskId: string): void {
     nominalCompletionTick,
     patrolStartTick: route.patrolStartTick,
     patrolEndTick: route.patrolEndTick,
-    workStartTick: route.workStartTick,
+    workStartTick,
     workNodeId: route.workNodeId,
-    delayTicks: risk.delayTicks,
-    teamInjured: risk.teamInjured,
-    phase: route.workStartTick !== null && departedAt >= route.workStartTick ? "working" : "traveling",
+    riskOutcome: {
+      delayTicks: risk.delayTicks,
+      injuredAgentIds: [...risk.injuredAgentIds],
+      teamInjured: risk.teamInjured,
+    },
+    phase: workStartTick !== null && departedAt >= workStartTick ? "working" : "traveling",
   };
   context.tx.put("task", task.taskId, running);
   for (const participant of participants) {
     ports["game.world"].setCharacterTask(participant, task.taskId);
   }
   ports["game.world"].setTeamStatus(task.teamId, "traveling", nominalCompletionTick, task.taskId);
+  if (running.workStartTick !== null && running.workStartTick <= departedAt) {
+    // 出发时已在该任务的工作节点：同一事务内立即结算已预留的修复材料。
+    const settled = settleRepairMaterials(context, running);
+    if (!settled.ok) {
+      failDeparture(context, running, settled.reasonCode);
+      return;
+    }
+  } else if (running.workStartTick !== null) {
+    context.tx.schedule("task.work", running.workStartTick, `task-work:${taskId}`, { taskId });
+  }
   context.tx.emit(
     "TaskDeparted",
     { taskId, participants: [...participants], route: [...running.route], nominalCompletionTick },
@@ -455,13 +473,28 @@ function depart(context: ActionContext, taskId: string): void {
   context.tx.schedule("task.complete", nominalCompletionTick, `task-complete:${taskId}:${nominalCompletionTick}`, { taskId });
 }
 
+/** 到达工作起点时结算修复材料；材料已结算则幂等跳过。 */
+function work(context: ActionContext, taskId: string): void {
+  const task = readTaskState(context.tx, taskId);
+  if (task === null || task.status !== "running" || task.taskType !== "repair") {
+    return;
+  }
+  const settled = settleRepairMaterials(context, task);
+  if (!settled.ok) {
+    releaseReserved(context, task);
+    refundDelegation(context, task);
+    failTask(context, task, settled.reasonCode);
+  }
+}
+
 function complete(context: ActionContext, taskId: string): void {
   const task = readTaskState(context.tx, taskId);
   if (task === null || task.status !== "running") {
     return;
   }
-  if ((task.delayTicks as number) > 0 && !task.delayNoticeSent) {
-    const newCompletion = (task.nominalCompletionTick as number) + (task.delayTicks as number);
+  const delayTicks = task.riskOutcome.delayTicks;
+  if (delayTicks > 0 && !task.delayNoticeSent) {
+    const newCompletion = task.nominalCompletionTick + delayTicks;
     context.tx.put("task", taskId, { ...task, delayNoticeSent: true });
     context.tx.emit(
       "TaskDelayed",
@@ -517,6 +550,12 @@ export function createActionsContributor(): GameRuleContributor<GameModulePorts,
         kind: "task.depart",
         handler: (context, job) => {
           depart(context as ActionContext, (job.payload as { readonly taskId: string }).taskId);
+        },
+      },
+      {
+        kind: "task.work",
+        handler: (context, job) => {
+          work(context as ActionContext, (job.payload as { readonly taskId: string }).taskId);
         },
       },
       {
