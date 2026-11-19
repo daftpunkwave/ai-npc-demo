@@ -51,6 +51,7 @@ Thumbs.db
 
 # local agent scratch
 .claude/settings.local.json
+/docs.local/
 
 # root-local agent instructions
 /AGENTS.local.md
