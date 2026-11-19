@@ -13,6 +13,7 @@ import type {
   Json,
   ModuleCreateInput,
   StoragePort,
+  StorageRawRow,
 } from "@ai-npc/contracts";
 import { Authority } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
@@ -307,20 +308,62 @@ export function readGameEventTypes(harness: GameHarness): readonly string[] {
   );
 }
 
-/** 读取分支事件的信封与 payload，供断言投递名单和公开受众。 */
+/** 读取分支事件的信封、提交 tick 与 payload，供断言顺序、投递名单和公开受众。 */
 export function readGameEvents(
   harness: GameHarness,
-): readonly { readonly type: string; readonly payload: Json; readonly audience: Json }[] {
+): readonly {
+  readonly type: string;
+  readonly worldTick: number;
+  readonly payload: Json;
+  readonly audience: Json;
+}[] {
   return harness.storage.transact((tx) =>
     tx
       .all(
-        "SELECT type, payload_json, audience_json FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC",
+        "SELECT type, world_tick, payload_json, audience_json FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC",
         [harness.branchId],
       )
       .map((row) => ({
         type: String(row["type"]),
+        worldTick: Number(row["world_tick"]),
         payload: typeof row["payload_json"] === "string" ? (JSON.parse(row["payload_json"]) as Json) : (row["payload_json"] as Json),
         audience: typeof row["audience_json"] === "string" ? (JSON.parse(row["audience_json"]) as Json) : (row["audience_json"] as Json),
       })),
   );
+}
+
+/** 一个分支的世界表原始行；列值保持数据库原样，不与聚合或事件语义混用。 */
+export interface BranchWorldRows {
+  readonly events: readonly StorageRawRow[];
+  readonly aggregates: readonly StorageRawRow[];
+  readonly jobs: readonly StorageRawRow[];
+  readonly clock: StorageRawRow | null;
+}
+
+/**
+ * 读取任意分支的世界表原始行，供比较源分支、冻结分支与恢复分支。
+ * 列清单显式排除随分支变化的 branch_id，并按主键排序；不解读聚合或事件语义。
+ */
+export function readBranchWorldRows(storage: StoragePort, branchId: string): BranchWorldRows {
+  return storage.transact((tx) => ({
+    events: tx.all(
+      "SELECT world_seq, event_id, world_tick, type, schema_version, principal_id, causation_ids_json, correlation_id, audience_json, payload_json, committed_at FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC",
+      [branchId],
+    ),
+    aggregates: tx.all(
+      "SELECT aggregate_type, aggregate_id, version, state_json FROM aggregate_state WHERE branch_id = ? ORDER BY aggregate_type ASC, aggregate_id ASC",
+      [branchId],
+    ),
+    jobs: tx.all(
+      "SELECT job_id, seq, kind, due_tick, status, idempotency_key, payload_json, attempts, last_error FROM jobs WHERE branch_id = ? ORDER BY job_id ASC",
+      [branchId],
+    ),
+    clock: tx.all("SELECT world_tick, mode, run_version FROM clock WHERE branch_id = ?", [branchId])[0] ?? null,
+  }));
+}
+
+/** 读取指定类型第一条事件的持久化受众；没有该事件时返回 null。 */
+export function readGameEventAudience(harness: GameHarness, type: string): Json | null {
+  const event = readGameEvents(harness).find((candidate) => candidate.type === type);
+  return event === undefined ? null : event.audience;
 }

@@ -9,5 +9,11 @@ export { escalatingScenarioModuleDefinition, scenarioModuleDefinition } from "./
 export { createScenarioContributor } from "./contributor";
 export { createScenarioPort } from "./port";
 export type { ScenarioPort } from "./port";
-export { readCardState, readRunState, scenarioCardStateSchema, scenarioRunStateSchema } from "./state";
-export type { ScenarioCardState, ScenarioRunState } from "./state";
+export {
+  readCardState,
+  readRunState,
+  scenarioCardStateSchema,
+  scenarioContaminationSchema,
+  scenarioRunStateSchema,
+} from "./state";
+export type { ScenarioCardState, ScenarioContamination, ScenarioRunState } from "./state";

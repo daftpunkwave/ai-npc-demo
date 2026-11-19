@@ -295,13 +295,13 @@ export interface CampaignView {
   readonly outcome: "equilibrium" | "strained" | null;
 }
 
-/** 委托快照；remaining 是各资源的剩余可动用额度。 */
+/** 委托快照；stockpileId 为 null 表示只委托队伍，remaining 是各资源的剩余可动用额度。 */
 export interface DelegationView {
   readonly delegationId: string;
   readonly grantorFactionId: string;
   readonly granteeId: string;
   readonly teamIds: readonly string[];
-  readonly stockpileId: string;
+  readonly stockpileId: string | null;
   readonly remaining: ResourceAmounts;
   readonly untilTick: number;
 }
@@ -402,21 +402,22 @@ export interface GameWorldPort {
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   claimGroup(groupId: string, taskId: string): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   releaseGroup(groupId: string, taskId: string): void;
+  /** 扣减覆盖该库存点的委托余额，并返回实际扣减的委托，供回补时按记录定位。 */
   drawDelegation(
     principalId: string,
     stockpileId: string,
     delta: ResourceAmounts,
-  ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  ): { readonly ok: true; readonly delegationId: string } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  /** 按实际扣减过的委托 ID 回补余额；不得按主体与库存点重新查找委托。 */
   refundDelegation(
-    principalId: string,
-    stockpileId: string,
+    delegationId: string,
     delta: ResourceAmounts,
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   createDelegation(spec: {
     readonly grantorFactionId: string;
     readonly granteeId: string;
     readonly teamIds: readonly string[];
-    readonly stockpileId: string;
+    readonly stockpileId: string | null;
     readonly maxDraw: ResourceAmounts;
     readonly untilTick: number;
   }): { readonly ok: true; readonly delegationId: string };
@@ -453,6 +454,11 @@ export interface GameActionsPort {
   task(taskId: string): TaskView | null;
   tasksOf(principalId: string): readonly TaskView[];
   isRoadEscorted(roadId: string, atTick: number): boolean;
+  /**
+   * 全部已完成任务，带权威完成 tick。
+   * 协议期限 job 与章节统计用它复核「截至期限是否已履约」，不依赖消费者是否追平。
+   */
+  completedTasks(): readonly TaskView[];
 }
 
 /** 协议查询端口；条款状态由协议模块拥有。 */
@@ -462,11 +468,22 @@ export interface AgreementView {
   readonly parties: readonly string[];
 }
 
+/** 截至某个 tick 的协议计数；同一协议只计一次，供章节评估使用。 */
+export interface AgreementCounts {
+  readonly fulfilled: number;
+  readonly breached: number;
+}
+
 /** 协议查询端口；协议聚合由协议模块拥有。 */
 export interface GameAgreementsPort {
   agreement(agreementId: string): AgreementView | null;
   agreementsOf(principalId: string): readonly AgreementView[];
   activeAgreements(): readonly AgreementView[];
+  /**
+   * 按已提交事实同步统计截至 `tick` 的已履约与已违约协议数：有违约记录的计入 breached，
+   * 全部条款（含期限复核）满足且无违约的计入 fulfilled，未生效或仍有未满足条款的不计。
+   */
+  countsAsOf(tick: number): AgreementCounts;
 }
 
 /** 剧情卡查询端口；具体卡状态由剧情模块拥有。 */
@@ -489,10 +506,25 @@ export interface CommsPostResult {
   readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
 }
 
+/** 证据分享的一次查询；分享必须落在 [sinceTick, byTick] 内，早于协议生效的分享不构成履约。 */
+export interface ShareQuery {
+  readonly fromId: string;
+  readonly evidenceId: string;
+  readonly toPrincipalId: string;
+  /** 协议生效 tick；早于它的分享不算履约。 */
+  readonly sinceTick: number;
+  /** 条款截止 tick；晚于它的分享不算履约。 */
+  readonly byTick: number;
+}
+
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
+  /** 两个主体此刻是否在同一节点；无位置主体（战略 Agent、未知主体）与任何人都不同节点。 */
+  sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
+  /** 是否存在由 fromId 在 sinceTick 到 byTick 之间提交、受众包含 toPrincipalId 的证据分享。 */
+  hasShare(query: ShareQuery): boolean;
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean;
   grantKnowledge(input: {
     readonly principalId: string;
@@ -508,6 +540,8 @@ export interface GameCommsPort {
     readonly intentKind: MessageIntentKind;
     readonly speechArtifactRef?: string | null;
     readonly audience?: readonly string[];
+    /** 广播的发布位置；缺省用发送者当前位置，中继中断时只送达与该位置同节点的主体。 */
+    readonly originNodeId?: string;
   }): CommsPostResult;
   postDialogue(input: {
     readonly speakerId: string;

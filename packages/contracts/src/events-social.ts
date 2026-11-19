@@ -39,7 +39,8 @@ export const delegationCreatedPayloadSchema = z
     grantorFactionId: z.string().min(1),
     granteeId: principalIdSchema,
     teamIds: z.array(contentIdSchemas.team).min(1),
-    stockpileId: contentIdSchemas.sp,
+    // null 表示只委托队伍，不创建库存动用权。
+    stockpileId: contentIdSchemas.sp.nullable(),
     maxDraw: z
       .object({
         supply: z.number().int().nonnegative(),

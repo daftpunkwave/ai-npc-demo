@@ -50,6 +50,16 @@ class StandardActionsPort implements GameActionsPort {
       .map(toView);
   }
 
+  /** 已完成任务按完成 tick 升序给出；完成 tick 缺失的记录不是已提交的完成事实，直接跳过。 */
+  completedTasks(): readonly TaskView[] {
+    return this.tx()
+      .list<TaskState>("task")
+      .map((entry) => entry.state)
+      .filter((state) => state.status === "completed" && state.completedAtTick !== null)
+      .map(toView)
+      .sort((left, right) => (left.completedAtTick ?? 0) - (right.completedAtTick ?? 0) || left.taskId.localeCompare(right.taskId));
+  }
+
   isRoadEscorted(roadId: string, atTick: number): boolean {
     return this.tx()
       .list<TaskState>("task")

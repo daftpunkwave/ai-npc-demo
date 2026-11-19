@@ -1,5 +1,5 @@
 /**
- * 注册剧情卡调度、触发、发布、撤回、补偿与覆盖，以及升级版剧情压力。
+ * 注册剧情卡草稿、调度、触发、发布、撤回、补偿与覆盖，以及升级版剧情压力。
  * 依赖内容剧情、卡片状态、效果白名单、世界/行动端口与 authority 事务上下文。
  * 禁止调用角色模型、修改指标（覆盖除外）或重复触发同一卡片。
  */
@@ -13,10 +13,21 @@ import {
   type HandlerContext,
   type HandlerResult,
 } from "@ai-npc/module-sdk";
-import { applyCardEffects, applyOverrideEffects } from "./effects";
-import { readCardState, readRunState, type ScenarioCardState, type ScenarioRunState } from "./state";
+import { applyCardEffects, applyOverrideEffects, invalidEffectReferences } from "./effects";
+import {
+  readCardState,
+  readRunState,
+  type ScenarioCardState,
+  type ScenarioContamination,
+  type ScenarioRunState,
+} from "./state";
 
 type ScenarioContext = HandlerContext<GameModulePorts, unknown>;
+
+/** 发布窗口：触发 tick 必须晚于当前 tick，且不超过 168 tick 之后。 */
+function isTriggerTickInWindow(triggerAtTick: number, worldTick: number): boolean {
+  return triggerAtTick > worldTick && triggerAtTick <= worldTick + 168;
+}
 
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
   return context.modules as GameModulePorts;
@@ -36,9 +47,35 @@ function ensureRunState(context: ScenarioContext): ScenarioRunState {
   if (existing !== null) {
     return existing;
   }
-  const created: ScenarioRunState = { scenarioId, repairCompleted: false, alarmTriggered: false };
+  const created: ScenarioRunState = {
+    scenarioId,
+    repairCompleted: false,
+    alarmTriggered: false,
+    contaminated: false,
+    contaminations: [],
+  };
   context.tx.put("scenario-run", scenarioId, created);
   return created;
+}
+
+/** 在同一事务记录一次调试覆盖造成的污染；调用方负责效果先于记录写入。 */
+function recordContamination(
+  context: ScenarioContext,
+  note: string,
+  effects: readonly OverrideEffect[],
+): void {
+  const run = ensureRunState(context);
+  const contamination: ScenarioContamination = {
+    source: "scenario.override",
+    note,
+    tick: context.tx.worldTick,
+    effects: [...effects],
+  };
+  context.tx.put("scenario-run", run.scenarioId, {
+    ...run,
+    contaminated: true,
+    contaminations: [...run.contaminations, contamination],
+  });
 }
 
 function scheduleCard(context: ScenarioContext, state: ScenarioCardState): void {
@@ -84,13 +121,51 @@ function triggerCard(context: ScenarioContext, cardId: string, version: number, 
   }
   const triggered: ScenarioCardState = { ...state, status: "triggered" };
   context.tx.put("scenario-card", cardId, triggered);
-  context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "public" }]);
+  context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "system" }]);
   applyCardEffects(context, cardId, state.effects.length > 0 ? state.effects : (card?.effects ?? []));
   if (cardId === "card-relay-alarm") {
     const run = ensureRunState(context);
     context.tx.put("scenario-run", run.scenarioId, { ...run, alarmTriggered: true });
   }
   void escalating;
+}
+
+function draft(context: ScenarioContext, payload: Json): HandlerResult {
+  const input = payload as unknown as {
+    readonly cardId: string;
+    readonly version: number;
+    readonly triggerAtTick: number;
+    readonly effects: readonly CardEffect[];
+    readonly note: string;
+  };
+  if (readCardState(context.tx, input.cardId) !== null) {
+    return {
+      kind: "rejected",
+      reasonCode: "version-conflict",
+      safeMessage: "该卡片已登记，不能重复创建草稿",
+    };
+  }
+  if (!isTriggerTickInWindow(input.triggerAtTick, context.tx.worldTick)) {
+    return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出发布窗口" };
+  }
+  const invalidEffect = invalidEffectReferences(requireGameContent(context.content), input.effects);
+  if (invalidEffect !== null) {
+    return {
+      kind: "rejected",
+      reasonCode: "invalid-effect",
+      safeMessage: `草稿效果引用的内容对象不存在：${invalidEffect}`,
+    };
+  }
+  const state: ScenarioCardState = {
+    cardId: input.cardId,
+    version: input.version,
+    status: "draft",
+    triggerAtTick: input.triggerAtTick,
+    effects: [...input.effects],
+    note: input.note,
+  };
+  context.tx.put("scenario-card", input.cardId, state);
+  return { kind: "accepted" };
 }
 
 function publish(context: ScenarioContext, payload: Json): HandlerResult {
@@ -100,15 +175,18 @@ function publish(context: ScenarioContext, payload: Json): HandlerResult {
     readonly triggerAtTick: number;
   };
   const state = readCardState(context.tx, input.cardId);
-  if (state === null || state.status !== "draft" || state.version !== input.version) {
+  if (state === null || state.status !== "draft") {
     return { kind: "rejected", reasonCode: "card-not-draft", safeMessage: "卡片不是可发布草稿" };
   }
-  if (input.triggerAtTick <= context.tx.worldTick || input.triggerAtTick > context.tx.worldTick + 168) {
-    return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出范围" };
+  if (state.version !== input.version) {
+    return { kind: "rejected", reasonCode: "version-conflict", safeMessage: "草稿版本与命令不一致" };
+  }
+  if (!isTriggerTickInWindow(input.triggerAtTick, context.tx.worldTick)) {
+    return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出发布窗口" };
   }
   const published: ScenarioCardState = { ...state, status: "published", triggerAtTick: input.triggerAtTick };
   context.tx.put("scenario-card", input.cardId, published);
-  context.tx.emit("ScenarioCardPublished", { cardId: input.cardId, version: input.version, note: "published" }, [{ kind: "public" }]);
+  context.tx.emit("ScenarioCardPublished", { cardId: input.cardId, version: input.version, note: "published" }, [{ kind: "system" }]);
   scheduleCard(context, published);
   return { kind: "accepted" };
 }
@@ -130,7 +208,7 @@ function withdraw(context: ScenarioContext, payload: Json): HandlerResult {
   context.tx.emit(
     "ScenarioCardWithdrawn",
     { cardId: input.cardId, version: state.version, note: "withdrawn" },
-    [{ kind: "public" }],
+    [{ kind: "system" }],
   );
   return { kind: "accepted" };
 }
@@ -141,12 +219,28 @@ function compensate(context: ScenarioContext, payload: Json): HandlerResult {
     readonly effects: readonly CardEffect[];
     readonly note: string;
   };
+  const state = readCardState(context.tx, input.cardId);
+  if (state === null) {
+    return { kind: "rejected", reasonCode: "invalid-effect", safeMessage: "补偿来源卡片不存在" };
+  }
+  if (state.status !== "triggered") {
+    return { kind: "rejected", reasonCode: "invalid-effect", safeMessage: "补偿来源卡片尚未触发" };
+  }
+  const invalidEffect = invalidEffectReferences(requireGameContent(context.content), input.effects);
+  if (invalidEffect !== null) {
+    return {
+      kind: "rejected",
+      reasonCode: "invalid-effect",
+      safeMessage: `补偿效果引用的内容对象不存在：${invalidEffect}`,
+    };
+  }
+  // 来源卡片与版本取自触发时写入的聚合状态，不采用调用方自报值。
   context.tx.emit(
     "ScenarioCompensationApplied",
-    { cardId: input.cardId, version: null, note: input.note },
-    [{ kind: "public" }],
+    { cardId: state.cardId, version: state.version, note: input.note },
+    [{ kind: "system" }],
   );
-  applyCardEffects(context, input.cardId, input.effects);
+  applyCardEffects(context, state.cardId, input.effects);
   return { kind: "accepted" };
 }
 
@@ -155,12 +249,13 @@ function override(context: ScenarioContext, payload: Json): HandlerResult {
     readonly effects: readonly OverrideEffect[];
     readonly note: string;
   };
+  applyOverrideEffects(context, input.effects);
+  recordContamination(context, input.note, input.effects);
   context.tx.emit(
     "ScenarioOverrideApplied",
     { cardId: null, version: null, note: input.note },
-    [{ kind: "public" }],
+    [{ kind: "system" }],
   );
-  applyOverrideEffects(context, input.effects);
   return { kind: "accepted" };
 }
 
@@ -205,6 +300,7 @@ export function createScenarioContributor(options: { readonly escalating: boolea
     moduleId: options.escalating ? gameModuleIds.scenarioEscalating : gameModuleIds.scenario,
     ownsAggregates: ["scenario-card", "scenario-run"],
     commands: [
+      { type: "scenario.draft", handler: (context, payload) => draft(context as ScenarioContext, payload) },
       { type: "scenario.publish", handler: (context, payload) => publish(context as ScenarioContext, payload) },
       { type: "scenario.withdraw", handler: (context, payload) => withdraw(context as ScenarioContext, payload) },
       { type: "scenario.compensate", handler: (context, payload) => compensate(context as ScenarioContext, payload) },

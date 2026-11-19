@@ -3,7 +3,7 @@
  * 依赖世界端口、地图/资源端口、内容索引与 authority 的处理器上下文。
  * 禁止在这里直接写地图/库存聚合，或在命令处理器中读取进程时间与随机源。
  */
-import type { EventEnvelope, Json } from "@ai-npc/contracts";
+import type { Json } from "@ai-npc/contracts";
 import { roadStatusSchema, watergateAllocationSchema } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
@@ -21,11 +21,9 @@ import { runChapterEvaluation, runDailySettlement } from "./settlement";
 import { campaignAggregateId, metersAggregateId } from "./port";
 import {
   characterStateSchema,
-  chapterStatsStateSchema,
   readWorldState,
   teamStateSchema,
   type CampaignState,
-  type ChapterStatsState,
   type CharacterState,
   type GroupState,
   type TeamState,
@@ -204,7 +202,6 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
       "group",
       "delegation",
       "evidence-placement",
-      "chapter-stats",
     ],
     commands: [
       {
@@ -292,23 +289,6 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
         when: (tick) => tick > 0,
         handler: (context) => {
           runChapterEvaluation(context as WorldContext, chapterLengthTicks);
-        },
-      },
-    ],
-    consumers: [
-      {
-        consumerId: "world.agreement-counts",
-        eventTypes: ["AgreementFulfilled", "AgreementBreached"],
-        handler: (context, event: EventEnvelope) => {
-          if (event.type !== "AgreementFulfilled" && event.type !== "AgreementBreached") {
-            return;
-          }
-          const record = readWorldState(context.tx, "chapter-stats", "chapter-stats", chapterStatsStateSchema);
-          const stats: ChapterStatsState = record?.state ?? { fulfilled: 0, breached: 0 };
-          context.tx.put("chapter-stats", "chapter-stats", {
-            fulfilled: stats.fulfilled + (event.type === "AgreementFulfilled" ? 1 : 0),
-            breached: stats.breached + (event.type === "AgreementBreached" ? 1 : 0),
-          });
         },
       },
     ],

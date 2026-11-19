@@ -51,7 +51,6 @@ const worldDefinition: ModuleDefinition = {
     "group",
     "delegation",
     "evidence-placement",
-    "chapter-stats",
   ],
   migrationPaths: [],
   create: async (input) => {

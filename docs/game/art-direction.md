@@ -28,7 +28,7 @@
 | 根庭 | `assets/factions/root-court.svg` | `species-flora` |
 | 泊星者 | `assets/factions/starfarers.svg` | `species-extraterrestrial` |
 
-机器可读清单见 `assets/manifest.json`。地点卡的 PNG 预览在 `assets/previews/`，仅用于评审与文档展示；运行时以 SVG 为准。
+机器可读清单见 `assets/manifest.json`，其中 `packId`、`contentVersion` 必须与内容包 `pack.yaml` 一致；`pnpm check:assets` 校验清单与内容包六节点、八派系的互相覆盖。地点卡的 PNG 预览在 `assets/previews/`，仅用于评审与文档展示；运行时以 SVG 为准。
 
 ## 3. 使用规则
 

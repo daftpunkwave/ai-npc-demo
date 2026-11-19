@@ -1,11 +1,11 @@
 # game.comms.standard
 
-标准通信服务。拥有会话与知识授权，负责按中继状态冻结逐主体送达时间。
+标准通信服务。拥有会话、知识授权与证据分享事实，负责按中继状态冻结逐主体送达时间。
 
 ## 边界
 
 - 提供能力：`game.comms`（`exactly-one`，run 作用域）。
-- 拥有聚合：`conversation`、`knowledge-grant`。
+- 拥有聚合：`conversation`、`knowledge-grant`、`share`。
 - 依赖：`game.world`，只读指标与角色位置。
 - 命令：`dialogue.say`、`speech.commit`、`seat.say`、`information.share`。
 - `campaign.start` 后续钩子提交开局消息与内容包 `heldBy` 知识授权。
@@ -16,6 +16,7 @@
 - 对话在中继正常时立即、降级时 +2，中断时拒绝。
 - 广播在中断时只保留同节点收件者；开局消息固定 tick 0。
 - 投递名单按 principalId 排序去重并随事件冻结；`speech.commit` 只接受已批准且主体/分支/受众完全匹配的对白。
+- 证据分享在同一事务内写入 `share` 聚合（分享者、证据、受众、提交 tick），协议期限 job 与章节统计据此复核已提交的分享事实。
 
 ## 参数与限制
 

@@ -1,5 +1,5 @@
 /**
- * 实现通信模块的送达计算、会话/知识写入、消息与证据分享。
+ * 实现通信模块的送达计算、会话/知识写入、消息、证据分享与分享事实查询。
  * 依赖世界指标与角色位置、通信聚合和注入的 scoped WorldTx。
  * 禁止绕过中继状态、向未授权主体投递或改写已冻结的投递名单。
  */
@@ -13,15 +13,23 @@ import {
   type GameContent,
   type GameIdFactory,
   type ScopedWorldTxFactory,
+  type ShareQuery,
 } from "@ai-npc/module-sdk";
 import {
   conversationStateSchema,
   readCommsState,
   type ConversationState,
   type KnowledgeGrantState,
+  type ShareState,
 } from "./state";
 
 type Delivery = { readonly principalId: string; readonly deliverAtTick: number };
+
+/** 世界角色聚合中本模块只读取的字段：当前所在节点。 */
+type CharacterPositionState = { readonly nodeId?: unknown };
+
+/** 世界指标聚合中本模块只读取的字段：中继稳定度。 */
+type RelayMetersState = { readonly "relay.stability"?: unknown };
 
 /** 通信端口实现；每个处理器调用绑定同一 storage transaction。 */
 class StandardCommsPort implements GameCommsPort {
@@ -43,15 +51,26 @@ class StandardCommsPort implements GameCommsPort {
     return this.txFor(gameModuleIds.world);
   }
 
+  /**
+   * 同一份事务内位置：角色读世界模块 character 聚合的当前节点，玩家取内容包声明的节点。
+   * 战略 Agent 不在图上，未知主体也不在世界状态里，两者都没有位置（与任何人都不同节点）。
+   */
   private principalNode(principalId: string): string | null {
-    const character = this.content.characters.get(principalId);
-    if (character !== undefined) {
-      return character.spawnNodeId;
+    const record = this.world().get<CharacterPositionState>("character", principalId);
+    const nodeId = record === null ? undefined : record.state.nodeId;
+    if (typeof nodeId === "string" && nodeId.length > 0) {
+      return nodeId;
     }
     if (principalId === this.content.playerPrincipalId) {
       return this.content.playerNodeId;
     }
     return null;
+  }
+
+  /** 两个主体此刻是否在同一节点；任一方没有位置时都不算同节点。 */
+  sameNode(fromId: string, toId: string): boolean {
+    const fromNode = this.principalNode(fromId);
+    return fromNode !== null && fromNode === this.principalNode(toId);
   }
 
   private allPrincipals(): string[] {
@@ -62,26 +81,24 @@ class StandardCommsPort implements GameCommsPort {
     ];
   }
 
+  /**
+   * 中继状态：稳定度 ≥ 30 正常、1–29 降级、0 中断。
+   * 世界指标聚合不存在表示 campaign 尚未开始、中继还没有建立，按中断处理；
+   * 字段缺失同样不默认成 100，避免把未知状态当成稳定。
+   */
   relayState(): "normal" | "degraded" | "down" {
-    const meters = (this.world().get<unknown>("meters", "meters")?.state ?? null) as {
-      readonly "relay.stability"?: unknown;
-    } | null;
-    const value = typeof meters?.["relay.stability"] === "number" ? meters["relay.stability"] : 100;
-    if (value <= 0) {
+    const meters = this.world().get<RelayMetersState>("meters", "meters")?.state ?? null;
+    const value = meters === null ? undefined : meters["relay.stability"];
+    if (typeof value !== "number" || value <= 0) {
       return "down";
     }
     return value < 30 ? "degraded" : "normal";
   }
 
-  deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down" {
+  /** 同节点立即送达；异地按渠道与中继状态延迟，中断时不可达。 */
+  private arrivalAt(channel: "dialogue" | "message" | "broadcast", samePlace: boolean): number | "relay-down" {
     const tick = this.tx().worldTick;
-    if (fromId === toId) {
-      return tick;
-    }
-    const fromNode = this.principalNode(fromId);
-    const toNode = this.principalNode(toId);
-    const sameNode = fromNode !== null && fromNode === toNode;
-    if (sameNode) {
+    if (samePlace) {
       return tick;
     }
     const state = this.relayState();
@@ -94,15 +111,43 @@ class StandardCommsPort implements GameCommsPort {
     return state === "degraded" ? tick + 3 : tick + 1;
   }
 
+  /** 定向通信：发送者立即回显，其余收件者按同节点与中继状态计算。 */
+  private directedArrival(channel: "dialogue" | "message", fromId: string, toId: string): number | "relay-down" {
+    if (fromId === toId) {
+      return this.tx().worldTick;
+    }
+    return this.arrivalAt(channel, this.sameNode(fromId, toId));
+  }
+
+  /** 广播的同节点判定以发布位置为准；发布位置未知时任何收件者都按异地处理。 */
+  private broadcastArrival(originNodeId: string | null, toId: string): number | "relay-down" {
+    const toNode = this.principalNode(toId);
+    return this.arrivalAt("broadcast", originNodeId !== null && toNode === originNodeId);
+  }
+
+  deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down" {
+    if (channel === "broadcast") {
+      return this.broadcastArrival(this.principalNode(fromId), toId);
+    }
+    return this.directedArrival(channel, fromId, toId);
+  }
+
+  /**
+   * 冻结投递名单：按 principalId 排序去重。定向通信中任一收件者不可达就整条返回 null，
+   * 广播则只保留与发布位置同节点的主体。
+   */
   private deliveries(
     channel: "dialogue" | "message" | "broadcast",
     fromId: string,
     recipients: readonly string[],
+    originNodeId?: string | null,
   ): readonly Delivery[] | null {
     const unique = [...new Set([fromId, ...recipients])].sort((left, right) => left.localeCompare(right));
     const output: Delivery[] = [];
     for (const principalId of unique) {
-      const at = this.deliverAt(channel, fromId, principalId);
+      const at = channel === "broadcast"
+        ? this.broadcastArrival(originNodeId ?? null, principalId)
+        : this.directedArrival(channel, fromId, principalId);
       if (at === "relay-down") {
         if (channel !== "broadcast") {
           return null;
@@ -110,10 +155,6 @@ class StandardCommsPort implements GameCommsPort {
         continue;
       }
       output.push({ principalId, deliverAtTick: at });
-    }
-    if (channel !== "broadcast" && !output.some((item) => item.principalId === fromId)) {
-      output.push({ principalId: fromId, deliverAtTick: this.tx().worldTick });
-      output.sort((left, right) => left.principalId.localeCompare(right.principalId));
     }
     return output;
   }
@@ -135,6 +176,20 @@ class StandardCommsPort implements GameCommsPort {
     return this.tx()
       .list<KnowledgeGrantState>("knowledge-grant")
       .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
+  }
+
+  /** 已提交的分享事实：分享者、证据、受众与提交 tick，均在同一事务内读取；只认 sinceTick 之后的分享。 */
+  hasShare(query: ShareQuery): boolean {
+    return this.tx()
+      .list<ShareState>("share")
+      .some(
+        (entry) =>
+          entry.state.fromId === query.fromId &&
+          entry.state.evidenceId === query.evidenceId &&
+          entry.state.audience.includes(query.toPrincipalId) &&
+          entry.state.sharedAtTick >= query.sinceTick &&
+          entry.state.sharedAtTick <= query.byTick,
+      );
   }
 
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean {
@@ -187,16 +242,21 @@ class StandardCommsPort implements GameCommsPort {
     readonly intentKind: MessageIntentKind;
     readonly speechArtifactRef?: string | null;
     readonly audience?: readonly string[];
+    readonly originNodeId?: string;
   }): { readonly eventId: string; readonly messageId: string; readonly deliveries: readonly Delivery[] } {
     const wantsPublic = input.channel !== "broadcast" || input.audience === undefined || input.audience.includes("public");
     const recipients = input.channel === "broadcast"
       ? (wantsPublic ? this.allPrincipals() : (input.audience ?? []))
       : [...input.to];
+    // 广播的同节点判定以发布位置为准；缺省时按发送者当前位置发布。
+    const originNodeId = input.channel === "broadcast"
+      ? (input.originNodeId ?? this.principalNode(input.fromId))
+      : null;
     const deliveries = input.channel === "opening"
       ? [...new Set([input.fromId, ...recipients])]
           .sort((left, right) => left.localeCompare(right))
           .map((principalId) => ({ principalId, deliverAtTick: 0 }))
-      : this.deliveries(input.channel === "broadcast" ? "broadcast" : "message", input.fromId, recipients);
+      : this.deliveries(input.channel === "broadcast" ? "broadcast" : "message", input.fromId, recipients, originNodeId);
     if (deliveries === null) {
       throw new DomainError("invalid-state", "中继中断时不能发送定向通信");
     }
@@ -269,6 +329,16 @@ class StandardCommsPort implements GameCommsPort {
       throw new DomainError("invalid-state", "中继中断时不能分享证据");
     }
     const shareId = this.ids("shr");
+    const sharedAtTick = this.tx().worldTick;
+    // 分享聚合同事务写入：协议期限 job 与章节统计据此复核已提交的分享事实。
+    const share: ShareState = {
+      shareId,
+      fromId: input.fromId,
+      evidenceId: input.evidenceId,
+      audience: [...input.audience],
+      sharedAtTick,
+    };
+    this.tx().put("share", shareId, share);
     const eventId = this.tx().emit(
       "InformationShared",
       {

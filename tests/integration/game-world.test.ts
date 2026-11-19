@@ -4,15 +4,23 @@
  * 禁止用失真的夹具替代内容包，也不把未执行 job 的 tick 当作已结算。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { Json } from "@ai-npc/contracts";
-import { createSystemAuth } from "@ai-npc/authority";
-import { createWorldPort } from "@ai-npc/mod-game-world-slg-light";
+import { DomainError, type Json } from "@ai-npc/contracts";
+import { Authority, createSystemAuth } from "@ai-npc/authority";
+import type { GameModulePorts, GameResourcesPort, ModuleBinder } from "@ai-npc/module-sdk";
+import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
+import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
+import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
+import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
+import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
+import { createScenarioContributor, createScenarioPort } from "@ai-npc/mod-game-scenario-watergate";
+import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
 import {
   createGameHarness,
   createMemoryTx,
   gameCommandEnvelope,
   playerAuth,
   readGameAggregate,
+  readGameEvents,
   readGameEventTypes,
   setGameClock,
   strategicAuth,
@@ -40,6 +48,48 @@ function start(harnessValue: GameHarness): ReturnType<GameHarness["authority"]["
       harnessValue.host.ids("cmd"),
     ),
   );
+}
+
+/**
+ * 在同一测试存储上重建 authority，并包装资源端口以注入每日供给扣减失败。
+ * 只用于让时钟步骤走可预测的失败路径；命令仍由主 harness 的 authority 提交。
+ */
+function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: boolean }): Authority {
+  const binder: ModuleBinder = (txFor) => {
+    const resources = createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 });
+    const failingResources = Object.assign(Object.create(resources) as GameResourcesPort, {
+      consume: (input: Parameters<GameResourcesPort["consume"]>[0]) => {
+        if (control.fail && input.reason === "daily-consumption") {
+          return { ok: false as const, reasonCode: "insufficient-resource" as const };
+        }
+        return resources.consume(input);
+      },
+    });
+    return {
+      "game.map": createMapPort(txFor, value.gameContent, value.host.ids),
+      "game.resources": failingResources,
+      "game.world": createWorldPort(txFor, value.gameContent, value.host.ids),
+      "game.comms": createCommsPort(txFor, value.gameContent, value.host.ids),
+      "game.actions": createActionsPort(txFor),
+      "game.agreements": createAgreementsPort(txFor),
+      "game.scenario": createScenarioPort(txFor),
+    } satisfies GameModulePorts;
+  };
+  const authority = new Authority({
+    storage: value.storage,
+    host: value.host,
+    content: value.gameContent,
+    moduleBinder: binder,
+    allowDirectAgentCommands: true,
+  });
+  authority.registerModule(createMapContributor());
+  authority.registerModule(createResourcesContributor());
+  authority.registerModule(createWorldContributor());
+  authority.registerModule(createCommsContributor());
+  authority.registerModule(createActionsContributor());
+  authority.registerModule(createAgreementsContributor());
+  authority.registerModule(createScenarioContributor({ escalating: false }));
+  return authority;
 }
 
 describe("世界核心", () => {
@@ -114,6 +164,30 @@ describe("世界核心", () => {
     expect(readGameEventTypes(value)).toContain("DayPassed");
   });
 
+  it("每日供给扣减失败时回滚整次结算，重试成功后恰好提交一次 DayPassed", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const control = { fail: true };
+    const authority = authorityWithFailingDailyConsume(value, control);
+    setGameClock(value, { worldTick: 24, mode: "running" });
+
+    expect(() => authority.clock.run(value.branchId)).toThrow(DomainError);
+    expect(readGameEventTypes(value)).not.toContain("DayPassed");
+    expect(readGameEventTypes(value)).not.toContain("MetersChanged");
+    expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ lastDailyTick: null });
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({ amount: { supply: 60 } });
+
+    // 修复注入条件后重试同一 tick：结算成功且只提交一次 DayPassed。
+    control.fail = false;
+    expect(authority.clock.run(value.branchId)).toBe(2);
+    expect(readGameEventTypes(value).filter((type) => type === "DayPassed")).toHaveLength(1);
+    expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ lastDailyTick: 24 });
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({ amount: { supply: 54 } });
+
+    authority.clock.run(value.branchId);
+    expect(readGameEventTypes(value).filter((type) => type === "DayPassed")).toHaveLength(1);
+  });
+
   it("群体期限 job 将伤员标记为恶化并降低迁徙安全", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
@@ -138,6 +212,93 @@ describe("世界核心", () => {
       outcome: "equilibrium",
     });
     expect(readGameEventTypes(value)).toContain("ChapterStageEvaluated");
+  });
+
+  it("章节评估按已提交事实统计协议，同协议多条款只计一次违约", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const propose = (terms: readonly Json[]): ReturnType<GameHarness["authority"]["commands"]["execute"]> =>
+      value.authority.commands.execute(
+        playerAuth(value),
+        gameCommandEnvelope("agreement.propose", { parties: ["player-1", "human-neutral"], terms: [...terms] }, value.host.ids("cmd")),
+      );
+    const acceptByNeutral = (agreementId: string): ReturnType<GameHarness["authority"]["commands"]["execute"]> =>
+      value.authority.commands.execute(
+        strategicAuth(value, "human-neutral"),
+        gameCommandEnvelope("agreement.respond", { agreementId, response: "accept" }, value.host.ids("cmd")),
+      );
+    const deliverTerm = (resource: "supply" | "energy", byTick: number): Json => ({
+      kind: "deliver",
+      obligorId: "player-1",
+      resource,
+      amount: resource === "supply" ? 10 : 5,
+      fromStockpileId: "sp-commons",
+      toStockpileId: "sp-earth",
+      byTick,
+    });
+
+    // 履约：tick 168 完成的运输；事件消费者尚未追平也要计入。
+    const delivered = propose([deliverTerm("supply", 168)]);
+    expect(delivered.commandStatus).toBe("accepted");
+    const deliveredId = (delivered.result as { readonly agreementId: string }).agreementId;
+    expect(acceptByNeutral(deliveredId).commandStatus).toBe("accepted");
+
+    // 违约：同一协议两条水闸条款被一次政策变更命中，按协议只计 1 份违约。
+    const watered = propose([
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 20 },
+      { kind: "water-allocation", obligorId: "human-neutral", policy: "harbor-first", untilTick: 40 },
+    ]);
+    expect(watered.commandStatus).toBe("accepted");
+    const wateredId = (watered.result as { readonly agreementId: string }).agreementId;
+    expect(acceptByNeutral(wateredId).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    const policy = value.authority.commands.execute(
+      strategicAuth(value),
+      gameCommandEnvelope("policy.set", { key: "watergate.allocation", value: "rotation" }, value.host.ids("cmd")),
+    );
+    expect(policy.commandStatus).toBe("accepted");
+    value.authority.consumers.run(value.branchId);
+    expect(readGameAggregate(value, "agreement", wateredId)).toMatchObject({ status: "breached", breachedTerms: [0, 1] });
+
+    // 未满足：条款期限未到且没有履约事实，不计。
+    setGameClock(value, { worldTick: 12, mode: "running" });
+    const pending = propose([deliverTerm("energy", 180)]);
+    expect(pending.commandStatus).toBe("accepted");
+    const pendingId = (pending.result as { readonly agreementId: string }).agreementId;
+    expect(acceptByNeutral(pendingId).commandStatus).toBe("accepted");
+    // 未生效：只提出、未接受，不计。
+    expect(propose([deliverTerm("energy", 180)]).commandStatus).toBe("accepted");
+
+    // 运输在 tick 168 抵达；出发 job 按到期 tick 执行，完成 job 与章节评估同一 tick。
+    setGameClock(value, { worldTick: 161, mode: "running" });
+    const dispatch = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope(
+        "task.dispatch",
+        {
+          taskType: "transport",
+          teamId: "team-commons",
+          params: { fromStockpileId: "sp-commons", toStockpileId: "sp-earth", cargo: { supply: 10, energy: 0, medical: 0 } },
+        },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(dispatch.commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 162, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 162);
+    setGameClock(value, { worldTick: 168, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 168);
+    value.authority.clock.run(value.branchId);
+
+    const chapters = readGameEvents(value).filter((event) => event.type === "ChapterStageEvaluated");
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0]?.payload).toMatchObject({ fulfilledCount: 1, breachedCount: 1 });
+    // 两份计数只来自协议模块的同步统计，世界不再保留事件累计副本。
+    expect(
+      value.storage.transact((tx) =>
+        tx.branch(value.branchId).table("aggregate_state").count({ aggregate_type: "chapter-stats" }),
+      ),
+    ).toBe(0);
   });
 
   it("非零启动 tick 时按 startTick 计算每日与章节边界", async () => {

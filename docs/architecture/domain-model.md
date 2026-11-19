@@ -73,6 +73,7 @@ interface AuthContext {            // always built by the host, never taken from
 | `agreement` | agreementId | `game.agreements.standard` | version、proposerId、parties、responses（提出者在提出时即为 accept）、terms（含每条状态与累计进度）、status、expiresAtTick、supersedesId |
 | `conversation` | conversationId | `game.comms.standard` | participants、lastSeq |
 | `knowledge-grant` | grantId | `game.comms.standard` | principalId、itemId（证据或秘密）、via、grantedAtTick |
+| `share` | shareId | `game.comms.standard` | fromId、evidenceId、audience、sharedAtTick |
 | `scenario-card` | cardId | `game.scenario.*` | version、status（scheduled/triggered/withdrawn）、triggerAtTick、triggeredAtTick |
 
 以下状态不在 `aggregate_state` 中，而是有专用表：时钟（`clock` 表，归 `game.clock.controlled`）；Agent 激活、控制权、trigger、观察、记忆（归宿主 `agent-runtime` 与对应 Agent 模块，见 [存储](storage.md) 第 2 节）。静态内容（节点、道路属性、人格、证据正文）由内容加载器读入内存只读索引。
@@ -127,9 +128,9 @@ type OpResult = { readonly ok: true } | { readonly ok: false; readonly reasonCod
 | `game.world` | `campaign()`、`meters()`、`character(id)`、`team(id)`、`group(id)`、`delegationsOf(principalId)`、`canDispatchTeam(principalId, teamId)`、`drawAuthority(principalId, stockpileId)`（返回 `owner` / `delegation` / `none` 与余额） | `moveCharacter(id, nodeId)`、`moveTeam(id, nodeId)`、`setTeamStatus(id, status, busyUntilTick, taskId)`、`setCharacterTask(id, taskId)`、`injureCharacter(id, untilTick, cause)`、`drawDelegation(principalId, stockpileId, delta)`、`refundDelegation(principalId, stockpileId, delta)`、`createDelegation(spec)`、`changeMeter(meter, delta, cause)`、`setAllocation(value, byId)`、`setGroupStatus(id, status, taskId)`、`discoverEvidence({ evidenceId, discoveredBy, taskId })`（更新发现者并发 `EvidenceDiscovered`，不授予知识） |
 | `game.map` | `road(id)`、`findRoute({ fromNodeId, toNodeId, factionId, atTick, withCargo })`（返回道路列表与行程，或 null）、`hasPassage(roadId, factionId, atTick)` | `setRoadStatus(roadId, status, byId)`、`grantPassage({ roadId, granteeFactionId, untilTick })` |
 | `game.resources` | `stockpile(id)`、`available(id)`、`level(id)` | `reserve(stockpileId, delta, taskId)`、`release(stockpileId, delta, taskId)`、`consume(stockpileId, delta, reason, taskId)`、`transfer(fromId, toId, delta, taskId)`、`adjust(stockpileId, delta, reason)` |
-| `game.actions` | `task(id)`、`tasksOf(principalId)` | — |
-| `game.agreements` | `agreement(id)`、`agreementsOf(principalId)` | — |
-| `game.comms` | `relayState()`、`deliverAt(channel, fromId, toId)`（按 [规则](../game/rules.md) 第 9 节计算送达 tick 或返回 `relay-down`）、`holds(principalId, itemId)` | `postMessage(spec)`、`postDialogue(spec)`、`grantKnowledge({ principalId, itemId, via })` |
+| `game.actions` | `task(id)`、`tasksOf(principalId)`、`completedTasks()` | — |
+| `game.agreements` | `agreement(id)`、`agreementsOf(principalId)`、`countsAsOf(tick)` | — |
+| `game.comms` | `relayState()`、`sameNode(fromId, toId)`、`deliverAt(channel, fromId, toId)`（按 [规则](../game/rules.md) 第 9 节计算送达 tick 或返回 `relay-down`）、`holds(principalId, itemId)`、`hasShare({ fromId, evidenceId, toPrincipalId, sinceTick, byTick })` | `postMessage(spec)`、`postDialogue(spec)`、`grantKnowledge({ principalId, itemId, via })` |
 | `game.scenario` | `cards()` | — |
 
 ops 修改所有者自己的聚合并发出对应事件（例如 `resources.reserve` 发出 `ResourcesReserved`）；不满足条件时返回 `{ ok: false, reasonCode }`，调用方应直接以该原因码返回 `rejected`。
@@ -181,6 +182,7 @@ COMMIT
 | `task.respond` | A | `{ taskId, response: "accept"\|"decline", reasonCode?: ReasonCode }` | actions | `TaskInvitationAnswered` | `not-invited`、`invitation-closed` |
 | `task.cancel` | P A S | `{ taskId }` | actions | `TaskCancelled`、`ResourcesReleased`（如有） | `task-not-cancellable`、`no-authority` |
 | `policy.set` | A S | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
+| `scenario.draft` | O | `{ cardId, version, triggerAtTick, effects: CardEffect[], note }` | scenario | 无事件；写入 `status` 为 `draft` 的 `scenario-card` | `version-conflict`（同一卡片已登记）、`invalid-effect`（效果引用内容不存在）、`deadline-out-of-range`（不在发布窗口内） |
 | `scenario.publish` | O | `{ cardId, version, triggerAtTick }` | scenario | `ScenarioCardPublished`，并安排 `scenario.card` job | `card-not-draft`、`version-conflict`、`deadline-out-of-range` |
 | `scenario.withdraw` | O | `{ cardId }` | scenario | `ScenarioCardWithdrawn` | `card-already-triggered` |
 | `scenario.compensate` | O | `{ cardId, effects: CardEffect[], note }` | scenario | `ScenarioCompensationApplied` + 效果事件 | `invalid-effect` |
@@ -196,6 +198,7 @@ COMMIT
 | job kind | 创建者 | 到期时处理 | 事件 |
 |---|---|---|---|
 | `task.depart` | `task.dispatch` | [规则](../game/rules.md) 第 6 节出发规则 | `TaskInvitationExpired`、`TaskDeparted` 或 `TaskFailed` |
+| `task.work` | `task.depart`（actions 模块；修复任务且工作起点晚于出发 tick） | 到达工作起点时结算任务已预留的能源与供给，任务状态写入「材料已消耗」标记后不再重复扣减；完成与工作中取消复用同一幂等结算 | `ResourcesConsumed` |
 | `task.complete` | `task.depart`（到期 tick 为名义完成 tick） | 有延误且 delayNoticeSent 为 false：提交一次 `TaskDelayed`，同事务置 true，并用同一 kind 安排名义完成 tick + 2 × 命中道路数的 job；尚未到真正完成 tick 不结算；否则结算完成效果 | `TaskDelayed`；或 `TaskCompleted`/`TaskFailed`，以及 `ResourcesTransferred`/`ResourcesConsumed`、`MetersChanged`、`CharacterMoved`、`TeamMoved`、`EvidenceDiscovered`、`ScoutReported`、`GroupRescued`、`CharacterInjured` |
 | `team.recover` / `character.recover` | 受伤结果 | 恢复可用 | `TeamRecovered` / `CharacterRecovered` |
 | `agreement.expire` | `agreement.propose` | 仍为 proposed 则过期 | `AgreementExpired` |

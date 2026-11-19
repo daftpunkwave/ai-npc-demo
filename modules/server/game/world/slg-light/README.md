@@ -1,12 +1,12 @@
 # game.world.slg-light
 
-首章“水闸之前”的轻数值世界服务。拥有 campaign、指标、角色、队伍、群体、委托、证据位置与章节统计。
+首章“水闸之前”的轻数值世界服务。拥有 campaign、指标、角色、队伍、群体、委托与证据位置。
 
 ## 边界
 
 - 提供能力：`game.world`（`exactly-one`，run 作用域）。
 - 依赖：`game.map`、`game.resources`；只通过端口读写道路与库存。
-- 拥有聚合：`campaign`、`meters`、`character`、`team`、`group`、`delegation`、`evidence-placement`、`chapter-stats`。
+- 拥有聚合：`campaign`、`meters`、`character`、`team`、`group`、`delegation`、`evidence-placement`。
 - 命令：`campaign.start`、`policy.set`；job：群体期限、角色恢复、队伍恢复；时钟步骤：每日结算、章节评估。
 
 ## 规则
@@ -20,4 +20,4 @@
 
 - 配置仅提供章节长度默认值 168；指标数值来自内容包，修改数值需要新 run。
 - 世界模块不读取 Agent 记忆、不生成对白、不自行调用模型。
-- 协议履约计数由事件消费者累加；消费者追平前章节评估只看到已提交的计数。
+- 章节评估经 `game.agreements` 的 `countsAsOf` 同步统计协议，不保留事件累计副本；消费者滞后也按已提交事实计算。

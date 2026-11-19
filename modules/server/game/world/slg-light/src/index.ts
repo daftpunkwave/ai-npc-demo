@@ -14,7 +14,6 @@ export { readWorldState } from "./state";
 export type {
   CampaignState,
   CharacterState,
-  ChapterStatsState,
   DelegationState,
   EvidencePlacementState,
   GroupState,

@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="远星协进会徽记">
   <title>远星协进会徽记</title>
   <desc>双轨四芒星与轨道环，中心为交换节点。</desc>
-  
   <defs>
     <radialGradient id="bg" cx=".5" cy=".4" r=".8"><stop stop-color="#2c1f3c"/><stop offset="1" stop-color="#0b0811"/></radialGradient>
     <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d7bdf0"/><stop offset=".5" stop-color="#7d5ba6"/><stop offset="1" stop-color="#2c1b40"/></linearGradient>

@@ -14,8 +14,11 @@
 
 - 提出者在提出时视为已接受；其余当事人 accept 后生效；reject 关闭；counter 生成 version+1 的新提案。
 - 当事人至少两个且互不相同，必须包含提出者；义务人必须是当事人；截止 tick 必须在当前 tick 之后 168 tick 内。
-- `grant-passage`、`water-allocation`、`delegate` 生效即履约；其余条款在 `byTick + 1` 检查违约，履约后提交 `AgreementTermFulfilled`，全部履约后 `AgreementFulfilled`。
-- 任一条款违约后协议状态为 `breached`，其余条款继续追踪，不自动关闭。
+- `delegate` 生效即履约。`grant-passage`、`water-allocation` 生效即记为履约，但义务期内仍有持续义务：`untilTick` 未过时协议保持 `active`，由 `untilTick + 1` 的期限 job 复核政策/道路状态后收尾。
+- 其余条款在 `byTick + 1` 的期限 job 先按已提交事实（已完成任务、已提交分享）复核，满足即补记履约；不满足才违约。
+- 事件订阅一律按事件发生的 tick 判定生效前/截止前：`InformationShared`、`PolicyChanged` 用 `event.worldTick`，任务类用任务的权威完成 tick。
+- 履约后提交 `AgreementTermFulfilled`，全部条款履约且没有未到期持续义务后 `AgreementFulfilled`。
+- 任一条款违约后协议状态为 `breached`，其余条款继续追踪，不自动关闭；已记录的违约不会被后续履约或政策恢复改写。
 
 ## 参数与限制
 

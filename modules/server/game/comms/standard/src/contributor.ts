@@ -43,25 +43,6 @@ function speechAllowed(
   );
 }
 
-function nodeOf(context: CommsContext, principalId: string): string | null {
-  const content = requireGameContent(context.content);
-  const live = asPorts(context)["game.world"].character(principalId);
-  if (live !== null) {
-    return live.nodeId;
-  }
-  const character = content.characters.get(principalId);
-  if (character !== undefined) {
-    return character.spawnNodeId;
-  }
-  return principalId === content.playerPrincipalId ? content.playerNodeId : null;
-}
-
-function sameNode(context: CommsContext, left: string, right: string): boolean {
-  const leftNode = nodeOf(context, left);
-  const rightNode = nodeOf(context, right);
-  return leftNode !== null && leftNode === rightNode;
-}
-
 function allDeliverable(
   context: CommsContext,
   channel: "dialogue" | "message",
@@ -118,11 +99,12 @@ function dialogueSay(context: CommsContext, payload: Json): HandlerResult {
     return { kind: "rejected", reasonCode: "unknown-target", safeMessage: "目标主体不存在" };
   }
   const speaker = context.auth.principalId;
+  const port = asPorts(context)["game.comms"];
   if (!allDeliverable(context, "dialogue", speaker, [input.targetAgentId])) {
     return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法通话" };
   }
-  const channelKind = sameNode(context, speaker, input.targetAgentId) ? "face-to-face" : "relay";
-  const result = asPorts(context)["game.comms"].postDialogue({
+  const channelKind = port.sameNode(speaker, input.targetAgentId) ? "face-to-face" : "relay";
+  const result = port.postDialogue({
     speakerId: speaker,
     audience: [input.targetAgentId],
     text: input.text,
@@ -168,7 +150,7 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
       audience: input.audience,
       text: speech.text,
       channel: "dialogue",
-      channelKind: sameNode(context, speech.agentId, input.audience[0] ?? "") ? "face-to-face" : "relay",
+      channelKind: ports["game.comms"].sameNode(speech.agentId, input.audience[0] ?? "") ? "face-to-face" : "relay",
       conversationId: input.conversationId,
       replyToId: input.replyToId,
     });
@@ -219,25 +201,23 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
   if (!ports["game.comms"].holds(fromId, input.evidenceId)) {
     return { kind: "rejected", reasonCode: "evidence-not-held", safeMessage: "当前主体不持有该证据" };
   }
-  for (const principalId of input.audience) {
-    if (!allDeliverable(context, "message", fromId, [principalId])) {
-      return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法分享证据" };
-    }
+  if (!allDeliverable(context, "message", fromId, input.audience)) {
+    return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法分享证据" };
   }
   const share = ports["game.comms"].postInformationShare({ fromId, evidenceId: input.evidenceId, audience: input.audience });
-  for (const principalId of input.audience) {
-    const at = ports["game.comms"].deliverAt("message", fromId, principalId);
-    if (at === "relay-down") {
+  // 知识授权按提交时冻结的投递名单安排：发送者已持有证据，其余收件者各按自己的 deliverAtTick 授权。
+  for (const delivery of share.deliveries) {
+    if (delivery.principalId === fromId) {
       continue;
     }
-    if (at <= context.tx.worldTick) {
-      ports["game.comms"].grantKnowledge({ principalId, itemId: input.evidenceId, via: "share" });
+    if (delivery.deliverAtTick <= context.tx.worldTick) {
+      ports["game.comms"].grantKnowledge({ principalId: delivery.principalId, itemId: input.evidenceId, via: "share" });
     } else {
       context.tx.schedule(
         "comms.knowledge-delivery",
-        at,
-        `knowledge-delivery:${share.eventId}:${principalId}`,
-        { principalId, itemId: input.evidenceId },
+        delivery.deliverAtTick,
+        `knowledge-delivery:${share.eventId}:${delivery.principalId}`,
+        { principalId: delivery.principalId, itemId: input.evidenceId },
       );
     }
   }
@@ -248,7 +228,7 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
 export function createCommsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.comms,
-    ownsAggregates: ["conversation", "knowledge-grant"],
+    ownsAggregates: ["conversation", "knowledge-grant", "share"],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
       { type: "speech.commit", handler: (context, payload) => speechCommit(context as CommsContext, payload) },

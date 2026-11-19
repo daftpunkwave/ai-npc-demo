@@ -12,6 +12,13 @@ export {
 } from "./host/module-catalog";
 export type { AuthorityPort, ServerApp, ServerAppOptions, ServerIdentity } from "./host/module-catalog";
 export { buildPlayerProjection } from "./projection";
+export { advanceWorldTick, catchUpWorldTick } from "./tick";
+export type {
+  AdvanceWorldTickInput,
+  TickAuthority,
+  WorldTickContext,
+  WorldTickResult,
+} from "./tick";
 export { startHost } from "./host";
 export type { HostOptions, RunningHost } from "./host";
 export { serverModuleDefinitions } from "./host/module-catalog";

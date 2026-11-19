@@ -29,6 +29,7 @@ import { clampMeter, thresholdEvents } from "./meters";
 import {
   campaignStateSchema,
   characterStateSchema,
+  delegationStateSchema,
   evidencePlacementStateSchema,
   groupStateSchema,
   metersStateSchema,
@@ -211,12 +212,14 @@ class SlgWorldPort implements GameWorldPort {
     };
   }
 
+  /** 查找覆盖该库存点的有效委托；stockpileId 为 null 的仅队伍委托不提供动用权。 */
   private findDelegation(principalId: string, stockpileId: string): DelegationState | null {
     const candidates = this.tx()
       .list<DelegationState>("delegation")
       .filter(
         (entry) =>
           entry.state.granteeId === principalId &&
+          entry.state.stockpileId !== null &&
           entry.state.stockpileId === stockpileId &&
           entry.state.untilTick >= this.tx().worldTick,
       );
@@ -336,7 +339,7 @@ class SlgWorldPort implements GameWorldPort {
     principalId: string,
     stockpileId: string,
     delta: ResourceAmounts,
-  ): OpSuccess | OpFailure {
+  ): { readonly ok: true; readonly delegationId: string } | OpFailure {
     const delegation = this.findDelegation(principalId, stockpileId);
     if (delegation === null) {
       return failure("draw-limit-exceeded");
@@ -348,18 +351,16 @@ class SlgWorldPort implements GameWorldPort {
       ...delegation,
       remaining: subtractAmounts(delegation.remaining, delta),
     });
-    return { ok: true };
+    // 返回实际扣减的委托，任务据此记录回补目标；回补时不再按主体与库存点重新查找。
+    return { ok: true, delegationId: delegation.delegationId };
   }
 
-  refundDelegation(
-    principalId: string,
-    stockpileId: string,
-    delta: ResourceAmounts,
-  ): OpSuccess | OpFailure {
-    const delegation = this.findDelegation(principalId, stockpileId);
-    if (delegation === null) {
+  refundDelegation(delegationId: string, delta: ResourceAmounts): OpSuccess | OpFailure {
+    const record = readWorldState(this.tx(), "delegation", delegationId, delegationStateSchema);
+    if (record === null) {
       return failure("invalid-params");
     }
+    const delegation = record.state;
     const next = addAmounts(delegation.remaining, delta);
     this.tx().put("delegation", delegation.delegationId, {
       ...delegation,
@@ -376,7 +377,7 @@ class SlgWorldPort implements GameWorldPort {
     readonly grantorFactionId: string;
     readonly granteeId: string;
     readonly teamIds: readonly string[];
-    readonly stockpileId: string;
+    readonly stockpileId: string | null;
     readonly maxDraw: ResourceAmounts;
     readonly untilTick: number;
   }): { readonly ok: true; readonly delegationId: string } {
