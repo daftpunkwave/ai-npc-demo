@@ -130,7 +130,7 @@ type OpResult = { readonly ok: true } | { readonly ok: false; readonly reasonCod
 | `game.resources` | `stockpile(id)`、`available(id)`、`level(id)` | `reserve(stockpileId, delta, taskId)`、`release(stockpileId, delta, taskId)`、`consume(stockpileId, delta, reason, taskId)`、`transfer(fromId, toId, delta, taskId)`、`adjust(stockpileId, delta, reason)` |
 | `game.actions` | `task(id)`、`tasksOf(principalId)`、`completedTasks()` | — |
 | `game.agreements` | `agreement(id)`、`agreementsOf(principalId)`、`countsAsOf(tick)` | — |
-| `game.comms` | `relayState()`、`sameNode(fromId, toId)`、`deliverAt(channel, fromId, toId)`（按 [规则](../game/rules.md) 第 9 节计算送达 tick 或返回 `relay-down`）、`holds(principalId, itemId)`、`hasShare({ fromId, evidenceId, toPrincipalId, byTick })` | `postMessage(spec)`、`postDialogue(spec)`、`grantKnowledge({ principalId, itemId, via })` |
+| `game.comms` | `relayState()`、`sameNode(fromId, toId)`、`deliverAt(channel, fromId, toId)`（按 [规则](../game/rules.md) 第 9 节计算送达 tick 或返回 `relay-down`）、`holds(principalId, itemId)`、`hasShare({ fromId, evidenceId, toPrincipalId, sinceTick, byTick })` | `postMessage(spec)`、`postDialogue(spec)`、`grantKnowledge({ principalId, itemId, via })` |
 | `game.scenario` | `cards()` | — |
 
 ops 修改所有者自己的聚合并发出对应事件（例如 `resources.reserve` 发出 `ResourcesReserved`）；不满足条件时返回 `{ ok: false, reasonCode }`，调用方应直接以该原因码返回 `rejected`。

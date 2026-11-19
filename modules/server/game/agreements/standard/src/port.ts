@@ -4,7 +4,7 @@
  * 禁止在查询中改写协议、执行条款校验或触发履约事件。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将泛型查询结果误判为 any。 */
-import { taskTypeSchema } from "@ai-npc/contracts";
+import { taskTypeSchema, watergateAllocationSchema, type WatergateAllocation } from "@ai-npc/contracts";
 import {
   gameModuleIds,
   type AgreementCounts,
@@ -46,6 +46,18 @@ const teamOwnerSchema = z.object({
   teamId: z.string().min(1),
   ownerFactionId: z.string().min(1),
 });
+
+const watergateMetersSchema = z.object({
+  "watergate.allocation": watergateAllocationSchema,
+});
+
+const roadStateSchema = z.object({
+  roadId: z.string().min(1),
+  status: z.enum(["open", "restricted", "closed"]),
+});
+
+/** 水闸指标聚合的固定 ID；没有该记录时按「世界尚未初始化」处理。 */
+const METERS_AGGREGATE_ID = "meters";
 
 function toView(state: AgreementState): AgreementView {
   return {
@@ -89,9 +101,9 @@ class StandardAgreementsPort implements GameAgreementsPort {
   }
 
   /**
-   * 截至 `tick` 的同步统计：有违约记录的协议计一次违约；其余按已提交事实复核全部条款，
-   * 全部满足才计为履约；未生效、仍有未满足条款或已关闭的提案不计。
-   * 不读取消费进度，因此消费者滞后也能得到正确结果。
+   * 截至 `tick` 的同步统计：有违约记录或义务期内已违反持续义务的协议计一次违约；
+   * 其余按生效后的已提交事实复核全部条款，全部满足才计为履约；
+   * 未生效、仍有未满足条款或已关闭的提案不计。不读取消费进度，因此消费者滞后也能得到正确结果。
    */
   countsAsOf(tick: number): AgreementCounts {
     const facts = this.fulfillmentFacts();
@@ -102,7 +114,8 @@ class StandardAgreementsPort implements GameAgreementsPort {
       if (state.activatedAtTick === null || state.activatedAtTick > tick) {
         continue;
       }
-      if (state.breachedTerms.length > 0) {
+      // 政策事件尚未被消费者处理时，义务期内的水闸/道路状态也要在同一 tick 计入违约。
+      if (state.breachedTerms.length > 0 || this.sustainedObligationViolated(state, tick)) {
         breached += 1;
         continue;
       }
@@ -111,6 +124,46 @@ class StandardAgreementsPort implements GameAgreementsPort {
       }
     }
     return { fulfilled, breached };
+  }
+
+  /**
+   * 仍处于义务期的通行/水闸条款按当前世界状态复核：水闸分配不等于条款值或道路关闭即为违约。
+   * 章节评估先于政策消费者运行时，这里直接给出已提交状态对应的违约，不依赖异步事件累计。
+   */
+  private sustainedObligationViolated(state: AgreementState, tick: number): boolean {
+    const openTerms = state.terms.filter(
+      (term) => (term.kind === "water-allocation" || term.kind === "grant-passage") && term.untilTick >= tick,
+    );
+    if (openTerms.length === 0) {
+      return false;
+    }
+    const allocation = this.watergateAllocation();
+    return openTerms.some((term) => {
+      if (term.kind === "water-allocation") {
+        return allocation !== null && allocation !== term.policy;
+      }
+      return term.kind === "grant-passage" && this.roadClosed(term.roadId);
+    });
+  }
+
+  /** 当前水闸分配；世界聚合尚未初始化时返回 null，按「无法判定违约」处理。 */
+  private watergateAllocation(): WatergateAllocation | null {
+    const record = this.txFor(gameModuleIds.world).get<unknown>("meters", METERS_AGGREGATE_ID);
+    if (record === null) {
+      return null;
+    }
+    const parsed = watergateMetersSchema.safeParse(record.state);
+    return parsed.success ? parsed.data["watergate.allocation"] : null;
+  }
+
+  /** 道路是否已关闭；没有状态记录时沿用内容包初始状态，按「未关闭」处理。 */
+  private roadClosed(roadId: string): boolean {
+    const record = this.txFor(gameModuleIds.map).get<unknown>("road", roadId);
+    if (record === null) {
+      return false;
+    }
+    const parsed = roadStateSchema.safeParse(record.state);
+    return parsed.success && parsed.data.status === "closed";
   }
 
   /** 已完成任务视图；只取 status 为 completed 且带完成 tick 的记录，字段无法解析的按「不是已提交事实」跳过。 */
@@ -160,6 +213,7 @@ class StandardAgreementsPort implements GameAgreementsPort {
             share.fromId === query.fromId &&
             share.evidenceId === query.evidenceId &&
             share.audience.includes(query.toPrincipalId) &&
+            share.sharedAtTick >= query.sinceTick &&
             share.sharedAtTick <= query.byTick,
         ),
       factionOfTeam: (teamId) => teams.get(teamId) ?? null,

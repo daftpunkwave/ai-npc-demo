@@ -1,8 +1,11 @@
 /**
  * 按条款判断「截至期限是否已由已提交事实满足」，供协议事件消费、期限 job 与章节统计共用。
  * 依赖公共条款、行动模块的任务视图与协议聚合状态；全部函数同步且无副作用。
- * 禁止用消费时钟、未提交事实或期限之后的完成来判定履约，也禁止在这里写聚合或发事件。
+ * 只有协议生效之后、条款期限之前完成的任务或提交的分享才算履约；
+ * 禁止用消费时钟、未提交事实、生效前的事实或期限之后的完成来判定履约，也禁止在这里写聚合或发事件。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名用于表达调用契约。 */
+/* eslint-disable security/detect-object-injection -- cargo 的键来自受限枚举 ResourceId，任务参数已由调用方按条款收窄。 */
 import type { ResourceId, Term } from "@ai-npc/contracts";
 import type { ShareQuery, TaskView } from "@ai-npc/module-sdk";
 import type { AgreementState } from "./state";
@@ -26,9 +29,12 @@ export function hasOpenSustainedObligation(state: AgreementState, tick: number):
   );
 }
 
-/** 任务已完成且完成 tick 不晚于期限；完成 tick 缺失表示不是已提交的完成事实。 */
-function completedBy(task: TaskView, byTick: number): boolean {
-  return task.completedAtTick !== null && task.completedAtTick <= byTick;
+/**
+ * 任务已完成，且完成 tick 落在协议生效 tick 之后、条款期限之内。
+ * 完成 tick 缺失表示不是已提交的完成事实；生效前完成的任务不构成本协议的履约。
+ */
+function completedInWindow(task: TaskView, sinceTick: number, byTick: number): boolean {
+  return task.completedAtTick !== null && task.completedAtTick >= sinceTick && task.completedAtTick <= byTick;
 }
 
 /** 任务由义务人派遣，或由义务人派系的队伍执行。 */
@@ -77,10 +83,11 @@ export function cargoAmount(task: TaskView, resource: ResourceId): number {
 }
 
 /**
- * 条款是否已由截至自身期限的已提交事实满足。
- * 通行、水闸与委托条款生效即履约；通行与水闸的持续义务由调用方另行判定。
+ * 条款是否已由协议生效之后、自身期限之前的已提交事实满足。
+ * `sinceTick` 是协议生效 tick，早于它完成的任务或提交的分享不算履约；
+ * 通行、水闸与委托条款生效即履约，通行与水闸的持续义务由调用方另行判定。
  */
-export function isTermSatisfied(term: Term, facts: FulfillmentFacts): boolean {
+export function isTermSatisfied(term: Term, facts: FulfillmentFacts, sinceTick: number): boolean {
   if (term.kind === "grant-passage" || term.kind === "water-allocation" || term.kind === "delegate") {
     return true;
   }
@@ -89,12 +96,13 @@ export function isTermSatisfied(term: Term, facts: FulfillmentFacts): boolean {
       fromId: term.obligorId,
       evidenceId: term.evidenceId,
       toPrincipalId: term.toPrincipalId,
+      sinceTick,
       byTick: term.byTick,
     });
   }
   const matched = facts.completedTasks.filter(
     (task) =>
-      completedBy(task, term.byTick) &&
+      completedInWindow(task, sinceTick, term.byTick) &&
       taskMatchesTerm(term, task) &&
       taskServesObligor(term.obligorId, task, facts.factionOfTeam),
   );
@@ -107,14 +115,15 @@ export function isTermSatisfied(term: Term, facts: FulfillmentFacts): boolean {
 
 /**
  * 协议是否已全部条款满足且没有违约记录；判定期限是每条条款自己的截止 tick。
- * 已记入 fulfilledTerms 的条款不再重复计算，其余条款按已提交事实复核；
- * 仍有未结束的持续义务时不算满足，与协议状态收尾规则保持一致。
+ * 未生效的协议还没有义务，不算满足；已记入 fulfilledTerms 的条款不再重复计算，
+ * 其余条款按生效后的已提交事实复核；仍有未结束的持续义务时不算满足，与协议状态收尾规则保持一致。
  */
 export function isAgreementSatisfied(state: AgreementState, facts: FulfillmentFacts, tick: number): boolean {
-  if (state.breachedTerms.length > 0 || hasOpenSustainedObligation(state, tick)) {
+  const sinceTick = state.activatedAtTick;
+  if (sinceTick === null || state.breachedTerms.length > 0 || hasOpenSustainedObligation(state, tick)) {
     return false;
   }
   return state.terms.every(
-    (term, index) => state.fulfilledTerms.includes(index) || isTermSatisfied(term, facts),
+    (term, index) => state.fulfilledTerms.includes(index) || isTermSatisfied(term, facts, sinceTick),
   );
 }

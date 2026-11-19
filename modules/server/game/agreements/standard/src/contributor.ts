@@ -2,7 +2,7 @@
  * 注册协议提出、回复、还价、生效、过期与违约/履约订阅。
  * 依赖协议聚合、内容索引、世界/地图/行动/通信端口与 authority 事务上下文。
  * 履约与违约一律按事实发生的 tick 判定：事件消费用 event.worldTick，任务类用权威完成 tick；
- * 期限 job 先按已提交事实复核，再按政策/道路状态判定持续义务。
+ * 只有协议生效之后的事实才算履约；期限 job 先按已提交事实复核，再按政策/道路状态判定持续义务。
  * 禁止替当事人记忆承诺，也禁止用未提交的任务事实提前判定履约。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；数组索引来自内部 terms/progress，资源键来自受限枚举。 */
@@ -552,8 +552,12 @@ function breach(context: AgreementContext, agreementId: string, termIndex: numbe
     return;
   }
   let current = state;
-  // 期限 job 可能先于消费者处理已提交的履约证据：先用已提交事实复核，满足即补记履约。
-  if (sustainedObligationViolated(context, term) || !isTermSatisfied(term, fulfillmentFacts(context))) {
+  // 期限 job 可能先于消费者处理已提交的履约证据：先用生效后的已提交事实复核，满足即补记履约。
+  // 生效前完成的任务或分享不算履约；期限 job 只在生效后安排，activatedAtTick 缺失时按 0 处理。
+  if (
+    sustainedObligationViolated(context, term) ||
+    !isTermSatisfied(term, fulfillmentFacts(context), state.activatedAtTick ?? 0)
+  ) {
     current = markBreach(context, current, termIndex);
   } else {
     current = fulfillTerm(context, current, termIndex, []);

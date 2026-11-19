@@ -506,11 +506,14 @@ export interface CommsPostResult {
   readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
 }
 
-/** 证据分享的一次查询；byTick 为该条款的截止 tick，分享必须不晚于它。 */
+/** 证据分享的一次查询；分享必须落在 [sinceTick, byTick] 内，早于协议生效的分享不构成履约。 */
 export interface ShareQuery {
   readonly fromId: string;
   readonly evidenceId: string;
   readonly toPrincipalId: string;
+  /** 协议生效 tick；早于它的分享不算履约。 */
+  readonly sinceTick: number;
+  /** 条款截止 tick；晚于它的分享不算履约。 */
   readonly byTick: number;
 }
 
@@ -520,7 +523,7 @@ export interface GameCommsPort {
   sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
-  /** 是否存在由 fromId 在 byTick 前提交、受众包含 toPrincipalId 的证据分享。 */
+  /** 是否存在由 fromId 在 sinceTick 到 byTick 之间提交、受众包含 toPrincipalId 的证据分享。 */
   hasShare(query: ShareQuery): boolean;
   canJoinConversation(conversationId: string, principalIds: readonly string[]): boolean;
   grantKnowledge(input: {

@@ -178,7 +178,7 @@ class StandardCommsPort implements GameCommsPort {
       .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
   }
 
-  /** 已提交的分享事实：分享者、证据、受众与提交 tick，均在同一事务内读取。 */
+  /** 已提交的分享事实：分享者、证据、受众与提交 tick，均在同一事务内读取；只认 sinceTick 之后的分享。 */
   hasShare(query: ShareQuery): boolean {
     return this.tx()
       .list<ShareState>("share")
@@ -187,6 +187,7 @@ class StandardCommsPort implements GameCommsPort {
           entry.state.fromId === query.fromId &&
           entry.state.evidenceId === query.evidenceId &&
           entry.state.audience.includes(query.toPrincipalId) &&
+          entry.state.sharedAtTick >= query.sinceTick &&
           entry.state.sharedAtTick <= query.byTick,
       );
   }
