@@ -3,11 +3,15 @@
  * 只读取 assets/ 与 earth-2964-v1 内容包，不渲染、不访问网络；CLI 失败时以非零状态退出并逐项打印原因。
  * 禁止把缺失、破损或未覆盖的资产静默当作可用，也禁止接受 assets/ 之外的路径。
  */
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection -- 路径已限制在 assets/ 与内容包目录内并做过 realpath 越界检查。 */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型与回调参数名用于表达调用契约。 */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Json 本身包含 null，联合写法用于表达解析失败哨兵。 */
 import { readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { XMLParser } from "fast-xml-parser";
 import { parse as parseYaml } from "yaml";
+import type { Json } from "@ai-npc/contracts";
 
 const CONTENT_PACK_DIRECTORY = "content/world-packs/earth-2964-v1";
 const ASSETS_DIRECTORY = "assets";
@@ -79,18 +83,18 @@ function readText(
   }
 }
 
-function parseJson(text: string, label: string, violations: AssetViolation[]): unknown | null {
+function parseJson(text: string, label: string, violations: AssetViolation[]): Json | null {
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(text) as Json;
   } catch {
     violations.push({ code: "manifest-unreadable", message: `${label}不是合法 JSON` });
     return null;
   }
 }
 
-function parseYamlText(text: string, label: string, violations: AssetViolation[]): unknown | null {
+function parseYamlText(text: string, label: string, violations: AssetViolation[]): Json | null {
   try {
-    return parseYaml(text) as unknown;
+    return parseYaml(text) as Json;
   } catch {
     violations.push({ code: "pack-unreadable", message: `${label}不是合法 YAML` });
     return null;
@@ -141,17 +145,23 @@ function assertSafe(node: unknown, path: string): void {
   }
 }
 
+/** 读取内容包 ID 列表所需的输入；只接受内容包目录内的固定文件名。 */
+interface IdentifierListInput {
+  readonly root: string;
+  readonly fileName: string;
+  readonly listField: string;
+  readonly idField: string;
+  readonly expectedCount: number;
+  readonly countCode: string;
+  readonly duplicateCode: string;
+  readonly label: string;
+}
+
 function readIdentifierList(
-  root: string,
-  fileName: string,
-  listField: string,
-  idField: string,
-  expectedCount: number,
-  countCode: string,
-  duplicateCode: string,
-  label: string,
+  input: IdentifierListInput,
   violations: AssetViolation[],
 ): ReadonlySet<string> | null {
+  const { root, fileName, listField, idField, expectedCount, countCode, duplicateCode, label } = input;
   const relativePath = `${CONTENT_PACK_DIRECTORY}/${fileName}`;
   const text = readText(root, relativePath, "pack-unreadable", `内容包 ${fileName}`, violations);
   if (text === null) {
@@ -234,25 +244,29 @@ function loadContentPack(root: string, violations: AssetViolation[]): ContentPac
     });
   }
   const nodeIds = readIdentifierList(
-    root,
-    "map.yaml",
-    "nodes",
-    "nodeId",
-    EXPECTED_NODE_COUNT,
-    "node-count",
-    "node-duplicate",
-    "节点",
+    {
+      root,
+      fileName: "map.yaml",
+      listField: "nodes",
+      idField: "nodeId",
+      expectedCount: EXPECTED_NODE_COUNT,
+      countCode: "node-count",
+      duplicateCode: "node-duplicate",
+      label: "节点",
+    },
     violations,
   );
   const factionIds = readIdentifierList(
-    root,
-    "factions.yaml",
-    "factions",
-    "factionId",
-    EXPECTED_FACTION_COUNT,
-    "faction-count",
-    "faction-duplicate",
-    "派系",
+    {
+      root,
+      fileName: "factions.yaml",
+      listField: "factions",
+      idField: "factionId",
+      expectedCount: EXPECTED_FACTION_COUNT,
+      countCode: "faction-count",
+      duplicateCode: "faction-duplicate",
+      label: "派系",
+    },
     violations,
   );
   if (nodeIds === null || factionIds === null) {
@@ -617,8 +631,8 @@ export function runAssetCheckCli(options: AssetCliOptions = {}): number {
 }
 
 function isDirectExecution(moduleUrl: string): boolean {
-  const entryPath = process.argv[1];
-  if (entryPath === undefined) {
+  const entryPath = process.argv[1] ?? "";
+  if (entryPath.length === 0) {
     return false;
   }
   const modulePath = fileURLToPath(moduleUrl);
