@@ -1,19 +1,22 @@
 /**
- * 打开服务端宿主：存储、内容、authority、游戏端口、存档、HTTP/WS 应用与时钟 worker。
- * 依赖组合根、存储模块、实验配置加载器、部署配置校验与 authority；不启动浏览器端。
- * 禁止在这里绕过模块 catalog 直接引用游戏模块实现，也禁止按当前入参重建已冻结的在线 run。
+ * 打开服务端宿主：装配预检、存储启动、在线 run 解析、按计划启动剩余模块、authority、应用与时钟 worker。
+ * 依赖 kernel 解析/生命周期、组合根公开端口、实验配置加载器、部署配置校验与 authority；不启动浏览器端。
+ * 禁止绕过解析计划直接引用模块实现，也禁止按当前入参重建已冻结的在线 run 或重复实现时钟状态。
  */
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import type {
-  AssemblyDescriptor,
-  AuthContext,
-  ClockView,
-  Json,
-  ModuleCreateInput,
-  StorageCell,
-  StoragePort,
-  StorageTransaction,
+import {
+  assemblyDescriptorSchema,
+  canonicalJson,
+  type AssemblyDescriptor,
+  type AuthContext,
+  type ClockView,
+  type Json,
+  type ModuleDefinition,
+  type StartOption,
+  type StorageCell,
+  type StoragePort,
+  type StorageTransaction,
 } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { createSystemAuth, systemPrincipalId } from "@ai-npc/authority";
@@ -26,29 +29,27 @@ import {
   validateRunSpec,
   type RunSpec,
 } from "@ai-npc/experiment";
-import type { ClockState } from "@ai-npc/module-sdk";
+import { startInstances, type ResolvedRealmPlan, type StartedInstances } from "@ai-npc/kernel";
+import type { ClockState, GameClockPort, GameContent, GameModulePorts } from "@ai-npc/module-sdk";
 import { assertDistinctTokens } from "./config";
 import { createHostServices } from "./host-services";
 import { buildPlayerProjection } from "./projection";
 import { advanceWorldTick, catchUpWorldTick } from "./tick";
-import { loadAssembly, resolveServerAssembly, type ResolvedServerAssembly } from "./host/assembly";
+import { filterPlan, loadAssembly, resolveServerAssembly, resolveSessionAssemblies, type ResolvedServerAssembly } from "./host/assembly";
 import { buildRunManifest, readFrozenManifest, type RunManifest } from "./host/manifest";
 import { generateRunSeed } from "./host/random";
 import {
-  createGameContributorsFromAssembly,
-  createGamePortsFromAssembly,
-  createModuleBinderFromAssembly,
-  assertSupportedServerBindings,
-  createOperationsService,
-  createSaveService,
+  createServerRuntime,
   parseTransportConfig,
+  plannedModuleForCapability,
   serverModuleDefinitions,
   toGameContent,
-  transportModuleDefinition,
-  operationsModuleDefinition,
-  type TransportPort,
+  type OperationsDriver,
   type ServerApp,
   type ServerIdentity,
+  type ServerRuntime,
+  type TransportPort,
+  type ConversationReadPort,
 } from "./host/module-catalog";
 
 export interface HostOptions {
@@ -56,6 +57,13 @@ export interface HostOptions {
   readonly contentRoot?: string;
   readonly packId?: string;
   readonly assemblyRef?: string;
+  /** 已解析装配对象；仅供嵌入式宿主与测试注入，设置后再指定 assemblyRef 会失败。 */
+  readonly assembly?: AssemblyDescriptor;
+  /**
+   * 完整模块目录；缺省使用组合根登记的全部 server 模块定义。
+   * 仅供嵌入式宿主与测试注入，仍走同一解析、校验与启动路径。
+   */
+  readonly moduleDefinitions?: readonly ModuleDefinition[];
   readonly runSpecRef?: string;
   /** 在线世界首次启动时写入 RunSpec 的名册引用；缺省用 standard-20。 */
   readonly rosterRef?: string;
@@ -77,7 +85,7 @@ export interface RunningHost {
   readonly storage: StoragePort;
   readonly branchId: string;
   readonly worldId: string;
-  readonly transport: import("./host/module-catalog").TransportPort;
+  readonly transport: TransportPort;
   listen(): Promise<void>;
   close(): Promise<void>;
 }
@@ -114,6 +122,21 @@ function clockView(clock: ClockState): ClockView {
   };
 }
 
+/**
+ * 开局选项：派系名、首个委托与接触角色都取自内容包索引，保持内容声明顺序。
+ */
+function startOptions(content: GameContent): StartOption[] {
+  return [...content.starts.values()].map((start) => ({
+    factionId: start.factionId,
+    name: content.factions.get(start.factionId)?.name ?? start.factionId,
+    commission: start.commission,
+    contacts: start.contacts.map((agentId) => ({
+      agentId,
+      name: content.characters.get(agentId)?.name ?? agentId,
+    })),
+  }));
+}
+
 /** 按启动令牌构造传输层身份；主体和角色只来自宿主配置。 */
 function createIdentity(
   token: string,
@@ -139,10 +162,6 @@ function createIdentity(
   };
 }
 
-function createOperations(driver: import("./host/module-catalog").OperationsDriver): ReturnType<typeof createOperationsService> {
-  return createOperationsService(driver);
-}
-
 const defaultPackId = "earth-2964-v1";
 const defaultRunSpecRef = "online-default";
 const defaultAssemblyRef = "local-slg-standard-v1";
@@ -165,19 +184,37 @@ interface ActiveRunState {
   readonly manifestHash: string;
 }
 
-/** 读取装配时钟配置的秒数；缺失或非法时沿用默认值。 */
-function secondsPerTickOf(assembly: AssemblyDescriptor): number {
-  const config = assembly.configs["clock"];
-  if (typeof config !== "object" || config === null || Array.isArray(config)) {
-    return 10;
-  }
-  const value = config["secondsPerTick"];
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 10;
+/** 恢复或重开后的活动 run 与启动计划。 */
+interface ResumedRunState {
+  readonly active: ActiveRunState;
+  readonly startup: ResolvedServerAssembly;
+}
+
+/** 首次启动的待提交状态；时钟 provider 启动后再在同一事务内写入在线世界与初始时钟行。 */
+interface PendingFirstRun {
+  readonly active: ActiveRunState;
+  commit(clock: GameClockPort): void;
 }
 
 /** 内容版本不兼容时给出冻结值与当前值，便于定位是哪一次内容发布。 */
 function contentVersionMismatch(frozen: string, current: string, scope: string): Error {
   return new Error(`内容包 contentVersion 不一致：${scope} 冻结「${frozen}」，当前内容包「${current}」；拒绝启动`);
+}
+
+/** 已启动的存储实例必须与在线装配声明的存储配置一致，避免用错误设置继续运行。 */
+function assertStorageCompatible(
+  activePlan: ResolvedRealmPlan,
+  requestedPlan: ResolvedRealmPlan,
+  storageModuleId: string,
+): void {
+  const activeStorage = activePlan.modules.find((module) => module.moduleId === storageModuleId);
+  const requestedStorage = requestedPlan.modules.find((module) => module.moduleId === storageModuleId);
+  if (activeStorage === undefined || requestedStorage === undefined) {
+    throw new Error(`在线装配缺少当前启动的存储模块 ${storageModuleId}`);
+  }
+  if (canonicalJson(activeStorage.config) !== canonicalJson(requestedStorage.config)) {
+    throw new Error("在线装配的存储配置与本次启动不一致；拒绝使用不匹配的存储实例");
+  }
 }
 
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
@@ -193,38 +230,54 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   if (dataDir.length <= 3 || /^[A-Za-z]:\\?$/.test(dataDir)) {
     throw new Error("DATA_DIR 必须是具体目录，不能是磁盘根目录");
   }
+  if (options.assembly !== undefined && options.assemblyRef !== undefined) {
+    throw new Error("不能同时指定装配对象与装配引用");
+  }
   const host = createHostServices();
   const signal = new AbortController().signal;
+  const definitions = options.moduleDefinitions ?? serverModuleDefinitions;
   const packId = options.packId ?? defaultPackId;
-  const configDir = join(process.cwd(), "config");
+  const configDir = resolve(process.cwd(), "config");
   const loadContext = { configDir, env: process.env };
-  const content = loadContentPack(options.contentRoot ?? join(process.cwd(), "content"), packId);
+  const content = loadContentPack(options.contentRoot ?? resolve(process.cwd(), "content"), packId);
   const gameContent = toGameContent(content);
   const contentVersion = content.pack.contentVersion;
-  const requestedAssembly = loadAssembly(options.assemblyRef ?? defaultAssemblyRef);
-  assertSupportedServerBindings(requestedAssembly);
-  const storageInput: ModuleCreateInput = {
-    moduleId: "platform.storage.sqlite",
-    realm: "server",
-    config: { dataDir },
-    scope: {},
-    ports: {},
-    host,
-    signal,
+  const requestedAssembly = options.assembly === undefined
+    ? loadAssembly(options.assemblyRef ?? defaultAssemblyRef)
+    : assemblyDescriptorSchema.parse(options.assembly);
+  const transportConfig = parseTransportConfig({
+    host: options.transportHost ?? "127.0.0.1",
+    port: options.transportPort ?? 3000,
+    allowedOrigins: options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://127.0.0.1:3000"],
+  });
+
+  /** 部署期参数由宿主并入模块配置：数据目录与监听设置不写进装配，也不参与冻结摘要。 */
+  const deploymentOverrides: Readonly<Record<string, Json>> = {
+    "platform.storage.sqlite": { dataDir },
+    "transport.http-ws.fastify": transportConfig as unknown as Json,
   };
-  const storageModule = serverModuleDefinitions[0];
-  const storageInstance = await storageModule.create(storageInput);
-  await storageInstance.start(signal);
-  const storage = storageInstance.port as StoragePort;
+
+  // 装配预检必须先于存储启动：缺失依赖、重复绑定、错误 realm 与非法配置都在打开数据库前失败。
+  const requestedResolved = await resolveServerAssembly(requestedAssembly, definitions);
+  const requestedStartup = await resolveServerAssembly(requestedAssembly, definitions, {
+    configOverrides: deploymentOverrides,
+  });
+  const storageModuleId = plannedModuleForCapability(requestedStartup.plan, "platform.storage").moduleId;
+  const storageStarted = await startInstances(filterPlan(requestedStartup.plan, (moduleId) => moduleId === storageModuleId), {
+    host,
+    scope: {},
+    signal,
+  });
+  const storage = storageStarted.instances[0]?.port as StoragePort | undefined;
   if (storage === undefined) {
+    await storageStarted.dispose();
     throw new Error("存储模块没有暴露 StoragePort");
   }
 
-  /** 首次启动：用当前启动选择生成新 RunSpec、随机 seed 与冻结 manifest，并创建在线世界。 */
-  const createFirstRun = async (): Promise<ActiveRunState> => {
+  /** 首次启动：用当前启动选择生成新 RunSpec、随机 seed 与冻结 manifest；提交函数在时钟 provider 启动后写入在线世界。 */
+  const prepareFirstRun = async (): Promise<PendingFirstRun> => {
     const roster = loadRoster(options.rosterRef ?? defaultRosterRef, loadContext);
     validateRoster(roster.value, content);
-    const resolved = await resolveServerAssembly(requestedAssembly, serverModuleDefinitions);
     const loaded = loadRunSpec(options.runSpecRef ?? defaultRunSpecRef, loadContext, {
       seed: generateRunSeed(),
       moduleAssemblyRef: requestedAssembly.assemblyId,
@@ -237,68 +290,66 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       runSpec: loaded.value,
       content: { packId, contentVersion },
       roster: roster.value,
-      resolved,
+      resolved: requestedResolved,
     });
     const worldId = host.ids("wld");
     const branchId = host.ids("br");
     const runId = host.ids("run");
     const createdAt = host.nowIso();
-    storage.transact((tx) => {
-      tx.rows("worlds").put({
-        world_id: worldId,
-        pack_id: packId,
-        content_version: contentVersion,
-        created_at: createdAt,
-      });
-      tx.rows("branches").put({
-        branch_id: branchId,
-        world_id: worldId,
-        kind: "online",
-        status: "active",
-        parent_branch_id: null,
-        forked_at_world_seq: null,
-        run_id: runId,
-        profile_hash: null,
-        created_at: createdAt,
-      });
-      tx.rows("runs").put({
-        run_id: runId,
-        world_id: worldId,
-        branch_id: branchId,
-        mode: "live",
-        status: "running",
-        run_spec_json: loaded.value,
-        manifest_json: sealed.manifest as unknown as Json,
-        manifest_hash: sealed.manifestHash,
-        contaminated: 0,
-        evidence_complete: 1,
-        created_at: createdAt,
-        started_at: createdAt,
-        ended_at: null,
-      });
-      tx.branch(branchId).table("clock").put({
-        world_tick: 0,
-        mode: "paused",
-        seconds_per_tick: secondsPerTickOf(requestedAssembly),
-        run_version: 0,
-        step_target_tick: null,
-        updated_at: createdAt,
-      });
-      tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: createdAt });
-    });
     return {
-      worldId,
-      branchId,
-      assembly: requestedAssembly,
-      resolved,
-      runSpec: loaded.value,
-      manifest: sealed.manifest,
-      manifestHash: sealed.manifestHash,
+      active: {
+        worldId,
+        branchId,
+        assembly: requestedAssembly,
+        resolved: requestedResolved,
+        runSpec: loaded.value,
+        manifest: sealed.manifest,
+        manifestHash: sealed.manifestHash,
+      },
+      commit: (clock) => {
+        storage.transact((tx) => {
+          tx.rows("worlds").put({
+            world_id: worldId,
+            pack_id: packId,
+            content_version: contentVersion,
+            created_at: createdAt,
+          });
+          tx.rows("branches").put({
+            branch_id: branchId,
+            world_id: worldId,
+            kind: "online",
+            status: "active",
+            parent_branch_id: null,
+            forked_at_world_seq: null,
+            run_id: runId,
+            profile_hash: null,
+            created_at: createdAt,
+          });
+          tx.rows("runs").put({
+            run_id: runId,
+            world_id: worldId,
+            branch_id: branchId,
+            mode: "live",
+            status: "running",
+            run_spec_json: loaded.value,
+            manifest_json: sealed.manifest as unknown as Json,
+            manifest_hash: sealed.manifestHash,
+            contaminated: 0,
+            evidence_complete: 1,
+            created_at: createdAt,
+            started_at: createdAt,
+            ended_at: null,
+          });
+          // 初始时钟行由 provider 自己的有效配置写入，宿主不解析或构造 clock 行。
+          clock.initializeInTransaction(tx, branchId);
+          tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: createdAt });
+        });
+      },
     };
   };
 
   /** 重启：沿用在线别名指向的分支与已冻结 run，不复用当前入参重建 RunSpec。 */
-  const resumeRun = async (onlineState: OnlineBranchState): Promise<ActiveRunState> => {
+  const resumeRun = async (onlineState: OnlineBranchState): Promise<ResumedRunState> => {
     const run = onlineState.run;
     if (run === null) {
       throw new Error(`在线分支 ${String(onlineState.branch["branch_id"])} 没有已冻结的 run；拒绝按当前入参重建`);
@@ -342,11 +393,11 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       throw contentVersionMismatch(worldVersion, contentVersion, "在线世界");
     }
     const assembly = loadAssembly(frozenSpec.moduleAssemblyRef);
-    assertSupportedServerBindings(assembly);
     const roster = loadRoster(frozenSpec.rosterRef, loadContext);
     validateRoster(roster.value, content);
     validateRunSpec(frozenSpec, content, roster);
-    const resolved = await resolveServerAssembly(assembly, serverModuleDefinitions);
+    const resolved = await resolveServerAssembly(assembly, definitions);
+    const startup = await resolveServerAssembly(assembly, definitions, { configOverrides: deploymentOverrides });
     const rebuilt = await buildRunManifest({
       runSpec: frozenSpec,
       content: { packId, contentVersion },
@@ -361,63 +412,136 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       throw new Error("冻结 manifest 无法复算：装配、名册或内容版本与 run 记录不一致");
     }
     return {
-      worldId: String(onlineState.branch["world_id"]),
-      branchId: String(onlineState.branch["branch_id"]),
-      assembly,
-      resolved,
-      runSpec: frozenSpec,
-      manifest: rebuilt.manifest,
-      manifestHash: storedHash,
+      active: {
+        worldId: String(onlineState.branch["world_id"]),
+        branchId: String(onlineState.branch["branch_id"]),
+        assembly,
+        resolved,
+        runSpec: frozenSpec,
+        manifest: rebuilt.manifest,
+        manifestHash: storedHash,
+      },
+      startup,
     };
   };
 
-  const online = storage.transact((tx): OnlineBranchState | null => {
-    const alias = tx.rows("world_aliases").get({ alias: "online" });
-    if (alias === null) {
-      return null;
-    }
-    const branchId = typeof alias["branch_id"] === "string" ? alias["branch_id"] : "";
-    if (branchId.length === 0) {
-      throw new Error("world_aliases('online') 缺少 branch_id");
-    }
-    const branch = tx.rows("branches").get({ branch_id: branchId });
-    if (branch === null) {
-      throw new Error(`在线别名指向的分支 ${branchId} 不存在`);
-    }
-    if (branch["kind"] !== "online") {
-      throw new Error(`在线别名指向的分支 ${branchId} 不是 online 分支`);
-    }
-    const runId = typeof branch["run_id"] === "string" ? branch["run_id"] : "";
-    return {
-      branch,
-      run: runId.length === 0 ? null : tx.rows("runs").get({ run_id: runId }),
-    };
-  });
-
-  let active: ActiveRunState;
+  let activeStarted: StartedInstances | null = null;
+  let serverRuntime: ServerRuntime | null = null;
+  let sessionAssemblies: Awaited<ReturnType<typeof resolveSessionAssemblies>> | null = null;
+  let activeBranchId = "";
+  let activeWorldId = "";
+  let activeAssembly: AssemblyDescriptor;
+  let activeResolved: ResolvedServerAssembly;
+  let activeStartup: ResolvedServerAssembly;
+  let runSpec: RunSpec;
+  let frozenManifest: RunManifest;
+  let frozenManifestHash: string;
   try {
-    active = online === null ? await createFirstRun() : await resumeRun(online);
+    const online = storage.transact((tx): OnlineBranchState | null => {
+      const alias = tx.rows("world_aliases").get({ alias: "online" });
+      if (alias === null) {
+        return null;
+      }
+      const branchId = typeof alias["branch_id"] === "string" ? alias["branch_id"] : "";
+      if (branchId.length === 0) {
+        throw new Error("world_aliases('online') 缺少 branch_id");
+      }
+      const branch = tx.rows("branches").get({ branch_id: branchId });
+      if (branch === null) {
+        throw new Error(`在线别名指向的分支 ${branchId} 不存在`);
+      }
+      if (branch["kind"] !== "online") {
+        throw new Error(`在线别名指向的分支 ${branchId} 不是 online 分支`);
+      }
+      const runId = typeof branch["run_id"] === "string" ? branch["run_id"] : "";
+      return {
+        branch,
+        run: runId.length === 0 ? null : tx.rows("runs").get({ run_id: runId }),
+      };
+    });
+
+    let active: ActiveRunState;
+    let pendingFirstRun: PendingFirstRun | null = null;
+    if (online === null) {
+      pendingFirstRun = await prepareFirstRun();
+      active = pendingFirstRun.active;
+      activeStartup = requestedStartup;
+    } else {
+      const resumed = await resumeRun(online);
+      active = resumed.active;
+      activeStartup = resumed.startup;
+    }
+    assertStorageCompatible(activeStartup.plan, requestedStartup.plan, storageModuleId);
+    activeWorldId = active.worldId;
+    activeBranchId = active.branchId;
+    activeAssembly = active.assembly;
+    activeResolved = active.resolved;
+    runSpec = active.runSpec;
+    frozenManifest = active.manifest;
+    frozenManifestHash = active.manifestHash;
+    // 在线装配确定后再启动其余模块；存储实例作为部署级 provider 复用，不重复创建。
+    activeStarted = await startInstances(filterPlan(activeStartup.plan, (moduleId) => moduleId !== storageModuleId), {
+      host,
+      scope: { worldId: activeWorldId, branchId: activeBranchId },
+      signal,
+      running: storageStarted.instances,
+    });
+    serverRuntime = createServerRuntime({
+      plan: activeStartup.plan,
+      instances: [...storageStarted.instances, ...activeStarted.instances],
+      content: gameContent,
+      host,
+    });
+    sessionAssemblies = await resolveSessionAssemblies(activeAssembly, definitions);
+    if (pendingFirstRun !== null) {
+      // 世界、分支、run、别名与初始时钟行在同一事务提交，时钟配置来自 provider。
+      pendingFirstRun.commit(serverRuntime.clock);
+    }
+    const restoredClock = serverRuntime.clock.read(activeBranchId);
+    if (restoredClock.mode !== "paused") {
+      const paused = serverRuntime.clock.pause(activeBranchId);
+      if (!paused.ok) {
+        throw new Error(`启动时暂停时钟失败：${paused.reasonCode}`);
+      }
+    }
   } catch (error) {
-    await storageInstance.dispose();
+    await activeStarted?.dispose();
+    await storageStarted.dispose();
     throw error;
   }
-  const activeWorldId = active.worldId;
-  let activeBranchId = active.branchId;
-  const activeAssembly = active.assembly;
-  const activeResolved = active.resolved;
-  const runSpec = active.runSpec;
-  const frozenManifest = active.manifest;
-  const frozenManifestHash = active.manifestHash;
+  if (activeStarted === null || serverRuntime === null || sessionAssemblies === null) {
+    await storageStarted.dispose();
+    throw new Error("宿主运行时未初始化");
+  }
+  const runtime = serverRuntime;
+  const startedModules = activeStarted;
+  const sessionAssembly = sessionAssemblies;
 
-  storage.transact((tx) => {
-    const clock = tx.branch(activeBranchId).table("clock");
-    const row = clock.get({});
-    if (row !== null && row["mode"] !== "paused") {
-      clock.put({ ...row, mode: "paused", run_version: Number(row["run_version"]) + 1, updated_at: host.nowIso() });
+  const clockState = () => runtime.clock.read(activeBranchId);
+
+  const txFor = (storageTx: StorageTransaction, moduleId: string) =>
+    (id: string): TransactionWorldTx => new TransactionWorldTx({
+      storageTx,
+      worldId: activeWorldId,
+      branchId: activeBranchId,
+      worldTick: runtime.clock.readInTransaction(storageTx, activeBranchId).worldTick,
+      principalId: systemPrincipalId,
+      correlationId: `host:${moduleId}:${id}`,
+      scope: { moduleId: id, ownsAggregates: allAggregates, order: 0 },
+      host,
+    });
+
+  const control = (mode: "pause" | "start", expectedRunVersion: number): ClockView => {
+    const result = mode === "pause"
+      ? runtime.clock.pause(activeBranchId, expectedRunVersion)
+      : runtime.clock.start(activeBranchId, expectedRunVersion);
+    if (!result.ok) {
+      throw new Error(result.reasonCode === "version-conflict" ? "时钟版本冲突" : "时钟控制参数非法");
     }
-  });
+    return clockView(result.clock);
+  };
 
-  const binder = createModuleBinderFromAssembly(activeAssembly, gameContent, host);
+  const binder = runtime.binder;
   const authority = new Authority({
     storage,
     host,
@@ -426,61 +550,18 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     allowDirectAgentCommands: true,
     runSeed: runSpec.seed,
   });
-  for (const contributor of createGameContributorsFromAssembly(activeAssembly)) {
+  for (const contributor of runtime.contributors) {
     authority.registerModule(contributor);
   }
 
-  const readClockTx = (tx: StorageTransaction, branch: string): ClockState => {
-    const row = tx.branch(branch).table("clock").get({});
-    if (row === null) {
-      throw new Error("分支缺少 clock");
-    }
-    return {
-      worldTick: Number(row["world_tick"]),
-      mode: String(row["mode"]) as ClockState["mode"],
-      secondsPerTick: Number(row["seconds_per_tick"]),
-      runVersion: Number(row["run_version"]),
-      stepTargetTick: row["step_target_tick"] === null ? null : Number(row["step_target_tick"]),
-    };
-  };
-
-  const clockState = (): ClockState => storage.transact((tx) => readClockTx(tx, activeBranchId));
-
-  const txFor = (storageTx: StorageTransaction, moduleId: string) =>
-    (id: string): TransactionWorldTx => new TransactionWorldTx({
-      storageTx,
-      worldId: activeWorldId,
-      branchId: activeBranchId,
-      worldTick: readClockTx(storageTx, activeBranchId).worldTick,
-      principalId: systemPrincipalId,
-      correlationId: `host:${moduleId}:${id}`,
-      scope: { moduleId: id, ownsAggregates: allAggregates, order: 0 },
-      host,
-    });
-
-  const control = (mode: "pause" | "start", expectedRunVersion: number): ClockView => {
-    return storage.transact((tx) => {
-      const current = readClockTx(tx, activeBranchId);
-      if (current.runVersion !== expectedRunVersion) {
-        throw new Error("时钟版本冲突");
-      }
-      const table = tx.branch(activeBranchId).table("clock");
-      const row = table.get({});
-      if (row === null) {
-        throw new Error("分支缺少 clock");
-      }
-      table.put({ ...row, mode: mode === "pause" ? "paused" : "running", run_version: expectedRunVersion + 1, updated_at: host.nowIso() });
-      return clockView(readClockTx(tx, activeBranchId));
-    });
-  };
   const projection = () => storage.transact((tx) => {
     const gameTx = txFor(tx, "read");
-    const ports = createGamePortsFromAssembly(activeAssembly, gameTx, gameContent, host);
+    const ports = binder(gameTx) as GameModulePorts;
     return buildPlayerProjection({
       content: gameContent,
       world: ports["game.world"],
       map: ports["game.map"],
-      clock: clockView(readClockTx(tx, activeBranchId)),
+      clock: clockView(runtime.clock.readInTransaction(tx, activeBranchId)),
       comms: ports["game.comms"],
       resources: ports["game.resources"],
       actions: ports["game.actions"],
@@ -488,16 +569,35 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     });
   });
 
-  const save = createSaveService(storage, host);
+  /**
+   * 会话读取端口：每次读取绑定只读事务与已装配的通信模块公开端口；
+   * 会话选择、分页与送达过滤由传输层完成，宿主只提供事实。
+   */
+  const conversationPort: ConversationReadPort = {
+    worldTick: () => clockState().worldTick,
+    conversationsOf: (principalId: string) =>
+      storage.transact((tx) => {
+        const ports = binder(txFor(tx, "conversation")) as GameModulePorts;
+        return ports["game.comms"].conversationsOf(principalId);
+      }),
+    conversationMessages: (conversationId: string, limit: number) =>
+      storage.transact((tx) => {
+        const ports = binder(txFor(tx, "conversation")) as GameModulePorts;
+        return ports["game.comms"].conversationMessages(conversationId, limit);
+      }),
+    speakerName: (principalId: string) => gameContent.characters.get(principalId)?.name ?? principalId,
+  };
+
+  const save = runtime.save;
   const createDrainedSnapshot = (
     input: { readonly label: string; readonly createdBy: string },
   ): ReturnType<typeof save.createSnapshot> => {
-    catchUpWorldTick({ storage, authority, host, branchId: activeBranchId });
+    catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: activeBranchId });
     return save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy });
   };
   const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
     const current = clockState();
-    if (current.mode === "running") {
+    if (current.mode !== "paused") {
       control("pause", current.runVersion);
     }
     const label = `reset-${current.worldTick}`;
@@ -551,14 +651,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         profile_hash: null,
         created_at: now,
       });
-      tx.branch(nextBranchId).table("clock").put({
-        world_tick: 0,
-        mode: "paused",
-        seconds_per_tick: secondsPerTickOf(activeAssembly),
-        run_version: 0,
-        step_target_tick: null,
-        updated_at: now,
-      });
+      // 新分支的初始时钟行由 provider 写入同一事务，秒数取 provider 有效配置。
+      runtime.clock.initializeInTransaction(tx, nextBranchId);
       if (previous !== null) {
         tx.rows("branches").put({ ...previous, status: "archived" });
       }
@@ -640,37 +734,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     return restored;
   };
 
-  const transportConfig = parseTransportConfig({
-    host: options.transportHost ?? "127.0.0.1",
-    port: options.transportPort ?? 3000,
-    allowedOrigins: options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://127.0.0.1:3000"],
-  });
-  const transportInstance = await transportModuleDefinition.create({
-    moduleId: "transport.http-ws.fastify",
-    realm: "server",
-    config: transportConfig,
-    scope: {},
-    ports: {},
-    host,
-    signal,
-  });
-  const transport = transportInstance.port as TransportPort;
-  await transportInstance.start(signal);
-
-  const operationsInstance = await operationsModuleDefinition.create({
-    moduleId: "platform.operations.standard",
-    realm: "server",
-    config: {},
-    scope: {},
-    ports: {},
-    host,
-    signal,
-  });
-  await operationsInstance.start(signal);
-  const operationsFactory = operationsInstance.port as {
-    create: typeof createOperations;
-  };
-  const operations = operationsFactory.create({
+  const operations = runtime.operations.create({
     clock: () => clockState(),
     pause: (expected) => control("pause", expected),
     resume: (expected) => control("start", expected),
@@ -681,56 +745,66 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       return restored;
     },
     reset: resetOnline,
-  });
-
-  const app = await transport.createApp({
-    authority,
-    storage,
-    worldId: activeWorldId,
-    branchId: activeBranchId,
-    assembly: activeResolved.modules,
-    projection,
-    clock: () => clockView(clockState()),
-    pause: (operationId, expected) => {
-      void operationId;
-      return operations.pause(expected);
-    },
-    resume: (operationId, expected) => {
-      void operationId;
-      return operations.resume(expected);
-    },
-    save: {
-      createSnapshot: (input) => operations.snapshot(input.label, input.createdBy),
-      listSnapshots: () => save.listSnapshots(),
-      restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy, input.runId),
-    },
-    reset: () => operations.reset(),
-    onBranchChanged: (nextBranchId) => {
-      activeBranchId = nextBranchId;
-    },
-    identities: [
-      createIdentity(options.playerToken, "player-1", "player", ["player"], activeWorldId, activeBranchId),
-      createIdentity(options.consoleToken, "console-admin", "operator", ["operator", "researcher", "evaluator"], activeWorldId, activeBranchId),
-      ...(options.operatorToken === undefined
-        ? []
-        : [createIdentity(options.operatorToken, "console-operator", "operator", ["operator"], activeWorldId, activeBranchId)]),
-      ...(options.researcherToken === undefined
-        ? []
-        : [createIdentity(options.researcherToken, "console-researcher", "researcher", ["researcher"], activeWorldId, activeBranchId)]),
-      ...(options.evaluatorToken === undefined
-        ? []
-        : [createIdentity(options.evaluatorToken, "console-evaluator", "evaluator", ["evaluator"], activeWorldId, activeBranchId)]),
-    ],
-    ids: (prefix) => host.ids(prefix),
-    tokens: (kind) => `${kind}-${randomUUID()}`,
-    healthStatus: () => (workerFailed ? "degraded" : "ready"),
-  });
+  } satisfies OperationsDriver);
 
   let workerFailed = false;
   let workerBusy = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let app: ServerApp;
   try {
-    catchUpWorldTick({ storage, authority, host, branchId: activeBranchId });
+    app = await runtime.transport.createApp({
+      authority,
+      storage,
+      worldId: activeWorldId,
+      branchId: activeBranchId,
+      assembly: activeResolved.modules,
+      sessionAssembly,
+      starts: () => startOptions(gameContent),
+      conversation: conversationPort,
+      projection,
+      clock: () => clockView(clockState()),
+      pause: (operationId, expected) => {
+        void operationId;
+        return operations.pause(expected);
+      },
+      resume: (operationId, expected) => {
+        void operationId;
+        return operations.resume(expected);
+      },
+      save: {
+        createSnapshot: (input) => operations.snapshot(input.label, input.createdBy),
+        listSnapshots: () => save.listSnapshots(),
+        restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy, input.runId),
+      },
+      reset: () => operations.reset(),
+      onBranchChanged: (nextBranchId) => {
+        activeBranchId = nextBranchId;
+      },
+      identities: [
+        createIdentity(options.playerToken, "player-1", "player", ["player"], activeWorldId, activeBranchId),
+        createIdentity(options.consoleToken, "console-admin", "operator", ["operator", "researcher", "evaluator"], activeWorldId, activeBranchId),
+        ...(options.operatorToken === undefined
+          ? []
+          : [createIdentity(options.operatorToken, "console-operator", "operator", ["operator"], activeWorldId, activeBranchId)]),
+        ...(options.researcherToken === undefined
+          ? []
+          : [createIdentity(options.researcherToken, "console-researcher", "researcher", ["researcher"], activeWorldId, activeBranchId)]),
+        ...(options.evaluatorToken === undefined
+          ? []
+          : [createIdentity(options.evaluatorToken, "console-evaluator", "evaluator", ["evaluator"], activeWorldId, activeBranchId)]),
+      ],
+      ids: (prefix) => host.ids(prefix),
+      tokens: (kind) => `${kind}-${randomUUID()}`,
+      healthStatus: () => (workerFailed ? "degraded" : "ready"),
+    });
+  } catch (error) {
+    await startedModules.dispose();
+    await storageStarted.dispose();
+    throw error;
+  }
+
+  try {
+    catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: activeBranchId });
   } catch (error) {
     workerFailed = true;
     host.logger.error("host 启动补完当前 tick 失败，已停止推进", {
@@ -754,7 +828,13 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     try {
       const clock = clockState();
       if (clock.mode === "running") {
-        advanceWorldTick({ storage, authority, host, branchId: activeBranchId, targetTick: clock.worldTick + 1 });
+        advanceWorldTick({
+          storage,
+          clock: runtime.clock,
+          authority,
+          branchId: activeBranchId,
+          targetTick: clock.worldTick + 1,
+        });
         app.notifyWorldChanged();
       }
     } catch (error) {
@@ -774,17 +854,16 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     storage,
     branchId: activeBranchId,
     worldId: activeWorldId,
-    transport,
-    listen: () => transport.listen(app),
+    transport: runtime.transport,
+    listen: () => runtime.transport.listen(app),
     close: async () => {
       workerFailed = true;
       if (timer !== null) {
         clearTimeout(timer);
       }
       await app.close();
-      await transportInstance.dispose();
-      await operationsInstance.dispose();
-      await storageInstance.dispose();
+      await startedModules.dispose();
+      await storageStarted.dispose();
     },
   };
 }

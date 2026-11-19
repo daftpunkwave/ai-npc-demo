@@ -147,7 +147,7 @@ packages:
 | `pnpm test` | `vitest run` | 单元、契约、集成、目录、场景测试 |
 | `pnpm test:e2e` | `playwright test` | 两端口启动、玩家与控制台关键路径 |
 | `pnpm check:boundaries` | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header |
-| `pnpm check:catalog` | `tsx scripts/check-catalog.ts` | 模块 ID、能力闭包、`config/assemblies/*.yaml` 全部可解析 |
+| `pnpm check:catalog` | `tsx scripts/check-catalog.ts` | 目录扫描 `config/assemblies/*.yaml`；realm/kind、能力闭包、作用域/重复绑定、拓扑与配置 schema 全量预检 |
 | `pnpm check:docs` | `tsx scripts/check-docs.ts` | 文档相对链接与锚点存在 |
 | `pnpm check:ports` | `tsx scripts/check-ports.ts` | 启动 `pnpm start` 后只发现 :5173 与 :3000 两个本应用监听 |
 | `pnpm check` | 见下文“`pnpm check` 的组成” | 每个构建步骤完成前必须通过 |
@@ -155,7 +155,7 @@ packages:
 
 `scripts/dev.ts` 与 `scripts/start.ts` 先调用 `process.loadEnvFile()`（`.env` 不存在时跳过），再用 `node:child_process.spawn` 启动子进程并把环境变量传给它们；任一子进程退出时结束全部子进程并以非零码退出；不自动重启、不改端口。
 
-上表是最终形态：S10 的 `dev` 仅启动 server/client，`build` 仅构建 client；S11 才加入 console 的 watch 构建、普通构建与静态资源挂载，S10 不引用 console 的 Vite 配置。`check:catalog` 按 realm 加载已存在的 catalog；某 realm 的 catalog 尚不存在时，只有全部待校验装配在该 realm 的 bindings 均为空才跳过加载，非空即失败，不得捕获其他加载错误后跳过。
+上表是最终形态：S10 的 `dev` 仅启动 server/client，`build` 仅构建 client；S11 才加入 console 的 watch 构建、普通构建与静态资源挂载，S10 不引用 console 的 Vite 配置。`check:catalog` 扫描 `config/assemblies/*.yaml` 并通过组合根加载已存在的 server 模块目录；某 realm 的模块目录尚不存在时，只有全部待校验装配在该 realm 的 bindings 均为空才通过，非空即失败，不得捕获解析错误后跳过。
 
 每个脚本在实现它的那一步加入 `package.json`（见 [构建计划](build-plan.md) 第 0.2 节），不提前写占位脚本。`pnpm check` 的组成随步骤增长：S00 为 `pnpm typecheck && pnpm test && pnpm check:docs`；S03 起加入 `pnpm check:boundaries`；S09 起加入 `pnpm check:catalog`。它始终不包含 `test:e2e` 与 `check:ports`（这两项在要求它们的步骤里单独运行）。
 

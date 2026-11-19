@@ -1,10 +1,11 @@
 /**
  * 在线世界的固定 tick 执行顺序：写入时钟、到期 job、时钟步骤、事件消费者。
- * 依赖存储事务、authority 的 job/时钟/消费者执行器与宿主时间服务；每个阶段各自提交事务。
- * 禁止把整个 tick 合并进一个事务、跳过命中阶段或吞掉阶段异常；补完入口不得推进 tick。
+ * 依赖存储事务读取分支状态、authority 的 job/时钟/消费者执行器、时钟模块端口与宿主时间服务。
+ * 每个阶段各自提交事务；时钟读写只经模块端口，禁止在这里解析或改写 clock 行。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名用于表达调用契约。 */
-import { DomainError, type HostServices, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type HostServices, type StoragePort } from "@ai-npc/contracts";
+import type { ClockState } from "@ai-npc/module-sdk";
 
 /** 一次 tick 需要的 authority 入口；结构类型让宿主与测试共用同一顺序。 */
 export interface TickAuthority {
@@ -15,12 +16,20 @@ export interface TickAuthority {
   };
 }
 
+/** tick 推进需要的时钟端口视图；读取与推进都由时钟 provider 完成。 */
+export interface TickClockPort {
+  read(branchId: string): ClockState;
+  setTick(branchId: string, tick: number): ClockState;
+}
+
 /** 补完当前 tick 与推进下一 tick 共用的运行环境。 */
 export interface WorldTickContext {
   readonly storage: StoragePort;
+  readonly clock: TickClockPort;
   readonly authority: TickAuthority;
-  readonly host: Pick<HostServices, "nowIso">;
   readonly branchId: string;
+  /** 兼容既有调用方传入的宿主时间服务；tick 推进本身只经时钟端口。 */
+  readonly host?: Pick<HostServices, "nowIso">;
 }
 
 /** 推进一个 tick 的输入：目标 tick 只能比当前 tick 大 1。 */
@@ -36,53 +45,29 @@ export interface WorldTickResult {
   readonly consumers: { readonly processed: number; readonly scanned: number };
 }
 
-/** 时钟行中本入口需要的字段。 */
-interface ClockRow {
-  readonly worldTick: number;
-  readonly mode: string;
-}
-
 /** 允许逻辑时间前进的时钟模式；paused 等模式由模式语义拒绝推进。 */
 const advancingModes: ReadonlySet<string> = new Set(["running", "stepping"]);
 
-/** 读取并校验分支时钟行；缺失或列非法时明确失败，避免在未知世界时间上推进。 */
-function readClockRow(tx: StorageTransaction, branchId: string): ClockRow {
-  const row = tx.branch(branchId).table("clock").get({});
-  if (row === null) {
-    throw new DomainError("not-ready", `分支 ${branchId} 尚未建立时钟状态`, {
-      details: { branchId },
-    });
-  }
-  const worldTick = row["world_tick"];
-  if (typeof worldTick !== "number" || !Number.isSafeInteger(worldTick) || worldTick < 0) {
-    throw new DomainError("invalid-state", "clock.world_tick 不是非负安全整数", {
-      details: { branchId },
-    });
-  }
-  const mode = row["mode"];
-  if (typeof mode !== "string" || mode.length === 0) {
-    throw new DomainError("invalid-state", "clock.mode 不是非空字符串", {
-      details: { branchId },
-    });
-  }
-  return { worldTick, mode };
-}
-
-/** 在同一事务内把时钟写为目标 tick；不产生领域事件。 */
-function commitClockTick(tx: StorageTransaction, input: AdvanceWorldTickInput): number {
-  const branch = tx.rows("branches").get({ branch_id: input.branchId });
+/** 分支状态决定是否接受 tick 推进；时钟字段本身由模块端口校验。 */
+function assertBranchAcceptsTicks(storage: StoragePort, branchId: string): void {
+  const branch = storage.transact((tx) => tx.rows("branches").get({ branch_id: branchId }));
   if (branch === null) {
-    throw new DomainError("not-found", `分支 ${input.branchId} 不存在`, {
-      details: { branchId: input.branchId },
+    throw new DomainError("not-found", `分支 ${branchId} 不存在`, {
+      details: { branchId },
     });
   }
   const status = branch["status"];
   if (status !== "active" && status !== "paused") {
-    throw new DomainError("forbidden", `分支 ${input.branchId} 当前状态不接受 tick 推进`, {
-      details: { branchId: input.branchId, status: String(status) },
+    throw new DomainError("forbidden", `分支 ${branchId} 当前状态不接受 tick 推进`, {
+      details: { branchId, status: String(status) },
     });
   }
-  const clock = readClockRow(tx, input.branchId);
+}
+
+/** 通过时钟端口把逻辑时间推进一个 tick；越界与模式由时钟 provider 拒绝。 */
+function commitClockTick(input: AdvanceWorldTickInput): number {
+  assertBranchAcceptsTicks(input.storage, input.branchId);
+  const clock = input.clock.read(input.branchId);
   if (!advancingModes.has(clock.mode)) {
     throw new DomainError("invalid-state", `时钟模式 ${clock.mode} 下不能推进 tick`, {
       details: { branchId: input.branchId, mode: clock.mode },
@@ -93,15 +78,7 @@ function commitClockTick(tx: StorageTransaction, input: AdvanceWorldTickInput): 
       details: { currentTick: clock.worldTick, targetTick: input.targetTick },
     });
   }
-  const table = tx.branch(input.branchId).table("clock");
-  const row = table.get({});
-  if (row === null) {
-    throw new DomainError("not-ready", `分支 ${input.branchId} 尚未建立时钟状态`, {
-      details: { branchId: input.branchId },
-    });
-  }
-  table.put({ ...row, world_tick: input.targetTick, updated_at: input.host.nowIso() });
-  return input.targetTick;
+  return input.clock.setTick(input.branchId, input.targetTick).worldTick;
 }
 
 /** 按规则顺序补完一个已提交 tick 的其余阶段；任一步抛错都向上传播。 */
@@ -127,7 +104,7 @@ export function advanceWorldTick(input: AdvanceWorldTickInput): WorldTickResult 
       details: { targetTick: input.targetTick },
     });
   }
-  const worldTick = input.storage.transact((tx) => commitClockTick(tx, input));
+  const worldTick = commitClockTick(input);
   return completeTick(input, worldTick);
 }
 
@@ -136,6 +113,6 @@ export function advanceWorldTick(input: AdvanceWorldTickInput): WorldTickResult 
  * 已提交的 job、每日结算与章节评估依赖各自 done 标记和状态守卫只生效一次。
  */
 export function catchUpWorldTick(input: WorldTickContext): WorldTickResult {
-  const worldTick = input.storage.transact((tx) => readClockRow(tx, input.branchId).worldTick);
+  const worldTick = input.clock.read(input.branchId).worldTick;
   return completeTick(input, worldTick);
 }

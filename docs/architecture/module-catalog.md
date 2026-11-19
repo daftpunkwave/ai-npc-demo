@@ -1,6 +1,6 @@
 # 全职能模块目录与默认装配
 
-> 状态：目标设计，尚未实现。模块 ID、能力、实例作用域和默认装配清单以本文为准。模块边界原则见 [模块边界](modules.md)，描述符与生命周期见 [插件机制](plugins.md)，装配冻结见 [积木组合](composition.md)。目录列出的是计划随仓库交付的可信内置模块，不代表包已存在或已运行。
+> 状态：服务端首批模块与其装配、目录预检已实现；Agent、客户端与控制台模块仍按本文目标设计逐步交付。模块 ID、能力、实例作用域和默认装配清单以本文为准。模块边界原则见 [模块边界](modules.md)，描述符与生命周期见 [插件机制](plugins.md)，装配冻结见 [积木组合](composition.md)。目录列出的是计划随仓库交付的可信内置模块，不代表包已存在或已运行。
 
 ## 1. 目录、装配、profile 不是一回事
 
@@ -176,7 +176,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | client | 5 章 `required` 与 `default` 模块（HUD 为 `client.hud.standard`） |
 | console | 6 章全部页面模块（可观测页为 `console.observability.standard`） |
 
-`local-slg-test-v1` 与标准装配的差别只有两处：model-transport 只有 `deterministic`；client 的 scene-renderer 为 `client.scene-renderer.null`。模型布局与名册不属于装配，测试时由 RunSpec 或环境变量选择 `deterministic-model-layout-v1` 与 `core-3`。它用于 CI 与规则回归，不产生模型费用，不能假装验证真实模型行为。装配文件的完整内容见 [配置](../platform/configuration.md) 第 10.1 节，S09–S24 期间的逐步增长见 [构建计划](../delivery/build-plan.md) 第 0.2 节。
+`local-slg-test-v1` 与标准装配的差别只有两处：model-transport 只有 `deterministic`；client 的 scene-renderer 为 `client.scene-renderer.null`。模型布局与名册不属于装配，测试时由 RunSpec 或环境变量选择 `deterministic-model-layout-v1` 与 `core-3`。它用于 CI 与规则回归，不产生模型费用，不能假装验证真实模型行为。S09 阶段上述测试专属模块尚未交付，两份装配的 server 绑定与配置相同，仅 `assemblyId` 不同；后续步骤再按计划加入 deterministic transport 与 null renderer。装配文件的完整内容见 [配置](../platform/configuration.md) 第 10.1 节，S09–S24 期间的逐步增长见 [构建计划](../delivery/build-plan.md) 第 0.2 节。
 
 M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `game.scenario.watergate-escalating`；`client.hud` 换成 `client.hud.compact`；`console.observability` 换成 `console.observability.lite`；Agent profile 的 memory 槽在 M0–M3 之间切换。
 
@@ -204,14 +204,21 @@ M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `
 
 ## 10. 目录守门与验收
 
-自动检查（目标脚本，尚未实现）至少覆盖：
+`check:catalog` 扫描 `config/assemblies/*.yaml`，并用与宿主启动相同的 kernel 解析器逐装配执行：
 
 - 模块 ID 与能力名唯一、版本与 apiVersion 相容、配置 schema 严格、未知字段拒绝；
-- 能力闭包：required 能力均有 provider；无环；fallback 声明完整；slot ID 与排序冲突可检测；
+- realm/kind 白名单、能力命名空间与绑定匹配；
+- 能力闭包：必需能力均有 provider；无缺失依赖、无环，提供者先于消费者的拓扑顺序；
+- 实例作用域兼容、重复绑定检测；
+- 模块配置 schema 校验，包含宿主并入部署参数后的有效配置；
+- 真实目录中 server 必需能力与 `local-slg-*` 主装配均通过。
+
+以下仍是后续验收项：
+
+- fallback 声明完整；slot ID 与排序冲突可检测；
 - realm 边界：client/console 模块不得 import 服务端实现或读取密钥；只有 transport 端口可跨域；
-- 实例作用域合法：session 模块不得持有世界写权限，agent 模块不得读取全量世界库；
 - 状态所有权：每个有状态模块声明 scope、schemaVersion、导出/迁移路径；
-- 目录快照 hash 进入 assembly 与 run manifest，注册顺序不影响解析结果。
+- 目录快照 hash 进入 assembly 与 run manifest，注册顺序不影响解析结果（解析与摘要已实现，替换验收仍须展示）。
 
 验收时必须展示：
 

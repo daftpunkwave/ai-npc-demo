@@ -1,0 +1,351 @@
+/**
+ * 校验 server 组合根与 config/assemblies 目录下的全部装配：模块目录、realm/kind 白名单、
+ * 能力名与绑定匹配、运行时 requires 闭包、作用域/重复绑定、拓扑顺序、模块配置 schema 与必需能力。
+ * 依赖 kernel 的统一解析器、module-sdk 描述符校验与组合根模块目录；不启动服务、不打开存储。
+ * 禁止写死装配文件名、放宽 schema 或用首错掩盖同一次预检中的其他失败项。
+ */
+/* eslint-disable security/detect-non-literal-fs-filename -- 只读取 root/config/assemblies 下由 readdir 得到的普通文件。 */
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { parse as parseYaml } from "yaml";
+import {
+  DomainError,
+  assemblyDescriptorSchema,
+  moduleKindSchema,
+  type AssemblyDescriptor,
+  type CapabilityRef,
+  type ModuleDefinition,
+  type Realm,
+} from "@ai-npc/contracts";
+import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@ai-npc/kernel";
+import { REALM_NAMESPACES, validateModuleDefinition } from "@ai-npc/module-sdk";
+import { serverModuleDefinitions, serverRequiredCapabilities } from "./module-catalog";
+
+/** 一条装配预检失败：文件、稳定代码与可直接定位的原因。 */
+export interface CatalogViolation {
+  readonly file: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+/** 预检结果；violations 为空表示目录下全部装配与模块目录一致。 */
+export interface CatalogCheckReport {
+  readonly moduleCount: number;
+  readonly assemblies: readonly string[];
+  readonly violations: readonly CatalogViolation[];
+}
+
+export interface CatalogCheckOptions {
+  readonly root?: string;
+  /** 待校验的模块目录；缺省使用组合根登记的 server 模块定义。 */
+  readonly definitions?: readonly ModuleDefinition[];
+  /** 宿主固定必需能力；缺省在真实目录下使用 server 必需能力，注入自定义目录时为空。 */
+  readonly requiredCapabilities?: readonly CapabilityRef[];
+}
+
+export interface CatalogCliOptions extends CatalogCheckOptions {
+  readonly writeStdout?: (text: string) => void;
+  readonly writeStderr?: (text: string) => void;
+}
+
+const realms: readonly Realm[] = ["server", "client", "console"];
+
+function leadingNamespace(value: string): string {
+  const separator = value.indexOf(".");
+  return separator === -1 ? value : value.slice(0, separator);
+}
+
+function errorCode(error: unknown): string {
+  return error instanceof DomainError ? error.code : "catalog-error";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof DomainError) {
+    return `${error.code}: ${error.safeMessage}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 收集模块目录自身的问题：重复 ID、描述符字段、realm 命名空间与 kind 白名单。 */
+function checkDefinitions(
+  definitions: readonly ModuleDefinition[],
+  violations: CatalogViolation[],
+): Map<string, ModuleDefinition> {
+  const byId = new Map<string, ModuleDefinition>();
+  for (const definition of definitions) {
+    try {
+      validateModuleDefinition(definition);
+    } catch (error) {
+      violations.push({
+        file: "<module-catalog>",
+        code: errorCode(error),
+        message: `模块 ${definition.id} 描述符非法：${errorMessage(error)}`,
+      });
+    }
+    if (!moduleKindSchema.safeParse(definition.kind).success) {
+      violations.push({
+        file: "<module-catalog>",
+        code: "module-kind",
+        message: `模块 ${definition.id} 的 kind 不在 service/contributor/adapter 白名单内`,
+      });
+    }
+    const namespace = leadingNamespace(definition.id);
+    const realmNamespaces = REALM_NAMESPACES[definition.realm];
+    if (realmNamespaces === undefined || !realmNamespaces.includes(namespace)) {
+      violations.push({
+        file: "<module-catalog>",
+        code: "realm-violation",
+        message: `模块 ${definition.id} 的 ID 命名空间 ${namespace} 不属于 ${String(definition.realm)} realm`,
+      });
+    }
+    if (byId.has(definition.id)) {
+      violations.push({
+        file: "<module-catalog>",
+        code: "module-duplicate",
+        message: `重复模块 ID: ${definition.id}`,
+      });
+      continue;
+    }
+    byId.set(definition.id, definition);
+  }
+  return byId;
+}
+
+/** 逐条绑定检查独立问题，便于一次报告同一次预检中的多个绑定错误。 */
+function checkBindings(
+  file: string,
+  realm: Realm,
+  assembly: AssemblyDescriptor,
+  byId: ReadonlyMap<string, ModuleDefinition>,
+  violations: CatalogViolation[],
+): boolean {
+  let failed = false;
+  const boundCapabilities = new Map<string, string>();
+  for (const binding of assembly.realms[realm].bindings) {
+    if (!REALM_NAMESPACES[realm].includes(leadingNamespace(binding.capability))) {
+      violations.push({
+        file,
+        code: "capability-namespace",
+        message: `能力 ${binding.capability} 不属于 ${realm} realm 的能力命名空间`,
+      });
+      failed = true;
+    }
+    const definition = byId.get(binding.moduleId);
+    if (definition === undefined) {
+      violations.push({
+        file,
+        code: "module-missing",
+        message: `能力 ${binding.capability} 绑定了未登记模块 ${binding.moduleId}`,
+      });
+      failed = true;
+      continue;
+    }
+    const provided = definition.provides.find((item) => item.capability === binding.capability);
+    const previousModuleId = boundCapabilities.get(binding.capability);
+    if (previousModuleId !== undefined && provided?.cardinality !== "many") {
+      violations.push({
+        file,
+        code: "binding-duplicate",
+        message: `能力 ${binding.capability} 重复绑定到 ${previousModuleId} 与 ${binding.moduleId}`,
+      });
+      failed = true;
+    } else {
+      boundCapabilities.set(binding.capability, binding.moduleId);
+    }
+    if (definition.realm !== realm) {
+      violations.push({
+        file,
+        code: "realm-violation",
+        message: `能力 ${binding.capability} 在 ${realm} realm 绑定了 ${definition.realm} 模块 ${binding.moduleId}`,
+      });
+      failed = true;
+      continue;
+    }
+    if (provided === undefined) {
+      violations.push({
+        file,
+        code: "capability-mismatch",
+        message: `模块 ${binding.moduleId} 未声明提供能力 ${binding.capability}`,
+      });
+      failed = true;
+    }
+    if (binding.configRef !== null && assembly.configs[binding.configRef] === undefined) {
+      violations.push({
+        file,
+        code: "config-missing",
+        message: `模块 ${binding.moduleId} 引用了不存在的配置块 ${binding.configRef}`,
+      });
+      failed = true;
+    }
+  }
+  return failed;
+}
+
+/** 解析器输出必须满足“提供者先于消费者”；失败时给出具体模块对。 */
+function checkTopology(
+  file: string,
+  plan: ResolvedRealmPlan,
+  violations: CatalogViolation[],
+): void {
+  const positions = new Map(plan.modules.map((module, index) => [module.moduleId, index]));
+  for (const [consumerIndex, module] of plan.modules.entries()) {
+    for (const requirement of module.requires) {
+      for (const provider of requirement.providers) {
+        const providerIndex = positions.get(provider.moduleId);
+        if (providerIndex !== undefined && providerIndex > consumerIndex) {
+          violations.push({
+            file,
+            code: "topology",
+            message: `模块 ${module.moduleId} 依赖 ${provider.moduleId}，但提供者排在消费者之后`,
+          });
+        }
+      }
+    }
+  }
+}
+
+/** 校验一个已通过 schema 的装配：三个 realm 各自解析，失败原因带文件与 realm。 */
+function checkAssembly(
+  file: string,
+  assembly: AssemblyDescriptor,
+  definitions: readonly ModuleDefinition[],
+  definitionsById: ReadonlyMap<string, ModuleDefinition>,
+  requiredCapabilities: readonly CapabilityRef[],
+  violations: CatalogViolation[],
+): void {
+  const registry = createModuleRegistry();
+  try {
+    for (const definition of definitions) {
+      registry.register(definition);
+    }
+  } catch (error) {
+    violations.push({ file, code: errorCode(error), message: errorMessage(error) });
+    return;
+  }
+  const snapshot = registry.snapshot();
+  for (const realm of realms) {
+    const bindingFailed = checkBindings(file, realm, assembly, definitionsById, violations);
+    try {
+      const plan = resolveRealmPlan({
+        assembly,
+        realm,
+        catalog: snapshot,
+        ...(realm === "server" ? { requiredCapabilities } : {}),
+      });
+      checkTopology(file, plan, violations);
+    } catch (error) {
+      // 逐条绑定检查已经给出同一条失败原因时，不再重复解析器的首错。
+      if (!bindingFailed) {
+        violations.push({
+          file,
+          code: errorCode(error),
+          message: `${realm}: ${errorMessage(error)}`,
+        });
+      }
+    }
+  }
+}
+
+/** 读取目录下全部 YAML 装配并执行完整预检；违规累积返回，供 CLI 决定退出码。 */
+export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckReport {
+  const root = resolve(options.root ?? process.cwd());
+  const definitions = options.definitions ?? serverModuleDefinitions;
+  const requiredCapabilities =
+    options.requiredCapabilities ??
+    (options.definitions === undefined ? serverRequiredCapabilities : []);
+  const violations: CatalogViolation[] = [];
+  const definitionsById = checkDefinitions(definitions, violations);
+  const directory = join(root, "config/assemblies");
+  let fileNames: string[];
+  try {
+    fileNames = readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    violations.push({
+      file: directory,
+      code: "assemblies-unreadable",
+      message: `无法读取装配目录：${errorMessage(error)}`,
+    });
+    return { moduleCount: definitions.length, assemblies: [], violations };
+  }
+  if (fileNames.length === 0) {
+    violations.push({
+      file: directory,
+      code: "assemblies-empty",
+      message: "装配目录中没有 YAML 文件",
+    });
+  }
+
+  const assemblies: string[] = [];
+  const seenAssemblyIds = new Map<string, string>();
+  for (const fileName of fileNames) {
+    const file = join(directory, fileName);
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      violations.push({ file: fileName, code: "assembly-unreadable", message: errorMessage(error) });
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = parseYaml(text);
+    } catch (error) {
+      violations.push({ file: fileName, code: "assembly-unreadable", message: `不是合法 YAML：${errorMessage(error)}` });
+      continue;
+    }
+    const result = assemblyDescriptorSchema.safeParse(parsed);
+    if (!result.success) {
+      violations.push({
+        file: fileName,
+        code: "assembly-schema",
+        message: `不符合装配 schema：${result.error.issues.map((issue) => issue.message).join("；")}`,
+      });
+      continue;
+    }
+    const assembly = result.data;
+    const previous = seenAssemblyIds.get(assembly.assemblyId);
+    if (previous !== undefined) {
+      violations.push({
+        file: fileName,
+        code: "assembly-duplicate",
+        message: `assemblyId ${assembly.assemblyId} 与 ${previous} 重复`,
+      });
+      continue;
+    }
+    seenAssemblyIds.set(assembly.assemblyId, fileName);
+    assemblies.push(assembly.assemblyId);
+    checkAssembly(
+      fileName,
+      assembly,
+      [...definitionsById.values()],
+      definitionsById,
+      requiredCapabilities,
+      violations,
+    );
+  }
+
+  return { moduleCount: definitions.length, assemblies, violations };
+}
+
+/** 输出预检结果并返回退出码；失败项逐行打印原因，成功时报告装配数量。 */
+export function runCatalogCheckCli(options: CatalogCliOptions = {}): number {
+  const report = checkCatalog(options);
+  const writeStdout = options.writeStdout ?? ((text: string): void => {
+    process.stdout.write(text);
+  });
+  const writeStderr = options.writeStderr ?? ((text: string): void => {
+    process.stderr.write(text);
+  });
+  if (report.violations.length === 0) {
+    writeStdout(`catalog ok: ${report.moduleCount} modules, ${report.assemblies.length} assemblies\n`);
+    return 0;
+  }
+  writeStderr(`catalog 校验失败：${report.violations.length} 项。\n`);
+  for (const violation of report.violations) {
+    writeStderr(`  [${violation.code}] ${violation.file}: ${violation.message}\n`);
+  }
+  return 1;
+}

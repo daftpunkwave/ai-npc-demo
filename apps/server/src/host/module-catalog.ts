@@ -1,21 +1,36 @@
 /**
- * 服务端组合根：显式登记全部 server 模块定义、游戏端口与规则贡献。
+ * 服务端组合根：显式登记全部 server 模块定义，并从已启动实例的公开端口装配运行期端口与规则贡献。
  * 应用组合根只允许本文件引用模块包；其他 host 文件只经此入口取用。
- * 禁止在这里启动服务、打开存储或执行命令。
+ * 禁止在这里启动服务、打开存储、按模块 ID 挑选实现或手工构造模块实例。
  */
-import type { GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory } from "@ai-npc/module-sdk";
-import type { GameRuleContributor } from "@ai-npc/module-sdk";
-import type { HostServices, StoragePort } from "@ai-npc/contracts";
-import type { AssemblyDescriptor } from "@ai-npc/contracts";
+import {
+  capabilityIdSchema,
+  type CapabilityRef,
+  type HostServices,
+  type InstanceScope,
+  type StoragePort,
+} from "@ai-npc/contracts";
+import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@ai-npc/kernel";
+import type {
+  GameClockPort,
+  GameContent,
+  GameModulePorts,
+  GameRuleContributor,
+  ModuleBinder,
+  ScopedWorldTxFactory,
+} from "@ai-npc/module-sdk";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { clockModuleDefinition } from "@ai-npc/mod-game-clock-controlled";
-import { createMapPort, mapModuleDefinition, createMapContributor } from "@ai-npc/mod-game-map-six-nodes";
-import { createResourcesPort, resourcesModuleDefinition, createResourcesContributor } from "@ai-npc/mod-game-resources-light";
-import { createWorldPort, worldModuleDefinition, createWorldContributor } from "@ai-npc/mod-game-world-slg-light";
-import { createCommsPort, commsModuleDefinition, createCommsContributor } from "@ai-npc/mod-game-comms-standard";
-import { createActionsPort, actionsModuleDefinition, createActionsContributor } from "@ai-npc/mod-game-actions-standard";
-import { createAgreementsPort, agreementsModuleDefinition, createAgreementsContributor } from "@ai-npc/mod-game-agreements-standard";
-import { createScenarioPort, scenarioModuleDefinition, escalatingScenarioModuleDefinition, createScenarioContributor } from "@ai-npc/mod-game-scenario-watergate";
+import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
+import { resourcesModuleDefinition } from "@ai-npc/mod-game-resources-light";
+import { worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
+import { commsModuleDefinition } from "@ai-npc/mod-game-comms-standard";
+import { actionsModuleDefinition } from "@ai-npc/mod-game-actions-standard";
+import { agreementsModuleDefinition } from "@ai-npc/mod-game-agreements-standard";
+import {
+  escalatingScenarioModuleDefinition,
+  scenarioModuleDefinition,
+} from "@ai-npc/mod-game-scenario-watergate";
 import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
 import { accessPolicyModuleDefinition } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
@@ -48,88 +63,14 @@ export type {
   ServerAppOptions,
   ServerIdentity,
 } from "@ai-npc/mod-transport-http-ws-fastify";
-
-function bindingFor(assembly: AssemblyDescriptor, capability: string): string {
-  const binding = assembly.realms.server.bindings.find((entry) => entry.capability === capability);
-  if (binding === undefined) {
-    throw new Error(`装配缺少必需能力: ${capability}`);
-  }
-  return binding.moduleId;
-}
-
-const expectedBindings: Readonly<Record<string, string>> = {
-  "game.world": "game.world.slg-light",
-  "game.map": "game.map.six-nodes",
-  "game.clock": "game.clock.controlled",
-  "game.resources": "game.resources.light",
-  "game.actions": "game.actions.standard",
-  "game.agreements": "game.agreements.standard",
-  "game.comms": "game.comms.standard",
-  "game.save": "game.save.sqlite",
-  "platform.storage": "platform.storage.sqlite",
-  "platform.access-policy": "platform.access-policy.roster",
-  "platform.secrets": "platform.secrets.env",
-  "platform.operations": "platform.operations.standard",
-  "transport.http-ws": "transport.http-ws.fastify",
-};
-
-/** 校验所有必需 server binding；返回已选 scenario moduleId。 */
-export function assertSupportedServerBindings(assembly: AssemblyDescriptor): string {
-  for (const [capability, moduleId] of Object.entries(expectedBindings)) {
-    if (bindingFor(assembly, capability) !== moduleId) {
-      throw new Error(`装配包含当前宿主未实现的绑定: ${capability}`);
-    }
-  }
-  const scenario = bindingFor(assembly, "game.scenario");
-  if (scenario !== "game.scenario.watergate" && scenario !== "game.scenario.watergate-escalating") {
-    throw new Error("装配包含当前宿主未实现的绑定: game.scenario");
-  }
-  return scenario;
-}
-
-/** 按装配绑定选择游戏端口实现；未支持的模块 ID 直接失败。 */
-export function createGamePortsFromAssembly(
-  assembly: AssemblyDescriptor,
-  txFor: ScopedWorldTxFactory,
-  content: GameContent,
-  host: HostServices,
-): GameModulePorts {
-  const scenario = assertSupportedServerBindings(assembly);
-  return {
-    "game.map": createMapPort(txFor, content, (prefix) => host.ids(prefix)),
-    "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
-    "game.world": createWorldPort(txFor, content, (prefix) => host.ids(prefix)),
-    "game.comms": createCommsPort(txFor, content, (prefix) => host.ids(prefix)),
-    "game.actions": createActionsPort(txFor),
-    "game.agreements": createAgreementsPort(txFor),
-    "game.scenario": createScenarioPort(txFor, scenario),
-  };
-}
-
-export function createModuleBinderFromAssembly(assembly: AssemblyDescriptor, content: GameContent, host: HostServices): ModuleBinder {
-  return (txFor) => createGamePortsFromAssembly(assembly, txFor, content, host);
-}
+export type { ConversationReadPort, ConversationReadQuery, ConversationSourceLine } from "@ai-npc/mod-transport-http-ws-fastify";
 
 /** 创建存档领域服务；宿主只经组合根引用具体实现。 */
 export function createSaveService(storage: StoragePort, host: HostServices): SqliteSaveService {
   return new SqliteSaveService(storage, host);
 }
 
-/** 按装配绑定选择规则贡献；不支持的实现直接失败。 */
-export function createGameContributorsFromAssembly(assembly: AssemblyDescriptor): readonly GameRuleContributor<GameModulePorts, unknown>[] {
-  const scenario = assertSupportedServerBindings(assembly);
-  return [
-    createMapContributor(),
-    createResourcesContributor(),
-    createWorldContributor(),
-    createCommsContributor(),
-    createActionsContributor(),
-    createAgreementsContributor(),
-    createScenarioContributor({ escalating: scenario === "game.scenario.watergate-escalating" }),
-  ];
-}
-
-/** 全部 server 模块定义；moduleId 唯一性由 check-catalog 校验。 */
+/** 全部 server 模块定义；moduleId 唯一性由注册表与 check-catalog 校验。 */
 export const serverModuleDefinitions = [
   storageModuleDefinition,
   clockModuleDefinition,
@@ -147,3 +88,174 @@ export const serverModuleDefinitions = [
   operationsModuleDefinition,
   transportModuleDefinition,
 ] as const;
+
+function requiredCapability(capability: string, instanceScope: InstanceScope): CapabilityRef {
+  return {
+    capability: capabilityIdSchema.parse(capability),
+    cardinality: "exactly-one",
+    instanceScope,
+  };
+}
+
+/**
+ * 服务端宿主固定必需能力：全部游戏能力、部署级存储/密钥/权限、运营与传输。
+ * 装配缺失任一项时解析阶段直接失败，不进入存储启动。
+ */
+export const serverRequiredCapabilities: readonly CapabilityRef[] = [
+  requiredCapability("game.world", "run"),
+  requiredCapability("game.map", "run"),
+  requiredCapability("game.clock", "run"),
+  requiredCapability("game.resources", "run"),
+  requiredCapability("game.actions", "run"),
+  requiredCapability("game.agreements", "run"),
+  requiredCapability("game.comms", "run"),
+  requiredCapability("game.scenario", "run"),
+  requiredCapability("game.save", "run"),
+  requiredCapability("platform.storage", "deployment"),
+  requiredCapability("platform.access-policy", "deployment"),
+  requiredCapability("platform.secrets", "deployment"),
+  requiredCapability("platform.operations", "run"),
+  requiredCapability("transport.http-ws", "deployment"),
+];
+
+/** 游戏能力与端口键固定，宿主按这些能力从实例公开端口取绑定器。 */
+const gameCapabilities = [
+  "game.map",
+  "game.resources",
+  "game.world",
+  "game.comms",
+  "game.actions",
+  "game.agreements",
+  "game.scenario",
+] as const;
+
+/** 模块实例公开端口的最小结构：事务绑定器与可选的规则贡献。 */
+interface GameModulePublicPort {
+  readonly bind: (
+    txFor: ScopedWorldTxFactory,
+    content: GameContent,
+    ids: (prefix: string) => string,
+  ) => unknown;
+  readonly contributor?: GameRuleContributor<GameModulePorts, unknown>;
+}
+
+/** 运营模块公开端口：按宿主驱动创建一次运营编排服务。 */
+export interface OperationsFactory {
+  create(driver: OperationsDriver): OperationsService;
+}
+
+/** 宿主从解析计划实例化后的运行期端口集合。 */
+export interface ServerRuntime {
+  readonly storage: StoragePort;
+  readonly clock: GameClockPort;
+  readonly transport: TransportPort;
+  readonly operations: OperationsFactory;
+  readonly save: SqliteSaveService;
+  readonly binder: ModuleBinder;
+  readonly contributors: readonly GameRuleContributor<GameModulePorts, unknown>[];
+}
+
+/** 在实例计划中定位提供指定能力的模块；缺失说明预检被绕过，直接失败。 */
+export function plannedModuleForCapability(plan: ResolvedRealmPlan, capability: string): PlannedModule {
+  const planned = plan.modules.find((module) =>
+    module.definition.provides.some((provided) => provided.capability === capability),
+  );
+  if (planned === undefined) {
+    throw new Error(`解析计划缺少能力 ${capability} 的提供者`);
+  }
+  return planned;
+}
+
+function runningInstanceFor(
+  plan: ResolvedRealmPlan,
+  instances: readonly RunningInstance[],
+  capability: string,
+): { readonly planned: PlannedModule; readonly running: RunningInstance } {
+  const planned = plannedModuleForCapability(plan, capability);
+  const running = instances.find((instance) => instance.moduleId === planned.moduleId);
+  if (running === undefined) {
+    throw new Error(`模块 ${planned.moduleId} 没有启动实例，无法提供能力 ${capability}`);
+  }
+  return { planned, running };
+}
+
+function portFor<T>(
+  plan: ResolvedRealmPlan,
+  instances: readonly RunningInstance[],
+  capability: string,
+): T {
+  const { planned, running } = runningInstanceFor(plan, instances, capability);
+  if (running.port === undefined) {
+    throw new Error(`模块 ${planned.moduleId} 没有暴露能力 ${capability} 的端口`);
+  }
+  return running.port as T;
+}
+
+/**
+ * 从已启动实例的公开端口构造宿主运行期端口：
+ * 游戏端口由各模块自己的绑定器按事务绑定，规则贡献只取实例公开端口声明的部分。
+ */
+export function createServerRuntime(input: {
+  readonly plan: ResolvedRealmPlan;
+  readonly instances: readonly RunningInstance[];
+  readonly content: GameContent;
+  readonly host: HostServices;
+}): ServerRuntime {
+  const { plan, instances, content, host } = input;
+  const binders = new Map<string, GameModulePublicPort["bind"]>();
+  const contributors: GameRuleContributor<GameModulePorts, unknown>[] = [];
+  for (const planned of plan.modules) {
+    const running = instances.find((instance) => instance.moduleId === planned.moduleId);
+    if (running === undefined) {
+      throw new Error(`模块 ${planned.moduleId} 没有启动实例`);
+    }
+    const providedGameCapabilities = planned.definition.provides.filter((provided) =>
+      gameCapabilities.includes(provided.capability as (typeof gameCapabilities)[number]),
+    );
+    if (providedGameCapabilities.length === 0) {
+      continue;
+    }
+    const port = running.port as Partial<GameModulePublicPort> | undefined;
+    if (port === undefined || typeof port.bind !== "function") {
+      throw new Error(`模块 ${planned.moduleId} 没有暴露事务端口绑定器`);
+    }
+    for (const provided of providedGameCapabilities) {
+      binders.set(provided.capability, port.bind);
+    }
+    if (port.contributor === undefined) {
+      throw new Error(`游戏模块 ${planned.moduleId} 没有通过公开端口暴露规则贡献`);
+    }
+    if (port.contributor.moduleId !== planned.moduleId) {
+      throw new Error(
+        `游戏模块 ${planned.moduleId} 暴露的规则贡献属于 ${port.contributor.moduleId}`,
+      );
+    }
+    contributors.push(port.contributor);
+  }
+
+  const binder: ModuleBinder = (txFor) => {
+    const ports: Record<string, unknown> = {};
+    for (const capability of gameCapabilities) {
+      const bind = binders.get(capability);
+      if (bind === undefined) {
+        throw new Error(`装配缺少游戏能力 ${capability} 的端口绑定器`);
+      }
+      ports[capability] = bind(txFor, content, (prefix) => host.ids(prefix));
+    }
+    return ports as unknown as GameModulePorts;
+  };
+
+  const savePort = portFor<{ readonly save?: SqliteSaveService }>(plan, instances, "game.save");
+  if (savePort.save === undefined) {
+    throw new Error("存档模块没有通过公开端口暴露存档服务");
+  }
+  return {
+    storage: portFor<StoragePort>(plan, instances, "platform.storage"),
+    clock: portFor<GameClockPort>(plan, instances, "game.clock"),
+    transport: portFor<TransportPort>(plan, instances, "transport.http-ws"),
+    operations: portFor<OperationsFactory>(plan, instances, "platform.operations"),
+    save: savePort.save,
+    binder,
+    contributors,
+  };
+}

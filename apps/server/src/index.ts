@@ -3,8 +3,15 @@
  * 不启动服务、不打开存储。
  */
 export { createServerApp } from "./host/module-catalog";
-export { loadAssembly, resolveServerAssembly, resolveServerModules } from "./host/assembly";
-export type { ResolvedServerAssembly } from "./host/assembly";
+export { checkCatalog, runCatalogCheckCli } from "./host/catalog-check";
+export type {
+  CatalogCheckOptions,
+  CatalogCheckReport,
+  CatalogCliOptions,
+  CatalogViolation,
+} from "./host/catalog-check";
+export { filterPlan, loadAssembly, resolveServerAssembly, resolveSessionAssemblies, resolveServerModules } from "./host/assembly";
+export type { ResolvedServerAssembly, ResolveServerAssemblyOptions } from "./host/assembly";
 export { buildRunManifest, readFrozenManifest } from "./host/manifest";
 export type {
   BuiltRunManifest,
@@ -17,17 +24,19 @@ export type {
 export { generateRunSeed, rngFor } from "./host/random";
 export { canonicalHasher } from "./host-services";
 export {
-  createGameContributorsFromAssembly,
-  createGamePortsFromAssembly,
-  createModuleBinderFromAssembly,
   createSaveService,
+  createServerRuntime,
+  plannedModuleForCapability,
+  serverRequiredCapabilities,
 } from "./host/module-catalog";
-export type { AuthorityPort, ServerApp, ServerAppOptions, ServerIdentity } from "./host/module-catalog";
+export type { OperationsFactory, ServerRuntime } from "./host/module-catalog";
+export type { AuthorityPort, ConversationReadPort, ServerApp, ServerAppOptions, ServerIdentity } from "./host/module-catalog";
 export { buildPlayerProjection } from "./projection";
 export { advanceWorldTick, catchUpWorldTick } from "./tick";
 export type {
   AdvanceWorldTickInput,
   TickAuthority,
+  TickClockPort,
   WorldTickContext,
   WorldTickResult,
 } from "./tick";

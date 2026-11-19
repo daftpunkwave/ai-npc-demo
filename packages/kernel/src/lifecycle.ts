@@ -1,7 +1,8 @@
 /**
  * 按实例计划拓扑顺序创建并启动模块实例，失败时逆序释放已创建实例，并提供幂等的 drain/dispose。
  * 依赖公共契约的 HostServices、ModuleInstance 与 DomainError，以及本包解析出的实例计划；
- * 实例所需 host 服务与作用域由调用方提供，存储、模型与网络资源不由内核创建。
+ * 实例所需 host 服务与作用域由调用方提供，存储、模型与网络资源不由内核创建；
+ * 调用方可以传入已启动的 provider 供依赖装配复用，本次句柄只释放自己创建的实例。
  * 禁止吞掉 create/start 的原始错误、在回滚中覆盖原始错误，或跳过对已启动实例的逆序释放。
  */
 import {
@@ -19,6 +20,11 @@ export interface StartInstancesOptions {
   readonly host: HostServices;
   readonly scope: ModuleScope;
   readonly signal?: AbortSignal;
+  /**
+   * 已由调用方启动的提供者：按 moduleId 参与本计划的 port 装配，但不归本次句柄释放。
+   * 用于宿主先启动部署级 provider、再按在线 run 的装配启动其余模块。
+   */
+  readonly running?: readonly RunningInstance[];
 }
 
 /** 已创建并启动的模块实例及其对外 port。 */
@@ -129,6 +135,9 @@ export async function startInstances(
   const signal = options.signal ?? new AbortController().signal;
   const running: RunningInstance[] = [];
   const byModuleId = new Map<string, RunningInstance>();
+  for (const prior of options.running ?? []) {
+    byModuleId.set(prior.moduleId, prior);
+  }
   try {
     for (const planned of plan.modules) {
       const input: ModuleCreateInput = {

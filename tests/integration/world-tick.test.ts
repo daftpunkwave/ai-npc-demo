@@ -124,7 +124,7 @@ function advanceRange(value: GameHarness, fromTick: number, toTick: number): rea
       advanceWorldTick({
         storage: value.storage,
         authority: value.authority,
-        host: value.host,
+        clock: value.clock,
         branchId: value.branchId,
         targetTick: tick,
       }),
@@ -217,7 +217,7 @@ describe("在线 tick 顺序", () => {
     const catchUp = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(catchUp.worldTick).toBe(168);
@@ -238,7 +238,7 @@ describe("在线 tick 顺序", () => {
       advanceWorldTick({
         storage: value.storage,
         authority: value.authority,
-        host: value.host,
+        clock: value.clock,
         branchId: value.branchId,
         targetTick: 72,
       }),
@@ -261,7 +261,7 @@ describe("在线 tick 顺序", () => {
     const recovered = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(recovered.worldTick).toBe(72);
@@ -274,7 +274,7 @@ describe("在线 tick 顺序", () => {
     const repeated = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(repeated.executedJobs).toBe(0);
@@ -306,7 +306,7 @@ describe("在线 tick 顺序", () => {
       advanceWorldTick({
         storage: value.storage,
         authority: value.authority,
-        host: value.host,
+        clock: value.clock,
         branchId: value.branchId,
         targetTick: 24,
       }),
@@ -319,7 +319,7 @@ describe("在线 tick 顺序", () => {
     const recovered = catchUpWorldTick({
       storage: value.storage,
       authority: value.authority,
-      host: value.host,
+      clock: value.clock,
       branchId: value.branchId,
     });
     expect(recovered.worldTick).toBe(24);

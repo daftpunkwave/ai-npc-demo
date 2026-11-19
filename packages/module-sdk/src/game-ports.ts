@@ -14,6 +14,7 @@ import type {
   ResourceDelta,
   ResourceId,
   RoadStatus,
+  StorageTransaction,
   TaskStatus,
   TaskType,
   Term,
@@ -196,6 +197,16 @@ export interface ClockState {
 /** 时钟控制端口；面向宿主 API，不属于规则事务内的写入路径。 */
 export interface GameClockPort {
   read(branchId: string): ClockState;
+  /**
+   * 在调用方已打开的事务内读取时钟；宿主投影与规则事务用同一快照，避免嵌套事务。
+   * 端口只读该事务，不提交、不回滚，也不缓存结果。
+   */
+  readInTransaction(tx: StorageTransaction, branchId: string): ClockState;
+  /**
+   * 在调用方事务内为一个新分支写入初始时钟行（0 tick、暂停、版本 0），
+   * 秒数取自 provider 自己的有效配置；已有时钟行时拒绝覆盖。
+   */
+  initializeInTransaction(tx: StorageTransaction, branchId: string): ClockState;
   start(branchId: string, expectedRunVersion?: number): { readonly ok: true; readonly clock: ClockState } | { readonly ok: false; readonly reasonCode: "version-conflict" | "invalid-params" };
   pause(branchId: string, expectedRunVersion?: number): { readonly ok: true; readonly clock: ClockState } | { readonly ok: false; readonly reasonCode: "version-conflict" | "invalid-params" };
   step(

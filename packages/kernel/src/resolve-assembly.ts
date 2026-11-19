@@ -1,6 +1,6 @@
 /**
  * 按装配描述符与已注册模块目录解析一个 realm 的实例计划：校验模块、realm、能力绑定、
- * 实例作用域与能力依赖闭包，输出依赖拓扑顺序的模块配置与 port 装配关系。
+ * 实例作用域与能力依赖闭包，合并部署期配置覆盖，输出依赖拓扑顺序的模块配置与 port 装配关系。
  * 依赖公共契约的模块与装配类型、DomainError，以及本包 registry、resolve-config、capability-requirements。
  * 禁止创建实例或存储/模型/网络资源，也禁止在多个候选实现之间静默挑选或忽略降级。
  */
@@ -32,6 +32,11 @@ export interface ResolveRealmInput {
   readonly realm: Realm;
   readonly catalog: CatalogSnapshot;
   readonly requiredCapabilities?: readonly CapabilityRef[];
+  /**
+   * 部署期配置覆盖：按模块 ID 并入装配配置块，再走同一 config schema 校验。
+   * 只用于宿主启动参数（数据目录、监听端口等）；摘要与握手仍以装配声明为准。
+   */
+  readonly configOverrides?: Readonly<Record<string, Json>>;
 }
 
 /** 计划中的单个模块实例：已解析配置、port 装配关系与描述符身份。 */
@@ -70,6 +75,37 @@ interface ModuleConfigResolution {
 }
 
 const compareText = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
+
+function isJsonObject(value: Json | undefined): value is { readonly [key: string]: Json } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 把部署期覆盖并入绑定配置块：覆盖键优先于装配声明，但合并结果仍交给模块 config schema 严格校验。
+ * 非对象覆盖与覆盖未装配模块都在这里失败，避免宿主静默忽略启动参数。
+ */
+function mergeConfigOverride(
+  definition: ModuleDefinition,
+  configRef: string | null,
+  raw: Json | undefined,
+  override: Json | undefined,
+): Json | undefined {
+  if (override === undefined) {
+    return raw;
+  }
+  if (!isJsonObject(override)) {
+    throw new DomainError("assembly-incompatible", `模块 ${definition.id} 的部署配置覆盖必须是 JSON 对象`, {
+      details: { moduleId: definition.id, configRef },
+    });
+  }
+  if (raw === undefined) {
+    return override;
+  }
+  if (!isJsonObject(raw)) {
+    return raw;
+  }
+  return { ...raw, ...override };
+}
 
 function indexCatalog(catalog: CatalogSnapshot): Map<string, ModuleDefinition[]> {
   const byModuleId = new Map<string, ModuleDefinition[]>();
@@ -253,7 +289,13 @@ export function resolveRealmPlan(input: ResolveRealmInput): ResolvedRealmPlan {
           details: { capability: binding.capability, moduleId: definition.id, configRef },
         });
       }
-      moduleConfig = { definition, configRef, config: resolveModuleConfig(definition, rawConfig, configRef) };
+      const effectiveConfig = mergeConfigOverride(
+        definition,
+        configRef,
+        rawConfig,
+        input.configOverrides?.[definition.id],
+      );
+      moduleConfig = { definition, configRef, config: resolveModuleConfig(definition, effectiveConfig, configRef) };
       moduleConfigs.set(definition.id, moduleConfig);
     } else if (moduleConfig.configRef !== configRef) {
       throw new DomainError("assembly-incompatible", `模块 ${definition.id} 被多个能力绑定使用了不同配置块`, {
@@ -279,6 +321,16 @@ export function resolveRealmPlan(input: ResolveRealmInput): ResolvedRealmPlan {
       providersByCapability.set(binding.capability, [resolution]);
     } else {
       group.push(resolution);
+    }
+  }
+
+  if (input.configOverrides !== undefined) {
+    for (const moduleId of Object.keys(input.configOverrides)) {
+      if (!moduleConfigs.has(moduleId)) {
+        throw new DomainError("assembly-incompatible", `部署配置覆盖引用了未装配的模块 ${moduleId}`, {
+          details: { moduleId, realm },
+        });
+      }
     }
   }
 

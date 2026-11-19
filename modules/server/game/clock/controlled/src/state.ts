@@ -5,10 +5,14 @@
  */
 import { DomainError } from "@ai-npc/contracts";
 
-/** 时钟配置；与模块描述符的 strict schema 保持同构。 */
+/**
+ * 时钟配置；与模块描述符的 strict schema 对齐。
+ * autoPauseAfterDisconnectMs 当前只参与装配校验，断线自动暂停尚未接入 worker。
+ */
 export interface ClockConfig {
   readonly secondsPerTick: number;
   readonly maxStepTicks: number;
+  readonly autoPauseAfterDisconnectMs?: number;
 }
 
 /** 读取列值；列名只允许时钟表的固定列，避免把外部键当作对象索引。 */

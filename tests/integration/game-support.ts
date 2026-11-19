@@ -18,7 +18,8 @@ import type {
 } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
-import type { GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory, WorldTx } from "@ai-npc/module-sdk";
+import type { GameClockPort, GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory, WorldTx } from "@ai-npc/module-sdk";
+import { createClockPort } from "@ai-npc/mod-game-clock-controlled";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
@@ -68,6 +69,7 @@ export function createMemoryTx(worldTick = 0): WorldTx {
 export interface GameHarness {
   readonly dataDir: string;
   readonly storage: StoragePort;
+  readonly clock: GameClockPort;
   readonly host: FakeHost;
   readonly authority: Authority;
   readonly worldId: string;
@@ -171,6 +173,11 @@ export async function createGameHarness(options: {
     }
     const storage = port as StoragePort;
     seedBranch(storage, host, worldId, branchId);
+    const clock = createClockPort(
+      storage,
+      { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 },
+      host.nowIso,
+    );
     const content = loadContentPack("content", "earth-2964-v1");
     const gameContent = toGameContent(content);
     const binder: ModuleBinder = (txFor) => bindGamePorts(txFor, gameContent, host);
@@ -193,6 +200,7 @@ export async function createGameHarness(options: {
     return {
       dataDir,
       storage,
+      clock,
       host,
       authority,
       worldId,
