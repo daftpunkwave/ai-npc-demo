@@ -243,6 +243,27 @@ describe("SQLite 存档", () => {
     expect(persistenceOf(value)).toEqual(before);
   });
 
+  it("事务内创建快照随调用方回滚，不留下冻结分支或快照行", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 5, mode: "paused" });
+    const save = new SqliteSaveService(value.storage, value.host);
+    const before = persistenceOf(value);
+
+    expect(() =>
+      value.storage.transact((tx) => {
+        const snapshot = save.createSnapshotInTransaction(tx, {
+          sourceBranchId: value.branchId,
+          label: "事务内存档",
+          createdBy: "player-1",
+        });
+        expect(snapshot.worldTick).toBe(5);
+        throw new Error("调用方回滚");
+      }),
+    ).toThrow(/调用方回滚/);
+    expect(persistenceOf(value)).toEqual(before);
+  });
+
   it("切换中途写入失败时整体回滚，别名、分支、run 与快照保持原状", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");

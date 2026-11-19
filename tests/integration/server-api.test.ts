@@ -7,6 +7,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DomainError,
   campaignResponseSchema,
   conversationResponseSchema,
   errorResponseSchema,
@@ -89,6 +90,16 @@ function branchBusinessRows(harness: GameHarness) {
     events: tx.branch(harness.branchId).table("domain_events").list(),
     aggregates: tx.branch(harness.branchId).table("aggregate_state").list(),
     jobs: tx.branch(harness.branchId).table("jobs").list(),
+    clock: tx.branch(harness.branchId).table("clock").get({}),
+  }));
+}
+
+/** 持久化分支、run、快照与时钟；用于断言结构非法或冲突请求零写入。 */
+function persistenceRows(harness: GameHarness) {
+  return harness.storage.transact((tx) => ({
+    branches: tx.rows("branches").list().map((row) => String(row["branch_id"])).sort(),
+    runs: tx.rows("runs").list().map((row) => String(row["run_id"])).sort(),
+    snapshots: tx.rows("snapshots").list().map((row) => String(row["snapshot_id"])).sort(),
     clock: tx.branch(harness.branchId).table("clock").get({}),
   }));
 }
@@ -186,6 +197,7 @@ function conversationPort(harness: GameHarness): ConversationReadPort {
 
 interface AppOverrides {
   readonly projection?: () => PlayerProjection;
+  readonly pause?: () => ClockView;
   readonly reset?: () => { readonly branchId: string; readonly clock: ClockView };
   readonly now?: () => number;
   readonly starts?: () => readonly StartOption[];
@@ -228,7 +240,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
       : { conversation: overrides.conversation }),
     pause: (operationId: string, expected: number) => {
       void operationId;
-      return setClockMode(harness, "paused", expected);
+      return overrides.pause === undefined ? setClockMode(harness, "paused", expected) : overrides.pause();
     },
     resume: (operationId: string, expected: number) => {
       void operationId;
@@ -999,6 +1011,189 @@ describe("服务端 API", () => {
     expect(resumed.json()).toMatchObject({ mode: "running", runVersion: before.runVersion + 2 });
   });
 
+  it("同一 commandId 同内容返回原回执，换 payload 返回 409", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const session = await login(app, "player-token");
+    const headers = { authorization: `Bearer ${session}` };
+    const command = gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd"));
+
+    const executed = await app.inject({ method: "POST", url: "/api/v1/commands", headers, payload: command });
+    expect(executed.statusCode).toBe(200);
+    const first = executed.json() as { readonly receiptId: string; readonly commandStatus: string };
+    expect(first.commandStatus).toBe("accepted");
+    const afterFirst = branchBusinessRows(value);
+
+    // 同键同内容重放返回原回执，不再写事件或回执。
+    const replay = await app.inject({ method: "POST", url: "/api/v1/commands", headers, payload: command });
+    expect(replay.statusCode).toBe(200);
+    expect((replay.json() as { readonly receiptId: string }).receiptId).toBe(first.receiptId);
+    expect(branchBusinessRows(value)).toEqual(afterFirst);
+
+    // 同键换 payload 是幂等冲突：409，且不留下新回执或领域事件。
+    const conflict = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers,
+      payload: { ...command, payload: { factionId: "human-pacifist" } },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(conflict.json()).error).toMatchObject({
+      code: "idempotency-conflict",
+      retryable: false,
+    });
+    expect(branchBusinessRows(value)).toEqual(afterFirst);
+
+    // 普通领域拒绝仍是 200 与 rejected receipt，不走 HTTP 错误。
+    setGameClock(value, { worldTick: 0, mode: "paused" });
+    const denied = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers,
+      payload: gameCommandEnvelope("dialogue.say", { targetAgentId: "npc-wenyuan", text: "现在不能动。" }, value.host.ids("cmd")),
+    });
+    expect(denied.statusCode).toBe(200);
+    expect(denied.json()).toMatchObject({ commandStatus: "rejected", reasonCode: "paused" });
+  });
+
+  it("所有非 2xx 响应使用统一错误结构，结构非法不写入", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const playerSession = await login(app, "player-token");
+    const playerHeaders = { authorization: `Bearer ${playerSession}` };
+    const consoleSession = await login(app, "console-token");
+    const consoleHeaders = { authorization: `Bearer ${consoleSession}` };
+    const before = persistenceRows(value);
+
+    const cases: readonly {
+      readonly label: string;
+      readonly method: "GET" | "POST";
+      readonly url: string;
+      readonly headers?: Record<string, string>;
+      readonly payload?: Record<string, Json>;
+      readonly status: number;
+      readonly code: string;
+    }[] = [
+      { label: "登录结构非法", method: "POST", url: "/api/v1/auth/login", payload: {}, status: 400, code: "validation" },
+      { label: "未认证会话", method: "GET", url: "/api/v1/session", status: 401, code: "unauthenticated" },
+      {
+        label: "玩家访问控制台",
+        method: "GET",
+        url: "/api/v1/console/health",
+        headers: { ...playerHeaders, "x-active-role": "operator" },
+        status: 403,
+        code: "forbidden",
+      },
+      { label: "未知路由", method: "GET", url: "/api/v1/unknown", status: 404, code: "not-found" },
+      {
+        label: "未知回执",
+        method: "GET",
+        url: "/api/v1/commands/cmd-000000000999",
+        headers: playerHeaders,
+        status: 404,
+        code: "not-found",
+      },
+      {
+        label: "命令信封结构非法",
+        method: "POST",
+        url: "/api/v1/commands",
+        headers: playerHeaders,
+        payload: { commandId: "cmd-000000000999", type: "campaign.start" },
+        status: 400,
+        code: "validation",
+      },
+      {
+        label: "暂停缺少 operationId",
+        method: "POST",
+        url: "/api/v1/campaign/pause",
+        headers: playerHeaders,
+        payload: { expectedRunVersion: 0 },
+        status: 400,
+        code: "validation",
+      },
+      {
+        label: "快照缺少 operationId",
+        method: "POST",
+        url: "/api/v1/campaign/snapshots",
+        headers: playerHeaders,
+        payload: { label: "缺少幂等键" },
+        status: 400,
+        code: "validation",
+      },
+      {
+        label: "恢复缺少 operationId",
+        method: "POST",
+        url: "/api/v1/campaign/restore",
+        headers: playerHeaders,
+        payload: { snapshotId: "snap-000000000001" },
+        status: 400,
+        code: "validation",
+      },
+      {
+        label: "重开缺少 operationId",
+        method: "POST",
+        url: "/api/v1/campaign/reset",
+        headers: playerHeaders,
+        payload: {},
+        status: 400,
+        code: "validation",
+      },
+      {
+        label: "控制台缺少 X-Active-Role",
+        method: "GET",
+        url: "/api/v1/console/health",
+        headers: consoleHeaders,
+        status: 403,
+        code: "forbidden",
+      },
+    ];
+    for (const item of cases) {
+      const response = await app.inject({
+        method: item.method,
+        url: item.url,
+        ...(item.headers === undefined ? {} : { headers: item.headers }),
+        ...(item.payload === undefined ? {} : { payload: item.payload }),
+      });
+      expect(response.statusCode, item.label).toBe(item.status);
+      const body = errorResponseSchema.parse(response.json());
+      expect(body.error.code, item.label).toBe(item.code);
+      expect(body.error.safeMessage.length, item.label).toBeGreaterThan(0);
+    }
+    // 结构非法与认证/授权拒绝都不触碰业务写入。
+    expect(persistenceRows(value)).toEqual(before);
+
+    // 领域错误按 code 映射为 409；未预期异常统一为 500 plugin-failed。
+    const versionApp = await appFor(value, {
+      pause: () => {
+        throw new DomainError("version-conflict", "时钟版本冲突");
+      },
+    });
+    const versionSession = await login(versionApp, "player-token");
+    const versionResponse = await versionApp.inject({
+      method: "POST",
+      url: "/api/v1/campaign/pause",
+      headers: { authorization: `Bearer ${versionSession}` },
+      payload: { operationId: "op-000000000901", expectedRunVersion: 0 },
+    });
+    expect(versionResponse.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(versionResponse.json()).error.code).toBe("version-conflict");
+
+    const failedApp = await appFor(value, {
+      reset: () => {
+        throw new Error("注入的宿主故障");
+      },
+    });
+    const failedSession = await login(failedApp, "player-token");
+    const failed = await failedApp.inject({
+      method: "POST",
+      url: "/api/v1/campaign/reset",
+      headers: { authorization: `Bearer ${failedSession}` },
+      payload: { operationId: "op-000000000902" },
+    });
+    expect(failed.statusCode).toBe(500);
+    expect(errorResponseSchema.parse(failed.json()).error.code).toBe("plugin-failed");
+  });
+
   it("WS 首次订阅返回快照，命令后推送增量", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value);
@@ -1151,7 +1346,12 @@ describe("服务端 API", () => {
     app.notifyWorldChanged();
     expect(await first.next()).toMatchObject({ type: "delta", streamSeq: 1 });
 
-    const reset = await app.inject({ method: "POST", url: "/api/v1/campaign/reset", headers: auth });
+    const reset = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/reset",
+      headers: auth,
+      payload: { operationId: "op-000000000003" },
+    });
     expect(reset.statusCode).toBe(200);
     expect(reset.json()).toMatchObject({ branchId: "br-000000000001" });
     expect(await first.next()).toMatchObject({

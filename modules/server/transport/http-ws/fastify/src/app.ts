@@ -1,5 +1,5 @@
 /**
- * 创建 Fastify HTTP/WS 应用：登录、会话、装配握手、玩家读接口、命令与回执、时钟控制、存档与玩家流。
+ * 创建 Fastify HTTP/WS 应用：登录、会话、装配握手、玩家读接口、命令与回执、时钟控制、存档、玩家流与统一错误响应。
  * 依赖 authority、装配的权限端口、存储、投影/会话/开局/时钟/存档回调与身份令牌；不直接写规则聚合或查存储表。
  * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
@@ -7,19 +7,28 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import websocket, { type WebSocket } from "@fastify/websocket";
 import cors from "@fastify/cors";
 import {
+  campaignResetRequestSchema,
+  campaignResetResponseSchema,
   campaignResponseSchema,
   clientStreamMessageSchema,
+  clockControlRequestSchema,
+  clockResponseSchema,
   commandEnvelopeSchema,
   commandReceiptSchema,
   consoleActiveRoleSchema,
   conversationQuerySchema,
   conversationResponseSchema,
+  DomainError,
   errorResponseSchema,
   healthResponseSchema,
   loginRequestSchema,
   loginResponseSchema,
   sessionAssemblyQuerySchema,
   sessionAssemblyResponseSchema,
+  snapshotCreateRequestSchema,
+  snapshotCreateResponseSchema,
+  snapshotRestoreRequestSchema,
+  snapshotRestoreResponseSchema,
   streamChannelSchema,
   type AuthContext,
   type ClockView,
@@ -99,15 +108,13 @@ export interface ServerIdentity {
 }
 
 /** 注入钩子的类型锚点；实现体不会被调用，只用于保留参数与返回类型。 */
-function pauseHook(operationId: string, expectedRunVersion: number): ClockView {
-  void operationId;
-  void expectedRunVersion;
+function pauseHook(operationId: string, expectedRunVersion: number, principalId: string): ClockView {
+  void principalId;
   throw new Error(`pause hook 未注入: ${operationId}:${expectedRunVersion}`);
 }
 
-function resumeHook(operationId: string, expectedRunVersion: number): ClockView {
-  void operationId;
-  void expectedRunVersion;
+function resumeHook(operationId: string, expectedRunVersion: number, principalId: string): ClockView {
+  void principalId;
   throw new Error(`resume hook 未注入: ${operationId}:${expectedRunVersion}`);
 }
 
@@ -115,12 +122,23 @@ interface SnapshotCreateArgs {
   readonly sourceBranchId: string;
   readonly label: string;
   readonly createdBy: string;
+  /** 请求体提供的运营幂等键；与认证主体共同识别重试。 */
+  readonly operationId: string;
+  readonly principalId: string;
 }
 
 interface SnapshotRestoreArgs {
   readonly snapshotId: string;
   readonly createdBy: string;
   readonly runId?: string;
+  readonly operationId: string;
+  readonly principalId: string;
+}
+
+/** 恢复结果：宿主命中幂等记录时返回首次时钟，未提供时由传输层读取当前时钟。 */
+interface RestoreSnapshotResult {
+  readonly branchId: string;
+  readonly clock?: ClockView;
 }
 
 function createSnapshotHook(input: SnapshotCreateArgs): { readonly snapshotId: string; readonly worldTick: number } {
@@ -128,13 +146,14 @@ function createSnapshotHook(input: SnapshotCreateArgs): { readonly snapshotId: s
   throw new Error(`save hook 未注入: ${input.sourceBranchId}`);
 }
 
-function restoreSnapshotHook(input: SnapshotRestoreArgs): { readonly branchId: string } {
+function restoreSnapshotHook(input: SnapshotRestoreArgs): RestoreSnapshotResult {
   void input;
   throw new Error(`restore hook 未注入: ${input.snapshotId}`);
 }
 
-function resetHook(): { readonly branchId: string; readonly clock: ClockView } {
-  throw new Error("reset hook 未注入");
+function resetHook(operationId: string, principalId: string): { readonly branchId: string; readonly clock: ClockView } {
+  void principalId;
+  throw new Error(`reset hook 未注入: ${operationId}`);
 }
 
 /** 玩家会话读取请求：认证主体、对方主体与分页游标都由调用方给出。 */
@@ -452,11 +471,39 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   /** 最近一次成功发布的投影；用于识别新增对白与提醒。分支切换后重新建立基线。 */
   let lastProjection: PlayerProjection | null = options.projection();
 
+  /** 错误码到 HTTP 状态的唯一映射；业务规则拒绝仍返回 200 与 rejected receipt。 */
+  const statusByErrorCode: Readonly<Record<ErrorCode, number>> = {
+    unauthenticated: 401,
+    forbidden: 403,
+    validation: 400,
+    "not-found": 404,
+    paused: 503,
+    "not-ready": 503,
+    "invalid-state": 409,
+    "budget-exhausted": 429,
+    cancelled: 409,
+    "idempotency-conflict": 409,
+    "version-conflict": 409,
+    "stale-controller": 409,
+    "stale-turn": 409,
+    "module-missing": 422,
+    "capability-conflict": 422,
+    "assembly-incompatible": 422,
+    "realm-violation": 403,
+    "plugin-failed": 500,
+    "provider-failed": 500,
+  };
+
   /** 统一非 2xx 载荷：错误码、可重试标记与安全文案；不含内部细节或敏感上下文。 */
-  const sendHttpError = (reply: FastifyReply, status: number, code: ErrorCode, safeMessage: string): FastifyReply =>
-    reply.code(status).send(
+  const sendHttpError = (
+    reply: FastifyReply,
+    code: ErrorCode,
+    safeMessage: string,
+    retryable = false,
+  ): FastifyReply =>
+    reply.code(statusByErrorCode[code]).send(
       errorResponseSchema.parse({
-        error: { code, retryable: false, safeMessage, traceId: null, detailsArtifactRef: null },
+        error: { code, retryable, safeMessage, traceId: null, detailsArtifactRef: null },
       }),
     );
 
@@ -476,7 +523,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (allowed) {
       return true;
     }
-    sendHttpError(reply, 403, "forbidden", "当前角色无权访问玩家接口");
+    sendHttpError(reply, "forbidden", "当前角色无权访问玩家接口");
     return false;
   };
 
@@ -500,7 +547,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (allowed) {
       return true;
     }
-    sendHttpError(reply, 403, "forbidden", "当前角色不能使用该命令");
+    sendHttpError(reply, "forbidden", "当前角色不能使用该命令");
     return false;
   };
 
@@ -516,16 +563,16 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const header = request.headers["x-active-role"];
     const value = Array.isArray(header) ? header[0] : header;
     if (typeof value !== "string" || value.trim().length === 0) {
-      sendHttpError(reply, 403, "forbidden", "控制台请求缺少 X-Active-Role");
+      sendHttpError(reply, "forbidden", "控制台请求缺少 X-Active-Role");
       return false;
     }
     const parsed = consoleActiveRoleSchema.safeParse(value.trim());
     if (!parsed.success) {
-      sendHttpError(reply, 403, "forbidden", "X-Active-Role 不是控制台角色");
+      sendHttpError(reply, "forbidden", "X-Active-Role 不是控制台角色");
       return false;
     }
     if (!session.auth.roles.includes(parsed.data)) {
-      sendHttpError(reply, 403, "forbidden", "当前会话不持有请求的角色");
+      sendHttpError(reply, "forbidden", "当前会话不持有请求的角色");
       return false;
     }
     const decision = options.accessPolicy.authorize({
@@ -534,7 +581,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       action: "console",
     });
     if (!decision.allowed) {
-      sendHttpError(reply, 403, "forbidden", "当前角色无权访问控制台接口");
+      sendHttpError(reply, "forbidden", "当前角色无权访问控制台接口");
       return false;
     }
     return true;
@@ -802,7 +849,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
-      sendHttpError(reply, 403, "forbidden", "Origin 不被允许");
+      sendHttpError(reply, "forbidden", "Origin 不被允许");
     }
   });
 
@@ -810,12 +857,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const token = bearer(request);
     const session = token === null ? undefined : sessions.get(token);
     if (session === undefined) {
-      sendHttpError(reply, 401, "unauthenticated", "缺少或无效会话");
+      sendHttpError(reply, "unauthenticated", "缺少或无效会话");
       return null;
     }
     if (session.expiresAt <= now()) {
       revokeSession(session.sessionId, "session expired");
-      sendHttpError(reply, 401, "unauthenticated", "会话已过期");
+      sendHttpError(reply, "unauthenticated", "会话已过期");
       return null;
     }
     return { ...session, auth: { ...session.auth, branchId } };
@@ -824,10 +871,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.get("/api/v1/health", () => healthResponseSchema.parse({ status: options.healthStatus?.() ?? "ready", protocolVersion: "1" }));
 
   app.post("/api/v1/auth/login", (request, reply) => {
-    const body = loginRequestSchema.parse(request.body);
-    const identity = identityByToken.get(body.token);
+    const body = loginRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return sendHttpError(reply, "validation", "登录请求结构不合法");
+    }
+    const identity = identityByToken.get(body.data.token);
     if (identity === undefined) {
-      return sendHttpError(reply, 401, "unauthenticated", "登录令牌无效");
+      return sendHttpError(reply, "unauthenticated", "登录令牌无效");
     }
     const session: Session = {
       sessionId: options.ids("ses"),
@@ -848,7 +898,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   app.post("/api/v1/auth/logout", (request, reply) => {
     const token = bearer(request);
     if (token === null) {
-      return sendHttpError(reply, 401, "unauthenticated", "缺少或无效会话");
+      return sendHttpError(reply, "unauthenticated", "缺少或无效会话");
     }
     // 注销按会话身份撤销且幂等：并发或重复注销不报错。
     const session = sessions.get(token);
@@ -882,15 +932,15 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     const query = sessionAssemblyQuerySchema.safeParse(request.query);
     if (!query.success) {
-      return sendHttpError(reply, 400, "validation", "realm 必须是 client 或 console");
+      return sendHttpError(reply, "validation", "realm 必须是 client 或 console");
     }
     if (query.data.realm === "console" && !isConsoleSession(session)) {
-      return sendHttpError(reply, 403, "realm-violation", "当前会话不能读取控制台装配");
+      return sendHttpError(reply, "realm-violation", "当前会话不能读取控制台装配");
     }
     const assembly =
       query.data.realm === "client" ? options.sessionAssembly?.client : options.sessionAssembly?.console;
     if (assembly === undefined) {
-      return sendHttpError(reply, 404, "not-found", "装配资源不存在");
+      return sendHttpError(reply, "not-found", "装配资源不存在");
     }
     return sessionAssemblyResponseSchema.parse(assembly);
   });
@@ -903,17 +953,24 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    const envelope = commandEnvelopeSchema.parse(request.body);
-    if (!requireCommand(session, envelope.type, reply)) {
+    const envelope = commandEnvelopeSchema.safeParse(request.body);
+    if (!envelope.success) {
+      return sendHttpError(reply, "validation", "命令信封结构不合法");
+    }
+    if (!requireCommand(session, envelope.data.type, reply)) {
       return;
     }
-    const receipt = options.authority.commands.execute(session.auth, envelope);
+    const receipt = commandReceiptSchema.parse(options.authority.commands.execute(session.auth, envelope.data));
+    // 同一 commandId 换 payload 是幂等冲突而不是业务拒绝：不返回 200 rejected receipt。
+    if (receipt.commandStatus === "rejected" && receipt.reasonCode === "idempotency-conflict") {
+      return sendHttpError(reply, "idempotency-conflict", receipt.safeMessage ?? "命令 ID 已被不同内容使用");
+    }
     try {
       publishDelta();
     } catch (error) {
       app.log.error(error, "投影发布失败");
     }
-    return commandReceiptSchema.parse(receipt);
+    return receipt;
   });
 
   app.get("/api/v1/commands/:commandId", (request, reply) => {
@@ -933,7 +990,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       ]),
     );
     if (row === null) {
-      return sendHttpError(reply, 404, "not-found", "回执不存在");
+      return sendHttpError(reply, "not-found", "回执不存在");
     }
     return receiptOf(row);
   });
@@ -974,16 +1031,16 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     const port = options.conversation;
     if (port === undefined) {
-      return sendHttpError(reply, 503, "not-ready", "会话读取尚未就绪");
+      return sendHttpError(reply, "not-ready", "会话读取尚未就绪");
     }
     const params = request.params as { readonly agentId?: string };
     const agentId = params.agentId ?? "";
     if (agentId.length === 0) {
-      return sendHttpError(reply, 404, "not-found", "会话不存在");
+      return sendHttpError(reply, "not-found", "会话不存在");
     }
     const query = conversationQueryOf(request.query);
     if (query === null) {
-      return sendHttpError(reply, 400, "validation", "分页参数不合法");
+      return sendHttpError(reply, "validation", "分页参数不合法");
     }
     const conversation = readPlayerConversation(port, {
       principalId: session.auth.principalId,
@@ -992,7 +1049,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       limit: query.limit ?? defaultConversationLimit,
     });
     if (conversation === null) {
-      return sendHttpError(reply, 404, "not-found", "会话不存在");
+      return sendHttpError(reply, "not-found", "会话不存在");
     }
     return conversationResponseSchema.parse(conversation);
   });
@@ -1005,10 +1062,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
-    const clock = options.pause(body.operationId, body.expectedRunVersion);
+    const body = clockControlRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return sendHttpError(reply, "validation", "时钟控制请求结构不合法");
+    }
+    const clock = options.pause(body.data.operationId, body.data.expectedRunVersion, session.auth.principalId);
     publishDelta();
-    return clock;
+    return clockResponseSchema.parse(clock);
   });
 
   app.post("/api/v1/campaign/resume", (request, reply) => {
@@ -1019,10 +1079,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    const body = request.body as { readonly operationId: string; readonly expectedRunVersion: number };
-    const clock = options.resume(body.operationId, body.expectedRunVersion);
+    const body = clockControlRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return sendHttpError(reply, "validation", "时钟控制请求结构不合法");
+    }
+    const clock = options.resume(body.data.operationId, body.data.expectedRunVersion, session.auth.principalId);
     publishDelta();
-    return clock;
+    return clockResponseSchema.parse(clock);
   });
 
   app.post("/api/v1/campaign/snapshots", (request, reply) => {
@@ -1033,13 +1096,18 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    const body = request.body as { readonly label: string };
+    const body = snapshotCreateRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return sendHttpError(reply, "validation", "快照请求结构不合法");
+    }
     const snapshot = options.save.createSnapshot({
       sourceBranchId: branchId,
-      label: body.label,
+      label: body.data.label,
       createdBy: session.auth.principalId,
+      operationId: body.data.operationId,
+      principalId: session.auth.principalId,
     });
-    return { snapshotId: snapshot.snapshotId, worldTick: snapshot.worldTick };
+    return snapshotCreateResponseSchema.parse({ snapshotId: snapshot.snapshotId, worldTick: snapshot.worldTick });
   });
 
   app.get("/api/v1/campaign/snapshots", (request, reply) => {
@@ -1069,10 +1137,24 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    const body = request.body as { readonly snapshotId: string; readonly runId?: string };
-    const restored = options.save.restoreSnapshot({ snapshotId: body.snapshotId, createdBy: session.auth.principalId, ...(body.runId === undefined ? {} : { runId: body.runId }) });
-    applyBranchChange(restored.branchId);
-    return { branchId: restored.branchId, clock: options.clock() };
+    const body = snapshotRestoreRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return sendHttpError(reply, "validation", "恢复请求结构不合法");
+    }
+    const restored = options.save.restoreSnapshot({
+      snapshotId: body.data.snapshotId,
+      createdBy: session.auth.principalId,
+      operationId: body.data.operationId,
+      principalId: session.auth.principalId,
+    });
+    // 幂等重放可能返回已经不在线的首次后继分支；只有真正切换时才更新传输层分支与推送快照。
+    if (restored.branchId !== branchId) {
+      applyBranchChange(restored.branchId);
+    }
+    return snapshotRestoreResponseSchema.parse({
+      branchId: restored.branchId,
+      clock: restored.clock ?? options.clock(),
+    });
   });
 
   app.post("/api/v1/campaign/reset", (request, reply) => {
@@ -1083,9 +1165,15 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (!requirePlayer(session, reply)) {
       return;
     }
-    const reset = options.reset();
-    applyBranchChange(reset.branchId);
-    return { branchId: reset.branchId, clock: reset.clock };
+    const body = campaignResetRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return sendHttpError(reply, "validation", "重开请求结构不合法");
+    }
+    const reset = options.reset(body.data.operationId, session.auth.principalId);
+    if (reset.branchId !== branchId) {
+      applyBranchChange(reset.branchId);
+    }
+    return campaignResetResponseSchema.parse({ branchId: reset.branchId });
   });
 
   // 票据与控制台共用：API 第 6 节对全部会话开放；可订阅频道在握手与订阅时另行裁决。
@@ -1149,14 +1237,22 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     return { status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } };
   });
 
+  /**
+   * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
+   * 其余未预期错误一律 500 plugin-failed，safeMessage 不携带内部细节。
+   */
   app.setErrorHandler((error, _request, reply) => {
-    const value = error as { readonly statusCode?: number; readonly message?: string };
-    const status = typeof value.statusCode === "number" ? value.statusCode : 500;
-    reply.code(status).send({
-      code: status >= 500 ? "internal-error" : "invalid-request",
-      safeMessage: status >= 500 ? "服务器内部错误" : (value.message ?? "请求不合法"),
-    });
+    if (error instanceof DomainError) {
+      return sendHttpError(reply, error.code, error.safeMessage, error.retryable);
+    }
+    const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
+    if (statusCode === 400 || statusCode === 413 || statusCode === 415) {
+      return sendHttpError(reply, "validation", "请求结构不合法");
+    }
+    return sendHttpError(reply, "plugin-failed", "服务器内部错误");
   });
+
+  app.setNotFoundHandler((_request, reply) => sendHttpError(reply, "not-found", "资源不存在"));
 
   app.decorate("notifyWorldChanged", () => {
     publishDelta();

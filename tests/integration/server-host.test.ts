@@ -276,9 +276,11 @@ describe("服务端宿主", () => {
       payload: { operationId: "op-000000000001" },
     });
     expect(reset.statusCode).toBe(200);
-    const resetBody = reset.json() as { readonly branchId: string; readonly clock: { readonly mode: string } };
+    const resetBody = reset.json() as { readonly branchId: string };
     expect(resetBody.branchId).not.toBe(originalBranchId);
-    expect(resetBody.clock.mode).toBe("paused");
+    // 重开响应只返回新在线分支；新分支时钟由宿主置为暂停并可从存档读取。
+    const resetClock = host.storage.transact((tx) => tx.branch(resetBody.branchId).table("clock").get({}));
+    expect(resetClock).toMatchObject({ mode: "paused", world_tick: 0 });
     // 宿主内存中的在线分支与别名同步更新。
     expect(host.branchId).toBe(resetBody.branchId);
     const runs = host.storage.transact((tx) => tx.rows("runs").list({ mode: "live" }));
@@ -724,7 +726,7 @@ describe("服务端宿主", () => {
         method: "POST",
         url: "/api/v1/campaign/snapshots",
         headers,
-        payload: { label: "恢复点" },
+        payload: { operationId: "op-000000000104", label: "恢复点" },
       });
       expect(snapshot.statusCode).toBe(200);
       const snapshotId = (snapshot.json() as { readonly snapshotId: string }).snapshotId;
@@ -748,7 +750,7 @@ describe("服务端宿主", () => {
           method: "POST",
           url: "/api/v1/campaign/restore",
           headers,
-          payload: { snapshotId },
+          payload: { operationId: "op-000000000105", snapshotId },
         });
         expect(restored.statusCode).toBe(200);
         const restoredBody = restored.json() as { readonly branchId: string; readonly clock: { readonly mode: string; readonly worldTick: number } };
@@ -852,7 +854,7 @@ describe("服务端宿主", () => {
       method: "POST",
       url: "/api/v1/campaign/snapshots",
       headers,
-      payload: { label: "旧版本恢复点" },
+      payload: { operationId: "op-000000000106", label: "旧版本恢复点" },
     });
     expect(snapshot.statusCode).toBe(200);
     const snapshotId = (snapshot.json() as { readonly snapshotId: string }).snapshotId;
@@ -877,7 +879,7 @@ describe("服务端宿主", () => {
       method: "POST",
       url: "/api/v1/campaign/restore",
       headers,
-      payload: { snapshotId },
+      payload: { operationId: "op-000000000107", snapshotId },
     });
     expect(restored.statusCode).toBe(500);
     const after = host.storage.transact((tx) => ({

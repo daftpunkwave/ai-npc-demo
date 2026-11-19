@@ -2,9 +2,11 @@
  * 存档服务：把在线分支复制为冻结快照，并在同一存储事务内从快照切换到后继在线分支。
  * 依赖 SQLite 存储端口的分支复制、快照/runs/world_aliases 表与宿主 ID/时间服务；不暂停时钟或排空 job。
  * 禁止在未暂停时保存、覆盖已有分支、在快照上继续写入，也禁止恢复失败时留下部分写入。
+ * 对外方法自行开启事务；InTransaction 变体供宿主把幂等记录等相邻写入并入同一事务。
  */
 /* eslint-disable security/detect-object-injection -- 行访问只使用本文件固定的列名。 */
 import {
+  DomainError,
   canonicalJson,
   type ForkBranchResult,
   type HostServices,
@@ -131,7 +133,7 @@ function maxWorldSeq(tx: StorageTransaction, branchId: string): number {
 function readFrozenSnapshot(tx: StorageTransaction, snapshotId: string): FrozenSnapshot {
   const row = tx.rows("snapshots").get({ snapshot_id: snapshotId });
   if (row === null) {
-    throw new Error(`快照 ${snapshotId} 不存在`);
+    throw new DomainError("not-found", `快照 ${snapshotId} 不存在`, { details: { snapshotId } });
   }
   const sourceBranchId = stringValue(row["source_branch_id"], "snapshots.source_branch_id");
   const frozenBranchId = stringValue(row["frozen_branch_id"], "snapshots.frozen_branch_id");
@@ -140,7 +142,9 @@ function readFrozenSnapshot(tx: StorageTransaction, snapshotId: string): FrozenS
 
   const sourceBranch = tx.rows("branches").get({ branch_id: sourceBranchId });
   if (sourceBranch === null) {
-    throw new Error(`快照源分支 ${sourceBranchId} 不存在`);
+    throw new DomainError("not-found", `快照源分支 ${sourceBranchId} 不存在`, {
+      details: { sourceBranchId },
+    });
   }
   if (sourceBranch["kind"] !== "online") {
     throw new Error(`快照源分支 ${sourceBranchId} 不是 online 分支，无法作为在线恢复来源`);
@@ -185,7 +189,9 @@ function readSourceRun(tx: StorageTransaction, frozen: FrozenSnapshot): Snapshot
   }
   const run = tx.rows("runs").get({ run_id: frozen.sourceRunId });
   if (run === null) {
-    throw new Error(`快照源 run ${frozen.sourceRunId} 不存在`);
+    throw new DomainError("not-found", `快照源 run ${frozen.sourceRunId} 不存在`, {
+      details: { runId: frozen.sourceRunId },
+    });
   }
   if (run["world_id"] !== frozen.worldId) {
     throw new Error(`快照源 run ${frozen.sourceRunId} 与快照不属于同一 world`);
@@ -290,47 +296,57 @@ export class SqliteSaveService {
 
   /** 创建一致快照：复制源分支为冻结分支并写入快照行；调用方负责先暂停并排空 job。 */
   createSnapshot(input: CreateSnapshotInput): SnapshotRecord {
+    return this.storage.transact((tx) => this.createSnapshotInTransaction(tx, input));
+  }
+
+  /**
+   * 在调用方已开启的事务内创建快照：供宿主把运营幂等记录与冻结分支、快照行一起提交。
+   * 只读写传入事务，不自行提交或回滚。
+   */
+  createSnapshotInTransaction(tx: StorageTransaction, input: CreateSnapshotInput): SnapshotRecord {
     if (input.label.trim().length === 0) {
-      throw new Error("快照标签不能为空");
+      throw new DomainError("validation", "快照标签不能为空");
     }
-    return this.storage.transact((tx) => {
-      const source = tx.rows("branches").get({ branch_id: input.sourceBranchId });
-      if (source === null) {
-        throw new Error(`源分支 ${input.sourceBranchId} 不存在`);
-      }
-      const clock = tx.branch(input.sourceBranchId).table("clock").get({});
-      if (clock === null) {
-        throw new Error(`源分支 ${input.sourceBranchId} 缺少时钟记录`);
-      }
-      const snapshotId = this.nextId("snap");
-      const frozenBranchId = this.nextId("br");
-      const fork: ForkBranchResult = this.storage.forkBranch(tx, {
-        srcBranchId: input.sourceBranchId,
-        dstBranchId: frozenBranchId,
-        kind: "snapshot",
+    const source = tx.rows("branches").get({ branch_id: input.sourceBranchId });
+    if (source === null) {
+      throw new DomainError("not-found", `源分支 ${input.sourceBranchId} 不存在`, {
+        details: { branchId: input.sourceBranchId },
       });
-      const record: SnapshotRecord = {
-        snapshotId,
-        sourceBranchId: input.sourceBranchId,
-        frozenBranchId: fork.branchId,
-        worldSeq: maxWorldSeq(tx, input.sourceBranchId),
-        worldTick: numberValue(clock["world_tick"], "clock.world_tick"),
-        label: input.label,
-        createdAt: this.host.nowIso(),
-      };
-      tx.rows("snapshots").put({
-        snapshot_id: record.snapshotId,
-        source_branch_id: record.sourceBranchId,
-        frozen_branch_id: record.frozenBranchId,
-        world_seq: record.worldSeq,
-        world_tick: record.worldTick,
-        label: record.label,
-        manifest_hash: null,
-        created_by: input.createdBy,
-        created_at: record.createdAt,
+    }
+    const clock = tx.branch(input.sourceBranchId).table("clock").get({});
+    if (clock === null) {
+      throw new DomainError("invalid-state", `源分支 ${input.sourceBranchId} 缺少时钟记录`, {
+        details: { branchId: input.sourceBranchId },
       });
-      return record;
+    }
+    const snapshotId = this.nextId("snap");
+    const frozenBranchId = this.nextId("br");
+    const fork: ForkBranchResult = this.storage.forkBranch(tx, {
+      srcBranchId: input.sourceBranchId,
+      dstBranchId: frozenBranchId,
+      kind: "snapshot",
     });
+    const record: SnapshotRecord = {
+      snapshotId,
+      sourceBranchId: input.sourceBranchId,
+      frozenBranchId: fork.branchId,
+      worldSeq: maxWorldSeq(tx, input.sourceBranchId),
+      worldTick: numberValue(clock["world_tick"], "clock.world_tick"),
+      label: input.label,
+      createdAt: this.host.nowIso(),
+    };
+    tx.rows("snapshots").put({
+      snapshot_id: record.snapshotId,
+      source_branch_id: record.sourceBranchId,
+      frozen_branch_id: record.frozenBranchId,
+      world_seq: record.worldSeq,
+      world_tick: record.worldTick,
+      label: record.label,
+      manifest_hash: null,
+      created_by: input.createdBy,
+      created_at: record.createdAt,
+    });
+    return record;
   }
 
   /** 只列出当前 campaign（在线别名分支及其父链）创建的存档；其他分支或 campaign 的快照不出现。 */
@@ -350,7 +366,12 @@ export class SqliteSaveService {
 
   /** 恢复 dry-run：只读校验快照完整性与源 run 记录；失败不产生任何写入。 */
   inspectRestore(snapshotId: string): RestoreInspection {
-    return this.storage.transact((tx) => inspectSnapshot(tx, snapshotId));
+    return this.storage.transact((tx) => this.inspectRestoreInTransaction(tx, snapshotId));
+  }
+
+  /** 在调用方事务内执行恢复 dry-run；只读传入事务，不自行提交。 */
+  inspectRestoreInTransaction(tx: StorageTransaction, snapshotId: string): RestoreInspection {
+    return inspectSnapshot(tx, snapshotId);
   }
 
   /**
@@ -358,93 +379,105 @@ export class SqliteSaveService {
    * 并原子切换 world_aliases('online')；任一步失败整体回滚，旧分支与别名保持原状。
    */
   restoreSnapshot(input: RestoreSnapshotInput): RestoreResult {
-    return this.storage.transact((tx) => {
-      const inspection = inspectSnapshot(tx, input.snapshotId);
-      if (input.expected !== undefined) {
-        assertExpectedSource(input.expected, inspection);
-      }
+    return this.storage.transact((tx) => this.restoreSnapshotInTransaction(tx, input));
+  }
 
-      const alias = tx.rows("world_aliases").get({ alias: "online" });
-      if (alias === null) {
-        throw new Error("没有 world_aliases('online')，拒绝恢复");
-      }
-      const previousBranchId = stringValue(alias["branch_id"], "world_aliases.branch_id");
-      const previousBranch = tx.rows("branches").get({ branch_id: previousBranchId });
-      if (previousBranch === null) {
-        throw new Error(`在线别名指向的分支 ${previousBranchId} 不存在`);
-      }
-      if (previousBranch["kind"] !== "online") {
-        throw new Error(`在线别名指向的分支 ${previousBranchId} 不是 online 分支`);
-      }
-      const previousStatus = stringValue(previousBranch["status"], "branches.status");
-      if (previousStatus !== "active" && previousStatus !== "paused") {
-        throw new Error(`在线别名指向的分支 ${previousBranchId} 状态为 ${previousStatus}，拒绝恢复`);
-      }
-      if (previousBranch["world_id"] !== inspection.worldId) {
-        throw new Error("快照与当前在线世界不属于同一 campaign，拒绝恢复");
-      }
-      const previousRunId = typeof previousBranch["run_id"] === "string" ? previousBranch["run_id"] : "";
-      if (previousRunId.length === 0) {
-        throw new Error(`在线分支 ${previousBranchId} 没有绑定 run，拒绝恢复`);
-      }
-      const previousRun = tx.rows("runs").get({ run_id: previousRunId });
-      if (previousRun === null) {
-        throw new Error(`在线 run ${previousRunId} 不存在，拒绝恢复`);
-      }
+  /**
+   * 在调用方已开启的事务内从快照切换在线世界；供宿主把运营幂等记录并入同一次提交。
+   * 只读写传入事务，不自行提交或回滚。
+   */
+  restoreSnapshotInTransaction(tx: StorageTransaction, input: RestoreSnapshotInput): RestoreResult {
+    const inspection = inspectSnapshot(tx, input.snapshotId);
+    if (input.expected !== undefined) {
+      assertExpectedSource(input.expected, inspection);
+    }
 
-      const runId = input.runId ?? this.nextId("run");
-      if (runId.trim().length === 0) {
-        throw new Error("后继 run ID 不能为空");
-      }
-      if (runId === previousRunId || tx.rows("runs").get({ run_id: runId }) !== null) {
-        throw new Error(`run ${runId} 已存在，拒绝复用为后继 run`);
-      }
+    const alias = tx.rows("world_aliases").get({ alias: "online" });
+    if (alias === null) {
+      throw new DomainError("invalid-state", "没有 world_aliases('online')，拒绝恢复");
+    }
+    const previousBranchId = stringValue(alias["branch_id"], "world_aliases.branch_id");
+    const previousBranch = tx.rows("branches").get({ branch_id: previousBranchId });
+    if (previousBranch === null) {
+      throw new DomainError("invalid-state", `在线别名指向的分支 ${previousBranchId} 不存在`);
+    }
+    if (previousBranch["kind"] !== "online") {
+      throw new DomainError("invalid-state", `在线别名指向的分支 ${previousBranchId} 不是 online 分支`);
+    }
+    const previousStatus = stringValue(previousBranch["status"], "branches.status");
+    if (previousStatus !== "active" && previousStatus !== "paused") {
+      throw new DomainError("invalid-state", `在线别名指向的分支 ${previousBranchId} 状态为 ${previousStatus}，拒绝恢复`);
+    }
+    if (previousBranch["world_id"] !== inspection.worldId) {
+      throw new DomainError("invalid-state", "快照与当前在线世界不属于同一 campaign，拒绝恢复");
+    }
+    const previousRunId = typeof previousBranch["run_id"] === "string" ? previousBranch["run_id"] : "";
+    if (previousRunId.length === 0) {
+      throw new DomainError("invalid-state", `在线分支 ${previousBranchId} 没有绑定 run，拒绝恢复`);
+    }
+    const previousRun = tx.rows("runs").get({ run_id: previousRunId });
+    if (previousRun === null) {
+      throw new DomainError("invalid-state", `在线 run ${previousRunId} 不存在，拒绝恢复`);
+    }
 
-      const now = this.host.nowIso();
-      // 分支复制会整表复制待办 job，并把后继时钟置为 paused、递增控制 epoch。
-      const fork = this.storage.forkBranch(tx, {
-        srcBranchId: inspection.frozenBranchId,
-        dstBranchId: this.nextId("br"),
-        kind: "online",
-        runId,
-      });
-      tx.rows("runs").put({
-        run_id: runId,
-        world_id: inspection.worldId,
-        branch_id: fork.branchId,
-        mode: "live",
-        status: "running",
-        run_spec_json: inspection.sourceRun.runSpec,
-        manifest_json: inspection.sourceRun.manifest,
-        manifest_hash: inspection.sourceRun.manifestHash,
-        contaminated: inspection.sourceRun.contaminated,
-        evidence_complete: inspection.sourceRun.evidenceComplete,
-        created_at: now,
-        started_at: now,
-        ended_at: null,
-      });
-      tx.rows("runs").put({
-        ...previousRun,
-        status: "completed",
-        ended_at: typeof previousRun["ended_at"] === "string" ? previousRun["ended_at"] : now,
-      });
-      tx.rows("branches").put({ ...previousBranch, status: "archived" });
-      tx.rows("world_aliases").put({ alias: "online", branch_id: fork.branchId, updated_at: now });
-      return {
-        branchId: fork.branchId,
-        runId,
-        worldId: inspection.worldId,
-        previousBranchId,
-        sourceRunId: inspection.sourceRun.runId,
-        worldSeq: inspection.worldSeq,
-        worldTick: inspection.worldTick,
-      };
+    const runId = input.runId ?? this.nextId("run");
+    if (runId.trim().length === 0) {
+      throw new DomainError("validation", "后继 run ID 不能为空");
+    }
+    if (runId === previousRunId || tx.rows("runs").get({ run_id: runId }) !== null) {
+      throw new DomainError("invalid-state", `run ${runId} 已存在，拒绝复用为后继 run`);
+    }
+
+    const now = this.host.nowIso();
+    // 分支复制会整表复制待办 job，并把后继时钟置为 paused、递增控制 epoch。
+    const fork = this.storage.forkBranch(tx, {
+      srcBranchId: inspection.frozenBranchId,
+      dstBranchId: this.nextId("br"),
+      kind: "online",
+      runId,
     });
+    tx.rows("runs").put({
+      run_id: runId,
+      world_id: inspection.worldId,
+      branch_id: fork.branchId,
+      mode: "live",
+      status: "running",
+      run_spec_json: inspection.sourceRun.runSpec,
+      manifest_json: inspection.sourceRun.manifest,
+      manifest_hash: inspection.sourceRun.manifestHash,
+      contaminated: inspection.sourceRun.contaminated,
+      evidence_complete: inspection.sourceRun.evidenceComplete,
+      created_at: now,
+      started_at: now,
+      ended_at: null,
+    });
+    tx.rows("runs").put({
+      ...previousRun,
+      status: "completed",
+      ended_at: typeof previousRun["ended_at"] === "string" ? previousRun["ended_at"] : now,
+    });
+    tx.rows("branches").put({ ...previousBranch, status: "archived" });
+    tx.rows("world_aliases").put({ alias: "online", branch_id: fork.branchId, updated_at: now });
+    return {
+      branchId: fork.branchId,
+      runId,
+      worldId: inspection.worldId,
+      previousBranchId,
+      sourceRunId: inspection.sourceRun.runId,
+      worldSeq: inspection.worldSeq,
+      worldTick: inspection.worldTick,
+    };
   }
 }
 
 /** 存档服务公开类型；调用方只依赖这些方法。 */
 export type SaveService = Pick<
   SqliteSaveService,
-  "createSnapshot" | "listSnapshots" | "inspectRestore" | "restoreSnapshot"
+  | "createSnapshot"
+  | "createSnapshotInTransaction"
+  | "listSnapshots"
+  | "inspectRestore"
+  | "inspectRestoreInTransaction"
+  | "restoreSnapshot"
+  | "restoreSnapshotInTransaction"
 >;

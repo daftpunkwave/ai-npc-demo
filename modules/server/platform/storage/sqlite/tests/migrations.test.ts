@@ -1,15 +1,15 @@
 /**
- * 验证初始迁移与表目录：表数量、版本记录、重复打开幂等、PRAGMA 生效与分支级表清单一致。
+ * 验证迁移与表目录：表数量、版本记录、重复打开幂等、PRAGMA 生效、分支级表清单与运营幂等表部署级身份。
  * 依赖存储模块测试助手与迁移推导的分支级表常量。
  * 禁止连接真实数据库文件、跳过失败迁移断言或把运行级表当作分支级表。
  */
 import { describe, expect, it } from "vitest";
 import type { StoragePort } from "@ai-npc/contracts";
-import { BRANCH_TABLES } from "../src/sqlite/schema";
+import { BRANCH_TABLES, OPERATION_IDEMPOTENCY_TABLE } from "../src/sqlite/schema";
 import { createTempDataDir, openStorageHarness, removeTempDataDir, startStorage } from "./support";
 
-/** 迁移中的表总数：部署级 9 + 分支级 18 + 运行级 12。 */
-const EXPECTED_TABLE_COUNT = 39;
+/** 迁移中的表总数：部署级 10 + 分支级 18 + 运行级 12（含运营操作幂等表）。 */
+const EXPECTED_TABLE_COUNT = 40;
 
 function readTableNames(port: StoragePort): readonly string[] {
   return port.transact((tx) =>
@@ -37,15 +37,16 @@ function deriveBranchTables(port: StoragePort): readonly string[] {
 }
 
 describe("初始迁移", () => {
-  it("首次打开建表并记录版本 1", async () => {
+  it("首次打开执行全部迁移并记录版本", async () => {
     const harness = await openStorageHarness();
     try {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at FROM schema_migrations ORDER BY version"),
       );
-      expect(versions).toHaveLength(1);
-      expect(versions[0]?.["version"]).toBe(1);
-      expect(typeof versions[0]?.["applied_at"]).toBe("string");
+      expect(versions.map((row) => row["version"])).toEqual([1, 2]);
+      for (const version of versions) {
+        expect(typeof version["applied_at"]).toBe("string");
+      }
       expect(harness.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(true);
     } finally {
       await harness.dispose();
@@ -60,7 +61,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -83,6 +84,23 @@ describe("初始迁移", () => {
     const harness = await openStorageHarness();
     try {
       expect(readTableNames(harness.port)).toHaveLength(EXPECTED_TABLE_COUNT);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("运营幂等表是部署级表，不参与分支复制", async () => {
+    const harness = await openStorageHarness();
+    try {
+      const columns = harness.port
+        .transact((tx) =>
+          tx.all(`SELECT name FROM pragma_table_info('${OPERATION_IDEMPOTENCY_TABLE}')`),
+        )
+        .map((row) => String(row["name"]));
+      expect(columns).toContain("request_hash");
+      expect(columns).toContain("result_json");
+      expect(columns).not.toContain("branch_id");
+      expect(deriveBranchTables(harness.port)).not.toContain(OPERATION_IDEMPOTENCY_TABLE);
     } finally {
       await harness.dispose();
     }

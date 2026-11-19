@@ -359,7 +359,7 @@ describe("快照排空", () => {
       method: "POST",
       url: "/api/v1/campaign/snapshots",
       headers: { authorization: `Bearer ${session}` },
-      payload: { label: "tick-72" },
+      payload: { operationId: "op-000000000001", label: "tick-72" },
     });
     expect(response.statusCode).toBe(200);
     const body = response.json() as { readonly snapshotId: string; readonly worldTick: number };

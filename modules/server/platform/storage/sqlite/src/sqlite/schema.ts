@@ -44,6 +44,12 @@ const REGISTRY_TABLES_WITH_BRANCH_KEY: ReadonlySet<string> = new Set(["branches"
 /** 标识分支归属的列名；分支级表的第一主键列。 */
 export const BRANCH_COLUMN = "branch_id";
 
+/**
+ * 运营操作幂等表：部署级表，按世界、认证主体与 operationId 保存首次结果。
+ * 不含 branch_id，不参与分支复制；打开时校验迁移已创建该表，避免代码与表结构漂移。
+ */
+export const OPERATION_IDEMPOTENCY_TABLE = "operation_idempotency";
+
 /** JSON 列的命名约定：迁移中以 _json 结尾的 TEXT 列存规范 JSON。 */
 const JSON_COLUMN_SUFFIX = "_json";
 
@@ -160,6 +166,12 @@ export function resolveCatalog(database: DatabaseSync): StorageCatalog {
     return table;
   });
   assertBranchTableList(BRANCH_TABLES, branchTableNamesOf([...tables.values()]));
+  const idempotency = tables.get(OPERATION_IDEMPOTENCY_TABLE);
+  if (idempotency === undefined || idempotency.hasBranchColumn) {
+    throw new DomainError("invalid-state", "存储迁移缺少部署级运营幂等表或误将其登记为分支级表", {
+      details: { table: OPERATION_IDEMPOTENCY_TABLE },
+    });
+  }
   return { tables, branchTables };
 }
 

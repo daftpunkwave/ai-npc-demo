@@ -1,16 +1,21 @@
 /**
- * 打开服务端宿主：装配预检、存储启动、在线 run 解析、按计划启动剩余模块、authority、应用与时钟 worker。
+ * 打开服务端宿主：装配预检、存储启动、在线 run 解析、运营操作幂等、按计划启动剩余模块、authority、应用与时钟 worker。
  * 依赖 kernel 解析/生命周期、组合根公开端口、实验配置加载器、部署配置校验与 authority；不启动浏览器端。
  * 禁止绕过解析计划直接引用模块实现，也禁止按当前入参重建已冻结的在线 run 或重复实现时钟状态。
  */
 import { resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
+  DomainError,
   assemblyDescriptorSchema,
   canonicalJson,
+  clockViewSchema,
+  isErrorCode,
+  jsonValueSchema,
   type AssemblyDescriptor,
   type AuthContext,
   type ClockView,
+  type ErrorCode,
   type Json,
   type ModuleDefinition,
   type StartOption,
@@ -168,6 +173,224 @@ const defaultPackId = "earth-2964-v1";
 const defaultRunSpecRef = "online-default";
 const defaultAssemblyRef = "local-slg-standard-v1";
 const defaultRosterRef = "standard-20";
+
+/** 运营操作种类；与 operation_idempotency.operation_kind 的约束一致。 */
+type OperationKind = "pause" | "resume" | "snapshot" | "restore" | "reset";
+
+/** 请求体中的幂等键与认证主体；传输层校验请求结构后传入。 */
+interface OperationActor {
+  readonly operationId: string;
+  readonly principalId: string;
+}
+
+/** 幂等键：世界、认证主体与 operationId；请求内容哈希只用于识别同键不同内容。 */
+interface OperationKey {
+  readonly kind: OperationKind;
+  readonly worldId: string;
+  readonly principalId: string;
+  readonly operationId: string;
+  readonly requestHash: string;
+}
+
+/** 已持久化的首次结果：成功结果或失败原因；失败也按同一 operationId 返回。 */
+type OperationOutcome =
+  | { readonly status: "succeeded"; readonly result: Json }
+  | { readonly status: "failed"; readonly code: ErrorCode; readonly retryable: boolean; readonly safeMessage: string };
+
+/** 部署级幂等表；不含 branch_id，因此跨在线别名切换与进程重启仍然有效。 */
+const operationIdempotencyTable = "operation_idempotency";
+
+/** 运营请求内容哈希：覆盖操作类型与业务字段，复用规范 JSON 保证键顺序无关。 */
+function operationRequestHash(kind: OperationKind, content: Json): string {
+  return createHash("sha256").update(canonicalJson({ kind, content })).digest("hex");
+}
+
+/** 对客户端公开的错误形状；未预期的宿主异常不携带内部细节。 */
+function publicOperationError(error: unknown): {
+  readonly code: ErrorCode;
+  readonly retryable: boolean;
+  readonly safeMessage: string;
+} {
+  if (error instanceof DomainError) {
+    return { code: error.code, retryable: error.retryable, safeMessage: error.safeMessage };
+  }
+  return { code: "plugin-failed", retryable: false, safeMessage: "服务器内部错误" };
+}
+
+/** 从幂等记录行还原首次结果；同键不同内容在此明确冲突。 */
+function storedOperationOutcome(row: StorageRow, key: OperationKey): OperationOutcome {
+  const storedHash = row["request_hash"];
+  if (typeof storedHash !== "string") {
+    throw new DomainError("invalid-state", "运营幂等记录缺少请求哈希");
+  }
+  if (storedHash !== key.requestHash) {
+    throw new DomainError("idempotency-conflict", "同一 operationId 已用于不同请求内容", {
+      details: { operationId: key.operationId, kind: key.kind },
+    });
+  }
+  const status = row["status"];
+  if (status === "succeeded") {
+    const result = row["result_json"];
+    if (result === null || result === undefined || result instanceof Uint8Array) {
+      throw new DomainError("invalid-state", "运营幂等记录缺少首次结果");
+    }
+    return { status: "succeeded", result: result as Json };
+  }
+  if (status === "failed") {
+    const code = row["error_code"];
+    const retryable = row["error_retryable"];
+    const safeMessage = row["error_safe_message"];
+    if (typeof code !== "string" || !isErrorCode(code)) {
+      throw new DomainError("invalid-state", "运营幂等记录的错误码不合法");
+    }
+    if (typeof retryable !== "number" || (retryable !== 0 && retryable !== 1)) {
+      throw new DomainError("invalid-state", "运营幂等记录的重试标记不合法");
+    }
+    if (typeof safeMessage !== "string" || safeMessage.length === 0) {
+      throw new DomainError("invalid-state", "运营幂等记录缺少安全文案");
+    }
+    return { status: "failed", code, retryable: retryable === 1, safeMessage };
+  }
+  throw new DomainError("invalid-state", "运营幂等记录状态不合法");
+}
+
+/** 把宿主构造的纯数据结果转换为契约 JSON；非法值在这里失败，不写入半成品记录。 */
+function toJsonResult(value: unknown): Json {
+  return jsonValueSchema.parse(value);
+}
+
+function operationJsonObject(value: Json, label: string): Record<string, Json> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new DomainError("invalid-state", `运营幂等记录中的${label}结果不合法`);
+  }
+  return value as Record<string, Json>;
+}
+
+/** 校验并还原时钟结果；记录由宿主自己写入，非法内容说明存储被破坏。 */
+function decodeClockOutcome(value: Json): ClockView {
+  const parsed = clockViewSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new DomainError("invalid-state", "运营幂等记录中的时钟结果不合法");
+  }
+  return parsed.data;
+}
+
+function decodeSnapshotOutcome(value: Json): { readonly snapshotId: string; readonly worldTick: number } {
+  const record = operationJsonObject(value, "快照");
+  const snapshotId = record["snapshotId"];
+  const worldTick = record["worldTick"];
+  if (typeof snapshotId !== "string" || typeof worldTick !== "number" || !Number.isSafeInteger(worldTick)) {
+    throw new DomainError("invalid-state", "运营幂等记录中的快照结果不合法");
+  }
+  return { snapshotId, worldTick };
+}
+
+function decodeBranchClockOutcome(value: Json): { readonly branchId: string; readonly clock: ClockView } {
+  const record = operationJsonObject(value, "分支");
+  const branchId = record["branchId"];
+  const clock = record["clock"];
+  if (typeof branchId !== "string" || branchId.length === 0 || clock === undefined) {
+    throw new DomainError("invalid-state", "运营幂等记录中的分支结果不合法");
+  }
+  return { branchId, clock: decodeClockOutcome(clock) };
+}
+
+/**
+ * 运营操作日志：按认证主体与 operationId 读取首次结果，或在同一事务内写入结果。
+ * 只读写部署级表，不参与分支复制；写入失败只记录日志，不覆盖原始业务错误。
+ */
+class OperationJournal {
+  private readonly storage: StoragePort;
+  private readonly nowIso: () => string;
+  private readonly report: (message: string, error: unknown) => void;
+
+  constructor(storage: StoragePort, nowIso: () => string, report: (message: string, error: unknown) => void) {
+    this.storage = storage;
+    this.nowIso = nowIso;
+    this.report = report;
+  }
+
+  /** 在独立读事务中查首次结果；命中时返回，未命中返回 null，同键不同内容抛冲突。 */
+  replay<T>(key: OperationKey, decode: (value: Json) => T): T | null {
+    const outcome = this.storage.transact((tx) => this.read(tx, key));
+    return outcome === null ? null : this.materialize(outcome, decode);
+  }
+
+  /** 在调用方事务内读取首次结果；不做任何写入。 */
+  read(tx: StorageTransaction, key: OperationKey): OperationOutcome | null {
+    const row = tx.rows(operationIdempotencyTable).get({
+      world_id: key.worldId,
+      principal_id: key.principalId,
+      operation_id: key.operationId,
+    });
+    return row === null ? null : storedOperationOutcome(row, key);
+  }
+
+  /** 首次结果成功时返回结果；失败时抛出与首次执行相同的领域错误。 */
+  materialize<T>(outcome: OperationOutcome, decode: (value: Json) => T): T {
+    if (outcome.status === "failed") {
+      throw new DomainError(outcome.code, outcome.safeMessage, { retryable: outcome.retryable });
+    }
+    return decode(outcome.result);
+  }
+
+  /**
+   * 在独立事务中写入成功结果；仅用于无法把业务写入并入同一事务的时钟控制。
+   * 调用方须保证业务写入已经成功。
+   */
+  recordSuccessStandalone(key: OperationKey, result: Json): void {
+    this.storage.transact((tx) => this.recordSuccess(tx, key, result));
+  }
+
+  /** 把成功结果写入调用方事务；调用方负责把业务写入与本次写入一起提交。 */
+  recordSuccess(tx: StorageTransaction, key: OperationKey, result: Json): void {
+    tx.rows(operationIdempotencyTable).put({
+      world_id: key.worldId,
+      principal_id: key.principalId,
+      operation_id: key.operationId,
+      operation_kind: key.kind,
+      request_hash: key.requestHash,
+      status: "succeeded",
+      result_json: result,
+      error_code: null,
+      error_retryable: 0,
+      error_safe_message: null,
+      created_at: this.nowIso(),
+    });
+  }
+
+  /** 记录首次执行的失败原因；已有记录时不覆盖，写入失败只记日志。 */
+  recordFailure(key: OperationKey, error: unknown): void {
+    const published = publicOperationError(error);
+    try {
+      this.storage.transact((tx) => {
+        const existing = tx.rows(operationIdempotencyTable).get({
+          world_id: key.worldId,
+          principal_id: key.principalId,
+          operation_id: key.operationId,
+        });
+        if (existing !== null) {
+          return;
+        }
+        tx.rows(operationIdempotencyTable).put({
+          world_id: key.worldId,
+          principal_id: key.principalId,
+          operation_id: key.operationId,
+          operation_kind: key.kind,
+          request_hash: key.requestHash,
+          status: "failed",
+          result_json: null,
+          error_code: published.code,
+          error_retryable: published.retryable ? 1 : 0,
+          error_safe_message: published.safeMessage,
+          created_at: this.nowIso(),
+        });
+      });
+    } catch (recordError) {
+      this.report("运营幂等失败记录写入失败", recordError);
+    }
+  }
+}
 
 /** 在线入口：world_aliases('online') 指向的唯一在线分支及其绑定的 live run。 */
 interface OnlineEntry {
@@ -327,6 +550,9 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     await storageStarted.dispose();
     throw new Error("存储模块没有暴露 StoragePort");
   }
+  const journal = new OperationJournal(storage, () => host.nowIso(), (message, error) => {
+    host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
+  });
 
   /** 首次启动：用当前启动选择生成新 RunSpec、随机 seed 与冻结 manifest；提交函数在时钟 provider 启动后写入在线世界。 */
   const prepareFirstRun = async (): Promise<PendingFirstRun> => {
@@ -564,10 +790,26 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       ? runtime.clock.pause(activeBranchId, expectedRunVersion)
       : runtime.clock.start(activeBranchId, expectedRunVersion);
     if (!result.ok) {
-      throw new Error(result.reasonCode === "version-conflict" ? "时钟版本冲突" : "时钟控制参数非法");
+      throw result.reasonCode === "version-conflict"
+        ? new DomainError("version-conflict", "时钟版本冲突")
+        : new DomainError("invalid-state", "时钟控制参数非法");
     }
     return clockView(result.clock);
   };
+
+  /** 运营操作键：世界取当前在线世界，主体与 operationId 由认证会话和请求体给出。 */
+  const operationKeyFor = (
+    kind: OperationKind,
+    principalId: string,
+    operationId: string,
+    content: Json,
+  ): OperationKey => ({
+    kind,
+    worldId: activeWorldId,
+    principalId,
+    operationId,
+    requestHash: operationRequestHash(kind, content),
+  });
 
   const binder = runtime.binder;
   // 生产装配使用默认 fencing：Agent 命令必须带有效 turn 租约，测试辅助方可显式放开直连。
@@ -617,11 +859,92 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
 
   const save = runtime.save;
+  /** 快照前的受控准备：运行中先暂停，再幂等补完当前 tick 的到期 job 与消费者。 */
+  const prepareSnapshot = (): void => {
+    const current = clockState();
+    if (current.mode === "running") {
+      control("pause", current.runVersion);
+    }
+    catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: activeBranchId });
+  };
   const createDrainedSnapshot = (
     input: { readonly label: string; readonly createdBy: string },
   ): ReturnType<typeof save.createSnapshot> => {
     catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: activeBranchId });
     return save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy });
+  };
+  /**
+   * 重开的单事务部分：先把当前在线世界冻结为快照，再创建新的空在线分支与 live run、
+   * 结束旧 run、归档旧分支并切换在线别名；调用方负责先暂停并补完 tick。
+   */
+  const resetInTransaction = (
+    tx: StorageTransaction,
+    createdBy: string,
+  ): { readonly branchId: string; readonly clock: ClockView } => {
+    const alias = tx.rows("world_aliases").get({ alias: "online" });
+    if (alias === null || alias["branch_id"] !== activeBranchId) {
+      throw new DomainError("invalid-state", "在线别名在重开事务内发生变化，拒绝切换");
+    }
+    const previous = tx.rows("branches").get({ branch_id: activeBranchId });
+    if (previous === null) {
+      throw new DomainError("invalid-state", `在线分支 ${activeBranchId} 不存在，拒绝重开`);
+    }
+    if (previous["kind"] !== "online") {
+      throw new DomainError("invalid-state", `在线分支 ${activeBranchId} 不是 online 分支，拒绝重开`);
+    }
+    const previousStatus = previous["status"];
+    if (previousStatus !== "active" && previousStatus !== "paused") {
+      throw new DomainError("invalid-state", `在线分支 ${activeBranchId} 状态为 ${String(previousStatus)}，拒绝重开`);
+    }
+    const previousRunId = typeof previous["run_id"] === "string" ? previous["run_id"] : "";
+    const previousRun = previousRunId.length === 0 ? null : tx.rows("runs").get({ run_id: previousRunId });
+    if (previousRun === null) {
+      throw new DomainError("invalid-state", `在线分支 ${activeBranchId} 没有绑定 run，拒绝重开`);
+    }
+    const clockRow = runtime.clock.readInTransaction(tx, activeBranchId);
+    const now = host.nowIso();
+    const nextBranchId = host.ids("br");
+    const nextRunId = host.ids("run");
+    // 重开前的快照与后续分支切换同事务提交，避免失败时留下孤立快照或半切换别名。
+    save.createSnapshotInTransaction(tx, {
+      sourceBranchId: activeBranchId,
+      label: `reset-${clockRow.worldTick}`,
+      createdBy,
+    });
+    const nextBranch: StorageRow = {
+      branch_id: nextBranchId,
+      world_id: activeWorldId,
+      kind: "online",
+      status: "active",
+      parent_branch_id: activeBranchId,
+      forked_at_world_seq: null,
+      run_id: null,
+      profile_hash: null,
+      created_at: now,
+    };
+    tx.rows("branches").put(nextBranch);
+    tx.rows("runs").put({
+      run_id: nextRunId,
+      world_id: activeWorldId,
+      branch_id: nextBranchId,
+      mode: "live",
+      status: "running",
+      run_spec_json: runSpec,
+      manifest_json: frozenManifest as unknown as Json,
+      manifest_hash: frozenManifestHash,
+      contaminated: 0,
+      evidence_complete: 1,
+      created_at: now,
+      started_at: now,
+      ended_at: null,
+    });
+    tx.rows("branches").put({ ...nextBranch, run_id: nextRunId });
+    // 新分支的初始时钟行由 provider 写入同一事务，秒数取 provider 有效配置。
+    runtime.clock.initializeInTransaction(tx, nextBranchId);
+    tx.rows("runs").put({ ...previousRun, status: "completed", ended_at: now });
+    tx.rows("branches").put({ ...previous, status: "archived" });
+    tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: now });
+    return { branchId: nextBranchId, clock: clockView(runtime.clock.readInTransaction(tx, nextBranchId)) };
   };
   /**
    * 重开：先把当前在线世界存为快照，再在同一事务内创建新的空在线分支与 live run、
@@ -630,76 +953,18 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
     const online = storage.transact(readOnlineEntry);
     if (online === null) {
-      throw new Error("没有 world_aliases('online')，拒绝重开");
+      throw new DomainError("invalid-state", "没有 world_aliases('online')，拒绝重开");
     }
     if (online.branchId !== activeBranchId) {
-      throw new Error(`在线别名指向 ${online.branchId}，与宿主分支 ${activeBranchId} 不一致；拒绝重开`);
+      throw new DomainError(
+        "invalid-state",
+        `在线别名指向 ${online.branchId}，与宿主分支 ${activeBranchId} 不一致；拒绝重开`,
+      );
     }
-    const current = clockState();
-    if (current.mode !== "paused") {
-      control("pause", current.runVersion);
-    }
-    createDrainedSnapshot({ label: `reset-${current.worldTick}`, createdBy: "operator-1" });
-    const nextBranchId = host.ids("br");
-    storage.transact((tx) => {
-      const alias = tx.rows("world_aliases").get({ alias: "online" });
-      if (alias === null || alias["branch_id"] !== activeBranchId) {
-        throw new Error("在线别名在重开事务内发生变化，拒绝切换");
-      }
-      const previous = tx.rows("branches").get({ branch_id: activeBranchId });
-      if (previous === null) {
-        throw new Error(`在线分支 ${activeBranchId} 不存在，拒绝重开`);
-      }
-      if (previous["kind"] !== "online") {
-        throw new Error(`在线分支 ${activeBranchId} 不是 online 分支，拒绝重开`);
-      }
-      const previousStatus = previous["status"];
-      if (previousStatus !== "active" && previousStatus !== "paused") {
-        throw new Error(`在线分支 ${activeBranchId} 状态为 ${String(previousStatus)}，拒绝重开`);
-      }
-      const previousRunId = typeof previous["run_id"] === "string" ? previous["run_id"] : "";
-      const previousRun = previousRunId.length === 0 ? null : tx.rows("runs").get({ run_id: previousRunId });
-      if (previousRun === null) {
-        throw new Error(`在线分支 ${activeBranchId} 没有绑定 run，拒绝重开`);
-      }
-      const now = host.nowIso();
-      const nextRunId = host.ids("run");
-      const nextBranch: StorageRow = {
-        branch_id: nextBranchId,
-        world_id: activeWorldId,
-        kind: "online",
-        status: "active",
-        parent_branch_id: activeBranchId,
-        forked_at_world_seq: null,
-        run_id: null,
-        profile_hash: null,
-        created_at: now,
-      };
-      tx.rows("branches").put(nextBranch);
-      tx.rows("runs").put({
-        run_id: nextRunId,
-        world_id: activeWorldId,
-        branch_id: nextBranchId,
-        mode: "live",
-        status: "running",
-        run_spec_json: runSpec,
-        manifest_json: frozenManifest as unknown as Json,
-        manifest_hash: frozenManifestHash,
-        contaminated: 0,
-        evidence_complete: 1,
-        created_at: now,
-        started_at: now,
-        ended_at: null,
-      });
-      tx.rows("branches").put({ ...nextBranch, run_id: nextRunId });
-      // 新分支的初始时钟行由 provider 写入同一事务，秒数取 provider 有效配置。
-      runtime.clock.initializeInTransaction(tx, nextBranchId);
-      tx.rows("runs").put({ ...previousRun, status: "completed", ended_at: now });
-      tx.rows("branches").put({ ...previous, status: "archived" });
-      tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: now });
-    });
-    activeBranchId = nextBranchId;
-    return { branchId: nextBranchId, clock: clockView(clockState()) };
+    prepareSnapshot();
+    const result = storage.transact((tx) => resetInTransaction(tx, "operator-1"));
+    activeBranchId = result.branchId;
+    return result;
   };
 
   /**
@@ -774,6 +1039,156 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     return restored;
   };
 
+  /**
+   * 暂停/继续的幂等执行。时钟 provider 自持事务，结果记录只能随后单独提交，
+   * 两次提交之间崩溃会退化为重新执行一次时钟控制，不承诺该窗口的原子性。
+   */
+  const controlOperation = (
+    kind: "pause" | "resume",
+    expectedRunVersion: number,
+    operation: OperationActor,
+  ): ClockView => {
+    const key = operationKeyFor(kind, operation.principalId, operation.operationId, { expectedRunVersion });
+    const replayed = journal.replay(key, decodeClockOutcome);
+    if (replayed !== null) {
+      return replayed;
+    }
+    let clock: ClockView;
+    try {
+      clock = control(kind === "pause" ? "pause" : "start", expectedRunVersion);
+    } catch (error) {
+      journal.recordFailure(key, error);
+      throw error;
+    }
+    journal.recordSuccessStandalone(key, toJsonResult(clock));
+    return clock;
+  };
+
+  /** 快照的幂等执行：首次结果与冻结分支、快照行在同一事务提交。 */
+  const snapshotOperation = (
+    operation: OperationActor,
+    input: { readonly label: string; readonly createdBy: string },
+  ): { readonly snapshotId: string; readonly worldTick: number } => {
+    const key = operationKeyFor("snapshot", operation.principalId, operation.operationId, { label: input.label });
+    const replayed = journal.replay(key, decodeSnapshotOutcome);
+    if (replayed !== null) {
+      return replayed;
+    }
+    try {
+      prepareSnapshot();
+      return storage.transact((tx) => {
+        const stored = journal.read(tx, key);
+        if (stored !== null) {
+          return journal.materialize(stored, decodeSnapshotOutcome);
+        }
+        const created = save.createSnapshotInTransaction(tx, {
+          sourceBranchId: activeBranchId,
+          label: input.label,
+          createdBy: input.createdBy,
+        });
+        const outcome = { snapshotId: created.snapshotId, worldTick: created.worldTick };
+        journal.recordSuccess(tx, key, toJsonResult(outcome));
+        return outcome;
+      });
+    } catch (error) {
+      journal.recordFailure(key, error);
+      throw error;
+    }
+  };
+
+  /** 恢复的幂等执行：首次结果、后继分支/run 与别名切换在同一事务提交。 */
+  const restoreOperation = (
+    operation: OperationActor,
+    input: { readonly snapshotId: string; readonly createdBy: string; readonly runId?: string },
+  ): { readonly branchId: string; readonly clock: ClockView } => {
+    const key = operationKeyFor("restore", operation.principalId, operation.operationId, {
+      snapshotId: input.snapshotId,
+      ...(input.runId === undefined ? {} : { runId: input.runId }),
+    });
+    const replayed = journal.replay(key, decodeBranchClockOutcome);
+    if (replayed !== null) {
+      return replayed;
+    }
+    try {
+      const committed = storage.transact((tx): {
+        readonly outcome: { readonly branchId: string; readonly clock: ClockView };
+        readonly applied: boolean;
+        readonly worldId?: string;
+      } => {
+        const stored = journal.read(tx, key);
+        if (stored !== null) {
+          return { outcome: journal.materialize(stored, decodeBranchClockOutcome), applied: false };
+        }
+        const inspection = save.inspectRestoreInTransaction(tx, input.snapshotId);
+        validateRestoreSource(inspection);
+        const restored = save.restoreSnapshotInTransaction(tx, {
+          snapshotId: input.snapshotId,
+          createdBy: input.createdBy,
+          ...(input.runId === undefined ? {} : { runId: input.runId }),
+          expected: {
+            sourceRunId: inspection.sourceRun.runId,
+            canonicalRunSpec: canonicalJson(inspection.sourceRun.runSpec),
+            manifestHash: inspection.sourceRun.manifestHash,
+            worldSeq: inspection.worldSeq,
+            worldTick: inspection.worldTick,
+          },
+        });
+        const outcome = {
+          branchId: restored.branchId,
+          clock: clockView(runtime.clock.readInTransaction(tx, restored.branchId)),
+        };
+        journal.recordSuccess(tx, key, toJsonResult(outcome));
+        return { outcome, applied: true, worldId: restored.worldId };
+      });
+      if (committed.applied) {
+        activeBranchId = committed.outcome.branchId;
+        activeWorldId = committed.worldId ?? activeWorldId;
+      }
+      return committed.outcome;
+    } catch (error) {
+      journal.recordFailure(key, error);
+      throw error;
+    }
+  };
+
+  /** 重开的幂等执行：重开前的快照与分支切换同事务，结果同事务写入。 */
+  const resetOperation = (operation: OperationActor): { readonly branchId: string; readonly clock: ClockView } => {
+    const key = operationKeyFor("reset", operation.principalId, operation.operationId, {});
+    const replayed = journal.replay(key, decodeBranchClockOutcome);
+    if (replayed !== null) {
+      return replayed;
+    }
+    try {
+      const online = storage.transact(readOnlineEntry);
+      if (online === null) {
+        throw new DomainError("invalid-state", "没有 world_aliases('online')，拒绝重开");
+      }
+      if (online.branchId !== activeBranchId) {
+        throw new DomainError(
+          "invalid-state",
+          `在线别名指向 ${online.branchId}，与宿主分支 ${activeBranchId} 不一致；拒绝重开`,
+        );
+      }
+      prepareSnapshot();
+      const committed = storage.transact((tx) => {
+        const stored = journal.read(tx, key);
+        if (stored !== null) {
+          return { outcome: journal.materialize(stored, decodeBranchClockOutcome), applied: false };
+        }
+        const outcome = resetInTransaction(tx, operation.principalId);
+        journal.recordSuccess(tx, key, toJsonResult(outcome));
+        return { outcome, applied: true };
+      });
+      if (committed.applied) {
+        activeBranchId = committed.outcome.branchId;
+      }
+      return committed.outcome;
+    } catch (error) {
+      journal.recordFailure(key, error);
+      throw error;
+    }
+  };
+
   const operations = runtime.operations.create({
     clock: () => clockState(),
     pause: (expected) => control("pause", expected),
@@ -781,6 +1196,13 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     snapshot: (input) => createDrainedSnapshot({ label: input.label, createdBy: input.createdBy }),
     restore: (input) => restoreOnlineRun(input),
     reset: resetOnline,
+    idempotent: {
+      pause: (operation, expected) => controlOperation("pause", expected, operation),
+      resume: (operation, expected) => controlOperation("resume", expected, operation),
+      snapshot: (operation, input) => snapshotOperation(operation, input),
+      restore: (operation, input) => restoreOperation(operation, input),
+      reset: (operation) => resetOperation(operation),
+    },
   } satisfies OperationsDriver);
 
   let workerFailed = false;
@@ -800,20 +1222,24 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       conversation: conversationPort,
       projection,
       clock: () => clockView(clockState()),
-      pause: (operationId, expected) => {
-        void operationId;
-        return operations.pause(expected);
-      },
-      resume: (operationId, expected) => {
-        void operationId;
-        return operations.resume(expected);
-      },
+      pause: (operationId, expected, principalId) =>
+        operations.pause(expected, { operationId, principalId }),
+      resume: (operationId, expected, principalId) =>
+        operations.resume(expected, { operationId, principalId }),
       save: {
-        createSnapshot: (input) => operations.snapshot(input.label, input.createdBy),
+        createSnapshot: (input) =>
+          operations.snapshot(input.label, input.createdBy, {
+            operationId: input.operationId,
+            principalId: input.principalId,
+          }),
         listSnapshots: () => save.listSnapshots(),
-        restoreSnapshot: (input) => operations.restore(input.snapshotId, input.createdBy, input.runId),
+        restoreSnapshot: (input) =>
+          operations.restore(input.snapshotId, input.createdBy, input.runId, {
+            operationId: input.operationId,
+            principalId: input.principalId,
+          }),
       },
-      reset: () => operations.reset(),
+      reset: (operationId, principalId) => operations.reset({ operationId, principalId }),
       onBranchChanged: (nextBranchId) => {
         activeBranchId = nextBranchId;
       },
