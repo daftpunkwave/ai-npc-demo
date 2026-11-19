@@ -3,8 +3,8 @@
  * 依赖运营幂等日志、基础操作、存档 InTransaction 方法与时钟 provider；不重算业务结果。
  * 禁止在业务写入之外单独提交结果（时钟控制除外），或让失败记录被后续重试覆盖。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { DomainError, canonicalJson, type ClockView, type StoragePort } from "@ai-npc/contracts";
-import type { ClockState } from "@ai-npc/module-sdk";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";
 import type {
@@ -30,13 +30,12 @@ export interface IdempotentOperationsInput {
   readonly active: LiveRunState;
   readonly journal: OperationJournal;
   readonly primitives: OperationsPrimitives;
-  readonly clockState: () => ClockState;
   readonly control: (mode: "pause" | "start", expectedRunVersion: number) => ClockView;
 }
 
 /** 构造幂等执行入口；每个操作先查首次结果，再在业务事务内写入首次记录。 */
 export function createIdempotentOperations(input: IdempotentOperationsInput): IdempotentOperationsDriver {
-  const { storage, runtime, active, journal, primitives, clockState, control } = input;
+  const { storage, runtime, active, journal, primitives, control } = input;
   const save = runtime.save;
 
   /**
@@ -142,6 +141,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
       });
       if (committed.applied) {
         active.branchId = committed.outcome.branchId;
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 旧快照可能缺少 worldId 字段，保留兜底。
         active.worldId = committed.worldId ?? active.worldId;
       }
       return committed.outcome;

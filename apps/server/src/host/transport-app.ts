@@ -132,7 +132,9 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         active.branchId = nextBranchId;
       },
       // 传输层只上报玩家连接数；暂停策略与审计留在宿主。
-      onPlayerConnectionsChanged: (connected) => lifecycle.handlePlayerConnections(connected),
+      onPlayerConnectionsChanged: (connected) => {
+        lifecycle.handlePlayerConnections(connected);
+      },
       identities: serverIdentities(options, active),
       ids: (prefix) => host.ids(prefix),
       tokens: (kind) => `${kind}-${randomUUID()}`,

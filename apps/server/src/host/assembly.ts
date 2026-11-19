@@ -4,6 +4,7 @@
  * 依赖 yaml、契约 schema、kernel 解析/摘要与组合根模块定义；不启动模块、不打开存储。
  * 禁止接受任意路径、未登记模块，也禁止用模块 ID、原始 JSON.stringify 或截断摘要代替规范化哈希。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
@@ -44,6 +45,7 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
   const directory = assemblyDirectory(root);
   let fileNames: string[];
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 只读取由配置解析得到的装配目录，不是请求入参。
     fileNames = readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
       .map((entry) => entry.name)
@@ -53,6 +55,7 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
   }
   const matches: AssemblyDescriptor[] = [];
   for (const fileName of fileNames) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 文件名来自同目录 readdir 结果，已过滤为 YAML。
     const text = readFileSync(join(directory, fileName), "utf8");
     let parsed: unknown;
     try {
@@ -102,6 +105,7 @@ function boundCapabilities(
   const byModuleId = new Map(plan.modules.map((module) => [module.moduleId, module.definition]));
   const capabilities: CapabilityRef[] = [];
   const seen = new Set<string>();
+  // eslint-disable-next-line security/detect-object-injection -- realm 是受限字面量联合，只索引装配中已声明的三个 realm。
   for (const binding of assembly.realms[realm].bindings) {
     const definition = byModuleId.get(binding.moduleId);
     const provided = definition?.provides.find((item) => item.capability === binding.capability);
@@ -142,6 +146,7 @@ async function moduleRefs(
 export async function resolveServerAssembly(
   assembly: AssemblyDescriptor,
   definitions: readonly ModuleDefinition[],
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 CanonicalHasher 判为 any。
   options: ResolveServerAssemblyOptions | CanonicalHasher = {},
 ): Promise<ResolvedServerAssembly> {
   const normalized = typeof options === "function" ? { hash: options } : options;

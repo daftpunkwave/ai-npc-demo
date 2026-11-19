@@ -22,7 +22,6 @@ export function createOperationsHost(input: OperationsHostInput): ReturnType<Ope
     active: input.active,
     journal: input.journal,
     primitives,
-    clockState: input.clockState,
     control: input.control,
   });
   return input.runtime.operations.create({

@@ -5,6 +5,7 @@
  * 禁止写死装配文件名、放宽 schema 或用首错掩盖同一次预检中的其他失败项。
  */
 /* eslint-disable security/detect-non-literal-fs-filename -- 只读取 root/config/assemblies 下由 readdir 得到的普通文件。 */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -77,6 +78,7 @@ function checkDefinitions(
       validateModuleDefinition(definition);
     } catch (error) {
       violations.push({
+        // eslint-disable-next-line xss/no-mixed-html -- "<module-catalog>" 是预检诊断的占位文件名，不是 HTML 片段。
         file: "<module-catalog>",
         code: errorCode(error),
         message: `模块 ${definition.id} 描述符非法：${errorMessage(error)}`,
@@ -84,6 +86,7 @@ function checkDefinitions(
     }
     if (!moduleKindSchema.safeParse(definition.kind).success) {
       violations.push({
+        // eslint-disable-next-line xss/no-mixed-html -- "<module-catalog>" 是预检诊断的占位文件名，不是 HTML 片段。
         file: "<module-catalog>",
         code: "module-kind",
         message: `模块 ${definition.id} 的 kind 不在 service/contributor/adapter 白名单内`,
@@ -91,8 +94,10 @@ function checkDefinitions(
     }
     const namespace = leadingNamespace(definition.id);
     const realmNamespaces = REALM_NAMESPACES[definition.realm];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 运行时目录可能带有未知 realm，保留防御性检查。
     if (realmNamespaces === undefined || !realmNamespaces.includes(namespace)) {
       violations.push({
+        // eslint-disable-next-line xss/no-mixed-html -- "<module-catalog>" 是预检诊断的占位文件名，不是 HTML 片段。
         file: "<module-catalog>",
         code: "realm-violation",
         message: `模块 ${definition.id} 的 ID 命名空间 ${namespace} 不属于 ${String(definition.realm)} realm`,
@@ -100,6 +105,7 @@ function checkDefinitions(
     }
     if (byId.has(definition.id)) {
       violations.push({
+        // eslint-disable-next-line xss/no-mixed-html -- "<module-catalog>" 是预检诊断的占位文件名，不是 HTML 片段。
         file: "<module-catalog>",
         code: "module-duplicate",
         message: `重复模块 ID: ${definition.id}`,
@@ -121,7 +127,9 @@ function checkBindings(
 ): boolean {
   let failed = false;
   const boundCapabilities = new Map<string, string>();
+  // eslint-disable-next-line security/detect-object-injection -- realm 是受限字面量联合，只索引装配中已声明的三个 realm。
   for (const binding of assembly.realms[realm].bindings) {
+    // eslint-disable-next-line security/detect-object-injection -- realm 同上，来自受限联合而非外部输入。
     if (!REALM_NAMESPACES[realm].includes(leadingNamespace(binding.capability))) {
       violations.push({
         file,

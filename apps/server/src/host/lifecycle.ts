@@ -3,6 +3,7 @@
  * 依赖时钟 provider、authority 的 tick 推进、存储事务、传输应用通知与组合根提供的释放回调。
  * 禁止在 worker 失败后继续推进时钟、跳过断线宽限或在关闭时跳过资源释放。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { DomainError, canonicalJson, type Json, type StoragePort } from "@ai-npc/contracts";
 import type { Authority } from "@ai-npc/authority";
 import type { ClockState } from "@ai-npc/module-sdk";
@@ -21,7 +22,7 @@ export interface LifecycleInput {
   /** 时钟 provider 的有效配置：全部玩家断线后自动暂停的阈值。 */
   readonly autoPauseAfterDisconnectMs: number;
   /** 关闭时释放存储、模块与传输；传输实例在 attachApp 后可用。 */
-  readonly disposeResources: (app: ServerApp | null) => Promise<void>;
+  readonly disposeResources: (app: ServerApp | null) => Promise<void>; // eslint-disable-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
 }
 
 /** 宿主生命周期接口；组装完成后由组合根 attachApp 并 start。 */
@@ -41,6 +42,7 @@ export interface HostLifecycle {
  */
 export function createLifecycle(input: LifecycleInput): HostLifecycle {
   const { host, storage, runtime, authority, active, autoPauseAfterDisconnectMs } = input;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
   let app: ServerApp | null = null;
   let playerConnections = 0;
   let autoPauseTimer: ReturnType<typeof setTimeout> | null = null;

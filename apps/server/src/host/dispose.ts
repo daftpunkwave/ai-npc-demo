@@ -15,11 +15,7 @@ export interface DisposalStep {
  */
 export async function disposeInReverse(steps: readonly DisposalStep[]): Promise<void> {
   const failures: { readonly label: string; readonly error: unknown }[] = [];
-  for (let index = steps.length - 1; index >= 0; index -= 1) {
-    const step = steps[index];
-    if (step === undefined) {
-      continue;
-    }
+  for (const step of steps.toReversed()) {
     try {
       await step.dispose();
     } catch (error) {

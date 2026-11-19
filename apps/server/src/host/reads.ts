@@ -3,6 +3,7 @@
  * 依赖 authority 的作用域规则、已启动模块的公开端口、存储事务与内容索引；不写入世界状态。
  * 禁止绕过已绑定的模块端口读取领域聚合；回执查询只访问命令网关写入的回执表。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { createScopedWorldTxFactory, systemPrincipalId, type Authority } from "@ai-npc/authority";
 import { DomainError, commandReceiptSchema, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
 import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";

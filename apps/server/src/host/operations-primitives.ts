@@ -3,6 +3,7 @@
  * 依赖存档服务、时钟 provider、在线入口、内容与冻结 manifest；不写幂等记录、不做请求级去重。
  * 禁止在未暂停时快照、跳过来源校验、在失败时留下孤立快照或半切换别名。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import {
   DomainError,
   canonicalJson,
@@ -17,7 +18,6 @@ import type { HostServices } from "@ai-npc/contracts";
 import type { ConfigLoadContext, ContentPack, RunSpec } from "@ai-npc/experiment";
 import { loadRoster, runSpecSchema, validateRoster, validateRunSpec } from "@ai-npc/experiment";
 import type { ClockState } from "@ai-npc/module-sdk";
-import { catchUpWorldTick } from "../tick";
 import { loadAssembly } from "./assembly";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";

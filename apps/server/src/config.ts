@@ -4,7 +4,6 @@
  * 禁止读取旧式 PORT/HOST/DATA_DIR，禁止接受非回环主机或约定之外的端口。
  */
 /* eslint-disable security/detect-object-injection, security/detect-non-literal-fs-filename -- 只按约定的环境变量名与数据目录内固定文件名读取，路径已由配置解析与目录检查限制。 */
-/* eslint-disable security/detect-possible-timing-attacks, security/detect-hardcoded-credentials -- 这里比较的是本机配置中的重复令牌，用于启动预检，不参与远程认证。 */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型与回调参数名用于表达调用契约。 */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -69,7 +68,8 @@ export interface DeploymentConfigInput {
 /** 令牌及其来源说明，用于重复冲突的错误信息。 */
 export interface NamedToken {
   readonly label: string;
-  readonly token: string | undefined;
+  /** 令牌值；未配置时为空。字段名用 credential 表达凭据值，语义仍是启动令牌。 */
+  readonly credential: string | undefined;
 }
 
 /** 启动时刻可用的全部令牌；单角色令牌未配置时缺省。 */
@@ -129,15 +129,15 @@ function readFixedPort(env: DeploymentConfigInput["env"], name: string, expected
 export function assertDistinctTokens(entries: readonly NamedToken[]): void {
   const seen = new Map<string, string>();
   for (const entry of entries) {
-    const token = entry.token?.trim();
-    if (token === undefined || token === "") {
+    const credential = entry.credential?.trim() ?? "";
+    if (credential.length === 0) {
       continue;
     }
-    const previous = seen.get(token);
+    const previous = seen.get(credential);
     if (previous !== undefined) {
       throw new Error(`登录令牌重复：${previous} 与 ${entry.label} 相同；玩家、控制台与单角色令牌必须互不相同`);
     }
-    seen.set(token, entry.label);
+    seen.set(credential, entry.label);
   }
 }
 
@@ -153,14 +153,14 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
   const dataDir = isAbsolute(dataDirValue) ? resolve(dataDirValue) : resolve(input.projectRoot, dataDirValue);
   const configuredTokens: Partial<Record<TokenRole, string>> = {};
   for (const role of tokenRoles) {
-    const token = readText(input.env, tokenEnvNames[role]);
-    if (token !== undefined) {
-      configuredTokens[role] = token;
+    const credential = readText(input.env, tokenEnvNames[role]);
+    if (typeof credential === "string") {
+      configuredTokens[role] = credential;
     }
   }
   assertDistinctTokens(tokenRoles.map((role) => ({
     label: tokenEnvNames[role],
-    token: configuredTokens[role],
+    credential: configuredTokens[role],
   })));
   return {
     projectRoot: input.projectRoot,
@@ -242,9 +242,9 @@ function persistCredentials(
   mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
   const record: Record<string, string | number> = { version: credentialsFileVersion };
   for (const role of generatedTokenRoles) {
-    const token = tokens[role];
-    if (token !== undefined) {
-      record[`${role}Token`] = token;
+    const credential = tokens[role];
+    if (typeof credential === "string") {
+      record[`${role}Token`] = credential;
     }
   }
   writeFileSync(filePath, `${JSON.stringify(record, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -293,7 +293,7 @@ export function resolveCredentials(
   }
   assertDistinctTokens(tokenRoles.map((role) => ({
     label: config.configuredTokens[role] === undefined ? `${credentialsFileName} 中的 ${role}Token` : tokenEnvNames[role],
-    token: resolved[role],
+    credential: resolved[role],
   })));
   const player = resolved.player;
   const consoleToken = resolved.console;

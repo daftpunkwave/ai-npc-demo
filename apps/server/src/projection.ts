@@ -281,7 +281,7 @@ function agreementViews(
       terms: agreement.terms.map((term, index) => ({
         term,
         status: termStatus(agreement, index),
-        progress: agreement.progress[index] ?? null,
+        progress: agreement.progress.at(index) ?? null,
       })),
       status: agreement.status,
       expiresAtTick: agreement.expiresAtTick,

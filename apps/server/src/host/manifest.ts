@@ -132,6 +132,7 @@ function manifestObject(value: Json, label: string): Readonly<Record<string, Jso
   return value as Readonly<Record<string, Json>>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把契约里的 Json 判为 any。
 function manifestString(value: Json | undefined, label: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`冻结 manifest 缺少 ${label}`);

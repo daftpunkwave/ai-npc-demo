@@ -4,6 +4,7 @@
  * 依赖 kernel 解析/生命周期、组合根模块目录、实验配置加载器、部署配置校验与存储事务。
  * 禁止绕过解析计划直接引用模块实现、按当前入参重建已冻结的在线 run，或在失败时留下已启动实例。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { resolve } from "node:path";
 import {
   assemblyDescriptorSchema,
@@ -104,11 +105,11 @@ const defaultRosterRef = "standard-20";
 /** 打开并启动宿主核心；调用方负责之后的传输装配与端口监听。 */
 export async function createHostCore(options: HostOptions): Promise<HostCore> {
   assertDistinctTokens([
-    { label: "玩家令牌", token: options.playerToken },
-    { label: "控制台令牌", token: options.consoleToken },
-    { label: "operator 单角色令牌", token: options.operatorToken },
-    { label: "researcher 单角色令牌", token: options.researcherToken },
-    { label: "evaluator 单角色令牌", token: options.evaluatorToken },
+    { label: "玩家令牌", credential: options.playerToken },
+    { label: "控制台令牌", credential: options.consoleToken },
+    { label: "operator 单角色令牌", credential: options.operatorToken },
+    { label: "researcher 单角色令牌", credential: options.researcherToken },
+    { label: "evaluator 单角色令牌", credential: options.evaluatorToken },
   ]);
   const dataDir = resolve(options.dataDir);
   if (dataDir.length <= 3 || /^[A-Za-z]:\\?$/.test(dataDir)) {
@@ -152,6 +153,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     scope: {},
     signal,
   });
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 StoragePort 判为 any。
   const storage = storageStarted.instances[0]?.port as StoragePort | undefined;
   if (storage === undefined) {
     await storageStarted.dispose();
@@ -304,11 +306,13 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     };
   };
 
+  // 启动失败路径都以异常结束，因此正常走到这里时五种状态必然已赋值；activeStarted 保留可空用于失败清理。
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 StartedInstances 判为 any。
   let activeStarted: StartedInstances | null = null;
-  let serverRuntime: ServerRuntime | null = null;
-  let sessionAssemblies: SessionAssemblies | null = null;
-  let active: ActiveRunState | null = null;
-  let activeStartup: ResolvedServerAssembly | null = null;
+  let serverRuntime: ServerRuntime;
+  let sessionAssemblies: SessionAssemblies;
+  let active: ActiveRunState;
+  let activeStartup: ResolvedServerAssembly;
   try {
     const online = storage.transact(readOnlineEntry);
 
@@ -371,13 +375,9 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     }
     throw error;
   }
-  if (
-    activeStarted === null ||
-    serverRuntime === null ||
-    sessionAssemblies === null ||
-    active === null ||
-    activeStartup === null
-  ) {
+  // 最后一道运行时防线：类型上均已赋值，避免将来重构漏赋值后静默返回未初始化状态。
+  const runtimeState: readonly unknown[] = [activeStarted, serverRuntime, sessionAssemblies, active, activeStartup];
+  if (runtimeState.some((value) => value === null || value === undefined)) {
     await disposeInReverse([{ label: "存储", dispose: () => storageStarted.dispose() }]);
     throw new Error("宿主运行时未初始化");
   }

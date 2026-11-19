@@ -3,6 +3,7 @@
  * 依赖存储事务、规范 JSON 与运营结果解码；跨分支切换与进程重启仍有效，不参与分支复制。
  * 禁止把失败记录覆盖成成功，或用独立事务记录除时钟控制以外的结果。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { createHash } from "node:crypto";
 import {
   DomainError,
@@ -185,7 +186,9 @@ export class OperationJournal {
    * 调用方须保证业务写入已经成功。
    */
   recordSuccessStandalone(key: OperationKey, result: Json): void {
-    this.storage.transact((tx) => this.recordSuccess(tx, key, result));
+    this.storage.transact((tx) => {
+      this.recordSuccess(tx, key, result);
+    });
   }
 
   /** 把成功结果写入调用方事务；调用方负责把业务写入与本次写入一起提交。 */

@@ -3,6 +3,7 @@
  * 应用组合根只允许本文件引用模块包；其他 host 文件只经此入口取用。
  * 禁止在这里启动服务、打开存储、按模块 ID 挑选实现或手工构造模块实例。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import {
   capabilityIdSchema,
   type CapabilityRef,
@@ -190,6 +191,7 @@ export function clockConfigOf(plan: ResolvedRealmPlan): Required<ClockConfig> {
   return {
     secondsPerTick: config.secondsPerTick,
     maxStepTicks: config.maxStepTicks,
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 旧装配可能省略该字段，保留 60s 兜底。
     autoPauseAfterDisconnectMs: config.autoPauseAfterDisconnectMs ?? 60_000,
   };
 }
@@ -270,6 +272,7 @@ export function createServerRuntime(input: {
       }
       // 每个模块只拿到自己按能力声明的 typed port；读取他人事实必须经已绑定的端口。
       const context: GamePortBindContext = { ports: ports as Readonly<Partial<GameModulePorts>> };
+      // eslint-disable-next-line security/detect-object-injection -- capability 来自上方受限的游戏能力常量数组。
       ports[capability] = bind(txFor, content, (prefix) => host.ids(prefix), context);
     }
     return ports as unknown as GameModulePorts;
