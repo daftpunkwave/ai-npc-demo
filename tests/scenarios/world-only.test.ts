@@ -299,11 +299,18 @@ describe("168 tick 世界脚本", () => {
     expect(Number(sourceRows.clock?.["world_tick"])).toBe(CHAPTER_END_TICK);
     expect(Number(frozenRows.clock?.["world_tick"])).toBe(CHAPTER_END_TICK);
 
-    // 从快照恢复后继在线分支，世界表仍与源分支一致。
-    // 恢复路径会把复制出的时钟置为 paused，且不会写入 runs 行；这两项属于恢复编排的已知缺陷，
-    // 不在世界表一致性的验收范围内，因此这里只比较世界表与 world_tick，不断言时钟模式或 runs。
-    const restored = save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
-    const restoredRows = readBranchWorldRows(harness.storage, restored.branchId);
+    // 从快照复制后继在线分支：本用例只比较世界表，直接使用存储端口的整表分支复制；
+    // 在线恢复编排（写 runs、结束旧 run、归档旧分支并切换 world_aliases('online')）由宿主入口验证。
+    const restoredBranchId = harness.host.ids("br");
+    harness.storage.transact((tx) => {
+      harness.storage.forkBranch(tx, {
+        srcBranchId: snapshot.frozenBranchId,
+        dstBranchId: restoredBranchId,
+        kind: "online",
+        runId: harness.host.ids("run"),
+      });
+    });
+    const restoredRows = readBranchWorldRows(harness.storage, restoredBranchId);
     expect(restoredRows.events).toEqual(sourceRows.events);
     expect(restoredRows.aggregates).toEqual(sourceRows.aggregates);
     expect(restoredRows.jobs).toEqual(sourceRows.jobs);

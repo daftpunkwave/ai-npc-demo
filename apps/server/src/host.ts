@@ -14,8 +14,8 @@ import {
   type Json,
   type ModuleDefinition,
   type StartOption,
-  type StorageCell,
   type StoragePort,
+  type StorageRow,
   type StorageTransaction,
 } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
@@ -167,10 +167,62 @@ const defaultRunSpecRef = "online-default";
 const defaultAssemblyRef = "local-slg-standard-v1";
 const defaultRosterRef = "standard-20";
 
-/** 在线分支与其已冻结的 run；首次启动时两者都不存在。 */
-interface OnlineBranchState {
-  readonly branch: Readonly<Record<string, StorageCell>>;
-  readonly run: Readonly<Record<string, StorageCell>> | null;
+/** 在线入口：world_aliases('online') 指向的唯一在线分支及其绑定的 live run。 */
+interface OnlineEntry {
+  readonly branch: StorageRow;
+  readonly run: StorageRow;
+  readonly branchId: string;
+  readonly runId: string;
+  readonly worldId: string;
+}
+
+/**
+ * 从持久化的在线别名解析分支与 run；这是启动、重启与恢复共同的唯一入口。
+ * 别名缺失表示首次启动，返回 null；别名存在但分支、run 或状态不一致时明确失败，不静默新建或改选其他分支。
+ */
+function readOnlineEntry(tx: StorageTransaction): OnlineEntry | null {
+  const alias = tx.rows("world_aliases").get({ alias: "online" });
+  if (alias === null) {
+    return null;
+  }
+  const branchId = typeof alias["branch_id"] === "string" ? alias["branch_id"] : "";
+  if (branchId.length === 0) {
+    throw new Error("world_aliases('online') 缺少 branch_id");
+  }
+  const branch = tx.rows("branches").get({ branch_id: branchId });
+  if (branch === null) {
+    throw new Error(`在线别名指向的分支 ${branchId} 不存在；拒绝启动`);
+  }
+  if (branch["kind"] !== "online") {
+    throw new Error(`在线别名指向的分支 ${branchId} 不是 online 分支；拒绝启动`);
+  }
+  const status = branch["status"];
+  if (status !== "active" && status !== "paused") {
+    throw new Error(`在线别名指向的分支 ${branchId} 状态为 ${String(status)}；拒绝启动`);
+  }
+  const runId = typeof branch["run_id"] === "string" ? branch["run_id"] : "";
+  if (runId.length === 0) {
+    throw new Error(`在线分支 ${branchId} 没有绑定 run；拒绝启动`);
+  }
+  const run = tx.rows("runs").get({ run_id: runId });
+  if (run === null) {
+    throw new Error(`在线分支 ${branchId} 绑定的 run ${runId} 不存在；拒绝启动`);
+  }
+  if (run["mode"] !== "live") {
+    throw new Error(`在线 run ${runId} 不是 live run；拒绝启动`);
+  }
+  if (run["branch_id"] !== branchId) {
+    throw new Error(`在线 run ${runId} 绑定的分支与别名分支 ${branchId} 不一致；拒绝启动`);
+  }
+  const runStatus = run["status"];
+  if (runStatus === "completed" || runStatus === "failed" || runStatus === "invalid") {
+    throw new Error(`在线 run ${runId} 状态为 ${String(runStatus)}；拒绝启动`);
+  }
+  const worldId = typeof branch["world_id"] === "string" ? branch["world_id"] : "";
+  if (worldId.length === 0) {
+    throw new Error(`在线分支 ${branchId} 缺少 world_id；拒绝启动`);
+  }
+  return { branch, run, branchId, runId, worldId };
 }
 
 /** 本次启动实际使用的世界、装配、RunSpec 与冻结 manifest。 */
@@ -349,11 +401,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
 
   /** 重启：沿用在线别名指向的分支与已冻结 run，不复用当前入参重建 RunSpec。 */
-  const resumeRun = async (onlineState: OnlineBranchState): Promise<ResumedRunState> => {
-    const run = onlineState.run;
-    if (run === null) {
-      throw new Error(`在线分支 ${String(onlineState.branch["branch_id"])} 没有已冻结的 run；拒绝按当前入参重建`);
-    }
+  const resumeRun = async (online: OnlineEntry): Promise<ResumedRunState> => {
+    const run = online.run;
     const parsed = runSpecSchema.safeParse(run["run_spec_json"]);
     if (!parsed.success) {
       throw new Error(`在线 run 的 RunSpec 无法解析：${parsed.error.issues.map((issue) => issue.message).join("；")}`);
@@ -379,11 +428,9 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     if (facts.contentVersion !== contentVersion) {
       throw contentVersionMismatch(facts.contentVersion, contentVersion, "在线 run");
     }
-    const worldRow = storage.transact((tx) =>
-      tx.rows("worlds").get({ world_id: String(onlineState.branch["world_id"]) }),
-    );
+    const worldRow = storage.transact((tx) => tx.rows("worlds").get({ world_id: online.worldId }));
     if (worldRow === null) {
-      throw new Error(`在线分支引用的 world ${String(onlineState.branch["world_id"])} 不存在`);
+      throw new Error(`在线分支引用的 world ${online.worldId} 不存在`);
     }
     if (worldRow["pack_id"] !== packId) {
       throw new Error(`内容包不一致：在线世界「${String(worldRow["pack_id"])}」，当前内容包「${packId}」；拒绝启动`);
@@ -413,8 +460,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     }
     return {
       active: {
-        worldId: String(onlineState.branch["world_id"]),
-        branchId: String(onlineState.branch["branch_id"]),
+        worldId: online.worldId,
+        branchId: online.branchId,
         assembly,
         resolved,
         runSpec: frozenSpec,
@@ -437,28 +484,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   let frozenManifest: RunManifest;
   let frozenManifestHash: string;
   try {
-    const online = storage.transact((tx): OnlineBranchState | null => {
-      const alias = tx.rows("world_aliases").get({ alias: "online" });
-      if (alias === null) {
-        return null;
-      }
-      const branchId = typeof alias["branch_id"] === "string" ? alias["branch_id"] : "";
-      if (branchId.length === 0) {
-        throw new Error("world_aliases('online') 缺少 branch_id");
-      }
-      const branch = tx.rows("branches").get({ branch_id: branchId });
-      if (branch === null) {
-        throw new Error(`在线别名指向的分支 ${branchId} 不存在`);
-      }
-      if (branch["kind"] !== "online") {
-        throw new Error(`在线别名指向的分支 ${branchId} 不是 online 分支`);
-      }
-      const runId = typeof branch["run_id"] === "string" ? branch["run_id"] : "";
-      return {
-        branch,
-        run: runId.length === 0 ? null : tx.rows("runs").get({ run_id: runId }),
-      };
-    });
+    const online = storage.transact(readOnlineEntry);
 
     let active: ActiveRunState;
     let pendingFirstRun: PendingFirstRun | null = null;
@@ -595,26 +621,48 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: activeBranchId });
     return save.createSnapshot({ sourceBranchId: activeBranchId, label: input.label, createdBy: input.createdBy });
   };
+  /**
+   * 重开：先把当前在线世界存为快照，再在同一事务内创建新的空在线分支与 live run、
+   * 结束旧 run、归档旧分支并切换在线别名；重启后从别名选中新分支。
+   */
   const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
+    const online = storage.transact(readOnlineEntry);
+    if (online === null) {
+      throw new Error("没有 world_aliases('online')，拒绝重开");
+    }
+    if (online.branchId !== activeBranchId) {
+      throw new Error(`在线别名指向 ${online.branchId}，与宿主分支 ${activeBranchId} 不一致；拒绝重开`);
+    }
     const current = clockState();
     if (current.mode !== "paused") {
       control("pause", current.runVersion);
     }
-    const label = `reset-${current.worldTick}`;
-    createDrainedSnapshot({ label, createdBy: "operator-1" });
+    createDrainedSnapshot({ label: `reset-${current.worldTick}`, createdBy: "operator-1" });
     const nextBranchId = host.ids("br");
     storage.transact((tx) => {
+      const alias = tx.rows("world_aliases").get({ alias: "online" });
+      if (alias === null || alias["branch_id"] !== activeBranchId) {
+        throw new Error("在线别名在重开事务内发生变化，拒绝切换");
+      }
+      const previous = tx.rows("branches").get({ branch_id: activeBranchId });
+      if (previous === null) {
+        throw new Error(`在线分支 ${activeBranchId} 不存在，拒绝重开`);
+      }
+      if (previous["kind"] !== "online") {
+        throw new Error(`在线分支 ${activeBranchId} 不是 online 分支，拒绝重开`);
+      }
+      const previousStatus = previous["status"];
+      if (previousStatus !== "active" && previousStatus !== "paused") {
+        throw new Error(`在线分支 ${activeBranchId} 状态为 ${String(previousStatus)}，拒绝重开`);
+      }
+      const previousRunId = typeof previous["run_id"] === "string" ? previous["run_id"] : "";
+      const previousRun = previousRunId.length === 0 ? null : tx.rows("runs").get({ run_id: previousRunId });
+      if (previousRun === null) {
+        throw new Error(`在线分支 ${activeBranchId} 没有绑定 run，拒绝重开`);
+      }
       const now = host.nowIso();
       const nextRunId = host.ids("run");
-      const previous = tx.rows("branches").get({ branch_id: activeBranchId });
-      const previousRunId = previous === null ? null : previous["run_id"];
-      if (typeof previousRunId === "string") {
-        const previousRun = tx.rows("runs").get({ run_id: previousRunId });
-        if (previousRun !== null) {
-          tx.rows("runs").put({ ...previousRun, status: "completed", ended_at: now });
-        }
-      }
-      tx.rows("branches").put({
+      const nextBranch: StorageRow = {
         branch_id: nextBranchId,
         world_id: activeWorldId,
         kind: "online",
@@ -624,7 +672,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         run_id: null,
         profile_hash: null,
         created_at: now,
-      });
+      };
+      tx.rows("branches").put(nextBranch);
       tx.rows("runs").put({
         run_id: nextRunId,
         world_id: activeWorldId,
@@ -640,97 +689,86 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
         started_at: now,
         ended_at: null,
       });
-      tx.rows("branches").put({
-        branch_id: nextBranchId,
-        world_id: activeWorldId,
-        kind: "online",
-        status: "active",
-        parent_branch_id: activeBranchId,
-        forked_at_world_seq: null,
-        run_id: nextRunId,
-        profile_hash: null,
-        created_at: now,
-      });
+      tx.rows("branches").put({ ...nextBranch, run_id: nextRunId });
       // 新分支的初始时钟行由 provider 写入同一事务，秒数取 provider 有效配置。
       runtime.clock.initializeInTransaction(tx, nextBranchId);
-      if (previous !== null) {
-        tx.rows("branches").put({ ...previous, status: "archived" });
-      }
+      tx.rows("runs").put({ ...previousRun, status: "completed", ended_at: now });
+      tx.rows("branches").put({ ...previous, status: "archived" });
       tx.rows("world_aliases").put({ alias: "online", branch_id: nextBranchId, updated_at: now });
     });
     activeBranchId = nextBranchId;
     return { branchId: nextBranchId, clock: clockView(clockState()) };
   };
 
-  /** 从快照恢复：后继 run 沿用源 run 的 RunSpec、seed 与冻结 manifest。 */
-  const restoreOnlineRun = (
-    input: { readonly snapshotId: string; readonly createdBy: string; readonly runId?: string },
-  ): { readonly branchId: string; readonly runId: string } => {
-    const snapshot = storage.transact((tx) => tx.rows("snapshots").get({ snapshot_id: input.snapshotId }));
-    if (snapshot === null) {
-      throw new Error(`快照 ${input.snapshotId} 不存在`);
+  /**
+   * 恢复 dry-run 的内容与模块兼容性裁决：内容包版本、RunSpec、装配、名册与冻结 manifest
+   * 必须仍与当前宿主一致；任何不兼容都在写入前失败，不产生快照副本或别名变更。
+   */
+  const validateRestoreSource = (inspection: ReturnType<typeof save.inspectRestore>): void => {
+    const parsed = runSpecSchema.safeParse(inspection.sourceRun.runSpec);
+    if (!parsed.success) {
+      throw new Error(`快照源 run 的 RunSpec 无法解析：${parsed.error.issues.map((issue) => issue.message).join("；")}`);
     }
-    const sourceBranchId = typeof snapshot["source_branch_id"] === "string" ? snapshot["source_branch_id"] : "";
-    const sourceBranch =
-      sourceBranchId.length === 0
-        ? null
-        : storage.transact((tx) => tx.rows("branches").get({ branch_id: sourceBranchId }));
-    if (sourceBranch === null) {
-      throw new Error(`快照源分支 ${sourceBranchId} 不存在`);
-    }
-    const sourceRunId = typeof sourceBranch["run_id"] === "string" ? sourceBranch["run_id"] : "";
-    const sourceRun =
-      sourceRunId.length === 0
-        ? null
-        : storage.transact((tx) => tx.rows("runs").get({ run_id: sourceRunId }));
-    if (sourceRun === null) {
-      throw new Error("快照源分支没有已冻结的 run，拒绝恢复");
-    }
-    const sourceRunSpec = sourceRun["run_spec_json"];
-    const sourceManifest = sourceRun["manifest_json"];
-    const sourceManifestHash = sourceRun["manifest_hash"];
-    if (
-      sourceRunSpec === undefined ||
-      sourceRunSpec === null ||
-      sourceManifest === undefined ||
-      sourceManifest === null ||
-      sourceManifest instanceof Uint8Array ||
-      typeof sourceManifestHash !== "string" ||
-      sourceManifestHash.length === 0
-    ) {
-      throw new Error("快照源 run 缺少冻结 RunSpec 或 manifest，拒绝恢复");
-    }
-    const facts = readFrozenManifest(sourceManifest);
+    const sourceSpec = parsed.data;
+    const facts = readFrozenManifest(inspection.sourceRun.manifest);
     if (facts.packId !== packId) {
       throw new Error(`内容包不一致：快照源 run 冻结「${facts.packId}」，当前内容包「${packId}」；拒绝恢复`);
     }
     if (facts.contentVersion !== contentVersion) {
       throw contentVersionMismatch(facts.contentVersion, contentVersion, "快照源 run");
     }
-    const runId = input.runId ?? host.ids("run");
-    const restored = save.restoreSnapshot({ snapshotId: input.snapshotId, createdBy: input.createdBy, runId });
-    const createdAt = host.nowIso();
-    storage.transact((tx) => {
-      const branch = tx.rows("branches").get({ branch_id: restored.branchId });
-      if (branch === null) {
-        throw new Error(`恢复后的分支 ${restored.branchId} 不存在`);
-      }
-      tx.rows("runs").put({
-        run_id: restored.runId,
-        world_id: String(branch["world_id"]),
-        branch_id: restored.branchId,
-        mode: "live",
-        status: "running",
-        run_spec_json: sourceRunSpec,
-        manifest_json: sourceManifest,
-        manifest_hash: sourceManifestHash,
-        contaminated: sourceRun["contaminated"] ?? 0,
-        evidence_complete: sourceRun["evidence_complete"] ?? 1,
-        created_at: createdAt,
-        started_at: createdAt,
-        ended_at: null,
-      });
+    if (facts.seed !== sourceSpec.seed) {
+      throw new Error("快照源 run 的 seed 与 RunSpec 不一致；拒绝恢复");
+    }
+    if (facts.moduleAssemblyRef !== sourceSpec.moduleAssemblyRef) {
+      throw new Error("快照源 run 的装配引用与 RunSpec 不一致；拒绝恢复");
+    }
+    if (facts.rosterRef !== sourceSpec.rosterRef) {
+      throw new Error("快照源 run 的名册引用与 RunSpec 不一致；拒绝恢复");
+    }
+    if (sourceSpec.worldPackRef !== packId) {
+      throw new Error(`快照源 RunSpec 的 worldPackRef「${sourceSpec.worldPackRef}」与当前内容包「${packId}」不一致；拒绝恢复`);
+    }
+    if (inspection.sourceRun.manifestHash !== frozenManifestHash) {
+      throw new Error("快照源 run 的冻结 manifest 与当前在线 run 不一致（模块、名册或内容版本不同）；拒绝恢复");
+    }
+    if (canonicalJson(sourceSpec as unknown as Json) !== canonicalJson(runSpec as unknown as Json)) {
+      throw new Error("快照源 run 的 RunSpec 与当前在线 run 不一致；拒绝恢复");
+    }
+    const assembly = loadAssembly(sourceSpec.moduleAssemblyRef);
+    if (assembly.assemblyId !== activeAssembly.assemblyId) {
+      throw new Error(
+        `快照源 run 的装配「${assembly.assemblyId}」与当前在线装配「${activeAssembly.assemblyId}」不一致；拒绝恢复`,
+      );
+    }
+    const roster = loadRoster(sourceSpec.rosterRef, loadContext);
+    validateRoster(roster.value, content);
+    validateRunSpec(sourceSpec, content, roster);
+  };
+
+  /**
+   * 从快照恢复：先 dry-run 校验内容与运行规格兼容性，再在同一事务内建立后继分支与 run、
+   * 结束旧 run、归档旧分支并切换在线别名；提交后更新宿主内存中的在线分支与世界。
+   */
+  const restoreOnlineRun = (
+    input: { readonly snapshotId: string; readonly createdBy: string; readonly runId?: string },
+  ): ReturnType<typeof save.restoreSnapshot> => {
+    const inspection = save.inspectRestore(input.snapshotId);
+    validateRestoreSource(inspection);
+    const restored = save.restoreSnapshot({
+      snapshotId: input.snapshotId,
+      createdBy: input.createdBy,
+      ...(input.runId === undefined ? {} : { runId: input.runId }),
+      expected: {
+        sourceRunId: inspection.sourceRun.runId,
+        canonicalRunSpec: canonicalJson(inspection.sourceRun.runSpec),
+        manifestHash: inspection.sourceRun.manifestHash,
+        worldSeq: inspection.worldSeq,
+        worldTick: inspection.worldTick,
+      },
     });
+    activeBranchId = restored.branchId;
+    activeWorldId = restored.worldId;
     return restored;
   };
 
@@ -739,11 +777,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     pause: (expected) => control("pause", expected),
     resume: (expected) => control("start", expected),
     snapshot: (input) => createDrainedSnapshot({ label: input.label, createdBy: input.createdBy }),
-    restore: (input) => {
-      const restored = restoreOnlineRun(input);
-      activeBranchId = restored.branchId;
-      return restored;
-    },
+    restore: (input) => restoreOnlineRun(input),
     reset: resetOnline,
   } satisfies OperationsDriver);
 
@@ -852,8 +886,13 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   return {
     app,
     storage,
-    branchId: activeBranchId,
-    worldId: activeWorldId,
+    // 在线分支切换后仍反映当前在线入口，调用方不需要重新启动宿主即可读取。
+    get branchId(): string {
+      return activeBranchId;
+    },
+    get worldId(): string {
+      return activeWorldId;
+    },
     transport: runtime.transport,
     listen: () => runtime.transport.listen(app),
     close: async () => {

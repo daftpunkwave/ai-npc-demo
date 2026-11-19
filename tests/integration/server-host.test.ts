@@ -8,6 +8,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { AssemblyDescriptor, Json, StorageCell } from "@ai-npc/contracts";
 import {
   campaignResponseSchema,
@@ -55,6 +56,147 @@ async function loginSession(host: RunningHost, token: string): Promise<string> {
   const response = await host.app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { token } });
   expect(response.statusCode).toBe(200);
   return (response.json() as { readonly sessionToken: string }).sessionToken;
+}
+
+/** 申请一次性 WS 票据。 */
+async function ticketFor(host: RunningHost, session: string): Promise<string> {
+  const response = await host.app.inject({
+    method: "POST",
+    url: "/api/v1/streams/ticket",
+    headers: { authorization: `Bearer ${session}` },
+  });
+  expect(response.statusCode).toBe(200);
+  return (response.json() as { readonly ticket: string }).ticket;
+}
+
+/** 解析持久化的在线入口：别名指向的分支与绑定 run。 */
+function onlineEntry(host: RunningHost): {
+  readonly branch: Record<string, StorageCell>;
+  readonly run: Record<string, StorageCell>;
+  readonly branchId: string;
+  readonly runId: string;
+} {
+  const alias = host.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }));
+  if (alias === null) {
+    throw new Error("缺少 world_aliases('online')");
+  }
+  const branchId = String(alias["branch_id"]);
+  const branch = host.storage.transact((tx) => tx.rows("branches").get({ branch_id: branchId }));
+  if (branch === null) {
+    throw new Error(`缺少在线分支 ${branchId}`);
+  }
+  const runId = String(branch["run_id"]);
+  const run = host.storage.transact((tx) => tx.rows("runs").get({ run_id: runId }));
+  if (run === null) {
+    throw new Error(`缺少在线 run ${runId}`);
+  }
+  return { branch, run, branchId, runId };
+}
+
+/** 测试夹具：把指定分支的逻辑时钟拨到给定 tick 并保持暂停。 */
+function setBranchClock(host: RunningHost, branchId: string, worldTick: number): void {
+  host.storage.transact((tx) => {
+    const table = tx.branch(branchId).table("clock");
+    const row = table.get({});
+    if (row === null) {
+      throw new Error(`分支 ${branchId} 缺少时钟行`);
+    }
+    table.put({
+      ...row,
+      world_tick: worldTick,
+      mode: "paused",
+      step_target_tick: null,
+      run_version: Number(row["run_version"]) + 1,
+      updated_at: new Date().toISOString(),
+    });
+  });
+}
+
+/** 取一个当前空闲的本机端口，避免与开发服务器或其他用例冲突。 */
+async function freePort(): Promise<number> {
+  const blocker = createServer();
+  await new Promise<void>((resolve) => {
+    blocker.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = blocker.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => {
+    blocker.close(() => resolve());
+  });
+  if (port <= 0) {
+    throw new Error("无法获得空闲端口");
+  }
+  return port;
+}
+
+interface StreamSocket {
+  addEventListener(type: "message", listener: (event: { readonly data: unknown }) => void): void;
+  addEventListener(type: "error", listener: () => void): void;
+  send(data: string): void;
+  close(): void;
+}
+
+interface StreamClient {
+  next(timeoutMs?: number): Promise<Record<string, unknown>>;
+  send(message: Record<string, unknown>): void;
+  close(): void;
+}
+
+const StreamWebSocket = (globalThis as unknown as {
+  WebSocket: new (url: string) => StreamSocket;
+}).WebSocket;
+
+/** 建立真实 WS 连接并按到达顺序缓存消息。 */
+function connectStream(url: string): StreamClient {
+  const socket = new StreamWebSocket(url);
+  const pending: Record<string, unknown>[] = [];
+  const waiters: Array<(message: Record<string, unknown>) => void> = [];
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+    const waiter = waiters.shift();
+    if (waiter === undefined) {
+      pending.push(message);
+    } else {
+      waiter(message);
+    }
+  });
+  socket.addEventListener("error", () => {
+    // 连接错误由等待超时体现，避免未处理的 error 事件。
+  });
+  const next = (timeoutMs = 3000): Promise<Record<string, unknown>> => {
+    const queued = pending.shift();
+    if (queued !== undefined) {
+      return Promise.resolve(queued);
+    }
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const waiter = (message: Record<string, unknown>): void => {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        resolve(message);
+      };
+      timer = setTimeout(() => {
+        const index = waiters.indexOf(waiter);
+        if (index >= 0) {
+          waiters.splice(index, 1);
+        }
+        reject(new Error("等待 WS 消息超时"));
+      }, timeoutMs);
+      waiters.push(waiter);
+    });
+  };
+  return {
+    next,
+    send: (message) => socket.send(JSON.stringify(message)),
+    close: () => {
+      try {
+        socket.close();
+      } catch {
+        // 已关闭的连接无需处理。
+      }
+    },
+  };
 }
 
 /** 复制标准装配并替换时钟/资源有效配置，用于验证宿主确实使用解析后的配置。 */
@@ -118,6 +260,7 @@ describe("服务端宿主", () => {
     const runRow = host.storage.transact((tx) => tx.rows("runs").list({ mode: "live" })[0]);
     expect(runRow).toMatchObject({ mode: "live", status: "running" });
 
+    const originalBranchId = host.branchId;
     const reset = await host.app.inject({
       method: "POST",
       url: "/api/v1/campaign/reset",
@@ -126,8 +269,10 @@ describe("服务端宿主", () => {
     });
     expect(reset.statusCode).toBe(200);
     const resetBody = reset.json() as { readonly branchId: string; readonly clock: { readonly mode: string } };
-    expect(resetBody.branchId).not.toBe(host.branchId);
+    expect(resetBody.branchId).not.toBe(originalBranchId);
     expect(resetBody.clock.mode).toBe("paused");
+    // 宿主内存中的在线分支与别名同步更新。
+    expect(host.branchId).toBe(resetBody.branchId);
     const runs = host.storage.transact((tx) => tx.rows("runs").list({ mode: "live" }));
     expect(runs).toHaveLength(2);
     expect(runs.filter((run) => run["status"] === "running")).toHaveLength(1);
@@ -368,7 +513,153 @@ describe("服务端宿主", () => {
     );
   });
 
-  it("从快照恢复的后继 run 沿用源 RunSpec 与 seed", async () => {
+  it("恢复切换在线别名与投影，重启后仍选中后继分支与 run", async () => {
+    const dataDir = tempDataDir();
+    const port = await freePort();
+    const host = await startHost({
+      dataDir,
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      transportPort: port,
+    });
+    let successorBranchId = "";
+    let successorRunId = "";
+    let sourceBranchId = "";
+    let sourceRunId = "";
+    try {
+      await host.listen();
+      const session = await loginSession(host, "player-token");
+      const headers = { authorization: `Bearer ${session}` };
+      const started = await host.app.inject({
+        method: "POST",
+        url: "/api/v1/commands",
+        headers,
+        payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000101"),
+      });
+      expect(started.statusCode).toBe(200);
+      const source = onlineEntry(host);
+      sourceBranchId = source.branchId;
+      sourceRunId = source.runId;
+
+      // 在 tick 5 存档，随后把旧分支时钟推到 tick 7，用于区分恢复后的投影来源。
+      setBranchClock(host, sourceBranchId, 5);
+      const snapshot = await host.app.inject({
+        method: "POST",
+        url: "/api/v1/campaign/snapshots",
+        headers,
+        payload: { label: "恢复点" },
+      });
+      expect(snapshot.statusCode).toBe(200);
+      const snapshotId = (snapshot.json() as { readonly snapshotId: string }).snapshotId;
+      // 存档会先排空到期 job；以快照后的源分支为准比较后继分支的待办 job。
+      const sourceJobs = host.storage.transact((tx) => tx.branch(sourceBranchId).table("jobs").list());
+      expect(sourceJobs.some((job) => job["status"] === "scheduled")).toBe(true);
+      setBranchClock(host, sourceBranchId, 7);
+
+      const ticket = await ticketFor(host, session);
+      const client = connectStream(`ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(ticket)}`);
+      try {
+        expect(await client.next()).toMatchObject({ type: "hello", channels: ["player"] });
+        client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+        expect(await client.next()).toMatchObject({
+          type: "snapshot",
+          channel: "player",
+          data: { clock: { worldTick: 7, mode: "paused" } },
+        });
+
+        const restored = await host.app.inject({
+          method: "POST",
+          url: "/api/v1/campaign/restore",
+          headers,
+          payload: { snapshotId },
+        });
+        expect(restored.statusCode).toBe(200);
+        const restoredBody = restored.json() as { readonly branchId: string; readonly clock: { readonly mode: string; readonly worldTick: number } };
+        successorBranchId = restoredBody.branchId;
+        expect(successorBranchId).not.toBe(sourceBranchId);
+        expect(restoredBody.clock).toMatchObject({ worldTick: 5, mode: "paused" });
+        // 宿主内存中的在线分支随提交结果更新。
+        expect(host.branchId).toBe(successorBranchId);
+
+        // 传输层在切换后立即推送后继分支的完整投影快照。
+        expect(await client.next()).toMatchObject({
+          type: "snapshot",
+          channel: "player",
+          data: { clock: { worldTick: 5, mode: "paused" } },
+        });
+      } finally {
+        client.close();
+      }
+
+      const alias = host.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }));
+      expect(alias).toMatchObject({ branch_id: successorBranchId });
+      const frozenBranchId = String(
+        host.storage.transact((tx) => tx.rows("snapshots").get({ snapshot_id: snapshotId }))?.["frozen_branch_id"],
+      );
+      const successorBranch = host.storage.transact((tx) => tx.rows("branches").get({ branch_id: successorBranchId }));
+      expect(successorBranch).toMatchObject({ kind: "online", status: "active", parent_branch_id: frozenBranchId });
+      successorRunId = String(successorBranch?.["run_id"]);
+      expect(successorRunId).not.toBe(sourceRunId);
+      const successorRun = host.storage.transact((tx) => tx.rows("runs").get({ run_id: successorRunId }));
+      expect(successorRun).toMatchObject({ branch_id: successorBranchId, mode: "live", status: "running" });
+      expect(successorRun?.["run_spec_json"]).toEqual(source.run["run_spec_json"]);
+      expect((successorRun?.["run_spec_json"] as { readonly seed: string }).seed).toBe(
+        (source.run["run_spec_json"] as { readonly seed: string }).seed,
+      );
+      expect(successorRun?.["manifest_json"]).toEqual(source.run["manifest_json"]);
+      expect(successorRun?.["manifest_hash"]).toBe(source.run["manifest_hash"]);
+
+      const previousRun = host.storage.transact((tx) => tx.rows("runs").get({ run_id: sourceRunId }));
+      expect(previousRun).toMatchObject({ branch_id: sourceBranchId, status: "completed" });
+      expect(previousRun?.["ended_at"]).not.toBeNull();
+      const previousBranch = host.storage.transact((tx) => tx.rows("branches").get({ branch_id: sourceBranchId }));
+      expect(previousBranch).toMatchObject({ kind: "online", status: "archived" });
+
+      const successorClock = host.storage.transact((tx) => tx.branch(successorBranchId).table("clock").get({}));
+      expect(successorClock).toMatchObject({ world_tick: 5, mode: "paused" });
+      const successorJobs = host.storage.transact((tx) => tx.branch(successorBranchId).table("jobs").list());
+      expect(successorJobs.map((job) => job["job_id"]).sort()).toEqual(sourceJobs.map((job) => job["job_id"]).sort());
+      expect(successorJobs.filter((job) => job["status"] === "scheduled")).toHaveLength(
+        sourceJobs.filter((job) => job["status"] === "scheduled").length,
+      );
+
+      const snapshots = await host.app.inject({
+        method: "GET",
+        url: "/api/v1/campaign/snapshots",
+        headers,
+      });
+      expect(snapshots.statusCode).toBe(200);
+      expect((snapshots.json() as { readonly snapshots: readonly { readonly snapshotId: string }[] }).snapshots).toHaveLength(1);
+      const sessionView = await host.app.inject({
+        method: "GET",
+        url: "/api/v1/session",
+        headers,
+      });
+      expect(sessionView.json()).toMatchObject({ branchId: successorBranchId });
+    } finally {
+      await host.close();
+    }
+
+    const second = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(second);
+    expect(second.branchId).toBe(successorBranchId);
+    const resumed = onlineEntry(second);
+    expect(resumed.branchId).toBe(successorBranchId);
+    expect(resumed.runId).toBe(successorRunId);
+    expect(resumed.run).toMatchObject({ branch_id: successorBranchId, status: "running" });
+    const session = await loginSession(second, "player-token");
+    const view = await second.app.inject({
+      method: "GET",
+      url: "/api/v1/world/view",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(view.statusCode).toBe(200);
+    expect(view.json()).toMatchObject({
+      projection: { campaign: { factionId: "human-neutral" }, clock: { worldTick: 5, mode: "paused" } },
+    });
+  }, 30_000);
+
+  it("恢复 dry-run 发现内容版本不兼容时不切换别名", async () => {
     const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
@@ -377,38 +668,163 @@ describe("服务端宿主", () => {
       method: "POST",
       url: "/api/v1/commands",
       headers,
-      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000101"),
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000102"),
     });
     expect(started.statusCode).toBe(200);
-    const source = liveRun(host);
     const snapshot = await host.app.inject({
       method: "POST",
       url: "/api/v1/campaign/snapshots",
       headers,
-      payload: { label: "恢复点" },
+      payload: { label: "旧版本恢复点" },
     });
     expect(snapshot.statusCode).toBe(200);
     const snapshotId = (snapshot.json() as { readonly snapshotId: string }).snapshotId;
+
+    const before = host.storage.transact((tx) => ({
+      branches: tx.rows("branches").list().map((row) => String(row["branch_id"])).sort(),
+      runs: tx.rows("runs").list().map((row) => String(row["run_id"])).sort(),
+      alias: String(tx.rows("world_aliases").get({ alias: "online" })?.["branch_id"]),
+      snapshots: tx.rows("snapshots").list().map((row) => String(row["snapshot_id"])).sort(),
+    }));
+    const source = onlineEntry(host);
+    host.storage.transact((tx) => {
+      const manifest = source.run["manifest_json"] as { readonly [key: string]: StorageCell };
+      const content = manifest["content"] as { readonly [key: string]: StorageCell };
+      tx.rows("runs").put({
+        ...source.run,
+        manifest_json: { ...manifest, content: { ...content, contentVersion: "9.9.9" } },
+      });
+    });
+
     const restored = await host.app.inject({
       method: "POST",
       url: "/api/v1/campaign/restore",
       headers,
       payload: { snapshotId },
     });
-    expect(restored.statusCode).toBe(200);
-    const restoredBranchId = (restored.json() as { readonly branchId: string }).branchId;
-    const branch = host.storage.transact((tx) => tx.rows("branches").get({ branch_id: restoredBranchId }));
-    expect(branch).not.toBeNull();
-    const successorRunId = String(branch?.["run_id"]);
-    const successor = host.storage.transact((tx) => tx.rows("runs").get({ run_id: successorRunId }));
-    expect(successor).not.toBeNull();
-    expect(successor?.["run_spec_json"]).toEqual(source["run_spec_json"]);
-    expect((successor?.["run_spec_json"] as { readonly seed: string }).seed).toBe(
-      (source["run_spec_json"] as { readonly seed: string }).seed,
-    );
-    expect(successor?.["manifest_hash"]).toBe(source["manifest_hash"]);
-    expect(successor?.["manifest_json"]).toEqual(source["manifest_json"]);
+    expect(restored.statusCode).toBe(500);
+    const after = host.storage.transact((tx) => ({
+      branches: tx.rows("branches").list().map((row) => String(row["branch_id"])).sort(),
+      runs: tx.rows("runs").list().map((row) => String(row["run_id"])).sort(),
+      alias: String(tx.rows("world_aliases").get({ alias: "online" })?.["branch_id"]),
+      snapshots: tx.rows("snapshots").list().map((row) => String(row["snapshot_id"])).sort(),
+    }));
+    expect(after).toEqual(before);
+    expect(host.branchId).toBe(before.alias);
   });
+
+  it("重开后重启仍选中重开后的在线分支", async () => {
+    const dataDir = tempDataDir();
+    const first = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    let resetBranchId = "";
+    let resetRunId = "";
+    let previousBranchId = "";
+    let previousRunId = "";
+    try {
+      const session = await loginSession(first, "player-token");
+      const headers = { authorization: `Bearer ${session}` };
+      const started = await first.app.inject({
+        method: "POST",
+        url: "/api/v1/commands",
+        headers,
+        payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000103"),
+      });
+      expect(started.statusCode).toBe(200);
+      const previous = onlineEntry(first);
+      previousBranchId = previous.branchId;
+      previousRunId = previous.runId;
+      const reset = await first.app.inject({
+        method: "POST",
+        url: "/api/v1/campaign/reset",
+        headers,
+        payload: { operationId: "op-000000000103" },
+      });
+      expect(reset.statusCode).toBe(200);
+      resetBranchId = (reset.json() as { readonly branchId: string }).branchId;
+      expect(resetBranchId).not.toBe(previousBranchId);
+      const resetBranch = first.storage.transact((tx) => tx.rows("branches").get({ branch_id: resetBranchId }));
+      expect(resetBranch).toMatchObject({ kind: "online", status: "active", parent_branch_id: previousBranchId });
+      resetRunId = String(resetBranch?.["run_id"]);
+      expect(resetRunId).not.toBe(previousRunId);
+    } finally {
+      await first.close();
+    }
+
+    const second = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(second);
+    // 审查实测缺陷：重开后重启曾选中归档的旧在线分支。
+    expect(second.branchId).toBe(resetBranchId);
+    const alias = second.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }));
+    expect(alias).toMatchObject({ branch_id: resetBranchId });
+    const resetBranch = second.storage.transact((tx) => tx.rows("branches").get({ branch_id: resetBranchId }));
+    expect(resetBranch).toMatchObject({ kind: "online", status: "active", run_id: resetRunId });
+    const resetRun = second.storage.transact((tx) => tx.rows("runs").get({ run_id: resetRunId }));
+    expect(resetRun).toMatchObject({ branch_id: resetBranchId, mode: "live", status: "running" });
+    const previousBranch = second.storage.transact((tx) => tx.rows("branches").get({ branch_id: previousBranchId }));
+    expect(previousBranch).toMatchObject({ status: "archived" });
+    const previousRun = second.storage.transact((tx) => tx.rows("runs").get({ run_id: previousRunId }));
+    expect(previousRun).toMatchObject({ status: "completed" });
+    const session = await loginSession(second, "player-token");
+    const sessionView = await second.app.inject({
+      method: "GET",
+      url: "/api/v1/session",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(sessionView.json()).toMatchObject({ branchId: resetBranchId });
+    const view = await second.app.inject({
+      method: "GET",
+      url: "/api/v1/world/view",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(view.statusCode).toBe(200);
+    expect(view.json()).toMatchObject({ projection: { campaign: null, clock: { worldTick: 0, mode: "paused" } } });
+  }, 30_000);
+
+  it("在线别名指向缺失分支、run 缺失或 manifest 不一致时拒绝启动", async () => {
+    const dataDir = tempDataDir();
+    const first = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    const online = onlineEntry(first);
+    try {
+      // manifest 与 RunSpec 不一致：不得静默重建，也不得改选其他分支。
+      const manifest = online.run["manifest_json"] as { readonly [key: string]: StorageCell };
+      first.storage.transact((tx) => {
+        tx.rows("runs").put({
+          ...online.run,
+          manifest_json: { ...manifest, seed: "f".repeat(32) },
+        });
+      });
+      await expect(startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" }))
+        .rejects.toThrow(/seed 与 RunSpec 不一致/);
+    } finally {
+      await first.close();
+    }
+
+    const databasePath = join(dataDir, "ai-npc.db");
+    // 运行级 runs 行缺失：别名分支上的 run 不存在。
+    {
+      const database = new DatabaseSync(databasePath);
+      try {
+        database.prepare("DELETE FROM runs WHERE run_id = ?").run(online.runId);
+      } finally {
+        database.close();
+      }
+    }
+    await expect(startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" }))
+      .rejects.toThrow(/绑定的 run .* 不存在/);
+
+    // 在线别名指向缺失分支：外键校验关闭后构造不一致的部署数据。
+    {
+      const database = new DatabaseSync(databasePath);
+      try {
+        database.exec("PRAGMA foreign_keys = OFF");
+        database.prepare("UPDATE world_aliases SET branch_id = ? WHERE alias = 'online'").run("br-missing");
+      } finally {
+        database.close();
+      }
+    }
+    await expect(startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" }))
+      .rejects.toThrow(/在线别名指向的分支 br-missing 不存在/);
+  }, 30_000);
 
   it("未知装配在打开存储前失败", async () => {
     const dataDir = tempDataDir();
