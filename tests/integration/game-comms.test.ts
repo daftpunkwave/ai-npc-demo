@@ -4,7 +4,7 @@
  * 禁止直接调用投影或跳过中继状态。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { ApprovedSpeech, ApprovedSpeechReader } from "@ai-npc/module-sdk";
+import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts } from "@ai-npc/module-sdk";
 import type { Json } from "@ai-npc/contracts";
 import { createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import {
@@ -459,9 +459,50 @@ describe("通信", () => {
     expect(shareGrants()).toHaveLength(1);
   });
 
+  it("替换 world 只读端口后仍按指标与位置计算中继和送达", async () => {
+    const value = await harness();
+    const talker = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 25,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === talker.agentId ? talker : null),
+    };
+    const port = createCommsPort(() => createMemoryTx(10), value.gameContent, value.host.ids, world);
+
+    expect(port.relayState()).toBe("degraded");
+    // 玩家由内容包声明在灰港，替换端口返回的温原也在灰港：同节点立即送达。
+    expect(port.sameNode("player-1", "npc-wenyuan")).toBe(true);
+    expect(port.deliverAt("dialogue", "player-1", "npc-wenyuan")).toBe(10);
+    // 岑雁不在替换端口返回的位置里，按异地降级延迟 2 tick。
+    expect(port.deliverAt("dialogue", "player-1", "npc-cenyan")).toBe(12);
+
+    // 指标由替换端口提供：缺失即按中继中断处理，不读取任何世界聚合。
+    const down = createCommsPort(() => createMemoryTx(10), value.gameContent, value.host.ids, {
+      ...world,
+      meters: () => null,
+    });
+    expect(down.relayState()).toBe("down");
+    expect(down.deliverAt("message", "player-1", "npc-cenyan")).toBe("relay-down");
+  });
+
   it("开局前缺少世界指标时中继按中断处理", async () => {
     const value = await harness();
-    const port = createCommsPort(() => createMemoryTx(), value.gameContent, value.host.ids);
+    const port = createCommsPort(
+      () => createMemoryTx(),
+      value.gameContent,
+      value.host.ids,
+      { meters: () => null, character: () => null },
+    );
     expect(port.relayState()).toBe("down");
     expect(port.deliverAt("dialogue", "player-1", "npc-cenyan")).toBe("relay-down");
     expect(port.sameNode("player-1", "npc-wenyuan")).toBe(false);

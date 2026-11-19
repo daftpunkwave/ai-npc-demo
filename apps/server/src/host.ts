@@ -10,6 +10,7 @@ import {
   assemblyDescriptorSchema,
   canonicalJson,
   clockViewSchema,
+  commandReceiptSchema,
   isErrorCode,
   jsonValueSchema,
   type AssemblyDescriptor,
@@ -23,7 +24,7 @@ import {
   type StorageRow,
   type StorageTransaction,
 } from "@ai-npc/contracts";
-import { Authority, TransactionWorldTx } from "@ai-npc/authority";
+import { Authority, createScopedWorldTxFactory } from "@ai-npc/authority";
 import { createSystemAuth, systemPrincipalId } from "@ai-npc/authority";
 import {
   loadContentPack,
@@ -49,6 +50,7 @@ import {
   plannedModuleForCapability,
   serverModuleDefinitions,
   toGameContent,
+  type CommandReceiptReadPort,
   type OperationsDriver,
   type ServerApp,
   type ServerIdentity,
@@ -96,28 +98,6 @@ export interface RunningHost {
   listen(): Promise<void>;
   close(): Promise<void>;
 }
-
-const allAggregates = new Set([
-  "campaign",
-  "meters",
-  "character",
-  "team",
-  "group",
-  "delegation",
-  "evidence-placement",
-  "road",
-  "passage-grant",
-  "stockpile",
-  "task",
-  "task-invitation",
-  "conversation",
-  "knowledge-grant",
-  "share",
-  "message",
-  "agreement",
-  "scenario-card",
-  "scenario-run",
-]);
 
 function clockView(clock: ClockState): ClockView {
   return {
@@ -773,18 +753,6 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
 
   const clockState = () => runtime.clock.read(activeBranchId);
 
-  const txFor = (storageTx: StorageTransaction, moduleId: string) =>
-    (id: string): TransactionWorldTx => new TransactionWorldTx({
-      storageTx,
-      worldId: activeWorldId,
-      branchId: activeBranchId,
-      worldTick: runtime.clock.readInTransaction(storageTx, activeBranchId).worldTick,
-      principalId: systemPrincipalId,
-      correlationId: `host:${moduleId}:${id}`,
-      scope: { moduleId: id, ownsAggregates: allAggregates, order: 0 },
-      host,
-    });
-
   const control = (mode: "pause" | "start", expectedRunVersion: number): ClockView => {
     const result = mode === "pause"
       ? runtime.clock.pause(activeBranchId, expectedRunVersion)
@@ -824,9 +792,50 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     authority.registerModule(contributor);
   }
 
+  /**
+   * 只读访问的模块事务工厂：与 authority 共用同一条作用域规则，
+   * 按模块注册时声明的 ownsAggregates 授予作用域；未注册模块直接失败。
+   */
+  const readTxFor = (storageTx: StorageTransaction) =>
+    createScopedWorldTxFactory({
+      registry: authority.registry,
+      storageTx,
+      worldId: activeWorldId,
+      branchId: activeBranchId,
+      worldTick: runtime.clock.readInTransaction(storageTx, activeBranchId).worldTick,
+      principalId: systemPrincipalId,
+      correlationId: (moduleId) => `host:${moduleId}:read`,
+      host,
+    });
+
+  /** 在调用方只读事务内绑定全部游戏端口；读取他人事实只能经各模块的 typed port。 */
+  const portsIn = (storageTx: StorageTransaction): GameModulePorts =>
+    binder(readTxFor(storageTx)) as GameModulePorts;
+
+  /**
+   * 命令回执只读端口：传输层按会话主体、分支与命令 ID 查询，
+   * 存储表与回执解析留在宿主，传输层不接触表结构。
+   */
+  const receipts: CommandReceiptReadPort = {
+    read: (principalId, branchId, commandId) =>
+      storage.transact((tx) => {
+        const row = tx.branch(branchId).table("command_receipts").get({
+          principal_id: principalId,
+          command_id: commandId,
+        });
+        if (row === null) {
+          return null;
+        }
+        const parsed = commandReceiptSchema.safeParse(row["receipt_json"]);
+        if (!parsed.success) {
+          throw new DomainError("invalid-state", "存储中的命令回执不符合契约");
+        }
+        return parsed.data;
+      }),
+  };
+
   const projection = () => storage.transact((tx) => {
-    const gameTx = txFor(tx, "read");
-    const ports = binder(gameTx) as GameModulePorts;
+    const ports = portsIn(tx);
     return buildPlayerProjection({
       content: gameContent,
       world: ports["game.world"],
@@ -846,13 +855,10 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   const conversationPort: ConversationReadPort = {
     worldTick: () => clockState().worldTick,
     conversationsOf: (principalId: string) =>
-      storage.transact((tx) => {
-        const ports = binder(txFor(tx, "conversation")) as GameModulePorts;
-        return ports["game.comms"].conversationsOf(principalId);
-      }),
+      storage.transact((tx) => portsIn(tx)["game.comms"].conversationsOf(principalId)),
     conversationMessages: (conversationId: string, limit: number) =>
       storage.transact((tx) => {
-        const ports = binder(txFor(tx, "conversation")) as GameModulePorts;
+        const ports = portsIn(tx);
         return ports["game.comms"].conversationMessages(conversationId, limit);
       }),
     speakerName: (principalId: string) => gameContent.characters.get(principalId)?.name ?? principalId,
@@ -1213,7 +1219,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     app = await runtime.transport.createApp({
       authority,
       accessPolicy: runtime.accessPolicy,
-      storage,
+      receipts,
       worldId: activeWorldId,
       branchId: activeBranchId,
       assembly: activeResolved.modules,
@@ -1330,7 +1336,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       if (timer !== null) {
         clearTimeout(timer);
       }
-      await app.close();
+      // 监听与关闭都经传输端口完成，宿主不依赖具体传输实现。
+      await runtime.transport.close(app);
       await startedModules.dispose();
       await storageStarted.dispose();
     },

@@ -18,7 +18,15 @@ import type {
 } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
-import type { GameClockPort, GameContent, GameModulePorts, ModuleBinder, ScopedWorldTxFactory, WorldTx } from "@ai-npc/module-sdk";
+import {
+  gameModuleIds,
+  type GameClockPort,
+  type GameContent,
+  type GameModulePorts,
+  type ModuleBinder,
+  type ScopedWorldTxFactory,
+  type WorldTx,
+} from "@ai-npc/module-sdk";
 import { createClockPort } from "@ai-npc/mod-game-clock-controlled";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
@@ -89,13 +97,19 @@ function bindGamePorts(
   gameContent: GameContent,
   host: FakeHost,
 ): GameModulePorts {
+  // 按依赖顺序构造：世界端口先于通信，通信/世界/行动/地图先于协议统计。
+  const map = createMapPort(txFor, gameContent, host.ids);
+  const resources = createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 });
+  const world = createWorldPort(txFor, gameContent, host.ids);
+  const comms = createCommsPort(() => txFor(gameModuleIds.comms), gameContent, host.ids, world);
+  const actions = createActionsPort(txFor);
   return {
-    "game.map": createMapPort(txFor, gameContent, host.ids),
-    "game.resources": createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 }),
-    "game.world": createWorldPort(txFor, gameContent, host.ids),
-    "game.comms": createCommsPort(txFor, gameContent, host.ids),
-    "game.actions": createActionsPort(txFor),
-    "game.agreements": createAgreementsPort(txFor),
+    "game.map": map,
+    "game.resources": resources,
+    "game.world": world,
+    "game.comms": comms,
+    "game.actions": actions,
+    "game.agreements": createAgreementsPort(() => txFor(gameModuleIds.agreements), { actions, comms, world, map }),
     "game.scenario": createScenarioPort(txFor),
   };
 }

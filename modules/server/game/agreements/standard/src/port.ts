@@ -1,68 +1,19 @@
 /**
  * 实现协议查询端口：协议视图与截至指定 tick 的履约/违约计数。
- * 依赖协议聚合、scoped WorldTx，以及行动/通信/世界聚合的只读事实视图。
- * 禁止在查询中改写协议、执行条款校验或触发履约事件。
+ * 依赖协议聚合、本模块 scoped WorldTx，以及组合根注入的行动/通信/世界/地图只读端口。
+ * 禁止在查询中改写协议、执行条款校验、触发履约事件或直接读取其他模块的私有聚合。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将泛型查询结果误判为 any。 */
-import { taskTypeSchema, watergateAllocationSchema, type WatergateAllocation } from "@ai-npc/contracts";
 import {
-  gameModuleIds,
   type AgreementCounts,
+  type AgreementQueryPorts,
   type AgreementView,
   type GameAgreementsPort,
-  type ScopedWorldTxFactory,
+  type OwnWorldTxFactory,
   type ShareQuery,
-  type TaskView,
 } from "@ai-npc/module-sdk";
-import { z } from "zod";
 import { isAgreementSatisfied, type FulfillmentFacts } from "./fulfillment";
 import { readAgreementState, type AgreementState } from "./state";
-
-/**
- * 查询端口只能拿到按模块划分的事务，没有其他模块的 typed port；
- * 因此按通信→世界读取角色位置的同一方式，以最小 schema 读取他人已提交的聚合字段，
- * 只读不写，也不复制对方的完整状态定义。
- */
-const committedTaskSchema = z.object({
-  taskId: z.string().min(1),
-  taskType: taskTypeSchema,
-  teamId: z.string().min(1),
-  dispatcherId: z.string().min(1),
-  invitees: z.array(z.string().min(1)),
-  participants: z.array(z.string().min(1)),
-  status: z.enum(["pending", "running", "completed", "failed", "cancelled"]),
-  params: z.unknown(),
-  route: z.array(z.string().min(1)),
-  departTick: z.number().int().nonnegative(),
-  nominalCompletionTick: z.number().int().nonnegative(),
-  completedAtTick: z.number().int().nonnegative().nullable(),
-  delayNoticeSent: z.boolean(),
-});
-
-const committedShareSchema = z.object({
-  shareId: z.string().min(1),
-  fromId: z.string().min(1),
-  evidenceId: z.string().min(1),
-  audience: z.array(z.string().min(1)),
-  sharedAtTick: z.number().int().nonnegative(),
-});
-
-const teamOwnerSchema = z.object({
-  teamId: z.string().min(1),
-  ownerFactionId: z.string().min(1),
-});
-
-const watergateMetersSchema = z.object({
-  "watergate.allocation": watergateAllocationSchema,
-});
-
-const roadStateSchema = z.object({
-  roadId: z.string().min(1),
-  status: z.enum(["open", "restricted", "closed"]),
-});
-
-/** 水闸指标聚合的固定 ID；没有该记录时按「世界尚未初始化」处理。 */
-const METERS_AGGREGATE_ID = "meters";
 
 function toView(state: AgreementState): AgreementView {
   return {
@@ -83,14 +34,16 @@ function toView(state: AgreementState): AgreementView {
 
 /** 协议查询实现；统计时只读取当前事务内已提交的事实。 */
 class StandardAgreementsPort implements GameAgreementsPort {
-  private readonly txFor: ScopedWorldTxFactory;
+  private readonly ownTx: OwnWorldTxFactory;
+  private readonly queries: AgreementQueryPorts;
 
-  constructor(txFor: ScopedWorldTxFactory) {
-    this.txFor = txFor;
+  constructor(ownTx: OwnWorldTxFactory, queries: AgreementQueryPorts) {
+    this.ownTx = ownTx;
+    this.queries = queries;
   }
 
   private tx() {
-    return this.txFor(gameModuleIds.agreements);
+    return this.ownTx();
   }
 
   agreement(agreementId: string): AgreementView | null {
@@ -151,91 +104,31 @@ class StandardAgreementsPort implements GameAgreementsPort {
     if (openTerms.length === 0) {
       return false;
     }
-    const allocation = this.watergateAllocation();
+    // 世界指标尚未初始化时无法判定水闸义务；与注入的世界查询端口一致，按「未违约」处理。
+    const allocation = this.queries.world.meters()?.["watergate.allocation"] ?? null;
     return openTerms.some((term) => {
       if (term.kind === "water-allocation") {
         return allocation !== null && allocation !== term.policy;
       }
-      return term.kind === "grant-passage" && this.roadClosed(term.roadId);
+      return term.kind === "grant-passage" && this.queries.map.roadStatus(term.roadId) === "closed";
     });
   }
 
-  /** 当前水闸分配；世界聚合尚未初始化时返回 null，按「无法判定违约」处理。 */
-  private watergateAllocation(): WatergateAllocation | null {
-    const record = this.txFor(gameModuleIds.world).get<unknown>("meters", METERS_AGGREGATE_ID);
-    if (record === null) {
-      return null;
-    }
-    const parsed = watergateMetersSchema.safeParse(record.state);
-    return parsed.success ? parsed.data["watergate.allocation"] : null;
-  }
-
-  /** 道路是否已关闭；没有状态记录时沿用内容包初始状态，按「未关闭」处理。 */
-  private roadClosed(roadId: string): boolean {
-    const record = this.txFor(gameModuleIds.map).get<unknown>("road", roadId);
-    if (record === null) {
-      return false;
-    }
-    const parsed = roadStateSchema.safeParse(record.state);
-    return parsed.success && parsed.data.status === "closed";
-  }
-
-  /** 已完成任务视图；只取 status 为 completed 且带完成 tick 的记录，字段无法解析的按「不是已提交事实」跳过。 */
-  private committedTasks(): readonly TaskView[] {
-    const tasks: TaskView[] = [];
-    for (const entry of this.txFor(gameModuleIds.actions).list<unknown>("task")) {
-      const parsed = committedTaskSchema.safeParse(entry.state);
-      if (parsed.success && parsed.data.status === "completed") {
-        tasks.push(parsed.data);
-      }
-    }
-    return tasks;
-  }
-
-  /** 已提交的证据分享；字段无法解析的记录按「不是已提交事实」跳过。 */
-  private committedShares(): readonly z.infer<typeof committedShareSchema>[] {
-    const shares: z.infer<typeof committedShareSchema>[] = [];
-    for (const entry of this.txFor(gameModuleIds.comms).list<unknown>("share")) {
-      const parsed = committedShareSchema.safeParse(entry.state);
-      if (parsed.success) {
-        shares.push(parsed.data);
-      }
-    }
-    return shares;
-  }
-
-  /** 队伍所属派系；世界聚合里没有该队伍时返回 null。 */
-  private teamOwners(): ReadonlyMap<string, string> {
-    const owners = new Map<string, string>();
-    for (const entry of this.txFor(gameModuleIds.world).list<unknown>("team")) {
-      const parsed = teamOwnerSchema.safeParse(entry.state);
-      if (parsed.success) {
-        owners.set(parsed.data.teamId, parsed.data.ownerFactionId);
-      }
-    }
-    return owners;
-  }
-
+  /** 履约事实：已完成任务、证据分享与队伍所属派系全部经注入的 typed port 读取。 */
   private fulfillmentFacts(): FulfillmentFacts {
-    const shares = this.committedShares();
-    const teams = this.teamOwners();
+    const teams = new Map(this.queries.world.teams().map((team) => [team.teamId, team.ownerFactionId]));
     return {
-      completedTasks: this.committedTasks(),
-      hasShare: (query: ShareQuery) =>
-        shares.some(
-          (share) =>
-            share.fromId === query.fromId &&
-            share.evidenceId === query.evidenceId &&
-            share.audience.includes(query.toPrincipalId) &&
-            share.sharedAtTick >= query.sinceTick &&
-            share.sharedAtTick <= query.byTick,
-        ),
+      completedTasks: this.queries.actions.completedTasks(),
+      hasShare: (query: ShareQuery) => this.queries.comms.hasShare(query),
       factionOfTeam: (teamId) => teams.get(teamId) ?? null,
     };
   }
 }
 
-/** 构造绑定到当前事务的协议端口。 */
-export function createAgreementsPort(txFor: ScopedWorldTxFactory): GameAgreementsPort {
-  return new StandardAgreementsPort(txFor);
+/** 构造绑定到当前事务的协议端口；queries 由组合根按依赖顺序注入。 */
+export function createAgreementsPort(
+  ownTx: OwnWorldTxFactory,
+  queries: AgreementQueryPorts,
+): GameAgreementsPort {
+  return new StandardAgreementsPort(ownTx, queries);
 }

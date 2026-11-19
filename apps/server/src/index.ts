@@ -30,7 +30,15 @@ export {
   serverRequiredCapabilities,
 } from "./host/module-catalog";
 export type { OperationsFactory, ServerRuntime } from "./host/module-catalog";
-export type { AuthorityPort, ConversationReadPort, ServerApp, ServerAppOptions, ServerIdentity } from "./host/module-catalog";
+export type {
+  AuthorityPort,
+  CommandReceiptReadPort,
+  ConversationReadPort,
+  ServerApp,
+  ServerAppInjectResponse,
+  ServerAppOptions,
+  ServerIdentity,
+} from "./host/module-catalog";
 export { buildPlayerProjection } from "./projection";
 export { advanceWorldTick, catchUpWorldTick } from "./tick";
 export type {

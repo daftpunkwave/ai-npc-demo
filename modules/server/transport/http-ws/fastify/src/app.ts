@@ -1,9 +1,9 @@
 /**
  * 创建 Fastify HTTP/WS 应用：登录、会话、装配握手、玩家读接口、命令与回执、时钟控制、存档、玩家流与统一错误响应。
- * 依赖 authority、装配的权限端口、存储、投影/会话/开局/时钟/存档回调与身份令牌；不直接写规则聚合或查存储表。
+ * 依赖 authority、装配的权限端口、回执只读查询端口、投影/会话/开局/时钟/存档回调与身份令牌；不直接查存储表。
  * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import websocket, { type WebSocket } from "@fastify/websocket";
 import cors from "@fastify/cors";
 import {
@@ -38,12 +38,12 @@ import {
   type ConversationQuery,
   type ConversationResponse,
   type ErrorCode,
+  type Json,
   type PlayerNotificationView,
   type PlayerProjection,
   type ResolvedModuleSet,
   type SessionDescriptor,
   type StartOption,
-  type StoragePort,
   type StreamChannel,
 } from "@ai-npc/contracts";
 
@@ -100,6 +100,14 @@ export interface SnapshotRecordView {
   readonly worldTick: number;
   readonly label: string;
   readonly createdAt: string;
+}
+
+/**
+ * 命令回执只读查询端口；宿主绑定存储细节，传输层只按会话主体、分支与命令 ID 查询。
+ * 未找到返回 null，由路由按资源不存在处理；端口不暴露写入或表结构。
+ */
+export interface CommandReceiptReadPort {
+  read(principalId: string, branchId: string, commandId: string): CommandReceipt | null;
 }
 
 export interface ServerIdentity {
@@ -193,7 +201,8 @@ export interface ServerAppOptions {
   readonly authority: AuthorityPort;
   /** 装配的权限端口；玩家、控制台与 WS 频道的裁决都经此端口。 */
   readonly accessPolicy: AccessPolicy;
-  readonly storage: StoragePort;
+  /** 命令回执只读查询端口；传输层不直接访问存储。 */
+  readonly receipts: CommandReceiptReadPort;
   readonly worldId: string;
   readonly branchId: string;
   /** 服务端 realm 的已解析装配；只含模块身份与能力，不含模块配置。 */
@@ -298,12 +307,6 @@ function bearer(request: FastifyRequest): string | null {
     return null;
   }
   return header.slice("Bearer ".length);
-}
-
-function receiptOf(row: Record<string, unknown>): CommandReceipt {
-  const raw = row["receipt_json"];
-  const value = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
-  return commandReceiptSchema.parse(value);
 }
 
 /** 会话分页未指定 limit 时取投影同样的窗口；上限由公共 schema 固定为 100。 */
@@ -447,8 +450,37 @@ function readPlayerConversation(port: ConversationReadPort, query: ConversationR
   return { conversationId: selectedConversationId, lines: lines.slice(-query.limit) };
 }
 
-export interface ServerApp extends FastifyInstance {
+/** 传输层测试与嵌入式调用使用的 HTTP 方法集合。 */
+export type ServerAppInjectMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD";
+
+/** 注入请求的最小选项；语义与传输适配器一致，但不暴露其内部类型。 */
+export interface ServerAppInjectOptions {
+  readonly method: ServerAppInjectMethod;
+  readonly url: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly payload?: unknown;
+}
+
+/** 注入响应的最小视图；只保留状态码、响应头与 JSON 读取。 */
+export interface ServerAppInjectResponse {
+  readonly statusCode: number;
+  readonly headers: Readonly<Record<string, string | string[] | number | undefined>>;
+  readonly body: string;
+  /** 解析后的响应体；调用方可按已知契约收窄，宿主不暴露框架的 any 默认值。 */
+  json<T = Json>(): T;
+}
+
+/**
+ * 传输层对宿主公开的最小应用接口：监听、关闭、测试注入与世界变化通知。
+ * 不继承具体框架类型；宿主只依赖这些能力，监听与关闭由传输模块实现。
+ */
+export interface ServerApp {
+  listen(options: { readonly host: string; readonly port: number }): Promise<void>;
+  close(): Promise<void>;
+  inject(options: ServerAppInjectOptions): Promise<ServerAppInjectResponse>;
   notifyWorldChanged(): void;
+  /** 当前监听地址；尚未监听时返回 null，供测试建立真实连接。 */
+  address(): { readonly host: string; readonly port: number } | null;
 }
 
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
@@ -982,17 +1014,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       return;
     }
     const params = request.params as { readonly commandId: string };
-    const row = options.storage.transact((tx) =>
-      tx.get("SELECT receipt_json FROM command_receipts WHERE branch_id = ? AND principal_id = ? AND command_id = ?", [
-        session.auth.branchId,
-        session.auth.principalId,
-        params.commandId,
-      ]),
-    );
-    if (row === null) {
+    // 主体与分支取自认证会话；传输层只经注入的只读端口取回执，不访问存储表。
+    const receipt = options.receipts.read(session.auth.principalId, session.auth.branchId, params.commandId);
+    if (receipt === null) {
       return sendHttpError(reply, "not-found", "回执不存在");
     }
-    return receiptOf(row);
+    return receipt;
   });
 
   app.get("/api/v1/world/view", (request, reply) => {
@@ -1254,9 +1281,38 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
 
   app.setNotFoundHandler((_request, reply) => sendHttpError(reply, "not-found", "资源不存在"));
 
-  app.decorate("notifyWorldChanged", () => {
-    publishDelta();
-  });
+  /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */
+  const listen = async (listenOptions: { readonly host: string; readonly port: number }): Promise<void> => {
+    await app.listen({ host: listenOptions.host, port: listenOptions.port });
+  };
 
-  return app as unknown as ServerApp;
+  const close = async (): Promise<void> => {
+    await app.close();
+  };
+
+  const inject = async (injectOptions: ServerAppInjectOptions): Promise<ServerAppInjectResponse> => {
+    // 经方法调用保留框架实例的接收者；返回值收窄为最小响应视图。
+    const runner = app as unknown as {
+      inject(options: ServerAppInjectOptions): Promise<ServerAppInjectResponse>;
+    };
+    return runner.inject(injectOptions);
+  };
+
+  const address = (): { readonly host: string; readonly port: number } | null => {
+    const value = app.server.address();
+    if (value === null || typeof value === "string") {
+      return null;
+    }
+    return { host: value.address, port: value.port };
+  };
+
+  return {
+    listen,
+    close,
+    inject,
+    notifyWorldChanged: () => {
+      publishDelta();
+    },
+    address,
+  };
 }

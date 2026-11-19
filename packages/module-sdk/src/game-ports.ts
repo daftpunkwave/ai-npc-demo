@@ -1,6 +1,6 @@
 /**
  * 定义服务端游戏模块之间共享的查询与操作端口，以及模块绑定的内容索引视图。
- * 依赖公共契约的领域值、资源量与原因码；端口方法在调用方事务内同步执行。
+ * 依赖公共契约的领域值、资源量与原因码，以及本包的事务端口类型；端口方法在调用方事务内同步执行。
  * 禁止在这里实现规则、读取存储或让端口绕过所属模块的聚合所有权。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
@@ -20,6 +20,10 @@ import type {
   Term,
   WatergateAllocation,
 } from "@ai-npc/contracts";
+import type { WorldTx } from "./ports";
+
+/** 只取调用模块自己作用域事务的工厂；模块端口不得借它读取或改写其他模块的聚合。 */
+export type OwnWorldTxFactory = () => WorldTx;
 
 /** 宿主 ID 生成器的游戏端口视图；参数为 ID 前缀。 */
 export type GameIdFactory = (...args: [string]) => string;
@@ -449,6 +453,12 @@ export interface GameWorldPort {
   }): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
 }
 
+/**
+ * 通信模块读取世界事实的最小只读视图：指标与角色位置。
+ * 组合根注入已绑定的世界端口；通信模块不再按世界模块 ID 直接读取聚合。
+ */
+export type CommsWorldFacts = Pick<GameWorldPort, "meters" | "character">;
+
 /** 任务查询端口；任务聚合由行动模块拥有。 */
 export interface TaskView {
   readonly taskId: string;
@@ -633,6 +643,17 @@ export interface GameCommsPort {
   }): CommsPostResult;
 }
 
+/**
+ * 协议统计读取的其他模块只读事实：已完成任务、证据分享、世界指标/队伍与道路状态。
+ * 由组合根按已声明能力注入；协议端口不再按实现 ID 读取对方私有聚合。
+ */
+export interface AgreementQueryPorts {
+  readonly actions: Pick<GameActionsPort, "completedTasks">;
+  readonly comms: Pick<GameCommsPort, "hasShare">;
+  readonly world: Pick<GameWorldPort, "meters" | "teams">;
+  readonly map: Pick<GameMapPort, "roadStatus">;
+}
+
 /** 游戏模块绑定的全部端口；宿主按能力解析后注入处理器上下文。 */
 export interface GameModulePorts {
   readonly "game.map": GameMapPort;
@@ -642,6 +663,14 @@ export interface GameModulePorts {
   readonly "game.agreements": GameAgreementsPort;
   readonly "game.scenario": GameScenarioPort;
   readonly "game.comms": GameCommsPort;
+}
+
+/**
+ * 组合根绑定模块端口时提供的已绑定端口快照。
+ * 绑定器按依赖顺序构造端口，只能经能力取用已声明的类型端口，不得借此读取对方聚合。
+ */
+export interface GamePortBindContext {
+  readonly ports: Readonly<Partial<GameModulePorts>>;
 }
 
 /** 可空的操作结果；成功时允许携带结果数据。 */

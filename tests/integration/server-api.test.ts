@@ -9,26 +9,35 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   DomainError,
   campaignResponseSchema,
+  commandReceiptSchema,
   conversationResponseSchema,
   errorResponseSchema,
   playerProjectionSchema,
   sessionAssemblyResponseSchema,
   streamAppendMessageSchema,
   type ClockView,
+  type CommandReceipt,
   type Json,
   type PlayerProjection,
   type ResolvedModuleSet,
   type StartOption,
 } from "@ai-npc/contracts";
-import { buildPlayerProjection, createServerApp } from "@ai-npc/app-server";
+import {
+  buildPlayerProjection,
+  createServerApp,
+  type CommandReceiptReadPort,
+  type ServerApp,
+  type ServerAppInjectResponse,
+} from "@ai-npc/app-server";
 import {
   accessPolicyModuleDefinition,
   type AccessPolicyPort,
 } from "@ai-npc/mod-platform-access-policy-roster";
 import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
-import type {
-  ConversationReadPort,
-  ConversationSourceLine,
+import {
+  TransportPort,
+  type ConversationReadPort,
+  type ConversationSourceLine,
 } from "@ai-npc/mod-transport-http-ws-fastify";
 import { SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
 import {
@@ -202,9 +211,25 @@ interface AppOverrides {
   readonly now?: () => number;
   readonly starts?: () => readonly StartOption[];
   readonly conversation?: ConversationReadPort;
+  /** 替换回执只读端口；缺省按真实回执表构造，用于验证传输层只经端口取回执。 */
+  readonly receipts?: CommandReceiptReadPort;
   readonly sessionAssembly?: { readonly client: ResolvedModuleSet; readonly console: ResolvedModuleSet };
   /** 覆盖名册权限配置，用于验证裁决确实来自装配的 provider。 */
   readonly accessPolicyConfig?: Json;
+}
+
+/** 用真实回执表构造只读查询端口；传输层不接触表结构。 */
+function receiptsPortFor(harness: GameHarness): CommandReceiptReadPort {
+  return {
+    read: (principalId, branchId, commandId) =>
+      harness.storage.transact((tx) => {
+        const row = tx.branch(branchId).table("command_receipts").get({
+          principal_id: principalId,
+          command_id: commandId,
+        });
+        return row === null ? null : commandReceiptSchema.parse(row["receipt_json"]);
+      }),
+  };
 }
 
 /** 用真实名册模块与给定配置构造权限端口；传输层只经端口裁决。 */
@@ -227,7 +252,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
   const app = await createServerApp({
     authority: harness.authority,
     accessPolicy,
-    storage: harness.storage,
+    receipts: overrides.receipts ?? receiptsPortFor(harness),
     worldId: harness.worldId,
     branchId: harness.branchId,
     assembly,
@@ -393,8 +418,8 @@ function connectStream(url: string): StreamClient {
 
 async function listen(app: Awaited<ReturnType<typeof createServerApp>>): Promise<number> {
   await app.listen({ port: 0, host: "127.0.0.1" });
-  const address = app.server.address();
-  if (address === null || typeof address === "string") {
+  const address = app.address();
+  if (address === null) {
     throw new Error("没有监听端口");
   }
   return address.port;
@@ -470,6 +495,45 @@ describe("服务端 API", () => {
     const view = await app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
     expect(view.statusCode).toBe(200);
     expect(view.json()).toMatchObject({ projection: { clock: { worldTick: 0 } } });
+  });
+
+  it("命令回执经注入的只读端口返回，不依赖存储表", async () => {
+    const value = await createTrackedGameHarness(active);
+    const receipt: CommandReceipt = commandReceiptSchema.parse({
+      receiptId: "rcp-000000000001",
+      commandId: "cmd-000000000777",
+      commandStatus: "accepted",
+      reasonCode: null,
+      safeMessage: null,
+      acceptedEventIds: [],
+      operationId: null,
+      resultingVersions: {},
+      result: null,
+      worldTick: 4,
+    });
+    const calls: { readonly principalId: string; readonly branchId: string; readonly commandId: string }[] = [];
+    const app = await appFor(value, {
+      receipts: {
+        read: (principalId, branchId, commandId) => {
+          calls.push({ principalId, branchId, commandId });
+          return commandId === receipt.commandId ? receipt : null;
+        },
+      },
+    });
+    const session = await login(app, "player-token");
+    const headers = { authorization: `Bearer ${session}` };
+
+    const found = await app.inject({ method: "GET", url: `/api/v1/commands/${receipt.commandId}`, headers });
+    expect(found.statusCode).toBe(200);
+    expect(found.json()).toEqual(receipt);
+    // 主体与分支来自认证会话；传输层没有可用的存储句柄。
+    expect(calls).toEqual([
+      { principalId: "player-1", branchId: value.branchId, commandId: receipt.commandId },
+    ]);
+
+    const missing = await app.inject({ method: "GET", url: "/api/v1/commands/cmd-000000000778", headers });
+    expect(missing.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(missing.json()).error.code).toBe("not-found");
   });
 
   it("GET /campaign 开局前返回空 campaign 与开局选项，开局后返回已开始的 campaign", async () => {
@@ -1513,5 +1577,36 @@ describe("服务端 API", () => {
     });
     expect(preflight.statusCode).toBe(204);
     expect(preflight.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
+  });
+
+  it("传输端口只经最小应用接口监听与关闭", async () => {
+    const calls: string[] = [];
+    const app: ServerApp = {
+      listen: async (options) => {
+        calls.push(`listen:${options.host}:${options.port}`);
+      },
+      close: async () => {
+        calls.push("close");
+      },
+      inject: async () =>
+        ({
+          statusCode: 204,
+          headers: {},
+          body: "",
+          json: () => null,
+        }) as unknown as ServerAppInjectResponse,
+      notifyWorldChanged: () => {
+        calls.push("notify");
+      },
+      address: () => null,
+    };
+    const transport = new TransportPort({
+      host: "127.0.0.1",
+      port: 3100,
+      allowedOrigins: ["http://127.0.0.1:5173"],
+    });
+    await transport.listen(app);
+    await transport.close(app);
+    expect(calls).toEqual(["listen:127.0.0.1:3100", "close"]);
   });
 });

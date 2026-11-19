@@ -15,6 +15,7 @@ import type {
   GameClockPort,
   GameContent,
   GameModulePorts,
+  GamePortBindContext,
   GameRuleContributor,
   ModuleBinder,
   ScopedWorldTxFactory,
@@ -62,7 +63,9 @@ export type { OperationsDriver, TransportPort };
 export { transportModuleDefinition, operationsModuleDefinition, createServerApp };
 export type {
   AuthorityPort,
+  CommandReceiptReadPort,
   ServerApp,
+  ServerAppInjectResponse,
   ServerAppOptions,
   ServerIdentity,
 } from "@ai-npc/mod-transport-http-ws-fastify";
@@ -121,7 +124,10 @@ export const serverRequiredCapabilities: readonly CapabilityRef[] = [
   requiredCapability("transport.http-ws", "deployment"),
 ];
 
-/** 游戏能力与端口键固定，宿主按这些能力从实例公开端口取绑定器。 */
+/**
+ * 游戏能力的绑定顺序；被依赖的能力先绑定，后续模块只能经已绑定的 typed port 读取事实。
+ * 顺序与领域模型声明的依赖一致：map/resources → world → comms → actions → agreements → scenario。
+ */
 const gameCapabilities = [
   "game.map",
   "game.resources",
@@ -138,6 +144,7 @@ interface GameModulePublicPort {
     txFor: ScopedWorldTxFactory,
     content: GameContent,
     ids: (prefix: string) => string,
+    context: GamePortBindContext,
   ) => unknown;
   readonly contributor?: GameRuleContributor<GameModulePorts, unknown>;
 }
@@ -245,7 +252,9 @@ export function createServerRuntime(input: {
       if (bind === undefined) {
         throw new Error(`装配缺少游戏能力 ${capability} 的端口绑定器`);
       }
-      ports[capability] = bind(txFor, content, (prefix) => host.ids(prefix));
+      // 每个模块只拿到自己按能力声明的 typed port；读取他人事实必须经已绑定的端口。
+      const context: GamePortBindContext = { ports: ports as Readonly<Partial<GameModulePorts>> };
+      ports[capability] = bind(txFor, content, (prefix) => host.ids(prefix), context);
     }
     return ports as unknown as GameModulePorts;
   };

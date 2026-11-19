@@ -1,21 +1,21 @@
 /**
  * 实现通信模块的送达计算、会话/知识写入、消息、证据分享与分享事实查询。
- * 依赖世界指标与角色位置、通信聚合和注入的 scoped WorldTx。
- * 禁止绕过中继状态、向未授权主体投递或改写已冻结的投递名单。
+ * 依赖注入的世界只读视图（指标与角色位置）、通信聚合和本模块 scoped WorldTx。
+ * 禁止绕过中继状态、向未授权主体投递、改写已冻结的投递名单或读取其他模块的私有聚合。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { MessageIntentKind, ReasonCode } from "@ai-npc/contracts";
 import { DomainError } from "@ai-npc/contracts";
 import {
-  gameModuleIds,
   principalsAudience,
   type CommsDialogueLineView,
   type CommsKnowledgeView,
   type CommsMessageView,
+  type CommsWorldFacts,
   type GameCommsPort,
   type GameContent,
   type GameIdFactory,
-  type ScopedWorldTxFactory,
+  type OwnWorldTxFactory,
   type ShareQuery,
 } from "@ai-npc/module-sdk";
 import {
@@ -30,41 +30,32 @@ import {
 
 type Delivery = { readonly principalId: string; readonly deliverAtTick: number };
 
-/** 世界角色聚合中本模块只读取的字段：当前所在节点。 */
-type CharacterPositionState = { readonly nodeId?: unknown };
-
-/** 世界指标聚合中本模块只读取的字段：中继稳定度。 */
-type RelayMetersState = { readonly "relay.stability"?: unknown };
-
 /** 通信端口实现；每个处理器调用绑定同一 storage transaction。 */
 class StandardCommsPort implements GameCommsPort {
-  private readonly txFor: ScopedWorldTxFactory;
+  private readonly ownTx: OwnWorldTxFactory;
   private readonly content: GameContent;
   private readonly ids: GameIdFactory;
+  private readonly world: CommsWorldFacts;
 
-  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: GameIdFactory) {
-    this.txFor = txFor;
+  constructor(ownTx: OwnWorldTxFactory, content: GameContent, ids: GameIdFactory, world: CommsWorldFacts) {
+    this.ownTx = ownTx;
     this.content = content;
     this.ids = ids;
+    this.world = world;
   }
 
   private tx() {
-    return this.txFor(gameModuleIds.comms);
-  }
-
-  private world() {
-    return this.txFor(gameModuleIds.world);
+    return this.ownTx();
   }
 
   /**
-   * 同一份事务内位置：角色读世界模块 character 聚合的当前节点，玩家取内容包声明的节点。
+   * 同一份事务内位置：角色经世界只读端口取当前节点，玩家取内容包声明的节点。
    * 战略 Agent 不在图上，未知主体也不在世界状态里，两者都没有位置（与任何人都不同节点）。
    */
   private principalNode(principalId: string): string | null {
-    const record = this.world().get<CharacterPositionState>("character", principalId);
-    const nodeId = record === null ? undefined : record.state.nodeId;
-    if (typeof nodeId === "string" && nodeId.length > 0) {
-      return nodeId;
+    const character = this.world.character(principalId);
+    if (character !== null) {
+      return character.nodeId;
     }
     if (principalId === this.content.playerPrincipalId) {
       return this.content.playerNodeId;
@@ -88,13 +79,12 @@ class StandardCommsPort implements GameCommsPort {
 
   /**
    * 中继状态：稳定度 ≥ 30 正常、1–29 降级、0 中断。
-   * 世界指标聚合不存在表示 campaign 尚未开始、中继还没有建立，按中断处理；
+   * 世界指标尚未初始化表示 campaign 尚未开始、中继还没有建立，按中断处理；
    * 字段缺失同样不默认成 100，避免把未知状态当成稳定。
    */
   relayState(): "normal" | "degraded" | "down" {
-    const meters = this.world().get<RelayMetersState>("meters", "meters")?.state ?? null;
-    const value = meters === null ? undefined : meters["relay.stability"];
-    if (typeof value !== "number" || value <= 0) {
+    const value = this.world.meters()?.["relay.stability"];
+    if (value === undefined || value <= 0) {
       return "down";
     }
     return value < 30 ? "degraded" : "normal";
@@ -465,13 +455,14 @@ class StandardCommsPort implements GameCommsPort {
   }
 }
 
-/** 构造绑定到当前事务的通信端口。 */
+/** 构造绑定到当前事务的通信端口；world 为组合根注入的世界只读视图。 */
 export function createCommsPort(
-  txFor: ScopedWorldTxFactory,
+  ownTx: OwnWorldTxFactory,
   content: GameContent,
   ids: GameIdFactory,
+  world: CommsWorldFacts,
 ): GameCommsPort {
-  return new StandardCommsPort(txFor, content, ids);
+  return new StandardCommsPort(ownTx, content, ids, world);
 }
 
 /** 通信拒绝原因码；保留类型收窄供处理器使用。 */

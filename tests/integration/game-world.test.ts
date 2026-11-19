@@ -5,8 +5,8 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { DomainError, type Json } from "@ai-npc/contracts";
-import { Authority, createSystemAuth } from "@ai-npc/authority";
-import type { GameModulePorts, GameResourcesPort, ModuleBinder } from "@ai-npc/module-sdk";
+import { Authority, createScopedWorldTxFactory, createSystemAuth } from "@ai-npc/authority";
+import { gameModuleIds, type GameModulePorts, type GameResourcesPort, type ModuleBinder } from "@ai-npc/module-sdk";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
 import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
@@ -65,13 +65,25 @@ function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: b
         return resources.consume(input);
       },
     });
+    const map = createMapPort(txFor, value.gameContent, value.host.ids);
+    const world = createWorldPort(txFor, value.gameContent, value.host.ids);
+    const comms = createCommsPort(
+      () => txFor(gameModuleIds.comms),
+      value.gameContent,
+      value.host.ids,
+      world,
+    );
+    const actions = createActionsPort(txFor);
     return {
-      "game.map": createMapPort(txFor, value.gameContent, value.host.ids),
+      "game.map": map,
       "game.resources": failingResources,
-      "game.world": createWorldPort(txFor, value.gameContent, value.host.ids),
-      "game.comms": createCommsPort(txFor, value.gameContent, value.host.ids),
-      "game.actions": createActionsPort(txFor),
-      "game.agreements": createAgreementsPort(txFor),
+      "game.world": world,
+      "game.comms": comms,
+      "game.actions": actions,
+      "game.agreements": createAgreementsPort(
+        () => txFor(gameModuleIds.agreements),
+        { actions, comms, world, map },
+      ),
       "game.scenario": createScenarioPort(txFor),
     } satisfies GameModulePorts;
   };
@@ -416,6 +428,41 @@ describe("世界核心", () => {
     expect(readGameAggregate(value, "character", "npc-cenyan")).toEqual(before);
     expect(readGameEventTypes(value)).not.toContain("CharacterMoved");
   });
+
+  it("模块越权写入未声明的聚合被拒绝，且不留下回执或部分状态", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    value.authority.registerModule({
+      moduleId: "test.scope",
+      ownsAggregates: [],
+      commands: [
+        {
+          type: "probe.ask",
+          handler: (context) => {
+            // 该模块没有声明 character，WorldTx 必须拒绝这次写入。
+            context.tx.put("character", "npc-cenyan", { agentId: "npc-cenyan" });
+            return { kind: "accepted" };
+          },
+        },
+      ],
+    });
+    const characterBefore = readGameAggregate(value, "character", "npc-cenyan");
+    const receiptCount = () =>
+      value.storage.transact((tx) => tx.branch(value.branchId).table("command_receipts").list()).length;
+    const receiptsBefore = receiptCount();
+    expect(() =>
+      value.authority.commands.execute(
+        createSystemAuth(value.worldId, value.branchId),
+        gameCommandEnvelope(
+          "probe.ask",
+          { probeId: "prb-000000000003", agentId: "npc-cenyan", askedBy: "player-1", question: "越权写入" },
+          value.host.ids("cmd"),
+        ),
+      ),
+    ).toThrowError(/不能写入聚合类型 character/);
+    expect(readGameAggregate(value, "character", "npc-cenyan")).toEqual(characterBefore);
+    expect(receiptCount()).toBe(receiptsBefore);
+  });
 });
 
 describe("世界端口", () => {
@@ -448,5 +495,28 @@ describe("世界端口", () => {
     expect(capture[1]).toMatchObject({ teamId: "team-commons", status: "idle" });
     expect(capture[2]).toMatchObject({ kind: "delegation" });
     expect(capture[3]).toMatchObject({ kind: "owner" });
+  });
+
+  it("绑定作用域按模块声明的 ownsAggregates 授予，未注册模块明确失败", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    value.storage.transact((tx) => {
+      const txFor = createScopedWorldTxFactory({
+        registry: value.authority.registry,
+        storageTx: tx,
+        worldId: value.worldId,
+        branchId: value.branchId,
+        worldTick: 0,
+        principalId: "system",
+        correlationId: (moduleId) => `test:${moduleId}`,
+        host: value.host,
+      });
+      // 世界模块读取自己声明的角色聚合。
+      expect(txFor(gameModuleIds.world).get("character", "npc-cenyan")).not.toBeNull();
+      // 通信模块没有声明 character，越权读取直接失败。
+      expect(() => txFor(gameModuleIds.comms).get("character", "npc-cenyan")).toThrowError(DomainError);
+      // 未注册模块没有作用域声明，必须明确失败而不是获得默认权限。
+      expect(() => txFor("game.missing")).toThrowError(/未注册/);
+    });
   });
 });
