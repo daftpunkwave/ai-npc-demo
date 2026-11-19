@@ -15,8 +15,10 @@ export function createSqliteStorageModule(input: ModuleCreateInput): Promise<Mod
     moduleId: input.moduleId,
     start: (signal) => {
       if (signal.aborted) {
-        // eslint-disable-next-line prefer-promise-reject-errors -- DomainError 继承 Error，静态分析无法解析跨包继承。
-        return Promise.reject(new DomainError("cancelled", "存储适配器启动已取消"));
+        // 以异步拒绝表达取消：DomainError 继承 Error，避免把错误构造成非 Error 的拒绝值。
+        return Promise.resolve().then(() => {
+          throw new DomainError("cancelled", "存储适配器启动已取消");
+        });
       }
       storage.open();
       return Promise.resolve();
