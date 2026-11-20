@@ -21,6 +21,7 @@ export * from "./agent-world-view";
 export * from "./modules";
 export * from "./storage";
 export * from "./model";
+export * from "./agent-runtime";
 export * from "./schema-profile";
 export * from "./api";
 export * from "./api-stream";

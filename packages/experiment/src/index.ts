@@ -51,5 +51,26 @@ export type {
 } from "./config/load-config";
 export { configRefSchema, rosterSchema, runSpecSchema } from "./config/schema";
 export type { Roster, RunSpec } from "./config/schema";
+export {
+  applyProfilePatch,
+  loadAgentProfile,
+  profileJson,
+  validateProfileSelection,
+} from "./config/agent-profile";
+export type {
+  AgentModuleSelection,
+  AgentProfileDocument,
+  ResolvedAgentProfile,
+} from "./config/agent-profile";
+export {
+  loadModelLayout,
+  modelLayoutSchema,
+  modelMountsJson,
+  resolveModelMounts,
+  validateModelLayout,
+} from "./config/model-layout";
+export type { ModelLayout, ResolvedModelMount } from "./config/model-layout";
+export { loadToolset, toolsetSchema } from "./config/toolset";
+export type { Toolset } from "./config/toolset";
 export { LoadingError } from "./loading/errors";
 export type { LoadingErrorCode } from "./loading/errors";

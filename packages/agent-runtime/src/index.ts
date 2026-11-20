@@ -4,3 +4,9 @@
  * 禁止复制第二套 loop，或让模块绕过证据、预算与 fencing 边界。
  */
 export const packageName = "@ai-npc/agent-runtime";
+
+export { ApprovedSpeechStore } from "./approved-speech";
+export { activateAgentRoster } from "./activation";
+export type { ActivationResult } from "./activation";
+export { AgentRuntime } from "./runtime";
+export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";
