@@ -30,7 +30,7 @@ Step SNN <title>
 | S00 | `typecheck`、`test`、`check:docs`、`check`（= typecheck + test + check:docs） | `.env.example` | — |
 | S03 | `check:boundaries`（并加入 `check`） | — | — |
 | S05 | — | `config/rosters/standard-15.yaml`、`core-3.yaml`、`config/runs/online-default.yaml` | — |
-| S09 | `dev:server`、`check:catalog`（并加入 `check`） | 两份主装配首次创建 | server：九个 game 绑定（scenario 为 `game.scenario.watergate`）、`platform.storage.sqlite`、`platform.secrets.env`、`platform.access-policy.roster`、`platform.operations.standard`、`transport.http-ws.fastify`；无 `agentSlots`；client、console 的 bindings 为空 |
+| S09 | `dev:server`、`check:catalog`（并加入 `check`） | 两份主装配和已提前交付的剧情替换装配 `local-slg-escalating-v1` | server：九个 game 绑定（主装配的 scenario 为 `game.scenario.watergate`）、`platform.storage.sqlite`、`platform.secrets.env`、`platform.access-policy.roster`、`platform.operations.standard`、`transport.http-ws.fastify`。无 `agentSlots`，client 与 console 的 bindings 为空 |
 | S10 | `dev:client`、`dev`、`build`、`start`、`test:e2e` | — | client：第 5 节全部 client 绑定（标准用 `client.scene-renderer.pixi`，测试用 `client.scene-renderer.null`） |
 | S11 | `dev`、`build` 加入 console 构建 | — | server：`platform.observability.sqlite`、`platform.module-admin.standard`；console：health、module-admin、`console.observability.standard` |
 | S12 | `check:ports` | — | — |
@@ -42,7 +42,7 @@ Step SNN <title>
 | S20 | — | 其余四个记忆 variant 文件（`memory-m0-window`、`memory-m0-current`、`memory-m2-stream-reflection`、`memory-m3-layered-hybrid`） | `agentSlots.memory` 加 stream-reflection、layered-hybrid |
 | S21 | — | `config/runs/exp-*.yaml` | server：`platform.evaluation.standard`；console：evaluation |
 | S22 | — | `config/presets/*.yaml` | console：scenario-editor、audit |
-| S24 | — | 三份替换装配 | client：`client.hud.compact`、console：`console.observability.lite` 只出现在替换装配里 |
+| S24 | — | 定稿已有的剧情替换装配，新增 HUD 和控制台两份替换装配 | client 的 `client.hud.compact`、console 的 `console.observability.lite` 只出现在各自替换装配里 |
 
 `pnpm check:assets` 随资产包入仓加入 `check`，不占构建步骤；它校验 `assets/manifest.json` 与内容包的节点、派系覆盖。
 
@@ -54,15 +54,15 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 | 接口（[API](../architecture/api.md)） | 步骤 |
 |---|---|
-| 第 2 节（登录、会话、装配握手、健康检查、WS 票据）、第 3 节（玩家接口，`/presets` 与 `/run-requests` 除外）、第 4 节 `player` 频道 | S09 |
+| 第 2 节（登录、会话、装配握手、健康检查、WS 票据）、第 3 节（玩家接口，`/presets`、`/run-requests` 和程序案命令除外）、第 4 节 `player` 频道 | S09 |
 | 第 5.1 节；第 5.5 节的 `/timeline` 与 `/agents`；WS `console.health`、`console.timeline` | S11 |
 | 第 5.2 节的只读与校验接口；第 5.3 节的时钟、存档与恢复；第 5.5 节其余接口；WS `console.turns` | S19 |
 | 第 5.6 节的 run、实验与报告 | S21 |
-| 第 5.2 节的草稿与连通性测试；第 5.3 节的席位与运行申请；第 5.4 节；第 5.6 节的导出；玩家的 `/presets`、`/run-requests` | S22 |
+| 第 5.2 节的草稿与连通性测试、第 5.3 节的席位与运行申请、第 5.4 节、第 5.6 节的导出、玩家的程序案命令与 `/presets`、`/run-requests` | S22 |
 
 ## 1. 步骤总览
 
-状态按当前仓库的产出记录。「已实现」表示本步功能已落地，「部分实现」表示仍有交付缺口，「目标」表示本步功能待实现。推进下一步仍须满足各步骤的完成判据。切片规则与内容的迁移清单见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
+状态按当前仓库的产出记录。「已实现」表示本步功能已落地，「部分实现」表示仍有交付缺口，「目标」表示本步功能待实现。服务端可运行，下一阶段先补齐 S05 和 S07–S09 的序章差距，再验收 S10。具体差距见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
 | 阶段 | 步骤 | 产出 | 对应切片 | 状态 |
 |---|---|---|---|---|
@@ -70,16 +70,18 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 | 服务端世界 | S04 | SQLite 存储、分支复制和备份 | A | 已实现 |
 | 服务端世界 | S05 | 内容与配置加载 | A | 部分实现。加载器已交付，`standard-15` 与内容迁移待完成 |
 | 服务端世界 | S06 | authority、命令网关、job 与事件消费者 | A | 已实现 |
-| 服务端世界 | S07 | 时钟、地图、库存与世界规则 | A | 部分实现。已有可运行模块，时钟与序章结算待对齐 |
-| 服务端世界 | S08–S09 | 通信、行动、协议、剧情、存档、服务端宿主与玩家 API | A | 已实现 |
+| 服务端世界 | S07 | 时钟、地图、库存与世界规则 | A | 部分实现。20 秒/tick、公社水闸权限与 t168 终点待对齐 |
+| 服务端世界 | S08 | 通信、行动、协议、剧情与存档 | A | 部分实现。世界规则测试可到 t168，开局内容、玩家广播与水闸条款待对齐 |
+| 服务端世界 | S09 | 服务端宿主、玩家 HTTP/WS、装配预检 | A | 部分实现。服务端入口可用，席位契约和公社命令接入待补 |
 | 浏览器两端 | S10 | 客户端协议、宿主与启动脚本 | A | 目标。协议包已有骨架 |
 | 浏览器两端 | S11 | 控制台宿主、首批页面与服务端接口 | A | 部分实现。已有精简版控制台健康 API |
 | 浏览器两端 | S12 | 双端端口检查 | A | 目标 |
 | Agent 管线 | S13–S18 | 感知与调度、记忆 M0/M1、上下文与工具网关、turn 主循环、模型池、模型适配器 | A | 目标。运行时包已有骨架 |
 | 切片 A 验收 | S19 | 三核心角色闭环 | A | 目标 |
 | 记忆对比 | S20–S21 | M2、M3、实验与探针、评估页面 | B | 目标 |
-| 完整切片 | S22–S23 | 15 个身份、公社单席、运营与剧情页面 | C | 目标 |
-| 可插拔验收 | S24–S25 | 替换模块、替换证据与交付包 | M | 目标 |
+| 完整切片 | S22–S23 | 15 个身份的完整运行、t144 程序案、运营与剧情页面 | C | 目标 |
+| 可插拔验收 | S24 | 四类模块替换与证据 | M | 部分实现。服务端剧情替换有规则测试 |
+| 可插拔验收 | S25 | 交付包 | M | 目标 |
 
 ## 2. 工程骨架
 
@@ -87,9 +89,9 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[技术栈](tech-stack.md) 全文。
 - **产出**：根目录的 `package.json`（只含 0.2 节 S00 行的脚本）、`pnpm-workspace.yaml`、三个 tsconfig、`vitest.config.ts`、`.env.example`；在 `.gitignore` 追加 `data/`、`data-e2e/`、`apps/server/console-static/`、`apps/client/dist/`、`test-results/`、`playwright-report/`；`packages/` 下九个包（`package.json` 与 `src/index.ts`，index 先导出包名常量 `export const packageName = "@ai-npc/<name>"`）；`tests/` 与 `scripts/` 两个包。
-- **实现** `scripts/check-docs.ts`：扫描 [README.md — 项目概览](../../README.md)、[AGENTS.md — 开发规范](../../AGENTS.md)、`docs/**/*.md` 中的相对链接，确认目标文件存在；带 `#锚点` 的链接确认目标标题存在（锚点规则：标题转小写，去掉除字母、数字、空格、连字符以外的字符，空格换成 `-`）。外部 `http(s)` 链接与代码块里的内容不检查。
+- **实现** `scripts/check-docs.ts`：检查项目文档的相对链接、标题锚点与 Markdown 表格列数。扫描范围与用法见 [README.md — 文档维护约定](../README.md#5-文档维护约定)。
 - **测试**：`tests/contract/smoke.test.ts`：断言九个包的 `packageName` 与目录一致。
-- **完成判据**：`pnpm install` 成功；`pnpm check` 通过；`pnpm check:docs` 对当前文档报告 0 个坏链接。
+- **完成判据**：`pnpm install` 成功，`pnpm check` 通过，文档链接、锚点与表格列数均无错误。
 
 ### S01 contracts
 
@@ -133,7 +135,8 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[内容包](../game/content-pack.md) 全文、[领域模型](../architecture/domain-model.md) 第 10 节、[配置](../platform/configuration.md) 第 3、10 节、[运营](../platform/operations.md) 第 10 节。
 - **产出**：把内容包第 1–9、11、12 节的 YAML 照抄到 `content/world-packs/earth-2964-v1/`（`prompts/zh-CN.yaml` 与 `locale/zh-CN.yaml` 按第 12 节的键结构填写，文本来源见该节的表）；内容包第 10 节的两个名册与 `config/runs/online-default.yaml`；在 `packages/experiment` 实现内容加载器与配置加载器（YAML 读取、Zod 校验、`*Ref` 引用解析（仓库文件优先，其次数据库草稿）、`env:` 解析、交叉检查）。其余配置文件在 0.2 节指定的步骤创建。
-- **测试**：完整内容包加载成功；分别篡改一处（不存在的节点、重复 ID、名册 21 个身份、缺事件模板、缺词表键）时加载失败并给出可定位的错误；配置加载器用 `tests/fixtures/config/` 下的样例覆盖引用解析、`env:` 解析与未知键拒绝。
+- **迁移**：落实单席开局、`standard-15` 与新版身份和剧情卡署名。同步 `.env.example`、服务端默认名册与在线 RunSpec，细项见 [IMPLEMENTATION-STATUS.md — 具体迁移项](../IMPLEMENTATION-STATUS.md#2-具体迁移项)。
+- **测试**：完整内容包与正式名册加载成功。不存在的节点、重复 ID、正式名册超过 15 个身份、缺事件模板或缺词表键时加载失败并给出可定位的错误。四个禁用开局不进入可选列表，公社开局有闻昭入口和三条消息。配置加载测试覆盖引用解析、`env:` 解析与未知键拒绝。
 - **完成判据**：`pnpm check` 通过。
 
 ### S06 authority：命令网关、job、时钟步骤与消费者
@@ -147,20 +150,23 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[规则](../game/rules.md) 第 1–5、8、10、11 节、[领域模型](../architecture/domain-model.md) 第 3–6 节、[模块目录](../architecture/module-catalog.md) 第 4.1 节。
 - **产出**：`game.clock.controlled`（模式切换、tick 推进、step 目标）、`game.map.six-nodes`（道路状态、通行许可、Dijkstra 路径与行程）、`game.resources.light`（预留/释放/消耗/转移/调整 ops、等级计算）、`game.world.slg-light`（`campaign.start` 的世界部分：campaign、指标、角色/队伍/群体初态、九条委托、伤员期限 job；`policy.set`（水闸由自己处理，道路调用 map ops）；每日结算与章节评估两个时钟步骤；阈值事件）。
-- **测试**：规则第 12 节用例 2、3、7、10、12；Dijkstra 的平局规则；`campaign.start` 之后指标、委托与群体初态正确。
+- **迁移**：同步时钟与装配的 20 秒/tick 配置。接入占公社席的玩家使用 `policy.set` 修改水闸的授权。t168 评估后结束序章，停止继续推进并保留存档与资源交接数据。程序案结果随 S22 接入评估。
+- **测试**：规则第 12 节用例 2、3、7、10 与 12 的三项读数评估。验证 Dijkstra 的平局规则、开局指标、委托与群体初态，以及 t168 评估后时钟停止推进。用例 12 的程序案部分在 S23 验证。
 - **完成判据**：`pnpm check` 通过。
 
 ### S08 游戏模块（二）：通信、行动、协议、剧情、存档
 
 - **先读**：[规则](../game/rules.md) 第 2、6、7、9 节、[内容包](../game/content-pack.md) 第 7–9 节、[领域模型](../architecture/domain-model.md) 第 4–7 节、[运营](../platform/operations.md) 第 3、4、6 节。
 - **产出**：`game.comms.standard`（`dialogue.say`、`speech.commit`、`seat.say`、`information.share`、`probe.ask`、广播权限、送达延迟表、`conversation_lines` 投影；`campaign.start` 的后续钩子：开局消息与知识授权）、`game.actions.standard`（派遣的十步校验、邀请回复、取消、出发与完成 job、风险抽样与 `TaskDelayed`）、`game.agreements.standard`（提出即提出者已接受、回复、还价、过期、生效效果、履约/违约订阅）、`game.scenario.watergate` 与 `game.scenario.watergate-escalating`（`campaign.start` 后续钩子安排卡片 job、效果白名单、草稿/发布/撤回/补偿/覆盖命令；escalating 订阅 `DayPassed` 与 `TaskCompleted`）、`game.save.sqlite`（静默 → 分支复制 → 快照记录；恢复预检 → 复制 → 切换在线别名）。此时还没有 Agent，静默只需暂停时钟并排空 job。
+- **迁移**：公社玩家可作为 `water-allocation` 条款的义务人。公开广播经命令网关复用 comms 送达规则。进入 S09 前验证水闸条款生效及改策违约，验证中继中断时的广播受众。
 - **测试**：规则第 12 节用例 1、4、5、6、8、9、11、13、14；协议八种条款各一条履约与一条违约用例；两个剧情模块在同一脚本下的卡片触发 tick 与指标不同；`campaign.start` 之后开局消息、知识授权与剧情卡 job 齐全；快照后恢复，世界状态逐行相等且时钟为 paused。
 - **完成判据**：`pnpm check` 通过；`tests/scenarios/world-only.test.ts` 用纯命令脚本跑完 168 tick，得到确定的 `ChapterStageEvaluated`。
 
 ### S09 服务端宿主与 API
 
 - **先读**：[API](../architecture/api.md) 第 1–4、7、9 节、[两个端口](../architecture/two-endpoints.md) 第 1、6 节、[领域模型](../architecture/domain-model.md) 第 8.1 节、[技术栈](tech-stack.md) 第 5、6 节、[运营](../platform/operations.md) 第 2–4、10 节、[代码目录](../architecture/code-structure.md) 第 2、3 节、本文 0.2 节。
-- **产出**：`apps/server`（`main.ts`：加载环境变量、打开存储、加载内容与配置、首次启动时按运营第 10 节创建在线世界与 live run、解析 server 装配、启动模块与 worker（时钟、job、消费者、投影推送）、监听；端口被占用时退出码非 0；`module-catalog.ts` 显式登记全部 server 模块定义）；`transport.http-ws.fastify`（0.3 节分配给 S09 的路由、Origin 校验、错误格式）；`platform.access-policy.roster`；`platform.secrets.env`；`platform.operations.standard`（暂停、继续、存档、恢复、重新开局的编排）；令牌生成与打印；玩家投影构建与增量推送（200 条重放缓冲）；三份装配的 S09 版本；`scripts/check-catalog.ts`（扫描 `config/assemblies/*.yaml`，通过组合根加载 server 模块目录，调用与宿主启动相同的 kernel 解析器校验 realm/kind、能力闭包、作用域、重复绑定、拓扑与模块配置 schema；client/console 尚无模块目录时只有其 bindings 为空才通过，非空即失败；失败时逐项打印文件与原因并以非零码退出）。
+- **产出**：`apps/server`（`main.ts`：加载环境变量、打开存储、加载内容与配置、首次启动时按运营第 10 节创建在线世界与 live run、解析 server 装配、启动模块与 worker（时钟、job、消费者、投影推送）、监听；端口被占用时退出码非 0；`module-catalog.ts` 显式登记全部 server 模块定义）；`transport.http-ws.fastify`（0.3 节分配给 S09 的路由、Origin 校验、错误格式）；`platform.access-policy.roster`；`platform.secrets.env`；`platform.operations.standard`（暂停、继续、存档、恢复、重新开局的编排）；令牌生成与打印；玩家投影构建与增量推送（200 条重放缓冲）；两份主装配与已提前交付的剧情替换装配；`scripts/check-catalog.ts`（扫描 `config/assemblies/*.yaml`，通过组合根加载 server 模块目录，调用与宿主启动相同的 kernel 解析器校验 realm/kind、能力闭包、作用域、重复绑定、拓扑与模块配置 schema；client/console 尚无模块目录时只有其 bindings 为空才通过，非空即失败；失败时逐项打印文件与原因并以非零码退出）。
+- **迁移**：按服务端认证开放公社水闸与玩家广播命令。定稿席位和动作者的公共契约与存档兼容规则，并验证实际来源、越权拒绝和分支恢复后的可追溯性。补齐暂停/继续与幂等结果的原子性。参见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
 - **测试**：用 `fastify.inject` 覆盖登录、会话、命令、receipt 查询、世界视图（含 `clock.runVersion`）、玩家访问控制台接口 403、错误 Origin 403、开局后继续与暂停；WS 用真实端口测试订阅、增量与断线重连。
 - **完成判据**：`pnpm check` 通过（已包含 `check:catalog`）；`pnpm dev:server` 启动后 `GET /api/v1/health` 返回 ready，并打印两条登录地址。
 
@@ -195,7 +201,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 
 - **先读**：[运行时](../agent/runtime.md) 第 2–4、9、13.1–13.2 节、[感知](../agent/perception.md) 全文、[领域模型](../architecture/domain-model.md) 第 7 节。
 - **产出**：`packages/agent-runtime` 的 trigger 存储、调度器宿主、turn 记录与租约、控制权与 epoch、名册激活与 15 个身份的配额（含 `campaign.start` 的激活钩子）；模块 `agent.perception.local`、`agent.scheduling.fair`。
-- **测试**：感知第 11.2 节的渠道表逐行断言；未授权事件只推进扫描游标；带 `deliverAtTick` 的观察在到期 tick 才写入；`AgentsSummoned` 生成 `scenario` trigger；trigger 去重；调度的优先级、老化、合并、冷却与“每个身份一个活动 turn”；被取消的 turn 释放 trigger；human 控制的身份不被调度；第 21 个身份激活被拒绝。
+- **测试**：感知第 11.2 节的渠道表逐行断言；未授权事件只推进扫描游标；带 `deliverAtTick` 的观察在到期 tick 才写入；`AgentsSummoned` 生成 `scenario` trigger；trigger 去重；调度的优先级、老化、合并、冷却与“每个身份一个活动 turn”；被取消的 turn 释放 trigger；human 控制的身份不被调度。在线、实验和探针分支共用配额，第 16 个活动身份激活被拒绝，释放名额后可激活。
 - **完成判据**：`pnpm check` 通过。
 
 ### S14 记忆 M0 与 M1
@@ -272,14 +278,17 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S22 十五个身份与运营功能
 
 - **先读**：[角色册](../game/characters.md)、[玩法](../game/gameplay.md)、[运营](../platform/operations.md) 全文、[两个端口](../architecture/two-endpoints.md) 第 10 节、本文 0.3 节 S22 行。
-- **产出**：`standard-15` 名册的完整运行（8 名公社支持者、4 名 AI 党魁、3 名外域；`human-neutral` 是玩家席位，不创建 AI 党魁；伊诺使用 `character-broadcaster`）；公社单席可选；0.3 节分配给 S22 的路由；`console.faction-ops.standard` 的席位接管、席位视图、席位命令与运行申请审批；`console.scenario-editor.standard`；`console.audit.standard`；客户端设置里的测试 preset 申请；`platform.operations.standard` 的接管 epoch、租约续期与过期处理；`config/presets/*.yaml`。
+- **产出**：`standard-15` 名册的完整运行（8 名公社支持者、4 名 AI 党魁、3 名外域，伊诺使用 `character-broadcaster`）；玩家占 `seat.commune`（派系 `human-neutral`），公社同席 AI 党魁不实例化；0.3 节分配给 S22 的路由；`console.faction-ops.standard` 的席位接管、席位视图、席位命令与运行申请审批；`console.scenario-editor.standard`；`console.audit.standard`；客户端设置里的测试 preset 申请；`platform.operations.standard` 的接管 epoch、租约续期与过期处理；`config/presets/*.yaml`。
+- **程序案**：实现 [rules.md — t144 程序案](../game/rules.md#101-t144-程序案) 的提案与投票命令、五席授权、玩家投票界面、AI 党魁投票、`MotionDecided` 事件和持久议事录。同步公共契约、感知模板、玩家投影及 t168 评估结果。
 - **测试**：路线第 4 节表格的工程断言；接管发生在模型返回前，旧 epoch 的命令被拒绝；租约过期后该席位不再产生自主提案；草稿卡不可感知、发布幂等、补偿有来源、覆盖标记污染；导出包里没有密钥。
+- **表决测试**：每席最多一票，重复提交幂等，外域与越权投票被拒绝。3 票通过，2 票含缺席或弃权时仍失败。结果可由事件与议事录查到，恢复后保留。
 - **完成判据**：`pnpm check` 通过。
 
 ### S23 切片 C 验收
 
 - **先读**：[路线与验收](roadmap-and-acceptance.md) 第 4、7 节。
 - **产出**：`tests/scenarios/slice-c.test.ts`（测试装配、`standard-15`）：公社席进入序章并产生初始委托与消息；15 个身份每人至少一次可接触的交互；第 16 个身份被拒绝；AI 党魁的每日巡检不造成无界推理；路线第 7 节故障注入表逐行覆盖（模型故障用确定性传输注入）。e2e `tests/e2e/console-ops.spec.ts`：席位接管与交还、发布一张草稿卡、查看一个 turn 详情。
+- **序章验收**：玩家在 t144 投下本席一票，四个 AI 席按立场投票。议事录显示结果，t168 评估引用该结果，评估后停止推进。
 - **完成判据**：`pnpm check`、`pnpm test:e2e` 通过；用真实模型以 `standard-15` 运行至少一个游戏日，把队列积压、延迟、token 与失败率记录进完成报告。
 
 ## 9. 可插拔验收（切片 M）
@@ -287,7 +296,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S24 第二实现与替换证据
 
 - **先读**：[模块目录](../architecture/module-catalog.md) 第 8、9 节、[配置](../platform/configuration.md) 第 10.1 节、[客户端](../architecture/client-and-rendering.md) 第 8.6 节、[两个端口](../architecture/two-endpoints.md) 第 10.2 节。
-- **产出**：`client.hud.compact`、`console.observability.lite`（`game.scenario.watergate-escalating` 已在 S08 完成）；三份替换装配文件；`check-catalog` 增加“替换装配与标准装配只差一行绑定”的断言；`tests/scenarios/swap.test.ts`。
+- **产出**：`client.hud.compact` 与 `console.observability.lite`，分别新增替换装配。已有的 `local-slg-escalating-v1` 随标准装配定稿。`check-catalog` 增加替换装配与标准装配只替换一个 binding 的断言，`tests/scenarios/swap.test.ts` 记录替换证据。
 - **测试**：剧情替换后，同一命令脚本下卡片触发 tick 与指标不同，其余模块代码未改；HUD 替换后，同一条玩家命令得到相同 receipt 与事件；观测页替换后，同一个 turn 在新页面可查，玩家会话仍 403；四个记忆组在同一脚本下各有独立的运行证据。
 - **完成判据**：`pnpm check` 通过；对每次替换给出 `git diff --stat` 证明只改了模块自身、装配文件与配置。
 

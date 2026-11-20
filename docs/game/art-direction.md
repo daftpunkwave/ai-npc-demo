@@ -26,7 +26,7 @@
 |---|---|---|
 | 灰港中继站 | `assets/world/grayharbor-relay.svg` | `grayharbor` |
 | 旧堤水闸 | `assets/world/old-watergate.svg` | `watergate` |
-| 灰痕果园 | `assets/world/ash-orchard.svg` | `orchard` |
+| 灼痕果园 | `assets/world/ash-orchard.svg` | `orchard` |
 | 迁徙隘口 | `assets/world/migration-pass.svg` | `pass` |
 | 战前档案库 | `assets/world/archive-vault.svg` | `archive` |
 | 降落锚区 | `assets/world/landing-anchor.svg` | `anchor` |

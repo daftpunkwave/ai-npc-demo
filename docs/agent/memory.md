@@ -1,6 +1,6 @@
 # 记忆模块详细设计
 
-> 状态：目标规范，尚未实现。主问题是“经历怎样改变 NPC 后续选择”，而不是“存下多少文本”。通用模块/插件协议见 [插件机制](../architecture/plugins.md)，实验口径见 [评估](../platform/evaluation.md)。
+> 状态：目标。记忆策略用于验证经历怎样改变 NPC 的后续选择。通用模块/插件协议见 [插件机制](../architecture/plugins.md)，实验口径见 [评估](../platform/evaluation.md)。
 
 ## 1. 职责与不变量
 

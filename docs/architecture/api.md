@@ -13,7 +13,7 @@
 | 认证 | `Authorization: Bearer <sessionToken>`；除 `GET /api/v1/health` 与 `POST /api/v1/auth/login` 外都需要 |
 | 控制台角色 | 控制台请求必须带 `X-Active-Role: operator \| researcher \| evaluator`，且该角色在会话角色内；服务端只按这个当前角色鉴权 |
 | Origin | 请求带 `Origin` 头时，必须是 `http://127.0.0.1:5173` 或 `http://127.0.0.1:3000`，否则返回 403；WS 握手同样检查 |
-| 幂等 | 世界命令用 `commandId`；时钟、快照、接管等控制操作用请求体里的 `operationId`；重复请求返回第一次的结果 |
+| 幂等 | 世界命令用 `commandId`。时钟、快照、接管等控制操作用请求体里的 `operationId`，重复请求复用已记录的结果 |
 | 并发控制 | 控制操作带 `expectedRunVersion` 或 `expectedEpoch`；不一致返回 409 |
 | 分支 | 玩家接口总是作用于 `world_aliases('online')` 指向的分支；控制台接口可以用查询参数 `branchId` 指定，缺省为在线分支 |
 | 错误 | 见第 7 节；业务拒绝不是 HTTP 错误，而是 200 + `commandStatus: "rejected"` 的 receipt |
@@ -88,7 +88,9 @@ interface CommandReceipt {
 interface ClockView { worldTick: number; day: number; hour: number; mode: "running" | "pausing" | "paused" | "resuming" | "stepping"; runVersion: number; }
 ```
 
-玩家不能使用的命令类型（`speech.commit`、`seat.say`、`task.respond`、`policy.set`、`scenario.*`）返回 403。
+### 3.1 玩家命令权限
+
+当前玩家接口只接受上面列出的七类命令，提交 `policy.set` 会返回 403。序章目标通过同一命令路由开放公社玩家的水闸政策、公开广播和程序案交互。政策键、当前 campaign 的席位控制权和实际发起者由服务端裁决。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
 
 ## 4. WebSocket：`GET /api/v1/streams?ticket=<ticket>`
 

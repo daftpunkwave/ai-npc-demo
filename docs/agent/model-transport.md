@@ -323,7 +323,7 @@ models:
 fixture 文件每行一个 JSON：
 
 ```json
-{"id":"cenyan-refuse-escort","match":{"purpose":"decision","agentId":"npc-cenyan","round":1,"inputIncludes":["护送"]},
+{"id":"cenyan-refuse-escort","match":{"purpose":"decision","agentId":"human-independent","round":1,"inputIncludes":["护送"]},
  "response":{"finishReason":"tool_calls","toolCalls":[{"name":"decision_submit","arguments":{"stance":"decline","dialogueIntent":{"kind":"refuse","audience":["player-1"],"tone":"cold","reasonCode":"past-breach","subjectRef":null,"factRefs":[]},"noteworthy":[],"citedMemoryIds":[],"decisionNote":"fixture"}}]}}
 ```
 

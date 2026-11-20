@@ -1,12 +1,12 @@
 # 共享 Tool：一次实现，多主体受限注册
 
-> **设计权威（2026-11-20）：** 设计层的工具目录见 [design/gameplay/11-agent-actions.md](../design/gameplay/11-agent-actions.md)。本文是实现层的 ToolDefinition/ToolBinding 规范；冲突时以 `docs/design/` 为准。
+> 设计层的工具目录见 [11-agent-actions.md — Agent 职能](../design/gameplay/11-agent-actions.md)。
 
-> 状态：待实现规范。ToolDefinition 是实现目录，ToolBinding 是 Agent 授权装配；工具实现不随 Agent 数量复制。
+> 状态：目标。ToolDefinition 维护共享工具，ToolBinding 为各 Agent 配置授权。
 
 ## 1. 定义、绑定与执行
 
-工具能力分为定义、注册绑定、执行三个层次。新增角色通常只新增数据化 binding；新增能力才增加 definition/executor。npc-cenyan 的运输能力与其他角色共用同一份实现，不存在专用版本。
+工具能力分为定义、注册绑定、执行三个层次。新增角色通常只加数据化 binding，新增能力才增加 definition/executor。岑雁（`human-independent`）与其他角色共用运输工具实现。
 
 | 层 | 拥有什么 | 不承担什么 |
 |---|---|---|
@@ -109,13 +109,13 @@ decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；
 | task.cancel | 自己有撤销权的任务 | 自己有撤销权的任务 | 自己有撤销权的任务 |
 | policy.set | 本派系拥有的政策 | 本种族拥有的政策 | 无 |
 
-设计支持五个人类席位；本切片玩家是公社党魁，席位改变开局关系、已知信息和有限授权，不直接继承该派 AI 党魁全部工具权限。三个非人类势力真人运营席位也走同一 command pipeline，控制方式见 [运营控制](../platform/operations.md)。
+矩阵适用于 Agent。公社玩家的水闸与广播权限由玩家命令网关和规则处理器裁决。三个外域真人运营席位也走同一命令管线。参见 [rules.md — 政策](../game/rules.md#8-政策)、[api.md — 玩家命令权限](../architecture/api.md#31-玩家命令权限)、[operations.md — 运营控制](../platform/operations.md)。
 
 研究评估器没有 gameplay binding；读取评估证据走独立研究权限。全平台 15 个活跃 gameplay 身份上限与工具并发/调用限额分别管理。
 
 ## 6. 数据化模板与组件复用
 
-permissionProfile、budgetProfile 和 constraint preset 是复用数据；角色装配解析 selector 为固定 agentIds 后冻结。禁止在 executor 写 `if (agentId === "npc-cenyan")` 决定功能分支。
+permissionProfile、budgetProfile 和 constraint preset 是复用数据。角色装配将 selector 解析为固定 agentIds 后冻结。禁止在 executor 写 `if (agentId === "human-independent")` 决定功能分支。
 
 例如“可派遣自己的护送队”由 delegated-assets 约束读取当前 grants；岑雁与其他角色引用同一个 asset.dispatch，只是被委托资产集合不同。
 
@@ -275,8 +275,7 @@ tools:
 | 工具集 | 使用者 | 差别 |
 |---|---|---|
 | `character-broadcaster` | 伊诺 | `message.send` 的 permissionProfile 为 `message-principals-or-public` |
-| `strategic-default` | 除 `human-neutral` 外的 7 个战略 Agent | 去掉 `task.respond`；`agreement.propose`/`agreement.respond` 的 permissionProfile 为 `agreement-faction`；`asset.dispatch` 为 `dispatch-faction`；增加 `{ toolId: policy.set, version: "1", permissionProfile: policy-owner, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }` |
-| `strategic-broadcaster` | `human-neutral` | 与 `strategic-default` 相同，另把 `message.send` 的 permissionProfile 改为 `message-principals-or-public` |
+| `strategic-default` | 4 名 AI 党魁和 3 名外域 Agent | 去掉 `task.respond`。`agreement.propose`、`agreement.respond` 用 `agreement-faction`，`asset.dispatch` 用 `dispatch-faction`。增加 `{ toolId: policy.set, version: "1", permissionProfile: policy-owner, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }` |
 
 | permissionProfile | 调用前检查（不通过时返回 executionStatus=error、reasonCode=no-authority，不发命令） |
 |---|---|
@@ -287,7 +286,7 @@ tools:
 | `dispatch-delegated` / `dispatch-faction` | 队伍在自己的委托内 / 属于本派系 |
 | `invited-only` | 自己是该任务的受邀者 |
 | `cancel-own` | 自己是派遣者 |
-| `policy-owner` | 政策键属于本派系 |
+| `policy-owner` | 政策键属于本派系，可设置的键见 [rules.md — 政策](../game/rules.md#8-政策) |
 
 | budgetProfile | 每 turn 上限 |
 |---|---|

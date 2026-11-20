@@ -1,10 +1,10 @@
 /**
- * 校验文档中的相对链接与标题锚点是否存在。
+ * 校验文档的相对链接、标题锚点与 Markdown 表格列数。
  * 只依赖 Node 内置文件系统与路径模块，从文档所在位置解析目标。
  * 禁止修改文档、访问网络或把外部绝对 URL 当成必须可达的本地目标。
  */
 /* eslint-disable security/detect-non-literal-fs-filename -- 只扫描仓库内的文档目录与文档内相对链接，路径均由仓库根目录解析。 */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,12 +21,28 @@ interface MarkdownDocument {
   readonly lines: readonly string[];
 }
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const rootDocuments = ["README.md", "AGENTS.md"];
+interface TableColumnMismatch {
+  readonly source: string;
+  readonly line: number;
+  readonly expected: number;
+  readonly actual: number;
+}
+
+// eslint-disable-next-line no-unused-vars -- 参数名仅声明输出回调签名。
+type DiagnosticWriter = (text: string) => void;
+
+interface DocsCliOptions {
+  readonly root?: string;
+  readonly writeStdout?: DiagnosticWriter;
+  readonly writeStderr?: DiagnosticWriter;
+}
+
+const scriptPath = fileURLToPath(import.meta.url);
+const rootDocuments = ["README.md", "AGENTS.md", "apps/server/README.md"];
 const documentationDirectory = "docs";
 
 /** 列出需要检查的 Markdown 文档：仓库入口文档与 docs 目录全量。 */
-function collectMarkdownDocuments(): MarkdownDocument[] {
+function collectMarkdownDocuments(repositoryRoot: string): MarkdownDocument[] {
   const absolutePaths = new Set<string>();
 
   for (const documentName of rootDocuments) {
@@ -61,29 +77,112 @@ function collectMarkdownDocuments(): MarkdownDocument[] {
     }));
 }
 
-/** 把围栏代码块与行内代码替换为空行，保留原始行号。 */
-function maskCode(lines: readonly string[]): string[] {
-  let fenceMarker: string | null = null;
+function stripBlockquote(line: string, limit = Number.POSITIVE_INFINITY) {
+  let content = line.trimStart();
+  let quoteDepth = 0;
+  while (quoteDepth < limit && content.startsWith(">")) {
+    quoteDepth += 1;
+    content = content.slice(1).trimStart();
+  }
+  return { content, quoteDepth };
+}
 
+/** 把围栏代码块替换为空行，保留原始行号。 */
+function maskFencedCode(lines: readonly string[]): string[] {
+  let fence: { readonly marker: string; readonly quoteDepth: number } | null = null;
   return lines.map((line) => {
-    const trimmed = line.trimStart();
-    const fenceMatch = /^(`{3,}|~{3,})/.exec(trimmed);
+    const { content, quoteDepth } = stripBlockquote(line, fence?.quoteDepth);
+    const marker = /^(`{3,}|~{3,})/.exec(content)?.[1];
 
-    if (fenceMarker !== null) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
-      if (fenceMatch?.[1]?.startsWith(fenceMarker[0] ?? "")) {
-        fenceMarker = null;
+    if (fence !== null && quoteDepth === fence.quoteDepth) {
+      if (marker !== undefined && marker.startsWith(fence.marker) && content.slice(marker.length).trim() === "") {
+        fence = null;
       }
       return "";
     }
 
-    if (fenceMatch?.[1] !== undefined) {
-      fenceMarker = fenceMatch[1];
-      return "";
-    }
-
-    return line.replace(/`[^`\n]*`/g, "");
+    fence = marker === undefined ? null : { marker, quoteDepth };
+    return fence === null ? line : "";
   });
+}
+
+function maskCode(lines: readonly string[]): string[] {
+  return maskFencedCode(lines).map((line) => line.replace(/`[^`\n]*`/g, ""));
+}
+
+function splitTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  const cells: string[] = [];
+  let cellStart = 0;
+
+  // 先消费反斜杠转义的字符，只让未转义的竖线分隔单元格。
+  for (const match of trimmed.matchAll(/\\.|\|/g)) {
+    if (match[0] !== "|") {
+      continue;
+    }
+    if (match.index > 0) {
+      cells.push(trimmed.slice(cellStart, match.index).trim());
+    }
+    cellStart = match.index + 1;
+  }
+
+  if (cellStart === 0) {
+    return null;
+  }
+  if (cellStart < trimmed.length) {
+    cells.push(trimmed.slice(cellStart).trim());
+  }
+  return cells;
+}
+
+function endsTable(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === "" ||
+    /^(?:#{1,6}(?:\s|$)|[-+*]\s|\d{1,9}[.)]\s|<!--)/.test(trimmed) ||
+    /^(?:\*{3,}|-{3,}|_{3,})$/.test(trimmed.replace(/[ \t]/g, ""));
+}
+
+function findTableColumnMismatches(documents: readonly MarkdownDocument[]) {
+  const mismatches: TableColumnMismatch[] = [];
+  let tableCount = 0;
+
+  for (const document of documents) {
+    let previousRow: string[] | null = null;
+    let expectedColumns = 0;
+    let previousQuoteDepth = 0;
+    for (const [index, line] of maskFencedCode(document.lines).entries()) {
+      const { content, quoteDepth } = stripBlockquote(line);
+      const boundary = endsTable(content);
+      if (boundary || quoteDepth !== previousQuoteDepth) {
+        previousRow = null;
+        expectedColumns = 0;
+      }
+      previousQuoteDepth = quoteDepth;
+      if (boundary) {
+        continue;
+      }
+
+      const cells = splitTableRow(content);
+      if (expectedColumns > 0) {
+        const actual = cells?.length ?? 1;
+        if (actual !== expectedColumns) {
+          mismatches.push({ source: document.relativePath, line: index + 1, expected: expectedColumns, actual });
+        }
+        continue;
+      }
+
+      if (previousRow !== null && cells !== null && cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell))) {
+        tableCount += 1;
+        expectedColumns = cells.length;
+        if (previousRow.length !== expectedColumns) {
+          mismatches.push({ source: document.relativePath, line: index, expected: expectedColumns, actual: previousRow.length });
+        }
+      }
+      previousRow = cells;
+    }
+  }
+
+  return { tableCount, mismatches };
 }
 
 /** 把标题文本规范化为锚点：小写，仅保留字母、数字、空格与连字符，空格转为连字符。 */
@@ -185,7 +284,7 @@ function inspectLink(
 }
 
 /** 检查全部文档，返回坏链接清单。 */
-function findBrokenLinks(documents: readonly MarkdownDocument[]): BrokenLink[] {
+function findBrokenLinks(documents: readonly MarkdownDocument[]) {
   const brokenLinks: BrokenLink[] = [];
   const anchorCache = new Map<string, Set<string>>();
   let checkedLinkCount = 0;
@@ -213,19 +312,40 @@ function findBrokenLinks(documents: readonly MarkdownDocument[]): BrokenLink[] {
     });
   }
 
-  process.stdout.write(`扫描 ${documents.length} 个文档，检查 ${checkedLinkCount} 条相对链接。\n`);
-  return brokenLinks;
+  return { checkedLinkCount, brokenLinks };
 }
 
-const documents = collectMarkdownDocuments();
-const brokenLinks = findBrokenLinks(documents);
+export function runDocsCheckCli(options: DocsCliOptions = {}): number {
+  const repositoryRoot = resolve(options.root ?? join(dirname(scriptPath), ".."));
+  const documents = collectMarkdownDocuments(repositoryRoot);
+  const { checkedLinkCount, brokenLinks } = findBrokenLinks(documents);
+  const { tableCount, mismatches } = findTableColumnMismatches(documents);
+  const writeStdout = options.writeStdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = options.writeStderr ?? ((message: string) => process.stderr.write(message));
 
-if (brokenLinks.length > 0) {
-  process.stderr.write(`发现 ${brokenLinks.length} 条坏链接：\n`);
-  for (const link of brokenLinks) {
-    process.stderr.write(`  ${link.source}:${link.line} -> ${link.target}（${link.reason}）\n`);
+  writeStdout(`扫描 ${documents.length} 个文档，检查 ${checkedLinkCount} 条相对链接。\n`);
+  writeStdout(`检查 ${tableCount} 张 Markdown 表格。\n`);
+  if (brokenLinks.length > 0) {
+    writeStderr(`发现 ${brokenLinks.length} 条坏链接：\n`);
+    for (const link of brokenLinks) {
+      writeStderr(`  ${link.source}:${link.line} -> ${link.target}（${link.reason}）\n`);
+    }
   }
-  process.exitCode = 1;
-} else {
-  process.stdout.write("文档链接检查通过。\n");
+  if (mismatches.length > 0) {
+    writeStderr(`发现 ${mismatches.length} 行表格列数错误：\n`);
+    for (const issue of mismatches) {
+      writeStderr(`  ${issue.source}:${issue.line} 期望 ${issue.expected} 列，实际 ${issue.actual} 列。\n`);
+    }
+  }
+
+  if (brokenLinks.length > 0 || mismatches.length > 0) {
+    return 1;
+  }
+  writeStdout("文档链接、锚点与表格列数检查通过。\n");
+  return 0;
+}
+
+const entryPath = process.argv.at(1);
+if (entryPath !== undefined && existsSync(entryPath) && realpathSync(entryPath) === realpathSync(scriptPath)) {
+  process.exitCode = runDocsCheckCli();
 }

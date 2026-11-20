@@ -1,6 +1,6 @@
 # 公共契约与协议语义
 
-> 以下是待实现的 TypeScript 公共类型示意，实际 schema 由 `packages/contracts` 维护。跨模块共有的语义由本文维护；Module/Plugin 机制见 [插件机制](plugins.md)，Tool、Model、Memory 的专有字段由对应专篇维护，其他文档只引用，不再复制一份契约。
+> 公共 Zod schema 与类型由 [packages/contracts — 公共契约包](../../packages/contracts/src/index.ts) 维护。本文解释共享语义；接口接入进度见 [api.md — HTTP 与 WebSocket API](api.md#1-通用约定)。Module/Plugin 机制见 [插件机制](plugins.md)，Tool、Model、Memory 的专有字段由对应专篇维护。
 
 ## 1. 身份、事件与输入边界
 
@@ -257,4 +257,4 @@ ToolDefinition/ToolBinding 的 schema 见 [工具](../agent/tools.md)，modelId/
 
 公共 API 在 v1 中不改变既有字段的含义；新增可选字段需要有默认语义，破坏性变更使用新的 schemaVersion 和迁移。事件旧版本保留 reader/upcaster 与原始 payload，不原地重写日志。模块 apiVersion 与内容 schemaVersion 分别校验，不能混成一个版本号。assembly 增加新 realm 或新能力类别属于契约升级，必须记录兼容窗口与迁移说明。
 
-共享契约测试覆盖合法与非法 payload、scope、幂等、旧版本读取、重连投影、realm 兼容、能力闭包与装配冲突。仓库里还没有 contracts 包，本文描述的 API 尚未经过运行时验证。
+现有公共 schema 有合法与非法输入测试。scope、幂等、玩家重连投影和装配冲突的验证由对应的集成测试与目录检查承载。席位字段和旧记录兼容的待交付项见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。

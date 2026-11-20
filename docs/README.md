@@ -1,6 +1,6 @@
 # 文档导航
 
-> **权威链（2026-11-20）：** 本仓库文档自包含，不引用仓库外的设计稿或资产包。游戏设计以 [design/README.md — 炉边议会](design/README.md) 为唯一权威；[00-scope-and-invariants.md](00-scope-and-invariants.md) 定义 Demo 序章切片的实现范围；其余工程文档只解释“怎么实现”。三者冲突时：**设计 > 切片范围 > 工程文档**。
+> **权威链**为设计、切片范围、工程文档，按该顺序裁决冲突。仓库内的 [design/README.md — 炉边议会](design/README.md) 是游戏设计权威，[00-scope-and-invariants.md — 序章切片范围](00-scope-and-invariants.md) 定义 Demo 范围，工程文档规定实施方式。
 > 本页负责目录导航、阅读路径与主题归属。项目介绍见 [README.md — 项目概览](../README.md)；各子目录 README 提供完整文件索引，不在此重复维护。
 
 ## 1. 三层结构与全局入口
@@ -91,4 +91,5 @@
 3. **规则数值只有一个来源。** 序章的阈值、日耗、门槛与加成写在 [game/rules.md](game/rules.md)；初始库存与内容数据写在 [game/content-pack.md](game/content-pack.md)；设计目标值写在 `design/balance/`。三处不重复定义同一组数字。
 4. **未实现的系统只写“不实现 + 接口”，不写简化版规则。** 城建、法案、支持/吞并、袭击、四季、多人都不在切片内。
 5. **文档链接使用“原始文件名 — 中文名称”。** 未存在的目标文件、代码示例与无可访问地址的来源不伪造链接。
-6. **变更后检查相对链接、标题锚点与表格列数。** 前两项由 `pnpm check:docs` 校验；表格列数在评审时人工核对，未运行时如实说明。
+6. **变更后运行 `pnpm check:docs`。** 它检查根 `README.md`、`AGENTS.md`、服务端 README 和 `docs/**/*.md` 的相对链接、标题锚点与 Markdown 表格列数。
+7. 工程文档标注交付状态时沿用 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览) 的「已实现」「部分实现」「目标」。部分实现需写清已交付范围，具体迁移项见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。

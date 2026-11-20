@@ -1,6 +1,6 @@
 # 运营控制台、保存与三势力席位
 
-> **设计权威（2026-11-20）：** 多人的席位、托管、权威与运营口径见 [design/multiplayer/02-authority-economy-fairness.md](../design/multiplayer/02-authority-economy-fairness.md)。本文保留 Demo 单人运营口径；冲突时以 `docs/design/` 为准。
+> 本文定义 Demo 单人运营。多人席位、托管与权威设计见 [02-authority-economy-fairness.md — 权威与公平](../design/multiplayer/02-authority-economy-fairness.md)。
 
 > 状态：部分实现。服务端已提供玩家暂停、继续、存档、恢复与重新开局。三势力席位、剧情运营接口和控制台页面为目标。本文规定运营与故障处理。参见 [00-scope-and-invariants.md — 序章范围](../00-scope-and-invariants.md)、[api.md — HTTP 与 WebSocket API](../architecture/api.md)、[two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
 
@@ -22,6 +22,8 @@
 ## 2. 时钟与运行状态
 
 运行状态从 `running` 经 `pausing` 进入 `paused`；恢复从 `paused` 经 `resuming` 回到 `running`；单步从 `paused` 经 `stepping` 回到 `paused`。保存和分支切换只在受控暂停点进行。每次状态转换记录操作者、原因、前后状态和幂等操作 ID。
+
+当前暂停与继续的幂等结果和时钟状态分两次提交。若两次提交之间进程退出，原请求重试可能收到版本冲突。见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
 
 `worldTick` 是持久逻辑时间。运行时按部署配置推进；暂停和默认离线期间不推进，不计算离线战争或按真实天数衰减记忆。请求耗时和控制租约的服务时间独立记录，不参与剧情时间。
 
@@ -120,6 +122,8 @@
 运营页面的模块可替换，但暂停/保存/接管/发布的服务端语义与审计不可替换；替换页面不得绕过过期 checkpoint、引用了过期 epoch 的 handover 或未校验的发布。恢复、接管和发布的并发/故障验收见 [roadmap-and-acceptance](../delivery/roadmap-and-acceptance.md)。
 
 ## 10. 在线世界的生命周期（首版）
+
+本节给出首版目标生命周期。当前默认名册、激活配额与席位契约的进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。
 
 | 时机 | 服务端行为 |
 |---|---|

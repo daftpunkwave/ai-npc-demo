@@ -3,7 +3,7 @@
 > **权威链：** ID、派系、节点与初态以 [design/world/canon.md §13](../design/world/canon.md#13-id-对照表) 与 [design/balance/01-baseline.md](../design/balance/01-baseline.md) 为准；本切片只包含序章 t0–167 的内容。范围与 15 个上场身份见 [00-scope-and-invariants.md](../00-scope-and-invariants.md)，规则见 [rules.md](rules.md)。
 > 本文是**目标内容契约**：说明每个文件装什么、约束是什么、初始值从哪里来。当前 YAML 与本文的迁移项统一记在 [IMPLEMENTATION-STATUS.md](../IMPLEMENTATION-STATUS.md)；迁移完成后，YAML 以本文为准，不再保留第二套口径。
 
-> 状态：实现规范。启动时由内容加载器按 [领域模型](../architecture/domain-model.md) 第 10 节的规则校验。修改任何数据都要提高内容版本，并作为新 run 的条件。
+> 内容加载器在启动时校验数据，目标校验规则见 [领域模型](../architecture/domain-model.md) 第 10 节。修改运行内容时提高内容版本，并创建新 run。
 
 ## 1. 文件清单
 
@@ -409,6 +409,8 @@ characters:
 
 ## 6. 世界初态（world-init.yaml）
 
+这里的库存仅用于序章。t168 交接见 [00-scope-and-invariants.md — 序章资源边界](../00-scope-and-invariants.md#12-序章资源边界)。
+
 ```yaml
 schemaVersion: 1
 meters: { relay.stability: 45, orchard.water: 50, migration.safety: 50, watergate.allocation: harbor-first }
@@ -432,7 +434,6 @@ teams:
   - { teamId: team-star,    ownerFactionId: species-extraterrestrial, nodeId: anchor,     capabilities: [repair, transport],         capacity: 15 }
 groups:
   - { groupId: grp-injured-migrants, nodeId: pass, injured: 6, deadlineTick: 48 }
-# 序章只结算 supply/energy/medical；materials/food/water 在 t168 按设计初值出现，不在这里建库存点。
 # duty delegations granted by each faction to its leader/agent at campaign start
 dutyDelegations:
   - { granteeId: human-independent, grantorFactionId: human-independent,        teamIds: [team-rubble],  stockpileId: sp-rubble,  maxDraw: { supply: 10, energy: 4, medical: 2 }, untilTick: 168 }
@@ -496,9 +497,9 @@ secrets:
 
 ## 8. 五席开局（starts.yaml；本切片只启用公社）
 
-**本切片只启用 `human-neutral`（公社席）。** 其余四席保留为设计全量内容，加载时标记 `disabled`，不出现在开局选择里；开放更多席位属于内容扩充，不改规则。
+**本切片只启用 `human-neutral`（公社席）。** 其余四席在内容中标记为 `enabled: false`，从合法开局选项中排除。
 
-玩家始终驻在 grayharbor。`campaign.start` 被接受时，在同一事务里：world 创建 8 条职责委托（第 6 节）与玩家委托；comms 的后续钩子提交两条开局消息（`MessageSent`：`fromId` 为接触角色、`to` 为玩家、`channel = opening`、`intentKind = scripted`、`speechArtifactRef = null`、`deliveries = [{ principalId: "player-1", deliverAtTick: 0 }, { principalId: 接触角色ID, deliverAtTick: 0 }]`（按 principalId 排序），正文取自下表，不调用模型），并授予开局知识与第 7 节的 `heldBy` 知识；scenario 的后续钩子安排剧情卡（见 [领域模型](../architecture/domain-model.md) 第 4 节）。
+玩家始终驻在 grayharbor。`campaign.start` 被接受时，world 创建职责委托（第 6 节）与玩家委托。comms 按 `starts.yaml` 提交所选开局的全部消息，并授予开局知识与第 7 节的 `heldBy` 知识。scenario 在同一事务安排剧情卡。消息的字段和送达见 [domain-model.md — 命令目录](../architecture/domain-model.md#5-命令目录)。
 
 ```yaml
 schemaVersion: 1
@@ -619,7 +620,7 @@ cards:
 
 `game.scenario.watergate-escalating`（模块替换演示用）读取同一份卡片，但节奏规则不同：所有 `atTick` 乘以 0.75 后向下取整；它还订阅 `TaskCompleted` 记录是否完成过修复，并订阅 `DayPassed`：`card-relay-alarm` 已触发、且到这次 `DayPassed` 为止还没有完成任何修复时，通过 world 的 `changeMeter` 再让 `relay.stability −2`（cause `scenario-pressure`）。这是剧情模块本身的节奏策略，不是卡片效果，因此不违反“剧情卡不能修改指标”。
 
-## 10. 名册（`config/rosters/*.yaml`）
+## 10. 名册
 
 名册把内容包里的身份绑定到配置，因此放在 `config/rosters/`，不在内容包内。它只引用身份与配置，不复制人格或模型参数；`profileRef`、`toolsetRef` 指向 `config/`，见 [配置](../platform/configuration.md)。
 

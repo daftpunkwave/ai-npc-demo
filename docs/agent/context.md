@@ -1,6 +1,6 @@
 # 上下文模块详细设计
 
-> 状态：目标规范，尚未实现。context 决定“这一次模型调用看到哪些合法材料、按什么顺序看到”，不负责记住历史或执行行动。相邻模块见 [memory](memory.md)、[感知](perception.md)、[压缩与工具视图](compression-and-tool-view.md)。
+> 状态：目标。context 决定这次模型调用会收到哪些合法材料及其顺序。相邻模块见 [memory](memory.md)、[感知](perception.md)、[压缩与工具视图](compression-and-tool-view.md)。
 
 ## 1. 边界与调用阶段
 
@@ -107,20 +107,7 @@ provider 的提示词缓存只能加速合法请求，不是长期 memory。缓�
 | 渲染 | 标签/紧凑 JSON/模板叙述、来源表示 | 同一证据与认知等级 |
 | 裁剪 | 低优先淘汰、重复项去重、触发压缩 | 不拆工具协议，不无声丢当前输入 |
 
-以下仅展示 context 槽配置片段，不是完整可启动配置：
-
-```yaml
-context:
-  module: agent.context.ordered-blocks
-  config:
-    segmentOrder: [protocol, identity, world, task, memory, history, input]
-    historyTurns: 8
-    lendUnusedBudget: false
-    decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 } }
-    speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }
-```
-
-示例参数是起点；schema 包含单位、范围与 phase 支持。这里只配置上下文策略；真实模型和 temperature 从 [统一配置](../platform/configuration.md) 的模型池与 mounts 解析，不能在角色文件里再复制。
+完整的 `context` 槽与预算示例见 [configuration.md — profile 继承链，第 10.2 节](../platform/configuration.md)。真实模型和 temperature 由模型池和 mounts 解析。
 
 ## 8. 一次公私分离示例
 
