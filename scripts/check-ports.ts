@@ -11,9 +11,7 @@ import { projectRoot, systemCommandPath } from "./processes";
 
 const expectedPorts = [3000, 5173] as const;
 // 项目只允许本机 HTTP，这两个地址不会承载远端或凭据流量。
-// nosemgrep
 const healthUrl = "http://127.0.0.1:3000/api/v1/health";
-// nosemgrep
 const clientUrl = "http://127.0.0.1:5173/";
 
 interface ProcessRecord {
@@ -211,7 +209,9 @@ async function waitForReady(child: ChildProcess): Promise<void> {
       throw new Error(`启动进程提前退出，退出码 ${child.exitCode}`);
     }
     try {
+      // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       const health = await fetch(healthUrl);
+      // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
       const client = await fetch(clientUrl);
       if (health.ok && client.ok) {
         return;

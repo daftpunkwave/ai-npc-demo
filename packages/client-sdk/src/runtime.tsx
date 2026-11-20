@@ -232,7 +232,7 @@ export async function startBrowserModules(
   const host = browserHostServices();
   const signal = input.signal ?? new AbortController().signal;
   const instances: ModuleInstance[] = [];
-  const providedPorts: Record<string, unknown> = { ...(input.fixedPorts ?? {}) };
+  const providedPorts: Record<string, unknown> = { ...input.fixedPorts };
   try {
     for (const definition of definitions) {
       const config = definition.configSchema.parse(definition.defaults ?? {}) as Json;

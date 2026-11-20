@@ -25,18 +25,24 @@ function windowsRoot(): string {
   return process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows";
 }
 
-const systemCommandCandidates: Readonly<
-  Record<SystemCommandName, () => readonly string[]>
-> = {
-  cmd: () => [resolve(windowsRoot(), "System32", "cmd.exe")],
-  powershell: () => [
-    resolve(windowsRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-  ],
-  taskkill: () => [resolve(windowsRoot(), "System32", "taskkill.exe")],
-  ps: () => ["/bin/ps", "/usr/bin/ps"],
-  ss: () => ["/usr/bin/ss", "/sbin/ss"],
-  lsof: () => ["/usr/sbin/lsof", "/usr/bin/lsof"],
-};
+function systemCommandCandidates(command: SystemCommandName): readonly string[] {
+  switch (command) {
+    case "cmd":
+      return [resolve(windowsRoot(), "System32", "cmd.exe")];
+    case "powershell":
+      return [
+        resolve(windowsRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      ];
+    case "taskkill":
+      return [resolve(windowsRoot(), "System32", "taskkill.exe")];
+    case "ps":
+      return ["/bin/ps", "/usr/bin/ps"];
+    case "ss":
+      return ["/usr/bin/ss", "/sbin/ss"];
+    case "lsof":
+      return ["/usr/sbin/lsof", "/usr/bin/lsof"];
+  }
+}
 
 const systemCommands = new Map<SystemCommandName, string>();
 
@@ -46,7 +52,7 @@ export function systemCommandPath(command: SystemCommandName): string {
   if (cached !== undefined) {
     return cached;
   }
-  const executable = systemCommandCandidates[command]().find((path) => existsSync(path));
+  const executable = systemCommandCandidates(command).find((path) => existsSync(path));
   if (executable === undefined) {
     throw new Error(`找不到系统命令 ${command} 的固定可执行文件`);
   }
