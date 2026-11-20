@@ -101,7 +101,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | S→C | `hello` | `protocolVersion`、`principalId`、`channels`（本会话可订阅的频道） |
 | C→S | `subscribe` | `channel`、`fromStreamSeq`（首次为 `null`） |
-| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`data`。玩家频道使用真实投影版本；v1 控制台频道固定为 `0`，不借用流序号 |
+| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准 |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
 | S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。已实现 `dialogue` 和 `notification`，`timeline` 为目标 |
 | C→S | `ack` | `channel`、`streamSeq` |

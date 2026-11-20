@@ -66,7 +66,7 @@
 
 ### 3.7 冻结装配能力升级
 
-当前装配新增了观测与模块管理能力；已有在线 run 若冻结的是缺少这些绑定的旧装配，恢复时会因当前必需能力闭包不满足而失败。需要提供显式的后继 run 或分支迁移，保留旧 manifest、seed、源分支和事件历史，不得按新配置静默改写旧 run。迁移与验收条件跟踪在 [Issue #50](https://github.com/daftpunkwave/ai-npc-demo/issues/50)。
+当前装配新增了观测与模块管理能力；已有在线 run 若冻结的是缺少这些绑定的旧装配，恢复时会因当前必需能力闭包不满足而失败。显式后继 run 或分支迁移尚未实现，迁移必须保留旧 manifest、seed、源分支和事件历史，不得按新配置静默改写旧 run。迁移与验收条件由 [Issue #50](https://github.com/daftpunkwave/ai-npc-demo/issues/50) 跟踪。
 
 ### 3.8 剩余表现与认知管线
 
