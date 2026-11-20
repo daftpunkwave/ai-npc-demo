@@ -276,7 +276,7 @@ export function conversationQueryOf(query: unknown): ConversationQuery | null {
 
 /**
  * 读取玩家与指定主体最近一次交换所在的会话。
- * 只选择双方共同参与且由最近一次交换确定的会话，再按 seq 游标与送达 tick 裁剪对白；
+ * 只选择双方共同参与且由最近一次提交确定的会话，再按 seq 游标与送达 tick 裁剪对白；
  * 找不到共同会话时返回 null，由路由按资源不存在处理。
  */
 export function readPlayerConversation(
@@ -297,8 +297,12 @@ export function readPlayerConversation(
     }
     if (
       selectedLastLine === null ||
-      lastLine.worldTick > selectedLastLine.worldTick ||
-      (lastLine.worldTick === selectedLastLine.worldTick && conversationId > (selectedConversationId ?? ""))
+      lastLine.worldSeq > selectedLastLine.worldSeq ||
+      (lastLine.worldSeq === selectedLastLine.worldSeq &&
+        lastLine.worldTick > selectedLastLine.worldTick) ||
+      (lastLine.worldSeq === selectedLastLine.worldSeq &&
+        lastLine.worldTick === selectedLastLine.worldTick &&
+        conversationId > (selectedConversationId ?? ""))
     ) {
       selectedConversationId = conversationId;
       selectedLastLine = lastLine;

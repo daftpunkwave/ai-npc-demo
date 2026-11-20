@@ -208,8 +208,28 @@ function conversationPort(harness: GameHarness): ConversationReadPort {
     worldTick: () => readGameClock(harness).worldTick,
     conversationsOf: (principalId) =>
       withGamePorts(harness, (ports) => ports["game.comms"].conversationsOf(principalId)),
-    conversationMessages: (conversationId, limit) =>
-      withGamePorts(harness, (ports) => ports["game.comms"].conversationMessages(conversationId, limit)),
+    conversationMessages: (conversationId, limit) => {
+      const lines = withGamePorts(
+        harness,
+        (ports) => ports["game.comms"].conversationMessages(conversationId, limit),
+      );
+      return lines.map((line) => {
+        const event = harness.storage.transact((tx) =>
+          tx.all(
+            `SELECT world_seq
+               FROM domain_events
+              WHERE branch_id = ?
+                AND type = 'DialogueSubmitted'
+                AND json_extract(payload_json, '$.dialogueId') = ?`,
+            [harness.branchId, line.dialogueId],
+          )[0],
+        );
+        if (event === undefined) {
+          throw new Error(`缺少对白 ${line.dialogueId} 的提交事件`);
+        }
+        return { ...line, worldSeq: Number(event["world_seq"]) };
+      });
+    },
     speakerName: (principalId) => harness.gameContent.characters.get(principalId)?.name ?? principalId,
   };
 }
@@ -718,6 +738,7 @@ describe("服务端 API", () => {
     const lateLine: ConversationSourceLine = {
       seq: 0,
       dialogueId: value.host.ids("dlg"),
+      worldSeq: 1,
       speakerId: "npc-cenyan",
       text: "隘口暂时安全。",
       channel: "relay",
@@ -757,6 +778,63 @@ describe("服务端 API", () => {
           channel: "relay",
         },
       ],
+    });
+  });
+
+  it("GET /conversations 在同一 tick 内按提交序号选择最新会话", async () => {
+    const value = await createTrackedGameHarness(active);
+    const olderConversationId = "conv-000000000002";
+    const newerConversationId = "conv-000000000001";
+    const line = (
+      dialogueId: string,
+      text: string,
+      worldSeq: number,
+    ): ConversationSourceLine => ({
+      seq: 0,
+      dialogueId,
+      worldSeq,
+      speakerId: "player-1",
+      text,
+      channel: "face-to-face",
+      worldTick: 0,
+      deliveries: [{ principalId: "player-1", deliverAtTick: 0 }],
+    });
+    const older = line(
+      value.host.ids("dlg"),
+      "较早提交",
+      10,
+    );
+    const newer = line(
+      value.host.ids("dlg"),
+      "较晚提交",
+      11,
+    );
+    // 较早会话的 ID 字典序更大，确保旧实现会稳定选错。
+    expect(olderConversationId > newerConversationId).toBe(true);
+    const app = await appFor(value, {
+      conversation: {
+        worldTick: () => 0,
+        conversationsOf: (principalId) =>
+          principalId === "player-1" || principalId === "npc-cenyan"
+            ? [olderConversationId, newerConversationId]
+            : [],
+        conversationMessages: (conversationId) =>
+          conversationId === olderConversationId ? [older] : [newer],
+        speakerName: (principalId) => principalId,
+      },
+    });
+    const session = await login(app, "player-token");
+    const auth = { authorization: `Bearer ${session}` };
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/conversations/npc-cenyan",
+      headers: auth,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(conversationResponseSchema.parse(response.json())).toMatchObject({
+      conversationId: newerConversationId,
+      lines: [{ text: "较晚提交" }],
     });
   });
 

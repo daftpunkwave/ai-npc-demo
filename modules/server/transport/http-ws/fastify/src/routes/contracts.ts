@@ -144,6 +144,8 @@ export interface ConversationReadQuery {
 export interface ConversationSourceLine {
   readonly seq: number;
   readonly dialogueId: string;
+  /** 对应 `DialogueSubmitted` 的提交顺序；同一 tick 的多个会话必须据此选出最新交换。 */
+  readonly worldSeq: number;
   readonly speakerId: string;
   readonly text: string;
   readonly channel: "face-to-face" | "relay";

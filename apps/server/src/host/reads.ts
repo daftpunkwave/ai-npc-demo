@@ -97,7 +97,25 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
     conversationMessages: (conversationId: string, limit: number) =>
       storage.transact((tx) => {
         const ports = portsIn(tx);
-        return ports["game.comms"].conversationMessages(conversationId, limit);
+        return ports["game.comms"].conversationMessages(conversationId, limit).map((line) => {
+          const event = tx.all(
+            `SELECT world_seq
+               FROM domain_events
+              WHERE branch_id = ?
+                AND type = 'DialogueSubmitted'
+                AND json_extract(payload_json, '$.dialogueId') = ?
+              ORDER BY world_seq DESC
+              LIMIT 1`,
+            [active.branchId, line.dialogueId],
+          )[0];
+          if (event === undefined) {
+            throw new DomainError("invalid-state", `对白 ${line.dialogueId} 缺少提交事件`);
+          }
+          return {
+            ...line,
+            worldSeq: Number(event["world_seq"]),
+          };
+        });
       }),
     speakerName: (principalId: string) => gameContent.characters.get(principalId)?.name ?? principalId,
   };
