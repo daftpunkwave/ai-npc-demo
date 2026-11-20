@@ -1,7 +1,7 @@
-# 设计并入说明：单一权威与序章切片
+# 设计目录结构与维护规则
 
-> **一句话：`docs/design/` 是根目录 `game-design.thc/` 的并入镜像，也是整套文档的唯一设计权威。`docs/game/` 只描述序章《水闸之前》的实现切片，不另立规则。**
-> 同步方向：根目录 `game-design.thc/` → `docs/design/`。若两者不一致，以根目录为准并重新复制。
+> **一句话：`docs/design/` 是本仓库唯一的设计权威，自包含，不设外部镜像。`docs/game/` 只描述序章《水闸之前》的实现切片，不另立规则。**
+> 本仓库文档不引用仓库外的设计稿或资产包：所有设计依据、数值与 ID 都能在仓库内查到。
 
 ## 1. 三层结构
 
@@ -18,7 +18,7 @@
 | 序章文档 | 设计依据 | 关系 |
 |---|---|---|
 | `docs/game/background.md` | `design/world/background.md`、`grayharbor.md`、`frontier.md`、`societies.md`、`story.md` | 摘要；不新增设定 |
-| `docs/game/characters.md` | `design/characters/roster.md`、`README.md` | 15 个上场身份；43 人名册的切片 |
+| `docs/game/characters.md` | `design/characters/roster.md`、`README.md` | 15 个上场身份；43 具名身份的切片 |
 | `docs/game/gameplay.md` | `design/gameplay/01-cycle-and-opening.md`、`05-chapter.md`、`06-player-experience.md` | 党魁视角的序章七日 |
 | `docs/game/rules.md` | `design/balance/01-baseline.md`、`gameplay/02`–`09` | 序章可结算规则；设计值以 balance 为准 |
 | `docs/game/content-pack.md` | `design/world/canon.md` §13、`balance/01` | 内容契约；ID 以 canon §13 为准 |
@@ -54,9 +54,9 @@
 
 ## 5. 维护规则
 
-1. **设计改动只改根目录 `game-design.thc/`。** `docs/design/` 是镜像，不直接编辑；改完重新复制。
+1. **设计改动只改 `docs/design/`。** 它是仓库内唯一的设计权威，不存在需要同步的外部源目录。
 2. **切片范围的改动只改 `00-scope-and-invariants.md`。** 其他文档引用它，不复制范围定义。
 3. **序章规则数值（阈值、日耗、门槛、加成）只写在 `docs/game/rules.md`；初始库存、初值与内容数据写在 `docs/game/content-pack.md`。** 设计目标值只写在 `docs/design/balance/`；两边不重复定义同一组数字。
 4. **ID 只有一个来源：`design/world/canon.md` §13。** `seatId` / `factionId` / 资产 slug / `characterId` 的映射只维护在那里。
-5. **同步方向只有一个：根目录 → docs/design。** 复制时保留 `docs/design/README.md` 顶部注记与 `MIGRATION.md`（这两个文件不在根目录中）。
-6. **每次改完跑链接检查。** 至少检查 `docs/design/**`、`docs/game/**` 的相对链接与表格列数。
+5. **设计与切片冲突时以 `design/` 为准**；实现差距只记在 `IMPLEMENTATION-STATUS.md`，不另开“实现口径”。
+6. **每次改完跑 `pnpm check:docs`，并检查表格列数。** 至少覆盖 `docs/design/**`、`docs/game/**` 的相对链接与表格列数。

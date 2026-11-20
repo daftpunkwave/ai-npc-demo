@@ -1,6 +1,6 @@
 # 文档导航
 
-> **权威链（2026-11-20）：** 游戏设计以 [design/README.md — 炉边议会](design/README.md)（根目录 `game-design.thc/` 的并入镜像）为唯一权威；[00-scope-and-invariants.md](00-scope-and-invariants.md) 定义 Demo 序章切片的实现范围；其余工程文档只解释“怎么实现”。三者冲突时：**设计 > 切片范围 > 工程文档**。
+> **权威链（2026-11-20）：** 本仓库文档自包含，不引用仓库外的设计稿或资产包。游戏设计以 [design/README.md — 炉边议会](design/README.md) 为唯一权威；[00-scope-and-invariants.md](00-scope-and-invariants.md) 定义 Demo 序章切片的实现范围；其余工程文档只解释“怎么实现”。三者冲突时：**设计 > 切片范围 > 工程文档**。
 > 本页负责目录导航、阅读路径与主题归属。项目介绍见 [README.md — 项目概览](../README.md)；各子目录 README 提供完整文件索引，不在此重复维护。
 
 ## 1. 三层结构与全局入口
@@ -16,7 +16,7 @@
 | [design/README.md — 完整游戏设计（权威）](design/README.md) | 世界、玩法、数值、派系、角色、多人、资产的目标设计 |
 | [00-scope-and-invariants.md — 序章切片范围与不变量](00-scope-and-invariants.md) | 范围、15 个上场身份、6 种资源边界、验收与术语 |
 | [IMPLEMENTATION-STATUS.md — 实现状态](IMPLEMENTATION-STATUS.md) | 当前代码/内容与规格的差距；迁移清单，不是第二套规则 |
-| [design/MIGRATION.md — 设计并入说明](design/MIGRATION.md) | 设计包如何并入、目录映射与维护规则 |
+| [design/STRUCTURE.md — 设计目录与维护规则](design/STRUCTURE.md) | 三层结构、目录映射、不实现清单与维护规则 |
 | [AGENTS.md — 开发规范](../AGENTS.md) | 工程约束、验证要求与 Git 工作流 |
 
 ## 2. 目录导航
@@ -54,9 +54,11 @@
 | 世界、玩法、数值、派系、角色、多人、资产（目标设计） | [design/README.md](design/README.md) |
 | 切片范围、15 个上场身份、资源边界、术语 | [00-scope-and-invariants.md](00-scope-and-invariants.md) |
 | 序章可结算规则与数值 | [game/rules.md](game/rules.md)；目标数值以 [design/balance/01-baseline.md](design/balance/01-baseline.md) 为准 |
-| 序章初始数据、剧情卡、名册、脚本、模板 | [game/content-pack.md](game/content-pack.md)；ID 以 [design/world/canon.md §13](design/world/canon.md#13-id-对照表) 为准 |
-| 15 人编制、人格契约、关系与验收 | [game/characters.md](game/characters.md)；完整 43 人名册以 [design/characters/roster.md](design/characters/roster.md) 为准 |
-| 序章玩家循环、九张卡、t144 表决 | [game/gameplay.md](game/gameplay.md)；设计依据 [design/gameplay/05-chapter.md](design/gameplay/05-chapter.md) |
+| 序章世界背景摘要 | [game/background.md](game/background.md)；完整设定以 [design/world/background.md](design/world/background.md) 为准 |
+| 序章表现与资产使用 | [game/art-direction.md](game/art-direction.md)；目标 3D 与资产口径见 [design/assets/README.md](design/assets/README.md) |
+| 序章初始数据、剧情卡数据（cardId/trigger/effects）、名册、脚本、模板 | [game/content-pack.md](game/content-pack.md)；ID 以 [design/world/canon.md §13](design/world/canon.md#13-id-对照表) 为准 |
+| 15 人编制、人格契约、关系与验收 | [game/characters.md](game/characters.md)；完整 43 具名身份以 [design/characters/roster.md](design/characters/roster.md) 为准 |
+| 序章玩家循环、t144 表决；九张卡的玩家决策 | [game/gameplay.md](game/gameplay.md)；设计意图见 [design/gameplay/05-chapter.md](design/gameplay/05-chapter.md) |
 | 命令、事件、聚合归属、受众、投影、原因码 | [domain-model.md](architecture/domain-model.md) |
 | 事务、投递、水位、快照的语义 | [events-and-state.md](architecture/events-and-state.md) |
 | 表结构与分支复制 | [storage.md](architecture/storage.md) |
@@ -79,12 +81,14 @@
 | 共享 Agent 工作流、Git 授权与本地补充边界 | [AGENTS.md](../AGENTS.md) |
 | 实施顺序与完成判据 | [build-plan.md](delivery/build-plan.md) |
 | 切片验收（Demo） | [roadmap-and-acceptance.md](delivery/roadmap-and-acceptance.md)；整局验收见 [design/gameplay/05](design/gameplay/05-chapter.md) 与 [design/gameplay/16](design/gameplay/16-campaign-arc.md) |
+| 参考依据、借鉴边界与设计取舍 | [references/README.md](references/README.md) |
+| 序章模块映射与可替换边界 | [game/systems.md](game/systems.md) |
 
 ## 5. 文档维护约定
 
-1. **设计改动只改根目录 `game-design.thc/`，再同步到 `docs/design/`。** 不同步反向修改镜像。
+1. **设计改动只改 `docs/design/`。** 它是仓库内唯一的设计权威，不设外部镜像，也不从仓库外同步。
 2. **切片范围的改动只改 `00-scope-and-invariants.md`。** 各工程文档引用它，不复制范围定义。
 3. **规则数值只有一个来源。** 序章的阈值、日耗、门槛与加成写在 [game/rules.md](game/rules.md)；初始库存与内容数据写在 [game/content-pack.md](game/content-pack.md)；设计目标值写在 `design/balance/`。三处不重复定义同一组数字。
 4. **未实现的系统只写“不实现 + 接口”，不写简化版规则。** 城建、法案、支持/吞并、袭击、四季、多人都不在切片内。
 5. **文档链接使用“原始文件名 — 中文名称”。** 未存在的目标文件、代码示例与无可访问地址的来源不伪造链接。
-6. **变更后检查相对链接、标题锚点和表格列数。** 检查命令见 [build-plan.md](delivery/build-plan.md)；未运行的检查如实说明。
+6. **变更后检查相对链接、标题锚点与表格列数。** 前两项由 `pnpm check:docs` 校验；表格列数在评审时人工核对，未运行时如实说明。
