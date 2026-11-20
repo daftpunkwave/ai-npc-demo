@@ -109,6 +109,38 @@ function stockpileSupply(value: GameHarness, stockpileId: string): number {
   return state.amount.supply;
 }
 
+/** 直接改写库存聚合的供给字段，用于构造可用量与预留的边界；同时写一条等额预留明细，保持聚合自身的预留校验成立。 */
+function setStockpileSupply(
+  value: GameHarness,
+  stockpileId: string,
+  next: { readonly amount: number; readonly reserved: number },
+): void {
+  value.storage.transact((tx) => {
+    const table = tx.branch(value.branchId).table("aggregate_state");
+    const row = table.get({ aggregate_type: "stockpile", aggregate_id: stockpileId });
+    if (row === null) {
+      throw new Error(`测试缺少库存聚合 ${stockpileId}`);
+    }
+    const state = row["state_json"] as Record<string, Json>;
+    const amount = state["amount"] as Record<string, Json> | undefined;
+    const reserved = state["reserved"] as Record<string, Json> | undefined;
+    if (amount === undefined || reserved === undefined) {
+      throw new Error(`库存点 ${stockpileId} 缺少 amount 或 reserved`);
+    }
+    amount["supply"] = next.amount;
+    reserved["supply"] = next.reserved;
+    state["reservations"] =
+      next.reserved === 0 ? [] : [{ taskId: "task-fixture", amount: { supply: next.reserved, energy: 0, medical: 0 } }];
+    table.put({ ...row, state_json: state, version: Number(row["version"]) + 1 });
+  });
+}
+
+/** 最近一条 StockpileAdjusted 的 payload，用于断言实际扣减量。 */
+function lastStockpileAdjustment(value: GameHarness): Json | undefined {
+  const events = readGameEvents(value).filter((event) => event.type === "StockpileAdjusted");
+  return events[events.length - 1]?.payload;
+}
+
 /** 用同一 dataDir 上的新存储连接读取持久化剧情运行状态，作为进程重启后读取的证据。 */
 async function readPersistedRunState(dataDir: string, branchId: string, scenarioId: string): Promise<ScenarioRunState> {
   const host = createFakeHost();
@@ -321,6 +353,39 @@ describe("剧情卡", () => {
     expect(event?.payload).toEqual({ cardId: "card-relay-alarm", version: 1, note: "补偿" });
     expect(readGameEventAudience(value, "ScenarioCompensationApplied")).toEqual([{ kind: "system" }]);
     expect(stockpileSupply(value, "sp-commons")).toBe(supplyBefore - 1);
+  });
+
+  it("库存调整只扣可用量，预留不被击穿", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 2, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 2);
+    expect(readGameAggregate(value, "scenario-card", "card-relay-alarm")).toMatchObject({ status: "triggered" });
+
+    // 可用量 2（amount 5、reserved 3）：-10 的调整只扣 2，预留保持 3。
+    setStockpileSupply(value, "sp-commons", { amount: 5, reserved: 3 });
+    const partial = compensateCommand(value, "card-relay-alarm", [
+      { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "受潮" },
+    ]);
+    expect(partial.commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 3 },
+      reserved: { supply: 3 },
+    });
+    expect(lastStockpileAdjustment(value)).toMatchObject({ stockpileId: "sp-commons", delta: { supply: -2 } });
+
+    // 可用量为 0：效果按空操作完成，不提交零额调整事件。
+    setStockpileSupply(value, "sp-commons", { amount: 3, reserved: 3 });
+    const adjustedBefore = readGameEvents(value).filter((event) => event.type === "StockpileAdjusted").length;
+    const empty = compensateCommand(value, "card-relay-alarm", [
+      { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "受潮" },
+    ]);
+    expect(empty.commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 3 },
+      reserved: { supply: 3 },
+    });
+    expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(adjustedBefore);
   });
 
   it("覆盖成功后在同一事务标记污染，重启读取仍可见", async () => {

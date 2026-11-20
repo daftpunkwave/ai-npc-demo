@@ -3,7 +3,7 @@
  * 依赖世界/地图/资源/通信端口、内容索引与 authority 事务；效果写入同一事务。
  * 禁止修改指标或道路状态（覆盖效果除外），也禁止调用模型生成正文。
  */
-import type { AudienceSpec, CardEffect, OverrideEffect } from "@ai-npc/contracts";
+import type { AudienceSpec, CardEffect, OverrideEffect, ResourceDelta } from "@ai-npc/contracts";
 import {
   principalsAudience,
   type GameContent,
@@ -52,9 +52,20 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
         [effect.audience],
       );
     } else if (effect.kind === "stockpile-adjust") {
+      // 负向调整只扣可用量（amount − reserved）：预留不会被击穿，可用量不足时按实际可扣量结算，不拒绝整张卡。
+      const delta: ResourceDelta = { ...effect.delta };
+      for (const resource of ["supply", "energy", "medical"] as const) {
+        const value = delta[resource];
+        if (value !== undefined && value < 0) {
+          delta[resource] = Math.max(value, -ports["game.resources"].available(effect.stockpileId, resource));
+        }
+      }
+      if ((delta.supply ?? 0) === 0 && (delta.energy ?? 0) === 0 && (delta.medical ?? 0) === 0) {
+        continue;
+      }
       const result = ports["game.resources"].adjust({
         stockpileId: effect.stockpileId,
-        delta: effect.delta,
+        delta,
         reason: effect.reason,
       });
       if (!result.ok) {
