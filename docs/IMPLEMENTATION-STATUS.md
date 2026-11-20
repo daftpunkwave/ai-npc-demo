@@ -28,7 +28,7 @@
 ### 2.1 身份与名册
 
 1. 新增 6 名公社支持者档案（另有 28 名 B 级名册角色由 roster 字段驱动，不逐人落 YAML）：`npc-wenzhao`、`npc-taoan`、`npc-muzhi`、`npc-luchen`、`npc-ahe`、`npc-qilu`；字段按 [game/characters.md](game/characters.md) 第 2 节。
-2. 按 [content-pack.md — 名册](game/content-pack.md#10-名册) 新增 `config/rosters/standard-15.yaml`。同步 `.env.example`、`config/runs/online-default.yaml` 与服务端默认 `rosterRef`，把单份正式名册校验上限改为 15。S13 在激活事务中落实部署级共享配额，并验证分支切换、释放名额与第 16 个身份被拒绝。当前 `standard-20` 里的 `strategic-broadcaster` 是旧引用，首版名册只使用 [tools.md — 工具集](agent/tools.md#132-binding-模板与工具集) 的三个工具集。
+2. 按 [content-pack.md — 名册](game/content-pack.md#10-名册) 新增 `config/rosters/standard-15.yaml`。同步 `.env.example`、`config/runs/online-default.yaml` 与服务端默认 `rosterRef`，把单份正式名册校验上限改为 15。部署级共享配额在激活事务中落实，并验证分支切换、释放名额与第 16 个身份被拒绝。当前 `standard-20` 里的 `strategic-broadcaster` 是旧引用，首版名册只使用 [tools.md — 工具集](agent/tools.md#132-binding-模板与工具集) 的三个工具集。
 3. 玩家以 `player-1` 占公社的 `seat.commune`，派系 ID 为 `human-neutral`。该席的 AI 党魁不实例化，闻昭以 `npc-wenzhao` 上场。
 4. 把 `npc-cenyan`、`npc-linwu`、`npc-tangzhen`、`npc-qiaoshu` 从运行名册移除；四名党魁只保留 `human-independent`、`human-earth-alliance`、`human-pacifist`、`human-alien-accord` 一套人格。旧档案若保留，只能作为内容库/回归数据，不能与党魁同时激活。
 5. 把 `npc-zhuifeng`、`npc-qingzhi`、`npc-luo` 从运行名册移除；外域只保留 `species-*` 一套人格。
@@ -63,12 +63,12 @@
 
 ## 3. 迁移顺序
 
-| 阶段 | 内容 | 完成判据 |
+| 交付内容 | 范围 | 完成判据 |
 |---|---|---|
-| S05 | `standard-15`、公社单席、开局消息、内容 ID 与剧情卡署名 | 正式名册可装载，同一人物只有一个运行身份 |
-| S07–S09 | 20 秒/tick、t168 终点、公社玩家命令、席位契约与时钟操作幂等 | 评估后停止推进，玩家权限按当前席位裁决，恢复和回放保留席位归属 |
-| S13 | 部署级 15 个活动身份的配额 | 达到配额后第 16 个身份激活被拒，释放后可重新激活 |
-| S22–S23 | t144 表决、议事录与 t168 评估关联 | 表决、投影、章节结果及存档恢复均有验证 |
-| 后续 | 3D 渲染器 | 同一 SceneView 在 3D 下可点选，规则结果一致 |
+| 名册与开局 | `standard-15`、公社单席、开局消息、内容 ID 与剧情卡署名 | 正式名册可装载，同一人物只有一个运行身份 |
+| 时钟与章节终点 | 20 秒/tick、t168 终点、公社玩家命令、席位契约与时钟操作幂等 | 评估后停止推进，玩家权限按当前席位裁决，恢复和回放保留席位归属 |
+| 身份配额 | 部署级 15 个活动身份的配额 | 达到配额后第 16 个身份激活被拒，释放后可重新激活 |
+| 程序案与章节评估 | t144 表决、议事录与 t168 评估关联 | 表决、投影、章节结果及存档恢复均有验证 |
+| 三维渲染 | 3D 渲染器 | 同一 SceneView 在 3D 下可点选，规则结果一致 |
 
 **不要做的事：** 不要为了“先跑起来”保留 20 人运行名册再在文档里写 15 人；那会重新制造两套口径。要么用 `standard-15`，要么明确标为开发诊断 roster（`core-3`），不能作为交付证据。

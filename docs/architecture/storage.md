@@ -25,7 +25,7 @@ PRAGMA busy_timeout = 5000;
 
 本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`。两份迁移的完整语句见 §2.1。
 
-`agent_activations` 保存单个身份的激活状态。部署级配额为 15 个活动身份，由激活事务检查跨分支总数。现有数据库迁移只约束单行状态。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。
+`agent_activations` 保存单个身份的激活状态。目标配额为部署内 15 个活动身份：接入激活事务后，由该事务在同一次提交中统计跨分支的活动身份并拒绝第 16 个。当前迁移只约束单行状态，尚未实施跨分支检查；接入前任何部署都可以超过 15 个活动身份。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。
 
 ```sql
 -- ===== deployment scope =====
