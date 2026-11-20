@@ -33,6 +33,7 @@
 |---|---|---|
 | 城建与地块 | `design/gameplay/08-city-building.md` | 不实现；只保留中继附属/热站的维修入口 |
 | 正式法案与议程 | `design/gameplay/09-council-and-laws.md` | 只实现 t144 一项程序案（3 票） |
+| 世界导演 | [12-world-director.md — 世界导演](gameplay/12-world-director.md) | 序章由剧情卡投放局势压力。战略指令、时代任务与导演面板留给开放世界 |
 | 支持态势与吞并 | `design/gameplay/13-support-and-annexation.md` | 不实现；8 人态势只作对话与执行系数 |
 | 袭击与损毁修复 | `design/gameplay/15-raids-and-repair.md` | 不实现 |
 | 四季与寒潮 | `design/gameplay/16-campaign-arc.md` | 只到 t168 评估；t168 之后不在切片内 |

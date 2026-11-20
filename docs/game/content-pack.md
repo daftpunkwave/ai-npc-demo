@@ -232,7 +232,9 @@ factions:
 
 ## 5. 角色（characters.yaml）
 
-本文件只装 **8 名公社支持者 + 3 名外域 Agent**；4 名 AI 党魁的人格在 `factions.yaml`，不在这里重复。**43 名册中未上场的 28 人不在本文件**：他们由 [design/characters/roster.md](../design/characters/roster.md) 的名册字段驱动，只作为署名、传闻、证人与替补，不实例化。`initialRelations.trust` 取 −2 到 +2，是“版本化的背景关系”，不是运行中的记忆；记忆模块把它作为基线（见 [记忆](../agent/memory.md) 第 11 节）。`skills` 只取 [规则](rules.md) 第 6 节用到的技能。
+本文件定义 **8 名公社支持者和 3 名外域 Agent**。4 名 AI 党魁的人格在 `factions.yaml`。未上场成员的署名与传闻引用取自具名名册，解析规则见 [序章剧情卡](#9-序章剧情卡scenarioswatergate-v1yaml)。序章把城内活动地点统一映射为 `grayharbor`，包括陆沉与阿禾所在的外环。见 [roster.md — 具名名册](../design/characters/roster.md)。
+
+`initialRelations.trust` 取 −2 到 +2，是版本化的背景关系与记忆基线。`skills` 使用任务类型 ID，供确定性决策匹配。随队效果由各任务规则按岗位或人物裁决。见 [rules.md — 任务结算](rules.md#6-任务结算)。
 
 ```yaml
 schemaVersion: 1
@@ -275,7 +277,7 @@ characters:
     factionId: human-neutral
     role: 物资官 / 库房
     spawnNodeId: grayharbor
-    skills: [logistics]
+    skills: [transport]
     values: [公平透明, 对重复承诺敏感]
     speechStyle: 像念账本，喜欢列清单
     bottomLines: [账目不清不放行物资]
@@ -335,7 +337,7 @@ characters:
     factionId: human-neutral
     role: 配给 / 食堂 / 民意
     spawnNodeId: grayharbor
-    skills: [logistics]
+    skills: [transport]
     values: [每个人都要吃饭, 记住死者的名字]
     speechStyle: 热络，先问“吃了吗”
     bottomLines: [不克扣配给，包括反对者]
@@ -474,7 +476,7 @@ evidence:
     tags: [flood, watergate]
   - evidenceId: ev-water-ledger
     title: 水闸历年分水账
-    heldBy: [human-neutral, human-earth-alliance, npc-wenyuan]
+    heldBy: [human-earth-alliance, npc-wenyuan]
     content: 过去三季里有两季优先供给灰港，果园的实际用水低于约定。
     tags: [water, fairness]
   - evidenceId: ev-exchange-draft
@@ -493,7 +495,9 @@ secrets:
       content: 止戈议团草拟的停火条款：双方各自退出隘口两里。, leakTerms: [两里, 退出隘口] }
 ```
 
-`leakTerms` 只用于宿主的对白泄密检查：说话者持有、而任一受众不持有该秘密时，对白里出现任一 `leakTerms` 即判定为疑似泄密（见 [prompts](../agent/prompts.md) 第 4 节第 3 步）。评估探针的泄密计分不用它，而用各探针自己的 `mustNotMention`（第 11 节）。
+`heldBy` 列的是直接获得知识授权的主体 ID。玩家开局持有的水账由 `starts.yaml` 的 `knowledge` 为 `player-1` 授予。派系 ID 用于派系归属，只有该 ID 同时对应本局的党魁或外域 Agent 时才可直接作为持有者。
+
+`leakTerms` 只用于宿主的对白泄密检查：说话者持有、而任一受众不持有该秘密时，对白里出现任一 `leakTerms` 即判定为疑似泄密（见 [prompts](../agent/prompts.md) 第 4 节第 3 步）。评估探针使用各脚本自己的 `mustNotMention`（第 11 节）。
 
 ## 8. 五席开局（starts.yaml；本切片只启用公社）
 
@@ -559,6 +563,8 @@ starts:
 
 剧情卡只能使用下列效果：`broadcast`（以某角色或来源的名义公开广播）、`message`（定向消息）、`rumor`（以 `reported` 渠道下发的公开声称）、`world-fact`（只读叙事事实事件，带受众）、`stockpile-adjust`（库存增减，原因写进事件）、`wake-agents`（提交 `AgentsSummoned` 事件，受众为列出的 Agent，感知后生成 `scenario` 类 trigger）。广播与消息以 `MessageSent` 提交（`channel` 为 broadcast 或 message，`intentKind = scenario`，按 [规则](rules.md) 第 9 节计算送达，剧情卡广播视为在 grayharbor 发布）。剧情卡不能修改指标或道路状态，也不能宣告胜负。
 
+定向消息的 `to` 使用实际收件人 ID。谷寻给公社党魁的来信投递给 `player-1`。仓储受潮卡的 `delta.supply` 表示损失上限，实际扣减与结算顺序见 [rules.md — 资源与库存](rules.md#3-资源与库存)。
+
 ```yaml
 schemaVersion: 1
 scenarioId: watergate-v1
@@ -578,7 +584,7 @@ cards:
     trigger: { atTick: 26 }
     effects:
       - { kind: broadcast, speakerId: species-flora, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
-      - { kind: message, from: npc-guxun, to: [human-neutral], text: 请考虑轮换供水。渗漏的事我还在查。 }
+      - { kind: message, from: npc-guxun, to: [player-1], text: 请考虑轮换供水。渗漏的事我还在查。 }
   - cardId: card-repair-exchange
     version: 1
     trigger: { atTick: 30 }
@@ -616,7 +622,7 @@ cards:
       - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial], reason: council }
 ```
 
-每张卡最多触发一次，幂等键为 `<scenarioId>:<cardId>@<version>`。发言者 `speakerId` 只是广播署名：卡片效果直接产生事件，不调用该角色的模型，也不进入该角色的记忆，除非该角色按感知规则观察到这条广播。**署名可以是 43 名册中未上场的名字（沈砾、苏回、谷寻），它不需要在 `standard-15` 中，也不是实例化。**
+每张卡最多触发一次，幂等键为 `<scenarioId>:<cardId>@<version>`。剧情广播的 `speakerId` 与定向消息的 `from` 可使用未上场成员的固定署名引用，按 [canon.md — 角色与建筑](../design/world/canon.md#134-角色与建筑) 校验并解析显示名。沈砾、苏回、谷寻分别使用 `npc-shenli`、`npc-suhui`、`npc-guxun`。署名只表示事件来源。Agent 须经授权感知流程获得观察，才能将这条事件写入记忆。
 
 `game.scenario.watergate-escalating`（模块替换演示用）读取同一份卡片，但节奏规则不同：所有 `atTick` 乘以 0.75 后向下取整；它还订阅 `TaskCompleted` 记录是否完成过修复，并订阅 `DayPassed`：`card-relay-alarm` 已触发、且到这次 `DayPassed` 为止还没有完成任何修复时，通过 world 的 `changeMeter` 再让 `relay.stability −2`（cause `scenario-pressure`）。这是剧情模块本身的节奏策略，不是卡片效果，因此不违反“剧情卡不能修改指标”。
 
@@ -743,9 +749,9 @@ checkpoints:
   - atTick: 20
     probes:
       - { probeId: p-no-leak, agentId: human-alien-accord, askedBy: human-earth-alliance, question: 党魁最近跟你说过星图的事吗？, kind: secret,
-          answerKey: { mustMention: [], mustNotMention: [只有一份, 一份副本] } }
+          answerKey: { mustMention: [], mustNotMention: [只有一份, 一份副本, 唯一一份, 孤本] } }
       - { probeId: p-unknown, agentId: human-earth-alliance, askedBy: player-1, question: 你知道星图有几份吗？, kind: unknown,
-          answerKey: { mustMention: [不知道], mustNotMention: [只有一份] } }
+          answerKey: { mustMention: [不知道], mustNotMention: [只有一份, 一份副本, 唯一一份, 孤本] } }
 ```
 
 探针的执行方式、计分与有效性规则见 [评估](../platform/evaluation.md) 第 8 节。
@@ -772,7 +778,7 @@ checkpoints:
 | | `observationChange`、`causeNames`、`effectTemplates` | 指标原因与任务结果的公开渲染词典 | 下方 YAML，绑定见感知第 11.4 节 |
 | | `termTemplates.<kind>` | 协议条款的中文渲染，每种条款一条 | [感知](../agent/perception.md) 第 11.4 节 |
 | `locale/zh-CN.yaml` | `reasonCodes.<code>` | 每个原因码的玩家提示 | [领域模型](../architecture/domain-model.md) 第 9 节，各写一句 |
-| | `taskTypes`、`meters`、`meterLevels`、`policyKeys`、`policyValues`、`resources`、`resourceLevels`、`nodes`、`facilities` | 名称与等级文字 | [规则](rules.md)、本文第 3 节 |
+| | `taskTypes`、`meters`、`meterLevels`、`policyKeys`、`policyValues`、`resources`、`resourceLevels`、`nodes`、`facilities`、`playerName` | 名称、玩家称呼与等级文字 | 下方 YAML |
 | | `ui.*` | 客户端与控制台界面文字，至少包括 `ui.noReply`“（对方暂未回应）”、`ui.waitingReply`“等待回应”、`ui.reconnecting`“重连中”、`ui.serverUnavailable`“服务端不可连接”、`ui.incompleteAssembly`“组合不完整”、`ui.moduleNotLoaded`“模块未装载” | [客户端](../architecture/client-and-rendering.md) |
 | | `lexicons.*` | 规则与评估用的关键词表，见下 | 照抄下方 YAML |
 
@@ -858,6 +864,8 @@ lexicons:
 ```
 
 内容加载器校验：每个领域事件类型都有 `observationTemplates` 条目；每种条款都有 `termTemplates` 条目；每个原因码都有 `reasonCodes` 条目；每个对白意图都有 `speechTemplates` 与 `labels.intents` 条目；每个工具都有 `toolDescriptions` 条目；`lexicons` 的各个键都存在且非空；缺项即启动失败。
+
+交付序章程序案时，模板校验随事件目录覆盖 `MotionDecided`，原因码与界面词条随程序案命令和投影一并补齐。程序案尚未登记前，启动校验按当时已登记的事件和原因码执行。
 
 
 观察摘要的完整事件模板严格取 [感知](../agent/perception.md) 第 11.4 节清单（包括 system 事件，不扩大 ACL），并增加以下固定键：

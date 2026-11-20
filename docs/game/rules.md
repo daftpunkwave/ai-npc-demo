@@ -44,7 +44,7 @@
   - `restricted`：只有在任务所属派系（队伍拥有方）就是控制方，或该派系持有该道路的有效通行许可（`PassageGrant`，`untilTick ≥` 出发 tick）时才能通行。
   - `closed`：一律不能通行，有通行许可也不行。
 - 路径：在可用道路上用 Dijkstra 按 `travelTicks` 求最短路；同长时选道路数少者，再按道路 ID 序列的字典序。找不到路径就拒绝命令，原因码 `route-unavailable`。
-- 行程：每条道路的 `travelTicks` 相加；有货物（`cargo` 总量 > 0）时每条道路再加 1。道路状态只在出发时检查，途中的变化不影响已出发的任务。
+- 行程按路径累加各道路的 `travelTicks`。运输任务携带非空 `cargo` 时每条道路再加 1。救援的医疗预留和修复的材料预留均按基础行程计算。道路状态只在出发时检查，途中的变化不影响已出发的任务。
 - 风险：道路 `risk ∈ {0,1,2}`。出发时对路径上每条 `risk > 0` 且未被护送（第 6 节 escort）的道路依次抽样（随机源见第 11 节）：
   - 延误：概率 `0.15 × risk`，每条命中道路贡献 2 tick，累计延误 = `2 × 命中延误的道路数量`；
   - 受伤：概率 `0.05 × risk`；有参与角色时，从按 agentId 排序的参与者中用同一随机源取一人，受伤 48 tick；没有参与角色时，队伍在任务结束后休整 24 tick。
@@ -59,7 +59,8 @@
 - 接受任务时原子预留，到达或完工时从 `amount` 与 `reserved` 中一起扣减；预留不足就拒绝命令，原因码 `insufficient-resource`。
 - 动用某个库存点的资源需要权限：库存点所属派系的战略 Agent（不受数量限制），或持有覆盖该库存点的委托（`Delegation`）、且本次用量不超过委托余额的主体（否则原因码 `draw-limit-exceeded`）。委托余额在任务被接受时扣减，任务在出发前取消时退回。
 - 展示等级：比值 `amount / max(1, baseline)`，其中 `baseline` 为初始数量。`< 0.3` 为“短缺”（`scarce`），`0.3–1.2` 为“可维持”（`adequate`），`> 1.2` 为“有余量”（`surplus`）。玩家只看到自己有委托的库存点的精确数量，其余只看到等级。
-- 每日消耗：`sp-commons` 每天消耗 6 点供给。这是**序章切片的压力值**，不是设计城市日耗（设计为 24/日，见 [balance/01-baseline.md](../design/balance/01-baseline.md)）；t168 重建资源后不再使用。不足时扣到 0，并提交公开事件 `SupplyShortage`。
+- 每日消耗：`sp-commons` 每天消耗 6 点供给。这是序章的日耗，城市账按 [01-baseline.md — 数值基线](../design/balance/01-baseline.md#3-资源与仪表) 另行结算。可用量不足时只扣可用量，并提交公开事件 `SupplyShortage`。
+- 仓储受潮：t72 的剧情卡先于当日结算执行。在同一事务中按 `min(10, amount.supply − reserved.supply)` 扣减 `sp-commons` 供给，`StockpileAdjusted` 记录实扣量。可用量为 0 时直接完成该效果，日结照常执行。
 
 ## 4. 局势指标与每日结算
 
@@ -70,7 +71,9 @@
 | `migration.safety` 迁徙安全 | 0–100，初值 50 | tick < 96 时不变；迁徙季（tick ≥ 96）：`r-gh-ps` 关闭时 −10，受限且 `species-fauna` 没有通行许可时 −6，其余情况 −2 | 迁徙道路（`r-gh-ps`、`r-wg-ps`、`r-ps-ar`）上的护送完成 +12（本派治安/向导支持者参与再 +4，本切片为陆沉；追风参与同效）；伤员救援完成 +10；伤员恶化 −10 | 首次 ≤ 20 时提交 `MigrationCrisis` |
 | `watergate.allocation` 水闸分配 | `harbor-first`（初值）\| `rotation` \| `orchard-first` | — | 公社党魁按第 8 节直接设置，或由协议条款 `water-allocation` 生效时设置 | 修改时提交公开事件 `PolicyChanged` |
 
-每日结算的顺序：先算 `relay.stability`，再算 `orchard.water`，接着算 `migration.safety`，最后扣 `sp-commons` 每日供给。三项仪表截断在 [0,100]；供给扣到 0 为止。然后在同一个事务里提交一个 `DayPassed`，其中带各指标的变化前后值与原因。剧情模块可以订阅 `DayPassed`，在随后的独立事务里通过 world 的 `changeMeter` 追加调整（`game.scenario.watergate` 不做调整；`game.scenario.watergate-escalating` 见 [内容包](content-pack.md) 第 9 节），追加调整以单独的 `MetersChanged` 公布。
+每日结算的顺序：先算 `relay.stability`，再算 `orchard.water`，接着算 `migration.safety`，最后按库存规则扣减 `sp-commons` 每日供给。三项仪表截断在 [0,100]。然后在同一个事务里提交一个 `DayPassed`，其中带各指标的变化前后值与原因。剧情模块可以订阅 `DayPassed`，在随后的独立事务里通过 world 的 `changeMeter` 追加调整（`game.scenario.watergate` 不做调整；`game.scenario.watergate-escalating` 见 [内容包](content-pack.md) 第 9 节），追加调整以单独的 `MetersChanged` 公布。
+
+修复完成时先取队伍基础值，再加符合条件的随队加成，每类加成最多计一次。普通队伍同时带本派工务支持者和洛时增加 `25 + 10 + 15 = 50`。泊星队带工务支持者时增加 `40 + 10 = 50`。实际稳定度上限为 100。
 
 指标的展示等级（玩家投影与 HUD 使用）：`≤ 20` 为危急（`critical`），`21–39` 为紧张（`strained`），`≥ 40` 为稳定（`stable`）。
 
@@ -84,7 +87,7 @@
 | 角色 Character | 所在节点、`injuredUntilTick`、当前任务 | 受伤期间不能参与任务，但可以交谈；位置只随参与的任务改变 |
 | 群体 Group | `grp-injured-migrants`：位于 pass，6 名伤员，`deadlineTick = 48`，状态 waiting/rescued/worsened | tick 48 时，若既未救出也没有进行中的救援任务，状态变为 worsened：提交 `GroupWorsened`，`migration.safety −10`；之后仍可救援 |
 
-**位置口径：** AI 党魁在灰港党部，与灰港同节点（谈话即时）；外域 Agent 在各自驻地——追风在隘口、青枝在果园、洛在锚区；只有他们离开驻地、在途中时才按异地处理。不存在“战略 Agent 永远没有位置”的第二套规则。玩家与 8 名支持者都在灰港，除非参与任务离开。
+**位置口径：** 玩家驻在 `grayharbor`，四名 AI 党魁和八名公社支持者也从灰港开局。外域 Agent 从各自驻地开始：追风在隘口、青枝在果园、洛在锚区。Agent 参与任务移动后，统一使用世界状态中的当前位置判定同节点。
 
 ## 6. 任务结算
 
@@ -178,7 +181,7 @@ active   --任一条款违约--> breached（其余条款继续追踪，只记录
 
 ## 9. 通信、证据与传闻
 
-送达延迟（相对于命令被接受的 tick；“同节点”指说话者与接收者此刻在同一节点；AI 党魁在 grayharbor 党部，外域 Agent 按所驻节点，只有在途中才按异地）：
+送达延迟以命令接受时的 tick 为基准。按 [队伍、角色与群体](#5-队伍角色与群体) 查说话者和接收者的位置。双方在同一节点才走「同节点」列，其余按中继状态列处理。
 
 | 渠道 | 同节点 | 中继正常 | 中继降级 | 中继中断 |
 |---|---|---|---|---|
@@ -189,7 +192,9 @@ active   --任一条款违约--> breached（其余条款继续追踪，只记录
 | 开局消息 | tick 0 立即送达，不受中继影响 | | | |
 | 其他所有事件（协议、邀请、任务、委托、政策、指标、通行许可等正式通知） | 立即送达，不受中继影响 | | | |
 
-只有 `DialogueSubmitted`、`MessageSent`、`InformationShared` 带 `deliveries: { principalId, deliverAtTick }[]`，不再使用标量 deliverAtTick。提交时逐收件者按上表计算，按 principalId 排序去重并冻结；发送者立即回显，同节点收件者立即、异地分别延迟，不按最慢者统一等待。AI 党魁在 grayharbor 党部，外域 Agent 按所驻节点，只有在途中才按异地；定向消息/对话/证据分享若混合受众中任一异地收件者因中继中断不可达，整条命令 `relay-down`、不部分发出；广播则只保留同节点主体（无节点发布者中断时无同节点收件者）。已接受的投递不因随后中继变化重新计算；权限撤回仍取消待交付项。开局消息固定玩家 tick 0。其余事件都在提交的 tick 送达。
+只有 `DialogueSubmitted`、`MessageSent`、`InformationShared` 带 `deliveries: { principalId, deliverAtTick }[]`。提交时逐个计算送达时点，按 `principalId` 排序去重并冻结。实际发送者和同节点收件者立即收到，其余收件者按各自的送达时点收到。
+
+定向消息、对话或证据分享中任一收件者因中继中断不可达时，整条命令以 `relay-down` 拒绝。广播中断时只投递给发布地的收件者。发布位置未知时没有同节点收件者。冻结的时点在中继状态变化后保持有效，只有权限撤回会取消待投递项。开局消息固定在 tick 0 送达玩家。其余事件在提交的 tick 送达。
 
 | 行为 | 规则 |
 |---|---|
@@ -268,4 +273,5 @@ function rngFor(runSeed: string, ...parts: string[]): () => number {
 11. pending 状态取消运输，预留与委托余额全部退回；已在工作中的修复被取消时不退还资源。
 12. 序章评估：给定三个指标的值，结果分别为 `equilibrium` 或 `strained`，并带未达标列表；t144 程序案结果为 3 票赞成时议程按玩家提案，否则按轮值议长默认顺序。
 13. 两方协议：提出者提出后，另一方 accept 一次即变为 active；提出者再回复自己的提案，返回 `already-responded`。
-14. 中继降级（稳定度 25）时，玩家对隘口的追风说话，`DialogueSubmitted.deliveries` 中追风的 deliverAtTick 为当前 tick + 2、玩家为当前 tick；中继中断时被拒绝，原因码 `relay-down`；同在 grayharbor 的温原照常立即收到。
+14. 中继降级（稳定度 25）时，玩家对隘口的追风说话，`DialogueSubmitted.deliveries` 中追风的送达时点为当前 tick + 2，玩家为当前 tick。中继中断时，该对话以 `relay-down` 拒绝。玩家分别向同在灰港的温原、岑雁说话时仍即时送达。
+15. t72 受潮卡触发时，若供给总量为 9、其中 5 已预留，仓储受潮只扣 4，保留 5 点预留。随后的日结报告供给短缺。

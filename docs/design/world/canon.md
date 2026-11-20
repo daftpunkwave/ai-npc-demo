@@ -158,7 +158,7 @@
 - **竞争性保护**：两个派系同时想吞并你时，它们会互相牵制；玩家可以利用。
 - **失败**：4/5 吞并案通过，或 ≥5 名支持者公开倒戈/离开且无人庇护，玩家失去党魁身份 → 本局结束，进入「被吞并」结局与编年史；城市继续存在，可开「遗产局」以新身份回到同一座城。
 - **支持崩解**：按 8 个席位计算（空缺=无支持），≥5 个席位处于「离心/敌对/空缺」且无庇护，本派失去合法性；其他派系可以提出吞并（宪制 4/5）或支持政变。**没有正式的内部信任表决**；玩家不是被投票赶下台，而是被抽走了支持。
-- **死亡与补位**：Agent 永久死亡；补位者是**全新 NPC**，有独立记忆、性格、关系，不继承死者的任何东西；补位期间岗位执行度 −30%。
+- **死亡与补位**：Agent 永久死亡。接任者以独立身份进入岗位，候选来源与空缺期见 [15-raids-and-repair.md — 袭击、死亡与修复](../gameplay/15-raids-and-repair.md)。
 
 ## 6. 资源、城建与人口
 
@@ -334,7 +334,8 @@
   - 玩家派支持者：`npc-<拼音>`，示例 `npc-wenzhao`、`npc-luchen`；
   - AI 党魁：`<factionId>`，示例 `human-independent`（显示名岑雁）、`human-neutral`（显示名闻昭，玩家不占席时）；
   - 外域 Agent：`<factionId>`，示例 `species-fauna`（显示名追风）。
-- **资产 `characterId` 一律是姓名拼音**，示例 `wenzhao`、`cenyan`、`zhuifeng`。`npc-` 前缀只用于玩家派支持者；**不要给党魁或外域再建一份 `npc-` 档案**。`model.json` 同时写 `characterId` 与 `agentId`，映射按本条而不是按前缀机械推导。
+- **未上场成员的内容引用**使用 `npc-<拼音>`，例如沈砾 `npc-shenli`。引用按具名名册解析，可用于署名、传闻等静态内容。上场与命令权限由运行名册和授权决定。见 [roster.md — 具名名册](../characters/roster.md)。
+- **资产 `characterId` 使用姓名拼音**，示例 `wenzhao`、`cenyan`、`zhuifeng`。为 AI 党魁或外域 Agent 绑定资产时，使用其运行中的派系 ID，避免为同一人物登记第二个 Agent。
 - `bldId` 见[资产清单](../assets/01-inventory.md#一建筑)；示例：`council-hall`、`greenhouse`、`watchtower`。
 - 建筑引用一律写 `bld.<bldId>`，节点引用写 `node.<nodeId>`，道路引用写 `road.<roadId>`。
 
@@ -353,5 +354,5 @@
 
 1. **玩家占席时，该派的 AI 党魁不创建。** 名册第 1 行以 `npc-wenzhao` 存在，身份是「资深支持者」，不是「前党魁」。
 2. **同一个人物不能同时在两个 ID 下行动。** 不允许 `human-neutral` 和 `npc-wenzhao` 同时出现在议事厅。
-3. **日志同时记 `seatId` 与 `actorId`。** `actorId` 可以是 `human-neutral`（AI 党魁）或 `npc-wenzhao`（人物）；两者都能追溯到同一个席位。
+3. **日志中的席位与动作者分开记录。** `actorId` 可以是 `player-1`（玩家）、`human-neutral`（AI 党魁）或 `npc-wenzhao`（支持者），三者行动时都可归属 `seat.commune`。外域和系统也是事实来源，其归属规则见 [02-authority-economy-fairness.md — Demo 席位接口](../multiplayer/02-authority-economy-fairness.md#九demo-必须留的接口清单)。
 4. **改名不改 ID。** 显示名可以随版本改；ID 改动必须升 `contentVersion` 并写迁移。
