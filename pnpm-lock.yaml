@@ -690,6 +690,30 @@ importers:
         specifier: ^4
         version: 4.6.7
 
+  modules/server/agent/perception/local:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
+  modules/server/agent/scheduling/fair:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
   modules/server/game/actions/standard:
     dependencies:
       '@ai-npc/contracts':
@@ -894,7 +918,17 @@ importers:
         specifier: ^4
         version: 4.6.7
 
-  packages/agent-runtime: {}
+  packages/agent-runtime:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@ai-npc/experiment':
+        specifier: workspace:*
+        version: link:../experiment
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../module-sdk
 
   packages/authority:
     dependencies:

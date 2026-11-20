@@ -5,5 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/experiment": "workspace:*",
+    "@ai-npc/module-sdk": "workspace:*"
   }
 }

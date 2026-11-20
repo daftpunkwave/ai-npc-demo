@@ -6,11 +6,15 @@
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名中的参数名只用于表达调用契约。 */
 import {
   DomainError,
+  type AgentModelCallResult,
   type AudienceSpec,
   type AuthContext,
   type Json,
   type ModuleCreateInput,
   type ModuleDefinition,
+  type ModelOutput,
+  type NormalizedMessage,
+  type NormalizedTool,
   type Purpose,
   type ReasonCode,
 } from "@ai-npc/contracts";
@@ -142,6 +146,17 @@ export interface ScopedModelScope {
  */
 export interface ScopedModelPort {
   readonly scope: ScopedModelScope;
+  call(input: {
+    readonly purpose: Purpose;
+    readonly workRef: string;
+    readonly system: string;
+    readonly messages: readonly NormalizedMessage[];
+    readonly tools: readonly NormalizedTool[];
+    readonly output: ModelOutput;
+    readonly reserveOutputTokens: number;
+    readonly deadlineMs: number;
+    readonly fence: () => boolean;
+  }): Promise<AgentModelCallResult>;
 }
 
 /**

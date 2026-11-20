@@ -1,0 +1,168 @@
+/**
+ * 协调感知消费、延迟发布、租约恢复与 turn 创建。
+ * 依赖存储、HostServices、内容包、Agent profile、感知模块与调度端口。
+ * 禁止在事务内等待模型、执行世界命令或复制第二套 turn loop。
+ */
+import type { HostServices, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
+import type { SchedulingPort } from "@ai-npc/module-sdk";
+import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
+import { PerceptionEventConsumer } from "./event-consumer";
+import { PerceptionModuleHandle } from "./perception-host";
+import { TurnScheduler } from "./turn-scheduler";
+
+export interface AgentWorldRead {
+  readonly nodeId: string | null;
+  readonly factionId: string;
+  readonly worldViewText: string;
+  readonly affairsText: string;
+}
+
+export interface AgentRuntimeOptions {
+  readonly storage: StoragePort;
+  readonly host: HostServices;
+  readonly content: ContentPack;
+  readonly roster: Roster;
+  readonly profiles: ReadonlyMap<string, ResolvedAgentProfile>;
+  readonly moduleDefinitions: ReadonlyMap<string, ModuleDefinition>;
+  readonly scheduling: SchedulingPort;
+  readonly maxConcurrentTurns: number;
+  readonly worldId: string;
+  readonly branchId: string;
+  readonly runId: string;
+  readonly readWorld: (agentId: string) => AgentWorldRead;
+  readonly onStateChange?: () => void;
+}
+
+/**
+ * 单进程感知与调度宿主。感知实例按 Agent 隔离；
+ * turn 创建后留给后续运行时阶段消费，本阶段不执行模型或工具。
+ */
+export class AgentRuntime {
+  private readonly perception = new Map<string, PerceptionModuleHandle>();
+  private readonly signal = new AbortController().signal;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private running = false;
+  private stopped = false;
+  private consumer: PerceptionEventConsumer | null = null;
+  private scheduler: TurnScheduler | null = null;
+
+  constructor(private readonly options: AgentRuntimeOptions) {}
+
+  async start(): Promise<void> {
+    for (const agent of this.options.roster.agents) {
+      const selection = this.options.profiles.get(agent.agentId)?.slots.perception;
+      if (selection === undefined) {
+        throw new Error(`名册身份 ${agent.agentId} 缺少 perception profile`);
+      }
+      const definition = this.options.moduleDefinitions.get(selection.module);
+      if (definition === undefined) {
+        throw new Error(`感知模块 ${selection.module} 未登记`);
+      }
+      this.perception.set(agent.agentId, await PerceptionModuleHandle.create({
+        agentId: agent.agentId,
+        moduleId: selection.module,
+        config: selection.config,
+        definition,
+        worldId: this.options.worldId,
+        branchId: this.options.branchId,
+        host: this.options.host,
+        signal: this.signal,
+      }));
+    }
+    this.consumer = new PerceptionEventConsumer({
+      storage: this.options.storage,
+      host: this.options.host,
+      content: this.options.content,
+      roster: this.options.roster,
+      profiles: this.options.profiles,
+      worldId: this.options.worldId,
+      branchId: this.options.branchId,
+      readWorld: this.options.readWorld,
+    }, this.perception);
+    this.scheduler = new TurnScheduler({
+      storage: this.options.storage,
+      host: this.options.host,
+      roster: this.options.roster,
+      profiles: this.options.profiles,
+      scheduling: this.options.scheduling,
+      maxConcurrentTurns: this.options.maxConcurrentTurns,
+      branchId: this.options.branchId,
+    });
+    this.scheduler.recoverInterrupted();
+    this.running = true;
+    await this.runCycle();
+    this.schedule();
+  }
+
+  /** 测试与受控单步使用同一轮询逻辑。 */
+  async pump(): Promise<void> {
+    await this.runCycle();
+  }
+
+  async drain(): Promise<void> {
+    this.stopped = true;
+    this.running = false;
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+
+  async dispose(): Promise<void> {
+    await this.drain();
+    let firstError: unknown;
+    for (const handle of [...this.perception.values()].reverse()) {
+      try {
+        await handle.dispose();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    this.perception.clear();
+    if (firstError !== undefined) throw firstError;
+  }
+
+  private schedule(): void {
+    if (!this.running || this.stopped) return;
+    this.timer = setTimeout(() => {
+      void this.runCycle()
+        .catch((error) => {
+          this.options.host.logger.error("Agent runtime cycle failed", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .finally(() => this.schedule());
+    }, 250);
+    this.timer.unref();
+  }
+
+  private async runCycle(): Promise<void> {
+    if (this.stopped || this.consumer === null || this.scheduler === null) return;
+    const tick = this.clockTick();
+    await this.consumer.consume(tick);
+    this.consumer.flush(tick);
+    this.scheduler.recoverExpired();
+    this.scheduler.schedule({
+      tick,
+      paused: this.clockMode() === "paused",
+      runId: this.options.runId,
+    });
+    this.options.onStateChange?.();
+  }
+
+  private clockTick(): number {
+    return this.options.storage.transact((tx) => {
+      const row = tx.branch(this.options.branchId).table("clock").get({});
+      if (row === null || typeof row["world_tick"] !== "number") throw new Error("Agent runtime 缺少时钟");
+      return row["world_tick"];
+    });
+  }
+
+  private clockMode(): string {
+    return this.options.storage.transact((tx) => {
+      const row = tx.branch(this.options.branchId).table("clock").get({});
+      if (row === null || typeof row["mode"] !== "string") throw new Error("Agent runtime 缺少时钟");
+      return row["mode"];
+    });
+  }
+}
