@@ -55,7 +55,7 @@ describe("JSON Schema 清洗", () => {
         nested: {
           type: "object",
           properties: { flag: { type: "boolean" } },
-          additionalProperties: true,
+          additionalProperties: false,
         },
       },
       required: ["name"],
@@ -220,6 +220,67 @@ describe("JSON Schema 清洗", () => {
       required: ["name", "note"],
       additionalProperties: false,
     });
+  });
+
+  it("preserves free-form additional properties for record schemas", () => {
+    const generated = z.toJSONSchema(z.record(z.string(), z.string()));
+    expect(cleanJsonSchemaForModel(generated)).toEqual({
+      type: "object",
+      additionalProperties: { type: "string" },
+    });
+
+    expect(
+      cleanJsonSchemaForModel({
+        type: "object",
+        additionalProperties: true,
+        description: "Free-form settings",
+      }),
+    ).toEqual({
+      type: "object",
+      description: "Free-form settings",
+      additionalProperties: true,
+    });
+  });
+
+  it("preserves implicit free-form object semantics and keeps ordinary objects closed", () => {
+    expect(cleanJsonSchemaForModel({ type: "object" })).toEqual({
+      type: "object",
+      additionalProperties: true,
+    });
+    expect(cleanJsonSchemaForModel(z.toJSONSchema(z.object({}).passthrough()))).toEqual({
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: {},
+    });
+    expect(
+      () =>
+        cleanJsonSchemaForModel({
+          type: "object",
+          properties: { id: { type: "string" } },
+          additionalProperties: { type: "number" },
+        }),
+    ).toThrow(TypeError);
+    expect(cleanJsonSchemaForModel({ additionalProperties: false })).toEqual({
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    });
+    expect(cleanJsonSchemaForModel(z.toJSONSchema(z.object({}).strict()))).toEqual({
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    });
+  });
+
+  it("rejects malformed additional properties declarations", () => {
+    expect(() =>
+      cleanJsonSchemaForModel({
+        type: "object",
+        additionalProperties: ["not", "a", "schema"],
+      }),
+    ).toThrow(TypeError);
   });
 
   it("拒绝非对象根 schema", () => {

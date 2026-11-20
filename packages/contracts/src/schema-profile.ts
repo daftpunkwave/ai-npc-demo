@@ -166,7 +166,8 @@ function inlineReferences(node: Json, root: Json, stack: readonly string[]): Jso
 }
 
 /**
- * 把对象 schema 规范为模型 strict profile：全部属性必填且禁止额外属性。
+ * 把固定属性对象规范为模型 strict profile：全部属性必填并禁止额外属性。
+ * 无固定属性的自由对象保留开放语义；strict profile 无法表达的组合直接拒绝。
  * 嵌套对象同样处理，数组元素递归清洗。
  */
 function cleanNode(node: Json, path: string): Json {
@@ -181,6 +182,8 @@ function cleanNode(node: Json, path: string): Json {
   }
 
   const cleaned: { [key: string]: Json } = {};
+  let additionalProperties: Json | undefined;
+  let hasAdditionalProperties = false;
   for (const [key, value] of Object.entries(node)) {
     if (key === "properties") {
       if (!isJsonObject(value)) {
@@ -206,7 +209,15 @@ function cleanNode(node: Json, path: string): Json {
       cleaned.anyOf = branches;
       continue;
     }
-    if (key === "required" || key === "additionalProperties" || key === "$defs" || key === "definitions") {
+    if (key === "additionalProperties") {
+      if (value !== true && value !== false && !isJsonObject(value)) {
+        throw new TypeError(`additionalProperties 必须是布尔值或 schema: ${path}`);
+      }
+      additionalProperties = value;
+      hasAdditionalProperties = true;
+      continue;
+    }
+    if (key === "required" || key === "$defs" || key === "definitions") {
       continue;
     }
     if (allowedKeywordSet.has(key)) {
@@ -217,11 +228,37 @@ function cleanNode(node: Json, path: string): Json {
 
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
   const hasProperties = cleaned.properties !== undefined;
-  const isObjectType = cleaned.type === "object" || hasProperties;
+  const properties = hasProperties
+    ? cleaned.properties as { [key: string]: Json }
+    : undefined;
+  const propertyNames = properties === undefined ? [] : Object.keys(properties);
+  if (propertyNames.length > 0 && hasAdditionalProperties && additionalProperties !== false) {
+    throw new TypeError(`strict profile 无法表达固定属性与开放 additionalProperties 的组合: ${path}`);
+  }
+  const allowsAdditionalProperties =
+    hasAdditionalProperties &&
+    additionalProperties !== undefined &&
+    (additionalProperties === true || isJsonObject(additionalProperties));
+  const isObjectType = cleaned.type === "object" || hasProperties || hasAdditionalProperties;
+  const preservesFreeFormObject =
+    propertyNames.length === 0 && (allowsAdditionalProperties || !hasAdditionalProperties);
+  if (isObjectType && preservesFreeFormObject) {
+    if (properties !== undefined) {
+      cleaned.properties = properties;
+      cleaned.required = propertyNames;
+    }
+    // 保留 JSON Schema 的开放对象语义；显式 schema 仍需递归清洗。
+    cleaned.additionalProperties =
+      additionalProperties === true
+        ? true
+        : additionalProperties === undefined
+          ? true
+          : cleanNode(additionalProperties as Json, `${path}.additionalProperties`);
+    return cleaned;
+  }
   if (isObjectType) {
-    const properties = hasProperties ? (cleaned.properties as { [key: string]: Json }) : {};
-    cleaned.properties = properties;
-    cleaned.required = Object.keys(properties);
+    cleaned.properties = properties ?? {};
+    cleaned.required = propertyNames;
     cleaned.additionalProperties = false;
   }
   return cleaned;

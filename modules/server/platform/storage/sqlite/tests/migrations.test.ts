@@ -4,9 +4,23 @@
  * 禁止连接真实数据库文件、跳过失败迁移断言或把运行级表当作分支级表。
  */
 import { describe, expect, it } from "vitest";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { StoragePort } from "@ai-npc/contracts";
 import { BRANCH_TABLES, OPERATION_IDEMPOTENCY_TABLE } from "../src/sqlite/schema";
-import { createTempDataDir, openStorageHarness, removeTempDataDir, startStorage } from "./support";
+import { closeDatabase, openDatabase } from "../src/sqlite/connection";
+import {
+  applyMigrations,
+  loadMigrations,
+  MIGRATIONS_DIRECTORY,
+} from "../src/sqlite/migrations";
+import {
+  createFakeHost,
+  createTempDataDir,
+  openStorageHarness,
+  removeTempDataDir,
+  startStorage,
+} from "./support";
 
 /** 迁移中的表总数：部署级 10 + 分支级 18 + 运行级 12（含运营操作幂等表）。 */
 const EXPECTED_TABLE_COUNT = 40;
@@ -36,16 +50,30 @@ function deriveBranchTables(port: StoragePort): readonly string[] {
   );
 }
 
+async function copyMigrations(
+  targetDirectory: string,
+  host: ReturnType<typeof createFakeHost>,
+  maxVersion = Number.POSITIVE_INFINITY,
+): Promise<void> {
+  const migrations = await loadMigrations(host.hash, MIGRATIONS_DIRECTORY);
+  for (const migration of migrations) {
+    if (migration.version <= maxVersion) {
+      writeFileSync(join(targetDirectory, basename(migration.filePath)), migration.sql, "utf8");
+    }
+  }
+}
+
 describe("初始迁移", () => {
   it("首次打开执行全部迁移并记录版本", async () => {
     const harness = await openStorageHarness();
     try {
       const versions = harness.port.transact((tx) =>
-        tx.all("SELECT version, applied_at FROM schema_migrations ORDER BY version"),
+        tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
+        expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
       }
       expect(harness.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(true);
     } finally {
@@ -61,7 +89,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -151,6 +179,128 @@ describe("初始迁移", () => {
       expect(pragmas.foreignKeys).toBe(1);
     } finally {
       await harness.dispose();
+    }
+  });
+});
+
+describe("迁移校验和", () => {
+  it("refuses to start when an applied migration file changes", async () => {
+    const root = createTempDataDir();
+    const migrationsDirectory = join(root, "migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    const databasePath = join(root, "checksum.db");
+    let first: ReturnType<typeof openDatabase> | null = null;
+    let second: ReturnType<typeof openDatabase> | null = null;
+    try {
+      await copyMigrations(migrationsDirectory, host);
+      first = openDatabase(databasePath);
+      await applyMigrations(first, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      closeDatabase(first);
+      first = null;
+
+      appendFileSync(join(migrationsDirectory, "0002_operation-idempotency.sql"), "\n-- 改动已应用迁移\n", "utf8");
+      second = openDatabase(databasePath);
+      await expect(
+        applyMigrations(second, host.nowIso(), host.logger, host.hash, migrationsDirectory),
+      ).rejects.toMatchObject({
+        code: "invalid-state",
+        details: { version: 2 },
+      });
+    } finally {
+      if (first !== null) {
+        closeDatabase(first);
+      }
+      if (second !== null) {
+        closeDatabase(second);
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to upgrade a legacy database when a published migration changes", async () => {
+    const root = createTempDataDir();
+    const migrationsDirectory = join(root, "migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    const databasePath = join(root, "legacy-changed.db");
+    let legacy: ReturnType<typeof openDatabase> | null = null;
+    let upgraded: ReturnType<typeof openDatabase> | null = null;
+    try {
+      await copyMigrations(migrationsDirectory, host, 3);
+      legacy = openDatabase(databasePath);
+      await applyMigrations(legacy, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      closeDatabase(legacy);
+      legacy = null;
+
+      await copyMigrations(migrationsDirectory, host);
+      appendFileSync(
+        join(migrationsDirectory, "0002_operation-idempotency.sql"),
+        "\n-- 升级前改动已发布迁移\n",
+        "utf8",
+      );
+      upgraded = openDatabase(databasePath);
+      await expect(
+        applyMigrations(upgraded, host.nowIso(), host.logger, host.hash, migrationsDirectory),
+      ).rejects.toMatchObject({
+        code: "invalid-state",
+        details: { version: 2 },
+      });
+      const columns = upgraded
+        .prepare("SELECT name FROM pragma_table_info('schema_migrations')")
+        .all()
+        .map((row) => String(row["name"]));
+      expect(columns).not.toContain("checksum");
+      expect(
+        upgraded
+          .prepare("SELECT version FROM schema_migrations ORDER BY version")
+          .all()
+          .map((row) => Number(row["version"])),
+      ).toEqual([1, 2, 3]);
+    } finally {
+      if (legacy !== null) {
+        closeDatabase(legacy);
+      }
+      if (upgraded !== null) {
+        closeDatabase(upgraded);
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("backfills checksums when upgrading a database created before checksum tracking", async () => {
+    const root = createTempDataDir();
+    const migrationsDirectory = join(root, "migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    const databasePath = join(root, "legacy.db");
+    let legacy: ReturnType<typeof openDatabase> | null = null;
+    let upgraded: ReturnType<typeof openDatabase> | null = null;
+    try {
+      await copyMigrations(migrationsDirectory, host, 3);
+      legacy = openDatabase(databasePath);
+      await applyMigrations(legacy, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      closeDatabase(legacy);
+      legacy = null;
+
+      await copyMigrations(migrationsDirectory, host);
+      upgraded = openDatabase(databasePath);
+      await applyMigrations(upgraded, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      const rows = upgraded
+        .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
+        .all();
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4]);
+      expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
+      closeDatabase(upgraded);
+      upgraded = null;
+    } finally {
+      if (legacy !== null) {
+        closeDatabase(legacy);
+      }
+      if (upgraded !== null) {
+        closeDatabase(upgraded);
+      }
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

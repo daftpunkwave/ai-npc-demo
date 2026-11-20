@@ -4,11 +4,13 @@
  * 禁止访问真实用户目录、让测试共享同一数据目录，或在测试之间复用已关闭的连接。
  */
 import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
 import {
   DomainError,
+  canonicalJson,
   type ErrorCode,
   type HostServices,
   type Json,
@@ -51,7 +53,7 @@ export function createFakeHost(startIso = "2026-01-01T00:00:00.000Z"): FakeHost 
       // 存储适配器不使用等待；空实现保持宿主契约完整。
     },
     rng: () => () => 0.5,
-    hash: async () => "0".repeat(64),
+    hash: async (value: Json) => createHash("sha256").update(canonicalJson(value)).digest("hex"),
     logger: {
       info: (message, data) => {
         logs.push(data === undefined ? { level: "info", message } : { level: "info", message, data });

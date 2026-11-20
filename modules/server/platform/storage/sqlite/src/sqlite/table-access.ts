@@ -54,12 +54,19 @@ class TableAccess implements StorageTable {
   private readonly database: DatabaseSync;
   private readonly info: TableInfo;
   private readonly branchId: string | null;
+  private readonly assertTransactionActive: () => void;
 
-  constructor(database: DatabaseSync, info: TableInfo, branchId: string | null) {
+  constructor(
+    database: DatabaseSync,
+    info: TableInfo,
+    branchId: string | null,
+    assertTransactionActive: () => void,
+  ) {
     this.database = database;
     this.info = info;
     this.table = info.name;
     this.branchId = branchId;
+    this.assertTransactionActive = assertTransactionActive;
   }
 
   /** 分支级表由 scope 注入 branch_id，主键的其余列由调用方给出。 */
@@ -116,6 +123,7 @@ class TableAccess implements StorageTable {
 
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   get(key: StorageFilter): StorageRow | null {
+    this.assertTransactionActive();
     this.assertKey(key);
     const where = this.buildWhere(key);
     const raw = this.database
@@ -125,6 +133,7 @@ class TableAccess implements StorageTable {
   }
 
   list(filter: StorageFilter = {}, options: StorageListOptions = {}): readonly StorageRow[] {
+    this.assertTransactionActive();
     const where = this.buildWhere(filter);
     const orderBy = options.orderBy ?? [];
     const orderClauses = orderBy.map((order) => {
@@ -173,6 +182,7 @@ class TableAccess implements StorageTable {
   }
 
   put(row: StorageRow): StorageWriteResult {
+    this.assertTransactionActive();
     if (typeof row !== "object" || row === null || Array.isArray(row)) {
       validationFailure(`表 ${this.table} 的写入行必须是对象`, { table: this.table });
     }
@@ -223,6 +233,7 @@ class TableAccess implements StorageTable {
   }
 
   delete(key: StorageFilter): StorageWriteResult {
+    this.assertTransactionActive();
     this.assertKey(key);
     const where = this.buildWhere(key);
     const result = this.database
@@ -232,6 +243,7 @@ class TableAccess implements StorageTable {
   }
 
   count(filter: StorageFilter = {}): number {
+    this.assertTransactionActive();
     const where = this.buildWhere(filter);
     const row = this.database
       .prepare(`SELECT COUNT(*) AS ${q("total")} FROM ${q(this.table)}${this.whereSql(where)}`)
@@ -240,6 +252,7 @@ class TableAccess implements StorageTable {
   }
 
   max(column: string, filter: StorageFilter = {}): StorageValue {
+    this.assertTransactionActive();
     requireColumn(this.info, column);
     const where = this.buildWhere(filter);
     const row = this.database
@@ -254,18 +267,31 @@ class BranchAccess implements ScopedBranchStorage {
   readonly branchId: string;
   private readonly database: DatabaseSync;
   private readonly catalog: StorageCatalog;
+  private readonly assertTransactionActive: () => void;
 
-  constructor(database: DatabaseSync, catalog: StorageCatalog, branchId: string) {
+  constructor(
+    database: DatabaseSync,
+    catalog: StorageCatalog,
+    branchId: string,
+    assertTransactionActive: () => void,
+  ) {
     if (branchId.trim().length === 0) {
       validationFailure("branchId 不能为空", { branchId });
     }
     this.database = database;
     this.catalog = catalog;
     this.branchId = branchId;
+    this.assertTransactionActive = assertTransactionActive;
   }
 
   table(name: string): StorageTable {
-    return new TableAccess(this.database, requireBranchTable(this.catalog, name), this.branchId);
+    this.assertTransactionActive();
+    return new TableAccess(
+      this.database,
+      requireBranchTable(this.catalog, name),
+      this.branchId,
+      this.assertTransactionActive,
+    );
   }
 }
 
@@ -274,8 +300,9 @@ export function createUnscopedTable(
   database: DatabaseSync,
   catalog: StorageCatalog,
   table: TableInfo,
+  assertTransactionActive: () => void,
 ): StorageTable {
-  return new TableAccess(database, table, null);
+  return new TableAccess(database, table, null, assertTransactionActive);
 }
 
 /** 为给定分支构造 scoped 读写入口。 */
@@ -283,6 +310,7 @@ export function createBranchAccess(
   database: DatabaseSync,
   catalog: StorageCatalog,
   branchId: string,
+  assertTransactionActive: () => void,
 ): ScopedBranchStorage {
-  return new BranchAccess(database, catalog, branchId);
+  return new BranchAccess(database, catalog, branchId, assertTransactionActive);
 }

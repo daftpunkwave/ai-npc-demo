@@ -4,6 +4,7 @@
  * 禁止用固定任务状态替代规则结算。
  */
 import type { AuthContext, Json } from "@ai-npc/contracts";
+import type { GameWorldPort } from "@ai-npc/module-sdk";
 import { describe, expect, it } from "vitest";
 import {
   acceptTaskInvitation,
@@ -851,5 +852,108 @@ describe("任务资源写入失败的事务边界", () => {
     expect(readGameAggregate(value, "task", taskId)).toMatchObject({ status: "cancelled" });
     expect(delegationBalance(value, drawnId).remaining.supply).toBe(drawnBefore.limit.supply);
     expect(delegationBalance(value, other!.delegationId).remaining).toEqual(otherBalance.remaining);
+  });
+
+  it("一笔任务可以按稳定顺序扣减多份委托并在取消时逐笔回补", async () => {
+    const value = await harness();
+    proposeAndAccept(
+      value,
+      strategicAuth(value, "human-neutral"),
+      playerAuth(value),
+      ["human-neutral", "player-1"],
+      [
+        {
+          kind: "delegate",
+          obligorId: "human-neutral",
+          granteeId: "player-1",
+          teamIds: ["team-commons"],
+          stockpileId: "sp-commons",
+          maxDraw: { supply: 3, energy: 0, medical: 0 },
+          untilTick: 100,
+        },
+      ],
+    );
+    const delegationIds = gameEventsOf(value, "DelegationCreated")
+      .map((event) => event.payload as {
+        readonly delegationId: string;
+        readonly granteeId: string;
+        readonly stockpileId: string | null;
+      })
+      .filter((payload) => payload.granteeId === "player-1" && payload.stockpileId === "sp-commons")
+      .map((payload) => payload.delegationId)
+      .sort();
+    expect(delegationIds).toHaveLength(2);
+
+    const [firstDelegationId, secondDelegationId] = delegationIds;
+    if (firstDelegationId === undefined || secondDelegationId === undefined) {
+      throw new Error("缺少测试所需的委托");
+    }
+    const caps = new Map([
+      [firstDelegationId, 2],
+      [secondDelegationId, 3],
+    ]);
+    value.storage.transact((tx) => {
+      const table = tx.branch(value.branchId).table("aggregate_state");
+      for (const [delegationId, cap] of caps) {
+        const row = table.get({ aggregate_type: "delegation", aggregate_id: delegationId });
+        if (row === null) {
+          throw new Error(`委托不存在: ${delegationId}`);
+        }
+        const state = row["state_json"] as Record<string, unknown>;
+        table.put({
+          ...row,
+          state_json: {
+            ...state,
+            remaining: { supply: cap, energy: 0, medical: 0 },
+            limit: { supply: cap, energy: 0, medical: 0 },
+          },
+        });
+      }
+    });
+
+    const taskId = dispatchTask(value, playerAuth(value), PARTIAL_SUPPLY_TRANSPORT);
+    const draws = (readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly {
+        readonly delegationId: string;
+        readonly amount: ResourceTriple;
+      }[];
+    }).delegationDraws;
+    expect(draws.map((draw) => draw.delegationId)).toEqual(delegationIds);
+    expect(draws.reduce((total, draw) => total + draw.amount.supply, 0)).toBe(5);
+    for (const delegationId of delegationIds) {
+      expect(delegationBalance(value, delegationId).remaining.supply).toBe(0);
+    }
+
+    expect(cancelTask(value, playerAuth(value), taskId).commandStatus).toBe("accepted");
+    for (const delegationId of delegationIds) {
+      expect(delegationBalance(value, delegationId).remaining.supply).toBe(caps.get(delegationId));
+    }
+  });
+
+  it("旧 provider 只返回单份委托 ID 时仍记录任务扣减", async () => {
+    const value = await harness({
+      worldPortWrapper: (port) => {
+        const legacyPort = Object.create(port) as GameWorldPort;
+        legacyPort.drawDelegation = (principalId, stockpileId, delta) => {
+          const result = port.drawDelegation(principalId, stockpileId, delta);
+          return result.ok
+            ? { ok: true, delegationId: result.delegationId }
+            : result;
+        };
+        return legacyPort;
+      },
+    });
+
+    const taskId = dispatchTask(value, playerAuth(value), PARTIAL_SUPPLY_TRANSPORT);
+    expect((readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly {
+        readonly delegationId: string;
+        readonly amount: ResourceTriple;
+      }[];
+    }).delegationDraws).toEqual([
+      expect.objectContaining({
+        amount: { supply: 5, energy: 0, medical: 0 },
+      }),
+    ]);
   });
 });

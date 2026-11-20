@@ -7,11 +7,15 @@ import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
-const worldConfigSchema = z
+/** 轻数值世界规则实现经校验的模块配置。 */
+export const worldConfigSchema = z
   .object({
     chapterLengthTicks: z.number().int().positive().default(168),
   })
   .strict();
+
+/** 应用默认值后的世界模块配置。 */
+export type WorldConfig = z.infer<typeof worldConfigSchema>;
 
 const worldDefinition: ModuleDefinition = {
   id: "game.world.slg-light",

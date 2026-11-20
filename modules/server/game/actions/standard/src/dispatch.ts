@@ -46,12 +46,17 @@ export function dispatch(context: ActionContext, payload: Json): HandlerResult {
     if (!result.ok) {
       return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "委托余额不足" };
     }
-    // 记录实际扣减的委托，任务取消或出发失败时按记录回补，不再按主体与库存点重查。
-    delegationDraws.push({
-      delegationId: result.delegationId,
-      stockpileId: stockpile.stockpileId,
-      amount: stockpile.amount,
-    });
+    // 新实现返回逐份扣减；旧实现只返回首份 ID，仍按原合同记录该笔扣减。
+    const allocations = result.allocations ?? [
+      { delegationId: result.delegationId, amount: stockpile.amount },
+    ];
+    for (const allocation of allocations) {
+      delegationDraws.push({
+        delegationId: allocation.delegationId,
+        stockpileId: stockpile.stockpileId,
+        amount: allocation.amount,
+      });
+    }
   }
   const rescueParams = plan.plan.taskType === "rescue"
     ? plan.plan.params as { readonly groupId: string }

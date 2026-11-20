@@ -6,12 +6,14 @@
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
 import { createWorldContributor } from "./contributor";
+import { worldConfigSchema } from "./definition";
 import { createWorldPort } from "./port";
 
 /** 世界实现没有后台任务，公开端口同时暴露事务绑定器与规则贡献。 */
 export function createWorldModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+  const config = worldConfigSchema.parse(input.config);
   return createStatelessModule(input, {
     bind: createWorldPort,
-    contributor: createWorldContributor(),
+    contributor: createWorldContributor({ chapterLengthTicks: config.chapterLengthTicks }),
   });
 }
