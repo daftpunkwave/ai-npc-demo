@@ -1,6 +1,6 @@
 # 两个本地端口与三运行域
 
-> 状态：目标设计，尚未实现。端口、origin、运行域、玩家设置与服务端控制台的部署边界以本文为准。模块清单见 [模块目录](module-catalog.md)，客户端渲染见 [场景适配](client-and-rendering.md)，观测与评估界面见 [观测](../platform/observability.md) 与 [评估](../platform/evaluation.md)。
+> 状态：部分实现。`server` 已监听 `127.0.0.1:3000`，并实现 HTTP/WS 的 Origin 校验、会话校验与角色鉴权。`client` 的 `:5173` 服务、代理及 `console` 的 `/console/*` 静态页面为目标。本文定义双端的部署和权限边界。参见 [api.md — HTTP 与 WebSocket API](api.md)、[module-catalog.md — 模块目录](module-catalog.md)、[client-and-rendering.md — 场景适配](client-and-rendering.md)、[observability.md — 观测](../platform/observability.md)、[evaluation.md — 评估](../platform/evaluation.md)。
 >
 > 这里的“端口”指网络监听端口；模块之间通过 capability port（能力端口）交互，见 [模块边界](modules.md) 与 [公共契约](contracts.md)，两者不是同一概念。
 
@@ -112,7 +112,7 @@ flowchart LR
 
 本地 demo 不等于无鉴权，具体机制见 [API](api.md) 第 2 节：
 
-- 服务端启动时读取或生成玩家令牌与控制台令牌，并打印两条带 `#token=` 的登录地址；浏览器用令牌换取会话令牌，存在按 origin 隔离的 `sessionStorage` 中。控制台不能凭 `127.0.0.1` 直接获批。
+- 服务端启动时读取或生成玩家令牌与控制台令牌，仅为本次新生成的令牌打印带 `#token=` 的登录地址。目标浏览器宿主用令牌换取会话，保存在按 origin 隔离的 `sessionStorage` 中。会话以登录时返回的 `expiresAt` 为准，注销或到期会同时撤销该会话的一次性票据和 WebSocket 连接。有效期见 [api.md — 认证、会话与健康检查](api.md#2-认证会话与健康检查)。
 - 角色区分 `player`、`operator`、`researcher`、`evaluator`；控制台会话可持有多个角色，但每个请求用 `X-Active-Role` 指明当前角色，服务端只按当前角色与资源 scope 校验。
 - 服务端只接受 `Origin` 为 `http://127.0.0.1:5173` 或 `http://127.0.0.1:3000` 的请求与 WebSocket 握手；WebSocket 用一次性票据认证。
 - 模型凭据只存在服务端环境变量；控制台只看到连接别名、模型能力与验证状态。
@@ -124,7 +124,7 @@ flowchart LR
 
 命令、脚本与本地拓扑的实现方式见 [技术栈](../delivery/tech-stack.md) 第 4、6 节。要点：
 
-> **状态：** 下表是目标命令。`pnpm dev` / `pnpm build` / `pnpm start` / `pnpm test:e2e` 按构建计划 S10 交付，`pnpm check:ports` 按 S12 交付；当前仓库只有 `pnpm dev:server`。
+> 当前启动入口为 `pnpm dev:server`。下表为双端目标命令。`pnpm dev`、`pnpm build`、`pnpm start` 与 `pnpm test:e2e` 随 S10 交付，S11 接入控制台静态资源，`pnpm check:ports` 随 S12 交付。参见 [build-plan.md — 构建计划](../delivery/build-plan.md#1-步骤总览)。
 
 | 命令 | 行为 |
 |---|---|
@@ -161,7 +161,7 @@ flowchart LR
 - 移除可选客户端模块或控制台页面后无残余订阅，导航显示不可用原因；移除必需模块时组合拒绝启动。
 - 无第三个 Web 端口、无客户端直连数据库/模型、无隐藏按钮替代鉴权。
 
-以上均为目标验收，尚无运行时或实测记录。
+服务端已有 Origin、角色鉴权和监听集成测试。双端联调、页面流程与替换验证仍按本节验收。
 
 ## 10. 控制台页面首版规格
 

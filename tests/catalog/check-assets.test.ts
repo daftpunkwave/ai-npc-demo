@@ -112,7 +112,7 @@ describe("资产与内容包版本对应", () => {
     const mismatch = report.violations.find((violation) => violation.code === "version-mismatch");
     expect(mismatch).toBeDefined();
     expect(mismatch?.message).toContain("1.0.1");
-    expect(mismatch?.message).toContain("1.0.0");
+    expect(mismatch?.message).toContain("0.1.0");
   });
 
   it("CLI 在版本不一致时返回非零并打印原因", () => {

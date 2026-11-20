@@ -1,6 +1,6 @@
 # 目标代码目录与扩展工作流
 
-> 状态：目标代码结构。`apps/server`、`modules/` 与 `packages/` 已按此结构交付首批实现；`apps/client`、`apps/console` 与 `modules/client|console` 尚未创建。依赖版本、构建命令和性能指标在实现时验证并锁定。模块职责见 [模块边界](modules.md)，目录清单见 [模块目录](module-catalog.md)，装配语义见 [积木组合](composition.md)。
+> 状态：部分实现。`apps/server`、`modules/server` 和共享包已按此结构交付首批实现。`apps/client`、`apps/console`、`modules/client` 与 `modules/console` 为目标。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)。
 
 ## 1. 目录树
 
@@ -212,7 +212,7 @@ modules/server/agent/memory/ledger/
 
 ## 7. 依赖守门与自动检查
 
-目标脚本（尚未实现）按 [技术栈](../delivery/tech-stack.md) 第 2、7 节读取源码引用、各包 manifest 并检查 header；运行时能力闭包由装配解析验证。依赖检查拒绝：
+已实现的 `pnpm check:boundaries` 检查源码引用、各包 manifest 和 header。运行时能力闭包由装配解析验证。检查规则见 [tech-stack.md — 技术栈](../delivery/tech-stack.md) 第 2、7 节。依赖检查拒绝以下情形。
 
 - 循环依赖、跨包深层引用、模块 import 时自动注册或执行副作用；
 - client/console 模块 import `node:*`、SQLite、模型 SDK、server 模块或密钥路径；

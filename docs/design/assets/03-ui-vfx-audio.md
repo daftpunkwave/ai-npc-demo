@@ -1,7 +1,7 @@
 # 界面、特效与音频
 
 > 3D 决定「城看起来怎么样」，界面决定「玩家能不能在 30 秒内读懂城」，特效与音频决定「冷不冷、危不危险」。
-> 上游：[玩家界面与引导](../gameplay/06-player-experience.md) · 风格基准：[表现与资产方向](../../game/art-direction.md)
+> 上游：[玩家界面与引导](../gameplay/06-player-experience.md) · 风格基准：[art-direction.md — 表现与资产方向](../../game/art-direction.md)
 
 ## 一、界面总则
 

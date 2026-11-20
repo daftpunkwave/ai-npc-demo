@@ -54,8 +54,8 @@
 | 世界、玩法、数值、派系、角色、多人、资产（目标设计） | [design/README.md](design/README.md) |
 | 切片范围、15 个上场身份、资源边界、术语 | [00-scope-and-invariants.md](00-scope-and-invariants.md) |
 | 序章可结算规则与数值 | [game/rules.md](game/rules.md)；目标数值以 [design/balance/01-baseline.md](design/balance/01-baseline.md) 为准 |
-| 序章世界背景摘要 | [game/background.md](game/background.md)；完整设定以 [design/world/background.md](design/world/background.md) 为准 |
-| 序章表现与资产使用 | [game/art-direction.md](game/art-direction.md)；目标 3D 与资产口径见 [design/assets/README.md](design/assets/README.md) |
+| 序章世界背景摘要 | [game/background.md — 世界背景（序章摘要）](game/background.md)；完整设定以 [design/world/background.md — 世界背景](design/world/background.md) 为准 |
+| 序章表现与资产使用 | [game/art-direction.md — 表现与资产方向](game/art-direction.md)；目标 3D 与资产口径见 [design/assets/README.md — 资产总纲](design/assets/README.md) |
 | 序章初始数据、剧情卡数据（cardId/trigger/effects）、名册、脚本、模板 | [game/content-pack.md](game/content-pack.md)；ID 以 [design/world/canon.md §13](design/world/canon.md#13-id-对照表) 为准 |
 | 15 人编制、人格契约、关系与验收 | [game/characters.md](game/characters.md)；完整 43 具名身份以 [design/characters/roster.md](design/characters/roster.md) 为准 |
 | 序章玩家循环、t144 表决；九张卡的玩家决策 | [game/gameplay.md](game/gameplay.md)；设计意图见 [design/gameplay/05-chapter.md](design/gameplay/05-chapter.md) |
@@ -81,8 +81,8 @@
 | 共享 Agent 工作流、Git 授权与本地补充边界 | [AGENTS.md](../AGENTS.md) |
 | 实施顺序与完成判据 | [build-plan.md](delivery/build-plan.md) |
 | 切片验收（Demo） | [roadmap-and-acceptance.md](delivery/roadmap-and-acceptance.md)；整局验收见 [design/gameplay/05](design/gameplay/05-chapter.md) 与 [design/gameplay/16](design/gameplay/16-campaign-arc.md) |
-| 参考依据、借鉴边界与设计取舍 | [references/README.md](references/README.md) |
-| 序章模块映射与可替换边界 | [game/systems.md](game/systems.md) |
+| 参考依据、借鉴边界与设计取舍 | [references/README.md — 来源与设计决策](references/README.md) |
+| 序章模块映射与可替换边界 | [game/systems.md — 职能边界](game/systems.md) |
 
 ## 5. 文档维护约定
 

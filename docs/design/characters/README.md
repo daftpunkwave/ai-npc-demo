@@ -98,7 +98,7 @@
 
 ## 署名与替补
 
-沈砾、苏回、谷寻是 43 具名身份中不上场的三名：他们只以署名、传闻、证人或替补出现，不实例化、不调用模型。人物档案见 [shenli.md](shenli.md)、[suhui.md](suhui.md)、[guxun.md](guxun.md)。
+沈砾、苏回、谷寻是 43 具名身份中不上场的三名：他们只以署名、传闻、证人或替补出现，不实例化、不调用模型。人物档案见 [shenli.md — 沈砾](shenli.md)、[suhui.md — 苏回](suhui.md)、[guxun.md — 谷寻](guxun.md)。
 
 ## 人物册怎么显示
 

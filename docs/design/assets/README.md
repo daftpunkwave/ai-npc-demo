@@ -1,7 +1,7 @@
 # 资产总纲
 
 > 本目录是《炉边议会》的**资产规定**：需要哪些东西、各自多少、什么标准、先做哪一个。
-> 它不是风格定义的替代品——[表现与资产方向](../../game/art-direction.md) 第 1 节管「看起来对不对」，本目录管「有没有、够不够、能不能验收」。
+> 它不是风格定义的替代品——[art-direction.md — 表现与资产方向](../../game/art-direction.md) 第 1 节管「看起来对不对」，本目录管「有没有、够不够、能不能验收」。
 > 上游：[游戏概览](../game-overview.md) · [灰港城](../world/grayharbor.md) · [城建](../gameplay/08-city-building.md) · [界面](../gameplay/06-player-experience.md)
 
 ## 一、一句话

@@ -1,6 +1,6 @@
 # 模型传输：统一 ModelPort 与三个适配器
 
-> 状态：实现规范。运行时只认供应商无关的 `ModelPort`；三个适配器把它映射到具体线协议：`platform.model-transport.openai-compatible`（Chat Completions 协议，适用于 DeepSeek、Kimi、通义等云端模型，以及 Ollama、vLLM 等本地服务）、`platform.model-transport.anthropic`（Anthropic 官方 TypeScript SDK 的 Messages API）、`platform.model-transport.deterministic`（测试用，不发网络请求）。路由、挂载、排队与预算见 [模型池](model-pool.md)；prompt 与输出 schema 见 [prompts](prompts.md)。
+> 状态：目标。本文维护 `ModelPort` 的线协议和三个适配器的配置。OpenAI 兼容适配器使用 Chat Completions，Anthropic 适配器使用官方 TypeScript SDK 的 Messages API，确定性适配器用本地 fixture 驱动测试。参见 [model-pool.md — 模型池](model-pool.md)、[prompts.md — Prompt 与输出契约](prompts.md)。
 
 ## 1. 分层
 
@@ -219,8 +219,9 @@ models:
   npc-claude:
     connectionId: anthropic
     externalModel: claude-opus-5-5
-    parameters: { effort: medium, serverSideFallback: default }
+    parameters: { effort: medium, serverSideFallback: default, strictTools: false }
     limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
+    maxOutputTokensByPurpose: { decision: 16000, speech: 4000, memory-maintenance: 4000 }
 ```
 
 能力由适配器按模型固定给出：工具调用可用，`structuredOutput: json_schema`，`contextWindowTokens: 1000000`，`maxOutputTokens: 128000`，`embedding: false`。`parameters.strictTools` 默认 false：工具 schema 较大、可空字段较多时，严格模式可能触及 API 对 strict schema 的复杂度限制；宿主对每个工具调用都会用原始 Zod schema 校验，不合格的调用返回错误结果让模型重试。`connections.anthropic.endpoint` 可省略，省略时用 SDK 默认地址。
@@ -316,6 +317,8 @@ models:
     connectionId: fixtures
     externalModel: deterministic-v1
 ```
+
+`npc-fixture` 的 `maxOutputTokensByPurpose` 采用第 3.1 节 `npc-chat` 的配置。
 
 fixture 文件每行一个 JSON：
 

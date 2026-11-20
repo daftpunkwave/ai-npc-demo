@@ -17,7 +17,7 @@
 | 三项仪表 | 中继 45、果园 50、迁徙 50；日结顺序 | 已实现 | **已对齐** |
 | t144 程序案 | 五席各 1 票，3 票通过 | 无表决模块 | **未开始** |
 | 序章终点 | t168 评估后切片结束 | t168 评估后进入自由模式 | **待改** |
-| 表现 | 3D 目标；2.5D 灰盒 | PixiJS 2.5D 灰盒 | **符合灰盒，缺 3D** |
+| 表现 | 3D 目标；2.5D 灰盒 | 客户端和 PixiJS 灰盒待实现 | **目标** |
 | 角色档案 | 15 个上场（含 6 名新公社支持者） | 12 个角色 + 8 个战略；缺 6 名公社支持者 | **进行中** |
 | 世界初态 | 15 人、单席开局 | 20 人、五席开局 | **待改** |
 
@@ -43,12 +43,12 @@
 10. `starts.yaml` 只启用 `human-neutral`；其余四席标 `disabled`。
 11. `scenarios/watergate-v1.yaml` 的 `speakerId` 允许 43 名册中未上场的署名（沈砾、苏回、谷寻），事件不实例化、不调用模型；若加载器把 `speakerId` 校验成 roster 成员，需放行 signature-only speaker。`wake-agents` 只唤醒 7 名党魁/外域，不唤醒 8 名支持者。同时把 4 张卡的署名从 `npc-qingzhi`、`npc-luo`、`npc-zhuifeng`、`npc-tangzhen` 改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`，与 [content-pack](game/content-pack.md) 第 9 节一致。
 12. `locale/zh-CN.yaml` 的 `playerName` 改为“党魁”；`resources` 增加 `materials`/`food`/`water` 词条（t168 用）。
-13. 内容版本从 `1.0.0` 升到 `1.1.0`，写迁移说明；旧 run 不静默改语义。
+13. 世界名与 system 模板已对齐。名册与其余数据修改按内容包版本规则推进。参见 [content-pack.md — 序章内容契约](game/content-pack.md#1-文件清单)。
 14. `factions.yaml` 的 `homeNodeId` 拆成 `factionHomeNodeId` + `outpostNodeId`（人类）与 `territoryNodeId`（外域）；见 [content-pack](game/content-pack.md) 第 4 节。
 
 ### 2.4 表现与客户端
 
-15. 保留 `client.scene-renderer.pixi` 作为灰盒；新增 3D 渲染器时实现同一个 `SceneRenderer` 端口，不改世界坐标与权限。
+15. 实现 `client.scene-renderer.pixi` 作为灰盒，后续 3D 渲染器复用同一个 `SceneRenderer` 端口、世界坐标与权限契约。
 16. 灰盒验收只证明交互与可读性；3D 资产按 [design/assets/02-modeling-spec.md](design/assets/02-modeling-spec.md) 单独验收。
 
 ## 3. 迁移顺序

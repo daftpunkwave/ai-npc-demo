@@ -15,14 +15,14 @@
 
 | 派系 | 类型 | 详情 |
 |---|---|---|
-| 灰港公社 | 人类 | [grayharbor-commons.md](grayharbor-commons.md) |
-| 砾火同盟 | 人类 | [rubble-league.md](rubble-league.md) |
-| 地生共约 | 人类 | [earth-alliance.md](earth-alliance.md) |
-| 止戈议团 | 人类 | [truce-council.md](truce-council.md) |
-| 远星协进会 | 人类 | [alien-accord.md](alien-accord.md) |
-| 巡裔 | 外域 | [fauna.md](fauna.md) |
-| 根庭 | 外域 | [flora.md](flora.md) |
-| 泊星者 | 外域 | [extraterrestrial.md](extraterrestrial.md) |
+| 灰港公社 | 人类 | [grayharbor-commons.md — 灰港公社](grayharbor-commons.md) |
+| 砾火同盟 | 人类 | [rubble-league.md — 砾火同盟](rubble-league.md) |
+| 地生共约 | 人类 | [earth-alliance.md — 地生共约](earth-alliance.md) |
+| 止戈议团 | 人类 | [truce-council.md — 止戈议团](truce-council.md) |
+| 远星协进会 | 人类 | [alien-accord.md — 远星协进会](alien-accord.md) |
+| 巡裔 | 外域 | [fauna.md — 巡裔](fauna.md) |
+| 根庭 | 外域 | [flora.md — 根庭](flora.md) |
+| 泊星者 | 外域 | [extraterrestrial.md — 泊星者](extraterrestrial.md) |
 
 ## 五张桌子，五票
 

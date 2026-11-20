@@ -1,8 +1,10 @@
 # HTTP 与 WebSocket API
 
-> 状态：实现规范，也是接口的唯一清单；其他文档只引用本文。所有接口由服务端 `127.0.0.1:3000` 提供，玩家客户端经 :5173 的代理以相对路径访问（见 [技术栈](../delivery/tech-stack.md) 第 6 节）。DTO 字段与 [领域模型](domain-model.md)、[公共契约](contracts.md) 一致，实现时在 `packages/contracts` 用 Zod 定义请求与响应，服务端与浏览器共用。
+> 状态：部分实现。本文是首版的完整接口规格。所有接口由 `server` 在 `127.0.0.1:3000` 提供，目标客户端经 `:5173` 的代理以相对路径访问。公共 DTO 在 `packages/contracts` 中用 Zod 定义。参见 [tech-stack.md — 技术栈](../delivery/tech-stack.md#6-本地双端拓扑)、[domain-model.md — 领域模型](domain-model.md)、[contracts.md — 公共契约](contracts.md)。
 
 ## 1. 通用约定
+
+当前已实现第 2 节的 HTTP 路由、第 3 节未标记为「目标」的玩家路由、第 4 节的玩家数据推送，以及第 5.1 节的精简控制台健康检查。交付顺序见 [build-plan.md — 控制台与玩家接口的实现步骤](../delivery/build-plan.md#03-控制台与玩家接口的实现步骤)。
 
 | 项 | 约定 |
 |---|---|
@@ -18,14 +20,14 @@
 
 ## 2. 认证、会话与健康检查
 
-本地 demo 用启动令牌登录：服务端启动时读取 `NPC_PLAYER_TOKEN`、`NPC_CONSOLE_TOKEN`（以及可选的 `NPC_OPERATOR_TOKEN`、`NPC_RESEARCHER_TOKEN`、`NPC_EVALUATOR_TOKEN`）；为空时生成 32 字节随机令牌，存入 `data/dev-tokens.json` 以便重启后保持不变，并在标准输出打印一次：
+本地 Demo 用启动令牌登录。服务端读取 `NPC_PLAYER_TOKEN`、`NPC_CONSOLE_TOKEN` 与可选的单角色控制台令牌。玩家和控制台令牌缺省时优先复用数据目录中的 `dev-tokens.json`。首次生成的令牌由 32 字节随机数据编码，保存后可跨重启复用，登录地址仅在生成当次打印。
 
 ```text
 [ai-npc] player  login: http://127.0.0.1:5173/#token=<player token>
 [ai-npc] console login: http://127.0.0.1:3000/console/#token=<console token>
 ```
 
-浏览器页面启动时读取 `location.hash` 里的 `token`，调用登录接口，把返回的 `sessionToken` 存进 `sessionStorage`（按 origin 隔离，端口不同即互不可见），再用 `history.replaceState` 清掉 hash。
+目标浏览器宿主启动时读取 `location.hash` 里的 `token`，调用登录接口，把返回的 `sessionToken` 存进按 origin 隔离的 `sessionStorage`，再用 `history.replaceState` 清掉 hash。
 
 | 令牌 | principalId | 角色 |
 |---|---|---|
@@ -36,7 +38,7 @@
 | 方法与路径 | 请求 | 响应 | 说明 |
 |---|---|---|---|
 | `GET /api/v1/health` | — | `{ status: "starting"\|"ready"\|"degraded", protocolVersion: "1" }` | 不需要认证，不返回内部细节；e2e 用它等待就绪 |
-| `POST /api/v1/auth/login` | `{ token }` | `{ sessionToken, principalId, roles, expiresAt }` | 令牌错误返回 401；会话有效期 7 天 |
+| `POST /api/v1/auth/login` | `{ token }` | `{ sessionToken, principalId, roles, expiresAt }` | 令牌错误返回 401。会话自登录起默认有效 12 小时 |
 | `POST /api/v1/auth/logout` | — | `{ ok: true }` | 吊销当前会话 |
 | `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集 |
 | `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；玩家会话请求 `realm=console` 返回 403 |
@@ -57,8 +59,8 @@
 | `GET /api/v1/campaign/snapshots` | — | `{ snapshots: SnapshotView[] }`（只列本 campaign 的存档） |
 | `POST /api/v1/campaign/restore` | `{ operationId, snapshotId }` | `{ branchId, clock: ClockView }`；创建后继在线分支，旧分支保留 |
 | `POST /api/v1/campaign/reset` | `{ operationId }` | `{ branchId }`：先存快照，再创建新的空在线分支（重新开局，见 [运营](../platform/operations.md) 第 10 节） |
-| `GET /api/v1/presets` | — | `{ presets: { presetId, title, summary }[] }`：玩家可以申请的测试 preset |
-| `POST /api/v1/run-requests` | `{ presetId, note }` | `{ requestId, status: "pending" }`；只登记申请，由控制台批准后才创建 run |
+| `GET /api/v1/presets`（目标） | — | `{ presets: { presetId, title, summary }[] }`：玩家可以申请的测试 preset |
+| `POST /api/v1/run-requests`（目标） | `{ presetId, note }` | `{ requestId, status: "pending" }`；只登记申请，由控制台批准后才创建 run |
 
 ```ts
 interface CommandEnvelope {
@@ -90,7 +92,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ## 4. WebSocket：`GET /api/v1/streams?ticket=<ticket>`
 
-连接建立后，服务端先发 `hello`；客户端发送 `subscribe` 后，服务端推送快照与增量。所有消息都是 JSON 文本帧。
+连接建立后，服务端先发 `hello`。客户端订阅 `player` 后接收快照与增量。所有消息都是 JSON 文本帧。
 
 | 方向 | 消息 | 字段 |
 |---|---|---|
@@ -98,19 +100,19 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | C→S | `subscribe` | `channel`、`fromStreamSeq`（首次为 `null`） |
 | S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`data`（整份投影） |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
-| S→C | `append` | `channel`、`streamSeq`、`kind`（`dialogue` / `notification` / `timeline`）、`item` |
+| S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。已实现 `dialogue` 和 `notification`，`timeline` 为目标 |
 | C→S | `ack` | `channel`、`streamSeq` |
 | C→S / S→C | `ping` / `pong` | — |
 | S→C | `error` | `code`、`safeMessage` |
 
-频道：
+控制台频道已有权限规则，获准的频道可出现在 `hello.channels` 中，数据推送为目标。
 
-| 频道 | 角色 | 内容 |
-|---|---|---|
-| `player` | player | `PlayerProjection` 快照与增量；新对话行、提醒用 `append` |
-| `console.health` | operator、researcher | 每 2 秒一次健康摘要（与 `GET /console/health` 同结构） |
-| `console.timeline` | researcher | 新领域事件与生命周期事件的摘要（`append`） |
-| `console.turns` | researcher | turn 状态变化（`append`） |
+| 频道 | 角色 | 推送内容 | 状态 |
+|---|---|---|---|
+| `player` | player | `PlayerProjection` 快照与增量；新对话行、提醒用 `append` | 已实现 |
+| `console.health` | operator、researcher | 每 2 秒一次健康摘要（采用 `GET /api/v1/console/health` 的首版完整结构） | 目标 |
+| `console.timeline` | researcher | 新领域事件与生命周期事件的摘要（`append`） | 目标 |
+| `console.turns` | researcher | turn 状态变化（`append`） | 目标 |
 
 在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。
 
@@ -118,11 +120,15 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ## 5. 控制台 API（`/api/v1/console/*`）
 
+除下文标记为「部分实现」的健康检查外，本节接口均为目标。
+
 ### 5.1 运行总览与模块装配
+
+`GET /api/v1/console/health` 已按角色鉴权，当前响应为 `{ status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } }`。下表列出完整目标响应。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /health` | operator、researcher | — | `{ ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning, maintenanceQueued, modelQueue }, laggingAgents, budgets, recentFailures }` |
+| `GET /health`（部分实现） | operator、researcher | — | `{ ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning, maintenanceQueued, modelQueue }, laggingAgents, budgets, recentFailures }` |
 | `GET /modules?realm=` | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
 | `GET /assemblies` | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
 | `GET /assemblies/{assemblyId}` | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |
@@ -232,7 +238,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 401 | `unauthenticated` | 缺少或无效的会话、令牌错误 |
 | 403 | `forbidden` / `realm-violation` | 角色不允许、Origin 不允许、玩家访问控制台接口 |
 | 404 | `not-found` | 资源不存在 |
-| 409 | `idempotency-conflict` / `version-conflict` / `stale-controller` / `invalid-state` | 同 ID 不同 payload、期望版本不符、旧 epoch、状态机不允许（例如 running 时请求 step） |
+| 409 | `idempotency-conflict` / `version-conflict` / `stale-controller` / `stale-turn` / `cancelled` / `invalid-state` | 同 ID 不同 payload、版本不符、控制权或 turn 已失效、操作已取消、当前状态不允许操作 |
 | 422 | `assembly-incompatible` / `module-missing` / `capability-conflict` | 装配或 run 预检失败 |
 | 429 | `budget-exhausted` | 预算或配额耗尽 |
 | 503 | `not-ready` / `paused` | 服务未就绪、分支正在静默或切换 |

@@ -4,7 +4,7 @@
 
 > **权威链（2026-11-20）：** 完整游戏设计见 [docs/design/README.md](docs/design/README.md)，它是唯一设计权威。本文描述 **序章切片**（7 日、15 Agent、6 资源中的 3 种、3D 目标 + 2.5D 灰盒）；切片范围见 [docs/00-scope-and-invariants.md](docs/00-scope-and-invariants.md)，实现差距见 [docs/IMPLEMENTATION-STATUS.md](docs/IMPLEMENTATION-STATUS.md)。
 
-> 以下架构、技术与目录为目标设计，尚未完成实现。详细规格见 [文档入口](docs/README.md)，实施顺序见 [构建计划](docs/delivery/build-plan.md)。
+> 当前仓库可启动服务端并运行世界规则。玩家客户端、控制台页面与 Agent 认知管线为目标。参见 [docs/README.md — 文档入口](docs/README.md)、[build-plan.md — 构建进度](docs/delivery/build-plan.md#1-步骤总览)。
 
 ## 一眼看懂
 

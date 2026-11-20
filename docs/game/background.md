@@ -2,7 +2,7 @@
 
 > **权威：** 完整世界背景见 [design/world/background.md](../design/world/background.md)、[grayharbor.md](../design/world/grayharbor.md)、[frontier.md](../design/world/frontier.md)、[story.md](../design/world/story.md)。冲突时以 `docs/design/` 为准；本文保留 Demo 摘要。
 
-> 内容基线 v0.3；本 demo 的世界背景摘要以本文为准；完整设计以 [design/world/background.md](../design/world/background.md) 为准。
+> `v0.3` 是本篇世界背景摘要的文档修订号。运行内容版本见 [content-pack.md — 序章内容契约](content-pack.md#1-文件清单)。
 
 ## 1. 三十世纪的地球
 

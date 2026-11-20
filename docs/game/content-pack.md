@@ -25,12 +25,14 @@
 # pack.yaml
 schemaVersion: 1
 packId: earth-2964-v1
-contentVersion: "1.1.0"
+contentVersion: "0.1.0"
 defaultScenario: watergate-v1
 files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]
 scripts: [scripts/s-promise.yaml, scripts/s-rumor.yaml, scripts/s-secret.yaml]
 ```
+
+`contentVersion` 标识每次 run 冻结的内容，资产清单的 `contentVersion` 必须与 `pack.yaml` 一致。正式发布前，开发存档版本不匹配时可重置开发数据后重新开局。参见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)。
 
 ## 2. 公开世界观（lore.yaml）
 
