@@ -1,5 +1,5 @@
 /**
- * 校验文档中的相对链接与标题锚点是否存在。
+ * 校验文档的相对链接、标题锚点与 Markdown 表格列数。
  * 只依赖 Node 内置文件系统与路径模块，从文档所在位置解析目标。
  * 禁止修改文档、访问网络或把外部绝对 URL 当成必须可达的本地目标。
  */
@@ -21,8 +21,15 @@ interface MarkdownDocument {
   readonly lines: readonly string[];
 }
 
+interface TableColumnMismatch {
+  readonly source: string;
+  readonly line: number;
+  readonly expected: number;
+  readonly actual: number;
+}
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const rootDocuments = ["README.md", "AGENTS.md"];
+const rootDocuments = ["README.md", "AGENTS.md", "apps/server/README.md"];
 const documentationDirectory = "docs";
 
 /** 列出需要检查的 Markdown 文档：仓库入口文档与 docs 目录全量。 */
@@ -61,8 +68,8 @@ function collectMarkdownDocuments(): MarkdownDocument[] {
     }));
 }
 
-/** 把围栏代码块与行内代码替换为空行，保留原始行号。 */
-function maskCode(lines: readonly string[]): string[] {
+/** 把围栏代码块替换为空行，保留原始行号。 */
+function maskFencedCode(lines: readonly string[]): string[] {
   let fenceMarker: string | null = null;
 
   return lines.map((line) => {
@@ -71,7 +78,7 @@ function maskCode(lines: readonly string[]): string[] {
 
     if (fenceMarker !== null) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
-      if (fenceMatch?.[1]?.startsWith(fenceMarker[0] ?? "")) {
+      if (fenceMatch?.[1]?.startsWith(fenceMarker) && trimmed.slice(fenceMatch[1].length).trim() === "") {
         fenceMarker = null;
       }
       return "";
@@ -82,8 +89,73 @@ function maskCode(lines: readonly string[]): string[] {
       return "";
     }
 
-    return line.replace(/`[^`\n]*`/g, "");
+    return line;
   });
+}
+
+function maskCode(lines: readonly string[]): string[] {
+  return maskFencedCode(lines).map((line) => line.replace(/`[^`\n]*`/g, ""));
+}
+
+function splitTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  const cells: string[] = [];
+  let cellStart = 0;
+
+  for (const match of trimmed.matchAll(/\\.|\|/g)) {
+    if (match[0] !== "|") {
+      continue;
+    }
+    if (match.index > 0) {
+      cells.push(trimmed.slice(cellStart, match.index).trim());
+    }
+    cellStart = match.index + 1;
+  }
+
+  if (cellStart === 0) {
+    return null;
+  }
+  if (cellStart < trimmed.length) {
+    cells.push(trimmed.slice(cellStart).trim());
+  }
+  return cells;
+}
+
+function findTableColumnMismatches(documents: readonly MarkdownDocument[]): TableColumnMismatch[] {
+  const mismatches: TableColumnMismatch[] = [];
+  let tableCount = 0;
+
+  for (const document of documents) {
+    let previousRow: string[] | null = null;
+    let expectedColumns = 0;
+    for (const [index, line] of maskFencedCode(document.lines).entries()) {
+      const cells = splitTableRow(line);
+      if (cells === null) {
+        previousRow = null;
+        expectedColumns = 0;
+        continue;
+      }
+
+      if (expectedColumns > 0) {
+        if (cells.length !== expectedColumns) {
+          mismatches.push({ source: document.relativePath, line: index + 1, expected: expectedColumns, actual: cells.length });
+        }
+        continue;
+      }
+
+      if (previousRow !== null && cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell))) {
+        tableCount += 1;
+        expectedColumns = cells.length;
+        if (previousRow.length !== expectedColumns) {
+          mismatches.push({ source: document.relativePath, line: index, expected: expectedColumns, actual: previousRow.length });
+        }
+      }
+      previousRow = cells;
+    }
+  }
+
+  process.stdout.write(`检查 ${tableCount} 张 Markdown 表格。\n`);
+  return mismatches;
 }
 
 /** 把标题文本规范化为锚点：小写，仅保留字母、数字、空格与连字符，空格转为连字符。 */
@@ -219,13 +291,23 @@ function findBrokenLinks(documents: readonly MarkdownDocument[]): BrokenLink[] {
 
 const documents = collectMarkdownDocuments();
 const brokenLinks = findBrokenLinks(documents);
+const tableColumnMismatches = findTableColumnMismatches(documents);
 
 if (brokenLinks.length > 0) {
   process.stderr.write(`发现 ${brokenLinks.length} 条坏链接：\n`);
   for (const link of brokenLinks) {
     process.stderr.write(`  ${link.source}:${link.line} -> ${link.target}（${link.reason}）\n`);
   }
+}
+if (tableColumnMismatches.length > 0) {
+  process.stderr.write(`发现 ${tableColumnMismatches.length} 行表格列数错误：\n`);
+  for (const issue of tableColumnMismatches) {
+    process.stderr.write(`  ${issue.source}:${issue.line} 期望 ${issue.expected} 列，实际 ${issue.actual} 列。\n`);
+  }
+}
+
+if (brokenLinks.length > 0 || tableColumnMismatches.length > 0) {
   process.exitCode = 1;
 } else {
-  process.stdout.write("文档链接检查通过。\n");
+  process.stdout.write("文档链接、锚点与表格列数检查通过。\n");
 }

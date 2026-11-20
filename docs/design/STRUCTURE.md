@@ -59,4 +59,4 @@
 3. **序章规则数值（阈值、日耗、门槛、加成）只写在 `docs/game/rules.md`；初始库存、初值与内容数据写在 `docs/game/content-pack.md`。** 设计目标值只写在 `docs/design/balance/`；两边不重复定义同一组数字。
 4. **ID 只有一个来源：`design/world/canon.md` §13。** `seatId` / `factionId` / 资产 slug / `characterId` 的映射只维护在那里。
 5. **设计与切片冲突时以 `design/` 为准**；实现差距只记在 `IMPLEMENTATION-STATUS.md`，不另开“实现口径”。
-6. **每次改完跑 `pnpm check:docs`，并检查表格列数。** 至少覆盖 `docs/design/**`、`docs/game/**` 的相对链接与表格列数。
+6. **每次改完跑 `pnpm check:docs`。** 检查范围见 [README.md — 文档维护约定](../README.md#5-文档维护约定)。

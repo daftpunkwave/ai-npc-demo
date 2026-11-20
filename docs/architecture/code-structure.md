@@ -89,7 +89,7 @@ ai-npc-demo/
       scenario-editor/standard/  observability/standard/  observability/lite/
       evaluation/standard/  debug/standard/  audit/standard/
   config/
-    assemblies/                  # local-slg-standard-v1, local-slg-test-v1, and the three swap-demo assemblies
+    assemblies/                  # standard, test and escalating are present; HUD and console swaps arrive in S24
     profiles/                    # platform baseline, scene profile, agent profiles, memory variant patches
     rosters/                     # standard-15, core-3
     model-layouts/               # shared-, claude-, deterministic-model-layout-v1

@@ -137,25 +137,26 @@ packages:
 
 ## 4. 根脚本
 
-| 命令 | 实际执行 | 结果 |
-|---|---|---|
-| `pnpm dev` | `tsx scripts/dev.ts` | 并行启动：服务端 `tsx watch apps/server/src/main.ts`（:3000）、客户端 `vite --config apps/client/vite.config.ts`（:5173）、控制台 `vite build --watch --config apps/console/vite.config.ts`（不监听端口，产物写入 `apps/server/console-static/`） |
-| `pnpm dev:server` / `pnpm dev:client` | 只启动单侧 | 另一侧不可用时页面显示“服务端不可连接”，不新开端口 |
-| `pnpm build` | 两次 `vite build` | 客户端产物 `apps/client/dist/`，控制台产物 `apps/server/console-static/` |
-| `pnpm start` | `tsx scripts/start.ts` | 服务端 `tsx apps/server/src/main.ts` + 客户端 `vite preview --config apps/client/vite.config.ts`；先执行过 `pnpm build` |
-| `pnpm typecheck` | `tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json` | 两个程序都零错误 |
-| `pnpm test` | `vitest run` | 单元、契约、集成、目录、场景测试 |
-| `pnpm test:e2e` | `playwright test` | 两端口启动、玩家与控制台关键路径 |
-| `pnpm check:boundaries` | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header |
-| `pnpm check:catalog` | `tsx scripts/check-catalog.ts` | 目录扫描 `config/assemblies/*.yaml`；realm/kind、能力闭包、作用域/重复绑定、拓扑与配置 schema 全量预检 |
-| `pnpm check:docs` | `tsx scripts/check-docs.ts` | 文档相对链接与锚点存在 |
-| `pnpm check:ports` | `tsx scripts/check-ports.ts` | 启动 `pnpm start` 后只发现 :5173 与 :3000 两个本应用监听 |
-| `pnpm check` | 见下文“`pnpm check` 的组成” | 每个构建步骤完成前必须通过 |
-| `pnpm db:reset` | 删除 `NPC_DATA_DIR` 目录 | 下次启动重新建库并装载内容包 |
+| 命令 | 状态 | 执行方式 | 结果 |
+|---|---|---|---|
+| `pnpm dev:server` | 已实现 | `tsx apps/server/src/main.ts` | 启动本地服务端（:3000） |
+| `pnpm dev:client` | 目标 S10 | Vite | 启动玩家客户端（:5173） |
+| `pnpm dev` | 目标 S10–S11 | `tsx scripts/dev.ts` | 并行启动服务端和客户端，监听控制台源码变更并构建到 `apps/server/console-static/` |
+| `pnpm build` | 目标 S10–S11 | 两次 `vite build` | 客户端产物 `apps/client/dist/`，控制台产物 `apps/server/console-static/` |
+| `pnpm start` | 目标 S10 | `tsx scripts/start.ts` | 在 `pnpm build` 后运行服务端与客户端 Vite preview |
+| `pnpm typecheck` | 已实现 | `tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json` | 检查服务端与浏览器的 TypeScript |
+| `pnpm test` | 已实现 | `vitest run` | 单元、契约、集成、目录、场景测试 |
+| `pnpm test:e2e` | 目标 S10 | `playwright test` | 两端口启动、玩家与控制台关键路径 |
+| `pnpm check:boundaries` | 已实现 | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header |
+| `pnpm check:catalog` | 已实现 | `tsx scripts/check-catalog.ts` | 检查装配的 realm/kind、能力闭包、作用域、重复绑定、拓扑和配置 schema |
+| `pnpm check:assets` | 已实现 | `tsx scripts/check-assets.ts` | 核对资产清单、版本与内容包覆盖 |
+| `pnpm check:docs` | 已实现 | `tsx scripts/check-docs.ts` | 检查相对链接、锚点与表格列数 |
+| `pnpm check:ports` | 目标 S12 | `tsx scripts/check-ports.ts` | 启动后核对应用只监听 :5173 与 :3000 |
+| `pnpm check` | 已实现 | 见下文 “`pnpm check` 的组成” | 每个构建步骤完成前必须通过 |
 
 `scripts/dev.ts` 与 `scripts/start.ts` 先调用 `process.loadEnvFile()`（`.env` 不存在时跳过），再用 `node:child_process.spawn` 启动子进程并把环境变量传给它们；任一子进程退出时结束全部子进程并以非零码退出；不自动重启、不改端口。
 
-上表是最终形态：S10 的 `dev` 仅启动 server/client，`build` 仅构建 client；S11 才加入 console 的 watch 构建、普通构建与静态资源挂载，S10 不引用 console 的 Vite 配置。`check:catalog` 扫描 `config/assemblies/*.yaml` 并通过组合根加载已存在的 server 模块目录；某 realm 的模块目录尚不存在时，只有全部待校验装配在该 realm 的 bindings 均为空才通过，非空即失败，不得捕获解析错误后跳过。
+S10 的 `dev` 启动 server/client，`build` 构建 client。S11 加入 console 的 watch 构建、普通构建与静态资源挂载。`check:catalog` 扫描 `config/assemblies/*.yaml` 并加载组合根登记的模块。若某 realm 还没有模块目录，该 realm 在每份装配里的 bindings 必须为空。
 
 每个脚本在实现它的那一步加入 `package.json`（见 [构建计划](build-plan.md) 第 0.2 节），不提前写占位脚本。`pnpm check` 的组成随步骤增长：S00 为 `pnpm typecheck && pnpm test && pnpm check:docs`；S03 起加入 `pnpm check:boundaries`；S09 起加入 `pnpm check:catalog`；资产包入仓后加入 `pnpm check:assets`。它始终不包含 `test:e2e` 与 `check:ports`（这两项在要求它们的步骤里单独运行）。
 
@@ -174,7 +175,7 @@ NPC_LOG_LEVEL=info
 # runtime selection for the online world (operations.md §10)
 NPC_ASSEMBLY=local-slg-standard-v1
 NPC_MODEL_LAYOUT=shared-model-layout-v1
-NPC_ROSTER=standard-15
+NPC_ROSTER=standard-20
 
 # local login tokens; generated and printed once when empty
 NPC_PLAYER_TOKEN=
@@ -194,6 +195,8 @@ ANTHROPIC_API_KEY=
 ```
 
 部署参数只有这一个来源：主机、两个端口、数据目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `NPC_DATA_DIR`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/ai-npc.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
+
+环境变量示例取自当前 `.env.example`。正式名册与默认值切换见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)。
 
 ## 6. 本地双端拓扑
 

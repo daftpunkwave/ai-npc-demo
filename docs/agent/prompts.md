@@ -1,6 +1,6 @@
 # Prompt 与模型输入输出规格
 
-> 状态：实现规范。本文规定每种 purpose 的请求结构、prompt 文本模板、输出 schema 与宿主校验。模板文本放在 `content/world-packs/earth-2964-v1/prompts/zh-CN.yaml`，代码按本文组装；修改模板属于 profile 可比较条件（`templateVersion` 进入 manifest）。上下文分段与预算见 [上下文](context.md)，线协议见 [模型传输](model-transport.md)，决策/对白分离的原因见 [运行时](runtime.md) 第 7 节。
+> 状态：部分实现。内容包已有 `prompts/zh-CN.yaml` 模板。按 purpose 组装模型请求、校验输出和冻结 `templateVersion` 的运行链路待接入。上下文分段与预算见 [上下文](context.md)，线协议见 [模型传输](model-transport.md)，决策与对白的边界见 [运行时](runtime.md) 第 7 节。
 
 ## 1. 总则
 

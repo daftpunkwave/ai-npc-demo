@@ -1,8 +1,8 @@
 # 游戏职能模块与规则边界
 
-> **设计权威（2026-11-20）：** 游戏设计意图见 [design/gameplay/11-agent-actions.md](../design/gameplay/11-agent-actions.md) 与 [14-agent-society.md](../design/gameplay/14-agent-society.md)。模块边界继续有效；与设计冲突时以 `docs/design/` 为准。
+> 游戏设计意图见 [11-agent-actions.md — Agent 职能](../design/gameplay/11-agent-actions.md) 与 [14-agent-society.md — Agent 社会](../design/gameplay/14-agent-society.md)。
 
-> 状态：目标设计。游戏只是全平台模块组合之一，地图、时钟、资源、行动、协议、通信、剧情与玩家授权均由可替换 provider 实现；宿主不固化这些游戏职能。本文只定义职能边界与不变量；首版的具体规则、数值与结算顺序见 [规则](rules.md)，初始数据见 [内容包](content-pack.md)，命令与事件见 [领域模型](../architecture/domain-model.md)。
+> 状态：部分实现。服务端已有首批规则 provider 和剧情 provider 替换。本文定义职能边界，序章差距见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)，命令与事件见 [领域模型](../architecture/domain-model.md)。
 
 ## 1. 主体、接口与实现
 

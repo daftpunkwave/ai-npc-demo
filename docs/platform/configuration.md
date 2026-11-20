@@ -140,7 +140,7 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 schemaVersion: 1
 assemblyId: local-slg-standard-v1
 configs:                         # named config blocks referenced by bindings
-  clock: { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
+  clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
   # host, ports, allowed origins and the data directory are NOT configured here:
   # the server host derives them from env (tech-stack.md §5) and merges them into the

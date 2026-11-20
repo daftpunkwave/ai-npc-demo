@@ -1,8 +1,8 @@
 # 领域模型：命令、事件、状态与投影
 
-> **设计权威（2026-11-20）：** 多人的 `seatId`、`actorId`、投影与命令网关要求见 [design/multiplayer/02-authority-economy-fairness.md](../design/multiplayer/02-authority-economy-fairness.md)。本文的字段与受众规则继续有效；冲突时以 `docs/design/` 为准。
+> 单机也需保留的席位与动作者字段见 [02-authority-economy-fairness.md — 首版要留的接口](../design/multiplayer/02-authority-economy-fairness.md)。当前迁移缺口见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
 
-> 状态：实现规范。本文是世界写入路径的“数据字典”：每个命令谁能发、payload 是什么、由哪个模块处理、产生哪些事件；每个事件的 payload 与受众；每类状态归哪个模块所有；玩家与 Agent 各自能看到什么。数值规则见 [规则](../game/rules.md)；信封、receipt、错误码等通用结构见 [公共契约](contracts.md)；事务与恢复语义见 [事件与状态](events-and-state.md)；表结构见 [存储](storage.md)。下文类型写成 TypeScript 示意，实现时在 `packages/contracts` 用 Zod 定义，字段名与本文保持一致。
+> 本文维护命令与事件目录、状态所有权及投影语义。待交付的命令和事件扩展在对应章节标明，HTTP 可用范围以 [api.md — 通用约定](api.md#1-通用约定) 为准。数值规则见 [规则](../game/rules.md)；信封、receipt 与错误码见 [公共契约](contracts.md)；事务与恢复语义见 [事件与状态](events-and-state.md)；表结构见 [存储](storage.md)。
 
 ## 1. ID 前缀
 
@@ -174,7 +174,7 @@ COMMIT
 
 | type | issuer | payload | 处理模块 | 成功时的事件 | 常见拒绝原因码 |
 |---|---|---|---|---|---|
-| `campaign.start` | P R | `{ factionId }` | world（另有 comms、scenario、宿主的后续钩子） | `CampaignStarted`、`DelegationCreated`×9、`MessageSent`×2、`KnowledgeGranted`×n；并安排伤员期限与剧情卡 job；宿主激活名册 | `campaign-exists`、`unknown-faction`、`budget-exhausted`（激活配额不足） |
+| `campaign.start` | P R | `{ factionId }` | world（另有 comms、scenario 和宿主钩子） | `CampaignStarted`、`DelegationCreated`、`MessageSent`、`KnowledgeGranted`，并安排伤员期限与剧情卡 job | `campaign-exists`、`unknown-faction`；名册激活接入后可返回 `budget-exhausted` |
 | `dialogue.say` | P | `{ targetAgentId, text }`（1–300 字） | comms | `DialogueSubmitted` | `paused`、`relay-down`、`unknown-target`、`invalid-params` |
 | `speech.commit` | H | `{ channel: "dialogue"\|"message"\|"broadcast", conversationId: string\|null, audience: string[], approvedSpeechArtifactRef, intentKind, replyToId: string\|null }` | comms | `DialogueSubmitted` 或 `MessageSent` | `speech-not-approved`、`relay-down`、`paused`、`no-authority`（无广播权） |
 | `seat.say` | S | `{ to: string[], text }`（1–200 字，真人席位直接写的话） | comms | `MessageSent`（channel `seat`，没有 speech artifact） | `paused`、`relay-down`、`no-authority` |
@@ -184,7 +184,7 @@ COMMIT
 | `task.dispatch` | P A S | `{ taskType, teamId, invitees?: string[], params, departAfterTicks?: number }` | actions（调用 world、map、resources 的 ops） | `TaskDispatched`、`ResourcesReserved`、`TaskInvitationIssued`×n | 按 [规则](../game/rules.md) 第 6 节的校验顺序 |
 | `task.respond` | A | `{ taskId, response: "accept"\|"decline", reasonCode?: ReasonCode }` | actions | `TaskInvitationAnswered` | `not-invited`、`invitation-closed` |
 | `task.cancel` | P A S | `{ taskId }` | actions | `TaskCancelled`、`ResourcesReleased`（如有） | `task-not-cancellable`、`no-authority` |
-| `policy.set` | A S | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
+| `policy.set` | A S；P 的水闸权限见下文 | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
 | `scenario.draft` | O | `{ cardId, version, triggerAtTick, effects: CardEffect[], note }` | scenario | 无事件；写入 `status` 为 `draft` 的 `scenario-card` | `version-conflict`（同一卡片已登记）、`invalid-effect`（效果引用内容不存在）、`deadline-out-of-range`（不在发布窗口内） |
 | `scenario.publish` | O | `{ cardId, version, triggerAtTick }` | scenario | `ScenarioCardPublished`，并安排 `scenario.card` job | `card-not-draft`、`version-conflict`、`deadline-out-of-range` |
 | `scenario.withdraw` | O | `{ cardId }` | scenario | `ScenarioCardWithdrawn` | `card-already-triggered` |
@@ -194,7 +194,13 @@ COMMIT
 
 `Term` 即 [规则](../game/rules.md) 第 7 节的八种条款，统一为 `{ kind, obligorId, ...params }` 的判别联合。`CardEffect` 见 [内容包](../game/content-pack.md) 第 9 节；`OverrideEffect` 在 `CardEffect` 之外额外允许 `meter-set { meter, value }` 与 `road-status-set { roadId, status }`，只供调试，使用即污染。
 
-`campaign.start` 产生的两条开局消息：`MessageSent` 的 `fromId` 为接触角色，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliveries` 为玩家与发送接触角色各自 tick 0 的条目（按 principalId 排序），正文取自 [内容包](../game/content-pack.md) 第 8 节。剧情卡的广播与消息同样不经过模型：`channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。
+序章待交付的命令与权限：
+
+- `policy.set` 增加发起者 P。只有当前 campaign 的公社党魁玩家可以设置 `watergate.allocation`。授权使用服务端认证与开局记录，`PolicyChanged.byId` 记为实际操作的 `player-1`。水闸协议的义务人沿用同一权限规则。参见 [rules.md — 政策](../game/rules.md#8-政策)。
+- 公社党魁通过玩家命令提交公开广播正文。comms 按公开广播规则计算并冻结送达，提交 `MessageSent`；玩家入口与 Agent 的 `speech.commit` 批准流程独立。
+- t144 程序案需要提案与投票命令以及席位归属校验。提案和投票依 [rules.md — t144 程序案](../game/rules.md#101-t144-程序案) 裁决，经命令网关与事务提交。
+
+`campaign.start` 按 [content-pack.md — 开局内容](../game/content-pack.md#8-五席开局startsyaml本切片只启用公社) 逐条提交开局消息。事件 `MessageSent` 的 `fromId` 为发件人，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliveries` 为玩家与发件人各自 tick 0 的条目（按 principalId 排序）。剧情卡消息的 `channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。
 
 规则 job：
 
@@ -263,6 +269,8 @@ COMMIT
 | `DayPassed` | day、meters、consumption、changes | public |
 | `ScenarioCardTriggered` / `ScenarioCardPublished` / `ScenarioCardWithdrawn` / `ScenarioCompensationApplied` / `ScenarioOverrideApplied` | cardId、version、note | system |
 | `ChapterStageEvaluated` | outcome、meters、unmet、fulfilledCount、breachedCount | public |
+
+程序案交付时，在事件目录与公共 schema 增加 `MotionDecided`，记录逐席票、赞成数、表决结果与下一周议程顺序，供议事录与投影使用。`ChapterStageEvaluated` 同步携带程序案结果。字段命名与兼容读取随该步定稿。参见 [rules.md — 序章议事与评估](../game/rules.md#10-序章议事与评估)。
 
 通信事件的 `deliveries: { principalId: string; deliverAtTick: number }[]` 是提交时冻结、按 principalId 排序去重的实际投递名单（含发送者的立即回显）；单事件不再有标量 deliverAtTick。逐接收者延迟、中断时混合受众的处理见规则第 9 节；投影只读取自己的 delivery。
 

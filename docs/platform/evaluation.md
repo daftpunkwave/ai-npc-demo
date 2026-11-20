@@ -172,10 +172,10 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
     { "metric": "traceable-turn-rate", "numerator": 9, "denominator": 9, "value": 1.0 }
   ],
   "probes": [
-    { "probeId": "p-recall-promise", "agentId": "npc-cenyan", "answer": "……", "score": { "kind": "recall", "correct": true }, "valid": true }
+    { "probeId": "p-recall-promise", "agentId": "human-independent", "answer": "……", "score": { "kind": "recall", "correct": true }, "valid": true }
   ],
   "behavior": [
-    { "atTick": 60, "agentId": "npc-cenyan", "trigger": "player-dialogue", "stance": "decline", "reasonCode": "past-breach", "commands": [] }
+    { "atTick": 60, "agentId": "human-independent", "trigger": "player-dialogue", "stance": "decline", "reasonCode": "past-breach", "commands": [] }
   ],
   "memory": { "recordsByTier": { "short": 12, "long": 5, "core": 1 }, "maintenanceRuns": 2, "maintenanceFailures": 0 },
   "cost": { "inputTokens": 12000, "outputTokens": 3000, "unknownUsageAttempts": 0, "costEstimate": 0, "currency": "USD", "pricingVersion": "2026-11" },

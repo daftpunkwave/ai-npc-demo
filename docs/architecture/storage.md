@@ -25,6 +25,8 @@ PRAGMA busy_timeout = 5000;
 
 本节的 DDL 是 0001 的基线；后续迁移只追加结构与索引，不改既有表：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`。两份迁移的完整语句见 §2.1。
 
+`agent_activations` 在 0001 中的 20 人注释是历史记录，表约束只校验激活状态枚举。目标配额为部署内 15 个活动身份，由激活事务统一检查。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。
+
 ```sql
 -- ===== deployment scope =====
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);

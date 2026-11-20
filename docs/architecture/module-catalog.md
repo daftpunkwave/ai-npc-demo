@@ -79,7 +79,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `agent.model-pool` | `agent.model-pool.shared` | — | 独立评估用 `agent.model-pool.isolated` | deployment | RunSpec 模型布局 |
 | `agent.tools` | `agent.tools.game-tools` | — | 按工具族拆分的 contributor | deployment | roster toolset/binding |
 
-`agent.runtime` 不在目录中：turn 管线、预算、租约、证据和会话边界是宿主固定机制，模块只实现各阶段策略。memory 的四个实现与评价口径由 [记忆](../agent/memory.md) 与 [评估](../platform/evaluation.md) 维护；decision 的 deterministic 实现只用于工程测试，不冒充真实模型效果。
+`agent.runtime` 不在目录中。turn 管线、预算、租约、证据和会话边界是宿主固定机制。上表的默认项指首版完成后的组合，S16–S17 的标准装配暂用 `agent.decision.deterministic`，S18 接入真实模型后切换。参见 [build-plan.md — 装配随步骤增长](../delivery/build-plan.md#02-脚本配置与装配随步骤增长)、[memory.md — 记忆](../agent/memory.md)、[evaluation.md — 评估](../platform/evaluation.md)。
 
 下文与 Agent 专篇中的 `memory.ledger`、`perception.local`、`context.ordered-blocks` 等是本表 `agent.<family>.<impl>` 的简写；冻结 manifest 与 trace 必须记录完整模块 ID，不能只写简写。
 
