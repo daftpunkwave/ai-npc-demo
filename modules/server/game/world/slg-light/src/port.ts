@@ -7,7 +7,6 @@
 import type { MeterChange, MeterChangeCause, NumericMeterId, ReasonCode, ResourceAmounts, WatergateAllocation } from "@ai-npc/contracts";
 import {
   addAmounts,
-  coversAmounts,
   factionAudience,
   gameModuleIds,
   principalsAudience,
@@ -16,6 +15,7 @@ import {
   type CampaignView,
   type CharacterView,
   type DelegationView,
+  type DelegationAllocation,
   type DrawAuthority,
   type GameContent,
   type GameIdFactory,
@@ -52,6 +52,42 @@ type OpSuccess = { readonly ok: true };
 
 function failure(reasonCode: ReasonCode): OpFailure {
   return { ok: false, reasonCode };
+}
+
+function compareDelegations(left: DelegationState, right: DelegationState): number {
+  if (left.delegationId < right.delegationId) {
+    return -1;
+  }
+  return left.delegationId > right.delegationId ? 1 : 0;
+}
+
+interface PlannedDelegationDraw {
+  readonly delegation: DelegationState;
+  readonly amount: ResourceAmounts;
+}
+
+function planDelegationDraws(
+  candidates: readonly DelegationState[],
+  delta: ResourceAmounts,
+): readonly PlannedDelegationDraw[] | null {
+  let remainingNeed = delta;
+  const draws: PlannedDelegationDraw[] = [];
+  for (const delegation of candidates) {
+    const amount: ResourceAmounts = {
+      supply: Math.min(delegation.remaining.supply, remainingNeed.supply),
+      energy: Math.min(delegation.remaining.energy, remainingNeed.energy),
+      medical: Math.min(delegation.remaining.medical, remainingNeed.medical),
+    };
+    if (totalAmount(amount) === 0) {
+      continue;
+    }
+    draws.push({ delegation, amount });
+    remainingNeed = subtractAmounts(remainingNeed, amount);
+    if (totalAmount(remainingNeed) === 0) {
+      return draws;
+    }
+  }
+  return null;
 }
 
 function viewOfMeters(state: MetersState): MetersView {
@@ -141,6 +177,7 @@ class SlgWorldPort implements GameWorldPort {
     return this.tx()
       .list<DelegationState>("delegation")
       .filter((entry) => entry.state.granteeId === principalId)
+      .sort((left, right) => compareDelegations(left.state, right.state))
       .map((entry) => ({
         delegationId: entry.state.delegationId,
         grantorFactionId: entry.state.grantorFactionId,
@@ -200,21 +237,27 @@ class SlgWorldPort implements GameWorldPort {
     ) {
       return { kind: "owner", factionId: stockpile.ownerFactionId };
     }
-    const delegation = this.findDelegation(principalId, stockpileId);
-    if (delegation === null) {
+    const delegations = this.findDelegations(principalId, stockpileId).map((entry) => entry.state);
+    const first = delegations[0];
+    if (first === undefined) {
       return { kind: "none" };
     }
     return {
       kind: "delegation",
-      delegationId: delegation.delegationId,
-      remaining: delegation.remaining,
-      untilTick: delegation.untilTick,
+      delegationId: first.delegationId,
+      remaining: delegations.reduce(
+        (remaining, delegation) => addAmounts(remaining, delegation.remaining),
+        { supply: 0, energy: 0, medical: 0 },
+      ),
+      untilTick: Math.min(...delegations.map((delegation) => delegation.untilTick)),
     };
   }
 
   /** 查找覆盖该库存点的有效委托；stockpileId 为 null 的仅队伍委托不提供动用权。 */
-  private findDelegation(principalId: string, stockpileId: string): DelegationState | null {
-    const candidates = this.tx()
+  private findDelegations(principalId: string, stockpileId: string): readonly {
+    readonly state: DelegationState;
+  }[] {
+    return this.tx()
       .list<DelegationState>("delegation")
       .filter(
         (entry) =>
@@ -222,8 +265,8 @@ class SlgWorldPort implements GameWorldPort {
           entry.state.stockpileId !== null &&
           entry.state.stockpileId === stockpileId &&
           entry.state.untilTick >= this.tx().worldTick,
-      );
-    return candidates[0]?.state ?? null;
+      )
+      .sort((left, right) => compareDelegations(left.state, right.state));
   }
 
   moveCharacter(agentId: string, nodeId: string): OpSuccess | OpFailure {
@@ -339,20 +382,35 @@ class SlgWorldPort implements GameWorldPort {
     principalId: string,
     stockpileId: string,
     delta: ResourceAmounts,
-  ): { readonly ok: true; readonly delegationId: string } | OpFailure {
-    const delegation = this.findDelegation(principalId, stockpileId);
-    if (delegation === null) {
+  ): { readonly ok: true; readonly delegationId: string; readonly allocations: readonly DelegationAllocation[] } | OpFailure {
+    const candidates = this.findDelegations(principalId, stockpileId).map((entry) => entry.state);
+    const first = candidates[0];
+    if (first === undefined) {
       return failure("draw-limit-exceeded");
     }
-    if (!coversAmounts(delegation.remaining, delta)) {
+    if (totalAmount(delta) === 0) {
+      return { ok: true, delegationId: first.delegationId, allocations: [] };
+    }
+    const plannedDraws = planDelegationDraws(candidates, delta);
+    if (plannedDraws === null || plannedDraws.length === 0) {
       return failure("draw-limit-exceeded");
     }
-    this.tx().put("delegation", delegation.delegationId, {
-      ...delegation,
-      remaining: subtractAmounts(delegation.remaining, delta),
-    });
-    // 返回实际扣减的委托，任务据此记录回补目标；回补时不再按主体与库存点重新查找。
-    return { ok: true, delegationId: delegation.delegationId };
+    for (const draw of plannedDraws) {
+      this.tx().put("delegation", draw.delegation.delegationId, {
+        ...draw.delegation,
+        remaining: subtractAmounts(draw.delegation.remaining, draw.amount),
+      });
+    }
+    const allocations: readonly DelegationAllocation[] = plannedDraws.map((draw) => ({
+      delegationId: draw.delegation.delegationId,
+      amount: draw.amount,
+    }));
+    const firstAllocation = allocations[0];
+    if (firstAllocation === undefined) {
+      return failure("draw-limit-exceeded");
+    }
+    // 保留稳定的单委托 ID 字段供兼容调用；回补方使用 allocations 逐笔处理所有已扣减委托。
+    return { ok: true, delegationId: firstAllocation.delegationId, allocations };
   }
 
   refundDelegation(delegationId: string, delta: ResourceAmounts): OpSuccess | OpFailure {

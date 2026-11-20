@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
-import { DomainError, type HostLogger } from "@ai-npc/contracts";
+import { DomainError, type HostLogger, type HostServices, type Json } from "@ai-npc/contracts";
 
 /** 迁移文件目录：与本模块源码一起交付，不读环境变量或用户目录。 */
 export const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../migrations/", import.meta.url));
@@ -21,16 +21,26 @@ export interface StorageMigration {
   readonly name: string;
   readonly filePath: string;
   readonly sql: string;
+  readonly checksum: string;
 }
+
+type MigrationHasher = HostServices["hash"];
 
 function migrationFailure(message: string, details?: Record<string, string | number>): never {
   throw new DomainError("invalid-state", message, { details: details ?? null });
 }
 
+function normalizeMigrationSql(sql: string): string {
+  return sql.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
+
 /** 读取迁移目录并按编号排序；要求编号从 1 连续递增且不重复。 */
-export function loadMigrations(directory: string = MIGRATIONS_DIRECTORY): readonly StorageMigration[] {
+export async function loadMigrations(
+  hash: MigrationHasher,
+  directory: string = MIGRATIONS_DIRECTORY,
+): Promise<readonly StorageMigration[]> {
   const names = readdirSync(directory).filter((entry) => MIGRATION_FILE_PATTERN.test(entry));
-  const migrations = names.map((fileName) => {
+  const migrations = await Promise.all(names.map(async (fileName) => {
     const match = MIGRATION_FILE_PATTERN.exec(fileName);
     if (match === null) {
       migrationFailure(`迁移文件名无法解析：${fileName}`);
@@ -39,8 +49,10 @@ export function loadMigrations(directory: string = MIGRATIONS_DIRECTORY): readon
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 正则已保证分组存在，但仓库开启 noUncheckedIndexedAccess 后索引访问仍可能为 undefined；Codacy 未开启该选项。
     const name = match[2] ?? "";
     const filePath = join(directory, fileName);
-    return { version, name, filePath, sql: readFileSync(filePath, "utf8") };
-  });
+    const sql = normalizeMigrationSql(readFileSync(filePath, "utf8"));
+    const checksum = await hash(sql as Json);
+    return { version, name, filePath, sql, checksum };
+  }));
   migrations.sort((left, right) => left.version - right.version);
   for (const [index, migration] of migrations.entries()) {
     const expected = index + 1;
@@ -54,38 +66,106 @@ export function loadMigrations(directory: string = MIGRATIONS_DIRECTORY): readon
   return migrations;
 }
 
-function readAppliedVersions(database: DatabaseSync): readonly number[] {
+interface AppliedMigration {
+  readonly version: number;
+  readonly checksum: string | null;
+}
+
+function hasChecksumColumn(database: DatabaseSync): boolean {
+  const column = database
+    .prepare(
+      "SELECT name FROM pragma_table_info('schema_migrations') WHERE name = 'checksum'",
+    )
+    .get();
+  return column !== undefined;
+}
+
+function readAppliedMigrations(database: DatabaseSync): readonly AppliedMigration[] {
   const table = database
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'")
     .get();
   if (table === undefined) {
     return [];
   }
+  const checksumExpression = hasChecksumColumn(database) ? "checksum" : "NULL AS checksum";
   return database
-    .prepare("SELECT version FROM schema_migrations ORDER BY version")
+    .prepare(`SELECT version, ${checksumExpression} FROM schema_migrations ORDER BY version`)
     .all()
-    .map((row) => Number(row["version"]));
+    .map((row) => ({
+      version: Number(row["version"]),
+      checksum: row["checksum"] === null ? null : String(row["checksum"]),
+    }));
+}
+
+function insertAppliedMigration(
+  database: DatabaseSync,
+  migration: StorageMigration,
+  nowIso: string,
+): void {
+  if (hasChecksumColumn(database)) {
+    database
+      .prepare("INSERT INTO schema_migrations (version, applied_at, checksum) VALUES (?, ?, ?)")
+      .run(migration.version, nowIso, migration.checksum);
+    return;
+  }
+  database
+    .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
+    .run(migration.version, nowIso);
+}
+
+function assertAppliedChecksums(
+  database: DatabaseSync,
+  migrations: readonly StorageMigration[],
+): void {
+  if (!hasChecksumColumn(database)) {
+    return;
+  }
+  const byVersion = new Map(migrations.map((migration) => [migration.version, migration]));
+  for (const applied of readAppliedMigrations(database)) {
+    const migration = byVersion.get(applied.version);
+    if (migration === undefined) {
+      continue;
+    }
+    if (applied.checksum === null || applied.checksum.length === 0) {
+      migrationFailure(`数据库已应用迁移 ${applied.version}，但缺少内容校验和`, {
+        version: applied.version,
+      });
+    }
+    if (applied.checksum !== migration.checksum) {
+      migrationFailure(`数据库已应用迁移 ${applied.version} 的内容校验和不一致`, {
+        version: applied.version,
+        expected: migration.checksum,
+        actual: applied.checksum,
+      });
+    }
+  }
 }
 
 /**
  * 执行尚未应用的迁移；每条迁移在自己的写事务内完成，失败时该条整体回滚。
  * 返回本次实际执行的迁移编号，便于宿主记录启动证据。
  */
-export function applyMigrations(
+export async function applyMigrations(
   database: DatabaseSync,
   nowIso: string,
   logger: HostLogger,
+  hash: MigrationHasher,
   directory: string = MIGRATIONS_DIRECTORY,
-): readonly number[] {
-  const migrations = loadMigrations(directory);
-  const applied = readAppliedVersions(database);
+): Promise<readonly number[]> {
+  const migrations = await loadMigrations(hash, directory);
+  const applied = readAppliedMigrations(database);
   const known = new Set(migrations.map((migration) => migration.version));
   for (const version of applied) {
-    if (!known.has(version)) {
-      migrationFailure(`数据库已应用迁移 ${version}，但迁移目录中缺少对应文件`, { version });
+    if (!known.has(version.version)) {
+      migrationFailure(`数据库已应用迁移 ${version.version}，但迁移目录中缺少对应文件`, {
+        version: version.version,
+      });
     }
   }
-  const appliedSet = new Set(applied);
+  if (hasChecksumColumn(database)) {
+    assertAppliedChecksums(database, migrations);
+  }
+  const appliedSet = new Set(applied.map((migration) => migration.version));
   const executed: number[] = [];
   for (const migration of migrations) {
     if (appliedSet.has(migration.version)) {
@@ -94,9 +174,7 @@ export function applyMigrations(
     database.exec("BEGIN IMMEDIATE");
     try {
       database.exec(migration.sql);
-      database
-        .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
-        .run(migration.version, nowIso);
+      insertAppliedMigration(database, migration, nowIso);
       database.exec("COMMIT");
     } catch (error) {
       try {
@@ -112,5 +190,6 @@ export function applyMigrations(
     executed.push(migration.version);
     logger.info("已应用存储迁移", { version: migration.version, name: migration.name });
   }
+  assertAppliedChecksums(database, migrations);
   return executed;
 }

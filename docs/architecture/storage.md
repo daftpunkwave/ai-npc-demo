@@ -17,19 +17,20 @@ PRAGMA busy_timeout = 5000;
 - 读操作可以用同一连接，也可以另开只读连接（`readOnly: true`）给控制台查询用。
 - JSON 字段一律存为 `TEXT`，写入前用规范 JSON 序列化；读出后用 Zod 校验。
 - 时间：`*_at` 列存 ISO-8601 UTC 字符串（来自宿主时钟端口）；游戏时间只用 `*_tick` 整数列。
-- 迁移：`modules/server/platform/storage/sqlite/migrations/NNNN_<name>.sql` 按编号顺序在启动时执行，已执行的版本记入 `schema_migrations`；迁移只追加，不修改已发布的迁移文件。
+- 迁移：`modules/server/platform/storage/sqlite/migrations/NNNN_<name>.sql` 按编号顺序在启动时执行，已执行的版本与内容校验和记入 `schema_migrations`；迁移只追加，不修改已发布的迁移文件。启动时逐版本比对校验和，文件缺失或内容漂移都会以 `invalid-state` 拒绝启动并指出版本。
 
 ## 2. 表结构（`0001_init.sql` 与后续迁移）
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
 
-本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`。两份迁移的完整语句见 §2.1。
+本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 的已发布内容指纹。0002 与 0003 的完整语句见 §2.1。
 
 `agent_activations` 保存单个身份的激活状态。目标配额为部署内 15 个活动身份：接入激活事务后，由该事务在同一次提交中统计跨分支的活动身份并拒绝第 16 个。当前迁移只约束单行状态，尚未实施跨分支检查；接入前任何部署都可以超过 15 个活动身份。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
 ```sql
 -- ===== deployment scope =====
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+-- 0004 为 schema_migrations 增加 checksum TEXT NOT NULL，并回填已发布迁移的内容指纹。
 
 CREATE TABLE worlds (
   world_id TEXT PRIMARY KEY,

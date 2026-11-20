@@ -57,7 +57,7 @@
 - 三种库存的用途及其余三种资源的处理见 [00-scope-and-invariants.md — 序章资源边界](../00-scope-and-invariants.md#12-序章资源边界)。
 - 库存点 `Stockpile` 归属一个派系、位于一个节点，保存 `amount` 与 `reserved`，均为非负整数，且 `reserved ≤ amount`；可用量 = `amount − reserved`。
 - 接受任务时原子预留，到达或完工时从 `amount` 与 `reserved` 中一起扣减；预留不足就拒绝命令，原因码 `insufficient-resource`。
-- 动用某个库存点的资源需要权限：库存点所属派系的战略 Agent（不受数量限制），或持有覆盖该库存点的委托（`Delegation`）、且本次用量不超过委托余额的主体（否则原因码 `draw-limit-exceeded`）。委托余额在任务被接受时扣减，任务在出发前取消时退回。
+- 动用某个库存点的资源需要权限：库存点所属派系的战略 Agent（不受数量限制），或持有覆盖该库存点的委托（`Delegation`）、且有效委托余额合计覆盖本次用量的主体（否则原因码 `draw-limit-exceeded`）。同一主体对同一库存点持有多份有效委托时，按 `delegationId` 字典序逐份扣减：每份先贡献当前剩余的资源，累计覆盖后才接受任务。供给、能源或医疗中任一资源总量不足时整笔拒绝，不留下部分扣减。任务记录每份实际扣减的委托与数量，在任务被接受时扣减，任务在出发前取消时按这些记录分别退回。
 - 展示等级：比值 `amount / max(1, baseline)`，其中 `baseline` 为初始数量。`< 0.3` 为“短缺”（`scarce`），`0.3–1.2` 为“可维持”（`adequate`），`> 1.2` 为“有余量”（`surplus`）。玩家只看到自己有委托的库存点的精确数量，其余只看到等级。
 - 每日消耗：`sp-commons` 每天消耗 6 点供给。这是序章的日耗，城市账按 [01-baseline.md — 数值基线](../design/balance/01-baseline.md#3-资源与仪表) 另行结算。可用量不足时只扣可用量，并提交公开事件 `SupplyShortage`。
 - 仓储受潮：t72 的剧情卡先于当日结算执行。在同一事务中按 `min(10, amount.supply − reserved.supply)` 扣减 `sp-commons` 供给，`StockpileAdjusted` 记录实扣量。可用量为 0 时直接完成该效果，日结照常执行。

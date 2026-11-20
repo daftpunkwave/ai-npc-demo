@@ -852,4 +852,76 @@ describe("任务资源写入失败的事务边界", () => {
     expect(delegationBalance(value, drawnId).remaining.supply).toBe(drawnBefore.limit.supply);
     expect(delegationBalance(value, other!.delegationId).remaining).toEqual(otherBalance.remaining);
   });
+
+  it("一笔任务可以按稳定顺序扣减多份委托并在取消时逐笔回补", async () => {
+    const value = await harness();
+    proposeAndAccept(
+      value,
+      strategicAuth(value, "human-neutral"),
+      playerAuth(value),
+      ["human-neutral", "player-1"],
+      [
+        {
+          kind: "delegate",
+          obligorId: "human-neutral",
+          granteeId: "player-1",
+          teamIds: ["team-commons"],
+          stockpileId: "sp-commons",
+          maxDraw: { supply: 3, energy: 0, medical: 0 },
+          untilTick: 100,
+        },
+      ],
+    );
+    const delegationIds = gameEventsOf(value, "DelegationCreated")
+      .map((event) => event.payload as {
+        readonly delegationId: string;
+        readonly granteeId: string;
+        readonly stockpileId: string | null;
+      })
+      .filter((payload) => payload.granteeId === "player-1" && payload.stockpileId === "sp-commons")
+      .map((payload) => payload.delegationId)
+      .sort();
+    expect(delegationIds).toHaveLength(2);
+
+    const caps = new Map([
+      [delegationIds[0]!, 2],
+      [delegationIds[1]!, 3],
+    ]);
+    value.storage.transact((tx) => {
+      const table = tx.branch(value.branchId).table("aggregate_state");
+      for (const [delegationId, cap] of caps) {
+        const row = table.get({ aggregate_type: "delegation", aggregate_id: delegationId });
+        if (row === null) {
+          throw new Error(`委托不存在: ${delegationId}`);
+        }
+        const state = row["state_json"] as Record<string, unknown>;
+        table.put({
+          ...row,
+          state_json: {
+            ...state,
+            remaining: { supply: cap, energy: 0, medical: 0 },
+            limit: { supply: cap, energy: 0, medical: 0 },
+          },
+        });
+      }
+    });
+
+    const taskId = dispatchTask(value, playerAuth(value), PARTIAL_SUPPLY_TRANSPORT);
+    const draws = (readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly {
+        readonly delegationId: string;
+        readonly amount: ResourceTriple;
+      }[];
+    }).delegationDraws;
+    expect(draws.map((draw) => draw.delegationId)).toEqual(delegationIds);
+    expect(draws.reduce((total, draw) => total + draw.amount.supply, 0)).toBe(5);
+    for (const delegationId of delegationIds) {
+      expect(delegationBalance(value, delegationId).remaining.supply).toBe(0);
+    }
+
+    expect(cancelTask(value, playerAuth(value), taskId).commandStatus).toBe("accepted");
+    for (const delegationId of delegationIds) {
+      expect(delegationBalance(value, delegationId).remaining.supply).toBe(caps.get(delegationId));
+    }
+  });
 });

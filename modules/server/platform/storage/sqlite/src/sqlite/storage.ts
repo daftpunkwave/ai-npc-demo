@@ -45,7 +45,7 @@ export class SqliteStorage implements StoragePort {
   }
 
   /** 打开库文件并执行未应用的迁移；重复调用无副作用，失败时连接会被关闭后重新抛出。 */
-  open(): void {
+  async open(): Promise<void> {
     if (this.database !== null) {
       return;
     }
@@ -55,7 +55,12 @@ export class SqliteStorage implements StoragePort {
     const databasePath = join(dataDir, "ai-npc.db");
     const database = openDatabase(databasePath);
     try {
-      const applied = applyMigrations(database, this.host.nowIso(), this.host.logger);
+      const applied = await applyMigrations(
+        database,
+        this.host.nowIso(),
+        this.host.logger,
+        this.host.hash,
+      );
       const catalog = resolveCatalog(database);
       this.database = database;
       this.catalog = catalog;

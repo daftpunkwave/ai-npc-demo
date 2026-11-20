@@ -345,12 +345,12 @@ fixture 文件每行一个 JSON：
 
 工具输入与 JSON 输出的 schema 都由 Zod 定义，用 `z.toJSONSchema()` 生成，再按以下规则清洗后发给模型：
 
-1. 每个 object 都设 `additionalProperties: false`，并把全部属性列入 `required`。可选字段在 Zod 里写成 `.nullable()`，不要用 `.optional()`。
+1. 含 `properties` 的普通 object 设 `additionalProperties: false`，并把全部属性列入 `required`。可选字段在 Zod 里写成 `.nullable()`，不要用 `.optional()`。没有 `properties` 的 `record` 或自由对象保留输入中的 `additionalProperties: true` 或子 schema，不把“无固定属性”收窄为只能传空对象。
 2. 删除模型协议不支持的约束关键字：`minimum`、`maximum`、`exclusiveMinimum`、`exclusiveMaximum`、`multipleOf`、`minLength`、`maxLength`、`pattern`、`minItems`、`maxItems`、`uniqueItems`、`format`、`default`、`$schema`。
 3. 不允许递归 schema；出现 `$ref` 时内联展开。
 4. 只保留白名单关键字：`type`、`properties`、`required`、`items`、`enum`、`const`、`anyOf`、`description`、`additionalProperties`（可空字段写成 `type: ["x", "null"]` 或 `anyOf` 含 `null`）；`oneOf` 改写为 `anyOf`；`$defs`/`definitions` 在内联后删除；`propertyNames` 等其他关键字一律删除。
 
-模型返回后，必须用**原始** Zod schema（含被删掉的长度与范围约束）重新校验；不通过就按 `protocol` 失败处理。清洗函数放在 `packages/contracts`，并有单元测试覆盖以上四条。工具 schema 不使用判别联合与 record（[工具](tools.md) 第 13.1 节），清洗后不会出现无法表达的结构。
+模型返回后，必须用**原始** Zod schema（含被删掉的长度与范围约束）重新校验；不通过就按 `protocol` 失败处理。清洗函数放在 `packages/contracts`，并有单元测试覆盖以上四条。工具 schema 不使用判别联合与 record（[工具](tools.md) 第 13.1 节）；清洗函数仍须正确保留其他调用方定义的 `record` 语义。
 
 ## 8. 归档与脱敏
 

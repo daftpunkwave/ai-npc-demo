@@ -13,15 +13,11 @@ export function createSqliteStorageModule(input: ModuleCreateInput): Promise<Mod
   const storage = new SqliteStorage(config, input.host);
   return Promise.resolve({
     moduleId: input.moduleId,
-    start: (signal) => {
+    start: async (signal) => {
       if (signal.aborted) {
-        // 以异步拒绝表达取消：DomainError 继承 Error，避免把错误构造成非 Error 的拒绝值。
-        return Promise.resolve().then(() => {
-          throw new DomainError("cancelled", "存储适配器启动已取消");
-        });
+        throw new DomainError("cancelled", "存储适配器启动已取消");
       }
-      storage.open();
-      return Promise.resolve();
+      await storage.open();
     },
     drain: async () => {
       // 存储适配器没有需要排空的在途任务：所有写入都在宿主事务内同步完成。

@@ -4,7 +4,7 @@
  * 禁止在测试中执行真实网络、让测试共享数据目录或忽略回滚后的残留数据断言。
  */
 import { describe, expect, it } from "vitest";
-import type { StorageTransaction } from "@ai-npc/contracts";
+import type { ScopedBranchStorage, StorageTable, StorageTransaction } from "@ai-npc/contracts";
 import { expectDomainError, openStorageHarness } from "./support";
 
 const BRANCH_ID = "brn-tx";
@@ -80,10 +80,12 @@ describe("同步事务", () => {
     const harness = await openStorageHarness();
     try {
       let captured: StorageTransaction | null = null;
+      let capturedTable: StorageTable | null = null;
       expect(() =>
         harness.port.transact((tx) => {
           captured = tx;
           const branch = tx.branch(BRANCH_ID);
+          capturedTable = branch.table("aggregate_state");
           writeAggregate(tx, "stk-rollback");
           branch.table("domain_events").put({
             world_seq: 1,
@@ -132,6 +134,10 @@ describe("同步事务", () => {
       const transaction = captured as StorageTransaction | null;
       expect(transaction).not.toBeNull();
       expectDomainError(() => (transaction as StorageTransaction).run("SELECT 1"), "invalid-state");
+      expectDomainError(
+        () => (capturedTable as StorageTable).list(),
+        "invalid-state",
+      );
     } finally {
       await harness.dispose();
     }
@@ -148,6 +154,63 @@ describe("同步事务", () => {
       ).toThrow("不能返回 Promise");
       const value = harness.port.transact((tx) => tx.get("SELECT 1 AS value")?.["value"]);
       expect(value).toBe(1);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("committed transactions invalidate derived table and branch handles", async () => {
+    const harness = await openStorageHarness();
+    try {
+      let rowsHandle: StorageTable | null = null;
+      let branchHandle: ScopedBranchStorage | null = null;
+      let branchTableHandle: StorageTable | null = null;
+      harness.port.transact((tx) => {
+        rowsHandle = tx.rows("worlds");
+        branchHandle = tx.branch(BRANCH_ID);
+        branchTableHandle = branchHandle.table("aggregate_state");
+        branchTableHandle.put({
+          aggregate_type: "stockpile",
+          aggregate_id: "stk-open",
+          version: 1,
+          state_json: { amount: 10 },
+        });
+      });
+
+      const rows = rowsHandle as StorageTable | null;
+      const branch = branchHandle as ScopedBranchStorage | null;
+      const branchTable = branchTableHandle as StorageTable | null;
+      expect(rows).not.toBeNull();
+      expect(branch).not.toBeNull();
+      expect(branchTable).not.toBeNull();
+      expectDomainError(
+        () =>
+          (rows as StorageTable).put({
+            world_id: "wld-after-commit",
+            pack_id: "earth-2964-v1",
+            content_version: "0.3.0",
+            created_at: "2026-01-01T00:00:00.000Z",
+          }),
+        "invalid-state",
+      );
+      expectDomainError(
+        () => (branch as ScopedBranchStorage).table("aggregate_state"),
+        "invalid-state",
+      );
+      expectDomainError(
+        () => (branchTable as StorageTable).get({ aggregate_type: "stockpile", aggregate_id: "stk-open" }),
+        "invalid-state",
+      );
+      expectDomainError(
+        () =>
+          (branchTable as StorageTable).put({
+            aggregate_type: "stockpile",
+            aggregate_id: "stk-after-commit",
+            version: 1,
+            state_json: { amount: 1 },
+          }),
+        "invalid-state",
+      );
     } finally {
       await harness.dispose();
     }

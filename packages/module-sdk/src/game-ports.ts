@@ -259,7 +259,11 @@ export interface StockpileView {
   readonly baseline: ResourceAmounts;
 }
 
-/** 委托余额视图；owner 表示由派系战略 Agent 直接动用。 */
+/**
+ * 委托动用权限视图；owner 表示派系战略主体直接动用。
+ * 存在多份有效委托时，remaining 为按资源合计的余额，delegationId 取字典序首份，
+ * untilTick 取这些委托中的最早到期 tick。
+ */
 export type DrawAuthority =
   | { readonly kind: "owner"; readonly factionId: string }
   | {
@@ -329,6 +333,12 @@ export interface DelegationView {
   readonly stockpileId: string | null;
   readonly remaining: ResourceAmounts;
   readonly untilTick: number;
+}
+
+/** 一次跨多份委托扣减中，单份委托实际承担的资源数量。 */
+export interface DelegationAllocation {
+  readonly delegationId: string;
+  readonly amount: ResourceAmounts;
 }
 
 /** 地图查询端口；所有读写都绑定到同一世界事务。 */
@@ -427,12 +437,21 @@ export interface GameWorldPort {
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   claimGroup(groupId: string, taskId: string): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
   releaseGroup(groupId: string, taskId: string): void;
-  /** 扣减覆盖该库存点的委托余额，并返回实际扣减的委托，供回补时按记录定位。 */
+  /**
+   * 扣减覆盖该库存点的委托余额，并返回实际扣减的委托，供回补时按记录定位。
+   * `allocations` 为新增可选能力：支持多份委托的实现返回每笔扣减，旧实现可只返回首份 ID。
+   */
   drawDelegation(
     principalId: string,
     stockpileId: string,
     delta: ResourceAmounts,
-  ): { readonly ok: true; readonly delegationId: string } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  ):
+    | {
+        readonly ok: true;
+        readonly delegationId: string;
+        readonly allocations?: readonly DelegationAllocation[];
+      }
+    | { readonly ok: false; readonly reasonCode: ReasonCode };
   /** 按实际扣减过的委托 ID 回补余额；不得按主体与库存点重新查找委托。 */
   refundDelegation(
     delegationId: string,
