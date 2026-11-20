@@ -17,6 +17,8 @@ export interface SnapshotView {
 export interface RestoreOutcome {
   readonly branchId: string;
   readonly clock?: ClockView;
+  /** 本次调用是否真正切换了在线分支；幂等重放返回首次结果时为 false。 */
+  readonly applied?: boolean;
 }
 
 /** 需要幂等记录的运营操作上下文；operationId 由请求体提供，principalId 来自认证会话。 */
@@ -45,7 +47,11 @@ export interface IdempotentOperationsDriver {
   resume(operation: OperationRequest, expectedRunVersion: number): ClockView;
   snapshot(operation: OperationRequest, input: SnapshotInput): SnapshotView;
   restore(operation: OperationRequest, input: RestoreInput): RestoreOutcome;
-  reset(operation: OperationRequest): { readonly branchId: string; readonly clock: ClockView };
+  reset(operation: OperationRequest): {
+    readonly branchId: string;
+    readonly clock: ClockView;
+    readonly applied?: boolean;
+  };
 }
 
 /** 宿主注入的时钟/存档/分支回调；运营服务不直接读写存储。 */
@@ -104,7 +110,11 @@ export class OperationsService {
     return this.driver.restore({ snapshotId, createdBy, ...(runId === undefined ? {} : { runId }) });
   }
 
-  reset(operation?: OperationRequest): { readonly branchId: string; readonly clock: ClockView } {
+  reset(operation?: OperationRequest): {
+    readonly branchId: string;
+    readonly clock: ClockView;
+    readonly applied?: boolean;
+  } {
     if (operation !== undefined && this.driver.idempotent !== undefined) {
       return this.driver.idempotent.reset(operation);
     }

@@ -56,6 +56,7 @@ export interface SnapshotRecordView {
   readonly worldSeq: number;
   readonly worldTick: number;
   readonly label: string;
+  readonly createdBy: string;
   readonly createdAt: string;
 }
 
@@ -95,6 +96,8 @@ export interface SnapshotRestoreArgs {
 export interface RestoreSnapshotResult {
   readonly branchId: string;
   readonly clock?: ClockView;
+  /** 本次调用是否真正切换在线分支；幂等重放为 false，传输层不得据此改切分支。 */
+  readonly applied?: boolean;
 }
 
 /** 快照创建结果。 */
@@ -107,6 +110,8 @@ export interface SnapshotCreateResult {
 export interface BranchClockResult {
   readonly branchId: string;
   readonly clock: ClockView;
+  /** 本次调用是否真正切换在线分支；幂等重放为 false，传输层不得据此改切分支。 */
+  readonly applied?: boolean;
 }
 
 /** 时钟控制回调：幂等键、期望版本与会话主体一起交给宿主执行。 */
@@ -189,6 +194,11 @@ export interface ServerAppOptions {
   readonly onBranchChanged?: BranchChangedHook;
   /** 玩家 WS 连接数变化；宿主据此在全部玩家断线超时后自动暂停。 */
   readonly onPlayerConnectionsChanged?: (connected: number) => void;
+  /**
+   * 内部错误上报：投影推送失败或未预期异常在此交给宿主记录。
+   * 传输层不直接写控制台，也没有自己的日志实现。
+   */
+  readonly onInternalError?: (message: string, error: unknown) => void;
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
   /** 认证、票据与过期判断使用的当前毫秒时间；默认 Date.now，测试可注入。 */
   readonly now?: () => number;

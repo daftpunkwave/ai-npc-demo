@@ -46,7 +46,7 @@ export function registerPlayerRoutes(context: RouteContext): void {
     try {
       hub.publish();
     } catch (error) {
-      app.log.error(error, "投影发布失败");
+      options.onInternalError?.("投影发布失败", error);
     }
     return receipt;
   });

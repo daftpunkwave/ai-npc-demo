@@ -7,6 +7,7 @@
 import {
   DomainError,
   eventEnvelopeSchema,
+  getDomainEventPayloadSchema,
   jsonValueSchema,
   type AudienceSpec,
   type Json,
@@ -170,6 +171,22 @@ export class TransactionWorldTx implements WorldTx {
       throw new DomainError("validation", "事件类型不能为空");
     }
     const json = requireJson(payload, "事件 payload");
+    // 已登记的事件类型必须满足公共契约的 payload schema；未登记类型留给扩展与测试模块。
+    const payloadSchema = getDomainEventPayloadSchema(type);
+    if (payloadSchema !== undefined) {
+      const payloadResult = payloadSchema.safeParse(json);
+      if (!payloadResult.success) {
+        throw new DomainError("validation", `事件 ${type} 的 payload 不合法`, {
+          details: {
+            type,
+            issues: payloadResult.error.issues.map((issue) => ({
+              path: issue.path.map((segment) => String(segment)).join("."),
+              message: issue.message,
+            })),
+          },
+        });
+      }
+    }
     const worldSeq = nextSequence(this.eventsTable, "world_seq");
     const eventId = this.host.ids("evt");
     const envelope = eventEnvelopeSchema.safeParse({

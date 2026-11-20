@@ -37,6 +37,11 @@ export class SocketSender {
   }
 
   sendMessage(socket: StreamSocket, message: Record<string, unknown>): void {
+    // hello、pong 与错误帧同样受背压约束；持续 ping 的慢连接不能绕过阈值无界堆积。
+    if (socket.bufferedAmount > this.options.maxBufferedBytes) {
+      this.close(socket, 1013, "backpressure");
+      return;
+    }
     try {
       socket.send(JSON.stringify(message));
     } catch {

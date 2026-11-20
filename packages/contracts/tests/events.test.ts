@@ -348,6 +348,15 @@ describe("领域事件目录", () => {
     expectInvalid(schema, null);
   });
 
+  it("无需移动的出发允许空路线", () => {
+    expectValid(domainEventPayloadSchemas.TaskDeparted, {
+      taskId,
+      participants: [],
+      route: [],
+      nominalCompletionTick: 1,
+    });
+  });
+
   it("投递名单必须按 principalId 排序去重", () => {
     expectSchema(deliverySchema, { principalId: "player-1", deliverAtTick: 0 }, { principalId: "", deliverAtTick: 0 });
     expectValid(deliveryListSchema, openings);

@@ -70,11 +70,11 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     autoPauseAfterDisconnectMs: clockConfigOf(core.activeStartup.plan).autoPauseAfterDisconnectMs,
     disposeResources: (app) =>
       disposeInReverse([
-        { label: "存储", dispose: () => core.storageStarted.dispose() },
-        { label: "已启动模块", dispose: () => core.startedModules.dispose() },
+        { label: "storage", dispose: () => core.storageStarted.dispose() },
+        { label: "started modules", dispose: () => core.startedModules.dispose() },
         ...(app === null
           ? []
-          : [{ label: "传输", dispose: () => core.runtime.transport.close(app) }]),
+          : [{ label: "transport", dispose: () => core.runtime.transport.close(app) }]),
       ]),
   });
   const operations = createOperationsHost({
@@ -116,8 +116,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     sessionAssembly: core.sessionAssembly,
     disposeOnFailure: () =>
       disposeInReverse([
-        { label: "存储", dispose: () => core.storageStarted.dispose() },
-        { label: "已启动模块", dispose: () => core.startedModules.dispose() },
+        { label: "storage", dispose: () => core.storageStarted.dispose() },
+        { label: "started modules", dispose: () => core.startedModules.dispose() },
       ]),
   });
 

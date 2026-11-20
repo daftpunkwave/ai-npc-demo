@@ -292,7 +292,7 @@ export function resolveCredentials(
     }
   }
   assertDistinctTokens(tokenRoles.map((role) => ({
-    label: config.configuredTokens[role] === undefined ? `${credentialsFileName} 中的 ${role}Token` : tokenEnvNames[role],
+    label: config.configuredTokens[role] === undefined ? `credentials.${role}Token` : tokenEnvNames[role],
     credential: resolved[role],
   })));
   const player = resolved.player;

@@ -58,16 +58,24 @@ export type {
 /**
  * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
  * 其余未预期错误一律 500 plugin-failed，safeMessage 不携带内部细节。
+ * 4xx 属于预期拒绝，不写内部错误；5xx 交宿主记录，避免静默失败。
  */
-function registerErrorHandling(app: FastifyInstance): void {
+function registerErrorHandling(
+  app: FastifyInstance,
+  report: (message: string, error: unknown) => void,
+): void {
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof DomainError) {
+      if (error.code === "plugin-failed" || error.code === "provider-failed") {
+        report("请求处理失败", error);
+      }
       return sendHttpError(reply, error.code, error.safeMessage, error.retryable);
     }
     const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
     if (statusCode === 400 || statusCode === 413 || statusCode === 415) {
       return sendHttpError(reply, "validation", "请求结构不合法");
     }
+    report("请求处理失败", error);
     return sendHttpError(reply, "plugin-failed", "服务器内部错误");
   });
   app.setNotFoundHandler((_request, reply) => sendHttpError(reply, "not-found", "资源不存在"));
@@ -76,6 +84,13 @@ function registerErrorHandling(app: FastifyInstance): void {
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
 export async function createServerApp(options: ServerAppOptions): Promise<ServerApp> {
   const app = Fastify({ logger: false });
+  const report = (message: string, error: unknown): void => {
+    try {
+      options.onInternalError?.(message, error);
+    } catch {
+      // 宿主上报失败不能影响已经确定的 HTTP 响应或连接清理。
+    }
+  };
   const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
@@ -112,7 +127,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerOperationsRoutes(context);
   registerStreamRoutes(context);
   registerConsoleRoutes(context);
-  registerErrorHandling(app);
+  registerErrorHandling(app, report);
 
   /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */
   const listen = async (listenOptions: { readonly host: string; readonly port: number }): Promise<void> => {
@@ -149,7 +164,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     close,
     inject,
     notifyWorldChanged: () => {
-      hub.publish();
+      try {
+        hub.publish();
+      } catch (error) {
+        // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
+        report("投影发布失败", error);
+      }
     },
     address,
     streamStats: () => hub.stats(),

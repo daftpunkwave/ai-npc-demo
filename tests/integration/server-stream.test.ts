@@ -231,6 +231,22 @@ describe("WS 流中心", () => {
     }
   });
 
+  it("慢连接的 ping 不能绕过背压阈值，超过上限即断开", () => {
+    const hub = createHub({ projection: () => projection(0), maxBufferedBytes: 128 });
+    try {
+      const session = hub.login({ token: "player-login-token", auth: playerAuth });
+      const socket = openStream(hub, session.sessionId);
+      socket.drain();
+      socket.bufferedAmount = 1024;
+      socket.receive({ type: "ping" });
+      expect(socket.closed?.code).toBe(1013);
+      expect(socket.drain().some((frame) => frame["type"] === "pong")).toBe(false);
+      expect(hub.stats().connections).toBe(0);
+    } finally {
+      hub.close();
+    }
+  });
+
   it("过期会话、未消费票据与断线重放缓冲被清理，重连按游标恢复", () => {
     let current = projection(0);
     let now = 0;
