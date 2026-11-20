@@ -43,7 +43,7 @@
 10. `starts.yaml` 只启用 `human-neutral`；其余四席标 `disabled`。
 11. `scenarios/watergate-v1.yaml` 的 `speakerId` 允许 43 名册中未上场的署名（沈砾、苏回、谷寻），事件不实例化、不调用模型；若加载器把 `speakerId` 校验成 roster 成员，需放行 signature-only speaker。`wake-agents` 只唤醒 7 名党魁/外域，不唤醒 8 名支持者。同时把 4 张卡的署名从 `npc-qingzhi`、`npc-luo`、`npc-zhuifeng`、`npc-tangzhen` 改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`，与 [content-pack](game/content-pack.md) 第 9 节一致。
 12. `locale/zh-CN.yaml` 的 `playerName` 改为“党魁”；`resources` 增加 `materials`/`food`/`water` 词条（t168 用）。
-13. 内容版本从 `1.0.0` 升到 `1.1.0`，写迁移说明；旧 run 不静默改语义。
+13. 世界名与 system 模板已随内容版本 `1.1.0` 对齐；旧 run 恢复会因 `contentVersion` 不匹配被拒绝，需重新开局，不静默改语义。名册与其余内容迁移随下一个内容版本 `1.2.0` 进行。
 14. `factions.yaml` 的 `homeNodeId` 拆成 `factionHomeNodeId` + `outpostNodeId`（人类）与 `territoryNodeId`（外域）；见 [content-pack](game/content-pack.md) 第 4 节。
 
 ### 2.4 表现与客户端

@@ -32,6 +32,8 @@ scenarios: [scenarios/watergate-v1.yaml]
 scripts: [scripts/s-promise.yaml, scripts/s-rumor.yaml, scripts/s-secret.yaml]
 ```
 
+> 版本说明：`1.1.0` 只把 system 模板中的世界名改为《炉边议会》，不改规则字段与占位符。恢复 `1.0.0` 的旧 run 会因 `contentVersion` 不匹配被明确拒绝，需重新开局。
+
 ## 2. 公开世界观（lore.yaml）
 
 lore 是所有主体都能读的共同背景，装进每个 Agent 的身份段（约 300 字），不包含任何秘密或未发布剧情。

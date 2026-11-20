@@ -123,7 +123,7 @@ describe("manifest 冻结与规范化哈希", () => {
     expect(built.manifest).toMatchObject({
       seed: "escalating-seed",
       selection: { moduleAssemblyRef: "local-slg-escalating-v1", rosterRef: "standard-20" },
-      content: { packId: "earth-2964-v1", contentVersion: "1.0.0" },
+      content: { packId: "earth-2964-v1", contentVersion: "1.1.0" },
       assembly: { assemblyId: "local-slg-escalating-v1", realm: "server", assemblyHash: resolved.assemblyHash },
       agentSlots: null,
     });
