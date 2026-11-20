@@ -81,7 +81,7 @@ export const contentMapSchema = z
   })
   .strict();
 
-/** factions.yaml：八个派系与战略 Agent 人格。 */
+/** factions.yaml：八个派系与战略 Agent 人格；人类派系有党部与前哨，外域只有领地。 */
 export const contentFactionsSchema = z
   .object({
     schemaVersion,
@@ -92,14 +92,30 @@ export const contentFactionsSchema = z
             factionId: factionIdSchema,
             name: textSchema,
             kind: z.enum(["human", "species"]),
-            homeNodeId: nodeIdSchema,
+            leaderCharacterId: contentIdSchema.optional(),
+            leaderName: textSchema.optional(),
+            factionHomeNodeId: nodeIdSchema.optional(),
+            outpostNodeId: nodeIdSchema.optional(),
+            territoryNodeId: nodeIdSchema.optional(),
+            playerSeat: textSchema.optional(),
             persona: z
               .object({
                 role: textSchema,
                 focus: textSchema,
+                secret: textSchema.optional(),
                 ...personaFieldsSchema,
               })
               .strict(),
+            relations: z
+              .array(
+                z
+                  .object({
+                    targetId: principalIdSchema,
+                    trust: z.number().int().min(-2).max(2),
+                  })
+                  .strict(),
+              )
+              .optional(),
           })
           .strict(),
       )
@@ -107,7 +123,7 @@ export const contentFactionsSchema = z
   })
   .strict();
 
-/** characters.yaml：十二个角色的人格与初始背景关系。 */
+/** characters.yaml：十一个角色的人格与初始背景关系。 */
 export const contentCharactersSchema = z
   .object({
     schemaVersion,
@@ -116,11 +132,13 @@ export const contentCharactersSchema = z
         z
           .object({
             agentId: contentIdSchema,
+            characterId: contentIdSchema.optional(),
             name: textSchema,
             factionId: factionIdSchema,
             role: textSchema,
             spawnNodeId: nodeIdSchema,
             skills: z.array(textSchema),
+            secret: textSchema.optional(),
             ...personaFieldsSchema,
             permissions: z.array(z.enum(["broadcast"])).optional(),
             initialRelations: z.array(

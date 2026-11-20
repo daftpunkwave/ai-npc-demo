@@ -15,13 +15,13 @@ cards:
     version: 1
     trigger: { atTick: 26 }
     effects:
-      - { kind: broadcast, speakerId: npc-qingzhi, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
+      - { kind: broadcast, speakerId: species-flora, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
       - { kind: message, from: npc-guxun, to: [player-1], text: 请考虑轮换供水。渗漏的事我还在查。 }
   - cardId: card-repair-exchange
     version: 1
     trigger: { atTick: 30 }
     effects:
-      - { kind: broadcast, speakerId: npc-luo, text: 泊星者可以修复中继。作为交换，我们需要战前星图。 }
+      - { kind: broadcast, speakerId: species-extraterrestrial, text: 泊星者可以修复中继。作为交换，我们需要战前星图。 }
   - cardId: card-flood-delay
     version: 1
     trigger: { atTick: 44 }
@@ -45,10 +45,10 @@ cards:
     version: 1
     trigger: { atTick: 96 }
     effects:
-      - { kind: broadcast, speakerId: npc-zhuifeng, text: 迁徙季开始了。隘口要是关着，族群只能冒险走别的路。 }
+      - { kind: broadcast, speakerId: species-fauna, text: 迁徙季开始了。隘口要是关着，族群只能冒险走别的路。 }
   - cardId: card-council
     version: 1
     trigger: { atTick: 144 }
     effects:
-      - { kind: broadcast, speakerId: npc-tangzhen, text: 明天之前在灰港议事。各方请带上可以签的条款。 }
-      - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, human-neutral, species-fauna, species-flora, species-extraterrestrial], reason: council }
+      - { kind: broadcast, speakerId: human-pacifist, text: 明天之前在灰港议事。各方请带上可以签的条款。 }
+      - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial], reason: council }

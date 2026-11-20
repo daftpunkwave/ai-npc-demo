@@ -161,13 +161,13 @@ describe("玩家投影", () => {
       agentId: "npc-wenyuan",
       name: "温原",
       factionId: "human-neutral",
-      role: "物资官",
+      role: "物资官 / 库房",
       nodeId: "grayharbor",
       injured: false,
       injuredUntilTick: null,
       publicClaim: "公平透明",
     });
-    expect(view.characters.find((character) => character.agentId === "npc-luo")?.publicClaim).toBe("精确");
+    expect(view.characters.find((character) => character.agentId === "species-extraterrestrial")?.publicClaim).toBe("精确");
   });
 
   it("自己的任务给出完整信息，其他队伍只给在途摘要，完成后状态与伤情正确", async () => {
@@ -177,7 +177,7 @@ describe("玩家投影", () => {
     const otherTaskId = dispatchTask(value, strategicAuth(value, "species-extraterrestrial"), {
       taskType: "transport",
       teamId: "team-star",
-      invitees: ["npc-luo"],
+      invitees: ["species-extraterrestrial"],
       departAfterTicks: 4,
       params: {
         fromStockpileId: "sp-star",
@@ -185,7 +185,7 @@ describe("玩家投影", () => {
         cargo: { supply: 0, energy: 1, medical: 0 },
       },
     });
-    acceptTaskInvitation(value, "npc-luo", otherTaskId);
+    acceptTaskInvitation(value, "species-extraterrestrial", otherTaskId);
 
     const pending = projection(value).tasks.find((task) => task.taskId === ownTaskId);
     expect(pending).toEqual({
@@ -243,13 +243,13 @@ describe("玩家投影", () => {
     // 该运输在 r-or-an 上抽样出 2 tick 延误与洛受伤：完成 tick 13，伤到 61。
     advanceTo(value, 13);
     expect(projection(value).tasks.some((task) => task.kind === "other")).toBe(false);
-    expect(projection(value).characters.find((character) => character.agentId === "npc-luo")).toMatchObject({
+    expect(projection(value).characters.find((character) => character.agentId === "species-extraterrestrial")).toMatchObject({
       injured: true,
       injuredUntilTick: 61,
     });
 
     advanceTo(value, 61);
-    expect(projection(value).characters.find((character) => character.agentId === "npc-luo")).toMatchObject({
+    expect(projection(value).characters.find((character) => character.agentId === "species-extraterrestrial")).toMatchObject({
       injured: false,
       injuredUntilTick: null,
     });
@@ -312,7 +312,7 @@ describe("玩家投影", () => {
       },
       "art-000000000102": {
         text: "隘口暂时安全，我晚点再确认。",
-        agentId: "npc-cenyan",
+        agentId: "species-fauna",
         turnId: "turn-000000000102",
         branchId: "br-000000000000",
         audience: ["player-1"],
@@ -332,7 +332,7 @@ describe("玩家投影", () => {
     const conversationId = (say.result as { readonly conversationId: string }).conversationId;
 
     // 玩家说完最后一句时，只有仍在排队 turn 的角色进入待回复列表。
-    expect(projection(value, { awaitingReplyCharacters: ["npc-wenyuan", "npc-cenyan"] })).toMatchObject({
+    expect(projection(value, { awaitingReplyCharacters: ["npc-wenyuan", "species-fauna"] })).toMatchObject({
       awaitingReplyFrom: ["npc-wenyuan"],
     });
 
@@ -353,7 +353,7 @@ describe("玩家投影", () => {
     );
     expect(reply.commandStatus).toBe("accepted");
     const committed = value.authority.commands.execute(
-      strategicAuth(value, "npc-cenyan"),
+      strategicAuth(value, "species-fauna"),
       gameCommandEnvelope(
         "speech.commit",
         {
@@ -395,6 +395,7 @@ describe("玩家投影", () => {
     expect(view.inbox.map((item) => item.text)).toEqual([
       "仓里的供给每天都在少，我需要知道哪些承诺是真的。",
       "最近消息很多，没核实的我不会往外发。",
+      "党魁，第一周的议程我先列了三项；t144 之前你得凑够三票。",
     ]);
     expect(view.inbox.every((item) => item.kind === "message" && item.sourceId !== "player-1")).toBe(true);
     expect(view.inbox.map((item) => item.text)).not.toContain("隘口暂时安全，我晚点再确认。");
@@ -402,7 +403,7 @@ describe("玩家投影", () => {
     setGameClock(value, { worldTick: 1, mode: "running" });
     const delivered = projection(value);
     const message = delivered.inbox.find((item) => item.text === "隘口暂时安全，我晚点再确认。");
-    expect(message).toEqual({ kind: "message", sourceId: "npc-cenyan", text: "隘口暂时安全，我晚点再确认。", worldTick: 1 });
+    expect(message).toEqual({ kind: "message", sourceId: "species-fauna", text: "隘口暂时安全，我晚点再确认。", worldTick: 1 });
 
     const notebook = delivered.notebook;
     expect(notebook).toHaveLength(1);
@@ -436,7 +437,7 @@ describe("玩家投影", () => {
     const privateSpeeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
       "art-000000000201": {
         text: "别把水路的事告诉外人。",
-        agentId: "npc-cenyan",
+        agentId: "species-fauna",
         turnId: "turn-000000000201",
         branchId: "br-000000000000",
         audience: ["npc-wenyuan"],
@@ -448,7 +449,7 @@ describe("玩家投影", () => {
         agentId: "npc-wenyuan",
         turnId: "turn-000000000202",
         branchId: "br-000000000000",
-        audience: ["npc-cenyan"],
+        audience: ["species-fauna"],
         channel: "message",
         approved: true,
       },
@@ -481,7 +482,7 @@ describe("玩家投影", () => {
     dispatchTask(value, strategicAuth(value, "species-extraterrestrial"), {
       taskType: "transport",
       teamId: "team-star",
-      invitees: ["npc-luo"],
+      invitees: ["species-extraterrestrial"],
       departAfterTicks: 4,
       params: {
         fromStockpileId: "sp-star",

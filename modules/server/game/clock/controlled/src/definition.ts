@@ -9,7 +9,7 @@ import { z } from "zod";
 
 export const clockConfigSchema = z
   .object({
-    secondsPerTick: z.number().int().positive().default(10),
+    secondsPerTick: z.number().int().positive().default(20),
     maxStepTicks: z.number().int().min(1).max(24).default(24),
     // 断线自动暂停阈值属于装配声明；宿主读取该配置，在全部玩家连接断开超时后暂停 running 时钟。
     autoPauseAfterDisconnectMs: z.number().int().positive().default(60_000),
@@ -38,7 +38,7 @@ const clockDefinition: ModuleDefinition = {
   ],
   requiresRemote: [],
   configSchema: clockConfigSchema,
-  defaults: { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 },
+  defaults: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 },
   stateSchemaVersion: null,
   ownsAggregates: [],
   migrationPaths: [],

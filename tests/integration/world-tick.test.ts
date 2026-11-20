@@ -261,6 +261,17 @@ describe("在线 tick 顺序", () => {
     }
     expect(chapter.worldSeq).toBeGreaterThan(day168.worldSeq);
     expect(readGameAggregate(value, "campaign", "campaign")).toMatchObject({ status: "evaluated" });
+    // 章节评估提交后时钟暂停，保留 t168 存档，不再接受后续 tick 推进。
+    expect(value.clock.read(value.branchId)).toMatchObject({ worldTick: 168, mode: "paused" });
+    expect(() =>
+      advanceWorldTick({
+        storage: value.storage,
+        authority: value.authority,
+        clock: value.clock,
+        branchId: value.branchId,
+        targetTick: 169,
+      }),
+    ).toThrow(/不能推进 tick/);
 
     const beforeCatchUp = readEvents(value.storage, value.branchId);
     const catchUp = catchUpWorldTick({

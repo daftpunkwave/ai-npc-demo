@@ -20,20 +20,20 @@ evidence:
     tags: [flood, watergate]
   - evidenceId: ev-water-ledger
     title: 水闸历年分水账
-    heldBy: [human-neutral, human-earth-alliance, npc-wenyuan, npc-guxun]
+    heldBy: [human-earth-alliance, npc-wenyuan]
     content: 过去三季里有两季优先供给灰港，果园的实际用水低于约定。
     tags: [water, fairness]
   - evidenceId: ev-exchange-draft
     title: 修复交换草案
-    heldBy: [human-alien-accord, species-extraterrestrial, npc-qiaoshu, npc-luo]
+    heldBy: [human-alien-accord, species-extraterrestrial]
     content: 泊星者提供一次中继修复；作为交换，人类一方提供战前星图。
     tags: [exchange]
 secrets:
-  - { secretId: sec-flora-evacuation, heldBy: [species-flora, npc-qingzhi, npc-yinuo], releasePolicy: private,
+  - { secretId: sec-flora-evacuation, heldBy: [species-flora, npc-yinuo], releasePolicy: private,
       content: 若果园失水，根庭幼体将沿北侧根网撤离。, leakTerms: [北侧, 撤离] }
-  - { secretId: sec-fauna-ridge-route, heldBy: [species-fauna, npc-zhuifeng], releasePolicy: private,
+  - { secretId: sec-fauna-ridge-route, heldBy: [species-fauna], releasePolicy: private,
       content: 巡裔的备用迁徙路线走山脊道（r-wg-ps）。, leakTerms: [山脊, 备用路线] }
-  - { secretId: sec-star-urgency, heldBy: [species-extraterrestrial, npc-luo], releasePolicy: private,
+  - { secretId: sec-star-urgency, heldBy: [species-extraterrestrial], releasePolicy: private,
       content: 泊星者急需星图来校准返航锚点，期限很紧。, leakTerms: [返航, 校准, 期限] }
-  - { secretId: sec-truce-draft, heldBy: [human-pacifist, npc-tangzhen], releasePolicy: private,
+  - { secretId: sec-truce-draft, heldBy: [human-pacifist], releasePolicy: private,
       content: 止戈议团草拟的停火条款：双方各自退出隘口两里。, leakTerms: [两里, 退出隘口] }

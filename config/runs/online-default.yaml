@@ -3,7 +3,7 @@ id: online-default
 moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
-rosterRef: standard-20
+rosterRef: standard-15
 modelLayoutRef: shared-model-layout-v1
 player: { principalId: player-1, factionId: null }   # 由 campaign.start 选择
 mode: live

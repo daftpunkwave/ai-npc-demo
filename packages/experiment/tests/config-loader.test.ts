@@ -48,7 +48,7 @@ function runSpecYaml(id: string): string {
     "moduleAssemblyRef: local-slg-standard-v1",
     "worldPackRef: earth-2964-v1",
     "scenarioRef: watergate-v1",
-    "rosterRef: standard-20",
+    "rosterRef: standard-15",
     "modelLayoutRef: shared-model-layout-v1",
     "seed: generated",
     "player: { principalId: player-1, factionId: null }",
@@ -242,7 +242,7 @@ describe("RunSpec 交叉检查", () => {
 
   it("online-default 的引用与内容一致", () => {
     expect(() => validateRunSpec(run.value, content)).not.toThrow();
-    const roster = loadRoster("standard-20", { configDir });
+    const roster = loadRoster("standard-15", { configDir });
     expect(() => validateRunSpec(run.value, content, roster, run.source)).not.toThrow();
   });
 
@@ -295,9 +295,9 @@ describe("RunSpec 交叉检查", () => {
 
     const rosterError = captureLoadingError(() =>
       validateRunSpec(
-        { ...coreRun, rosterRef: "standard-20" },
+        { ...coreRun, rosterRef: "standard-15" },
         content,
-        loadRoster("standard-20", { configDir }),
+        loadRoster("standard-15", { configDir }),
       ),
     );
     expect(rosterError.path).toBe("rosterRef");

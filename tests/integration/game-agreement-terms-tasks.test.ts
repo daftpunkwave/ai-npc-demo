@@ -100,16 +100,16 @@ describe("协议条款履约", () => {
     const taskId = dispatchTask(value, strategicAuth(value, "human-pacifist"), {
       taskType: "rescue",
       teamId: "team-truce",
-      invitees: ["npc-suhui"],
+      invitees: ["npc-muzhi"],
       params: {
         groupId: "grp-injured-migrants",
         toNodeId: "grayharbor",
         medicalStockpileId: "sp-truce",
       },
     });
-    acceptTaskInvitation(value, "npc-suhui", taskId);
+    acceptTaskInvitation(value, "npc-muzhi", taskId);
 
-    // 出发 tick 2，行程 4 tick（苏回参与减 2），道路风险可能再延误 2 tick。
+    // 出发 tick 2，行程 4 tick（穆枝参与减 2），道路风险可能再延误 2 tick。
     advanceTicks(value, 1, 20, { consumers: true });
     const task = taskView(value, taskId);
     expect(task.status).toBe("completed");

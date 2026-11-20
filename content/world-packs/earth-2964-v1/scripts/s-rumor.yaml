@@ -1,17 +1,17 @@
 schemaVersion: 1
 scriptId: s-rumor
 rosterRef: core-3
-start: { factionId: human-earth-alliance }
+start: { factionId: human-neutral }
 setup:
   - { grantEvidence: ev-flood-log, to: player-1 }
 steps:
-  - { atTick: 66, as: player-1, command: { type: information.share, payload: { evidenceId: ev-flood-log, audience: [npc-linwu] } } }
+  - { atTick: 66, as: player-1, command: { type: information.share, payload: { evidenceId: ev-flood-log, audience: [human-earth-alliance] } } }
 checkpoints:
   - atTick: 56
     probes:
-      - { probeId: p-belief-before, agentId: npc-linwu, askedBy: player-1, question: 巡裔袭击补给车队的事，你怎么看？, kind: belief,
+      - { probeId: p-belief-before, agentId: human-earth-alliance, askedBy: player-1, question: 巡裔袭击补给车队的事，你怎么看？, kind: belief,
           answerKey: { mustMention: [听说], mustNotMention: [确实袭击] } }
   - atTick: 70
     probes:
-      - { probeId: p-belief-after, agentId: npc-linwu, askedBy: player-1, question: 现在你怎么看车队那件事？, kind: belief,
+      - { probeId: p-belief-after, agentId: human-earth-alliance, askedBy: player-1, question: 现在你怎么看车队那件事？, kind: belief,
           answerKey: { mustMention: [渗水], mustNotMention: [] } }

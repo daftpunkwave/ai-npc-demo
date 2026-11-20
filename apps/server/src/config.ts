@@ -22,7 +22,7 @@ export const credentialsFileName = "dev-tokens.json";
 const defaultDataDir = "./data";
 const defaultAssemblyRef = "local-slg-standard-v1";
 const defaultModelLayoutRef = "shared-model-layout-v1";
-const defaultRosterRef = "standard-20";
+const defaultRosterRef = "standard-15";
 const credentialsFileVersion = 1;
 
 /** 启动令牌对应的身份；单角色令牌只发放对应控制台角色。 */

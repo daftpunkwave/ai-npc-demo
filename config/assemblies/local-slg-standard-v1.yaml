@@ -1,7 +1,7 @@
 schemaVersion: 1
 assemblyId: local-slg-standard-v1
 configs:
-  clock: { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
+  clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
 realms:
   server:

@@ -4,9 +4,9 @@
  * 禁止修补缺失引用、跳过错误或在该文件中构建索引。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
+import { isSignatureOnlyPrincipal } from "@ai-npc/contracts";
 import type {
   ContentCard,
-  ContentCharacter,
   ContentCharacters,
   ContentEvidenceEntry,
   ContentEvidence,
@@ -79,12 +79,42 @@ export function checkFactionsAndCharacters(
   principalIds: ReadonlySet<string>,
 ): void {
   factionsFile.factions.forEach((faction, index) => {
-    if (!nodes.has(faction.homeNodeId)) {
-      fail(sources.factions, `factions.${index}.homeNodeId`, `派系「${faction.factionId}」的驻地「${faction.homeNodeId}」不存在`);
+    const path = `factions.${index}`;
+    if (faction.kind === "human") {
+      if (faction.factionHomeNodeId === undefined) {
+        fail(sources.factions, `${path}.factionHomeNodeId`, `人类派系「${faction.factionId}」必须声明党部驻地`);
+      } else if (!nodes.has(faction.factionHomeNodeId)) {
+        fail(sources.factions, `${path}.factionHomeNodeId`, `派系「${faction.factionId}」的党部驻地「${faction.factionHomeNodeId}」不存在`);
+      }
+      if (faction.outpostNodeId === undefined) {
+        fail(sources.factions, `${path}.outpostNodeId`, `人类派系「${faction.factionId}」必须声明前哨驻地`);
+      } else if (!nodes.has(faction.outpostNodeId)) {
+        fail(sources.factions, `${path}.outpostNodeId`, `派系「${faction.factionId}」的前哨驻地「${faction.outpostNodeId}」不存在`);
+      }
+    } else if (faction.territoryNodeId === undefined) {
+      fail(sources.factions, `${path}.territoryNodeId`, `外域「${faction.factionId}」必须声明领地节点`);
+    } else if (!nodes.has(faction.territoryNodeId)) {
+      fail(sources.factions, `${path}.territoryNodeId`, `外域「${faction.factionId}」的领地「${faction.territoryNodeId}」不存在`);
     }
+    faction.relations?.forEach((relation, relationIndex) => {
+      if (!principalIds.has(relation.targetId)) {
+        fail(
+          sources.factions,
+          `${path}.relations.${relationIndex}.targetId`,
+          `派系「${faction.factionId}」的关系对象「${relation.targetId}」不存在`,
+        );
+      }
+    });
   });
+  const characterIds = new Set<string>();
   charactersFile.characters.forEach((character, index) => {
     const path = `characters.${index}`;
+    if (character.characterId !== undefined) {
+      if (characterIds.has(character.characterId)) {
+        fail(sources.characters, `${path}.characterId`, `角色资产 ID「${character.characterId}」重复`);
+      }
+      characterIds.add(character.characterId);
+    }
     if (!factions.has(character.factionId)) {
       fail(sources.characters, `${path}.factionId`, `角色「${character.agentId}」的派系「${character.factionId}」不存在`);
     }
@@ -199,11 +229,10 @@ export function checkEvidence(
   });
 }
 
-/** 校验五个开局引用的派系、队伍、库存点、知识与消息来源。 */
+/** 校验五个开局引用的派系、队伍、库存点、知识与消息来源；contacts 可以是党魁或支持者。 */
 export function checkStarts(
   startsFile: ContentStarts,
   factions: ReadonlyMap<string, ContentFaction>,
-  characters: ReadonlyMap<string, ContentCharacter>,
   teams: ReadonlyMap<string, ContentTeam>,
   stockpiles: ReadonlyMap<string, ContentStockpile>,
   evidence: ReadonlyMap<string, ContentEvidenceEntry>,
@@ -219,7 +248,7 @@ export function checkStarts(
       fail(sources.starts, `${path}.factionId`, `只有人类派系可以有玩家开局，「${start.factionId}」不是人类派系`);
     }
     start.contacts.forEach((contact, contactIndex) => {
-      if (!characters.has(contact)) {
+      if (!principalIds.has(contact)) {
         fail(sources.starts, `${path}.contacts.${contactIndex}`, `开局接触角色「${contact}」不存在`);
       }
     });
@@ -262,6 +291,14 @@ export function checkStarts(
 /** 剧情卡广播允许署名角色或非 Agent 来源。 */
 const sourceIdPattern = /^src-[a-z0-9-]+$/;
 
+/**
+ * 判断广播署名或消息来源是已登记主体还是 signature-only 署名。
+ * 未上场的具名单由公共契约维护，内容加载与剧情模块共用同一份名单。
+ */
+function isKnownOrSignature(principalIds: ReadonlySet<string>, principalId: string): boolean {
+  return principalIds.has(principalId) || isSignatureOnlyPrincipal(principalId);
+}
+
 /** 剧情卡跨文件校验所需的上下文；避免函数参数继续膨胀。 */
 export interface ScenarioCheckContext {
   readonly file: string;
@@ -283,12 +320,12 @@ export function checkScenario(
     const path = `cards.${cardIndex}.effects.${effectIndex}`;
     switch (effect.kind) {
       case "broadcast":
-        if (!principalIds.has(effect.speakerId) && !sourceIdPattern.test(effect.speakerId)) {
+        if (!isKnownOrSignature(principalIds, effect.speakerId) && !sourceIdPattern.test(effect.speakerId)) {
           fail(file, `${path}.speakerId`, `广播署名「${effect.speakerId}」不存在`);
         }
         break;
       case "message":
-        if (!principalIds.has(effect.from)) {
+        if (!isKnownOrSignature(principalIds, effect.from)) {
           fail(file, `${path}.from`, `消息发送者「${effect.from}」不存在`);
         }
         effect.to.forEach((to, toIndex) => {

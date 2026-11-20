@@ -530,7 +530,6 @@ describe("剧情卡", () => {
           "human-earth-alliance",
           "human-pacifist",
           "human-alien-accord",
-          "human-neutral",
           "species-fauna",
           "species-flora",
           "species-extraterrestrial",

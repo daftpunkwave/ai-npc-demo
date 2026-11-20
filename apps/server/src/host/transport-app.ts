@@ -32,17 +32,23 @@ export interface TransportAppInput {
   readonly disposeOnFailure: () => Promise<void>;
 }
 
-/** 开局选项：派系名、首个委托与接触角色都取自内容包索引，保持内容声明顺序。 */
+/** 开局选项：只列出内容中启用的开局，派系名、首个委托与接触角色都取自内容包索引。 */
 function startOptions(content: GameContent): StartOption[] {
-  return [...content.starts.values()].map((start) => ({
-    factionId: start.factionId,
-    name: content.factions.get(start.factionId)?.name ?? start.factionId,
-    commission: start.commission,
-    contacts: start.contacts.map((agentId) => ({
-      agentId,
-      name: content.characters.get(agentId)?.name ?? agentId,
-    })),
-  }));
+  return [...content.starts.values()]
+    .filter((start) => start.enabled !== false)
+    .map((start) => ({
+      factionId: start.factionId,
+      name: content.factions.get(start.factionId)?.name ?? start.factionId,
+      commission: start.commission,
+      contacts: start.contacts.map((agentId) => {
+        const character = content.characters.get(agentId);
+        const faction = content.factions.get(agentId);
+        return {
+          agentId,
+          name: character?.name ?? faction?.leaderName ?? agentId,
+        };
+      }),
+    }));
 }
 
 /** 按启动令牌构造传输层身份；主体和角色只来自宿主配置。 */

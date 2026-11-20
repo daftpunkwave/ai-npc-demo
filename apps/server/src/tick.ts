@@ -10,16 +10,21 @@ import type { ClockState } from "@ai-npc/module-sdk";
 /** 一次 tick 需要的 authority 入口；结构类型让宿主与测试共用同一顺序。 */
 export interface TickAuthority {
   readonly jobs: { runDue(branchId: string, tick: number): number };
-  readonly clock: { run(branchId: string): number };
+  readonly clock: {
+    run(branchId: string): number;
+    /** 额外返回是否有步骤请求在本次 tick 收尾后停止时钟（章节终点）。 */
+    runDetailed(branchId: string): { readonly executed: number; readonly stopRequested: boolean };
+  };
   readonly consumers: {
     run(branchId: string): { readonly processed: number; readonly scanned: number };
   };
 }
 
-/** tick 推进需要的时钟端口视图；读取与推进都由时钟 provider 完成。 */
+/** tick 推进需要的时钟端口视图；读取、推进与终点暂停都由时钟 provider 完成。 */
 export interface TickClockPort {
   read(branchId: string): ClockState;
   setTick(branchId: string, tick: number): ClockState;
+  pause(branchId: string, expectedRunVersion?: number): { readonly ok: boolean };
 }
 
 /** 补完当前 tick 与推进下一 tick 共用的运行环境。 */
@@ -84,12 +89,21 @@ function commitClockTick(input: AdvanceWorldTickInput): number {
 /** 按规则顺序补完一个已提交 tick 的其余阶段；任一步抛错都向上传播。 */
 function completeTick(input: WorldTickContext, worldTick: number): WorldTickResult {
   const executedJobs = input.authority.jobs.runDue(input.branchId, worldTick);
-  const executedClockSteps = input.authority.clock.run(input.branchId);
+  const clockSteps = input.authority.clock.runDetailed(input.branchId);
   const consumers = input.authority.consumers.run(input.branchId);
+  // 章节评估等步骤声明终点后，在所有阶段提交完成时暂停时钟，保留存档与资源交接数据。
+  if (clockSteps.stopRequested) {
+    const paused = input.clock.pause(input.branchId);
+    if (!paused.ok) {
+      throw new DomainError("invalid-state", "章节终点暂停时钟失败", {
+        details: { branchId: input.branchId, worldTick },
+      });
+    }
+  }
   return {
     worldTick,
     executedJobs,
-    executedClockSteps,
+    executedClockSteps: clockSteps.executed,
     consumers: { processed: consumers.processed, scanned: consumers.scanned },
   };
 }

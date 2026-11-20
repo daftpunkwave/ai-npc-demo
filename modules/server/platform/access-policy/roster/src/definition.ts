@@ -17,6 +17,7 @@ export const accessPolicyConfigSchema = z
       "agreement.respond",
       "task.dispatch",
       "task.cancel",
+      "policy.set",
     ]),
     consoleRoles: z.array(z.enum(["operator", "researcher", "evaluator"])).default(["operator", "researcher"]),
   })

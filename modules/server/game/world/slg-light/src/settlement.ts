@@ -204,19 +204,19 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
 }
 
 /** 在章节评估事务内执行一次；未到章节长度或已评估的 campaign 直接返回。 */
-export function runChapterEvaluation(context: WorldContext, chapterLengthTicks = 168): void {
+export function runChapterEvaluation(context: WorldContext, chapterLengthTicks = 168): { readonly stopClock: true } | undefined {
   const record = readWorldState(context.tx, "campaign", "campaign", campaignStateSchema);
   if (record === null || record.state.status === "evaluated") {
-    return;
+    return undefined;
   }
   const tick = context.tx.worldTick;
   const elapsed = tick - record.state.startTick;
   if (elapsed < chapterLengthTicks) {
-    return;
+    return undefined;
   }
   const meterRecord = readWorldState(context.tx, "meters", "meters", metersStateSchema);
   if (meterRecord === null) {
-    return;
+    return undefined;
   }
   const meters = metersView(meterRecord.state);
   // 协议计数由协议模块按已提交事实同步给出，不再读取异步事件的累计副本。
@@ -245,4 +245,5 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
   );
   const campaign: CampaignState = { ...record.state, status: "evaluated", outcome };
   context.tx.put("campaign", "campaign", campaign);
+  return { stopClock: true };
 }

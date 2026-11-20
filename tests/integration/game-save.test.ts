@@ -32,7 +32,7 @@ const onlineRunSpec: Json = {
   moduleAssemblyRef: "local-slg-standard-v1",
   worldPackRef: "earth-2964-v1",
   scenarioRef: "watergate-v1",
-  rosterRef: "standard-20",
+  rosterRef: "standard-15",
   modelLayoutRef: "shared-model-layout-v1",
   seed: "0123456789abcdef0123456789abcdef",
   mode: "live",
@@ -52,12 +52,12 @@ const onlineManifest: Json = {
     moduleAssemblyRef: "local-slg-standard-v1",
     worldPackRef: "earth-2964-v1",
     scenarioRef: "watergate-v1",
-    rosterRef: "standard-20",
+    rosterRef: "standard-15",
     modelLayoutRef: "shared-model-layout-v1",
   },
   content: { packId: "earth-2964-v1", contentVersion: "0.3.0" },
   assembly: { assemblyId: "local-slg-standard-v1", realm: "server", modules: [], catalogHash: "a".repeat(64), assemblyHash: "a".repeat(64) },
-  roster: { rosterRef: "standard-20", agents: [] },
+  roster: { rosterRef: "standard-15", agents: [] },
   agentSlots: null,
 };
 

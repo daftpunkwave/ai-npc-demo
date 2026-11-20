@@ -277,15 +277,17 @@ export function validateRoster(roster: Roster, content: ContentPack, source = `r
         message: `身份「${agent.agentId}」不在内容包中`,
       });
     }
-    if (faction !== undefined && agent.kind !== "strategic") {
-      throw new LoadingError({
-        code: "cross-check",
-        source,
-        path: `agents.${index}.kind`,
-        message: `派系「${agent.agentId}」必须以 strategic 身份登记`,
-      });
-    }
-    if (character !== undefined && agent.kind !== "character") {
+    // 外域 Agent 同时有派系与角色条目，运行身份按派系登记为 strategic。
+    if (faction !== undefined) {
+      if (agent.kind !== "strategic") {
+        throw new LoadingError({
+          code: "cross-check",
+          source,
+          path: `agents.${index}.kind`,
+          message: `派系「${agent.agentId}」必须以 strategic 身份登记`,
+        });
+      }
+    } else if (character !== undefined && agent.kind !== "character") {
       throw new LoadingError({
         code: "cross-check",
         source,

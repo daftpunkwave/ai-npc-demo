@@ -175,11 +175,14 @@ export function buildContentIndex(parts: ContentParts): ContentIndex {
       source: contentFiles.factions,
       path: `factions.${parts.factions.factions.indexOf(faction)}`,
     })),
-    ...[...characters].map(([id, character]) => ({
-      id,
-      source: contentFiles.characters,
-      path: `characters.${parts.characters.characters.indexOf(character)}`,
-    })),
+    ...[...characters]
+      // 外域 Agent 的运行身份与 factionId 相同：派系与角色两份数据描述同一主体，只登记一次。
+      .filter(([id, character]) => !(factions.get(id)?.kind === "species" && character.factionId === id))
+      .map(([id, character]) => ({
+        id,
+        source: contentFiles.characters,
+        path: `characters.${parts.characters.characters.indexOf(character)}`,
+      })),
     ...[...stockpiles].map(([id, stockpile]) => ({
       id,
       source: contentFiles.worldInit,
@@ -221,7 +224,7 @@ export function buildContentIndex(parts: ContentParts): ContentIndex {
   checkFactionsAndCharacters(parts.factions, parts.characters, nodes, factions, principalIds);
   checkWorldInit(parts.worldInit, nodes, factions, teams, stockpiles, principalIds);
   checkEvidence(parts.evidence, nodes, principalIds);
-  checkStarts(parts.starts, factions, characters, teams, stockpiles, evidence, principalIds);
+  checkStarts(parts.starts, factions, teams, stockpiles, evidence, principalIds);
 
   const scenariosById = new Map<string, ContentScenario>();
   for (const [file, scenario] of parts.scenarios) {

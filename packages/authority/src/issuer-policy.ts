@@ -18,7 +18,7 @@ export const commandIssuerKinds = {
   "task.dispatch": ["player", "agent", "operator"],
   "task.respond": ["agent"],
   "task.cancel": ["player", "agent", "operator"],
-  "policy.set": ["agent", "operator"],
+  "policy.set": ["player", "agent", "operator"],
   "scenario.draft": ["operator"],
   "scenario.publish": ["operator"],
   "scenario.withdraw": ["operator"],

@@ -1,6 +1,6 @@
 schemaVersion: 1
 rosterId: core-3
 agents:
-  - { agentId: npc-cenyan,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-linwu,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
-  - { agentId: npc-qiaoshu, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: human-independent,    kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-earth-alliance, kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-alien-accord,   kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }

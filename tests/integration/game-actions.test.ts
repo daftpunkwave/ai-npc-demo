@@ -207,30 +207,30 @@ describe("任务行动", () => {
     ]);
   });
 
-  it("救援邀请苏回、预留医疗并在完成时救出群体", async () => {
+  it("救援邀请穆枝、预留医疗并在完成时救出群体", async () => {
     const value = await harness();
     const taskId = dispatchTask(value, strategicAuth(value, "human-pacifist"), {
       taskType: "rescue",
       teamId: "team-truce",
-      invitees: ["npc-suhui"],
+      invitees: ["npc-muzhi"],
       params: { groupId: "grp-injured-migrants", toNodeId: "grayharbor", medicalStockpileId: "sp-truce" },
     });
     expect(readGameAggregate(value, "stockpile", "sp-truce")).toMatchObject({ reserved: { medical: 6 } });
     expect(readGameEventAudience(value, "TaskDispatched")).toEqual([
-      { kind: "principals", ids: ["human-pacifist", "npc-suhui"] },
+      { kind: "principals", ids: ["human-pacifist", "npc-muzhi"] },
       { kind: "faction", factionId: "human-pacifist" },
     ]);
     expect(readGameEventAudience(value, "TaskInvitationIssued")).toEqual([
-      { kind: "principals", ids: ["npc-suhui", "human-pacifist"] },
+      { kind: "principals", ids: ["npc-muzhi", "human-pacifist"] },
     ]);
     expect(gameEventsOf(value, "TaskInvitationIssued")).toHaveLength(1);
-    acceptTaskInvitation(value, "npc-suhui", taskId);
+    acceptTaskInvitation(value, "npc-muzhi", taskId);
     expect(readGameEventAudience(value, "TaskInvitationAnswered")).toEqual([
-      { kind: "principals", ids: ["human-pacifist", "npc-suhui"] },
+      { kind: "principals", ids: ["human-pacifist", "npc-muzhi"] },
     ]);
     advanceTo(value, 2);
     expect(readGameEventAudience(value, "TaskDeparted")).toEqual([
-      { kind: "principals", ids: ["human-pacifist", "npc-suhui"] },
+      { kind: "principals", ids: ["human-pacifist", "npc-muzhi"] },
       { kind: "faction", factionId: "human-pacifist" },
       { kind: "node", nodeId: "pass" },
     ]);
@@ -249,12 +249,12 @@ describe("任务行动", () => {
     dispatchTask(value, strategicAuth(value, "human-independent"), {
       taskType: "scout",
       teamId: "team-rubble",
-      invitees: ["npc-cenyan"],
+      invitees: ["species-fauna"],
       params: { nodeId: "archive" },
     });
     advanceTo(value, 2);
     expect(readGameEventAudience(value, "TaskInvitationExpired")).toEqual([
-      { kind: "principals", ids: ["npc-cenyan", "human-independent"] },
+      { kind: "principals", ids: ["species-fauna", "human-independent"] },
     ]);
   });
 
@@ -317,16 +317,16 @@ describe("派遣校验顺序", () => {
     const missingStockpile = dispatchAs(value, playerAuth(value), {
       taskType: "transport",
       teamId: "team-commons",
-      invitees: ["npc-suhui"],
+      invitees: ["species-flora"],
       params: { fromStockpileId: "sp-commons", toStockpileId: "sp-nowhere", cargo: { supply: 10, energy: 0, medical: 0 } },
     });
     expect(missingStockpile.commandStatus).toBe("rejected");
     expect(missingStockpile.reasonCode).toBe("invalid-params");
-    // 参数齐全后才轮到受邀者可用性：苏回不在灰港，属于 participant-unavailable。
+    // 参数齐全后才轮到受邀者可用性：青枝在果园，不在运输出发节点，属于 participant-unavailable。
     const unavailable = dispatchAs(value, playerAuth(value), {
       taskType: "transport",
       teamId: "team-commons",
-      invitees: ["npc-suhui"],
+      invitees: ["species-flora"],
       params: { fromStockpileId: "sp-commons", toStockpileId: "sp-earth", cargo: { supply: 10, energy: 0, medical: 0 } },
     });
     expect(unavailable.commandStatus).toBe("rejected");
@@ -362,16 +362,16 @@ describe("派遣校验顺序", () => {
 });
 
 describe("任务用时与参与者", () => {
-  it("救援同一条路线：苏回参与总用时减 2", async () => {
+  it("救援同一条路线：穆枝参与总用时减 2", async () => {
     const invited = await harness();
     const helperTaskId = dispatchTask(invited, strategicAuth(invited, "human-pacifist"), {
       taskType: "rescue",
       teamId: "team-truce",
-      invitees: ["npc-suhui"],
+      invitees: ["npc-muzhi"],
       departAfterTicks: 1,
       params: { groupId: "grp-injured-migrants", toNodeId: "grayharbor", medicalStockpileId: "sp-truce" },
     });
-    acceptTaskInvitation(invited, "npc-suhui", helperTaskId);
+    acceptTaskInvitation(invited, "npc-muzhi", helperTaskId);
     advanceTo(invited, 1);
     const helperTask = taskView(invited, helperTaskId);
     expect(helperTask).toMatchObject({ status: "running", departTick: 1, route: ["r-gh-ps"] });
@@ -395,11 +395,11 @@ describe("任务用时与参与者", () => {
     const guidedTaskId = dispatchTask(guided, strategicAuth(guided, "human-independent"), {
       taskType: "scout",
       teamId: "team-rubble",
-      invitees: ["npc-zhuifeng"],
+      invitees: ["species-fauna"],
       departAfterTicks: 1,
       params: { nodeId: "orchard" },
     });
-    acceptTaskInvitation(guided, "npc-zhuifeng", guidedTaskId);
+    acceptTaskInvitation(guided, "species-fauna", guidedTaskId);
     advanceTo(guided, 1);
     const guidedTask = taskView(guided, guidedTaskId);
     // 两条道路 r-wg-ps 与 r-wg-or 各减 1：行程 8，加观察 2，合计 10。
@@ -419,32 +419,17 @@ describe("任务用时与参与者", () => {
     expect(plainTask.nominalCompletionTick - 1).toBe(12);
   });
 
-  it("侦察同一条路线：谷寻在目标节点参与时同样每条道路减 1", async () => {
-    const guided = await harness();
-    const guidedTaskId = dispatchTask(guided, strategicAuth(guided, "species-fauna"), {
+  it("受邀角色不在任务工作节点时拒绝派遣", async () => {
+    const value = await harness();
+    const unavailable = dispatchAs(value, strategicAuth(value, "species-fauna"), {
       taskType: "scout",
       teamId: "team-fauna",
-      invitees: ["npc-guxun"],
+      invitees: ["npc-qilu"],
       departAfterTicks: 1,
       params: { nodeId: "watergate" },
     });
-    acceptTaskInvitation(guided, "npc-guxun", guidedTaskId);
-    advanceTo(guided, 1);
-    const guidedTask = taskView(guided, guidedTaskId);
-    expect(guidedTask).toMatchObject({ status: "running", route: ["r-wg-ps"] });
-    expect(guidedTask.nominalCompletionTick - 1).toBe(8);
-
-    const plain = await harness();
-    const plainTaskId = dispatchTask(plain, strategicAuth(plain, "species-fauna"), {
-      taskType: "scout",
-      teamId: "team-fauna",
-      departAfterTicks: 1,
-      params: { nodeId: "watergate" },
-    });
-    advanceTo(plain, 1);
-    const plainTask = taskView(plain, plainTaskId);
-    expect(plainTask).toMatchObject({ status: "running", route: ["r-wg-ps"] });
-    expect(plainTask.nominalCompletionTick - 1).toBe(9);
+    expect(unavailable.commandStatus).toBe("rejected");
+    expect(unavailable.reasonCode).toBe("participant-unavailable");
   });
 });
 
@@ -569,20 +554,20 @@ describe("风险结果的公布时机", () => {
     const value = await harness();
     const taskId = dispatchTask(value, strategicAuth(value, "species-extraterrestrial"), {
       ...delayInjuryTransport,
-      invitees: ["npc-luo"],
+      invitees: ["species-extraterrestrial"],
       departAfterTicks: 4,
     });
-    acceptTaskInvitation(value, "npc-luo", taskId);
+    acceptTaskInvitation(value, "species-extraterrestrial", taskId);
 
     advanceTo(value, 4);
     expect(taskView(value, taskId)).toMatchObject({
       status: "running",
       departTick: 4,
       nominalCompletionTick: 11,
-      riskOutcome: { delayTicks: 2, injuredAgentIds: ["npc-luo"], teamInjured: false },
+      riskOutcome: { delayTicks: 2, injuredAgentIds: ["species-extraterrestrial"], teamInjured: false },
     });
     // 出发只写内部风险：不改变角色伤势，也不发 CharacterInjured。
-    expect(readGameAggregate(value, "character", "npc-luo")).toMatchObject({ injuredUntilTick: null });
+    expect(readGameAggregate(value, "character", "species-extraterrestrial")).toMatchObject({ injuredUntilTick: null });
     expect(gameEventsOf(value, "TaskDeparted")).toHaveLength(1);
     expect(gameEventsOf(value, "CharacterInjured")).toHaveLength(0);
 
@@ -598,8 +583,8 @@ describe("风险结果的公布时机", () => {
     expect(taskView(value, taskId)).toMatchObject({ status: "completed", completedAtTick: 13 });
     const injured = gameEventsOf(value, "CharacterInjured");
     expect(injured).toHaveLength(1);
-    expect(injured[0]?.payload).toMatchObject({ agentId: "npc-luo", untilTick: 61, cause: "road-risk" });
-    expect(readGameAggregate(value, "character", "npc-luo")).toMatchObject({ injuredUntilTick: 61 });
+    expect(injured[0]?.payload).toMatchObject({ agentId: "species-extraterrestrial", untilTick: 61, cause: "road-risk" });
+    expect(readGameAggregate(value, "character", "species-extraterrestrial")).toMatchObject({ injuredUntilTick: 61 });
     expect(readGameAggregate(value, "stockpile", "sp-star")).toMatchObject({ amount: { energy: 39 } });
     expect(readGameAggregate(value, "stockpile", "sp-flora")).toMatchObject({ amount: { energy: 1 } });
 
