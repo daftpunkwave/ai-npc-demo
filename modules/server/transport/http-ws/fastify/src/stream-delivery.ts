@@ -92,13 +92,26 @@ export class SocketSender {
   /** 用调用方已读取的投影发送快照；分支切换时避免重复读取投影。 */
   sendSnapshotPayload(connection: Connection, channel: StreamChannel, projection: PlayerProjection): void {
     const sequence = this.options.sequence();
-    const payload = JSON.stringify({
-      type: "snapshot",
-      channel,
-      streamSeq: sequence.streamSeq,
-      projectionVersion: sequence.projectionVersion,
-      data: projection,
-    });
+    let payload: string;
+    try {
+      payload = JSON.stringify({
+        type: "snapshot",
+        channel,
+        streamSeq: sequence.streamSeq,
+        projectionVersion: sequence.projectionVersion,
+        data: projection,
+      });
+    } catch {
+      // 投影无法序列化时连接无法重建基线；关闭后由客户端重连再试。
+      this.close(connection.socket, 1012, "projection unavailable");
+      connection.needsSnapshot = true;
+      return;
+    }
+    this.sendSerializedSnapshot(connection, payload);
+  }
+
+  /** 发送已序列化的快照；重同步时一份投影复用到多个连接，避免重复序列化。 */
+  sendSerializedSnapshot(connection: Connection, payload: string): void {
     if (!this.deliver(connection, payload)) {
       connection.needsSnapshot = true;
       return;

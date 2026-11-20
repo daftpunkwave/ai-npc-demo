@@ -21,15 +21,11 @@ export function registerOperationsRoutes(context: RouteContext): void {
   const { app, hub, options, branch } = context;
 
   /**
-   * 推送投影变化；业务操作已经提交时，推送失败只记日志，不把成功结果改写成 HTTP 错误。
-   * 客户端仍可经世界视图重新读取投影。
+   * 推送投影变化；业务操作已经提交时，推送失败只安全上报并触发快照重建，
+   * 不把成功结果改写成 HTTP 错误，也不让回调自身的异常冒泡。
    */
   const publishProjection = (): void => {
-    try {
-      hub.publish();
-    } catch (error) {
-      options.onInternalError?.("投影发布失败", error);
-    }
+    hub.publishWithResync(context.reportInternalError);
   };
 
   app.post("/api/v1/campaign/pause", (request, reply) => {

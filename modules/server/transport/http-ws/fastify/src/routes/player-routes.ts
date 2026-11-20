@@ -43,11 +43,7 @@ export function registerPlayerRoutes(context: RouteContext): void {
     if (receipt.commandStatus === "rejected" && receipt.reasonCode === "idempotency-conflict") {
       return sendHttpError(reply, "idempotency-conflict", receipt.safeMessage ?? "命令 ID 已被不同内容使用");
     }
-    try {
-      hub.publish();
-    } catch (error) {
-      options.onInternalError?.("投影发布失败", error);
-    }
+    hub.publishWithResync(context.reportInternalError);
     return receipt;
   });
 

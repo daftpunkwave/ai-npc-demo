@@ -1317,7 +1317,7 @@ describe("服务端 API", () => {
     expect(await client.next()).toMatchObject({ type: "delta", channel: "player", streamSeq: 1 });
   });
 
-  it("投影发布失败不抛给宿主，并经内部错误回调上报", async () => {
+  it("reports projection publish failures without throwing to the host", async () => {
     const value = await createTrackedGameHarness(active);
     let fail = false;
     const errors: string[] = [];
@@ -1332,7 +1332,88 @@ describe("服务端 API", () => {
     });
     fail = true;
     expect(() => app.notifyWorldChanged()).not.toThrow();
-    expect(errors).toEqual(["投影发布失败"]);
+    expect(errors).toEqual(["projection publish failed", "projection resync failed"]);
+  });
+
+  it("rebuilds player snapshots after a projection publish failure", async () => {
+    const value = await createTrackedGameHarness(active);
+    const errors: string[] = [];
+    let failNext = false;
+    let current = projection(clockView(value));
+    const app = await appFor(value, {
+      projection: () => {
+        if (failNext) {
+          failNext = false;
+          throw new Error("projection broken");
+        }
+        return current;
+      },
+      onInternalError: (message) => errors.push(message),
+    });
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+    client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+    expect(await client.next()).toMatchObject({ type: "snapshot", streamSeq: 0, projectionVersion: 0 });
+
+    // 发布失败前状态已经变化；快照必须反映新状态，而不是失败前的旧投影。
+    current = {
+      ...current,
+      clock: { ...current.clock, worldTick: 7 },
+      notifications: [...current.notifications, { kind: "urgent", text: "resync", worldTick: 7 }],
+    };
+    failNext = true;
+    app.notifyWorldChanged();
+    const snapshot = await client.next();
+    expect(snapshot).toMatchObject({
+      type: "snapshot",
+      channel: "player",
+      streamSeq: 0,
+      data: { clock: { worldTick: 7 } },
+    });
+    expect((snapshot as { readonly data: PlayerProjection }).data.notifications).toContainEqual({
+      kind: "urgent",
+      text: "resync",
+      worldTick: 7,
+    });
+    expect(errors).toEqual(["projection publish failed"]);
+
+    // 快照已经包含该状态；下一次发布只发空增量，不能把同一条提醒重复追加。
+    app.notifyWorldChanged();
+    const delta = await client.next();
+    expect(delta).toMatchObject({ type: "delta", channel: "player", streamSeq: 1, set: {} });
+    expect(delta).not.toMatchObject({ type: "append" });
+  });
+
+  it("keeps a committed operation response when the internal error reporter throws", async () => {
+    const value = await createTrackedGameHarness(active);
+    const before = clockView(value);
+    const errors: string[] = [];
+    let fail = false;
+    const app = await appFor(value, {
+      projection: () => {
+        if (fail) {
+          throw new Error("projection broken");
+        }
+        return projection(clockView(value));
+      },
+      onInternalError: (message) => {
+        errors.push(message);
+        throw new Error("reporter broken");
+      },
+    });
+    const session = await login(app, "player-token");
+    fail = true;
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/pause",
+      headers: { authorization: `Bearer ${session}` },
+      payload: { operationId: "op-000000000062", expectedRunVersion: before.runVersion },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ mode: "paused", runVersion: before.runVersion + 1 });
+    expect(errors).toEqual(["projection publish failed", "projection resync failed"]);
   });
 
   it("未预期异常返回 500 并经内部错误回调上报", async () => {

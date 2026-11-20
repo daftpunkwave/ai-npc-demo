@@ -112,7 +112,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     },
   });
   hub.setBranch(branch.branchId);
-  const context: RouteContext = { app, hub, options, identityByToken, branch };
+  const context: RouteContext = { app, hub, options, identityByToken, branch, reportInternalError: report };
 
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
@@ -163,13 +163,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     listen,
     close,
     inject,
+    // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
     notifyWorldChanged: () => {
-      try {
-        hub.publish();
-      } catch (error) {
-        // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
-        report("投影发布失败", error);
-      }
+      hub.publishWithResync(report);
     },
     address,
     streamStats: () => hub.stats(),
