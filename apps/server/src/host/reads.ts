@@ -97,24 +97,34 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
     conversationMessages: (conversationId: string, limit: number) =>
       storage.transact((tx) => {
         const ports = portsIn(tx);
-        return ports["game.comms"].conversationMessages(conversationId, limit).map((line) => {
-          const event = tx.all(
-            `SELECT world_seq
-               FROM domain_events
-              WHERE branch_id = ?
-                AND type = 'DialogueSubmitted'
-                AND json_extract(payload_json, '$.dialogueId') = ?
-              ORDER BY world_seq DESC
-              LIMIT 1`,
-            [active.branchId, line.dialogueId],
-          )[0];
-          if (event === undefined) {
+        const lines = ports["game.comms"].conversationMessages(conversationId, limit);
+        if (lines.length === 0) {
+          return [];
+        }
+        const dialogueIds = [...new Set(lines.map((line) => line.dialogueId))];
+        const placeholders = dialogueIds.map(() => "?").join(", ");
+        const events = tx.all(
+          `SELECT json_extract(payload_json, '$.dialogueId') AS dialogue_id,
+                  MAX(world_seq) AS world_seq
+             FROM domain_events
+            WHERE branch_id = ?
+              AND type = 'DialogueSubmitted'
+              AND json_extract(payload_json, '$.dialogueId') IN (${placeholders})
+            GROUP BY dialogue_id`,
+          [active.branchId, ...dialogueIds],
+        );
+        const worldSeqByDialogueId = new Map(
+          events.map((event) => [
+            String(event["dialogue_id"]),
+            Number(event["world_seq"]),
+          ]),
+        );
+        return lines.map((line) => {
+          const worldSeq = worldSeqByDialogueId.get(line.dialogueId);
+          if (worldSeq === undefined) {
             throw new DomainError("invalid-state", `对白 ${line.dialogueId} 缺少提交事件`);
           }
-          return {
-            ...line,
-            worldSeq: Number(event["world_seq"]),
-          };
+          return { ...line, worldSeq };
         });
       }),
     speakerName: (principalId: string) => gameContent.characters.get(principalId)?.name ?? principalId,

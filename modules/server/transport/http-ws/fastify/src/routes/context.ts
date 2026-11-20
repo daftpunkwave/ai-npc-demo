@@ -285,33 +285,84 @@ export function readPlayerConversation(
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 ): ConversationResponse | null {
   const ownConversations = new Set(port.conversationsOf(query.principalId));
+  const tick = port.worldTick();
+  const loaded = new Map<string, {
+    readonly lines: readonly ConversationSourceLine[];
+    readonly exhausted: boolean;
+  }>();
+  const conversationWindow = (conversationId: string, requested: number): readonly ConversationSourceLine[] => {
+    const cached = loaded.get(conversationId);
+    if (cached !== undefined && (cached.exhausted || cached.lines.length >= requested)) {
+      return cached.lines;
+    }
+    const lines = port.conversationMessages(conversationId, requested);
+    loaded.set(conversationId, {
+      lines,
+      exhausted: lines.length < requested,
+    });
+    return lines;
+  };
+  const latestDelivered = (conversationId: string): ConversationSourceLine | null => {
+    let window = 20;
+    for (;;) {
+      const lines = conversationWindow(conversationId, window);
+      const line = [...lines].reverse().find((candidate) => {
+        const delivery = candidate.deliveries.find(
+          (entry) => entry.principalId === query.principalId,
+        );
+        return delivery !== undefined && delivery.deliverAtTick <= tick;
+      });
+      if (line !== undefined) {
+        return line;
+      }
+      if (lines.length < window) {
+        return null;
+      }
+      window *= 2;
+    }
+  };
   let selectedConversationId: string | null = null;
   let selectedLastLine: ConversationSourceLine | null = null;
+  let fallbackConversationId: string | null = null;
+  let fallbackLastLine: ConversationSourceLine | null = null;
+  const isNewer = (
+    candidate: ConversationSourceLine,
+    current: ConversationSourceLine | null,
+    candidateConversationId: string,
+    currentConversationId: string | null,
+  ): boolean =>
+    current === null ||
+    candidate.worldSeq > current.worldSeq ||
+    (candidate.worldSeq === current.worldSeq &&
+      candidate.worldTick > current.worldTick) ||
+    (candidate.worldSeq === current.worldSeq &&
+      candidate.worldTick === current.worldTick &&
+      candidateConversationId > (currentConversationId ?? ""));
   for (const conversationId of port.conversationsOf(query.agentId)) {
     if (!ownConversations.has(conversationId)) {
       continue;
     }
-    const lastLine = port.conversationMessages(conversationId, 1).at(-1);
-    if (lastLine === undefined) {
-      continue;
-    }
+    const lastLine = latestDelivered(conversationId);
+    const fallbackLine = loaded.get(conversationId)?.lines.at(-1);
     if (
-      selectedLastLine === null ||
-      lastLine.worldSeq > selectedLastLine.worldSeq ||
-      (lastLine.worldSeq === selectedLastLine.worldSeq &&
-        lastLine.worldTick > selectedLastLine.worldTick) ||
-      (lastLine.worldSeq === selectedLastLine.worldSeq &&
-        lastLine.worldTick === selectedLastLine.worldTick &&
-        conversationId > (selectedConversationId ?? ""))
+      fallbackLine !== undefined &&
+      isNewer(fallbackLine, fallbackLastLine, conversationId, fallbackConversationId)
     ) {
+      fallbackConversationId = conversationId;
+      fallbackLastLine = fallbackLine;
+    }
+    if (lastLine !== null && isNewer(lastLine, selectedLastLine, conversationId, selectedConversationId)) {
       selectedConversationId = conversationId;
       selectedLastLine = lastLine;
     }
   }
+  if (selectedConversationId === null) {
+    selectedConversationId = fallbackConversationId;
+    selectedLastLine = fallbackLastLine;
+  }
   if (selectedConversationId === null || selectedLastLine === null) {
     return null;
   }
-  const tick = port.worldTick();
   const total = selectedLastLine.seq + 1;
   const before = query.beforeSeq ?? total;
   // 端口只支持从尾部读取；先按主体与送达时间过滤，再取分页窗口。
@@ -320,7 +371,7 @@ export function readPlayerConversation(
   let lines: ConversationLine[] = [];
   for (;;) {
     lines = [];
-    for (const line of port.conversationMessages(selectedConversationId, window)) {
+    for (const line of conversationWindow(selectedConversationId, window)) {
       if (line.seq >= before) {
         continue;
       }

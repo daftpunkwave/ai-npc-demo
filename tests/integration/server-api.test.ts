@@ -838,6 +838,53 @@ describe("服务端 API", () => {
     });
   });
 
+  it("GET /conversations 不会用尚未送达玩家的新会话遮蔽旧会话", async () => {
+    const value = await createTrackedGameHarness(active);
+    const visibleConversationId = "conv-000000000001";
+    const pendingConversationId = "conv-000000000002";
+    const line = (
+      dialogueId: string,
+      text: string,
+      worldSeq: number,
+      deliverAtTick: number,
+    ): ConversationSourceLine => ({
+      seq: 0,
+      dialogueId,
+      worldSeq,
+      speakerId: "player-1",
+      text,
+      channel: "relay",
+      worldTick: 0,
+      deliveries: [{ principalId: "player-1", deliverAtTick }],
+    });
+    const visible = line(value.host.ids("dlg"), "已送达对白", 10, 0);
+    const pending = line(value.host.ids("dlg"), "尚未送达对白", 11, 1);
+    const app = await appFor(value, {
+      conversation: {
+        worldTick: () => 0,
+        conversationsOf: (principalId) =>
+          principalId === "player-1" || principalId === "npc-cenyan"
+            ? [visibleConversationId, pendingConversationId]
+            : [],
+        conversationMessages: (conversationId) =>
+          conversationId === visibleConversationId ? [visible] : [pending],
+        speakerName: (principalId) => principalId,
+      },
+    });
+    const session = await login(app, "player-token");
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/conversations/npc-cenyan",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(conversationResponseSchema.parse(response.json())).toMatchObject({
+      conversationId: visibleConversationId,
+      lines: [{ text: "已送达对白" }],
+    });
+  });
+
   it("GET /session/assembly 按 realm 返回装配握手，玩家不能读取控制台装配", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value, {
