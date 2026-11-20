@@ -39,6 +39,8 @@ export interface RouteContext {
   readonly options: ServerAppOptions;
   readonly identityByToken: ReadonlyMap<string, ServerIdentity>;
   readonly branch: OnlineBranch;
+  /** 传输层内部错误的安全上报口；回调自身抛错不会改变已确定的 HTTP 响应或连接清理。 */
+  readonly reportInternalError: (message: string, error: unknown) => void;
 }
 
 /** 错误码到 HTTP 状态的唯一映射；业务规则拒绝仍返回 200 与 rejected receipt。 */

@@ -269,6 +269,32 @@ export class StreamHub {
     return true;
   }
 
+  /**
+   * 发布投影；失败时安全上报并让玩家连接改发完整快照。
+   * 失败的发布没有推进 streamSeq，继续补发旧增量会让客户端停在旧视图；
+   * 清空重放缓冲并标记 needsSnapshot，订阅中的连接立即尝试快照，其余在下次订阅或 ack 时重建。
+   */
+  publishWithResync(report: (message: string, error: unknown) => void): void {
+    try {
+      this.publish();
+    } catch (error) {
+      report("projection publish failed", error);
+      this.resyncPlayers();
+    }
+  }
+
+  /** 投影基线失效后的恢复：清空旧增量，所有玩家连接改为等待完整快照。 */
+  private resyncPlayers(): void {
+    this.replay.resetAll(this.branchId, this.generation);
+    const players = [...this.connections.values()].filter((connection) => connection.isPlayer);
+    for (const connection of players) {
+      connection.needsSnapshot = true;
+    }
+    for (const connection of players) {
+      this.sender.flushPendingSnapshot(connection);
+    }
+  }
+
   /** 分支切换：递增代次与序号，清空旧分支缓冲，并向已订阅连接强制发送快照。 */
   applyBranchChange(nextBranchId: string): void {
     this.branchId = nextBranchId;
