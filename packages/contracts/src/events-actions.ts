@@ -70,7 +70,8 @@ export const taskDepartedPayloadSchema = z
   .object({
     taskId: idSchemas.task,
     participants: z.array(principalIdSchema),
-    route: z.array(contentIdSchemas.r).min(1),
+    /** 已在工作节点出发的修复任务没有行程，路线可以为空。 */
+    route: z.array(contentIdSchemas.r),
     nominalCompletionTick: z.number().int().nonnegative(),
   })
   .strict();
