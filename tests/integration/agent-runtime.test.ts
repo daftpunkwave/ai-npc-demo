@@ -325,4 +325,40 @@ describe("Agent runtime 持久状态", () => {
       consumed_by_turn_id: null,
     });
   });
+
+  it("未配置记忆槽位时保持既有运行时启动路径", async () => {
+    const value = await fixture();
+    const profile: ResolvedAgentProfile = {
+      ...value.profile,
+      slots: {
+        ...value.profile.slots,
+        memory: undefined as never,
+      },
+    };
+    const runtime = new AgentRuntime({
+      storage: value.storage,
+      host: value.host,
+      content: loadContentPack("content", "earth-2964-v1"),
+      roster: value.roster,
+      profiles: new Map([["human-independent", profile]]),
+      moduleDefinitions: new Map([[value.definition.id, value.definition]]),
+      scheduling: { plan: () => [] },
+      maxConcurrentTurns: 1,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      runId: "run-000000000001",
+      readWorld: () => ({
+        nodeId: "grayharbor",
+        factionId: "human-independent",
+        worldViewText: "",
+        affairsText: "",
+      }),
+    });
+    await runtime.start();
+    resources.push({ dispose: () => runtime.dispose() });
+    await runtime.pump();
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("memory_watermarks").list(),
+    )).toHaveLength(0);
+  });
 });

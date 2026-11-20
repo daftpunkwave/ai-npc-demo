@@ -12,6 +12,7 @@ import {
   type LedgerRow,
   baseSalience,
   clamp01,
+  compareStrings,
   dataOf,
   eventFromObservation,
   involvementOf,
@@ -169,7 +170,7 @@ function aggregateRow(
       ...(existing?.sourceObservationIds ?? []),
       ...group.map((event) => event.observation.observationId),
     ]),
-  ].sort();
+  ].sort(compareStrings);
   if (
     existing !== undefined &&
     group.every((event) => existing.sourceObservationIds.includes(event.observation.observationId))
@@ -186,7 +187,10 @@ function aggregateRow(
       ? "verified-event"
       : "reported-claim",
     releasePolicyId: mergeReleasePolicies(
-      group.map((event) => event.observation.releasePolicyId),
+      [
+        ...(existing === undefined ? [] : [existing.releasePolicyId]),
+        ...group.map((event) => event.observation.releasePolicyId),
+      ],
     ),
     validFromTick: existing?.validFromTick ?? first.observation.knownAtTick,
     validUntilTick: null,
@@ -194,11 +198,11 @@ function aggregateRow(
     salience,
     recallCount: existing?.recallCount ?? 0,
     lastReinforcedTick: existing?.lastReinforcedTick ?? first.observation.knownAtTick,
-    tags: [...new Set(group.flatMap((event) => event.tags))].sort(),
+    tags: [...new Set(group.flatMap((event) => event.tags))].sort(compareStrings),
     sourceObservationIds,
     content: {
       summaryZh: `第 ${day} 日：收到 ${(numberValue(existingData["count"]) ?? 0) + group.length} 条${first.eventType}通报`,
-      counterpartIds: [...new Set(group.flatMap((event) => event.counterpartIds))].sort(),
+      counterpartIds: [...new Set(group.flatMap((event) => event.counterpartIds))].sort(compareStrings),
       data: {
         aggregateKey,
         aggregate: true,

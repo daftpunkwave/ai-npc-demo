@@ -13,6 +13,8 @@ import type {
   StorageRow,
 } from "@ai-npc/contracts";
 
+const maxMaintenanceAttempts = 3;
+
 export interface ClaimedMaintenance {
   readonly maintenanceId: string;
   readonly moduleId: string;
@@ -49,6 +51,15 @@ export class MemoryMaintenanceQueue {
     this.storage.transact((tx) => {
       const table = tx.rows("maintenance_runs");
       for (const row of table.list({ branch_id: this.branchId, status: "leased" })) {
+        table.put({
+          ...row,
+          status: "queued",
+          lease_expires_at: null,
+          error_json: null,
+        });
+      }
+      for (const row of table.list({ branch_id: this.branchId, status: "failed" })) {
+        if (numberColumn(row, "lease_epoch") >= maxMaintenanceAttempts) continue;
         table.put({
           ...row,
           status: "queued",
@@ -175,6 +186,25 @@ export class MemoryMaintenanceQueue {
         lease_expires_at: null,
         error_json: error,
         ended_at: this.host.nowIso(),
+      });
+    });
+  }
+
+  defer(maintenanceId: string, leaseEpoch: number): void {
+    this.storage.transact((tx) => {
+      const table = tx.rows("maintenance_runs");
+      const current = table.get({ maintenance_id: maintenanceId });
+      if (
+        current === null ||
+        current["status"] !== "leased" ||
+        numberColumn(current, "lease_epoch") !== leaseEpoch
+      ) {
+        return;
+      }
+      table.put({
+        ...current,
+        status: "queued",
+        lease_expires_at: null,
       });
     });
   }

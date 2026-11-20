@@ -29,6 +29,7 @@ export function buildRelations(
 ): LedgerBuild {
   const inserts: LedgerRow[] = [];
   const retires = new Map<string, MemoryChangePlan["retires"][number]["status"]>();
+  const existingRecordIds = new Set(view.records.map((record) => record.memoryId));
   const knownSources = new Set(view.records.flatMap((record) => record.sourceObservationIds));
   const modifiersByTarget = new Map<string, MemoryRecordView[]>();
   for (const record of view.records) {
@@ -51,7 +52,12 @@ export function buildRelations(
           left.memoryId.localeCompare(right.memoryId),
         )[0];
         if (weakest !== undefined) {
-          retires.set(weakest.memoryId, "evicted");
+          if (existingRecordIds.has(weakest.memoryId)) {
+            retires.set(weakest.memoryId, "evicted");
+          } else {
+            const insertIndex = inserts.findIndex((row) => row.memoryId === weakest.memoryId);
+            if (insertIndex >= 0) inserts.splice(insertIndex, 1);
+          }
           current.splice(current.indexOf(weakest), 1);
         }
       }

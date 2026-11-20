@@ -126,6 +126,17 @@ describe("Agent memory host", () => {
       const newView = host.retrieve(memoryAgentId, memoryQuery(2, 11));
       expect(oldView.items.some((item) => item.summaryZh === "收到新证据")).toBe(false);
       expect(newView.items.some((item) => item.summaryZh === "收到新证据")).toBe(true);
+      const cited = oldView.items[0];
+      if (cited === undefined) throw new Error("expected a retrieved memory to cite");
+      await expect(host.recordUse(memoryAgentId, {
+        baseRevision: 2,
+        turnId: "turn-000000000001",
+        retrievedMemoryIds: [],
+        citedMemoryIds: [cited.memoryId],
+        noteworthy: [],
+        inputObservations: [],
+        worldTick: 11,
+      })).rejects.toThrow("not retrieved");
     } finally {
       await closeHosts([host], [harness]);
     }
@@ -214,17 +225,77 @@ describe("Agent memory host", () => {
     const host = await startedHost(harness);
     try {
       await host.runDueMaintenance(24);
+      expect(maintenanceRows(harness)).toEqual([
+        expect.objectContaining({ status: "queued" }),
+      ]);
+      expect(host.watermark(memoryAgentId).derivedThroughTick).toBe(0);
+      await host.ingestAll(24);
+      await host.runDueMaintenance(24);
       const row = harness.storage.transact((tx) =>
         tx.rows("maintenance_runs").list({ branch_id: memoryBranchId }),
       );
       expect(row).toEqual([
-        expect.objectContaining({ status: "completed", lease_epoch: 3 }),
+        expect.objectContaining({ status: "completed", lease_epoch: 4 }),
       ]);
       expect(host.watermark(memoryAgentId)).toMatchObject({
-        revision: 1,
+        revision: 2,
         derivedThroughSeq: 1,
         derivedThroughTick: 24,
       });
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
+
+  it("retries a failed maintenance task on restart before the attempt limit", async () => {
+    const harness = await createMemoryHarness(memoryLedgerModuleDefinition);
+    insertObservation(harness, {
+      sequence: 1,
+      tick: 24,
+      eventType: "DayPassed",
+      summary: "第 2 日结算完成",
+      facts: { day: 2 },
+      channel: "public-notice",
+    });
+    const task: MaintenanceTask = {
+      moduleId: memoryLedgerModuleDefinition.id,
+      trigger: "day-passed",
+      dueTick: 24,
+      baseRevision: 0,
+      observationSeqThrough: 1,
+      day: 2,
+      needsModel: false,
+    };
+    harness.storage.transact((tx) => {
+      tx.rows("maintenance_runs").put({
+        maintenance_id: "mnt-000000000002",
+        run_id: memoryRunId,
+        branch_id: memoryBranchId,
+        agent_id: memoryAgentId,
+        module_id: memoryLedgerModuleDefinition.id,
+        status: "failed",
+        trigger: task.trigger,
+        due_tick: task.dueTick,
+        observation_seq_through: task.observationSeqThrough,
+        task_json: task as never,
+        base_revision: 0,
+        lease_epoch: 1,
+        lease_expires_at: null,
+        error_json: { message: "transient" },
+        created_at: harness.host.nowIso(),
+        ended_at: harness.host.nowIso(),
+      });
+    });
+    const host = await startedHost(harness);
+    try {
+      expect(maintenanceRows(harness)).toEqual([
+        expect.objectContaining({ status: "queued" }),
+      ]);
+      await host.ingestAll(24);
+      await host.runDueMaintenance(24);
+      expect(maintenanceRows(harness)).toEqual([
+        expect.objectContaining({ status: "completed", lease_epoch: 2 }),
+      ]);
     } finally {
       await closeHosts([host], [harness]);
     }
@@ -316,6 +387,7 @@ describe("Agent memory host", () => {
       const use = host.recordUse(memoryAgentId, {
         baseRevision: 1,
         turnId: "turn-000000000001",
+        retrievedMemoryIds: ["mem-000000000010"],
         citedMemoryIds: ["mem-000000000010"],
         noteworthy: [],
         inputObservations: [original],

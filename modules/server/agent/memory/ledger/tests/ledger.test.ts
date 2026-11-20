@@ -85,7 +85,7 @@ function view(records: readonly MemoryRecordView[] = [], revision = 0): Revision
   return { scope, revision, identity, records };
 }
 
-function asViews(plan: MemoryChangePlan, revision = 1): readonly MemoryRecordView[] {
+function asViews(plan: MemoryChangePlan): readonly MemoryRecordView[] {
   return plan.inserts.map((row) => ({
     ...row,
     rowVersion: 1,
@@ -162,6 +162,121 @@ describe("structured ledger", () => {
     expect(() => memory.retrieve(query({
       scope: { ...scope, agentId: "npc-qilu" },
     }), view())).toThrow("memory scope");
+  });
+
+  it("applies candidateLimit after relevance scoring", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.candidateLimit = 1;
+    config.recall.topK = 1;
+    const memory = createLedgerPort(config, ids);
+    const records = [
+      memoryRow({
+        memoryId: "mem-000000000201",
+        kind: "episodic",
+        tier: "long",
+        validFromTick: 1,
+        salience: 0.5,
+        data: { eventType: "MetersChanged" },
+        tags: ["unrelated"],
+      }),
+      memoryRow({
+        memoryId: "mem-000000000202",
+        kind: "episodic",
+        tier: "long",
+        validFromTick: 1,
+        salience: 0.5,
+        data: { eventType: "AgreementActivated" },
+        tags: ["agreement"],
+      }),
+    ];
+    const bundle = memory.retrieve(query(), view(records, 1));
+    expect(bundle.items.map((item) => item.memoryId)).toEqual(["mem-000000000202"]);
+  });
+
+  it("counts mandatory items against the shared token budget", () => {
+    const memory = port();
+    const records = [
+      memoryRow({
+        memoryId: "mem-000000000203",
+        kind: "prospective",
+        tier: "long",
+        validFromTick: 1,
+        salience: 0.5,
+        data: {
+          sourceKind: "agreement",
+          obligorId: "human-independent",
+          dueTick: 30,
+          state: "open",
+        },
+      }),
+    ];
+    const bundle = memory.retrieve(query({ maxTokens: 0 }), view(records, 1));
+    expect(bundle.items).toEqual([]);
+    expect(bundle.dropped).toContainEqual({
+      memoryId: "mem-000000000203",
+      reason: "budget",
+    });
+  });
+
+  it("does not retire a relation row that was only created in the same plan", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.relationModifiersPerTarget = 1;
+    const memory = createLedgerPort(config, ids);
+    const plan = memory.prepareIngest({
+      scope,
+      baseRevision: 0,
+      observations: [observation({
+        id: "obs-000000000041",
+        seq: 1,
+        tick: 10,
+        eventType: "AgreementBreached",
+        facts: {
+          agreementId: "agr-000000000001",
+          termIndex: 0,
+          obligorId: "player-1",
+          term: { kind: "deliver", obligorId: "player-1" },
+        },
+      })],
+      worldTick: 10,
+    }, view());
+    const relationIds = plan.inserts
+      .filter((row) => row.kind === "relation")
+      .map((row) => row.memoryId);
+    expect(relationIds).toHaveLength(1);
+    expect(plan.retires.map((row) => row.memoryId)).not.toContain(relationIds[0]);
+  });
+
+  it("does not double count a reinforced row against capacity", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.capacity.long = 1;
+    const memory = createLedgerPort(config, ids);
+    const record = memoryRow({
+      memoryId: "mem-000000000204",
+      kind: "episodic",
+      tier: "long",
+      validFromTick: 1,
+      salience: 0.5,
+      data: { eventType: "WorldFactRecorded" },
+    });
+    const source = observation({
+      id: "obs-000000000042",
+      seq: 1,
+      tick: 1,
+      eventType: "WorldFactRecorded",
+    });
+    const plan = memory.recordUse({
+      scope,
+      baseRevision: 1,
+      turnId: "turn-000000000001",
+      citedMemoryIds: [record.memoryId],
+      noteworthy: [],
+      inputObservations: [source],
+      worldTick: 2,
+    }, view([record], 1));
+    expect(plan.retires).toEqual([{
+      memoryId: record.memoryId,
+      status: "superseded",
+    }]);
   });
 
   it("records a breach as decaying relation causes", () => {
@@ -295,6 +410,60 @@ describe("structured ledger", () => {
     expect(plan.retires.map((row) => row.memoryId)).not.toContain(promises[0]?.memoryId);
   });
 
+  it("uses an earlier invitation observation to date an accepted task promise", () => {
+    const memory = port();
+    const issued = observation({
+      id: "obs-000000000031",
+      seq: 1,
+      tick: 10,
+      eventType: "TaskInvitationIssued",
+      facts: {
+        invitationId: "inv-000000000001",
+        taskId: "task-000000000001",
+        inviteeId: "human-independent",
+        taskType: "escort",
+        departTick: 20,
+      },
+      summary: "收到护送邀请",
+    });
+    const first = memory.prepareIngest({
+      scope,
+      baseRevision: 0,
+      observations: [issued],
+      worldTick: 10,
+    }, view());
+    const accepted = observation({
+      id: "obs-000000000032",
+      seq: 2,
+      tick: 11,
+      eventType: "TaskInvitationAnswered",
+      facts: {
+        invitationId: "inv-000000000001",
+        taskId: "task-000000000001",
+        inviteeId: "human-independent",
+        response: "accept",
+        reasonCode: null,
+      },
+      summary: "接受护送邀请",
+    });
+    const second = memory.prepareIngest({
+      scope,
+      baseRevision: 1,
+      observations: [accepted],
+      worldTick: 11,
+    }, view(asViews(first), 1));
+    expect(second.inserts).toContainEqual(expect.objectContaining({
+      kind: "prospective",
+      content: expect.objectContaining({
+        data: expect.objectContaining({
+          sourceKind: "task",
+          taskId: "task-000000000001",
+          dueTick: 20,
+        }),
+      }),
+    }));
+  });
+
   it("reinforces only cited records", () => {
     const memory = port();
     const events = [
@@ -319,19 +488,19 @@ describe("structured ledger", () => {
       observations: events,
       worldTick: 11,
     }, view());
-    const records = asViews(ingested, 1);
+    const records = asViews(ingested);
     const cited = records[0];
-    expect(cited).toBeDefined();
+    if (cited === undefined) throw new Error("expected an ingest record for citation");
     const used = memory.recordUse({
       scope,
       baseRevision: 1,
       turnId: "turn-000000000001",
-      citedMemoryIds: [cited!.memoryId],
+      citedMemoryIds: [cited.memoryId],
       noteworthy: [],
       inputObservations: events,
       worldTick: 12,
     }, view(records, 1));
-    expect(used.inserts.map((row) => row.memoryId)).toEqual([cited!.memoryId]);
+    expect(used.inserts.map((row) => row.memoryId)).toEqual([cited.memoryId]);
     expect(used.inserts[0]?.recallCount).toBe(1);
   });
 
@@ -372,6 +541,46 @@ describe("structured ledger", () => {
     ]);
   });
 
+  it("keeps an aggregate private when a later public observation joins it", () => {
+    const memory = port();
+    const existing = memoryRow({
+      memoryId: "mem-000000000301",
+      kind: "episodic",
+      tier: "short",
+      validFromTick: 1,
+      salience: 0.2,
+      releasePolicyId: "private:sec-test",
+      data: {
+        aggregateKey: "aggregate:1:RumorSpread",
+        aggregate: true,
+        eventType: "RumorSpread",
+        day: 1,
+        count: 1,
+        salience: 0.2,
+      },
+    });
+    const publicRumor = {
+      ...observation({
+        id: "obs-000000000051",
+        seq: 2,
+        tick: 2,
+        eventType: "RumorSpread",
+        channel: "broadcast",
+      }),
+      releasePolicyId: "public",
+    };
+    const plan = memory.prepareIngest({
+      scope,
+      baseRevision: 1,
+      observations: [publicRumor],
+      worldTick: 2,
+    }, view([existing], 1));
+    expect(plan.inserts).toContainEqual(expect.objectContaining({
+      memoryId: existing.memoryId,
+      releasePolicyId: "private:sec-test",
+    }));
+  });
+
   it("adjudicates model-reported points against the current turn observations", () => {
     const memory = port();
     const source = observation({
@@ -381,6 +590,16 @@ describe("structured ledger", () => {
       eventType: "DialogueSubmitted",
       summary: "玩家说明明天会补交药品",
     });
+    const privateSource = {
+      ...observation({
+        id: "obs-000000000009",
+        seq: 2,
+        tick: 12,
+        eventType: "InformationShared",
+        summary: "一段私有补充",
+      }),
+      releasePolicyId: "private:sec-test",
+    };
     const valid = memory.recordUse({
       scope,
       baseRevision: 0,
@@ -391,13 +610,14 @@ describe("structured ledger", () => {
         aboutId: "player-1",
         summary: "玩家声称明天会补交药品",
         dueTick: null,
-        sourceRefs: [source.observationId],
+        sourceRefs: [source.observationId, privateSource.observationId],
       }],
-      inputObservations: [source],
+      inputObservations: [source, privateSource],
       worldTick: 12,
     }, view());
     expect(valid.inserts).toHaveLength(1);
     expect(valid.inserts[0]?.epistemic).toBe("reported-claim");
+    expect(valid.inserts[0]?.releasePolicyId).toBe("private:sec-test");
 
     const invalid = memory.recordUse({
       scope,
@@ -497,6 +717,8 @@ function memoryRow(input: {
   readonly validFromTick: number;
   readonly salience: number;
   readonly data: Json;
+  readonly tags?: readonly string[];
+  readonly releasePolicyId?: string;
 }): MemoryRecordView {
   return {
     memoryId: input.memoryId,
@@ -505,14 +727,14 @@ function memoryRow(input: {
     tier: input.tier,
     status: "active",
     epistemic: "verified-event",
-    releasePolicyId: "parties:human-independent,player-1",
+    releasePolicyId: input.releasePolicyId ?? "parties:human-independent,player-1",
     validFromTick: input.validFromTick,
     validUntilTick: null,
     strength: input.salience,
     salience: input.salience,
     recallCount: 0,
     lastReinforcedTick: input.validFromTick,
-    tags: ["test"],
+    tags: [...(input.tags ?? ["test"])],
     sourceObservationIds: ["obs-000000000001"],
     content: {
       summaryZh: "测试记录",

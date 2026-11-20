@@ -37,21 +37,27 @@ export interface LedgerEvent {
   readonly counterpartIds: readonly string[];
 }
 
+const relationCauses = [
+  "fulfilled",
+  "breach",
+  "agreement",
+  "aid",
+  "invite-accepted",
+  "invite-declined",
+  "shared-evidence",
+  "hostile-policy",
+  "rumor-hostile",
+  "counter-evidence",
+] as const;
+
+type RelationCause = (typeof relationCauses)[number];
+const relationCauseSet: ReadonlySet<string> = new Set(relationCauses);
+
 export interface RelationModifier {
   readonly targetId: string;
   readonly dimension: "trust" | "affinity" | "wariness";
   readonly delta: number;
-  readonly cause:
-    | "fulfilled"
-    | "breach"
-    | "agreement"
-    | "aid"
-    | "invite-accepted"
-    | "invite-declined"
-    | "shared-evidence"
-    | "hostile-policy"
-    | "rumor-hostile"
-    | "counter-evidence";
+  readonly cause: RelationCause;
   readonly halfLifeTicks: number;
 }
 
@@ -86,8 +92,12 @@ export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+export function compareStrings(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
 export function mergeReleasePolicies(policies: readonly string[]): string {
-  const unique = [...new Set(policies)].sort();
+  const unique = [...new Set(policies)].sort(compareStrings);
   const first = unique[0];
   if (first === undefined) return "private:derived";
   if (unique.some((policy) => policy.startsWith("private:"))) {
@@ -100,7 +110,9 @@ export function mergeReleasePolicies(policies: readonly string[]): string {
       (current, next) => current.filter((id) => next.includes(id)),
       lists[0] ?? [],
     );
-    return intersection.length === 0 ? "private:derived" : `parties:${intersection.sort().join(",")}`;
+    return intersection.length === 0
+      ? "private:derived"
+      : `parties:${intersection.sort(compareStrings).join(",")}`;
   }
   if (unique.every((policy) => policy.startsWith("faction:")) && new Set(unique).size === 1) return first;
   if (unique.every((policy) => policy.startsWith("holders:")) && new Set(unique).size === 1) return first;
@@ -145,7 +157,7 @@ export function counterpartIdsOf(observation: AgentObservation, selfId: string):
     if (typeof value === "string") ids.add(value);
   }
   ids.delete(selfId);
-  return [...ids].sort();
+  return [...ids].sort(compareStrings);
 }
 
 function categoryOf(eventType: string): keyof MemoryAgentIdentity["personalityKeywords"] | null {
@@ -261,7 +273,9 @@ export function tagsFor(event: LedgerEvent): readonly string[] {
   for (const tag of stringArray(event.facts["tags"])) tags.add(tag);
   const evidenceId = event.facts["evidenceId"];
   if (evidenceId === "ev-exchange-draft" || evidenceId === "ev-star-charts") tags.add("exchange");
-  return [...tags].filter((tag) => tag.length > 0).sort();
+  return [...tags]
+    .filter((tag) => tag.length > 0)
+    .sort(compareStrings);
 }
 
 export function eventFromObservation(
@@ -321,17 +335,15 @@ function buildRelationSummary(
   trust: number;
   affinity: number;
   wariness: number;
-  causes: (
-    | "fulfilled" | "breach" | "agreement" | "aid" | "invite-accepted"
-    | "invite-declined" | "shared-evidence" | "hostile-policy" | "rumor-hostile" | "counter-evidence"
-  )[];
+  causes: RelationCause[];
   reasonMemoryIds: string[];
 }[] {
-  const targets = [...new Set(query.counterpartIds)].sort();
+  const targets = [...new Set(query.counterpartIds)]
+    .sort(compareStrings);
   return targets.map((targetId) => {
     const baselineTrust = (view.identity.initialRelations.find((relation) => relation.targetId === targetId)?.trust ?? 0) * 4;
     const totals = { trust: baselineTrust, affinity: 0, wariness: 0 };
-    const contributions: { memoryId: string; cause: keyof typeof causeSet; value: number }[] = [];
+    const contributions: { memoryId: string; cause: RelationCause; value: number }[] = [];
     for (const record of view.records) {
       if (record.kind !== "relation" || record.status !== "active") continue;
       const data = dataOf(record);
@@ -347,8 +359,8 @@ function buildRelationSummary(
       const weight = relationModifierWeight(record, query.frontier.worldTick);
       totals[dimension] += weight;
       if (Math.abs(weight) >= 0.1) {
-        const typedCause = cause as keyof typeof causeSet;
-        if (typedCause in causeSet) {
+        if (relationCauseSet.has(cause)) {
+          const typedCause = cause as RelationCause;
           contributions.push({ memoryId: record.memoryId, cause: typedCause, value: weight });
         }
       }
@@ -366,19 +378,6 @@ function buildRelationSummary(
     };
   });
 }
-
-const causeSet = {
-  "fulfilled": true,
-  "breach": true,
-  "agreement": true,
-  "aid": true,
-  "invite-accepted": true,
-  "invite-declined": true,
-  "shared-evidence": true,
-  "hostile-policy": true,
-  "rumor-hostile": true,
-  "counter-evidence": true,
-} as const;
 
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;

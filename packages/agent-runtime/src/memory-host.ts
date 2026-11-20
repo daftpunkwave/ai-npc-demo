@@ -120,6 +120,10 @@ export class MemoryHost {
     await Promise.all(claimed.map(async (claim) => {
       const agentId = String(claim.row["agent_id"]);
       try {
+        if (this.requireWatermark(agentId).observationSeqConsumed < claim.observationSeqThrough) {
+          this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch);
+          return;
+        }
         await publishMaintenance(agentId, claim, this.publication(agentId));
       } catch (error) {
         this.options.host.logger.error("Memory maintenance failed", {
@@ -253,15 +257,16 @@ export class MemoryHost {
 
   private requeueMissingDayPassed(agentId: string): void {
     if (!this.store.agentControl(agentId).active) return;
-    const latest = this.store.latestDayPassedTick(agentId);
+    const latest = this.store.latestDayPassed(agentId);
     if (latest === null) return;
     const watermark = this.requireWatermark(agentId);
-    if (watermark.derivedThroughTick >= latest) return;
-    if (this.maintenance.hasTask(agentId, "day-passed", latest)) return;
+    if (latest.observationSeq > watermark.observationSeqConsumed) return;
+    if (watermark.derivedThroughTick >= latest.tick) return;
+    if (this.maintenance.hasTask(agentId, "day-passed", latest.tick)) return;
     const task = this.module(agentId).port.planMaintenance({
       scope: this.scope(agentId),
       revision: watermark.revision,
-      worldTick: latest,
+      worldTick: latest.tick,
       observationSeqThrough: watermark.observationSeqConsumed,
       trigger: "day-passed",
     });

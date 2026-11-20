@@ -26,9 +26,11 @@ import { buildMaintenance } from "./ledger-maintenance";
 import {
   type LedgerRow,
   clamp01,
+  compareStrings,
   currentStrength,
   dataOf,
   eventFromObservation,
+  mergeReleasePolicies,
   numberValue,
   objectValue,
   relationSummary,
@@ -67,8 +69,7 @@ export class LedgerMemoryPort implements MemoryPort {
         record.kind !== "relation" &&
         (this.config.prospectiveInput === "enabled" || record.kind !== "prospective") &&
         record.validFromTick <= query.frontier.worldTick,
-      )
-      .slice(0, this.config.recall.candidateLimit);
+      );
     const scored = candidates.map((record) => ({
       record,
       score: this.score(record, query),
@@ -77,9 +78,24 @@ export class LedgerMemoryPort implements MemoryPort {
       right.record.validFromTick - left.record.validFromTick ||
       left.record.memoryId.localeCompare(right.record.memoryId),
     );
+    const candidatePool = scored.slice(0, this.config.recall.candidateLimit);
     const picked = new Map<string, { record: MemoryRecordView; score: number; mustInclude: boolean }>();
+    const dropped: MemoryBundle["dropped"] = [];
+    const droppedIds = new Set<string>();
+    let tokenEstimate = 0;
+    const pickMandatory = (item: { record: MemoryRecordView; score: number }): void => {
+      if (picked.has(item.record.memoryId) || picked.size >= query.maxItems) return;
+      const itemTokens = estimateTokens(item.record.content.summaryZh);
+      if (tokenEstimate + itemTokens > query.maxTokens) {
+        dropped.push({ memoryId: item.record.memoryId, reason: "budget" });
+        droppedIds.add(item.record.memoryId);
+        return;
+      }
+      tokenEstimate += itemTokens;
+      picked.set(item.record.memoryId, { ...item, mustInclude: true });
+    };
     if (this.config.prospectiveInput === "enabled") {
-      const promises = scored.filter(({ record }) =>
+      const promises = candidatePool.filter(({ record }) =>
         record.kind === "prospective" &&
         record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
       );
@@ -87,10 +103,10 @@ export class LedgerMemoryPort implements MemoryPort {
         this.config.recall.mustIncludeProspective,
         query.maxItems,
       ))) {
-        picked.set(item.record.memoryId, { ...item, mustInclude: true });
+        pickMandatory(item);
       }
     }
-    const about = scored.filter(({ record }) =>
+    const about = candidatePool.filter(({ record }) =>
       record.tier === "long" &&
       record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
     );
@@ -98,18 +114,15 @@ export class LedgerMemoryPort implements MemoryPort {
       this.config.recall.mustIncludeAboutCounterpart,
       Math.max(0, query.maxItems - picked.size),
     ))) {
-      picked.set(item.record.memoryId, { ...item, mustInclude: true });
+      pickMandatory(item);
     }
-    const dropped: MemoryBundle["dropped"] = [];
-    const droppedIds = new Set<string>();
-    let tokenEstimate = 0;
     const seenSources = new Set([...picked.values()].map(({ record }) =>
-      record.sourceObservationIds.slice().sort().join(","),
+      record.sourceObservationIds.slice().sort(compareStrings).join(","),
     ).filter((key) => key.length > 0));
-    for (const item of scored) {
+    for (const item of candidatePool) {
       if (picked.size >= Math.min(this.config.recall.topK, query.maxItems)) break;
       if (picked.has(item.record.memoryId)) continue;
-      const sourceKey = item.record.sourceObservationIds.slice().sort().join(",");
+      const sourceKey = item.record.sourceObservationIds.slice().sort(compareStrings).join(",");
       if (sourceKey.length > 0 && seenSources.has(sourceKey)) {
         dropped.push({ memoryId: item.record.memoryId, reason: "dedupe" });
         droppedIds.add(item.record.memoryId);
@@ -125,7 +138,7 @@ export class LedgerMemoryPort implements MemoryPort {
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: false });
     }
-    for (const item of scored) {
+    for (const item of candidatePool) {
       if (!picked.has(item.record.memoryId) && !droppedIds.has(item.record.memoryId)) {
         dropped.push({ memoryId: item.record.memoryId, reason: "rank" });
       }
@@ -147,7 +160,7 @@ export class LedgerMemoryPort implements MemoryPort {
       coreBlock: null,
       relationSummary: this.config.relationInput === "enabled" ? relationSummary(query, view) : [],
       items,
-      candidates: candidates.length,
+      candidates: candidatePool.length,
       dropped,
     };
   }
@@ -313,8 +326,7 @@ export class LedgerMemoryPort implements MemoryPort {
     input: Parameters<MemoryPort["recordUse"]>[0],
     view: RevisionView,
   ): LedgerRow {
-    const first = sources[0];
-    if (first === undefined) throw new Error("validated noteworthy entry has no source");
+    if (sources.length === 0) throw new Error("validated noteworthy entry has no source");
     const isPromise = entry.kind === "promise-by-other" || entry.kind === "promise-by-me";
     const obligorId = entry.kind === "promise-by-other" ? entry.aboutId : view.scope.agentId;
     const kind = isPromise ? "prospective" : "episodic";
@@ -335,7 +347,7 @@ export class LedgerMemoryPort implements MemoryPort {
       tier: isPromise ? "long" : kind === "episodic" && salience >= this.config.salienceThresholds.long ? "long" : "short",
       status: "active",
       epistemic: entry.kind === "claim" ? "reported-claim" : "inference",
-      releasePolicyId: first.releasePolicyId,
+      releasePolicyId: mergeReleasePolicies(sources.map((source) => source.releasePolicyId)),
       validFromTick: input.worldTick,
       validUntilTick: null,
       strength: salience,
@@ -343,12 +355,12 @@ export class LedgerMemoryPort implements MemoryPort {
       recallCount: 0,
       lastReinforcedTick: input.worldTick,
       tags: isPromise ? ["agreement", "prospective"] : ["dialogue"],
-      sourceObservationIds: [...new Set(sources.map((source) => source.observationId))].sort(),
+      sourceObservationIds: [...new Set(sources.map((source) => source.observationId))].sort(compareStrings),
       content: {
         summaryZh: entry.summary,
         counterpartIds: [...new Set([entry.aboutId, ...sources.flatMap((source) =>
           eventFromObservation(source, view.scope.agentId).counterpartIds,
-        )])].filter((id) => id !== view.scope.agentId).sort(),
+        )])].filter((id) => id !== view.scope.agentId).sort(compareStrings),
         data,
       },
     };

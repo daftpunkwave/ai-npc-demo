@@ -4,6 +4,7 @@
  * Depends on the storage port and public memory, observation, and scope contracts.
  * Must not call modules, models, or expose cross-agent reads.
  */
+import { maintenanceTaskSchema } from "@ai-npc/contracts";
 import {
   type AgentObservation,
   type HostServices,
@@ -118,14 +119,19 @@ export class MemoryStore {
     });
   }
 
-  latestDayPassedTick(agentId: string): number | null {
+  latestDayPassed(agentId: string): { readonly tick: number; readonly observationSeq: number } | null {
     return this.storage.transact((tx) => {
       const rows = tx.branch(this.branchId)
         .table("observations")
         .list({ agent_id: agentId }, { orderBy: [{ column: "known_at_tick", direction: "desc" }] });
       for (const row of rows) {
         const content = jsonObject(row["content_json"]);
-        if (content["eventType"] === "DayPassed") return numberColumn(row, "known_at_tick");
+        if (content["eventType"] === "DayPassed") {
+          return {
+            tick: numberColumn(row, "known_at_tick"),
+            observationSeq: numberColumn(row, "observation_seq"),
+          };
+        }
       }
       return null;
     });
@@ -303,6 +309,11 @@ export class MemoryStore {
           ...task,
           status: "completed",
           base_revision: revision,
+          task_json: {
+            ...maintenanceTaskSchema.parse(task["task_json"]),
+            baseRevision: plan.baseRevision,
+            observationSeqThrough: plan.observationSeqThrough,
+          },
           lease_expires_at: null,
           error_json: null,
           ended_at: this.host.nowIso(),

@@ -17,6 +17,7 @@ import {
 import {
   type LedgerRow,
   clamp01,
+  compareStrings,
   currentStrength,
   dataOf,
   mergeReleasePolicies,
@@ -221,11 +222,11 @@ function mergeShortGroup(
     salience: mergedSalience,
     recallCount: records.reduce((sum, record) => sum + record.recallCount, 0),
     lastReinforcedTick: Math.max(...records.map((record) => record.lastReinforcedTick)),
-    tags: [...new Set(records.flatMap((record) => record.tags))].sort(),
-    sourceObservationIds: [...new Set(records.flatMap((record) => record.sourceObservationIds))].sort(),
+    tags: [...new Set(records.flatMap((record) => record.tags))].sort(compareStrings),
+    sourceObservationIds: [...new Set(records.flatMap((record) => record.sourceObservationIds))].sort(compareStrings),
     content: {
       summaryZh: `同类经历合并 ${records.length} 次：${first.content.summaryZh}`,
-      counterpartIds: [...new Set(records.flatMap((record) => record.content.counterpartIds))].sort(),
+      counterpartIds: [...new Set(records.flatMap((record) => record.content.counterpartIds))].sort(compareStrings),
       data: {
         ...data,
         mergedCount: records.length,

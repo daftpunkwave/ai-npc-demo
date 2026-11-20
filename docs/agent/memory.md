@@ -240,7 +240,7 @@ interface MemoryBundle {
 interface WakeupProposal { atTick: number; dedupeKey: string; reason: "self-due" | "other-due" | "intent"; memoryId: string; counterpartId: string | null }
 ```
 
-`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询），并携带宿主从已校验人格提取的 `MemoryAgentIdentity`，避免记忆插件旁路读取内容包。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
+`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询），并携带宿主从已校验人格提取的 `MemoryAgentIdentity`，避免记忆插件旁路读取内容包。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`recordUse` 的引用集合还必须来自该 turn 实际注入或合法返回的记忆 ID，宿主不接受未召回的强化目标。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
 
 ### 11.2 共用：显著度与标签
 

@@ -156,12 +156,17 @@ function findTaskDepartTick(
     const direct = numberValue(event.facts["departTick"]);
     if (direct !== null) return direct;
   }
-  const fromRecords = view.records.filter((record) => dataOf(record)["taskId"] === taskId);
+  const fromRecords = view.records.filter((record) => storedFact(record, "taskId") === taskId);
   for (const record of [...fromRecords].reverse()) {
-    const direct = numberValue(dataOf(record)["departTick"]);
+    const direct = numberValue(storedFact(record, "departTick"));
     if (direct !== null) return direct;
   }
   return null;
+}
+
+function storedFact(record: MemoryRecordView, key: string): unknown {
+  const data = dataOf(record);
+  return data[key] ?? objectValue(data["facts"])[key];
 }
 
 function closeAgreementPromise(

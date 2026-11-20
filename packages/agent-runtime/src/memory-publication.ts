@@ -25,6 +25,7 @@ import type { MemoryStore } from "./memory-store";
 export interface MemoryRecordUseRequest {
   readonly baseRevision: number;
   readonly turnId: string;
+  readonly retrievedMemoryIds: readonly string[];
   readonly citedMemoryIds: readonly string[];
   readonly noteworthy: Parameters<MemoryPort["recordUse"]>[0]["noteworthy"];
   readonly inputObservations: readonly AgentObservation[];
@@ -47,7 +48,7 @@ export async function publishUse(
   input: MemoryRecordUseRequest,
   dependencies: MemoryPublicationDependencies,
 ): Promise<number> {
-  const { store, host, port, scope, identity, enqueueActor } = dependencies;
+  const { store, port, scope, identity, enqueueActor } = dependencies;
   let baseRevision = input.baseRevision;
   for (let generation = 0; generation <= 2; generation += 1) {
     const current = store.readWatermark(agentId);
@@ -60,12 +61,20 @@ export async function publishUse(
       }
     }
     const view = store.readRevisionView(agentId, identity, baseRevision);
-    const plan = port.recordUse({ scope, ...input, baseRevision }, view);
+    const plan = port.recordUse({
+      scope,
+      baseRevision,
+      turnId: input.turnId,
+      citedMemoryIds: input.citedMemoryIds,
+      noteworthy: input.noteworthy,
+      inputObservations: input.inputObservations,
+      worldTick: input.worldTick,
+    }, view);
     validateUsePlan(plan, view, input);
     if (plan.derivedThroughTick !== null && plan.derivedThroughTick > input.worldTick) {
       throw new Error("memory use plan cannot derive a future tick");
     }
-    const outcome = await bindAndCommitUse(
+    const outcome = await bindAndCommitPlan(
       agentId,
       plan,
       dependencies,
@@ -91,7 +100,16 @@ export async function publishMaintenance(
     const view = store.readRevisionView(agentId, identity, task.baseRevision);
     const plan = await port.runMaintenance(task, view, null);
     validateMaintenancePlan(plan, task);
-    const outcome = await bindAndCommitMaintenance(agentId, plan, claim, dependencies, enqueueActor);
+    const outcome = await bindAndCommitPlan(
+      agentId,
+      plan,
+      dependencies,
+      enqueueActor,
+      {
+        maintenanceId: claim.maintenanceId,
+        leaseEpoch: claim.leaseEpoch,
+      },
+    );
     if (outcome.committed) return;
     if (rerun === 1) throw new Error("memory maintenance remained conflicted after regeneration");
     const current = store.readWatermark(agentId);
@@ -105,51 +123,17 @@ export async function publishMaintenance(
   }
 }
 
-async function bindAndCommitUse(
-  agentId: string,
-  plan: MemoryChangePlan,
-  dependencies: MemoryPublicationDependencies,
-  enqueueActor: MemoryPublicationDependencies["enqueueActor"],
-): Promise<{ readonly committed: boolean; readonly revision: number }> {
-  const { store, host, moduleId } = dependencies;
-  let candidate = plan;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const current = store.readWatermark(agentId);
-    if (current === null) throw new Error(`agent ${agentId} memory is not initialized`);
-    if (store.hasRevisionConflicts(agentId, plan.baseRevision, targetIds(plan))) {
-      return { committed: false, revision: current.revision };
-    }
-    if (current.revision !== candidate.baseRevision) {
-      candidate = { ...candidate, baseRevision: current.revision };
-    }
-    const planHash = await host.hash(candidate as unknown as Json);
-    const outcome = await enqueueActor(agentId, () => {
-      const latest = store.readWatermark(agentId);
-      if (latest === null) throw new Error(`agent ${agentId} memory is not initialized`);
-      if (latest.revision !== candidate.baseRevision) {
-        return { committed: false as const, revision: latest.revision };
-      }
-      return {
-        committed: true as const,
-        revision: store.commitPlan(agentId, moduleId, candidate, {
-          planHash,
-          worldSeqThrough: store.scannedWorldSeq(),
-        }),
-      };
-    });
-    if (outcome.committed) return outcome;
-  }
-  const current = store.readWatermark(agentId);
-  if (current === null) throw new Error(`agent ${agentId} memory is not initialized`);
-  return { committed: false, revision: current.revision };
+interface MaintenanceFence {
+  readonly maintenanceId: string;
+  readonly leaseEpoch: number;
 }
 
-async function bindAndCommitMaintenance(
+async function bindAndCommitPlan(
   agentId: string,
   plan: MemoryChangePlan,
-  claim: ClaimedMaintenance,
   dependencies: MemoryPublicationDependencies,
   enqueueActor: MemoryPublicationDependencies["enqueueActor"],
+  maintenance?: MaintenanceFence,
 ): Promise<{ readonly committed: boolean; readonly revision: number }> {
   const { store, host, moduleId } = dependencies;
   let candidate = plan;
@@ -174,10 +158,7 @@ async function bindAndCommitMaintenance(
         revision: store.commitPlan(agentId, moduleId, candidate, {
           planHash,
           worldSeqThrough: store.scannedWorldSeq(),
-          maintenance: {
-            maintenanceId: claim.maintenanceId,
-            leaseEpoch: claim.leaseEpoch,
-          },
+          ...(maintenance === undefined ? {} : { maintenance }),
         }),
       };
     });
@@ -197,6 +178,10 @@ function validateUsePlan(
     .filter((record) => record.status === "active")
     .map((record) => [record.memoryId, record]));
   const cited = new Set(input.citedMemoryIds);
+  const retrieved = new Set(input.retrievedMemoryIds);
+  if (input.citedMemoryIds.some((memoryId) => !retrieved.has(memoryId))) {
+    throw new Error("memory use cited a record that was not retrieved for this turn");
+  }
   const inputObservations = new Set(input.inputObservations.map((observation) => observation.observationId));
   for (const retire of plan.retires) {
     if (!current.has(retire.memoryId)) {

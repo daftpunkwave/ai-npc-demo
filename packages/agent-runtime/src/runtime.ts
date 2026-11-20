@@ -73,22 +73,31 @@ export class AgentRuntime {
           signal: this.signal,
         }));
       }
-      this.memory = new MemoryHost({
-        storage: this.options.storage,
-        host: this.options.host,
-        roster: this.options.roster,
-        profiles: this.options.profiles,
-        moduleDefinitions: this.options.moduleDefinitions,
-        identities: new Map(this.options.roster.agents.map((agent) => [
-          agent.agentId,
-          memoryIdentityForAgent(this.options.content, agent.agentId),
-        ])),
-        worldId: this.options.worldId,
-        branchId: this.options.branchId,
-        runId: this.options.runId,
-        signal: this.signal,
-      });
-      await this.memory.start();
+      const memorySelections = this.options.roster.agents.map((agent) =>
+        this.options.profiles.get(agent.agentId)?.slots.memory,
+      );
+      if (memorySelections.some((selection) => selection !== undefined) &&
+          memorySelections.some((selection) => selection === undefined)) {
+        throw new Error("Agent 名册的记忆 profile 配置不完整");
+      }
+      if (memorySelections.every((selection) => selection !== undefined)) {
+        this.memory = new MemoryHost({
+          storage: this.options.storage,
+          host: this.options.host,
+          roster: this.options.roster,
+          profiles: this.options.profiles,
+          moduleDefinitions: this.options.moduleDefinitions,
+          identities: new Map(this.options.roster.agents.map((agent) => [
+            agent.agentId,
+            memoryIdentityForAgent(this.options.content, agent.agentId),
+          ])),
+          worldId: this.options.worldId,
+          branchId: this.options.branchId,
+          runId: this.options.runId,
+          signal: this.signal,
+        });
+        await this.memory.start();
+      }
       this.consumer = new PerceptionEventConsumer({
         storage: this.options.storage,
         host: this.options.host,
