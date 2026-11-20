@@ -647,14 +647,14 @@ describe("服务端宿主", () => {
         channel: "console.health",
         data: { ports: { client: 5173, server: port } },
       });
-      expect(healthSnapshot).not.toHaveProperty("projectionVersion");
+      expect(healthSnapshot).toHaveProperty("projectionVersion", 0);
       consoleClient.send({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null });
       const initialTimelineSnapshot = await consoleClient.next();
       expect(initialTimelineSnapshot).toMatchObject({
         type: "snapshot",
         channel: "console.timeline",
       });
-      expect(initialTimelineSnapshot).not.toHaveProperty("projectionVersion");
+      expect(initialTimelineSnapshot).toHaveProperty("projectionVersion", 0);
       host.app.notifyWorldChanged();
       let timelineSnapshot: unknown = null;
       for (let attempt = 0; attempt < 4; attempt += 1) {

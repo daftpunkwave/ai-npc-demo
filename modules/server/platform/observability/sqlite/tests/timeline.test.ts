@@ -62,6 +62,9 @@ describe("ObservabilityPort timeline", () => {
     expect(domainCall?.sql).toContain("type IN (?)");
     expect(domainCall?.sql).toContain("json_tree(payload_json)");
     expect(domainCall?.sql).toContain("ORDER BY world_seq DESC");
+    expect(domainCall?.sql).toContain("LIMIT ?");
+    expect(domainCall?.sql.match(/json_tree/g)).toHaveLength(2);
+    expect(domainCall?.parameters).toContain("node-gate");
     expect(domainCall?.parameters.at(-1)).toBe(10);
     expect(domainCall?.parameters).not.toContain(30);
   });

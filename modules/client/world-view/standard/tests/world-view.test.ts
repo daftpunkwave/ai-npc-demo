@@ -3,7 +3,7 @@
  * 依赖内存命令端口与最小宿主服务；不启动浏览器、网络或真实服务端。
  * 禁止在命令已受理后要求重新生成 commandId。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   playerProjectionSchema,
   type CommandReceipt,
@@ -90,9 +90,8 @@ function moduleInput(api: ApiClient, command: object): ModuleCreateInput {
 
 describe("WorldViewController 命令受理", () => {
   it("命令已受理而投影刷新失败时返回 accepted 与独立刷新错误", async () => {
-    const command = {
-      send: async () => receipt,
-    };
+    const send = vi.fn(async () => receipt);
+    const command = { send };
     let refreshes = 0;
     const api = {
       worldView: async () => {
@@ -108,6 +107,11 @@ describe("WorldViewController 命令受理", () => {
 
     await expect(port.sendDialogue("human-independent", "请确认道路")).resolves.toBe(true);
     expect(port.refreshError()).toBe("projection refresh failed");
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith("dialogue.say", {
+      targetAgentId: "human-independent",
+      text: "请确认道路",
+    });
     await port.refresh();
     expect(port.refreshError()).toBeNull();
   });

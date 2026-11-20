@@ -97,7 +97,7 @@ export class ObservabilityPort {
       domainConditions.push(
         `(principal_id = ? OR EXISTS (
           SELECT 1 FROM json_tree(payload_json) AS payload_value
-           WHERE payload_value.type IN ('text', 'integer', 'real')
+          WHERE payload_value.type = 'text'
              AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
         ))`,
       );
@@ -105,7 +105,7 @@ export class ObservabilityPort {
       lifecycleConditions.push(
         `(subject_id = ? OR EXISTS (
           SELECT 1 FROM json_tree(payload_json) AS payload_value
-           WHERE payload_value.type IN ('text', 'integer', 'real')
+           WHERE payload_value.type = 'text'
              AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
         ))`,
       );
@@ -114,7 +114,7 @@ export class ObservabilityPort {
     if (query.nodeId !== undefined) {
       const nodeFilter = `EXISTS (
         SELECT 1 FROM json_tree(payload_json) AS payload_value
-         WHERE payload_value.type IN ('text', 'integer', 'real')
+         WHERE payload_value.type = 'text'
            AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
       )`;
       domainConditions.push(nodeFilter);

@@ -52,6 +52,8 @@ export const playerStreamSnapshotMessageSchema = streamSnapshotBaseSchema
 export const consoleStreamSnapshotMessageSchema = streamSnapshotBaseSchema
   .extend({
     channel: z.enum(["console.health", "console.timeline", "console.turns"]),
+    /** v1 兼容字段：非玩家快照没有投影修订号，固定为 0，不借用流序号。 */
+    projectionVersion: z.literal(0),
   })
   .strict();
 

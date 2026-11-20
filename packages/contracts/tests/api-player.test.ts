@@ -264,13 +264,14 @@ describe("认证、会话与玩家接口 DTO", () => {
       type: "snapshot",
       channel: "console.timeline",
       streamSeq: 5,
+      projectionVersion: 0,
       data: { events: [] },
     };
     expect(streamSnapshotMessageSchema.safeParse(consoleSnapshot).success).toBe(true);
     expect(
       streamSnapshotMessageSchema.safeParse({
         ...consoleSnapshot,
-        projectionVersion: 5,
+        projectionVersion: 1,
       }).success,
     ).toBe(false);
     const { projectionVersion: _projectionVersion, ...playerWithoutVersion } = snapshotMessage;
