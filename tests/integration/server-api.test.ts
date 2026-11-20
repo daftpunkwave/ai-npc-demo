@@ -885,6 +885,59 @@ describe("服务端 API", () => {
     });
   });
 
+  it("GET /conversations 使用实际尾行计算分页窗口并保留 beforeSeq 边界", async () => {
+    const value = await createTrackedGameHarness(active);
+    const conversationId = value.host.ids("conv");
+    const lines: readonly ConversationSourceLine[] = Array.from({ length: 60 }, (_, seq) => ({
+      seq,
+      dialogueId: value.host.ids("dlg"),
+      worldSeq: seq + 1,
+      speakerId: "npc-cenyan",
+      text: `第 ${seq} 条对白`,
+      channel: "relay",
+      worldTick: 0,
+      deliveries: [{
+        principalId: "player-1",
+        deliverAtTick: seq < 30 ? 0 : 1,
+      }],
+    }));
+    const app = await appFor(value, {
+      conversation: {
+        worldTick: () => 0,
+        conversationsOf: (principalId) =>
+          principalId === "player-1" || principalId === "npc-cenyan"
+            ? [conversationId]
+            : [],
+        conversationMessages: (_conversationId, limit) => lines.slice(-limit),
+        speakerName: (principalId) => principalId,
+      },
+    });
+    const session = await login(app, "player-token");
+    const auth = { authorization: `Bearer ${session}` };
+
+    const latest = conversationResponseSchema.parse(
+      (await app.inject({
+        method: "GET",
+        url: "/api/v1/conversations/npc-cenyan?limit=50",
+        headers: auth,
+      })).json(),
+    );
+    expect(latest.lines.map((line) => line.seq)).toEqual(
+      Array.from({ length: 30 }, (_, seq) => seq),
+    );
+
+    const before = conversationResponseSchema.parse(
+      (await app.inject({
+        method: "GET",
+        url: "/api/v1/conversations/npc-cenyan?beforeSeq=20&limit=50",
+        headers: auth,
+      })).json(),
+    );
+    expect(before.lines.map((line) => line.seq)).toEqual(
+      Array.from({ length: 20 }, (_, seq) => seq),
+    );
+  });
+
   it("GET /session/assembly 按 realm 返回装配握手，玩家不能读取控制台装配", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value, {

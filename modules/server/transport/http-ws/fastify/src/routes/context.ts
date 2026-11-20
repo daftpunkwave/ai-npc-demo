@@ -363,7 +363,12 @@ export function readPlayerConversation(
   if (selectedConversationId === null || selectedLastLine === null) {
     return null;
   }
-  const total = selectedLastLine.seq + 1;
+  const selectedTailLine = loaded.get(selectedConversationId)?.lines.at(-1);
+  if (selectedTailLine === undefined) {
+    throw new Error(`会话 ${selectedConversationId} 的尾行缓存缺失`);
+  }
+  // 会话排序使用最后一条已送达行，但分页上界必须覆盖整个尾部窗口。
+  const total = selectedTailLine.seq + 1;
   const before = query.beforeSeq ?? total;
   // 端口只支持从尾部读取；先按主体与送达时间过滤，再取分页窗口。
   // 尾部可能有尚未送达的对白，逐次扩大窗口直到凑满 limit 或到达会话开头。
