@@ -51,6 +51,8 @@ export type {
 } from "./tick";
 export { disposeInReverse, startHost } from "./host";
 export type { DisposalStep, HostOptions, RunningHost } from "./host";
+export { createTransportApp } from "./host/transport-app";
+export type { TransportAppInput } from "./host/transport-app";
 export {
   assertDistinctTokens,
   credentialsFileName,

@@ -28,9 +28,11 @@ import {
 import {
   buildPlayerProjection,
   createServerApp,
+  createTransportApp,
   type CommandReceiptReadPort,
   type ServerApp,
   type ServerAppInjectResponse,
+  type TransportAppInput,
 } from "@ai-npc/app-server";
 import {
   accessPolicyModuleDefinition,
@@ -1841,6 +1843,26 @@ describe("服务端 API", () => {
       const afterBuild = await app.inject({ method: "GET", url: "/console/timeline" });
       expect(afterBuild.statusCode).toBe(200);
       expect(afterBuild.body).toContain("console built");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("控制台静态目录创建失败时释放已初始化资源", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-failure-"));
+    const blocker = join(directory, "not-a-directory");
+    writeFileSync(blocker, "blocked");
+    let disposed = 0;
+    try {
+      await expect(
+        createTransportApp({
+          consoleStaticDir: join(blocker, "console-static"),
+          disposeOnFailure: async () => {
+            disposed += 1;
+          },
+        } as unknown as TransportAppInput),
+      ).rejects.toThrow();
+      expect(disposed).toBe(1);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

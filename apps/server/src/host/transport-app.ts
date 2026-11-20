@@ -30,6 +30,8 @@ export interface TransportAppInput {
   readonly lifecycle: HostLifecycle;
   readonly gameContent: GameContent;
   readonly sessionAssembly: SessionAssemblies;
+  /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
+  readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
   readonly disposeOnFailure: () => Promise<void>;
 }
@@ -105,10 +107,12 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 /** 创建传输应用；调用方负责之后监听端口并在关闭时释放。 */
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
   const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent } = input;
-  const consoleStaticDir = resolve(process.cwd(), "apps/server/console-static");
-  // 开发宿主与控制台构建并行启动；目录先存在，路由在空目录上登记，构建完成后无需重启服务端。
-  mkdirSync(consoleStaticDir, { recursive: true });
+  const consoleStaticDir = resolve(
+    input.consoleStaticDir ?? resolve(process.cwd(), "apps/server/console-static"),
+  );
   try {
+    // 开发宿主与控制台构建并行启动；目录先存在，路由在空目录上登记，构建完成后无需重启服务端。
+    mkdirSync(consoleStaticDir, { recursive: true });
     return await runtime.transport.createApp({
       authority,
       accessPolicy: runtime.accessPolicy,
