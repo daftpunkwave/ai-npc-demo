@@ -65,6 +65,54 @@ describe("ProjectionStore", () => {
     expect(store.needsSnapshot()).toBe(true);
   });
 
+  it("较旧的 REST 快照不会覆盖较新的 WS 增量", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(snapshot(6), "wld-000000000001", "br-000000000001");
+    store.applyDelta(delta(7, 7));
+
+    const stale = store.replaceSnapshot({
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      streamSeq: 6,
+      projectionVersion: 6,
+      projection: projection(),
+    });
+
+    expect(stale).toMatchObject({ changed: false, needsSnapshot: false });
+    expect(store.streamSeq).toBe(7);
+    expect(store.getSnapshot()?.projection.clock.worldTick).toBe(7);
+  });
+
+  it("较旧的 WS 快照不会回退当前游标", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(snapshot(8), "wld-000000000001", "br-000000000001");
+    store.applyDelta(delta(9, 9));
+
+    const stale = store.applySnapshot(
+      snapshot(8),
+      "wld-000000000001",
+      "br-000000000001",
+    );
+
+    expect(stale).toMatchObject({ changed: false, needsSnapshot: false });
+    expect(store.streamSeq).toBe(9);
+    expect(store.getSnapshot()?.projection.clock.worldTick).toBe(9);
+  });
+
+  it("不同分支的晚到快照不会覆盖当前分支", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(snapshot(3), "wld-000000000001", "br-000000000001");
+
+    const staleBranch = store.applySnapshot(
+      snapshot(4),
+      "wld-000000000001",
+      "br-000000000002",
+    );
+
+    expect(staleBranch.changed).toBe(false);
+    expect(store.getSnapshot()?.branchId).toBe("br-000000000001");
+  });
+
   it("重复对白 append 不重复写入", () => {
     const store = new ProjectionStore();
     store.applySnapshot(snapshot(1), "wld-000000000001", "br-000000000001");

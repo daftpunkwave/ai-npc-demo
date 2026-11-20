@@ -3,7 +3,7 @@
  * 依赖玩家投影、选择端口、宿主 API 与 React 视图；不读取 Agent 私有记忆或原始 prompt。
  * 禁止展示未提交模型输出，或在命令被拒时保留乐观成功状态。
  */
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
   ConversationLine,
@@ -27,6 +27,8 @@ interface SelectionLike {
 interface WorldViewLike {
   subscribe(listener: (state: ProjectionState | null) => void): () => void;
   getSnapshot(): ProjectionState | null;
+  refresh(): Promise<void>;
+  refreshError(): string | null;
   sendDialogue(agentId: string, text: string): Promise<boolean>;
 }
 
@@ -50,32 +52,58 @@ function DialogueView(): ReactNode {
   const [lines, setLines] = useState<readonly ConversationLine[]>([]);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const character = selectedCharacter(state?.projection, selection);
   const agentId = character?.agentId ?? null;
+
+  const loadConversation = useCallback(
+    async (cancelled: () => boolean = () => false): Promise<void> => {
+      if (agentId === null) {
+        return;
+      }
+      try {
+        const response = await api.conversation(agentId, undefined, 80);
+        if (!cancelled()) {
+          setLines(response.lines);
+          setConversationError(null);
+        }
+      } catch (error) {
+        if (!cancelled()) {
+          setConversationError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    },
+    [agentId, api],
+  );
 
   useEffect(() => {
     setLines([]);
     setNotice(null);
+    setConversationError(null);
+    setRefreshError(null);
     if (agentId === null) {
       return;
     }
     let cancelled = false;
-    void api
-      .conversation(agentId, undefined, 80)
-      .then((response) => {
-        if (!cancelled) {
-          setLines(response.lines);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLines([]);
-        }
-      });
+    void loadConversation(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [api, agentId]);
+  }, [agentId, loadConversation]);
+
+  const retryRefresh = async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      await worldView.refresh();
+      setRefreshError(null);
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -85,6 +113,7 @@ function DialogueView(): ReactNode {
     }
     setSending(true);
     setNotice(null);
+    setRefreshError(null);
     setText("");
     try {
       const accepted = await worldView.sendDialogue(agentId, message);
@@ -93,23 +122,11 @@ function DialogueView(): ReactNode {
         setNotice("消息未被受理");
         return;
       }
-      const response = await api.conversation(agentId, undefined, 80).catch(() => null);
-      if (response !== null) {
-        setLines(response.lines);
-      } else {
-        setLines((current) => [
-          ...current,
-          {
-            seq: current.length,
-            dialogueId: "dlg-abcdefghjkmn" as ConversationLine["dialogueId"],
-            speakerId: "player-1",
-            speakerName: "党魁",
-            text: message,
-            worldTick: state?.projection.clock.worldTick ?? 0,
-            channel: "face-to-face",
-          },
-        ]);
+      const nextRefreshError = worldView.refreshError();
+      if (nextRefreshError !== null) {
+        setRefreshError(nextRefreshError);
       }
+      await loadConversation();
     } catch (error) {
       setText(message);
       setNotice(error instanceof Error ? error.message : String(error));
@@ -160,6 +177,26 @@ function DialogueView(): ReactNode {
           ))
         )}
         {notice === null ? null : <p className="inline-error" role="alert">{notice}</p>}
+        {refreshError === null ? null : (
+          <p className="inline-error" role="alert">
+            消息已受理，但世界投影刷新失败：{refreshError}
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={() => void retryRefresh()}
+            >
+              {refreshing ? "刷新中" : "重试刷新"}
+            </button>
+          </p>
+        )}
+        {conversationError === null ? null : (
+          <p className="inline-error" role="alert">
+            对白读取失败：{conversationError}
+            <button type="button" onClick={() => void loadConversation()}>
+              重试读取
+            </button>
+          </p>
+        )}
       </div>
       <form className="dialogue-compose" onSubmit={(event) => void submit(event)}>
         <input

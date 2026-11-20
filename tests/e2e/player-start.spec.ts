@@ -20,4 +20,13 @@ test("玩家可以开局、选择岑雁并提交对白", async ({ page }) => {
   await expect(page.getByTestId("dialogue-line").last()).toContainText(
     "岑雁，请确认隘口今天的通行情况。",
   );
+
+  await page.route("**/api/v1/conversations/human-independent**", (route) => route.abort("failed"));
+  await page.getByTestId("dialogue-input").fill("读取失败时不要补造第二条对白。");
+  await page.getByTestId("dialogue-send").click();
+
+  await expect(page.getByText(/对白读取失败/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "重试读取" })).toBeVisible();
+  await expect(page.getByTestId("dialogue-line")).toHaveCount(1);
+  await expect(page.getByText("读取失败时不要补造第二条对白")).toHaveCount(0);
 });
