@@ -28,21 +28,15 @@ import {
   type ResolvedRealmPlan,
 } from "@ai-npc/kernel";
 import { canonicalHasher } from "../host-services";
-import { serverRequiredCapabilities } from "./module-catalog";
+import { clientRequiredCapabilities, serverRequiredCapabilities } from "./module-catalog";
 
 /** 装配目录固定为项目根下的 config/assemblies；测试可传入不同根目录。 */
 function assemblyDirectory(root: string = process.cwd()): string {
   return resolve(root, "config/assemblies");
 }
 
-/**
- * 按 assemblyId 在装配目录中读取唯一装配。
- * 目录内每个 YAML 都必须通过装配 schema；损坏文件直接报告文件名，不静默跳过。
- */
-export function loadAssembly(ref: string, root: string = process.cwd()): AssemblyDescriptor {
-  if (ref.trim().length === 0 || ref.includes("/") || ref.includes("\\")) {
-    throw new Error(`未知 server 装配: ${ref}`);
-  }
+/** 读取装配目录内的全部 YAML；每个文件必须是普通文件并通过严格 schema。 */
+export function loadAssemblies(root: string = process.cwd()): readonly AssemblyDescriptor[] {
   const directory = assemblyDirectory(root);
   let fileNames: string[];
   try {
@@ -53,7 +47,7 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
   } catch (error) {
     throw new Error(`无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`);
   }
-  const matches: AssemblyDescriptor[] = [];
+  const assemblies: AssemblyDescriptor[] = [];
   const realDirectory = realpathSync(directory);
   for (const fileName of fileNames) {
     const filePath = join(directory, fileName);
@@ -75,10 +69,27 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
         `装配文件 ${fileName} 不符合装配 schema：${result.error.issues.map((issue) => issue.message).join("；")}`,
       );
     }
-    if (result.data.assemblyId === ref) {
-      matches.push(result.data);
-    }
+    assemblies.push(result.data);
   }
+  const ids = new Set<string>();
+  for (const assembly of assemblies) {
+    if (ids.has(assembly.assemblyId)) {
+      throw new Error(`装配目录中存在重复 assemblyId=${assembly.assemblyId}`);
+    }
+    ids.add(assembly.assemblyId);
+  }
+  return assemblies;
+}
+
+/**
+ * 按 assemblyId 在装配目录中读取唯一装配。
+ * 目录内每个 YAML 都必须通过装配 schema；损坏文件直接报告文件名，不静默跳过。
+ */
+export function loadAssembly(ref: string, root: string = process.cwd()): AssemblyDescriptor {
+  if (ref.trim().length === 0 || ref.includes("/") || ref.includes("\\")) {
+    throw new Error(`未知 server 装配: ${ref}`);
+  }
+  const matches = loadAssemblies(root).filter((assembly) => assembly.assemblyId === ref);
   if (matches.length === 0) {
     throw new Error(`未知 server 装配: ${ref}`);
   }
@@ -198,7 +209,12 @@ export async function resolveSessionAssemblies(
   }
   const catalog = registry.snapshot();
   const resolveRealm = async (realm: "client" | "console"): Promise<ResolvedModuleSet> => {
-    const plan = resolveRealmPlan({ assembly, realm, catalog });
+    const plan = resolveRealmPlan({
+      assembly,
+      realm,
+      catalog,
+      ...(realm === "client" ? { requiredCapabilities: clientRequiredCapabilities } : {}),
+    });
     const modules = await moduleRefs(plan, hash);
     return {
       realm,

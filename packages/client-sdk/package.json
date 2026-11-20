@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./define-browser-module": "./src/define-browser-module.ts"
   },
   "dependencies": {
     "@ai-npc/contracts": "workspace:*",

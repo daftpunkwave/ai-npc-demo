@@ -210,6 +210,26 @@ export function requireConsole(
   return true;
 }
 
+/** 在通用控制台入口校验之外，再限制页面允许的角色范围。 */
+export function requireConsoleRole(
+  context: RouteContext,
+  request: FastifyRequest,
+  session: HttpSession,
+  reply: FastifyReply,
+  allowedRoles: readonly string[],
+): boolean {
+  if (!requireConsole(context, request, session, reply)) {
+    return false;
+  }
+  const header = request.headers["x-active-role"];
+  const role = Array.isArray(header) ? header[0] : header;
+  if (typeof role !== "string" || !allowedRoles.includes(role.trim())) {
+    sendHttpError(reply, "forbidden", "当前控制台角色无权访问该页面接口");
+    return false;
+  }
+  return true;
+}
+
 /** 控制台装配握手：会话持有的任一角色获准 console-session 动作即可读取。 */
 export function isConsoleSession(context: RouteContext, session: HttpSession): boolean {
   return session.auth.roles.some(

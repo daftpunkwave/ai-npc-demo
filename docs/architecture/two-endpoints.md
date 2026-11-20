@@ -1,6 +1,6 @@
 # 两个本地端口与三运行域
 
-> 状态：部分实现。`server` 已监听 `127.0.0.1:3000`，并实现 HTTP/WS 的 Origin 校验、会话校验与角色鉴权。`client` 的 `:5173` 服务、代理及 `console` 的 `/console/*` 静态页面为目标。本文定义双端的部署和权限边界。参见 [api.md — HTTP 与 WebSocket API](api.md)、[module-catalog.md — 模块目录](module-catalog.md)、[client-and-rendering.md — 场景适配](client-and-rendering.md)、[observability.md — 观测](../platform/observability.md)、[evaluation.md — 评估](../platform/evaluation.md)。
+> 状态：基础双端已实现。玩家客户端监听 `127.0.0.1:5173`，服务端监听 `127.0.0.1:3000` 并通过 `/console/*` 提供控制台静态页面；Origin、会话、角色与 WS 频道均经服务端校验。完整运营、研究与评估页面仍按后续能力补齐。本文定义双端的部署和权限边界。参见 [api.md — HTTP 与 WebSocket API](api.md)、[module-catalog.md — 模块目录](module-catalog.md)、[client-and-rendering.md — 场景适配](client-and-rendering.md)、[observability.md — 观测](../platform/observability.md)、[evaluation.md — 评估](../platform/evaluation.md)。
 >
 > 这里的“端口”指网络监听端口；模块之间通过 capability port（能力端口）交互，见 [模块边界](modules.md) 与 [公共契约](contracts.md)，两者不是同一概念。
 
@@ -124,7 +124,7 @@ flowchart LR
 
 命令、脚本与本地拓扑的实现方式见 [技术栈](../delivery/tech-stack.md) 第 4、6 节。要点：
 
-> 当前启动入口为 `pnpm dev:server`。下表为双端目标命令。`pnpm dev`、`pnpm build`、`pnpm start` 与 `pnpm test:e2e` 随 S10 交付，S11 接入控制台静态资源，`pnpm check:ports` 随 S12 交付。参见 [build-plan.md — 构建计划](../delivery/build-plan.md#1-步骤总览)。
+> 下表命令均已实现；`pnpm test:e2e` 覆盖玩家与控制台关键路径，`pnpm check:ports` 验证开发和生产启动只产生两个监听。参见 [build-plan.md — 构建计划](../delivery/build-plan.md#1-步骤总览)。
 
 | 命令 | 行为 |
 |---|---|

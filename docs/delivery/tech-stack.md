@@ -10,7 +10,7 @@
 | 包管理 | pnpm workspaces | `pnpm@12` | Node 25 起不再自带 corepack，用 `npm install -g pnpm@12` 安装 |
 | 语言 | TypeScript | `typescript@^7` | `strict: true`；只用于类型检查（`noEmit`） |
 | 运行 TS | tsx | `tsx@^4` | 服务端开发、启动与 `scripts/*.ts` 都用 tsx 直接运行源码 |
-| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`。S11 引入 `@fastify/static@^10` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器 |
+| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`、`@fastify/static@^10` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器 |
 | 数据库 | SQLite | Node 内置 `node:sqlite`（`DatabaseSync`） | 同步 API、WAL、单写者；只在 `platform.storage.sqlite` 适配器内出现 |
 | 校验 | Zod | `zod@^4` | 所有 DTO、配置、内容与 LLM 输出的唯一运行时校验；`z.toJSONSchema()` 生成工具与输出 schema |
 | 配置/内容 | YAML | `yaml@^2` | `config/**`、`content/**` 都是 YAML，读入后用 Zod 校验 |
@@ -140,23 +140,23 @@ packages:
 | 命令 | 状态 | 执行方式 | 结果 |
 |---|---|---|---|
 | `pnpm dev:server` | 已实现 | `tsx apps/server/src/main.ts` | 启动本地服务端（:3000） |
-| `pnpm dev:client` | 目标 S10 | Vite | 启动玩家客户端（:5173） |
-| `pnpm dev` | 目标 S10–S11 | `tsx scripts/dev.ts` | 并行启动服务端和客户端，监听控制台源码变更并构建到 `apps/server/console-static/` |
-| `pnpm build` | 目标 S10–S11 | 两次 `vite build` | 客户端产物 `apps/client/dist/`，控制台产物 `apps/server/console-static/` |
-| `pnpm start` | 目标 S10 | `tsx scripts/start.ts` | 在 `pnpm build` 后运行服务端与客户端 Vite preview |
+| `pnpm dev:client` | 已实现 | Vite | 启动玩家客户端（:5173） |
+| `pnpm dev` | 已实现 | `tsx scripts/dev.ts` | 并行启动服务端和客户端，监听控制台源码变更并构建到 `apps/server/console-static/` |
+| `pnpm build` | 已实现 | 两次 `vite build` | 客户端产物 `apps/client/dist/`，控制台产物 `apps/server/console-static/` |
+| `pnpm start` | 已实现 | `tsx scripts/start.ts` | 在 `pnpm build` 后运行服务端与客户端 Vite preview |
 | `pnpm typecheck` | 已实现 | `tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json` | 检查服务端与浏览器的 TypeScript |
 | `pnpm test` | 已实现 | `vitest run` | 单元、契约、集成、目录、场景测试 |
-| `pnpm test:e2e` | 目标 S10 | `playwright test` | 两端口启动、玩家与控制台关键路径 |
+| `pnpm test:e2e` | 已实现 | `playwright test` | 两端口启动、玩家与控制台关键路径 |
 | `pnpm check:boundaries` | 已实现 | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header |
 | `pnpm check:catalog` | 已实现 | `tsx scripts/check-catalog.ts` | 检查装配的 realm/kind、能力闭包、作用域、重复绑定、拓扑和配置 schema |
 | `pnpm check:assets` | 已实现 | `tsx scripts/check-assets.ts` | 核对资产清单、版本与内容包覆盖 |
 | `pnpm check:docs` | 已实现 | `tsx scripts/check-docs.ts` | 检查相对链接、锚点与表格列数 |
-| `pnpm check:ports` | 目标 S12 | `tsx scripts/check-ports.ts` | 启动后核对应用只监听 :5173 与 :3000 |
+| `pnpm check:ports` | 已实现 | `tsx scripts/check-ports.ts` | 启动后核对应用只监听 :5173 与 :3000，并验证端口占用失败 |
 | `pnpm check` | 已实现 | 见下文 “`pnpm check` 的组成” | 每个构建步骤完成前必须通过 |
 
 `scripts/dev.ts` 与 `scripts/start.ts` 先调用 `process.loadEnvFile()`（`.env` 不存在时跳过），再用 `node:child_process.spawn` 启动子进程并把环境变量传给它们；任一子进程退出时结束全部子进程并以非零码退出；不自动重启、不改端口。
 
-S10 的 `dev` 启动 server/client，`build` 构建 client。S11 加入 console 的 watch 构建、普通构建与静态资源挂载。`check:catalog` 扫描 `config/assemblies/*.yaml` 并加载组合根登记的模块。若某 realm 还没有模块目录，该 realm 在每份装配里的 bindings 必须为空。
+`dev` 启动 server/client 与控制台 watch 构建，`build` 构建 client/console，服务端挂载控制台静态资源。`check:catalog` 扫描 `config/assemblies/*.yaml` 并加载三 realm 组合根登记的模块；主装配的 client/console 绑定均已非空。
 
 每个脚本在实现它的那一步加入 `package.json`（见 [构建计划](build-plan.md) 第 0.2 节），不提前写占位脚本。`pnpm check` 的组成随步骤增长：S00 为 `pnpm typecheck && pnpm test && pnpm check:docs`；S03 起加入 `pnpm check:boundaries`；S09 起加入 `pnpm check:catalog`；资产包入仓后加入 `pnpm check:assets`。它始终不包含 `test:e2e` 与 `check:ports`（这两项在要求它们的步骤里单独运行）。
 

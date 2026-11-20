@@ -343,7 +343,11 @@ describe("服务端宿主", () => {
     const client = await host.app.inject({ method: "GET", url: "/api/v1/session/assembly?realm=client", headers });
     expect(client.statusCode).toBe(200);
     const clientAssembly = sessionAssemblyResponseSchema.parse(client.json());
-    expect(clientAssembly).toMatchObject({ realm: "client", protocolVersion: "1", modules: [], capabilities: [] });
+    expect(clientAssembly).toMatchObject({ realm: "client", protocolVersion: "1" });
+    expect(clientAssembly.modules.length).toBeGreaterThanOrEqual(11);
+    expect(clientAssembly.capabilities.map((capability) => capability.capability)).toContain(
+      "client.world-view",
+    );
     expect(clientAssembly.assemblyHash).toMatch(/^[0-9a-f]{64}$/);
     expect((await host.app.inject({ method: "GET", url: "/api/v1/session/assembly?realm=console", headers })).statusCode).toBe(403);
     const sessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers });
@@ -367,6 +371,18 @@ describe("服务端宿主", () => {
     expect(started.statusCode).toBe(200);
     const after = campaignResponseSchema.parse((await host.app.inject({ method: "GET", url: "/api/v1/campaign", headers })).json());
     expect(after.campaign).toMatchObject({ factionId: "human-neutral", factionName: "灰港公社", status: "running", startTick: 0 });
+    const projection = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers });
+    expect(projection.statusCode).toBe(200);
+    expect(projection.json()).toMatchObject({
+      projection: {
+        characters: expect.arrayContaining([
+          expect.objectContaining({ agentId: "human-independent", name: "岑雁" }),
+          expect.objectContaining({ agentId: "npc-wenzhao", name: "闻昭" }),
+        ]),
+      },
+    });
+    expect(projection.json<{ readonly projection: { readonly characters: readonly unknown[] } }>()
+      .projection.characters).toHaveLength(15);
 
     // 宿主启动后时钟保持暂停；玩家继续时钟后对白命令才会被受理。
     const resumed = await host.app.inject({
@@ -491,7 +507,68 @@ describe("服务端宿主", () => {
       headers: { ...consoleHeaders, "x-active-role": "operator" },
     });
     expect(allowed.statusCode).toBe(200);
-    expect(allowed.json()).toMatchObject({ status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } });
+    expect(allowed.json()).toMatchObject({
+      ports: { client: 5173, server: port },
+      realms: ["server", "client", "console"],
+      queues: { turnsQueued: 0, turnsRunning: 0, maintenanceQueued: 0, modelQueue: 0 },
+    });
+    expect(allowed.json<{ readonly modules: readonly unknown[] }>().modules.length).toBeGreaterThan(0);
+    const moduleCatalog = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/modules?realm=client",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(moduleCatalog.statusCode).toBe(200);
+    expect(moduleCatalog.json()).toMatchObject({
+      modules: expect.arrayContaining([
+        expect.objectContaining({ moduleId: "client.world-view.standard", realm: "client" }),
+      ]),
+    });
+    const assemblies = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/assemblies",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(assemblies.statusCode).toBe(200);
+    expect(assemblies.json()).toMatchObject({
+      assemblies: expect.arrayContaining([
+        expect.objectContaining({ assemblyId: "local-slg-standard-v1", source: "repo" }),
+      ]),
+    });
+    const assembly = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/assemblies/local-slg-standard-v1",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(assembly.statusCode).toBe(200);
+    expect(assembly.json()).toMatchObject({
+      descriptor: { assemblyId: "local-slg-standard-v1" },
+      resolved: {
+        client: { realm: "client" },
+        console: { realm: "console" },
+      },
+    });
+    const timeline = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/timeline",
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(timeline.statusCode).toBe(200);
+    expect(timeline.json()).toEqual({ events: [] });
+    const agents = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents?branchId=${host.branchId}`,
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(agents.statusCode).toBe(200);
+    expect(agents.json()).toEqual({ agents: [] });
+    const operatorTimeline = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/timeline",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(operatorTimeline.statusCode).toBe(403);
+    expect(host.storage.transact((tx) => tx.rows("trace_spans").count())).toBeGreaterThan(0);
 
     // WS：玩家 hello 只含 player 频道，控制台角色也不能订阅玩家频道。
     const playerTicket = await ticketFor(host, playerSession);
@@ -520,8 +597,34 @@ describe("服务端宿主", () => {
       });
       consoleClient.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
       expect(await consoleClient.next()).toMatchObject({ type: "error", code: "forbidden" });
+      consoleClient.send({ type: "subscribe", channel: "console.health", fromStreamSeq: null });
+      expect(await consoleClient.next()).toMatchObject({
+        type: "snapshot",
+        channel: "console.health",
+        data: { ports: { client: 5173, server: port } },
+      });
+      consoleClient.send({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null });
+      expect(await consoleClient.next()).toMatchObject({
+        type: "snapshot",
+        channel: "console.timeline",
+      });
       host.app.notifyWorldChanged();
-      await expect(consoleClient.next(100)).rejects.toThrow("等待 WS 消息超时");
+      let timelineSnapshot: unknown = null;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const message = await consoleClient.next();
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          (message as { readonly channel?: unknown }).channel === "console.timeline"
+        ) {
+          timelineSnapshot = message;
+          break;
+        }
+      }
+      expect(timelineSnapshot).toMatchObject({
+        type: "snapshot",
+        channel: "console.timeline",
+      });
     } finally {
       consoleClient.close();
     }

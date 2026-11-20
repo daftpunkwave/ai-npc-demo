@@ -1,0 +1,7 @@
+/* 玩家端样式入口：组织基础变量、宿主布局、场景、侧栏、对话与设置模块。 */
+@import "./base.css";
+@import "./layout.css";
+@import "./scene.css";
+@import "./sidebar.css";
+@import "./dialogue.css";
+@import "./settings.css";

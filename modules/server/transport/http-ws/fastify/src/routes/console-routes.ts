@@ -1,23 +1,145 @@
 /**
- * 注册控制台路由：当前只提供健康读数。
- * 依赖 X-Active-Role 与会话角色的授权裁决；不读取运营队列或模块清单。
- * 禁止用占位数据伪造模块与队列字段，也不在这里实现后续控制台能力。
+ * 注册控制台首批只读接口：健康总览、模块目录、装配详情、时间线与 Agent 摘要。
+ * 依赖认证会话、当前角色、宿主只读控制台端口与公共响应 schema。
+ * 禁止在页面接口中写入世界、泄露凭据，或由运营角色读取研究员专属时间线。
  */
-import { authenticate, requireConsole } from "./context";
+import {
+  agentsResponseSchema,
+  assembliesResponseSchema,
+  assemblyDetailResponseSchema,
+  consoleHealthResponseSchema,
+  modulesResponseSchema,
+  realmQuerySchema,
+  timelineResponseSchema,
+} from "@ai-npc/contracts";
+import {
+  authenticate,
+  requireConsoleRole,
+  sendHttpError,
+} from "./context";
 import type { RouteContext } from "./context";
 
+const dashboardRoles = ["operator", "researcher"] as const;
+const researchRoles = ["researcher"] as const;
+
+function queryText(query: unknown, key: string): string | undefined {
+  if (typeof query !== "object" || query === null || Array.isArray(query)) {
+    return undefined;
+  }
+  const value = (query as Readonly<Record<string, unknown>>)[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function queryInteger(query: unknown, key: string, fallback: number): number | null {
+  const raw = queryText(query, key);
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = Number(raw);
+  return Number.isInteger(value) ? value : null;
+}
+
 export function registerConsoleRoutes(context: RouteContext): void {
-  const { app } = context;
+  const { app, branch, options } = context;
 
   app.get("/api/v1/console/health", (request, reply) => {
     const session = authenticate(context, request, reply);
-    if (session === null) {
+    if (session === null || !requireConsoleRole(context, request, session, reply, dashboardRoles)) {
       return;
     }
-    if (!requireConsole(context, request, session, reply)) {
+    if (options.console === undefined) {
+      return { status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } };
+    }
+    return consoleHealthResponseSchema.parse(options.console.health());
+  });
+
+  app.get("/api/v1/console/modules", (request, reply) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, dashboardRoles)) {
       return;
     }
-    // 完整字段与队列数据由后续控制台验收；这里只返回已实现的状态，不用伪造数据填充模块与队列。
-    return { status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } };
+    if (options.console === undefined) {
+      return sendHttpError(reply, "not-ready", "模块目录尚未就绪");
+    }
+    const realm = queryText(request.query, "realm");
+    if (realm === undefined) {
+      return modulesResponseSchema.parse(options.console.modules());
+    }
+    const parsed = realmQuerySchema.safeParse({ realm });
+    if (!parsed.success) {
+      return sendHttpError(reply, "validation", "realm 必须是 server、client 或 console");
+    }
+    return modulesResponseSchema.parse(options.console.modules(parsed.data.realm));
+  });
+
+  app.get("/api/v1/console/assemblies", (request, reply) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, dashboardRoles)) {
+      return;
+    }
+    if (options.console === undefined) {
+      return sendHttpError(reply, "not-ready", "装配目录尚未就绪");
+    }
+    return assembliesResponseSchema.parse({ assemblies: options.console.assemblies() });
+  });
+
+  app.get("/api/v1/console/assemblies/:assemblyId", (request, reply) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, dashboardRoles)) {
+      return;
+    }
+    if (options.console === undefined) {
+      return sendHttpError(reply, "not-ready", "装配目录尚未就绪");
+    }
+    const params = request.params as { readonly assemblyId?: string };
+    const assemblyId = params.assemblyId ?? "";
+    if (assemblyId.length === 0) {
+      return sendHttpError(reply, "not-found", "装配不存在");
+    }
+    return assemblyDetailResponseSchema.parse(options.console.assembly(assemblyId));
+  });
+
+  app.get("/api/v1/console/timeline", (request, reply) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, researchRoles)) {
+      return;
+    }
+    if (options.console === undefined) {
+      return sendHttpError(reply, "not-ready", "观测服务尚未就绪");
+    }
+    const fromSeq = queryInteger(request.query, "fromSeq", 0);
+    const limit = queryInteger(request.query, "limit", 100);
+    if (fromSeq === null || fromSeq < 0 || limit === null || limit < 1 || limit > 200) {
+      return sendHttpError(reply, "validation", "fromSeq 或 limit 不合法");
+    }
+    const types = queryText(request.query, "types")?.split(",").filter((item) => item.length > 0);
+    const agentId = queryText(request.query, "agentId");
+    const nodeId = queryText(request.query, "nodeId");
+    const branchId = queryText(request.query, "branchId") ?? branch.branchId;
+    return timelineResponseSchema.parse(
+      options.console.timeline({
+        branchId,
+        fromSeq,
+        limit,
+        ...(types === undefined ? {} : { types }),
+        ...(agentId === undefined ? {} : { agentId }),
+        ...(nodeId === undefined ? {} : { nodeId }),
+      }),
+    );
+  });
+
+  app.get("/api/v1/console/agents", (request, reply) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, researchRoles)) {
+      return;
+    }
+    if (options.console === undefined) {
+      return sendHttpError(reply, "not-ready", "观测服务尚未就绪");
+    }
+    const branchId = queryText(request.query, "branchId");
+    if (branchId === undefined) {
+      return sendHttpError(reply, "validation", "branchId 不能为空");
+    }
+    return agentsResponseSchema.parse(options.console.agents(branchId));
   });
 }

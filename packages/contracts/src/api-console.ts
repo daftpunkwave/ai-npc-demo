@@ -117,6 +117,8 @@ export const modulesResponseSchema = z
   })
   .strict();
 
+export type ModulesResponse = z.infer<typeof modulesResponseSchema>;
+
 export const assembliesResponseSchema = z
   .object({
     assemblies: z.array(

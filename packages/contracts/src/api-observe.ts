@@ -31,6 +31,7 @@ export const timelineResponseSchema = z
   .strict();
 
 export type TimelineResponse = z.infer<typeof timelineResponseSchema>;
+export type TimelineQuery = z.infer<typeof timelineQuerySchema>;
 
 /** Agent 列表项：激活状态、控制者、位置、turn 状态与水位滞后。 */
 export const agentStatusViewSchema = z
@@ -45,11 +46,15 @@ export const agentStatusViewSchema = z
   })
   .strict();
 
+export type AgentStatusView = z.infer<typeof agentStatusViewSchema>;
+
 export const agentsResponseSchema = z
   .object({
     agents: z.array(agentStatusViewSchema),
   })
   .strict();
+
+export type AgentsResponse = z.infer<typeof agentsResponseSchema>;
 
 export const agentsQuerySchema = z
   .object({

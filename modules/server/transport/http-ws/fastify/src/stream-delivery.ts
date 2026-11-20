@@ -3,11 +3,15 @@
  * 依赖注入的投影读取、序号读取与推送缓冲阈值；不持有连接集合、不决定订阅。
  * 禁止绕过背压阈值堆积推送、把发送异常抛给调用方，或向未确认订阅的连接补发快照。
  */
-import type { PlayerProjection, StreamChannel } from "@ai-npc/contracts";
+import type { Json, PlayerProjection, StreamChannel } from "@ai-npc/contracts";
 import { playerChannel, type Connection, type StreamSocket } from "./stream-types";
 
 export interface SocketSenderOptions {
   readonly projection: () => PlayerProjection;
+  /** 控制台频道的按需快照；玩家频道仍由授权投影生成。 */
+  readonly channelSnapshot?: (channel: StreamChannel) => Json | null;
+  /** 非玩家频道的独立序号，避免控制台推送扰动玩家增量游标。 */
+  readonly channelSequence?: (channel: StreamChannel) => number;
   /** 当前流序号与投影版本；快照与增量都使用同一份。 */
   readonly sequence: () => { readonly streamSeq: number; readonly projectionVersion: number };
   /** 推送缓冲超过该字节数时丢弃增量并等待快照。 */
@@ -56,7 +60,21 @@ export class SocketSender {
   /** 发送完整快照；缓冲已超阈值时保留补发标记，等连接可写后再发。 */
   sendSnapshot(connection: Connection, channel: StreamChannel): void {
     if (channel !== playerChannel) {
-      // 控制台频道没有投影快照，订阅后等待增量事件。
+      let data: Json | null;
+      try {
+        data = this.options.channelSnapshot?.(channel) ?? null;
+      } catch {
+        this.close(connection.socket, 1012, "channel unavailable");
+        return;
+      }
+      if (data !== null) {
+        this.sendChannelSnapshot(
+          connection,
+          channel,
+          data,
+          this.options.channelSequence?.(channel) ?? 0,
+        );
+      }
       return;
     }
     let projection: PlayerProjection;
@@ -71,10 +89,13 @@ export class SocketSender {
 
   /** 连接可写且需要快照时补发一次；快照覆盖积压的所有增量。 */
   flushPendingSnapshot(connection: Connection): void {
-    if (!connection.needsSnapshot || !connection.subscriptions.has(playerChannel)) {
+    if (!connection.needsSnapshot) {
       return;
     }
-    this.sendSnapshot(connection, playerChannel);
+    const channel = [...connection.subscriptions][0];
+    if (channel !== undefined) {
+      this.sendSnapshot(connection, channel);
+    }
   }
 
   close(socket: StreamSocket, code: number, reason: string): void {
@@ -117,5 +138,28 @@ export class SocketSender {
       return;
     }
     connection.needsSnapshot = false;
+  }
+
+  /** 发送控制台频道的完整快照；序号由该频道独立维护。 */
+  sendChannelSnapshot(
+    connection: Connection,
+    channel: StreamChannel,
+    data: Json,
+    streamSeq: number,
+  ): void {
+    let payload: string;
+    try {
+      payload = JSON.stringify({
+        type: "snapshot",
+        channel,
+        streamSeq,
+        projectionVersion: streamSeq,
+        data,
+      });
+    } catch {
+      connection.needsSnapshot = true;
+      return;
+    }
+    this.sendSerializedSnapshot(connection, payload);
   }
 }

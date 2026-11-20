@@ -5,7 +5,13 @@
  */
 export const packageName = "@ai-npc/client-sdk";
 
-export { ModuleHostProvider, useModuleHost, usePort, usePreferencePort } from "./context";
+export {
+  ModuleHostProvider,
+  useModuleHost,
+  usePort,
+  usePortSubscription,
+  usePreferencePort,
+} from "./context";
 export type {
   ContributionErrorReporter,
   ModuleHostProviderProps,
@@ -20,3 +26,12 @@ export type { SlotContribution } from "./slots";
 
 export { isPreferenceKey, preferenceKeys } from "./preferences";
 export type { PreferenceKey, PreferencePort, PreferenceValues } from "./preferences";
+
+export { memoryPreferencePort, startBrowserModules } from "./runtime";
+export type {
+  BrowserModuleRuntimeInput,
+  BrowserViewPort,
+  StartedBrowserModules,
+} from "./runtime";
+
+export { defineBrowserModule } from "./define-browser-module";

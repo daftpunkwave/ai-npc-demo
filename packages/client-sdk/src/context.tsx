@@ -4,7 +4,7 @@
  * 禁止伪造未注册 port，也禁止把世界权威状态、运营权限或凭据放进 context。
  */
 import { DomainError } from "@ai-npc/contracts";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useSyncExternalStore, useContext, type ReactNode } from "react";
 import type { PreferencePort } from "./preferences";
 import type { SlotContribution } from "./slots";
 
@@ -65,4 +65,15 @@ export function usePort<TPort>(capabilityId: string): TPort {
 /** 读取宿主提供的纯展示偏好端口；偏好不进入运行清单，也不改变世界规则。 */
 export function usePreferencePort(): PreferencePort {
   return useModuleHost().preferences;
+}
+
+/** 订阅模块提供的只读外部状态；getSnapshot 必须返回稳定引用。 */
+export function usePortSubscription<T>(
+  capabilityId: string,
+): T {
+  const port = usePort<{
+    subscribe(listener: (value: T) => void): () => void;
+    getSnapshot(): T;
+  }>(capabilityId);
+  return useSyncExternalStore(port.subscribe, port.getSnapshot, port.getSnapshot);
 }

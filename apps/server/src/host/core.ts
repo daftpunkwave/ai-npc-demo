@@ -27,12 +27,14 @@ import {
   type RunSpec,
 } from "@ai-npc/experiment";
 import { startInstances, type StartedInstances } from "@ai-npc/kernel";
+import { computeCatalogHash, createModuleRegistry } from "@ai-npc/kernel";
 import type { GameClockPort, GameContent } from "@ai-npc/module-sdk";
 import { assertDistinctTokens } from "../config";
-import { createHostServices } from "../host-services";
+import { canonicalHasher, createHostServices } from "../host-services";
 import {
   filterPlan,
   loadAssembly,
+  loadAssemblies,
   resolveServerAssembly,
   resolveSessionAssemblies,
   type ResolvedServerAssembly,
@@ -43,6 +45,7 @@ import {
   createServerRuntime,
   parseTransportConfig,
   plannedModuleForCapability,
+  allModuleDefinitions,
   serverModuleDefinitions,
   toGameContent,
   type ServerRuntime,
@@ -349,7 +352,31 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       content: gameContent,
       host,
     });
-    sessionAssemblies = await resolveSessionAssemblies(chosen.assembly, definitions);
+    sessionAssemblies = await resolveSessionAssemblies(chosen.assembly, allModuleDefinitions);
+    const moduleRegistry = createModuleRegistry();
+    for (const definition of allModuleDefinitions) {
+      moduleRegistry.register(definition);
+    }
+    const catalogHash = await computeCatalogHash(moduleRegistry.snapshot(), canonicalHasher);
+    const adminAssemblies = [];
+    for (const assembly of loadAssemblies()) {
+      const server = await resolveServerAssembly(assembly, serverModuleDefinitions);
+      const browser = await resolveSessionAssemblies(assembly, allModuleDefinitions);
+      adminAssemblies.push({
+        source: "repo" as const,
+        descriptor: assembly,
+        resolved: {
+          server: server.modules,
+          client: browser.client,
+          console: browser.console,
+        },
+      });
+    }
+    serverRuntime.moduleAdmin.bind({
+      catalogHash,
+      definitions: allModuleDefinitions,
+      assemblies: adminAssemblies,
+    });
     if (pendingFirstRun !== null) {
       // 世界、分支、run、别名与初始时钟行在同一事务提交，时钟配置来自 provider。
       pendingFirstRun.commit(serverRuntime.clock);

@@ -30,5 +30,7 @@ export interface HostOptions {
   readonly evaluatorToken?: string;
   readonly transportHost?: string;
   readonly transportPort?: number;
+  /** 玩家浏览器端口；只用于健康摘要与 Origin 白名单，不启动第二个服务端监听。 */
+  readonly clientPort?: number;
   readonly allowedOrigins?: readonly string[];
 }

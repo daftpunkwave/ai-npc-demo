@@ -1,0 +1,160 @@
+/* 定义底部对话面板的消息流与输入区，不承载模型流式状态。 */
+.dialogue {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) minmax(320px, 0.9fr);
+  min-height: 194px;
+  max-height: 252px;
+  border-top: 1px solid #47564f;
+  background: #16211f;
+  box-shadow: 0 -12px 40px rgba(0,0,0,0.22);
+}
+
+.dialogue-idle {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 76px;
+  padding: 0 24px;
+}
+
+.dialogue-idle p {
+  margin: 0;
+  color: #8e9b95;
+  font-size: 0.78rem;
+}
+
+.dialogue-rule {
+  width: 42px;
+  border-top: 1px solid var(--accent);
+}
+
+.dialogue-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px;
+  border-right: 1px solid var(--line-soft);
+}
+
+.dialogue-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.dialogue-head strong {
+  font-family: "Noto Serif SC", "Source Han Serif SC", serif;
+  font-size: 1.3rem;
+}
+
+.dialogue-head small {
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.dialogue-lines {
+  min-width: 0;
+  overflow: auto;
+  padding: 14px 18px;
+}
+
+.dialogue-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  margin-bottom: 10px;
+  padding-left: 10px;
+  border-left: 2px solid #4a5a54;
+}
+
+.dialogue-line.is-player {
+  border-left-color: var(--accent);
+}
+
+.dialogue-line span {
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.dialogue-line p {
+  grid-column: 1;
+  margin: 0;
+  color: #d8d5cc;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.dialogue-line time {
+  grid-column: 2;
+  grid-row: 1;
+  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-size: 0.62rem;
+}
+
+.dialogue-empty {
+  max-width: 58ch;
+  color: #87958f;
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+
+.dialogue-compose {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 10px;
+  padding: 18px;
+  border-left: 1px solid var(--line-soft);
+}
+
+.dialogue-compose input {
+  min-width: 0;
+  padding: 12px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #101a18;
+  resize: none;
+}
+
+.dialogue-compose button {
+  justify-self: end;
+  min-height: 38px;
+  padding: 0 16px;
+  border-color: #725f35;
+  background: #332d20;
+  color: var(--accent-strong);
+}
+
+@media (max-width: 900px) {
+  .dialogue {
+    grid-template-columns: 150px minmax(0, 1fr);
+    max-height: none;
+  }
+
+  .dialogue-compose {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .dialogue {
+    grid-template-columns: 1fr;
+  }
+
+  .dialogue-head {
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .dialogue-lines {
+    max-height: 220px;
+  }
+
+  .dialogue-compose {
+    grid-column: auto;
+  }
+}

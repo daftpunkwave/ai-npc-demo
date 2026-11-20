@@ -11,6 +11,7 @@
     "@ai-npc/contracts": "workspace:*",
     "@ai-npc/module-sdk": "workspace:*",
     "@fastify/cors": "^11",
+    "@fastify/static": "^10",
     "@fastify/websocket": "^11",
     "fastify": "^5",
     "zod": "^4"

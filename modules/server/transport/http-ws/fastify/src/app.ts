@@ -8,7 +8,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
-import { DomainError } from "@ai-npc/contracts";
+import fastifyStatic from "@fastify/static";
+import { DomainError, type Json, type StreamChannel } from "@ai-npc/contracts";
 import { StreamHub } from "./stream-hub";
 import { channelsFor, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
 import { registerAuthRoutes } from "./routes/auth-routes";
@@ -39,6 +40,7 @@ export type {
   ConversationSourceLine,
   IdGenerator,
   ResetHook,
+  RecordSpanInput,
   RestoreSnapshotResult,
   ServerApp,
   ServerAppInjectMethod,
@@ -94,11 +96,38 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   await app.register(cors, { origin: [...allowedOrigins] });
   await app.register(websocket);
+  if (options.consoleStaticDir !== undefined) {
+    await app.register(fastifyStatic, {
+      root: options.consoleStaticDir,
+      prefix: "/console/",
+      wildcard: false,
+      decorateReply: true,
+    });
+    app.get("/console", (_request, reply) => reply.redirect("/console/"));
+    app.get("/console/*", (_request, reply) => reply.sendFile("index.html"));
+  }
   const now = options.now ?? (() => Date.now());
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   const branch: OnlineBranch = { branchId: options.branchId };
+  const consoleSnapshot = (channel: StreamChannel): Json | null => {
+    if (options.console === undefined) {
+      return null;
+    }
+    if (channel === "console.health") {
+      return options.console.health() as unknown as Json;
+    }
+    if (channel === "console.timeline") {
+      return options.console.timeline({
+        branchId: branch.branchId,
+        fromSeq: 0,
+        limit: 100,
+      }) as unknown as Json;
+    }
+    return null;
+  };
   const hub = new StreamHub({
     projection: () => options.projection(),
+    channelSnapshot: consoleSnapshot,
     channelsFor: (auth) => channelsFor(options.accessPolicy, auth),
     ids: (prefix) => options.ids(prefix),
     tokens: (kind) => options.tokens(kind),
@@ -112,12 +141,55 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     },
   });
   hub.setBranch(branch.branchId);
+  const consoleHealthTimer =
+    options.console === undefined
+      ? null
+      : setInterval(() => {
+          try {
+            hub.publishConsole("console.health", options.console?.health() as unknown as Json);
+          } catch (error) {
+            report("控制台健康推送失败", error);
+          }
+        }, 2_000);
+  consoleHealthTimer?.unref();
   const context: RouteContext = { app, hub, options, identityByToken, branch, reportInternalError: report };
+  const requestSpans = new WeakMap<
+    object,
+    { readonly traceId: string; readonly spanId: string; readonly startedAt: number }
+  >();
 
   app.addHook("onRequest", async (request, reply) => {
+    requestSpans.set(request, {
+      traceId: options.ids("trc"),
+      spanId: options.ids("spn"),
+      startedAt: Date.now(),
+    });
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
       sendHttpError(reply, "forbidden", "Origin 不被允许");
+    }
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const started = requestSpans.get(request);
+    if (started === undefined || options.recordSpan === undefined) {
+      return;
+    }
+    try {
+      options.recordSpan({
+        spanId: started.spanId,
+        traceId: started.traceId,
+        name: "http.request",
+        status: reply.statusCode >= 500 ? "error" : "ok",
+        startMs: started.startedAt,
+        endMs: Date.now(),
+        attrs: {
+          route: request.routeOptions.url ?? request.url,
+          status: reply.statusCode,
+        },
+      });
+    } catch (error) {
+      report("HTTP span 写入失败", error);
     }
   });
 
@@ -136,6 +208,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
 
   const close = async (): Promise<void> => {
     try {
+      if (consoleHealthTimer !== null) {
+        clearInterval(consoleHealthTimer);
+      }
       await app.close();
     } finally {
       // 即使框架关闭抛错也要清除流中心的低频定时器与后台对象。
@@ -166,6 +241,14 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
     notifyWorldChanged: () => {
       hub.publishWithResync(report);
+      try {
+        const timeline = consoleSnapshot("console.timeline");
+        if (timeline !== null) {
+          hub.publishConsole("console.timeline", timeline);
+        }
+      } catch (error) {
+        report("控制台时间线推送失败", error);
+      }
     },
     address,
     streamStats: () => hub.stats(),

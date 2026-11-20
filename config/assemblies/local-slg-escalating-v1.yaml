@@ -19,8 +19,24 @@ realms:
       - { capability: platform.access-policy, moduleId: platform.access-policy.roster, configRef: null }
       - { capability: platform.secrets, moduleId: platform.secrets.env, configRef: null }
       - { capability: platform.operations, moduleId: platform.operations.standard, configRef: null }
+      - { capability: platform.observability, moduleId: platform.observability.sqlite, configRef: null }
+      - { capability: platform.module-admin, moduleId: platform.module-admin.standard, configRef: null }
       - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
   client:
-    bindings: []
+    bindings:
+      - { capability: client.world-view, moduleId: client.world-view.standard, configRef: null }
+      - { capability: client.scene-renderer, moduleId: client.scene-renderer.pixi, configRef: null }
+      - { capability: client.camera, moduleId: client.camera.standard, configRef: null }
+      - { capability: client.screen-projection, moduleId: client.screen-projection.isometric, configRef: null }
+      - { capability: client.input, moduleId: client.input.standard, configRef: null }
+      - { capability: client.hud, moduleId: client.hud.standard, configRef: null }
+      - { capability: client.dialogue, moduleId: client.dialogue.standard, configRef: null }
+      - { capability: client.faction-start, moduleId: client.faction-start.standard, configRef: null }
+      - { capability: client.characters, moduleId: client.characters.standard, configRef: null }
+      - { capability: client.settings, moduleId: client.settings.standard, configRef: null }
+      - { capability: client.notifications, moduleId: client.notifications.standard, configRef: null }
   console:
-    bindings: []
+    bindings:
+      - { capability: console.health, moduleId: console.health.standard, configRef: null }
+      - { capability: console.module-admin, moduleId: console.module-admin.standard, configRef: null }
+      - { capability: console.observability, moduleId: console.observability.standard, configRef: null }

@@ -4,6 +4,8 @@
  * 禁止在传输层内重算授权、把内部错误细节交给客户端，或在创建失败后留下已启动资源。
  */
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Authority } from "@ai-npc/authority";
 import type { AuthContext, HostServices, ResolvedModuleSet, StartOption } from "@ai-npc/contracts";
 import type { GameContent } from "@ai-npc/module-sdk";
@@ -103,6 +105,7 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 /** 创建传输应用；调用方负责之后监听端口并在关闭时释放。 */
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
   const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent } = input;
+  const consoleStaticDir = resolve(process.cwd(), "apps/server/console-static");
   try {
     return await runtime.transport.createApp({
       authority,
@@ -119,6 +122,50 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         conversationMessages: (conversationId, limit) =>
           reads.conversation.conversationMessages(conversationId, limit),
         speakerName: (principalId) => reads.conversation.speakerName(principalId),
+      },
+      console: {
+        health: () => {
+          const queueCounts = runtime.storage.transact((tx) => ({
+            turnsQueued: tx.rows("turn_runs").count({
+              branch_id: active.branchId,
+              status: "queued",
+            }),
+          }));
+          const modules = [
+            ...input.assembly.modules,
+            ...input.sessionAssembly.client.modules,
+            ...input.sessionAssembly.console.modules,
+          ].map((module) => ({
+            moduleId: module.moduleId,
+            version: module.version,
+            status: "ready",
+          }));
+          return {
+            ports: { client: options.clientPort ?? 5173, server: options.transportPort ?? 3000 },
+            realms: ["server", "client", "console"] as const,
+            assemblyHash: input.assembly.assemblyHash,
+            modules,
+            clock: clockView(lifecycle.clockState()),
+            queues: {
+              turnsQueued: queueCounts.turnsQueued,
+              turnsRunning: 0,
+              maintenanceQueued: 0,
+              modelQueue: 0,
+            },
+            laggingAgents: 0,
+            budgets: [],
+            recentFailures: [],
+          };
+        },
+        modules: (realm) => runtime.moduleAdmin.modules(realm),
+        assemblies: () => runtime.moduleAdmin.assemblies(),
+        assembly: (assemblyId) => runtime.moduleAdmin.assembly(assemblyId),
+        timeline: (query) =>
+          runtime.observability.timeline({
+            ...query,
+            branchId: query.branchId ?? active.branchId,
+          }),
+        agents: (branchId) => runtime.observability.agents(branchId),
       },
       projection: () => reads.projection(),
       clock: () => clockView(lifecycle.clockState()),
@@ -151,6 +198,18 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       ids: (prefix) => host.ids(prefix),
       tokens: (kind) => `${kind}-${randomUUID()}`,
       healthStatus: () => lifecycle.healthStatus(),
+      recordSpan: (span) =>
+        runtime.observability.recordSpan({
+          ...span,
+          parentSpanId: null,
+          runId: null,
+          branchId: active.branchId,
+          agentId: null,
+          turnId: null,
+          moduleId: "transport.http-ws.fastify",
+          moduleVersion: "1.0.0",
+        }),
+      ...(existsSync(consoleStaticDir) ? { consoleStaticDir } : {}),
       onInternalError: (message, error) => {
         host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
       },
