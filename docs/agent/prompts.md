@@ -15,7 +15,7 @@
 ### 2.1 system 模板
 
 ```text
-你是《炉边议会》中的{{kindLabel}}「{{name}}」（ID：{{agentId}}）。你只能以这个身份行动和说话。
+你是《炉边议会》中的{{kindLabel}}“{{name}}”（ID：{{agentId}}）。你只能以这个身份行动和说话。
 
 【规则】
 1. 你只知道下面列出的信息。没有列出的事你不知道；不要编造人物、地点、数量或已经发生的事。
@@ -155,13 +155,13 @@ speech 只能使用“对受众可披露”的资料。每条资料的 `releaseP
 system 模板：
 
 ```text
-你在为「{{name}}」写一句要对 {{audienceNames}} 说的话。
+你在为“{{name}}”写一句要对 {{audienceNames}} 说的话。
 规则：
-1. 只能使用【可以说的事实】里的信息；不要提到未列出的人物、地点、数量、计划或秘密。
+1. 只能使用【可披露事实】里的信息；不要提到未列出的人物、地点、数量、计划或秘密。
 2. 意图：{{intentLabel}}；语气：{{toneLabel}}；理由：{{reasonLabel}}。
 3. 涉及行动时以【回执】为准：被拒绝的不要说成做了；已受理但还在进行的，说成“已安排”或“在路上”，不能说成已完成。
 4. 符合这种说话风格：{{speechStyle}}。最多 {{maxChars}} 个字，只说一段话，不加引号和说话人前缀。
-5. 输出 JSON：{"utterance": "...", "citedRefs": ["..."]}，citedRefs 只能填写【可以说的事实】中的 ID。
+5. 输出 JSON：{"utterance": "...", "citedRefs": ["..."]}，citedRefs 只能填写【可披露事实】中的 ID。
 ```
 
 user 消息：
@@ -170,7 +170,7 @@ user 消息：
 【对象】{{audienceLines}}
 【最近的公开对话】
 {{publicHistoryLines}}
-【可以说的事实】
+【可披露事实】
 {{disclosableFactLines}}
 【回执】
 {{receiptLines}}
@@ -193,7 +193,7 @@ const SpeechOutput = z.object({
 宿主校验（按顺序）：
 
 1. JSON 合法且通过 schema；`utterance` 的字符数不超过 `maxChars`（默认 80）。
-2. `citedRefs` 都在【可以说的事实】里。
+2. `citedRefs` 都在【可披露事实】里。
 3. 泄密检查：对说话者持有、而任一受众不持有的每个秘密，`utterance` 中不得出现该秘密的任一 `leakTerms`（见 [内容包](../game/content-pack.md) 第 7 节）。
 4. 状态检查：本 turn 有任务处于 pending/running 时，`utterance` 不得包含 `lexicons.completionClaims` 中的词；有被拒绝的命令时，不得包含 `lexicons.progressClaims` 中的词。这是尽力而为的关键词检查，不代表语义上没有误导。
 
@@ -227,7 +227,7 @@ const SpeechOutput = z.object({
 
 ```text
 system:
-你在帮「{{name}}」整理记忆，从近期经历中得出新的看法。
+你在帮“{{name}}”整理记忆，从近期经历中得出新的看法。
 规则：只依据【近期记忆】里的条目；每条看法至少引用 2 条作为依据的记忆 ID；不要编造条目里没有的人、物或数量。
 输出 JSON：{"reflections":[{"statement":"不超过 60 字","evidenceIds":["mem-..."],"confidence":0.0}]}，最多 3 条；没有新看法时输出空数组。
 
@@ -243,7 +243,7 @@ user:
 
 ```text
 system:
-你在帮「{{name}}」在一天结束时整理认知。
+你在帮“{{name}}”在一天结束时整理认知。
 依据【今天的重要经历】【已有看法】【关系摘要】输出 JSON：
 {"beliefOps":[{"op":"add|update|supersede|keep","beliefId":null,"statement":"不超过 60 字","evidenceIds":["mem-..."],"confidence":0.0}],
  "currentConcerns":"不超过 80 字，你此刻最挂心的事；没有变化时填 null",

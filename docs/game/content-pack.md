@@ -164,7 +164,7 @@ factions:
       speechStyle: 理性、条款化
       bottomLines: [不签没有监督条款的交换]
       goals: [促成修复交换, 核实翻译]
-      secret: 第一次翻译「对等」时译错
+      secret: 第一次翻译“对等”时译错
       relations: [ { targetId: species-extraterrestrial, trust: 1 } ]
   - factionId: human-neutral
     name: 灰港公社

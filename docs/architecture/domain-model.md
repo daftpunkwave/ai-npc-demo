@@ -207,7 +207,7 @@ COMMIT
 | job kind | 创建者 | 到期时处理 | 事件 |
 |---|---|---|---|
 | `task.depart` | `task.dispatch` | [规则](../game/rules.md) 第 6 节出发规则 | `TaskInvitationExpired`、`TaskDeparted` 或 `TaskFailed` |
-| `task.work` | `task.depart`（actions 模块；修复任务且工作起点晚于出发 tick） | 到达工作起点时结算任务已预留的能源与供给，任务状态写入「材料已消耗」标记后不再重复扣减；完成与工作中取消复用同一幂等结算 | `ResourcesConsumed` |
+| `task.work` | `task.depart`（actions 模块；修复任务且工作起点晚于出发 tick） | 到达工作起点时结算任务已预留的能源与供给，任务状态写入“材料已消耗”标记后不再重复扣减；完成与工作中取消复用同一幂等结算 | `ResourcesConsumed` |
 | `task.complete` | `task.depart`（到期 tick 为名义完成 tick） | 有延误且 delayNoticeSent 为 false：提交一次 `TaskDelayed`，同事务置 true，并用同一 kind 安排名义完成 tick + 2 × 命中道路数的 job；尚未到真正完成 tick 不结算；否则结算完成效果 | `TaskDelayed`；或 `TaskCompleted`/`TaskFailed`，以及 `ResourcesTransferred`/`ResourcesConsumed`、`MetersChanged`、`CharacterMoved`、`TeamMoved`、`EvidenceDiscovered`、`ScoutReported`、`GroupRescued`、`CharacterInjured` |
 | `team.recover` / `character.recover` | 受伤结果 | 恢复可用 | `TeamRecovered` / `CharacterRecovered` |
 | `agreement.expire` | `agreement.propose` | 仍为 proposed 则过期 | `AgreementExpired` |

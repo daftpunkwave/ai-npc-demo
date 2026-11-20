@@ -92,4 +92,4 @@
 4. **序章文档只定义切片内的规则。** 切片外系统的入口与接口以 [00-scope-and-invariants.md — 序章切片范围](00-scope-and-invariants.md#1-切片范围) 为准。
 5. **文档链接使用“原始文件名 — 中文名称”。** 未存在的目标文件、代码示例与无可访问地址的来源不伪造链接。
 6. **变更后运行 `pnpm check:docs`。** 它检查根 `README.md`、`AGENTS.md`、服务端 README 和 `docs/**/*.md` 的相对链接、标题锚点与 Markdown 表格列数。
-7. 工程文档标注交付状态时沿用 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览) 的「已实现」「部分实现」「目标」。部分实现需写清已交付范围，具体迁移项见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。
+7. 工程文档标注交付状态时沿用 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览) 的“已实现”“部分实现”“目标”。部分实现需写清已交付范围，具体迁移项见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。

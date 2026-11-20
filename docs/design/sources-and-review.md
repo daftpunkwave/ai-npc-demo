@@ -1,12 +1,12 @@
 # 基线、参考与验证
 
-本稿把原来的七日单章扩展成开放世界经营 SLG。世界、人物、地点、道路与序章数值继续以 Demo 规格为依据；城建、议事、外交、谍报与世界导演是本稿新增的设计。两者冲突时，以本页「与 Demo 的差异」列出的口径为准，并在下一轮同步到 `docs/`。
+本稿把原来的七日单章扩展成开放世界经营 SLG。世界、人物、地点、道路与序章数值继续以 Demo 规格为依据；城建、议事、外交、谍报与世界导演是本稿新增的设计。两者冲突时，以本页“与 Demo 的差异”列出的口径为准，并在下一轮同步到 `docs/`。
 
 ## 作品名
 
-游戏标题为 **《炉边议会》 / *The Hearth Council***。标题取自灰港的政治场景：五派围着中继炉取暖，也围着同一张桌子分票。旧稿标题「最后的中继」不再作游戏名，保留为对中继网络的旧称与世界观用语；序章仍名《水闸之前》。
+游戏标题为 **《炉边议会》 / *The Hearth Council***。标题取自灰港的政治场景：五派围着中继炉取暖，也围着同一张桌子分票。旧稿标题“最后的中继”不再作游戏名，保留为对中继网络的旧称与世界观用语；序章仍名《水闸之前》。
 
-英文名不是直译：*Hearth* 同时指炉边与家宅，*Council* 指议事会；两者并置，正好对应「取暖」与「投票」两件事。宣传语为「长冬之下，三票决定谁先暖。」 / “Three votes decide who warms first.”
+英文名不是直译：*Hearth* 同时指炉边与家宅，*Council* 指议事会；两者并置，正好对应“取暖”与“投票”两件事。宣传语为“长冬之下，三票决定谁先暖。” / “Three votes decide who warms first.”
 
 ## 参考作品
 
@@ -14,35 +14,35 @@
 
 | 作品 | 借用的结构 | 本稿怎么改 |
 |---|---|---|
-| 《冰汽时代》（Frostpunk, 11 bit studios） | 环形城市围绕核心炉；热区分级；法案册与道德取舍；希望/不满；探险队；寒潮 | 中继炉同时供热、供电与通信；热级改为 0–4 五档；希望/不满拆成「支持（五派）」与「不满」；探险队变成外域使节与队伍 |
+| 《冰汽时代》（Frostpunk, 11 bit studios） | 环形城市围绕核心炉；热区分级；法案册与道德取舍；希望/不满；探险队；寒潮 | 中继炉同时供热、供电与通信；热级改为 0–4 五档；希望/不满拆成“支持（五派）”与“不满”；探险队变成外域使节与队伍 |
 | 《冰汽时代 2》 | 议事会、席位、派系、拉票、承诺、执行；区域经济与邻接；紧张与信任 | 100 席改为**五席（每派 1 票）**；普通法案 3/5，宪制法案 4/5；党魁是 Agent，玩家是本派党魁；法案通过后还有执行度 |
 | 《城市：天际线》 | 看得见的城市、分区、服务覆盖、交通与人口 | 保留 24 地块、四环、热区、建筑服务覆盖；不做无限大地图与交通微操 |
 | 《模拟人生》 | 每个人有自己的日程、关系、情绪与小心思 | 15 个 Agent 有工作、社交、记忆、底线；玩家不能直接操控他们的私生活 |
-| 《十字军之王 3》 | 角色驱动；观点/把柄/密谋；议会席位与强力封臣；派系 ultimatum；联姻/宴会；继承 | 不设王朝与婚姻主线；把「封臣」换成「派系」；把「继承」换成政治生命与遗产局；保留把柄、宴请、私下交易 |
+| 《十字军之王 3》 | 角色驱动；观点/把柄/密谋；议会席位与强力封臣；派系 ultimatum；联姻/宴会；继承 | 不设王朝与婚姻主线；把“封臣”换成“派系”；把“继承”换成政治生命与遗产局；保留把柄、宴请、私下交易 |
 | 《绝地潜兵 2》 | 世界导演/Game Master；全局指令；时代目标；玩家行为反馈 | 单人长局版：导演面对一座城与三个外域 Agent；多人共治版仍只有一条压力预算。指令只改意图，不写结局；Agent 可以拒绝或变通 |
 
 ### Frostpunk 1
 
 - 城市沿核心炉的环形网格建造；热量按环带衰减，建筑需要保温与热站；煤是核心燃料。参考：[Frostpunk Wiki: A New Home](http://frostpunk.wikia.com/wiki/A_New_Home)、[Handwiki: Frostpunk](https://handwiki.org/wiki/Software:Frostpunk)。
-- 法案册（Book of Laws）用生存/目的两条线换取效率与道德代价；希望与不满是两个不同的失败轨道。本稿把它拆成「民意（五派支持率）」与「不满（城市压力）」，因为本作的政治主体是派系，不是统一的市民。
+- 法案册（Book of Laws）用生存/目的两条线换取效率与道德代价；希望与不满是两个不同的失败轨道。本稿把它拆成“民意（五派支持率）”与“不满（城市压力）”，因为本作的政治主体是派系，不是统一的市民。
 - 探险队（Beacon/Scout）负责发现幸存者、资源与蒸汽核心。本稿把它变成外域使节、商队、侦察与联合工程；外域不是资源点，是有议价的阵营。
 
 ### Frostpunk 2
 
-- 议事会 100 席，普通法案 51 票，Rule 类法案约 67 票（2/3）；议员分 For / Against / Hesitant；派系是「真信徒」，社区可谈判；拉票靠承诺研究、建筑、法案、议程。参考：[Frostpunk 2 Wiki: Council](https://frostpunk-2.game-vault.net/wiki/Book_of_Laws)、[TheGamer: Council Guide](https://www.thegamer.com/frostpunk-2-council-laws-negotiate-complete-guide/)、[Frostpunk 2 Factions Guide](https://rappy-world.com/guide/frostpunk_2_factions_guide_managing_the_council_and_winning_votes)。
+- 议事会 100 席，普通法案 51 票，Rule 类法案约 67 票（2/3）；议员分 For / Against / Hesitant；派系是“真信徒”，社区可谈判；拉票靠承诺研究、建筑、法案、议程。参考：[Frostpunk 2 Wiki: Council](https://frostpunk-2.game-vault.net/wiki/Book_of_Laws)、[TheGamer: Council Guide](https://www.thegamer.com/frostpunk-2-council-laws-negotiate-complete-guide/)、[Frostpunk 2 Factions Guide](https://rappy-world.com/guide/frostpunk_2_factions_guide_managing_the_council_and_winning_votes)。
 - 区域（Housing / Food / Extraction / Industrial / Logistics）与邻接加成/惩罚；热量按区域分配；劳动力是核心约束。参考：[Frostpunk 2 Wiki: District](https://frostpunk-2.game-vault.net/w/index.php?title=District&oldid=1419)、[Frostpunk 2 District Types](https://frostpunk2.wiki/districts/types)。
-- 本稿把 100 席缩到 **5 席**：每派 1 票，普通法案 3 票、宪制法案 4 票。5 席让玩家一眼算清联盟，也让 15 个 Agent 的 roster 撑得住；3 票门槛强迫至少三派合作，4 票门槛保护少数派。派系的「基石」对应 Frostpunk 2 的不可谈判信条；「承诺」对应它的 negotiation terms。
+- 本稿把 100 席缩到 **5 席**：每派 1 票，普通法案 3 票、宪制法案 4 票。5 席让玩家一眼算清联盟，也让 15 个 Agent 的 roster 撑得住；3 票门槛强迫至少三派合作，4 票门槛保护少数派。派系的“基石”对应 Frostpunk 2 的不可谈判信条；“承诺”对应它的 negotiation terms。
 
 ### Crusader Kings 3
 
 - 议会五席（外交、军事、财政、密谋、宗教），强力封臣期望席位；封臣观点低会加入派系、发 ultimatum；把柄（hook）可以强迫合作；密谋包括谋杀、伪造把柄、绑架。参考：[CK3 Vassal Management and Council](https://guildorder.com/games/ck3/wiki/vassal-management-and-council)、[CK3 Beginner's Guide](https://earlyguides.com/crusader-kings-iii/beginners-guide)。
-- 本稿借用「角色有自己的利益与把柄」「议会席位是政治工具」「失败不是立刻结束」三件事；不借用王朝、婚姻、继承法、战争微操。继承改为「政治生命」：被吞并/支持崩解后换一个位置继续，而不是换一个王朝。
-- CK3 的派系 ultimatum 对应本稿的外域最后通牒与吞并/支持崩解；「恐怖值」不借用，避免把政治简化成恐惧条。
+- 本稿借用“角色有自己的利益与把柄”“议会席位是政治工具”“失败不是立刻结束”三件事；不借用王朝、婚姻、继承法、战争微操。继承改为“政治生命”：被吞并/支持崩解后换一个位置继续，而不是换一个王朝。
+- CK3 的派系 ultimatum 对应本稿的外域最后通牒与吞并/支持崩解；“恐怖值”不借用，避免把政治简化成恐惧条。
 
 ### Helldivers 2
 
 - 世界导演（Joel）监控全局战争，调整敌方压力、发布 Major Order、制造戏剧性；玩家行为会被回应，但不是每个任务都被手工编排。参考：[Position Is Everything: Joel the Game Master](https://www.positioniseverything.net/helldivers-2-celebrates-its-first-anniversary-by-revealing-joel-the-game-master)。
-- 本稿的导演只对外域下指令，不直接命令人类派系；指令有预算、冷却、红线与日志；Agent 可以执行、变通、拖延或拒绝。这是单人长局版的「全局战役」，也是研究装置：可对比开/关导演、温和/高压指令的差异。多人共治时，导演由服务端运营持有，人类玩家不能接管导演席位——否则等于给一名玩家上帝视角。
+- 本稿的导演只对外域下指令，不直接命令人类派系；指令有预算、冷却、红线与日志；Agent 可以执行、变通、拖延或拒绝。这是单人长局版的“全局战役”，也是研究装置：可对比开/关导演、温和/高压指令的差异。多人共治时，导演由服务端运营持有，人类玩家不能接管导演席位——否则等于给一名玩家上帝视角。
 
 ## 与 Demo 规格的映射
 
@@ -50,7 +50,7 @@
 
 | 主题 | Demo 规格 | 本稿入口 | 关系 |
 |---|---|---|---|
-| 范围、20 身份、五派开局 | `docs/00-scope-and-invariants.md` | [游戏概览](game-overview.md) | **改为 15 个上场 Agent**；五派从「五个开局」变为「同一城的五派」 |
+| 范围、20 身份、五派开局 | `docs/00-scope-and-invariants.md` | [游戏概览](game-overview.md) | **改为 15 个上场 Agent**；五派从“五个开局”变为“同一城的五派” |
 | 世界、地点、文明 | `docs/game/background.md` | [背景](world/background.md)、[地图](world/grayharbor.md) | 扩写长冬、四阵营、外域、五印、白障 |
 | 角色、关系、派系倾向 | `docs/game/characters.md`、`docs/game/content-pack.md` | [人物](characters/README.md)、[名册](characters/roster.md) | 40 人名册，每局实例化 15 人；新增支持者代表、态势、秘密 |
 | 任务、路况、库存、政策、协议、序章结算 | `docs/game/rules.md` | [任务](gameplay/02-logistics-and-actions.md)、[协议](gameplay/03-agreements-and-policy.md)、[数值](balance/01-baseline.md) | 任务/路况/库存/政策/协议保留；时间、编制与资源边界按设计对齐 |
@@ -109,7 +109,7 @@
 
 | 从文档检查 | 应能得到的回答 |
 |---|---|
-| 玩家是否能感到「我是党魁，但不是全城的主人」 | 玩家决定本派 1 票；其他四派要谈；8 个支持者可以反对；政策不能直接改 |
+| 玩家是否能感到“我是党魁，但不是全城的主人” | 玩家决定本派 1 票；其他四派要谈；8 个支持者可以反对；政策不能直接改 |
 | 3 票门槛是否真的制造联盟 | 任何一派都不够；必须再找两派；默认票数表能算出 2 票失败 |
 | 4 票宪制门槛是否保护少数派 | 三派不能合法吞并第四派；吞并要说服非盟友 |
 | 8 个人的支持是否真的影响游戏 | 同一法案由不同人执行结果不同；支持崩会触发吞并；8 人可反对/博弈但不争党魁 |
