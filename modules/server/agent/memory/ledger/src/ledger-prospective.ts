@@ -3,7 +3,7 @@
  * Builds and closes prospective memory rows without changing formal contracts.
  * Must not invent a deadline that is absent from this or an earlier observation.
  */
-import type { MemoryChangePlan } from "@ai-npc/contracts";
+import type { AgentObservation, MemoryChangePlan } from "@ai-npc/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
@@ -15,6 +15,7 @@ import {
   type LedgerRow,
   type ProspectiveState,
   dataOf,
+  mergeReleasePolicies,
   numberValue,
   objectValue,
 } from "./ledger-model";
@@ -59,15 +60,23 @@ export function buildProspective(
     }
     if (event.eventType === "TaskInvitationAnswered" && event.facts["response"] === "accept") {
       const taskId = event.facts["taskId"];
-      const departTick = findTaskDepartTick(taskId, event.observation.knownAtTick, view, events);
-      if (typeof taskId === "string" && departTick !== null) {
+      const deadline = findTaskDeadline(taskId, event.observation, view, events);
+      if (typeof taskId === "string" && deadline !== null) {
         const row = prospectiveRow(event, {
           sourceKind: "task",
           taskId,
           obligorId: view.scope.agentId,
-          dueTick: departTick,
+          dueTick: deadline.dueTick,
           state: "open",
         }, config, ids);
+        row.releasePolicyId = mergeReleasePolicies([
+          event.observation.releasePolicyId,
+          deadline.releasePolicyId,
+        ]);
+        row.sourceObservationIds = [...new Set([
+          ...row.sourceObservationIds,
+          ...deadline.sourceObservationIds,
+        ])].sort((left, right) => left.localeCompare(right));
         inserts.push(row);
         activePromises.push(viewRecord(row));
       }
@@ -84,7 +93,9 @@ export function buildProspective(
     if (event.eventType === "TaskCompleted" || event.eventType === "TaskCancelled" || event.eventType === "TaskFailed") {
       const taskId = event.facts["taskId"];
       for (const record of activePromises) {
-        if (dataOf(record)["taskId"] === taskId) retires.set(record.memoryId, "superseded");
+        if (typeof taskId === "string" && storedFact(record, "taskId") === taskId) {
+          retires.set(record.memoryId, "superseded");
+        }
       }
     }
   }
@@ -141,25 +152,52 @@ function prospectiveRow(
   };
 }
 
-function findTaskDepartTick(
+interface TaskDeadline {
+  readonly dueTick: number;
+  readonly releasePolicyId: string;
+  readonly sourceObservationIds: readonly string[];
+}
+
+function findTaskDeadline(
   taskId: unknown,
-  beforeTick: number,
+  before: AgentObservation,
   view: RevisionView,
   events: readonly LedgerEvent[],
-): number | null {
+): TaskDeadline | null {
   if (typeof taskId !== "string") return null;
   const fromEvents = events.filter((event) =>
     event.facts["taskId"] === taskId &&
-    event.observation.knownAtTick <= beforeTick,
+    (
+      event.observation.knownAtTick < before.knownAtTick ||
+      (
+        event.observation.knownAtTick === before.knownAtTick &&
+        event.observation.observationSeq <= before.observationSeq
+      )
+    ),
   );
   for (const event of [...fromEvents].reverse()) {
     const direct = numberValue(event.facts["departTick"]);
-    if (direct !== null) return direct;
+    if (direct !== null) {
+      return {
+        dueTick: direct,
+        releasePolicyId: event.observation.releasePolicyId,
+        sourceObservationIds: [event.observation.observationId],
+      };
+    }
   }
-  const fromRecords = view.records.filter((record) => storedFact(record, "taskId") === taskId);
+  const fromRecords = view.records.filter((record) =>
+    storedFact(record, "taskId") === taskId &&
+    record.validFromTick <= before.knownAtTick,
+  );
   for (const record of [...fromRecords].reverse()) {
     const direct = numberValue(storedFact(record, "departTick"));
-    if (direct !== null) return direct;
+    if (direct !== null) {
+      return {
+        dueTick: direct,
+        releasePolicyId: record.releasePolicyId,
+        sourceObservationIds: record.sourceObservationIds,
+      };
+    }
   }
   return null;
 }

@@ -179,20 +179,23 @@ function groupShortExperiences(
     .sort((left, right) =>
       left.validFromTick - right.validFromTick || left.memoryId.localeCompare(right.memoryId),
     );
-  const groups = new Map<string, MemoryRecordView[]>();
+  const groups = new Map<string, MemoryRecordView[][]>();
   for (const record of candidates) {
     const data = dataOf(record);
     const eventType = typeof data["eventType"] === "string" ? data["eventType"] : "Unknown";
     const counterpart = record.content.counterpartIds[0] ?? "";
     const key = `${eventType}:${counterpart}`;
-    const group = groups.get(key) ?? [];
-    const firstTick = group[0]?.validFromTick ?? record.validFromTick;
-    if (record.validFromTick - firstTick <= 72) {
-      group.push(record);
-      groups.set(key, group);
+    const keyGroups = groups.get(key) ?? [];
+    const activeGroup = keyGroups.at(-1);
+    const firstTick = activeGroup?.[0]?.validFromTick;
+    if (activeGroup === undefined || firstTick === undefined || record.validFromTick - firstTick > 72) {
+      keyGroups.push([record]);
+    } else {
+      activeGroup.push(record);
     }
+    groups.set(key, keyGroups);
   }
-  return [...groups.values()];
+  return [...groups.values()].flat();
 }
 
 function mergeShortGroup(

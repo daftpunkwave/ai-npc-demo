@@ -50,7 +50,7 @@ export function buildIngestion(
   const inserts = significant.map((entry) =>
     rowForEvent(entry.event, entry.salience, config, ids),
   );
-  const retires: LedgerRow["memoryId"][] = [];
+  const retires = new Map<string, LedgerBuild["retires"][number]["status"]>();
   const groups = new Map<string, LedgerEvent[]>();
   for (const entry of low) {
     const key = `${Math.floor(entry.event.observation.knownAtTick / 24) + 1}:${entry.event.eventType}`;
@@ -62,20 +62,21 @@ export function buildIngestion(
     const aggregate = aggregateRow(group, view, ids);
     if (aggregate === null) continue;
     if (view.records.some((record) => record.memoryId === aggregate.memoryId && record.status === "active")) {
-      retires.push(aggregate.memoryId);
+      retires.set(aggregate.memoryId, "superseded");
     }
     inserts.push(aggregate);
   }
-  const relation = buildRelations(events, view, config, ids);
-  inserts.push(...relation.inserts);
-  retires.push(...relation.retires.map((entry) => entry.memoryId));
-  const prospective = buildProspective(events, view, config, ids);
-  inserts.push(...prospective.inserts);
-  retires.push(...prospective.retires.map((entry) => entry.memoryId));
-  return {
-    inserts,
-    retires: [...new Set(retires)].map((memoryId) => ({ memoryId, status: "superseded" })),
-  };
+  if (config.relationInput === "enabled") {
+    const relation = buildRelations(events, view, config, ids);
+    inserts.push(...relation.inserts);
+    for (const entry of relation.retires) retires.set(entry.memoryId, entry.status);
+  }
+  if (config.prospectiveInput === "enabled") {
+    const prospective = buildProspective(events, view, config, ids);
+    inserts.push(...prospective.inserts);
+    for (const entry of prospective.retires) retires.set(entry.memoryId, entry.status);
+  }
+  return { inserts, retires: [...retires].map(([memoryId, status]) => ({ memoryId, status })) };
 }
 
 function epistemicOf(observation: AgentObservation): LedgerRow["epistemic"] {
@@ -99,6 +100,7 @@ function freshness(
   const existing = existingSources.size;
   const newlySeen = priorEvents.filter((candidate) =>
     candidate.eventType === event.eventType &&
+    candidate.observation.knownAtTick >= cutoff &&
     candidate.counterpartIds.some((id) => event.counterpartIds.includes(id)),
   ).length;
   return [1.2, 1, 0.8, 0.6][Math.min(existing + newlySeen, 3)] ?? 0.5;
@@ -144,6 +146,7 @@ function rowForEvent(
       counterpartIds: [...event.counterpartIds],
       data: {
         eventType: event.eventType,
+        observationSeq: event.observation.observationSeq,
         sourceEventIds: [...event.observation.sourceEventIds],
         facts: event.facts,
         claim: event.claim,
@@ -183,7 +186,8 @@ function aggregateRow(
     kind: "episodic",
     tier: "short",
     status: "active",
-    epistemic: group.every((event) => event.observation.epistemic === "witnessed")
+    epistemic: (existing === undefined || existing.epistemic === "verified-event") &&
+      group.every((event) => event.observation.epistemic === "witnessed")
       ? "verified-event"
       : "reported-claim",
     releasePolicyId: mergeReleasePolicies(
@@ -198,11 +202,17 @@ function aggregateRow(
     salience,
     recallCount: existing?.recallCount ?? 0,
     lastReinforcedTick: existing?.lastReinforcedTick ?? first.observation.knownAtTick,
-    tags: [...new Set(group.flatMap((event) => event.tags))].sort(compareStrings),
+    tags: [...new Set([
+      ...(existing?.tags ?? []),
+      ...group.flatMap((event) => event.tags),
+    ])].sort(compareStrings),
     sourceObservationIds,
     content: {
       summaryZh: `第 ${day} 日：收到 ${(numberValue(existingData["count"]) ?? 0) + group.length} 条${first.eventType}通报`,
-      counterpartIds: [...new Set(group.flatMap((event) => event.counterpartIds))].sort(compareStrings),
+      counterpartIds: [...new Set([
+        ...(existing?.content.counterpartIds ?? []),
+        ...group.flatMap((event) => event.counterpartIds),
+      ])].sort(compareStrings),
       data: {
         aggregateKey,
         aggregate: true,

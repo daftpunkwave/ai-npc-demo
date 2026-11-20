@@ -4,7 +4,5 @@
  * Exposes descriptor data without loading implementation state.
  * Must not create storage or a parallel memory host.
  */
-export const packageName = "@ai-npc/mod-agent-memory-ledger";
-
-export { ledgerConfigSchema, memoryLedgerModuleDefinition } from "./definition";
+export { memoryLedgerModuleDefinition } from "./definition";
 export type { LedgerConfig } from "./definition";

@@ -304,8 +304,9 @@ export function currentStrength(
 ): number {
   if (record.tier === "core") return record.salience;
   const tier = record.tier === "long" ? "long" : "short";
+  const elapsedTicks = Math.max(0, worldTick - record.lastReinforcedTick);
   return record.salience *
-    Math.exp(-(worldTick - record.lastReinforcedTick) / (config.decayBaseTicks[tier] * (1 + record.recallCount)));
+    Math.exp(-elapsedTicks / (config.decayBaseTicks[tier] * (1 + record.recallCount)));
 }
 
 export function relationModifierWeight(
@@ -317,7 +318,8 @@ export function relationModifierWeight(
   const modifiedAtTick = numberValue(data["modifiedAtTick"]) ?? record.validFromTick;
   const halfLifeTicks = numberValue(data["halfLifeTicks"]) ?? 1;
   if (data["baseline"] === true) return delta;
-  return delta * (0.5 ** ((worldTick - modifiedAtTick) / Math.max(1, halfLifeTicks)));
+  const elapsedTicks = Math.max(0, worldTick - modifiedAtTick);
+  return delta * (0.5 ** (elapsedTicks / Math.max(1, halfLifeTicks)));
 }
 
 export function relationSummary(

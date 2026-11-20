@@ -43,6 +43,7 @@ export class AgentRuntime {
   private readonly perception = new Map<string, PerceptionModuleHandle>();
   private readonly signal = new AbortController().signal;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private cycle: Promise<void> | null = null;
   private running = false;
   private stopped = false;
   private consumer: PerceptionEventConsumer | null = null;
@@ -119,7 +120,7 @@ export class AgentRuntime {
       });
       this.scheduler.recoverInterrupted();
       this.running = true;
-      await this.runCycle();
+      await this.runTrackedCycle();
       this.schedule();
     } catch (error) {
       await this.dispose();
@@ -129,7 +130,7 @@ export class AgentRuntime {
 
   /** 测试与受控单步使用同一轮询逻辑。 */
   async pump(): Promise<void> {
-    await this.runCycle();
+    await this.runTrackedCycle();
   }
 
   async drain(): Promise<void> {
@@ -139,6 +140,7 @@ export class AgentRuntime {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    await this.cycle;
   }
 
   async dispose(): Promise<void> {
@@ -166,7 +168,7 @@ export class AgentRuntime {
   private schedule(): void {
     if (!this.running || this.stopped) return;
     this.timer = setTimeout(() => {
-      void this.runCycle()
+      void this.runTrackedCycle()
         .catch((error) => {
           this.options.host.logger.error("Agent runtime cycle failed", {
             message: error instanceof Error ? error.message : String(error),
@@ -177,14 +179,24 @@ export class AgentRuntime {
     this.timer.unref();
   }
 
+  private runTrackedCycle(): Promise<void> {
+    if (this.cycle !== null) return this.cycle;
+    const cycle = this.runCycle().finally(() => {
+      if (this.cycle === cycle) this.cycle = null;
+    });
+    this.cycle = cycle;
+    return cycle;
+  }
+
   private async runCycle(): Promise<void> {
     if (this.stopped || this.consumer === null || this.scheduler === null) return;
     const tick = this.clockTick();
     await this.consumer.consume(tick);
     this.consumer.flush(tick);
     await this.memory?.ingestAll(tick);
-    await this.memory?.runDueMaintenance(tick);
     this.memory?.proposeDueWakeups(tick);
+    await this.memory?.runDueMaintenance(tick);
+    if (this.stopped) return;
     this.scheduler.recoverExpired();
     this.scheduler.schedule({
       tick,

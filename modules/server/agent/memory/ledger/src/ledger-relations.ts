@@ -15,7 +15,7 @@ import {
   type LedgerRow,
   type RelationModifier,
   dataOf,
-  numberValue,
+  relationModifierWeight,
   stringArray,
 } from "./ledger-model";
 
@@ -44,49 +44,47 @@ export function buildRelations(
     if (knownSources.has(event.observation.observationId)) continue;
     const modifiers = relationModifiers(event, view);
     for (const modifier of modifiers) {
-      const current = modifiersByTarget.get(modifier.targetId) ?? [];
-      if (current.length >= config.relationModifiersPerTarget) {
-        const weakest = [...current].sort((left, right) =>
-          Math.abs(relationWeight(left, event.observation.knownAtTick)) -
-            Math.abs(relationWeight(right, event.observation.knownAtTick)) ||
-          left.memoryId.localeCompare(right.memoryId),
-        )[0];
-        if (weakest !== undefined) {
-          if (existingRecordIds.has(weakest.memoryId)) {
-            retires.set(weakest.memoryId, "evicted");
-          } else {
-            const insertIndex = inserts.findIndex((row) => row.memoryId === weakest.memoryId);
-            if (insertIndex >= 0) inserts.splice(insertIndex, 1);
-          }
-          current.splice(current.indexOf(weakest), 1);
-        }
-      }
-      const row = relationRow(event, modifier, ids);
-      inserts.push(row);
-      current.push({
-        ...row,
-        rowVersion: 0,
-        tags: [...row.tags],
-        sourceObservationIds: [...row.sourceObservationIds],
-        content: {
-          ...row.content,
-          counterpartIds: [...row.content.counterpartIds],
-        },
+      appendRelationModifier({
+        event,
+        modifier,
+        config,
+        ids,
+        inserts,
+        retires,
+        existingRecordIds,
+        modifiersByTarget,
       });
-      modifiersByTarget.set(modifier.targetId, current);
     }
     if (stringArray(event.facts["tags"]).includes("rumor-counter")) {
       for (const targetId of event.counterpartIds) {
-        for (const record of modifiersByTarget.get(targetId) ?? []) {
-          if (dataOf(record)["cause"] === "rumor-hostile") retires.set(record.memoryId, "superseded");
+        const current = modifiersByTarget.get(targetId) ?? [];
+        for (const record of [...current]) {
+          if (dataOf(record)["cause"] !== "rumor-hostile") continue;
+          if (existingRecordIds.has(record.memoryId)) {
+            retires.set(record.memoryId, "superseded");
+          } else {
+            const insertIndex = inserts.findIndex((row) => row.memoryId === record.memoryId);
+            if (insertIndex >= 0) inserts.splice(insertIndex, 1);
+          }
+          current.splice(current.indexOf(record), 1);
         }
-        inserts.push(relationRow(event, {
-          targetId,
-          dimension: "trust",
-          delta: 1,
-          cause: "counter-evidence",
-          halfLifeTicks: 120,
-        }, ids));
+        modifiersByTarget.set(targetId, current);
+        appendRelationModifier({
+          event,
+          modifier: {
+            targetId,
+            dimension: "trust",
+            delta: 1,
+            cause: "counter-evidence",
+            halfLifeTicks: 120,
+          },
+          config,
+          ids,
+          inserts,
+          retires,
+          existingRecordIds,
+          modifiersByTarget,
+        });
       }
     }
   }
@@ -96,13 +94,59 @@ export function buildRelations(
   };
 }
 
+function appendRelationModifier(input: {
+  readonly event: LedgerEvent;
+  readonly modifier: RelationModifier;
+  readonly config: LedgerConfig;
+  readonly ids: Ids;
+  readonly inserts: LedgerRow[];
+  readonly retires: Map<string, MemoryChangePlan["retires"][number]["status"]>;
+  readonly existingRecordIds: ReadonlySet<string>;
+  readonly modifiersByTarget: Map<string, MemoryRecordView[]>;
+}): void {
+  const current = input.modifiersByTarget.get(input.modifier.targetId) ?? [];
+  if (current.length >= input.config.relationModifiersPerTarget) {
+    const weakest = [...current].sort((left, right) =>
+      Math.abs(relationModifierWeight(left, input.event.observation.knownAtTick)) -
+        Math.abs(relationModifierWeight(right, input.event.observation.knownAtTick)) ||
+      left.memoryId.localeCompare(right.memoryId),
+    )[0];
+    if (weakest !== undefined) {
+      if (input.existingRecordIds.has(weakest.memoryId)) {
+        input.retires.set(weakest.memoryId, "evicted");
+      } else {
+        const insertIndex = input.inserts.findIndex((row) => row.memoryId === weakest.memoryId);
+        if (insertIndex >= 0) input.inserts.splice(insertIndex, 1);
+      }
+      current.splice(current.indexOf(weakest), 1);
+    }
+  }
+  const row = relationRow(input.event, input.modifier, input.ids);
+  input.inserts.push(row);
+  current.push({
+    ...row,
+    rowVersion: 0,
+    tags: [...row.tags],
+    sourceObservationIds: [...row.sourceObservationIds],
+    content: {
+      ...row.content,
+      counterpartIds: [...row.content.counterpartIds],
+    },
+  });
+  input.modifiersByTarget.set(input.modifier.targetId, current);
+}
+
 function relationRow(event: LedgerEvent, modifier: RelationModifier, ids: Ids): LedgerRow {
   return {
     memoryId: ids("mem") as LedgerRow["memoryId"],
     kind: "relation",
     tier: "long",
     status: "active",
-    epistemic: event.observation.epistemic === "inferred" ? "inference" : "verified-event",
+    epistemic: event.observation.epistemic === "witnessed"
+      ? "verified-event"
+      : event.observation.epistemic === "reported"
+        ? "reported-claim"
+        : "inference",
     releasePolicyId: event.observation.releasePolicyId,
     validFromTick: event.observation.knownAtTick,
     validUntilTick: null,
@@ -126,14 +170,6 @@ function relationRow(event: LedgerEvent, modifier: RelationModifier, ids: Ids): 
       },
     },
   };
-}
-
-function relationWeight(record: MemoryRecordView, worldTick: number): number {
-  const data = dataOf(record);
-  const delta = numberValue(data["delta"]) ?? 0;
-  const modifiedAtTick = numberValue(data["modifiedAtTick"]) ?? record.validFromTick;
-  const halfLifeTicks = numberValue(data["halfLifeTicks"]) ?? 1;
-  return delta * (0.5 ** ((worldTick - modifiedAtTick) / Math.max(1, halfLifeTicks)));
 }
 
 function relationModifiers(event: LedgerEvent, view: RevisionView): readonly RelationModifier[] {
@@ -204,6 +240,7 @@ function relationModifiers(event: LedgerEvent, view: RevisionView): readonly Rel
 }
 
 function isHostilePolicy(event: LedgerEvent, view: RevisionView): boolean {
+  if (event.eventType !== "PolicyChanged") return false;
   const key = typeof event.facts["key"] === "string" ? event.facts["key"] : "";
   const next = typeof event.facts["newValue"] === "string" ? event.facts["newValue"] : "";
   if (key === "watergate.allocation" && next === "harbor-first") {

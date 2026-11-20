@@ -78,51 +78,60 @@ export class LedgerMemoryPort implements MemoryPort {
       right.record.validFromTick - left.record.validFromTick ||
       left.record.memoryId.localeCompare(right.record.memoryId),
     );
-    const candidatePool = scored.slice(0, this.config.recall.candidateLimit);
     const picked = new Map<string, { record: MemoryRecordView; score: number; mustInclude: boolean }>();
     const dropped: MemoryBundle["dropped"] = [];
     const droppedIds = new Set<string>();
+    const seenSources = new Set<string>();
     let tokenEstimate = 0;
-    const pickMandatory = (item: { record: MemoryRecordView; score: number }): void => {
-      if (picked.has(item.record.memoryId) || picked.size >= query.maxItems) return;
+    const sourceKeyOf = (record: MemoryRecordView): string =>
+      record.sourceObservationIds.slice().sort(compareStrings).join(",");
+    const pickMandatory = (item: { record: MemoryRecordView; score: number }): boolean => {
+      if (picked.has(item.record.memoryId) || picked.size >= query.maxItems) return false;
+      const sourceKey = sourceKeyOf(item.record);
+      if (sourceKey.length > 0 && seenSources.has(sourceKey)) return false;
       const itemTokens = estimateTokens(item.record.content.summaryZh);
       if (tokenEstimate + itemTokens > query.maxTokens) {
         dropped.push({ memoryId: item.record.memoryId, reason: "budget" });
         droppedIds.add(item.record.memoryId);
-        return;
+        return false;
       }
+      if (sourceKey.length > 0) seenSources.add(sourceKey);
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: true });
+      return true;
     };
     if (this.config.prospectiveInput === "enabled") {
-      const promises = candidatePool.filter(({ record }) =>
+      const promises = scored.filter(({ record }) =>
         record.kind === "prospective" &&
         record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
       );
-      for (const item of promises.slice(0, Math.min(
-        this.config.recall.mustIncludeProspective,
-        query.maxItems,
-      ))) {
-        pickMandatory(item);
+      let selected = 0;
+      for (const item of promises) {
+        if (selected >= Math.min(this.config.recall.mustIncludeProspective, query.maxItems)) break;
+        if (pickMandatory(item)) selected += 1;
       }
     }
-    const about = candidatePool.filter(({ record }) =>
-      record.tier === "long" &&
-      record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
-    );
-    for (const item of about.slice(0, Math.min(
-      this.config.recall.mustIncludeAboutCounterpart,
-      Math.max(0, query.maxItems - picked.size),
-    ))) {
-      pickMandatory(item);
+    const about = scored
+      .filter(({ record }) =>
+        record.tier === "long" &&
+        record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
+      )
+      .sort((left, right) =>
+        right.record.salience - left.record.salience ||
+        right.record.validFromTick - left.record.validFromTick ||
+        left.record.memoryId.localeCompare(right.record.memoryId),
+      );
+    let aboutSelected = 0;
+    for (const item of about) {
+      if (aboutSelected >= this.config.recall.mustIncludeAboutCounterpart) break;
+      if (query.maxItems - picked.size <= 0) break;
+      if (pickMandatory(item)) aboutSelected += 1;
     }
-    const seenSources = new Set([...picked.values()].map(({ record }) =>
-      record.sourceObservationIds.slice().sort(compareStrings).join(","),
-    ).filter((key) => key.length > 0));
+    const candidatePool = scored.slice(0, this.config.recall.candidateLimit);
     for (const item of candidatePool) {
       if (picked.size >= Math.min(this.config.recall.topK, query.maxItems)) break;
       if (picked.has(item.record.memoryId)) continue;
-      const sourceKey = item.record.sourceObservationIds.slice().sort(compareStrings).join(",");
+      const sourceKey = sourceKeyOf(item.record);
       if (sourceKey.length > 0 && seenSources.has(sourceKey)) {
         dropped.push({ memoryId: item.record.memoryId, reason: "dedupe" });
         droppedIds.add(item.record.memoryId);
@@ -138,7 +147,7 @@ export class LedgerMemoryPort implements MemoryPort {
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: false });
     }
-    for (const item of candidatePool) {
+    for (const item of scored) {
       if (!picked.has(item.record.memoryId) && !droppedIds.has(item.record.memoryId)) {
         dropped.push({ memoryId: item.record.memoryId, reason: "rank" });
       }
@@ -160,7 +169,7 @@ export class LedgerMemoryPort implements MemoryPort {
       coreBlock: null,
       relationSummary: this.config.relationInput === "enabled" ? relationSummary(query, view) : [],
       items,
-      candidates: candidatePool.length,
+      candidates: scored.length,
       dropped,
     };
   }
@@ -346,7 +355,7 @@ export class LedgerMemoryPort implements MemoryPort {
       kind,
       tier: isPromise ? "long" : kind === "episodic" && salience >= this.config.salienceThresholds.long ? "long" : "short",
       status: "active",
-      epistemic: entry.kind === "claim" ? "reported-claim" : "inference",
+      epistemic: entry.kind === "request" ? "inference" : "reported-claim",
       releasePolicyId: mergeReleasePolicies(sources.map((source) => source.releasePolicyId)),
       validFromTick: input.worldTick,
       validUntilTick: null,

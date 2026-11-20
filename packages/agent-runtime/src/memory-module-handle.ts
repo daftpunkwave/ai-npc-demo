@@ -67,7 +67,16 @@ export class MemoryModuleHandle {
       await instance.dispose();
       throw new Error(`Memory module ${input.moduleId} did not expose a MemoryPort`);
     }
-    await instance.start(input.signal);
+    try {
+      await instance.start(input.signal);
+    } catch (error) {
+      try {
+        await instance.dispose();
+      } catch {
+        // Preserve the startup failure while making a best-effort release.
+      }
+      throw error;
+    }
     return new MemoryModuleHandle(input.moduleId, instance.port as MemoryPort, instance);
   }
 

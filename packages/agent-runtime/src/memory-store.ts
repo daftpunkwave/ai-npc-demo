@@ -20,6 +20,7 @@ import type {
   RevisionView,
 } from "@ai-npc/module-sdk";
 import {
+  encodeMemoryRow,
   jsonObject,
   numberColumn,
   parseObservation,
@@ -111,10 +112,18 @@ export class MemoryStore {
   readObservations(agentId: string, afterSeq: number): readonly AgentObservation[] {
     return this.storage.transact((tx) => {
       const scope = this.scope(agentId);
-      return tx.branch(this.branchId)
-        .table("observations")
-        .list({ agent_id: agentId }, { orderBy: [{ column: "observation_seq" }] })
-        .filter((row) => numberColumn(row, "observation_seq") > afterSeq)
+      const table = tx.branch(this.branchId).table("observations");
+      return tx.all(
+        `SELECT observation_seq FROM observations
+         WHERE branch_id = ? AND agent_id = ? AND observation_seq > ?
+         ORDER BY observation_seq ASC`,
+        [this.branchId, agentId, afterSeq],
+      )
+        .map((row) => table.get({
+          agent_id: agentId,
+          observation_seq: numberColumn(row, "observation_seq"),
+        }))
+        .filter((row): row is StorageRow => row !== null)
         .map((row) => parseObservation(row, scope));
     });
   }
@@ -245,7 +254,13 @@ export class MemoryStore {
       for (const insert of plan.inserts) {
         const current = currentById.get(insert.memoryId);
         const nextRowVersion = (current?.rowVersion ?? this.maxRowVersion(tx, agentId, insert.memoryId)) + 1;
-        records.put(this.memoryRow(agentId, moduleId, revision, nextRowVersion, insert));
+        records.put(encodeMemoryRow({
+          agentId,
+          moduleId,
+          revision,
+          rowVersion: nextRowVersion,
+          insert,
+        }));
       }
       for (const retire of plan.retires) {
         if (insertedIds.has(retire.memoryId)) continue;
@@ -360,44 +375,6 @@ export class MemoryStore {
       [this.branchId, agentId, memoryId],
     )[0];
     return typeof row?.["version"] === "number" ? row["version"] : 0;
-  }
-
-  private memoryRow(
-    agentId: string,
-    moduleId: string,
-    revision: number,
-    rowVersion: number,
-    insert: MemoryChangePlan["inserts"][number],
-  ): StorageRow {
-    const content = {
-      summaryZh: insert.content.summaryZh,
-      counterpartIds: [...insert.content.counterpartIds],
-      data: {
-        ...jsonObject(insert.content.data),
-        _lastReinforcedTick: insert.lastReinforcedTick,
-      },
-    };
-    return {
-      agent_id: agentId,
-      memory_id: insert.memoryId,
-      row_version: rowVersion,
-      module_id: moduleId,
-      kind: insert.kind,
-      tier: insert.tier,
-      status: insert.status,
-      epistemic: insert.epistemic,
-      release_policy_id: insert.releasePolicyId,
-      valid_from_tick: insert.validFromTick,
-      valid_until_tick: insert.validUntilTick,
-      created_revision: revision,
-      retired_revision: null,
-      strength: insert.strength,
-      salience: insert.salience,
-      recall_count: insert.recallCount,
-      tags_json: [...insert.tags],
-      source_observation_ids_json: [...insert.sourceObservationIds],
-      content_json: content,
-    };
   }
 
   private requireWatermark(

@@ -7,6 +7,7 @@ import {
   agentObservationSchema,
   type AgentObservation,
   type Json,
+  type MemoryChangePlan,
   type MemoryScope,
   type StorageRow,
 } from "@ai-npc/contracts";
@@ -86,9 +87,11 @@ export function parseRecord(row: StorageRow): MemoryRecordView {
     strength: typeof row["strength"] === "number" ? row["strength"] : 0,
     salience: typeof row["salience"] === "number" ? row["salience"] : 0,
     recallCount: numberColumn(row, "recall_count"),
-    lastReinforcedTick: typeof data["_lastReinforcedTick"] === "number"
-      ? data["_lastReinforcedTick"]
-      : numberColumn(row, "valid_from_tick"),
+    lastReinforcedTick: typeof content["_lastReinforcedTick"] === "number"
+      ? content["_lastReinforcedTick"]
+      : typeof data["_lastReinforcedTick"] === "number"
+        ? data["_lastReinforcedTick"]
+        : numberColumn(row, "valid_from_tick"),
     tags: Array.isArray(row["tags_json"])
       ? row["tags_json"].filter((value): value is string => typeof value === "string")
       : [],
@@ -100,7 +103,43 @@ export function parseRecord(row: StorageRow): MemoryRecordView {
       counterpartIds: Array.isArray(content["counterpartIds"])
         ? content["counterpartIds"].filter((value): value is string => typeof value === "string")
         : [],
-      data: jsonObject(content["data"]) as Json,
+      data: content["data"] as Json,
+    },
+  };
+}
+
+export function encodeMemoryRow(input: {
+  readonly agentId: string;
+  readonly moduleId: string;
+  readonly revision: number;
+  readonly rowVersion: number;
+  readonly insert: MemoryChangePlan["inserts"][number];
+}): StorageRow {
+  const { insert } = input;
+  return {
+    agent_id: input.agentId,
+    memory_id: insert.memoryId,
+    row_version: input.rowVersion,
+    module_id: input.moduleId,
+    kind: insert.kind,
+    tier: insert.tier,
+    status: insert.status,
+    epistemic: insert.epistemic,
+    release_policy_id: insert.releasePolicyId,
+    valid_from_tick: insert.validFromTick,
+    valid_until_tick: insert.validUntilTick,
+    created_revision: input.revision,
+    retired_revision: null,
+    strength: insert.strength,
+    salience: insert.salience,
+    recall_count: insert.recallCount,
+    tags_json: [...insert.tags],
+    source_observation_ids_json: [...insert.sourceObservationIds],
+    content_json: {
+      summaryZh: insert.content.summaryZh,
+      counterpartIds: [...insert.content.counterpartIds],
+      data: insert.content.data,
+      _lastReinforcedTick: insert.lastReinforcedTick,
     },
   };
 }

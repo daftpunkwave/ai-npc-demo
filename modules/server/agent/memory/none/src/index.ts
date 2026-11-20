@@ -4,6 +4,4 @@
  * Exposes descriptor data without loading the implementation.
  * Must not retain state or expose a parallel runtime.
  */
-export const packageName = "@ai-npc/mod-agent-memory-none";
-
 export { memoryNoneModuleDefinition } from "./definition";

@@ -74,8 +74,7 @@ export function capacityRetirements(
     );
     const pending = inserts.filter((row) =>
       row.tier === tier &&
-      row.status === "active" &&
-      !retires.has(row.memoryId),
+      row.status === "active",
     );
     let overflow = existing.length + pending.length - config.capacity[tier];
     const candidates = [
