@@ -216,6 +216,8 @@ interface AppOverrides {
   readonly sessionAssembly?: { readonly client: ResolvedModuleSet; readonly console: ResolvedModuleSet };
   /** 覆盖名册权限配置，用于验证裁决确实来自装配的 provider。 */
   readonly accessPolicyConfig?: Json;
+  /** 收集传输层上报的内部错误；缺省保持静默。 */
+  readonly onInternalError?: (message: string, error: unknown) => void;
 }
 
 /** 用真实回执表构造只读查询端口；传输层不接触表结构。 */
@@ -282,6 +284,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     ],
     ids: (prefix: string) => harness.host.ids(prefix),
     tokens: (kind) => `${kind}-${randomUUID()}`,
+    ...(overrides.onInternalError === undefined ? {} : { onInternalError: overrides.onInternalError }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),
   });
   apps.push(app);
@@ -1291,6 +1294,65 @@ describe("服务端 API", () => {
     expect(await client.next()).toMatchObject({ type: "delta", channel: "player", streamSeq: 1 });
     client.send({ type: "subscribe", channel: "player", fromStreamSeq: 999 });
     expect(await client.next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 1 });
+  });
+
+  it("创建快照后向已订阅玩家推送投影变化", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+    client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+    expect(await client.next()).toMatchObject({ type: "snapshot", streamSeq: 0 });
+
+    const snapshot = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/snapshots",
+      headers: { authorization: `Bearer ${session}` },
+      payload: { operationId: "op-000000000051", label: "推送验证" },
+    });
+    expect(snapshot.statusCode).toBe(200);
+    // 快照在运行中会先暂停时钟；已订阅客户端应立即收到新的投影增量。
+    expect(await client.next()).toMatchObject({ type: "delta", channel: "player", streamSeq: 1 });
+  });
+
+  it("投影发布失败不抛给宿主，并经内部错误回调上报", async () => {
+    const value = await createTrackedGameHarness(active);
+    let fail = false;
+    const errors: string[] = [];
+    const app = await appFor(value, {
+      projection: () => {
+        if (fail) {
+          throw new Error("projection broken");
+        }
+        return projection(clockView(value));
+      },
+      onInternalError: (message) => errors.push(message),
+    });
+    fail = true;
+    expect(() => app.notifyWorldChanged()).not.toThrow();
+    expect(errors).toEqual(["投影发布失败"]);
+  });
+
+  it("未预期异常返回 500 并经内部错误回调上报", async () => {
+    const value = await createTrackedGameHarness(active);
+    const errors: string[] = [];
+    const app = await appFor(value, {
+      pause: () => {
+        throw new Error("injected failure");
+      },
+      onInternalError: (message) => errors.push(message),
+    });
+    const session = await login(app, "player-token");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/pause",
+      headers: { authorization: `Bearer ${session}` },
+      payload: { operationId: "op-000000000061", expectedRunVersion: 0 },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(errors).toContain("请求处理失败");
   });
 
   it("订阅后 delta 只携带变化顶层字段与版本号，未变化时为空", async () => {

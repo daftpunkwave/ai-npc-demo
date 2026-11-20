@@ -103,14 +103,15 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
   const restoreOperation = (
     operation: OperationRequest,
     restoreInput: RestoreInput,
-  ): { readonly branchId: string; readonly clock: ClockView } => {
+  ): { readonly branchId: string; readonly clock: ClockView; readonly applied?: boolean } => {
     const key = primitives.operationKeyFor("restore", operation.principalId, operation.operationId, {
       snapshotId: restoreInput.snapshotId,
       ...(restoreInput.runId === undefined ? {} : { runId: restoreInput.runId }),
     });
     const replayed = journal.replay(key, decodeBranchClockOutcome);
     if (replayed !== null) {
-      return replayed;
+      // 重放不切换分支：返回首次结果供调用方读取，同时标记本次没有应用切换。
+      return { ...replayed, applied: false };
     }
     try {
       const committed = storage.transact((tx) => {
@@ -144,7 +145,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 旧快照可能缺少 worldId 字段，保留兜底。
         active.worldId = committed.worldId ?? active.worldId;
       }
-      return committed.outcome;
+      return { ...committed.outcome, applied: committed.applied };
     } catch (error) {
       journal.recordFailure(key, error);
       throw error;
@@ -152,11 +153,16 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
   };
 
   /** 重开的幂等执行：重开前的快照与分支切换同事务，结果同事务写入。 */
-  const resetOperation = (operation: OperationRequest): { readonly branchId: string; readonly clock: ClockView } => {
+  const resetOperation = (operation: OperationRequest): {
+    readonly branchId: string;
+    readonly clock: ClockView;
+    readonly applied?: boolean;
+  } => {
     const key = primitives.operationKeyFor("reset", operation.principalId, operation.operationId, {});
     const replayed = journal.replay(key, decodeBranchClockOutcome);
     if (replayed !== null) {
-      return replayed;
+      // 重放不切换分支：返回首次结果供调用方读取，同时标记本次没有应用切换。
+      return { ...replayed, applied: false };
     }
     try {
       const online = storage.transact(readOnlineEntry);
@@ -182,7 +188,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
       if (committed.applied) {
         active.branchId = committed.outcome.branchId;
       }
-      return committed.outcome;
+      return { ...committed.outcome, applied: committed.applied };
     } catch (error) {
       journal.recordFailure(key, error);
       throw error;

@@ -25,6 +25,7 @@ export interface SnapshotRecord {
   readonly worldSeq: number;
   readonly worldTick: number;
   readonly label: string;
+  readonly createdBy: string;
   readonly createdAt: string;
 }
 
@@ -278,6 +279,7 @@ function snapshotRecordOf(row: StorageRow): SnapshotRecord {
     worldSeq: numberValue(row["world_seq"], "snapshots.world_seq"),
     worldTick: numberValue(row["world_tick"], "snapshots.world_tick"),
     label: stringValue(row["label"], "snapshots.label"),
+    createdBy: stringValue(row["created_by"], "snapshots.created_by"),
     createdAt: stringValue(row["created_at"], "snapshots.created_at"),
   };
 }
@@ -335,6 +337,7 @@ export class SqliteSaveService {
       worldSeq: maxWorldSeq(tx, input.sourceBranchId),
       worldTick: numberValue(clock["world_tick"], "clock.world_tick"),
       label: input.label,
+      createdBy: input.createdBy,
       createdAt: this.host.nowIso(),
     };
     tx.rows("snapshots").put({

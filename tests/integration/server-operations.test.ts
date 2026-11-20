@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { errorResponseSchema, type Json, type StorageCell } from "@ai-npc/contracts";
+import { errorResponseSchema, snapshotListResponseSchema, type Json, type StorageCell } from "@ai-npc/contracts";
 import { startHost, type RunningHost } from "@ai-npc/app-server";
 
 const hosts: RunningHost[] = [];
@@ -94,6 +94,24 @@ describe("运营操作幂等", () => {
     const secondSnapshotBody = secondSnapshot.json() as { readonly snapshotId: string };
     const afterSnapshots = ledger(host);
     expect(afterSnapshots.snapshots).toHaveLength(2);
+
+    // 列表响应必须满足公开的 SnapshotView 契约，包含天数与创建者。
+    const listed = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/campaign/snapshots",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(listed.statusCode).toBe(200);
+    const listedBody = snapshotListResponseSchema.parse(listed.json());
+    const listedFirst = listedBody.snapshots.find(
+      (snapshot) => snapshot.snapshotId === firstSnapshotBody.snapshotId,
+    );
+    expect(listedFirst).toMatchObject({
+      label: "幂等存档一",
+      worldTick: firstSnapshotBody.worldTick,
+      day: Math.floor(firstSnapshotBody.worldTick / 24) + 1,
+      createdBy: "player-1",
+    });
 
     // 快照重放返回同一 snapshotId，不再复制冻结分支。
     const snapshotReplay = await post(host, session, "/api/v1/campaign/snapshots", {
@@ -262,6 +280,74 @@ describe("运营操作幂等", () => {
 
     expect(ledger(second)).toEqual(afterRestore);
     expect(ledger(second).snapshots).toHaveLength(snapshotCount);
+  }, 30_000);
+
+  it("重放旧的分支切换操作不会把在线入口切回已归档分支", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const session = await loginSession(host, "player-token");
+
+    const snapshot = await post(host, session, "/api/v1/campaign/snapshots", {
+      operationId: "op-000000000041",
+      label: "旧分支回退点",
+    });
+    expect(snapshot.statusCode).toBe(200);
+    const snapshotId = (snapshot.json() as { readonly snapshotId: string }).snapshotId;
+
+    const restore = await post(host, session, "/api/v1/campaign/restore", {
+      operationId: "op-000000000042",
+      snapshotId,
+    });
+    expect(restore.statusCode).toBe(200);
+    const restoredBranchId = (restore.json() as { readonly branchId: string }).branchId;
+
+    const reset = await post(host, session, "/api/v1/campaign/reset", {
+      operationId: "op-000000000043",
+    });
+    expect(reset.statusCode).toBe(200);
+    expect((reset.json() as { readonly branchId: string }).branchId).not.toBe(restoredBranchId);
+
+    // 再恢复同一个快照，得到当前在线分支；旧的操作结果都已经不是在线入口。
+    const currentRestore = await post(host, session, "/api/v1/campaign/restore", {
+      operationId: "op-000000000044",
+      snapshotId,
+    });
+    expect(currentRestore.statusCode).toBe(200);
+    const currentBranchId = (currentRestore.json() as { readonly branchId: string }).branchId;
+
+    // 重放“重开”和“恢复”的旧 operationId：仍返回首次结果，但不得切回已归档分支。
+    const resetReplay = await post(host, session, "/api/v1/campaign/reset", {
+      operationId: "op-000000000043",
+    });
+    expect(resetReplay.statusCode).toBe(200);
+    expect((resetReplay.json() as { readonly branchId: string }).branchId).not.toBe(currentBranchId);
+
+    const restoreReplay = await post(host, session, "/api/v1/campaign/restore", {
+      operationId: "op-000000000042",
+      snapshotId,
+    });
+    expect(restoreReplay.statusCode).toBe(200);
+    expect((restoreReplay.json() as { readonly branchId: string }).branchId).toBe(restoredBranchId);
+
+    // 在线别名、宿主内存入口与会话视图都保持在最后一次真正切换的分支。
+    expect(ledger(host).alias).toBe(currentBranchId);
+    expect(host.branchId).toBe(currentBranchId);
+    const sessionView = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/session",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(sessionView.json()).toMatchObject({ branchId: currentBranchId });
+
+    // 后续命令仍落在当前在线分支，不会因旧重放指向已归档分支而被拒绝。
+    const started = await post(host, session, "/api/v1/commands", {
+      commandId: "cmd-000000000041",
+      type: "campaign.start",
+      schemaVersion: 1,
+      payload: { factionId: "human-neutral" },
+    });
+    expect(started.statusCode).toBe(200);
+    expect(started.json()).toMatchObject({ commandStatus: "accepted" });
   }, 30_000);
 
   it("时钟版本冲突按 DomainError 返回 409 并记录首次失败", async () => {

@@ -145,6 +145,9 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       ids: (prefix) => host.ids(prefix),
       tokens: (kind) => `${kind}-${randomUUID()}`,
       healthStatus: () => lifecycle.healthStatus(),
+      onInternalError: (message, error) => {
+        host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
+      },
     });
   } catch (error) {
     // 创建传输应用失败：先释放已启动模块，再释放存储；清理失败只记日志。
