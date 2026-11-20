@@ -3,36 +3,13 @@
  * 依赖玩家投影；不把日志、错误或控制台事件当作游戏提醒。
  * 禁止用渲染器本地计时器生成世界事实。
  */
-import { capabilityIdSchema, type CapabilityRef, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineBrowserModule } from "@ai-npc/client-sdk/define-browser-module";
-import { z } from "zod";
+import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
 
-const requirement: CapabilityRef = {
-  capability: capabilityIdSchema.parse("client.world-view"),
-  cardinality: "exactly-one",
-  instanceScope: "session",
-};
-
-const definition: ModuleDefinition = {
+export const notificationsModuleDefinition = defineBrowserModuleDefinition({
   id: "client.notifications.standard",
-  realm: "client",
   kind: "contributor",
-  version: "1.0.0",
-  apiVersion: "1",
-  instanceScope: "session",
-  provides: [
-    {
-      capability: capabilityIdSchema.parse("client.notifications"),
-      cardinality: "exactly-one",
-      instanceScope: "session",
-    },
-  ],
-  requires: [requirement],
-  requiresRemote: [],
-  configSchema: z.object({}).strict(),
-  defaults: {},
-  stateSchemaVersion: null,
-  migrationPaths: [],
+  provides: "client.notifications",
+  requires: ["client.world-view"],
   contributions: [
     {
       extensionId: "client.notifications.standard.toast",
@@ -44,6 +21,4 @@ const definition: ModuleDefinition = {
     const { createNotificationsModule } = await import("./plugin");
     return createNotificationsModule(input);
   },
-};
-
-export const notificationsModuleDefinition = defineBrowserModule(definition);
+});

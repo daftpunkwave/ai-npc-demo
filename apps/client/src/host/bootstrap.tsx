@@ -46,9 +46,9 @@ export function ClientBootstrap(): ReactNode {
     void (async () => {
       const api = new ApiClient();
       const token = takeHashToken();
-      if (token !== null) {
+      if (token) {
         await api.login(token);
-      } else if (api.token === null) {
+      } else if (!api.token) {
         throw new Error("缺少登录令牌。请使用服务端启动时打印的玩家登录地址。");
       }
       const session = await api.session();
@@ -103,7 +103,7 @@ export function ClientBootstrap(): ReactNode {
         contributions: ready.runtime.contributions,
         preferences: localPreferencePort(),
         reportContributionError: (cause, contribution) => {
-          console.error(`模块贡献 ${contribution.extensionId} 渲染失败`, cause);
+          console.error("模块贡献渲染失败", contribution.extensionId, cause);
         },
       }}
     >

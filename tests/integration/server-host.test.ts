@@ -555,6 +555,13 @@ describe("服务端宿主", () => {
     });
     expect(timeline.statusCode).toBe(200);
     expect(timeline.json()).toEqual({ events: [] });
+    const tooManyTimelineTypes = Array.from({ length: 21 }, (_, index) => `event.${index}`).join(",");
+    const invalidTimeline = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/timeline?types=${encodeURIComponent(tooManyTimelineTypes)}`,
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(invalidTimeline.statusCode).toBe(400);
     const agents = await host.app.inject({
       method: "GET",
       url: `/api/v1/console/agents?branchId=${host.branchId}`,

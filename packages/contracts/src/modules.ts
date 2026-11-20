@@ -151,6 +151,9 @@ export type AssemblyDescriptor = z.infer<typeof assemblyDescriptorSchema>;
 /** 严配置 schema：必须调用过 .strict() 的 Zod object，未知键解析即失败。 */
 export type StrictConfigSchema = z.ZodObject<z.core.$ZodShape, z.core.$strict>;
 
+/** 无配置模块共用的严格空 schema。 */
+export const emptyModuleConfigSchema: StrictConfigSchema = z.object({}).strict();
+
 /** 状态迁移路径：fromVersion 的状态经 migrate 变为 toVersion。 */
 export interface MigrationPath {
   readonly fromVersion: number;

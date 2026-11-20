@@ -3,33 +3,16 @@
  * 依赖远端观测与运营能力；不直接连接数据库或读取模型凭据。
  * 禁止把页面隐藏当作服务端授权，也不让评估角色进入运营视图。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineBrowserModule } from "@ai-npc/client-sdk/define-browser-module";
-import { z } from "zod";
+import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
 
-const definition: ModuleDefinition = {
+export const healthPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.health.standard",
-  realm: "console",
   kind: "contributor",
-  version: "1.0.0",
-  apiVersion: "1",
-  instanceScope: "session",
-  provides: [
-    {
-      capability: capabilityIdSchema.parse("console.health"),
-      cardinality: "exactly-one",
-      instanceScope: "session",
-    },
-  ],
-  requires: [],
+  provides: "console.health",
   requiresRemote: [
-    capabilityIdSchema.parse("platform.observability"),
-    capabilityIdSchema.parse("platform.operations"),
+    "platform.observability",
+    "platform.operations",
   ],
-  configSchema: z.object({}).strict(),
-  defaults: {},
-  stateSchemaVersion: null,
-  migrationPaths: [],
   contributions: [
     {
       extensionId: "console.health.standard.page",
@@ -42,6 +25,4 @@ const definition: ModuleDefinition = {
     const { createHealthPageModule } = await import("./plugin");
     return createHealthPageModule(input);
   },
-};
-
-export const healthPageModuleDefinition = defineBrowserModule(definition);
+});

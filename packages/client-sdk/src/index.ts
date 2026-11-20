@@ -34,4 +34,8 @@ export type {
   StartedBrowserModules,
 } from "./runtime";
 
-export { defineBrowserModule } from "./define-browser-module";
+export {
+  defineBrowserModule,
+  defineBrowserModuleDefinition,
+} from "./define-browser-module";
+export type { BrowserModuleDefinitionInput } from "./define-browser-module";

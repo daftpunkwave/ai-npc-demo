@@ -45,9 +45,9 @@ export function ConsoleBootstrap(): ReactNode {
     void (async () => {
       const api = new ApiClient();
       const token = takeHashToken();
-      if (token !== null) {
+      if (token) {
         await api.login(token);
-      } else if (api.token === null) {
+      } else if (!api.token) {
         throw new Error("缺少控制台登录令牌");
       }
       const session = await api.session();

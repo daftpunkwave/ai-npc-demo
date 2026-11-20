@@ -5,11 +5,78 @@
  */
 import {
   DomainError,
+  capabilityIdSchema,
+  emptyModuleConfigSchema,
   moduleIdSchema,
   moduleKindSchema,
   realmSchema,
+  type CapabilityRef,
+  type ContributionRef,
+  type Json,
   type ModuleDefinition,
+  type StrictConfigSchema,
 } from "@ai-npc/contracts";
+
+type BrowserRealm = Extract<ModuleDefinition["realm"], "client" | "console">;
+
+export interface BrowserModuleDefinitionInput {
+  readonly id: string;
+  readonly kind: ModuleDefinition["kind"];
+  readonly provides: string;
+  readonly requires?: readonly string[];
+  readonly requiresRemote?: readonly string[];
+  readonly configSchema?: StrictConfigSchema;
+  readonly defaults?: Json;
+  readonly contributions?: readonly ContributionRef[];
+  readonly create: ModuleDefinition["create"];
+}
+
+function browserRealm(id: string): BrowserRealm {
+  if (!moduleIdSchema.safeParse(id).success) {
+    throw new DomainError("assembly-incompatible", `浏览器模块 ID 不合法：${id}`);
+  }
+  if (id.startsWith("client.")) {
+    return "client";
+  }
+  if (id.startsWith("console.")) {
+    return "console";
+  }
+  throw new DomainError("realm-violation", `模块 ${id} 不能由浏览器宿主注册`);
+}
+
+function capabilityRef(capability: string): CapabilityRef {
+  return {
+    capability: capabilityIdSchema.parse(capability),
+    cardinality: "exactly-one",
+    instanceScope: "session",
+  };
+}
+
+export function defineBrowserModuleDefinition(
+  input: BrowserModuleDefinitionInput,
+): ModuleDefinition {
+  return defineBrowserModule({
+    id: input.id,
+    realm: browserRealm(input.id),
+    kind: input.kind,
+    version: "1.0.0",
+    apiVersion: "1",
+    instanceScope: "session",
+    provides: [capabilityRef(input.provides)],
+    requires: (input.requires ?? []).map(capabilityRef),
+    requiresRemote: (input.requiresRemote ?? []).map((capability) =>
+      capabilityIdSchema.parse(capability),
+    ),
+    configSchema: input.configSchema ?? emptyModuleConfigSchema,
+    defaults: input.defaults ?? {},
+    stateSchemaVersion: null,
+    migrationPaths: [],
+    ...(input.contributions === undefined
+      ? {}
+      : { contributions: input.contributions }),
+    create: input.create,
+  });
+}
 
 export function defineBrowserModule<T extends ModuleDefinition>(definition: T): T {
   if (!moduleIdSchema.safeParse(definition.id).success) {

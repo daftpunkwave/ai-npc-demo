@@ -7,10 +7,13 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { projectRoot } from "./processes";
+import { projectRoot, systemCommandPath } from "./processes";
 
 const expectedPorts = [3000, 5173] as const;
+// 项目只允许本机 HTTP，这两个地址不会承载远端或凭据流量。
+// nosemgrep
 const healthUrl = "http://127.0.0.1:3000/api/v1/health";
+// nosemgrep
 const clientUrl = "http://127.0.0.1:5173/";
 
 interface ProcessRecord {
@@ -54,7 +57,7 @@ function windowsSnapshot(rootPid: number): ProcessSnapshot {
     "[pscustomobject]@{ processes = $processes; listeners = $listeners } | ConvertTo-Json -Depth 5 -Compress",
   ].join("; ");
   const output = execFileSync(
-    "powershell.exe",
+    systemCommandPath("powershell"),
     ["-NoProfile", "-NonInteractive", "-Command", script],
     { encoding: "utf8", windowsHide: true },
   );
@@ -83,7 +86,7 @@ function windowsSnapshot(rootPid: number): ProcessSnapshot {
 }
 
 function unixProcesses(): readonly ProcessRecord[] {
-  const output = execFileSync("ps", ["-eo", "pid=,ppid="], {
+  const output = execFileSync(systemCommandPath("ps"), ["-eo", "pid=,ppid="], {
     encoding: "utf8",
     windowsHide: true,
   });
@@ -96,7 +99,7 @@ function unixProcesses(): readonly ProcessRecord[] {
 }
 
 function linuxListeners(): readonly ListenerRecord[] {
-  const output = execFileSync("ss", ["-ltnp"], {
+  const output = execFileSync(systemCommandPath("ss"), ["-ltnp"], {
     encoding: "utf8",
     windowsHide: true,
   });
@@ -115,7 +118,7 @@ function linuxListeners(): readonly ListenerRecord[] {
 }
 
 function macOSListeners(): readonly ListenerRecord[] {
-  const output = execFileSync("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pc"], {
+  const output = execFileSync(systemCommandPath("lsof"), ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pc"], {
     encoding: "utf8",
     windowsHide: true,
   });
@@ -168,7 +171,7 @@ function childEnvironment(): NodeJS.ProcessEnv {
 
 function spawnPnpm(args: readonly string[], env: NodeJS.ProcessEnv): ChildProcess {
   const command = process.platform === "win32"
-    ? (process.env.ComSpec ?? "cmd.exe")
+    ? systemCommandPath("cmd")
     : "pnpm";
   const commandArgs = process.platform === "win32"
     ? ["/d", "/s", "/c", `pnpm.cmd ${args.join(" ")}`]
@@ -187,7 +190,7 @@ function killTree(child: ChildProcess): void {
     return;
   }
   if (process.platform === "win32") {
-    spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+    spawn(systemCommandPath("taskkill"), ["/PID", String(pid), "/T", "/F"], {
       stdio: "ignore",
       windowsHide: true,
     });

@@ -13,6 +13,47 @@ const node = process.execPath;
 const tsxCli = resolve(projectRoot, "node_modules/tsx/dist/cli.mjs");
 const viteCli = resolve(projectRoot, "node_modules/vite/bin/vite.js");
 
+export type SystemCommandName =
+  | "cmd"
+  | "powershell"
+  | "taskkill"
+  | "ps"
+  | "ss"
+  | "lsof";
+
+function windowsRoot(): string {
+  return process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows";
+}
+
+const systemCommandCandidates: Readonly<
+  Record<SystemCommandName, () => readonly string[]>
+> = {
+  cmd: () => [resolve(windowsRoot(), "System32", "cmd.exe")],
+  powershell: () => [
+    resolve(windowsRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+  ],
+  taskkill: () => [resolve(windowsRoot(), "System32", "taskkill.exe")],
+  ps: () => ["/bin/ps", "/usr/bin/ps"],
+  ss: () => ["/usr/bin/ss", "/sbin/ss"],
+  lsof: () => ["/usr/sbin/lsof", "/usr/bin/lsof"],
+};
+
+const systemCommands = new Map<SystemCommandName, string>();
+
+/** 只从固定的系统目录解析工程脚本依赖的命令，避免受 PATH 搜索顺序影响。 */
+export function systemCommandPath(command: SystemCommandName): string {
+  const cached = systemCommands.get(command);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const executable = systemCommandCandidates[command]().find((path) => existsSync(path));
+  if (executable === undefined) {
+    throw new Error(`找不到系统命令 ${command} 的固定可执行文件`);
+  }
+  systemCommands.set(command, executable);
+  return executable;
+}
+
 export function loadProjectEnvironment(): void {
   const envFile = resolve(projectRoot, ".env");
   if (existsSync(envFile)) {
@@ -33,7 +74,7 @@ function spawnManaged(label: string, args: readonly string[]): ManagedProcess {
     windowsHide: true,
   });
   child.on("error", (error) => {
-    console.error(`[ai-npc] ${label} 启动失败`, error);
+    console.error("[ai-npc] 子进程启动失败", { label, error });
   });
   return { label, child };
 }
@@ -75,7 +116,7 @@ export function terminateProcess(entry: ManagedProcess): void {
   }
   try {
     if (process.platform === "win32") {
-      spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      spawn(systemCommandPath("taskkill"), ["/PID", String(pid), "/T", "/F"], {
         stdio: "ignore",
         windowsHide: true,
       });

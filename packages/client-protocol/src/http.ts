@@ -366,8 +366,8 @@ export function takeHashToken(): string | null {
     return null;
   }
   const params = new URLSearchParams(current.location.hash.replace(/^#/, ""));
-  const token = params.get("token");
-  if (token === null) {
+  const token = params.get("token") ?? "";
+  if (token.length === 0) {
     return null;
   }
   current.history.replaceState(null, "", `${current.location.pathname}${current.location.search}`);

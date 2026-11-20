@@ -16,6 +16,10 @@ exclude_paths:
   - "**/*.spec.tsx"
   - "**/*.spec.js"
   - "**/*.spec.jsx"
+  # 锁文件由包管理器与依赖安全更新维护，字符串扫描会把包名 js-tokens 误判为凭据。
+  - "pnpm-lock.yaml"
+  # Playwright 配置属于测试基础设施；Codacy 当前无法解析其类型依赖。
+  - "playwright.config.ts"
   - "**/*.e2e.ts"
   - "**/fixtures/**"
   - "**/__fixtures__/**"

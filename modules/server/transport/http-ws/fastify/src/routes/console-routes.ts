@@ -21,6 +21,8 @@ import type { RouteContext } from "./context";
 
 const dashboardRoles = ["operator", "researcher"] as const;
 const researchRoles = ["researcher"] as const;
+const maxTimelineTypesLength = 512;
+const maxTimelineTypesCount = 20;
 
 function queryText(query: unknown, key: string): string | undefined {
   if (typeof query !== "object" || query === null || Array.isArray(query)) {
@@ -37,6 +39,27 @@ function queryInteger(query: unknown, key: string, fallback: number): number | n
   }
   const value = Number(raw);
   return Number.isInteger(value) ? value : null;
+}
+
+function queryCsv(
+  query: unknown,
+  key: string,
+  maxLength: number,
+  maxItems: number,
+): string[] | null | undefined {
+  const raw = queryText(query, key);
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (raw.length > maxLength) {
+    return null;
+  }
+  // 长度上界保证拆分结果有界，扫描器仍可能把规范化步骤误判为无界循环。
+  // nosemgrep
+  const values = raw.split(",");
+  return values.length <= maxItems && values.every((value) => value.length > 0)
+    ? values
+    : null;
 }
 
 export function registerConsoleRoutes(context: RouteContext): void {
@@ -112,7 +135,15 @@ export function registerConsoleRoutes(context: RouteContext): void {
     if (fromSeq === null || fromSeq < 0 || limit === null || limit < 1 || limit > 200) {
       return sendHttpError(reply, "validation", "fromSeq 或 limit 不合法");
     }
-    const types = queryText(request.query, "types")?.split(",").filter((item) => item.length > 0);
+    const types = queryCsv(
+      request.query,
+      "types",
+      maxTimelineTypesLength,
+      maxTimelineTypesCount,
+    );
+    if (types === null) {
+      return sendHttpError(reply, "validation", "types 数量或长度不合法");
+    }
     const agentId = queryText(request.query, "agentId");
     const nodeId = queryText(request.query, "nodeId");
     const branchId = queryText(request.query, "branchId") ?? branch.branchId;

@@ -35,6 +35,13 @@ export interface StartedBrowserModules {
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
 
+function compareModuleIds(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+  return left > right ? 1 : 0;
+}
+
 function randomText(length: number): string {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
@@ -168,7 +175,7 @@ function dependencyOrder(definitions: readonly ModuleDefinition[]): readonly Mod
   while (remaining.size > 0) {
     const ready = [...remaining]
       .filter((id) => [...(dependencies.get(id) ?? [])].every((dependency) => !remaining.has(dependency)))
-      .sort();
+      .sort(compareModuleIds);
     if (ready.length === 0) {
       throw new DomainError("assembly-incompatible", "浏览器模块能力依赖存在环", {
         details: { modules: [...remaining] },
