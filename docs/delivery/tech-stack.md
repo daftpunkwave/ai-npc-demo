@@ -157,7 +157,7 @@ packages:
 
 上表是最终形态：S10 的 `dev` 仅启动 server/client，`build` 仅构建 client；S11 才加入 console 的 watch 构建、普通构建与静态资源挂载，S10 不引用 console 的 Vite 配置。`check:catalog` 扫描 `config/assemblies/*.yaml` 并通过组合根加载已存在的 server 模块目录；某 realm 的模块目录尚不存在时，只有全部待校验装配在该 realm 的 bindings 均为空才通过，非空即失败，不得捕获解析错误后跳过。
 
-每个脚本在实现它的那一步加入 `package.json`（见 [构建计划](build-plan.md) 第 0.2 节），不提前写占位脚本。`pnpm check` 的组成随步骤增长：S00 为 `pnpm typecheck && pnpm test && pnpm check:docs`；S03 起加入 `pnpm check:boundaries`；S09 起加入 `pnpm check:catalog`。它始终不包含 `test:e2e` 与 `check:ports`（这两项在要求它们的步骤里单独运行）。
+每个脚本在实现它的那一步加入 `package.json`（见 [构建计划](build-plan.md) 第 0.2 节），不提前写占位脚本。`pnpm check` 的组成随步骤增长：S00 为 `pnpm typecheck && pnpm test && pnpm check:docs`；S03 起加入 `pnpm check:boundaries`；S09 起加入 `pnpm check:catalog`；资产包入仓后加入 `pnpm check:assets`。它始终不包含 `test:e2e` 与 `check:ports`（这两项在要求它们的步骤里单独运行）。
 
 ## 5. 环境变量
 

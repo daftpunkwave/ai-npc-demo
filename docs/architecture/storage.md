@@ -19,9 +19,11 @@ PRAGMA busy_timeout = 5000;
 - 时间：`*_at` 列存 ISO-8601 UTC 字符串（来自宿主时钟端口）；游戏时间只用 `*_tick` 整数列。
 - 迁移：`modules/server/platform/storage/sqlite/migrations/NNNN_<name>.sql` 按编号顺序在启动时执行，已执行的版本记入 `schema_migrations`；迁移只追加，不修改已发布的迁移文件。
 
-## 2. 表结构（`0001_init.sql`）
+## 2. 表结构（`0001_init.sql` 与后续迁移）
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
+
+本节的 DDL 是 0001 的基线；后续迁移只追加结构与索引，不改既有表：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`。两份迁移的完整语句见 §2.1。
 
 ```sql
 -- ===== deployment scope =====
@@ -526,6 +528,35 @@ CREATE TABLE probe_results (
   invalid_reason TEXT,
   created_at TEXT NOT NULL
 );
+```
+
+### 2.1 后续迁移
+
+```sql
+-- 0002_operation-idempotency.sql
+-- 部署级表：主键不含 branch_id，不参与分支复制，在线别名切换与重启后仍然有效。
+CREATE TABLE IF NOT EXISTS operation_idempotency (
+  world_id TEXT NOT NULL,
+  principal_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
+  operation_kind TEXT NOT NULL CHECK (operation_kind IN ('pause', 'resume', 'snapshot', 'restore', 'reset')),
+  request_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed')),
+  result_json TEXT,
+  error_code TEXT,
+  error_retryable INTEGER NOT NULL DEFAULT 0,
+  error_safe_message TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (world_id, principal_id, operation_id)
+);
+
+CREATE INDEX IF NOT EXISTS operation_idempotency_kind
+  ON operation_idempotency (world_id, operation_kind, created_at);
+
+-- 0003_jobs-scheduled-index.sql
+-- 热路径只读最早到期的一条 scheduled job；部分索引避免已完成行留在索引里。
+DROP INDEX jobs_due;
+CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHERE status = 'scheduled';
 ```
 
 ## 3. 分支复制 `forkBranch`
