@@ -176,6 +176,7 @@ function characterViews(input: {
   readonly tick: number;
 }): CharacterView[] {
   const views: CharacterView[] = [];
+  const present = new Set<string>();
   for (const state of input.world.characters()) {
     const definition = input.content.characters.get(state.agentId);
     if (definition === undefined) {
@@ -191,6 +192,41 @@ function characterViews(input: {
       injuredUntilTick: state.injuredUntilTick,
       publicClaim: definition.values[0] ?? null,
     });
+    present.add(state.agentId);
+  }
+  if (input.world.campaign() !== null) {
+    for (const faction of input.content.factions.values()) {
+      if (present.has(faction.factionId) || faction.leaderName === undefined) {
+        continue;
+      }
+      const presentation = faction as typeof faction & {
+        readonly playerSeat?: string;
+        readonly persona?: {
+          readonly role?: string;
+          readonly values?: readonly string[];
+        };
+      };
+      if (presentation.playerSeat !== undefined) {
+        continue;
+      }
+      const nodeId =
+        faction.factionHomeNodeId ??
+        faction.outpostNodeId ??
+        faction.territoryNodeId;
+      if (nodeId === undefined) {
+        continue;
+      }
+      views.push({
+        agentId: faction.factionId as CharacterView["agentId"],
+        name: faction.leaderName,
+        factionId: faction.factionId,
+        role: presentation.persona?.role ?? `${faction.name}党魁`,
+        nodeId: nodeId as CharacterView["nodeId"],
+        injured: false,
+        injuredUntilTick: null,
+        publicClaim: presentation.persona?.values?.[0] ?? null,
+      });
+    }
   }
   return views.sort((left, right) => left.agentId.localeCompare(right.agentId));
 }

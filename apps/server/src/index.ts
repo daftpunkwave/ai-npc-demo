@@ -76,4 +76,9 @@ export type {
   StartupLogInput,
   TokenRole,
 } from "./config";
-export { serverModuleDefinitions } from "./host/module-catalog";
+export {
+  allModuleDefinitions,
+  browserModuleDefinitions,
+  clientRequiredCapabilities,
+  serverModuleDefinitions,
+} from "./host/module-catalog";

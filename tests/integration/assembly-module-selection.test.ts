@@ -91,7 +91,7 @@ describe("装配驱动的模块选择与启动", () => {
       const assembly = loadAssembly(ref);
       const resolved = await resolveServerAssembly(assembly, serverModuleDefinitions);
       expect(resolved.plan.assemblyId).toBe(ref);
-      expect(resolved.plan.modules).toHaveLength(14);
+      expect(resolved.plan.modules).toHaveLength(16);
       expect(resolved.modules.assemblyHash).toMatch(/^[0-9a-f]{64}$/);
       expect(resolved.modules.capabilities.some((capability) => capability.capability === "game.clock")).toBe(true);
     }
@@ -130,7 +130,7 @@ describe("装配驱动的模块选择与启动", () => {
       expect(runtime.contributors.map((contributor) => contributor.moduleId)).toContain("game.scenario.watergate");
       const clockPlan = startup.plan.modules.find((module) => module.moduleId === "game.clock.controlled");
       expect(clockPlan?.config).toMatchObject({ secondsPerTick: 20 });
-      expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(14);
+      expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(16);
     } finally {
       await started.started.dispose();
       await started.storageStarted.dispose();

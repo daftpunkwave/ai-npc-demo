@@ -21,6 +21,7 @@ const running = await startHost({
   ...(credentials.tokens.evaluator === undefined ? {} : { evaluatorToken: credentials.tokens.evaluator }),
   transportHost: config.serverHost,
   transportPort: config.serverPort,
+  clientPort: config.clientPort,
 });
 try {
   await running.listen();

@@ -5,6 +5,11 @@
  */
 /* eslint-disable no-unused-vars -- 本文件是传输层类型契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import type {
+  AgentsResponse,
+  AssemblyDetailResponse,
+  AssemblySource,
+  ConsoleHealthResponse,
+  ModulesResponse,
   AuthContext,
   ClockView,
   CommandEnvelope,
@@ -13,6 +18,8 @@ import type {
   PlayerProjection,
   ResolvedModuleSet,
   StartOption,
+  TimelineQuery,
+  TimelineResponse,
 } from "@ai-npc/contracts";
 import type { StreamSession, StreamStats } from "../stream-hub";
 
@@ -158,6 +165,27 @@ export interface ConversationReadPort {
   speakerName(principalId: string): string;
 }
 
+/** 控制台只读数据端口，由宿主把观测、目录和装配查询绑定在统一边界上。 */
+export interface ConsoleReadPort {
+  health(): ConsoleHealthResponse;
+  modules(realm?: "server" | "client" | "console"): ModulesResponse;
+  assemblies(): readonly { readonly assemblyId: string; readonly source: AssemblySource }[];
+  assembly(assemblyId: string): AssemblyDetailResponse;
+  timeline(query: TimelineQuery): TimelineResponse;
+  agents(branchId: string): AgentsResponse;
+}
+
+/** HTTP 适配器写入观测存储的最小跨度视图。 */
+export interface RecordSpanInput {
+  readonly spanId: string;
+  readonly traceId: string;
+  readonly name: string;
+  readonly status: "ok" | "error" | "skipped";
+  readonly startMs: number;
+  readonly endMs: number;
+  readonly attrs: Json;
+}
+
 export interface ServerAppOptions {
   readonly authority: AuthorityPort;
   /** 装配的权限端口；玩家、控制台与 WS 频道的裁决都经此端口。 */
@@ -177,6 +205,8 @@ export interface ServerAppOptions {
   readonly starts?: () => readonly StartOption[];
   /** 玩家会话读取端口；未接线时返回服务未就绪。 */
   readonly conversation?: ConversationReadPort;
+  /** 控制台首批只读页面；未接线时保留最小健康回退。 */
+  readonly console?: ConsoleReadPort;
   readonly projection: () => PlayerProjection;
   readonly clock: () => ClockView;
   readonly pause: ClockControlHook;
@@ -202,6 +232,10 @@ export interface ServerAppOptions {
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
   /** 认证、票据与过期判断使用的当前毫秒时间；默认 Date.now，测试可注入。 */
   readonly now?: () => number;
+  /** 已构建控制台静态资源目录；不存在时不注册 /console/* 页面。 */
+  readonly consoleStaticDir?: string;
+  /** 观测写入口；失败不得改变已经确定的 HTTP 响应。 */
+  readonly recordSpan?: (span: RecordSpanInput) => void;
 }
 
 /** 传输层测试与嵌入式调用使用的 HTTP 方法集合。 */

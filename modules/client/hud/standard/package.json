@@ -1,0 +1,17 @@
+{
+  "name": "@ai-npc/mod-client-hud-standard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./definition": "./src/definition.ts"
+  },
+  "dependencies": {
+    "@ai-npc/client-protocol": "workspace:*",
+    "@ai-npc/client-sdk": "workspace:*",
+    "@ai-npc/contracts": "workspace:*",
+    "react": "^19",
+    "zod": "^4"
+  }
+}

@@ -4,7 +4,7 @@
 
 ## 1. 通用约定
 
-当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送，以及第 5.1 节的精简控制台健康检查。交付顺序见 [build-plan.md — 控制台与玩家接口的实现步骤](../delivery/build-plan.md#03-控制台与玩家接口的实现步骤)。
+当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送与控制台健康/时间线推送，以及第 5.1 节的健康、模块目录、装配列表与装配详情。预检、草稿、其他控制台页面和各实验接口仍按目标状态后续交付。
 
 | 项 | 约定 |
 |---|---|
@@ -113,8 +113,8 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 频道 | 角色 | 推送内容 | 状态 |
 |---|---|---|---|
 | `player` | player | `PlayerProjection` 快照与增量；新对话行、提醒用 `append` | 已实现 |
-| `console.health` | operator、researcher | 每 2 秒一次健康摘要，结构与 [运行总览的目标响应](#51-运行总览与模块装配) 一致 | 目标 |
-| `console.timeline` | researcher | 新领域事件与生命周期事件的摘要（`append`） | 目标 |
+| `console.health` | operator、researcher | 每 2 秒一次健康摘要快照，结构与 [运行总览响应](#51-运行总览与模块装配) 一致 | 已实现 |
+| `console.timeline` | researcher | 订阅时和世界变化后推送时间线快照 | 已实现 |
 | `console.turns` | researcher | turn 状态变化（`append`） | 目标 |
 
 在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。
@@ -123,18 +123,18 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ## 5. 控制台 API（`/api/v1/console/*`）
 
-除下文标记为“部分实现”的健康检查外，本节接口均为目标。
+本节首批只读接口已实现，包括健康、模块目录、装配列表/详情、时间线与 Agent 状态摘要；预检、草稿、模型池、席位运营、剧情和调试接口仍为目标。
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按角色鉴权，当前响应为 `{ status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } }`。下表列出完整目标响应。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回两个端口、三个 realm、服务端装配 hash、各模块 ready 状态、当前时钟和无 Agent 运行时的队列摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /health`（部分实现） | operator、researcher | — | `{ ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning, maintenanceQueued, modelQueue }, laggingAgents, budgets, recentFailures }` |
-| `GET /modules?realm=` | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
-| `GET /assemblies` | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
-| `GET /assemblies/{assemblyId}` | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |
+| `GET /health`（已实现） | operator、researcher | — | `{ ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning, maintenanceQueued, modelQueue }, laggingAgents, budgets, recentFailures }` |
+| `GET /modules?realm=`（已实现） | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
+| `GET /assemblies`（已实现） | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
+| `GET /assemblies/{assemblyId}`（已实现） | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |
 | `POST /assemblies/preflight` | operator、researcher | `{ assembly: AssemblyDescriptor }` 或 `{ assemblyRef }` | `{ ok, errors: { code, moduleId?, capability?, message }[], resolved, diffAgainstCurrent }` |
 | `POST /assemblies/drafts` | operator | `{ assembly: AssemblyDescriptor }` | `{ assemblyId, version }`；保存到 `config_drafts`，只对新 run 生效 |
 

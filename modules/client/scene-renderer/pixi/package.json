@@ -1,0 +1,18 @@
+{
+  "name": "@ai-npc/mod-client-scene-renderer-pixi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./definition": "./src/definition.ts"
+  },
+  "dependencies": {
+    "@ai-npc/client-protocol": "workspace:*",
+    "@ai-npc/client-sdk": "workspace:*",
+    "@ai-npc/contracts": "workspace:*",
+    "pixi.js": "^8",
+    "react": "^19",
+    "zod": "^4"
+  }
+}

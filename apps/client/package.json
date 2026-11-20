@@ -1,0 +1,34 @@
+{
+  "name": "@ai-npc/app-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "preview": "vite preview --config vite.config.ts"
+  },
+  "dependencies": {
+    "@ai-npc/client-protocol": "workspace:*",
+    "@ai-npc/client-sdk": "workspace:*",
+    "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/mod-client-camera-standard": "workspace:*",
+    "@ai-npc/mod-client-characters-standard": "workspace:*",
+    "@ai-npc/mod-client-dialogue-standard": "workspace:*",
+    "@ai-npc/mod-client-faction-start-standard": "workspace:*",
+    "@ai-npc/mod-client-hud-standard": "workspace:*",
+    "@ai-npc/mod-client-input-standard": "workspace:*",
+    "@ai-npc/mod-client-notifications-standard": "workspace:*",
+    "@ai-npc/mod-client-scene-renderer-null": "workspace:*",
+    "@ai-npc/mod-client-scene-renderer-pixi": "workspace:*",
+    "@ai-npc/mod-client-screen-projection-isometric": "workspace:*",
+    "@ai-npc/mod-client-settings-standard": "workspace:*",
+    "@ai-npc/mod-client-world-view-standard": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "vite": "^8"
+  }
+}

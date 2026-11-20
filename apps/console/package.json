@@ -1,0 +1,24 @@
+{
+  "name": "@ai-npc/app-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config vite.config.ts",
+    "watch": "vite build --config vite.config.ts --watch"
+  },
+  "dependencies": {
+    "@ai-npc/client-protocol": "workspace:*",
+    "@ai-npc/client-sdk": "workspace:*",
+    "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/mod-console-health-standard": "workspace:*",
+    "@ai-npc/mod-console-module-admin-standard": "workspace:*",
+    "@ai-npc/mod-console-observability-standard": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "vite": "^8"
+  }
+}

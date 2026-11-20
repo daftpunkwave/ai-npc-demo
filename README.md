@@ -4,7 +4,7 @@
 
 > 完整游戏设计、Demo 切片范围与工程文档的权威链见 [docs/README.md — 文档导航](docs/README.md#1-三层结构与全局入口)。
 
-> 当前服务端可运行七日世界规则，提供玩家 HTTP/WS 与存档恢复。序章内容使用正式名册 `standard-15`、只开放公社开局、20 秒/tick；t168 评估后暂停时钟。公社党魁玩家可以设置水闸分配，并作为水闸条款的义务人。玩家客户端、控制台页面及 Agent 认知管线待交付。参见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](docs/IMPLEMENTATION-STATUS.md)、[build-plan.md — 构建进度](docs/delivery/build-plan.md#1-步骤总览)。
+> 当前 Demo 可在 `127.0.0.1:5173` 完成公社开局、查看授权投影、选择角色并提交对白；PixiJS 灰盒提供节点、道路与角色视图，设置和时钟操作走服务端接口。`127.0.0.1:3000/console/` 已提供运行总览、模块装配、世界时间线与 Agent 状态摘要，并保留玩家与控制台权限隔离。序章仍使用 `standard-15`、只开放公社开局、20 秒/tick，t168 评估后暂停。Agent 认知管线、t144 程序案、六资源交接和席位契约仍待交付。参见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](docs/IMPLEMENTATION-STATUS.md)、[build-plan.md — 构建进度](docs/delivery/build-plan.md#1-步骤总览)。
 
 ## 一眼看懂
 

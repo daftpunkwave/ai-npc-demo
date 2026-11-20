@@ -20,7 +20,11 @@ import {
 } from "@ai-npc/contracts";
 import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@ai-npc/kernel";
 import { REALM_NAMESPACES, validateModuleDefinition } from "@ai-npc/module-sdk";
-import { serverModuleDefinitions, serverRequiredCapabilities } from "./module-catalog";
+import {
+  allModuleDefinitions,
+  clientRequiredCapabilities,
+  serverRequiredCapabilities,
+} from "./module-catalog";
 
 /** 一条装配预检失败：文件、稳定代码与可直接定位的原因。 */
 export interface CatalogViolation {
@@ -218,7 +222,7 @@ function checkAssembly(
   assembly: AssemblyDescriptor,
   definitions: readonly ModuleDefinition[],
   definitionsById: ReadonlyMap<string, ModuleDefinition>,
-  requiredCapabilities: readonly CapabilityRef[],
+  requiredCapabilities: Readonly<Record<Realm, readonly CapabilityRef[]>>,
   violations: CatalogViolation[],
 ): void {
   const registry = createModuleRegistry();
@@ -238,7 +242,7 @@ function checkAssembly(
         assembly,
         realm,
         catalog: snapshot,
-        ...(realm === "server" ? { requiredCapabilities } : {}),
+        requiredCapabilities: requiredCapabilities[realm],
       });
       checkTopology(file, plan, violations);
     } catch (error) {
@@ -257,10 +261,19 @@ function checkAssembly(
 /** 读取目录下全部 YAML 装配并执行完整预检；违规累积返回，供 CLI 决定退出码。 */
 export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckReport {
   const root = resolve(options.root ?? process.cwd());
-  const definitions = options.definitions ?? serverModuleDefinitions;
-  const requiredCapabilities =
-    options.requiredCapabilities ??
-    (options.definitions === undefined ? serverRequiredCapabilities : []);
+  const definitions = options.definitions ?? allModuleDefinitions;
+  const requiredCapabilities: Readonly<Record<Realm, readonly CapabilityRef[]>> =
+    options.definitions === undefined
+      ? {
+          server: options.requiredCapabilities ?? serverRequiredCapabilities,
+          client: clientRequiredCapabilities,
+          console: [],
+        }
+      : {
+          server: options.requiredCapabilities ?? [],
+          client: [],
+          console: [],
+        };
   const violations: CatalogViolation[] = [];
   const definitionsById = checkDefinitions(definitions, violations);
   const directory = join(root, "config/assemblies");

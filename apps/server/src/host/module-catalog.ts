@@ -41,12 +41,35 @@ import {
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
 import {
+  observabilityModuleDefinition,
+  ObservabilityPort,
+} from "@ai-npc/mod-platform-observability-sqlite";
+import {
+  moduleAdminModuleDefinition,
+  ModuleAdminPort,
+} from "@ai-npc/mod-platform-module-admin-standard";
+import {
   transportModuleDefinition,
   transportConfigSchema,
   createServerApp,
   type TransportConfig,
   type TransportPort,
 } from "@ai-npc/mod-transport-http-ws-fastify";
+import { cameraModuleDefinition } from "@ai-npc/mod-client-camera-standard/definition";
+import { charactersModuleDefinition } from "@ai-npc/mod-client-characters-standard/definition";
+import { dialogueModuleDefinition } from "@ai-npc/mod-client-dialogue-standard/definition";
+import { factionStartModuleDefinition } from "@ai-npc/mod-client-faction-start-standard/definition";
+import { hudModuleDefinition } from "@ai-npc/mod-client-hud-standard/definition";
+import { inputModuleDefinition } from "@ai-npc/mod-client-input-standard/definition";
+import { notificationsModuleDefinition } from "@ai-npc/mod-client-notifications-standard/definition";
+import { nullSceneModuleDefinition } from "@ai-npc/mod-client-scene-renderer-null/definition";
+import { pixiSceneModuleDefinition } from "@ai-npc/mod-client-scene-renderer-pixi/definition";
+import { projectionModuleDefinition } from "@ai-npc/mod-client-screen-projection-isometric/definition";
+import { settingsModuleDefinition } from "@ai-npc/mod-client-settings-standard/definition";
+import { worldViewModuleDefinition } from "@ai-npc/mod-client-world-view-standard/definition";
+import { healthPageModuleDefinition } from "@ai-npc/mod-console-health-standard/definition";
+import { moduleAdminPageModuleDefinition } from "@ai-npc/mod-console-module-admin-standard/definition";
+import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
 
 export { toGameContent } from "./content-adapter";
 
@@ -96,7 +119,34 @@ export const serverModuleDefinitions = [
   accessPolicyModuleDefinition,
   secretsModuleDefinition,
   operationsModuleDefinition,
+  observabilityModuleDefinition,
+  moduleAdminModuleDefinition,
   transportModuleDefinition,
+] as const;
+
+/** 浏览器两端目录只含描述符；服务端不加载其 React/Pixi 实现。 */
+export const browserModuleDefinitions = [
+  worldViewModuleDefinition,
+  pixiSceneModuleDefinition,
+  nullSceneModuleDefinition,
+  cameraModuleDefinition,
+  projectionModuleDefinition,
+  inputModuleDefinition,
+  hudModuleDefinition,
+  dialogueModuleDefinition,
+  factionStartModuleDefinition,
+  charactersModuleDefinition,
+  settingsModuleDefinition,
+  notificationsModuleDefinition,
+  healthPageModuleDefinition,
+  moduleAdminPageModuleDefinition,
+  observabilityPageModuleDefinition,
+] as const;
+
+/** 完整三 realm 目录，供浏览器握手与控制台模块管理查询。 */
+export const allModuleDefinitions = [
+  ...serverModuleDefinitions,
+  ...browserModuleDefinitions,
 ] as const;
 
 function requiredCapability(capability: string, instanceScope: InstanceScope): CapabilityRef {
@@ -125,7 +175,21 @@ export const serverRequiredCapabilities: readonly CapabilityRef[] = [
   requiredCapability("platform.access-policy", "deployment"),
   requiredCapability("platform.secrets", "deployment"),
   requiredCapability("platform.operations", "run"),
+  requiredCapability("platform.observability", "deployment"),
+  requiredCapability("platform.module-admin", "deployment"),
   requiredCapability("transport.http-ws", "deployment"),
+];
+
+/** 玩家浏览器宿主必需能力；缺少任一实现时装配预检失败。 */
+export const clientRequiredCapabilities: readonly CapabilityRef[] = [
+  requiredCapability("client.world-view", "session"),
+  requiredCapability("client.scene-renderer", "session"),
+  requiredCapability("client.camera", "session"),
+  requiredCapability("client.screen-projection", "session"),
+  requiredCapability("client.input", "session"),
+  requiredCapability("client.hud", "session"),
+  requiredCapability("client.dialogue", "session"),
+  requiredCapability("client.faction-start", "session"),
 ];
 
 /**
@@ -166,6 +230,8 @@ export interface ServerRuntime {
   /** 装配声明的权限端口；宿主把它交给传输层裁决玩家、控制台与频道访问。 */
   readonly accessPolicy: AccessPolicyPort;
   readonly operations: OperationsFactory;
+  readonly observability: ObservabilityPort;
+  readonly moduleAdmin: ModuleAdminPort;
   readonly save: SqliteSaveService;
   readonly binder: ModuleBinder;
   readonly contributors: readonly GameRuleContributor<GameModulePorts, unknown>[];
@@ -288,6 +354,8 @@ export function createServerRuntime(input: {
     transport: portFor<TransportPort>(plan, instances, "transport.http-ws"),
     accessPolicy: portFor<AccessPolicyPort>(plan, instances, "platform.access-policy"),
     operations: portFor<OperationsFactory>(plan, instances, "platform.operations"),
+    observability: portFor<ObservabilityPort>(plan, instances, "platform.observability"),
+    moduleAdmin: portFor<ModuleAdminPort>(plan, instances, "platform.module-admin"),
     save: savePort.save,
     binder,
     contributors,

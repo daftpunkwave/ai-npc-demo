@@ -3,7 +3,7 @@
  * 依赖公共契约的投影类型、权限回调、注入时钟、会话注册表、重放缓冲与发送器。
  * 禁止无限保留过期会话、未消费票据或断线重放缓冲，也禁止在慢连接上堆积推送。
  */
-import type { PlayerProjection } from "@ai-npc/contracts";
+import type { Json, PlayerProjection, StreamChannel } from "@ai-npc/contracts";
 import { handleClientMessage } from "./client-messages";
 import { ReplayStore } from "./replay-store";
 import { SessionRegistry } from "./session-registry";
@@ -50,6 +50,7 @@ export class StreamHub {
   private generation = 0;
   private streamSeq = 0;
   private projectionVersion = 0;
+  private readonly consoleSequences = new Map<StreamChannel, number>();
   /** 上一份投影的顶层只读副本；用于识别新增对白与提醒。 */
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   private lastProjection: PlayerProjection | null;
@@ -86,6 +87,10 @@ export class StreamHub {
     this.sender = new SocketSender({
       projection: options.projection,
       sequence: () => ({ streamSeq: this.streamSeq, projectionVersion: this.projectionVersion }),
+      ...(options.channelSnapshot === undefined
+        ? {}
+        : { channelSnapshot: options.channelSnapshot }),
+      channelSequence: (channel) => this.consoleSequences.get(channel) ?? 0,
       maxBufferedBytes: limits.maxBufferedBytes,
     });
     const initial = options.projection();
@@ -267,6 +272,24 @@ export class StreamHub {
       }
     }
     return true;
+  }
+
+  /** 向指定控制台频道发布完整快照；每个频道使用独立序号。 */
+  publishConsole(channel: StreamChannel, data: Json): void {
+    if (this.closed || channel === playerChannel) {
+      return;
+    }
+    const streamSeq = (this.consoleSequences.get(channel) ?? 0) + 1;
+    this.consoleSequences.set(channel, streamSeq);
+    for (const connection of [...this.connections.values()]) {
+      if (!connection.subscriptions.has(channel)) {
+        continue;
+      }
+      if (this.sessions.activeSession(connection.sessionId) === null) {
+        continue;
+      }
+      this.sender.sendChannelSnapshot(connection, channel, data, streamSeq);
+    }
   }
 
   /**

@@ -2,7 +2,7 @@
 
 > **权威：** 目标表现是 **3D 斜俯视**，见 [design/gameplay/06-player-experience.md](../design/gameplay/06-player-experience.md) 与 [design/assets/02-modeling-spec.md](../design/assets/02-modeling-spec.md)。本文的 2.5D/PixiJS 是**序章灰盒**：验证交互、可读性与端口契约，不是最终渲染，也不作为美术验收。3D 渲染器必须实现同一个 `SceneRenderer` 端口，见第 5 节。
 
-> 目标设计。玩家访问 http://127.0.0.1:5173，世界权威、模型和后台管理在 http://127.0.0.1:3000。两个端口是固定的部署边界，详见 [双端口拓扑](two-endpoints.md)。客户端宿主与可替换功能的规则由本文维护，图形界面不是不可拆的游戏主体。控制台页面是同一套模块机制在 `console` realm 的另一个宿主，见 [模块目录](module-catalog.md)。
+> 状态：序章玩家宿主与前批模块已实现。玩家访问 http://127.0.0.1:5173，世界权威、模型和后台管理在 http://127.0.0.1:3000。当前交付覆盖登录、装配握手、授权投影、公社开局、PixiJS 灰盒、HUD、侧栏、对话、设置与通知；完整证据/提案/派遣工作流和正式 3D 资产仍待后续。两个端口是固定的部署边界，详见 [双端口拓扑](two-endpoints.md)。
 
 ## 1. 客户端宿主保留什么
 
