@@ -280,6 +280,8 @@ export const stockpileAdjustEffectSchema = z
     stockpileId: contentIdSchemas.sp,
     delta: resourceDeltaSchema,
     reason: z.string().min(1),
+    /** 为真时负向增量只扣可用量（`amount − reserved`），可用量为 0 时按空操作完成；缺省为整体成功或失败。 */
+    clampToAvailable: z.boolean().optional(),
   })
   .strict();
 

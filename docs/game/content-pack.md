@@ -25,7 +25,7 @@
 # pack.yaml
 schemaVersion: 1
 packId: earth-2964-v1
-contentVersion: "0.1.0"
+contentVersion: "0.1.1"
 defaultScenario: watergate-v1
 files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]
@@ -561,9 +561,9 @@ starts:
 
 ## 9. 序章剧情卡（scenarios/watergate-v1.yaml）
 
-剧情卡只能使用下列效果：`broadcast`（以某角色或来源的名义公开广播）、`message`（定向消息）、`rumor`（以 `reported` 渠道下发的公开声称）、`world-fact`（只读叙事事实事件，带受众）、`stockpile-adjust`（库存增减，原因写进事件）、`wake-agents`（提交 `AgentsSummoned` 事件，受众为列出的 Agent，感知后生成 `scenario` 类 trigger）。广播与消息以 `MessageSent` 提交（`channel` 为 broadcast 或 message，`intentKind = scenario`，按 [规则](rules.md) 第 9 节计算送达，剧情卡广播视为在 grayharbor 发布）。剧情卡不能修改指标或道路状态，也不能宣告胜负。
+剧情卡只能使用下列效果：`broadcast`（以某角色或来源的名义公开广播）、`message`（定向消息）、`rumor`（以 `reported` 渠道下发的公开声称）、`world-fact`（只读叙事事实事件，带受众）、`stockpile-adjust`（库存增减，原因写进事件；`clampToAvailable: true` 时负向增量只扣可用量）、`wake-agents`（提交 `AgentsSummoned` 事件，受众为列出的 Agent，感知后生成 `scenario` 类 trigger）。广播与消息以 `MessageSent` 提交（`channel` 为 broadcast 或 message，`intentKind = scenario`，按 [规则](rules.md) 第 9 节计算送达，剧情卡广播视为在 grayharbor 发布）。剧情卡不能修改指标或道路状态，也不能宣告胜负。
 
-定向消息的 `to` 使用实际收件人 ID。谷寻给公社党魁的来信投递给 `player-1`。仓储受潮卡的 `delta.supply` 表示损失上限，实际扣减与结算顺序见 [rules.md — 资源与库存](rules.md#3-资源与库存)。
+定向消息的 `to` 使用实际收件人 ID。谷寻给公社党魁的来信投递给 `player-1`。仓储受潮卡的 `delta.supply` 表示损失上限，实际扣减与结算顺序见 [rules.md — 资源与库存](rules.md#3-资源与库存)；该卡声明 `clampToAvailable: true`，负向增量按可用量结算，广播不写具体数量，实际损失以 `StockpileAdjusted` 记录为准。
 
 ```yaml
 schemaVersion: 1
@@ -607,8 +607,8 @@ cards:
     version: 1
     trigger: { atTick: 72 }
     effects:
-      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮 }
-      - { kind: broadcast, speakerId: npc-wenyuan, text: 仓库受潮，损失了 10 点供给。 }
+      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮, clampToAvailable: true }
+      - { kind: broadcast, speakerId: npc-wenyuan, text: 仓库受潮，库存需要重新清点。 }
   - cardId: card-migration-season
     version: 1
     trigger: { atTick: 96 }

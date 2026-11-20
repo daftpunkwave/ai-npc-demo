@@ -109,7 +109,7 @@ characters:
     factionId: human-neutral
     role: 物资官
     spawnNodeId: grayharbor
-    skills: [logistics]
+    skills: [transport]
     values: [公平透明, 对重复承诺敏感]
     speechStyle: 像念账本，喜欢列清单
     bottomLines: [账目不清不放行物资]

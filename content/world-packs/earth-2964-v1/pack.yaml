@@ -1,6 +1,6 @@
 schemaVersion: 1
 packId: earth-2964-v1
-contentVersion: "0.1.0"
+contentVersion: "0.1.1"
 defaultScenario: watergate-v1
 files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]

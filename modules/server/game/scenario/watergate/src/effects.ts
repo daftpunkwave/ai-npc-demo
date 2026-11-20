@@ -3,7 +3,7 @@
  * 依赖世界/地图/资源/通信端口、内容索引与 authority 事务；效果写入同一事务。
  * 禁止修改指标或道路状态（覆盖效果除外），也禁止调用模型生成正文。
  */
-import type { AudienceSpec, CardEffect, OverrideEffect } from "@ai-npc/contracts";
+import type { AudienceSpec, CardEffect, OverrideEffect, ResourceDelta, ResourceId } from "@ai-npc/contracts";
 import {
   principalsAudience,
   type GameContent,
@@ -52,9 +52,16 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
         [effect.audience],
       );
     } else if (effect.kind === "stockpile-adjust") {
+      // 只有显式声明 clampToAvailable 的调整按可用量扣减；其余调整保持整体成功或失败。
+      const delta = effect.clampToAvailable === true
+        ? clampToAvailable(ports["game.resources"], effect.stockpileId, effect.delta)
+        : effect.delta;
+      if (effect.clampToAvailable === true && isZeroDelta(delta)) {
+        continue;
+      }
       const result = ports["game.resources"].adjust({
         stockpileId: effect.stockpileId,
-        delta: effect.delta,
+        delta,
         reason: effect.reason,
       });
       if (!result.ok) {
@@ -70,6 +77,35 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
       );
     }
   }
+}
+
+/** 负向增量夹到可用量（amount − reserved）；正向增量与未声明的资源保持原样。 */
+function clampToAvailable(
+  resources: GameModulePorts["game.resources"],
+  stockpileId: string,
+  delta: ResourceDelta,
+): ResourceDelta {
+  // 缺少运行时状态时不能把可用量当成 0：那会让效果静默变成空操作。
+  if (resources.stockpile(stockpileId) === null) {
+    throw new DomainError("invalid-state", `剧情卡引用的库存点 ${stockpileId} 没有运行时状态`, {
+      details: { stockpileId },
+    });
+  }
+  const clamp = (value: number | undefined, resource: ResourceId): number | undefined =>
+    value === undefined || value >= 0 ? value : Math.max(value, -resources.available(stockpileId, resource));
+  const supply = clamp(delta.supply, "supply");
+  const energy = clamp(delta.energy, "energy");
+  const medical = clamp(delta.medical, "medical");
+  return {
+    ...(supply === undefined ? {} : { supply }),
+    ...(energy === undefined ? {} : { energy }),
+    ...(medical === undefined ? {} : { medical }),
+  };
+}
+
+/** 三资源增量是否全为零；用于跳过被夹到空操作的调整。 */
+function isZeroDelta(delta: ResourceDelta): boolean {
+  return (delta.supply ?? 0) === 0 && (delta.energy ?? 0) === 0 && (delta.medical ?? 0) === 0;
 }
 
 /** 应用覆盖效果；额外允许直接设置指标与道路状态。 */

@@ -16,7 +16,7 @@ cards:
     trigger: { atTick: 26 }
     effects:
       - { kind: broadcast, speakerId: npc-qingzhi, text: 果园的水只够几天了。根庭请求水闸轮换供水。 }
-      - { kind: message, from: npc-guxun, to: [human-neutral], text: 请考虑轮换供水。渗漏的事我还在查。 }
+      - { kind: message, from: npc-guxun, to: [player-1], text: 请考虑轮换供水。渗漏的事我还在查。 }
   - cardId: card-repair-exchange
     version: 1
     trigger: { atTick: 30 }
@@ -39,8 +39,8 @@ cards:
     version: 1
     trigger: { atTick: 72 }
     effects:
-      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮 }
-      - { kind: broadcast, speakerId: npc-wenyuan, text: 仓库受潮，损失了 10 点供给。 }
+      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮, clampToAvailable: true }
+      - { kind: broadcast, speakerId: npc-wenyuan, text: 仓库受潮，库存需要重新清点。 }
   - cardId: card-migration-season
     version: 1
     trigger: { atTick: 96 }

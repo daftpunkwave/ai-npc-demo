@@ -172,7 +172,7 @@ perception:
 | 4 | `ProbeAsked`（只在 sandbox 分支） | `probe` | reported | 0.6 | full | — |
 | 5 | `MessageSent` channel broadcast | `broadcast` | reported | 0.7 | full | broadcast |
 | 6 | `RumorSpread` | `rumor` | reported | 0.3 | full | broadcast |
-| 7 | 官方公开通报：`MetersChanged`、`PolicyChanged`、`PassageGranted`、`DayPassed`、危机事件、`Group*`、`CharacterMoved`、`TeamMoved`、`CampaignStarted`、`ChapterStageEvaluated` | `public-notice` | witnessed | 1.0 | full | broadcast |
+| 7 | 官方公开通报：`MetersChanged`、`PolicyChanged`、`PassageGranted`、`DayPassed`、危机事件、`Group*`、`CharacterMoved`、`TeamMoved`、`CampaignStarted`、`MotionDecided`、`ChapterStageEvaluated` | `public-notice` | witnessed | 1.0 | full | broadcast |
 | 8 | 自己是事件主体：自己发出的命令产生的事件、自己受伤、`AgentsSummoned` 点名自己 | `self` | witnessed | 1.0 | full | — |
 | 9 | 其余 `principals` 受众中有自己（协议、邀请、任务、委托等正式通知） | `party` | witnessed | 1.0 | full | — |
 | 10 | `node` 受众，自己当时在该节点 | `on-site` | witnessed | 1.0 | summary | — |
