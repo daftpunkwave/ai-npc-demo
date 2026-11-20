@@ -4,7 +4,7 @@
  * 禁止修补缺失引用、跳过错误或在该文件中构建索引。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
-import { isSignatureOnlyPrincipal } from "@ai-npc/contracts";
+import { isSignatureOnlyPrincipal, sourceIdSchema } from "@ai-npc/contracts";
 import type {
   ContentCard,
   ContentCharacters,
@@ -288,8 +288,10 @@ export function checkStarts(
   }
 }
 
-/** 剧情卡广播允许署名角色或非 Agent 来源。 */
-const sourceIdPattern = /^src-[a-z0-9-]+$/;
+/** 剧情卡广播允许非 Agent 来源时，来源 ID 必须符合公共契约的 `src-` 形态。 */
+function isSourceId(value: string): boolean {
+  return sourceIdSchema.safeParse(value).success;
+}
 
 /**
  * 判断广播署名或消息来源是已登记主体还是 signature-only 署名。
@@ -320,7 +322,7 @@ export function checkScenario(
     const path = `cards.${cardIndex}.effects.${effectIndex}`;
     switch (effect.kind) {
       case "broadcast":
-        if (!isKnownOrSignature(principalIds, effect.speakerId) && !sourceIdPattern.test(effect.speakerId)) {
+        if (!isKnownOrSignature(principalIds, effect.speakerId) && !isSourceId(effect.speakerId)) {
           fail(file, `${path}.speakerId`, `广播署名「${effect.speakerId}」不存在`);
         }
         break;
