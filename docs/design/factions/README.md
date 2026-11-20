@@ -11,6 +11,19 @@
 | 上场 Agent | 本派 8 人 + 其余四派党魁 + 三外域各 1 人 | 15 | 交谈、议事、外务、挖角、袭击、背叛 |
 | 名册人物 | 五派各 8 人 + 三外域 3 人 | 43 | 创作池；每局只实例化 15 人 |
 
+### 各派系详情
+
+| 派系 | 类型 | 详情 |
+|---|---|---|
+| 灰港公社 | 人类 | [grayharbor-commons.md](grayharbor-commons.md) |
+| 砾火同盟 | 人类 | [rubble-league.md](rubble-league.md) |
+| 地生共约 | 人类 | [earth-alliance.md](earth-alliance.md) |
+| 止戈议团 | 人类 | [truce-council.md](truce-council.md) |
+| 远星协进会 | 人类 | [alien-accord.md](alien-accord.md) |
+| 巡裔 | 外域 | [fauna.md](fauna.md) |
+| 根庭 | 外域 | [flora.md](flora.md) |
+| 泊星者 | 外域 | [extraterrestrial.md](extraterrestrial.md) |
+
 ## 五张桌子，五票
 
 | 派系 | 党魁（AI 时） | 票 | 开局支持 | 一句话 | 基石 |

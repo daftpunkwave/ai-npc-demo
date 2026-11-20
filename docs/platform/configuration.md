@@ -132,6 +132,8 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找，找不到再查控制台保存的草稿（`config_drafts`）。`env:NAME` 形式的值在预检时从环境变量解析。
 
+> **状态：** 本节是首版完成（构建计划 S24）时的目标内容。当前 `config/assemblies/` 有 `local-slg-standard-v1`、`local-slg-test-v1` 与 `local-slg-escalating-v1`（`game.scenario` 替换演示）；标准装配目前只有服务端首批 14 个绑定，之后按 [构建计划](../delivery/build-plan.md) 第 0.2 节逐步追加，另两份替换装配随 S24 交付。
+
 ### 10.1 装配 `config/assemblies/local-slg-standard-v1.yaml`
 
 ```yaml

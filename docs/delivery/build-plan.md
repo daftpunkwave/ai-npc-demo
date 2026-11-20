@@ -44,6 +44,8 @@ Step SNN <title>
 | S22 | — | `config/presets/*.yaml` | console：scenario-editor、audit |
 | S24 | — | 三份替换装配 | client：`client.hud.compact`、console：`console.observability.lite` 只出现在替换装配里 |
 
+`pnpm check:assets` 随资产包入仓加入 `check`，不占构建步骤；它校验 `assets/manifest.json` 与内容包的节点、派系覆盖。
+
 装配没有 `agentSlots` 时，服务端宿主不启动 Agent 运行时，也不解析名册里的 `profileRef`/`toolsetRef` 与 RunSpec 的 `modelLayoutRef`（S09–S15 的在线世界没有 NPC 行动）。有 `agentSlots` 时解析 profile/toolset；仅绑定 `agent.model-pool` 时才解析、校验 RunSpec 的 `modelLayoutRef`（S16 虽有 `agentSlots`，仍不读取尚不存在的模型布局文件）。有 `agentSlots` 时，`agent.scheduling` 与 `agent.tools` 成为必需能力；`agentSlots` 中各模块声明的 `requires`（例如 `agent.decision.model` 需要 `agent.model-pool`）也纳入能力闭包检查。
 
 S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-default.yaml`）须在 `variant.profilePatchRefs` 末尾追加 `decision-deterministic`，测试模型路径的 RunSpec 则显式移除该 patch、选择测试装配与 `deterministic-model-layout-v1`。profile 合并后再检查所选槽是否在装配白名单中：标准最终为 deterministic，测试最终为 model，二者都可运行；不得让标准装配依赖尚未实现的真实 transport。S18 标准装配具备 pool/transport 后移除这一过渡 patch、选择真实布局。
@@ -259,7 +261,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 
 ## 8. 完整首版（切片 C）
 
-### S22 二十个身份与运营功能
+### S22 十五个身份与运营功能
 
 - **先读**：[角色册](../game/characters.md)、[玩法](../game/gameplay.md)、[运营](../platform/operations.md) 全文、[两个端口](../architecture/two-endpoints.md) 第 10 节、本文 0.3 节 S22 行。
 - **产出**：`standard-15` 名册的完整运行（8 名公社支持者、4 名 AI 党魁、3 名外域；`human-neutral` 是玩家席位，不创建 AI 党魁；伊诺使用 `character-broadcaster`）；公社单席可选；0.3 节分配给 S22 的路由；`console.faction-ops.standard` 的席位接管、席位视图、席位命令与运行申请审批；`console.scenario-editor.standard`；`console.audit.standard`；客户端设置里的测试 preset 申请；`platform.operations.standard` 的接管 epoch、租约续期与过期处理；`config/presets/*.yaml`。

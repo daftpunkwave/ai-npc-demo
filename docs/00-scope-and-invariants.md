@@ -1,6 +1,6 @@
 # 序章切片范围与全局不变量
 
-> **权威链（2026-11-20）：** 游戏设计以 [design/README.md](design/README.md)（即根目录 `game-design.thc/`）为唯一权威；本文定义 **Demo 序章切片** 的实现范围与工程不变量；架构、Agent、平台与交付文档只解释“怎么实现”，不另立游戏规则。
+> **权威链（2026-11-20）：** 本仓库文档自包含。游戏设计以 [design/README.md](design/README.md) 为唯一权威；本文定义 **Demo 序章切片** 的实现范围与工程不变量；架构、Agent、平台与交付文档只解释“怎么实现”，不另立游戏规则。
 > 三者冲突时：设计 > 本文 > 工程文档。发现冲突先改拥有该规范的文档，再同步引用；不能在代码里悄悄选择另一套语义。
 > 当前实现与本文的差距单独记在 [实现状态](IMPLEMENTATION-STATUS.md)，它是迁移清单，不是第二套规则。
 
@@ -16,7 +16,7 @@
 | 切片终点 | t168 评估后**切片结束**；设计上此刻进入第 1 季第 2 周，开放世界不在本切片内 | [序章](design/gameplay/05-chapter.md) |
 | 世界 | 一个共享世界观版本；一个正式世界状态，实验在隔离分支运行 | [设定速查表](design/world/canon.md) |
 | 派系 | 五个人类派系同城共治；本切片只开放公社席，其余四席由 AI 党魁运行 | [派系索引](design/factions/README.md) |
-| Agent | 每局 **15 个**：本派 8 名支持者 + 4 名 AI 党魁 + 3 名外域 Agent | [四十人名册](design/characters/roster.md) |
+| Agent | 每局 **15 个**：本派 8 名支持者 + 4 名 AI 党魁 + 3 名外域 Agent | [43 具名身份名册](design/characters/roster.md) |
 | NPC 名册 | 43 个具名身份（40 人类 + 3 外域）；15 个上场，28 个以简报、传闻、证人、替补出现 | [名册](design/characters/roster.md) |
 | 时间 | 1 tick = 1 游戏小时；**20 秒/tick**；1 日 8 分钟；序章七日约 56 分钟 | [速查表](design/world/canon.md) |
 | 地图 | 序章加载近城 **6 节点、9 条路**；外域 7 节点、7 条路在 t168 后启用 | [灰港地图](design/world/grayharbor.md) |

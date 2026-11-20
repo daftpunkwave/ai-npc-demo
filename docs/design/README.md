@@ -2,10 +2,9 @@
 
 *The Hearth Council*
 
-> **本目录是根目录 `game-design.thc/` 并入 Demo 文档树后的权威入口（2026-11-20）。**
-> 与 `docs/` 其他文档冲突时，以本目录（即 `game-design.thc` 的内容）为准；若本目录与根目录 `game-design.thc/` 不一致，以根目录为准并重新同步。
+> **权威：本目录是《炉边议会》设计文档在仓库内的唯一权威（2026-11-20）。** 与 `docs/` 其他文档冲突时以本目录为准；本目录自包含，不依赖也不镜像仓库外的设计稿。
 > `docs/game/` 与 [`00-scope-and-invariants.md`](../00-scope-and-invariants.md) 是 **序章切片规格**（7 日、15 Agent、6 资源中的 3 种、近城 6 节点、20 秒/tick；3D 为目标、2.5D 为灰盒）。它不另立规则，只描述本切片实现。
-> 迁移关系与主要差异见 [MIGRATION.md](MIGRATION.md)。
+> 目录组织、三层结构与维护规则见 [STRUCTURE.md](STRUCTURE.md)。
 
 《炉边议会》是一款 3D 斜俯视的开放世界经营策略游戏（SLG）：**单人长局为主，设计上支持 1–5 人同城共治**。长冬之后，人类只剩少数靠中继炉供暖与通信的聚居地。灰港是其中之一：一座城里住着五个互相不服的派系，城外还有三个各有算盘的非人阵营。玩家不是市长，也不是全人类的主人，而是五派之一的**党魁**——手里一票、身边八个人、一张必须自己凑出来的票数。
 
@@ -25,7 +24,7 @@
 | 风隙牧道、暖谷根庭与降落锚区 | [外域与中立遗址](world/frontier.md) |
 | 四方怎么生活、计量、投票与交战 | [世界观与日常](world/societies.md) |
 | 五个人类派系争什么、三外域要什么 | [四阵营与五派系](factions/README.md) |
-| 15 个上场 Agent 与 40 人名册 | [人物索引](characters/README.md) · [名册](characters/roster.md) |
+| 15 个上场 Agent 与 43 具名身份 | [人物索引](characters/README.md) · [名册](characters/roster.md) |
 | 多人怎么坐、怎么等、怎么缺席 | [多人总纲](multiplayer/README.md) |
 | 需要哪些资产、多少、什么标准 | [资产总纲](assets/README.md) |
 

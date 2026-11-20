@@ -124,6 +124,8 @@ flowchart LR
 
 命令、脚本与本地拓扑的实现方式见 [技术栈](../delivery/tech-stack.md) 第 4、6 节。要点：
 
+> **状态：** 下表是目标命令。`pnpm dev` / `pnpm build` / `pnpm start` / `pnpm test:e2e` 按构建计划 S10 交付，`pnpm check:ports` 按 S12 交付；当前仓库只有 `pnpm dev:server`。
+
 | 命令 | 行为 |
 |---|---|
 | `pnpm dev` | 服务端（`:3000`）+ 客户端 Vite dev server（`:5173`，HMR 复用该端口）+ 控制台 `vite build --watch`（不监听端口） |

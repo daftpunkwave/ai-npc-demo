@@ -1,6 +1,6 @@
 # 目标代码目录与扩展工作流
 
-> 状态：目标代码结构，不代表这些运行模块已经存在。当前交付仍是设计文档；依赖版本、构建命令和性能指标在实现时验证并锁定。模块职责见 [模块边界](modules.md)，目录清单见 [模块目录](module-catalog.md)，装配语义见 [积木组合](composition.md)。
+> 状态：目标代码结构。`apps/server`、`modules/` 与 `packages/` 已按此结构交付首批实现；`apps/client`、`apps/console` 与 `modules/client|console` 尚未创建。依赖版本、构建命令和性能指标在实现时验证并锁定。模块职责见 [模块边界](modules.md)，目录清单见 [模块目录](module-catalog.md)，装配语义见 [积木组合](composition.md)。
 
 ## 1. 目录树
 

@@ -11,6 +11,7 @@
 | 文档 | 负责内容 |
 |---|---|
 | [background.md — 世界背景（序章摘要）](background.md) | 灰港、五派与三外域；完整版见 [design/world/](../design/world/background.md) |
+| [art-direction.md — 表现与资产方向](art-direction.md) | 表现形式、资产清单与使用规则 |
 | [gameplay.md — 玩家循环（党魁视角）](gameplay.md) | 序章七日、九张卡、三条路线、t144 表决；设计依据 [design/gameplay/05-chapter.md](../design/gameplay/05-chapter.md) |
 | [characters.md — 15 个上场身份](characters.md) | 8 支持者 + 4 AI 党魁 + 3 外域；完整 43 人名册见 [design/characters/roster.md](../design/characters/roster.md) |
 | [systems.md — 职能边界](systems.md) | 游戏模块的职责划分与可替换边界 |

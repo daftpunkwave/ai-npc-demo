@@ -8,13 +8,13 @@
 
 以下是实际查阅的来源与采用方式，不将参考工程的能力等同于本项目已实现能力。
 
-### 项目现有记忆资料
+### 记忆分层设计
 
-父项目的记忆设计资料（`game-agent/design/memory/last-light-memory-design.md`）和研究汇编（`game-agent/research/agent-memory.md`）位于本仓库之外，属于设计资料，没有运行中的 memory 模块。本仓库已把实现所需的部分（L1–L6 分层、显著度门控、容量、衰减、检索打分、引用才强化）改写进 [记忆](../agent/memory.md) 第 3、11 节，不依赖这两份外部文件。本方案继承其“规则写事实、LLM 写理解”、L0 到 L6 分类、来源链、知情边界和后台整理。
+记忆设计的分层思路（L0 世界事件日志、L1 episodic、L2 relation、L3 belief、L4 prospective、L5 core、L6 public）、显著度门控、容量、衰减、检索打分与「引用才强化」都写在[记忆](../agent/memory.md) 第 3、11 节，本仓库文档是唯一依据。
 
-本轮做了场景适配：隔离键从玩家/王国/居民改为 world/branch/agent；世界合同与主观承诺分开；规则只保留 authority，memory 对 policy 的输入显式可调；审计历史不随角色遗忘删除。旧稿的价格、容量、成本结论和商业化内容不作为本 demo 的依据。
+规则写事实、LLM 写理解；L0 到 L6 分类、来源链、知情边界和后台整理都在该文定义，不引自仓库外资料。
 
-父项目资料不随本仓库分发，也不是运行或实现依赖。
+场景适配在本仓库完成：隔离键为 world/branch/agent；世界合同与主观承诺分开；规则只保留 authority，memory 对 policy 的输入显式可调；审计历史不随角色遗忘删除。
 
 ### agent-prism
 
