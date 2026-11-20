@@ -1,0 +1,21 @@
+schemaVersion: 1
+rosterId: standard-15
+agents:
+  # 4 名 AI 党魁：agentId 与 factionId 相同
+  - { agentId: human-independent,        kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-earth-alliance,     kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-pacifist,           kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: human-alien-accord,       kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  # 3 名外域 Agent：不是席位
+  - { agentId: species-fauna,            kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: species-flora,            kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  - { agentId: species-extraterrestrial, kind: strategic, profileRef: agent-strategic-default, toolsetRef: strategic-default }
+  # 8 名公社支持者
+  - { agentId: npc-wenzhao, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-yinuo,   kind: character, profileRef: agent-character-default, toolsetRef: character-broadcaster }
+  - { agentId: npc-wenyuan, kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-taoan,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-muzhi,   kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-luchen,  kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-ahe,     kind: character, profileRef: agent-character-default, toolsetRef: character-default }
+  - { agentId: npc-qilu,    kind: character, profileRef: agent-character-default, toolsetRef: character-default }

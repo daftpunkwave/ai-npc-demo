@@ -100,7 +100,7 @@ export interface HostCore {
 const defaultPackId = "earth-2964-v1";
 const defaultRunSpecRef = "online-default";
 const defaultAssemblyRef = "local-slg-standard-v1";
-const defaultRosterRef = "standard-20";
+const defaultRosterRef = "standard-15";
 
 /** 打开并启动宿主核心；调用方负责之后的传输装配与端口监听。 */
 export async function createHostCore(options: HostOptions): Promise<HostCore> {

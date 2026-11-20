@@ -20,6 +20,7 @@ import {
 import { runChapterEvaluation, runDailySettlement } from "./settlement";
 import { campaignAggregateId, metersAggregateId } from "./port";
 import {
+  campaignStateSchema,
   characterStateSchema,
   readWorldState,
   teamStateSchema,
@@ -41,6 +42,9 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
   const start = content.starts.get(factionId);
   if (faction === undefined || faction.kind !== "human" || start === undefined) {
     return { kind: "rejected", reasonCode: "unknown-faction", safeMessage: "未知的人类派系开局" };
+  }
+  if (start.enabled === false) {
+    return { kind: "rejected", reasonCode: "unknown-faction", safeMessage: "该派系开局未开放" };
   }
   if (context.tx.get<unknown>("campaign", campaignAggregateId) !== null) {
     return { kind: "rejected", reasonCode: "campaign-exists", safeMessage: "当前分支已经存在 campaign" };
@@ -149,13 +153,29 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
   return { kind: "accepted", result: { campaignId } };
 }
 
+/**
+ * 判断当前主体是否掌握公社水闸政策：AI 公社党魁直接以其派系 ID 行动，
+ * 玩家则按已开局 campaign 的 playerId 与 factionId 裁决，不信任命令自报身份。
+ */
+function controlsWatergate(context: WorldContext, principalId: string): boolean {
+  if (principalId === "human-neutral") {
+    return true;
+  }
+  const record = readWorldState(context.tx, "campaign", campaignAggregateId, campaignStateSchema);
+  return (
+    record !== null &&
+    record.state.playerId === context.auth.principalId &&
+    record.state.factionId === "human-neutral"
+  );
+}
+
 function policySet(context: WorldContext, payload: Json): HandlerResult {
   const input = payload as { readonly key: string; readonly value: string };
   const principalId = effectivePrincipalId(context.auth);
   const ports = asPorts(context);
   if (input.key === "watergate.allocation") {
-    if (principalId !== "human-neutral") {
-      return { kind: "rejected", reasonCode: "no-authority", safeMessage: "只有灰港公社可以修改水闸分配" };
+    if (!controlsWatergate(context, principalId)) {
+      return { kind: "rejected", reasonCode: "no-authority", safeMessage: "只有占公社席的党魁可以修改水闸分配" };
     }
     const allocation = watergateAllocationSchema.safeParse(input.value);
     if (!allocation.success) {
@@ -287,9 +307,7 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
       {
         stepId: "world.chapter-evaluation",
         when: (tick) => tick > 0,
-        handler: (context) => {
-          runChapterEvaluation(context as WorldContext, chapterLengthTicks);
-        },
+        handler: (context) => runChapterEvaluation(context as WorldContext, chapterLengthTicks),
       },
     ],
   };

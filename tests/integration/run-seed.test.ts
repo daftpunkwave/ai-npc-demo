@@ -27,14 +27,14 @@ describe("规则处理器的 runSeed 注入", () => {
       taskType: "transport",
       teamId: "team-star",
       departAfterTicks: 4,
-      invitees: ["npc-luo"],
+      invitees: ["species-extraterrestrial"],
       params: {
         fromStockpileId: "sp-star",
         toStockpileId: "sp-flora",
         cargo: { supply: 0, energy: 1, medical: 0 },
       },
     });
-    acceptTaskInvitation(value, "npc-luo", taskId);
+    acceptTaskInvitation(value, "species-extraterrestrial", taskId);
     advanceTo(value, 4);
 
     expect(recorded.length).toBeGreaterThan(0);

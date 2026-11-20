@@ -77,6 +77,9 @@ resources:
   supply: 供给
   energy: 能源
   medical: 医疗材料
+  materials: 材料
+  food: 食物
+  water: 水
 resourceLevels:
   scarce: 短缺
   adequate: 可维持
@@ -96,7 +99,7 @@ facilities:
   outpost: 哨站
   archive-vault: 档案库
   landing-anchor: 降落锚
-playerName: 特派员
+playerName: 党魁
 ui:
   noReply: （对方暂未回应）
   waitingReply: 等待回应

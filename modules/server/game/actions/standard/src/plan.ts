@@ -193,7 +193,7 @@ function resolveParams(
           fromStockpileId: medical.stockpileId,
           toStockpileId: medical.stockpileId,
           stockpiles: [{ stockpileId: medical.stockpileId, amount: { supply: 0, energy: 0, medical: group.injured } }],
-          participantNodes: [teamNodeId, group.nodeId],
+          participantNodes: [teamNodeId, group.nodeId, params.toNodeId],
           originNodeId: null,
           cargoTotal: null,
         },

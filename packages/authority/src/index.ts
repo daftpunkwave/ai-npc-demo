@@ -11,7 +11,7 @@ export { CommandGateway, commandPayloadHash } from "./command-gateway";
 export { createScopedWorldTxFactory } from "./module-binding";
 export type { ModuleBindingInput, ModuleScopeInput } from "./module-binding";
 export { ClockStepRunner } from "./clock-steps";
-export type { ClockStepRunnerOptions } from "./clock-steps";
+export type { ClockStepRunResult, ClockStepRunnerOptions } from "./clock-steps";
 export { EventConsumerRunner } from "./consumer-runner";
 export type { ConsumerRunOptions, ConsumerRunResult, EventConsumerRunnerOptions } from "./consumer-runner";
 export { JobRunner } from "./job-runner";

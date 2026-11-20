@@ -16,7 +16,7 @@ import {
 
 const loadContext = { configDir: "config" };
 const content = loadContentPack("content", "earth-2964-v1");
-const roster = loadRoster("standard-20", loadContext);
+const roster = loadRoster("standard-15", loadContext);
 const runSpec = loadRunSpec("online-default", loadContext, {
   seed: "run-seed-test",
   moduleAssemblyRef: "local-slg-standard-v1",
@@ -97,7 +97,7 @@ describe("manifest 冻结与规范化哈希", () => {
 
   it("有效配置变化会改变模块、装配与 manifest 哈希", async () => {
     const assembly = loadAssembly("local-slg-standard-v1");
-    const changed = withClock(assembly, { ...clockOf(assembly), secondsPerTick: 20 });
+    const changed = withClock(assembly, { ...clockOf(assembly), secondsPerTick: 30 });
     const base = await manifestFor(assembly);
     const tweaked = await manifestFor(changed);
     const clockHash = (result: typeof base): string | undefined =>
@@ -122,8 +122,8 @@ describe("manifest 冻结与规范化哈希", () => {
     });
     expect(built.manifest).toMatchObject({
       seed: "escalating-seed",
-      selection: { moduleAssemblyRef: "local-slg-escalating-v1", rosterRef: "standard-20" },
-      content: { packId: "earth-2964-v1", contentVersion: "0.1.1" },
+      selection: { moduleAssemblyRef: "local-slg-escalating-v1", rosterRef: "standard-15" },
+      content: { packId: "earth-2964-v1", contentVersion: "0.2.0" },
       assembly: { assemblyId: "local-slg-escalating-v1", realm: "server", assemblyHash: resolved.assemblyHash },
       agentSlots: null,
     });
@@ -132,7 +132,7 @@ describe("manifest 冻结与规范化哈希", () => {
     ).toBe(true);
     expect(built.manifest.assembly.modules.every((module) => module.configHash.length === 64)).toBe(true);
     expect(built.manifest.assembly.modules.find((module) => module.moduleId === "game.clock.controlled")?.config).toMatchObject({
-      secondsPerTick: 10,
+      secondsPerTick: 20,
       maxStepTicks: 24,
     });
     expect(built.manifestHash.length).toBe(64);

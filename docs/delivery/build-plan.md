@@ -62,17 +62,17 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 ## 1. 步骤总览
 
-状态按当前仓库的产出记录。“已实现”表示本步功能已落地，“部分实现”表示仍有交付缺口，“目标”表示本步功能待实现。服务端可运行，下一阶段先补齐 S05 和 S07–S09 的序章差距，再验收 S10。具体差距见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
+状态按当前仓库的产出记录。“已实现”表示本步功能已落地，“部分实现”表示仍有交付缺口，“目标”表示本步功能待实现。服务端可运行，下一阶段先补齐 S07–S09 的剩余差距与部署级身份配额，再验收 S10。具体差距见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
 | 阶段 | 步骤 | 产出 | 对应切片 | 状态 |
 |---|---|---|---|---|
 | 工程骨架 | S00–S03 | workspace、contracts、kernel、module-sdk、client-sdk、边界检查 | — | 已实现 |
 | 服务端世界 | S04 | SQLite 存储、分支复制和备份 | A | 已实现 |
-| 服务端世界 | S05 | 内容与配置加载 | A | 部分实现。加载器已交付，`standard-15` 与内容迁移待完成 |
+| 服务端世界 | S05 | 内容与配置加载 | A | 部分实现。加载器、`standard-15` 与序章内容迁移已交付；部署级身份配额待 Agent 运行时接入 |
 | 服务端世界 | S06 | authority、命令网关、job 与事件消费者 | A | 已实现 |
-| 服务端世界 | S07 | 时钟、地图、库存与世界规则 | A | 部分实现。20 秒/tick、公社水闸权限与 t168 终点待对齐 |
-| 服务端世界 | S08 | 通信、行动、协议、剧情与存档 | A | 部分实现。世界规则测试可到 t168，开局内容、玩家广播与水闸条款待对齐 |
-| 服务端世界 | S09 | 服务端宿主、玩家 HTTP/WS、装配预检 | A | 部分实现。服务端入口可用，席位契约和公社命令接入待补 |
+| 服务端世界 | S07 | 时钟、地图、库存与世界规则 | A | 部分实现。20 秒/tick、公社玩家水闸权限与 t168 暂停已交付；六资源交接与程序案结果待补 |
+| 服务端世界 | S08 | 通信、行动、协议、剧情与存档 | A | 部分实现。开局内容、剧情署名与水闸条款义务人已对齐；玩家公开广播命令待定稿 |
+| 服务端世界 | S09 | 服务端宿主、玩家 HTTP/WS、装配预检 | A | 部分实现。服务端入口可用，席位契约待补 |
 | 浏览器两端 | S10 | 客户端协议、宿主与启动脚本 | A | 目标。协议包已有骨架 |
 | 浏览器两端 | S11 | 控制台宿主、首批页面与服务端接口 | A | 部分实现。已有精简版控制台健康 API |
 | 浏览器两端 | S12 | 双端端口检查 | A | 目标 |
@@ -135,7 +135,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[内容包](../game/content-pack.md) 全文、[领域模型](../architecture/domain-model.md) 第 10 节、[配置](../platform/configuration.md) 第 3、10 节、[运营](../platform/operations.md) 第 10 节。
 - **产出**：把内容包第 1–9、11、12 节的 YAML 照抄到 `content/world-packs/earth-2964-v1/`（`prompts/zh-CN.yaml` 与 `locale/zh-CN.yaml` 按第 12 节的键结构填写，文本来源见该节的表）；内容包第 10 节的两个名册与 `config/runs/online-default.yaml`；在 `packages/experiment` 实现内容加载器与配置加载器（YAML 读取、Zod 校验、`*Ref` 引用解析（仓库文件优先，其次数据库草稿）、`env:` 解析、交叉检查）。其余配置文件在 0.2 节指定的步骤创建。
-- **迁移**：落实单席开局、`standard-15` 与新版身份和剧情卡署名。同步 `.env.example`、服务端默认名册与在线 RunSpec，细项见 [IMPLEMENTATION-STATUS.md — 具体迁移项](../IMPLEMENTATION-STATUS.md#2-具体迁移项)。
+- **迁移**：已落实单席开局、`standard-15`、新版身份与剧情卡署名。部署级 15 个活动身份的共享配额随 Agent 运行时的激活事务接入，细项见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 - **测试**：完整内容包与正式名册加载成功。不存在的节点、重复 ID、正式名册超过 15 个身份、缺事件模板或缺词表键时加载失败并给出可定位的错误。四个禁用开局不进入可选列表，公社开局有闻昭入口和三条消息。配置加载测试覆盖引用解析、`env:` 解析与未知键拒绝。
 - **完成判据**：`pnpm check` 通过。
 
@@ -150,15 +150,15 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[规则](../game/rules.md) 第 1–5、8、10、11 节、[领域模型](../architecture/domain-model.md) 第 3–6 节、[模块目录](../architecture/module-catalog.md) 第 4.1 节。
 - **产出**：`game.clock.controlled`（模式切换、tick 推进、step 目标）、`game.map.six-nodes`（道路状态、通行许可、Dijkstra 路径与行程）、`game.resources.light`（预留/释放/消耗/转移/调整 ops、等级计算）、`game.world.slg-light`（`campaign.start` 的世界部分：campaign、指标、角色/队伍/群体初态、九条委托、伤员期限 job；`policy.set`（水闸由自己处理，道路调用 map ops）；每日结算与章节评估两个时钟步骤；阈值事件）。
-- **迁移**：同步时钟与装配的 20 秒/tick 配置。接入占公社席的玩家使用 `policy.set` 修改水闸的授权。t168 评估后结束序章，停止继续推进并保留存档与资源交接数据。程序案结果随 S22 接入评估。
-- **测试**：规则第 12 节用例 2、3、7、10 与 12 的三项读数评估。验证 Dijkstra 的平局规则、开局指标、委托与群体初态，以及 t168 评估后时钟停止推进。用例 12 的程序案部分在 S23 验证。
+- **迁移**：时钟与装配已同步 20 秒/tick。占公社席的玩家可以用 `policy.set` 修改水闸。t168 评估后暂停时钟并保留存档；六种城市资源的交接数据与程序案结果仍待接入，随 S22 补齐。
+- **测试**：规则第 12 节用例 2、3、7、10 与 12 的三项读数评估。验证 Dijkstra 的平局规则、开局指标、委托与群体初态，以及 t168 评估后时钟暂停、tick 169 被拒绝。用例 12 的程序案部分在 S23 验证。
 - **完成判据**：`pnpm check` 通过。
 
 ### S08 游戏模块（二）：通信、行动、协议、剧情、存档
 
 - **先读**：[规则](../game/rules.md) 第 2、6、7、9 节、[内容包](../game/content-pack.md) 第 7–9 节、[领域模型](../architecture/domain-model.md) 第 4–7 节、[运营](../platform/operations.md) 第 3、4、6 节。
 - **产出**：`game.comms.standard`（`dialogue.say`、`speech.commit`、`seat.say`、`information.share`、`probe.ask`、广播权限、送达延迟表、`conversation_lines` 投影；`campaign.start` 的后续钩子：开局消息与知识授权）、`game.actions.standard`（派遣的十步校验、邀请回复、取消、出发与完成 job、风险抽样与 `TaskDelayed`）、`game.agreements.standard`（提出即提出者已接受、回复、还价、过期、生效效果、履约/违约订阅）、`game.scenario.watergate` 与 `game.scenario.watergate-escalating`（`campaign.start` 后续钩子安排卡片 job、效果白名单、草稿/发布/撤回/补偿/覆盖命令；escalating 订阅 `DayPassed` 与 `TaskCompleted`）、`game.save.sqlite`（静默 → 分支复制 → 快照记录；恢复预检 → 复制 → 切换在线别名）。此时还没有 Agent，静默只需暂停时钟并排空 job。
-- **迁移**：公社玩家可作为 `water-allocation` 条款的义务人。公开广播经命令网关复用 comms 送达规则。进入 S09 前验证水闸条款生效及改策违约，验证中继中断时的广播受众。
+- **迁移**：公社玩家已可作为 `water-allocation` 条款的义务人。公开广播经命令网关复用 comms 送达规则；命令名与正文限制待定稿，尚未接入。进入 S09 前已验证水闸条款生效、改策违约与中继中断时的广播受众。
 - **测试**：规则第 12 节用例 1、4、5、6、8、9、11、13、14；协议八种条款各一条履约与一条违约用例；两个剧情模块在同一脚本下的卡片触发 tick 与指标不同；`campaign.start` 之后开局消息、知识授权与剧情卡 job 齐全；快照后恢复，世界状态逐行相等且时钟为 paused。
 - **完成判据**：`pnpm check` 通过；`tests/scenarios/world-only.test.ts` 用纯命令脚本跑完 168 tick，得到确定的 `ChapterStageEvaluated`。
 
@@ -166,7 +166,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 - **先读**：[API](../architecture/api.md) 第 1–4、7、9 节、[两个端口](../architecture/two-endpoints.md) 第 1、6 节、[领域模型](../architecture/domain-model.md) 第 8.1 节、[技术栈](tech-stack.md) 第 5、6 节、[运营](../platform/operations.md) 第 2–4、10 节、[代码目录](../architecture/code-structure.md) 第 2、3 节、本文 0.2 节。
 - **产出**：`apps/server`（`main.ts`：加载环境变量、打开存储、加载内容与配置、首次启动时按运营第 10 节创建在线世界与 live run、解析 server 装配、启动模块与 worker（时钟、job、消费者、投影推送）、监听；端口被占用时退出码非 0；`module-catalog.ts` 显式登记全部 server 模块定义）；`transport.http-ws.fastify`（0.3 节分配给 S09 的路由、Origin 校验、错误格式）；`platform.access-policy.roster`；`platform.secrets.env`；`platform.operations.standard`（暂停、继续、存档、恢复、重新开局的编排）；令牌生成与打印；玩家投影构建与增量推送（200 条重放缓冲）；两份主装配与已提前交付的剧情替换装配；`scripts/check-catalog.ts`（扫描 `config/assemblies/*.yaml`，通过组合根加载 server 模块目录，调用与宿主启动相同的 kernel 解析器校验 realm/kind、能力闭包、作用域、重复绑定、拓扑与模块配置 schema；client/console 尚无模块目录时只有其 bindings 为空才通过，非空即失败；失败时逐项打印文件与原因并以非零码退出）。
-- **迁移**：按服务端认证开放公社水闸与玩家广播命令。定稿席位和动作者的公共契约与存档兼容规则，并验证实际来源、越权拒绝和分支恢复后的可追溯性。补齐暂停/继续与幂等结果的原子性。参见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
+- **迁移**：公社水闸的网关入口已按服务端认证接入；玩家公开广播命令待定稿。席位和动作者的公共契约、存档兼容与分支恢复后的可追溯性仍待补。暂停/继续与幂等结果的原子性见 [IMPLEMENTATION-STATUS.md — 时钟操作原子性](../IMPLEMENTATION-STATUS.md#36-时钟操作原子性)。
 - **测试**：用 `fastify.inject` 覆盖登录、会话、命令、receipt 查询、世界视图（含 `clock.runVersion`）、玩家访问控制台接口 403、错误 Origin 403、开局后继续与暂停；WS 用真实端口测试订阅、增量与断线重连。
 - **完成判据**：`pnpm check` 通过（已包含 `check:catalog`）；`pnpm dev:server` 启动后 `GET /api/v1/health` 返回 ready，并打印两条登录地址。
 

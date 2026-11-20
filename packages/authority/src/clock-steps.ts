@@ -17,6 +17,17 @@ export interface ClockStepRunnerOptions extends RuleRuntime {
   readonly registry: RuleRegistry;
 }
 
+/** 时钟步骤执行结果：执行条数与此轮是否有步骤请求停止时钟。 */
+export interface ClockStepRunResult {
+  readonly executed: number;
+  readonly stopRequested: boolean;
+}
+
+/** 步骤处理器可返回 { stopClock: true } 请求宿主在本次 tick 收尾后暂停时钟。 */
+function requestsClockStop(outcome: unknown): boolean {
+  return typeof outcome === "object" && outcome !== null && "stopClock" in outcome && outcome.stopClock === true;
+}
+
 /** 时钟步骤执行器；读取分支时钟，按注册顺序逐事务执行命中步骤。 */
 export class ClockStepRunner {
   private readonly storage: RuleRuntime["storage"];
@@ -41,17 +52,25 @@ export class ClockStepRunner {
 
   /** 在分支当前 worldTick 上执行全部命中步骤，每个步骤一个事务；返回执行条数。 */
   run(branchId: string): number {
+    return this.runDetailed(branchId).executed;
+  }
+
+  /** 与 run 相同，但额外返回是否有步骤请求停止时钟，供 tick 收尾后暂停。 */
+  runDetailed(branchId: string): ClockStepRunResult {
     const worldTick = this.storage.transact((tx) => {
       this.requireWritableBranch(tx, branchId);
       return readClock(tx, branchId).worldTick;
     });
     const matching = this.registry.clockStepList().filter((step) => step.when(worldTick));
+    let stopRequested = false;
     for (const step of matching) {
       this.storage.transact((tx) => {
-        this.runStep(tx, branchId, step);
+        if (this.runStep(tx, branchId, step)) {
+          stopRequested = true;
+        }
       });
     }
-    return matching.length;
+    return { executed: matching.length, stopRequested };
   }
 
   /** 读取分支并确认其状态允许时钟步骤；不存在或不可写时明确失败。 */
@@ -69,7 +88,7 @@ export class ClockStepRunner {
   }
 
   /** 在一个独立事务内执行单个时钟步骤；异常由存储事务回滚并向上传播。 */
-  private runStep(tx: StorageTransaction, branchId: string, step: StoredClockStep): void {
+  private runStep(tx: StorageTransaction, branchId: string, step: StoredClockStep): boolean {
     const branch = this.requireWritableBranch(tx, branchId);
     const clock = readClock(tx, branchId);
     const worldTx = new TransactionWorldTx({
@@ -104,5 +123,6 @@ export class ClockStepRunner {
     });
     const outcome = step.handler(context, clock.worldTick);
     assertSynchronous(outcome, `时钟步骤 ${step.stepId}`);
+    return requestsClockStop(outcome);
   }
 }

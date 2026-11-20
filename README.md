@@ -4,7 +4,7 @@
 
 > 完整游戏设计、Demo 切片范围与工程文档的权威链见 [docs/README.md — 文档导航](docs/README.md#1-三层结构与全局入口)。
 
-> 当前服务端可运行七日世界规则，提供玩家 HTTP/WS 与存档恢复。默认仍使用开发名册 `standard-20`、五席开局和 10 秒/tick。玩家客户端、控制台页面及 Agent 认知管线待交付。参见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](docs/IMPLEMENTATION-STATUS.md)、[build-plan.md — 构建进度](docs/delivery/build-plan.md#1-步骤总览)。
+> 当前服务端可运行七日世界规则，提供玩家 HTTP/WS 与存档恢复。序章内容使用正式名册 `standard-15`、只开放公社开局、20 秒/tick；t168 评估后暂停时钟。公社党魁玩家可以设置水闸分配，并作为水闸条款的义务人。玩家客户端、控制台页面及 Agent 认知管线待交付。参见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](docs/IMPLEMENTATION-STATUS.md)、[build-plan.md — 构建进度](docs/delivery/build-plan.md#1-步骤总览)。
 
 ## 一眼看懂
 

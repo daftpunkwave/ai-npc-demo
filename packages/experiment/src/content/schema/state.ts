@@ -127,7 +127,7 @@ export const contentEvidenceSchema = z
   })
   .strict();
 
-/** starts.yaml：五个人类派系的开局委托、知识与消息。 */
+/** starts.yaml：五个人类派系的开局委托、知识与消息；序章只启用公社席。 */
 export const contentStartsSchema = z
   .object({
     schemaVersion,
@@ -136,6 +136,7 @@ export const contentStartsSchema = z
         z
           .object({
             factionId: factionIdSchema,
+            enabled: z.boolean().default(true),
             contacts: z.array(principalIdSchema).min(1),
             commission: textSchema,
             playerDelegation: z

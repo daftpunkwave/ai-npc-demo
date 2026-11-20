@@ -55,18 +55,21 @@ function captureLoadingError(load: () => unknown): LoadingError {
 describe("内容包加载", () => {
   it("完整内容包通过 schema 与交叉检查", () => {
     const pack = loadContentPack(contentRoot, packId);
-    expect(pack.pack.contentVersion).toBe("0.1.1");
+    expect(pack.pack.contentVersion).toBe("0.2.0");
     expect(pack.pack.defaultScenario).toBe("watergate-v1");
     expect(pack.index.nodes.size).toBe(6);
     expect(pack.index.roads.size).toBe(9);
     expect(pack.index.factions.size).toBe(8);
-    expect(pack.index.characters.size).toBe(12);
+    expect(pack.index.characters.size).toBe(11);
     expect(pack.index.stockpiles.size).toBe(8);
     expect(pack.index.teams.size).toBe(8);
     expect(pack.index.groups.size).toBe(1);
     expect(pack.index.evidence.size).toBe(5);
     expect(pack.index.secrets.size).toBe(4);
     expect(pack.index.starts.size).toBe(5);
+    expect([...pack.index.starts.values()].filter((start) => start.enabled).map((start) => start.factionId)).toEqual([
+      "human-neutral",
+    ]);
     expect(pack.index.cards.size).toBe(9);
     expect(pack.index.scenarios.size).toBe(1);
     expect(pack.index.scripts.size).toBe(3);
@@ -93,12 +96,12 @@ describe("内容包加载", () => {
   });
 
   it("重复的角色 ID 时错误定位到 characters.yaml", () => {
-    const sources = mutatedSources("characters.yaml", "agentId: npc-shenli", "agentId: npc-cenyan");
+    const sources = mutatedSources("characters.yaml", "agentId: npc-yinuo", "agentId: npc-wenzhao");
     const error = captureLoadingError(() => parseContentPack(sources));
     expect(error.code).toBe("cross-check");
     expect(error.source).toBe("characters.yaml");
     expect(error.path).toBe("characters.1.agentId");
-    expect(error.message).toContain("npc-cenyan");
+    expect(error.message).toContain("npc-wenzhao");
   });
 
   it("缺少观察模板时错误定位到 prompts/zh-CN.yaml", () => {
@@ -154,7 +157,7 @@ describe("内容包加载", () => {
 
   it("全局 ID 冲突与不可达证据被拒绝", () => {
     const conflict = captureLoadingError(() =>
-      parseContentPack(mutatedSources("characters.yaml", "agentId: npc-cenyan", "agentId: human-neutral")),
+      parseContentPack(mutatedSources("characters.yaml", "agentId: npc-wenzhao", "agentId: human-neutral")),
     );
     expect(conflict.code).toBe("cross-check");
     expect(conflict.source).toBe("characters.yaml");
@@ -172,7 +175,7 @@ describe("内容包加载", () => {
   it("脚本命令引用错误定位到具体脚本文件", () => {
     const sources = mutatedSources(
       "scripts/s-promise.yaml",
-      "targetAgentId: npc-cenyan",
+      "targetAgentId: human-independent",
       "targetAgentId: npc-nobody",
     );
     const error = captureLoadingError(() => parseContentPack(sources));
@@ -194,9 +197,9 @@ describe("内容包加载", () => {
 describe("名册校验", () => {
   const content = loadContentPack(contentRoot, packId);
 
-  it("standard-20 与 core-3 都通过身份存在性检查", () => {
-    const standard = loadRoster("standard-20", { configDir: resolve(repoRoot, "config") });
-    expect(standard.value.agents).toHaveLength(20);
+  it("standard-15 与 core-3 都通过身份存在性检查", () => {
+    const standard = loadRoster("standard-15", { configDir: resolve(repoRoot, "config") });
+    expect(standard.value.agents).toHaveLength(15);
     expect(() => validateRoster(standard.value, content, standard.source)).not.toThrow();
 
     const core = loadRoster("core-3", { configDir: resolve(repoRoot, "config") });
@@ -204,9 +207,9 @@ describe("名册校验", () => {
     expect(() => validateRoster(core.value, content, core.source)).not.toThrow();
   });
 
-  it("超过 20 个身份的名册在 schema 层被拒绝", () => {
+  it("超过 15 个身份的名册在 schema 层被拒绝", () => {
     expect(() => loadRoster("roster-21", { configDir: fixturesConfigDir })).toThrow(
-      /名册最多包含 20 个身份/,
+      /名册最多包含 15 个身份/,
     );
     expect(rosterSchema.safeParse({ schemaVersion: 1, rosterId: "x", agents: [] }).success).toBe(false);
   });
@@ -216,8 +219,8 @@ describe("名册校验", () => {
       schemaVersion: 1,
       rosterId: "duplicate",
       agents: [
-        { agentId: "npc-cenyan", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-default" },
-        { agentId: "npc-cenyan", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-default" },
+        { agentId: "npc-wenzhao", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-default" },
+        { agentId: "npc-wenzhao", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-default" },
       ],
     };
     const duplicateError = captureLoadingError(() => validateRoster(duplicate, content));
@@ -228,7 +231,7 @@ describe("名册校验", () => {
       schemaVersion: 1,
       rosterId: "wrong-kind",
       agents: [
-        { agentId: "npc-cenyan", kind: "strategic", profileRef: "agent-character-default", toolsetRef: "character-default" },
+        { agentId: "npc-wenzhao", kind: "strategic", profileRef: "agent-character-default", toolsetRef: "character-default" },
       ],
     };
     const kindError = captureLoadingError(() => validateRoster(wrongKind, content));

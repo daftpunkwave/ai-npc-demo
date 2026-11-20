@@ -151,10 +151,10 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     // 材料已在完成 job 开头结算（失败会回滚整个 job），这里只应用完成效果。
     const teamStar = task.teamId === "team-star";
     let delta = teamStar ? 40 : 25;
-    if (task.participants.includes("npc-shenli")) {
+    if (task.participants.includes("npc-taoan")) {
       delta += 10;
     }
-    if (task.participants.includes("npc-luo") && !teamStar) {
+    if (task.participants.includes("species-extraterrestrial") && !teamStar) {
       delta += 15;
     }
     ports["game.world"].changeMeter("relay.stability", delta, "task");
@@ -163,7 +163,7 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
   } else {
     const params = task.params as { readonly roadId: string };
     if (content.migrationRoads.includes(params.roadId)) {
-      const bonus = task.participants.includes("npc-cenyan") || task.participants.includes("npc-zhuifeng") ? 4 : 0;
+      const bonus = task.participants.includes("npc-luchen") || task.participants.includes("species-fauna") ? 4 : 0;
       ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
     }
   }

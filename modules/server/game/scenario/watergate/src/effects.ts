@@ -10,7 +10,7 @@ import {
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError, isSignatureOnlyPrincipal } from "@ai-npc/contracts";
 
 type EffectContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -129,12 +129,13 @@ export function applyOverrideEffects(context: EffectContext, effects: readonly O
   }
 }
 
-/** 主体是否由内容包定义：玩家、角色与作为战略主体的派系。 */
+/** 主体是否由内容包定义：玩家、角色与作为战略主体的派系；signature-only 署名只表示事件来源。 */
 function knownPrincipal(content: GameContent, principalId: string): boolean {
   return (
     principalId === content.playerPrincipalId ||
     content.characters.has(principalId) ||
-    content.factions.has(principalId)
+    content.factions.has(principalId) ||
+    isSignatureOnlyPrincipal(principalId)
   );
 }
 

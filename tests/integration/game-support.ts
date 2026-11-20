@@ -137,7 +137,7 @@ function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branc
     tx.branch(branchId).table("clock").put({
       world_tick: 0,
       mode: "running",
-      seconds_per_tick: 10,
+      seconds_per_tick: 20,
       run_version: 0,
       step_target_tick: null,
       updated_at: createdAt,
@@ -194,7 +194,7 @@ export async function createGameHarness(options: {
     seedBranch(storage, host, worldId, branchId);
     const clock = createClockPort(
       storage,
-      { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 },
+      { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 },
       host.nowIso,
     );
     const content = loadContentPack("content", "earth-2964-v1");

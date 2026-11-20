@@ -20,12 +20,12 @@ export const rosterAgentSchema = z
   })
   .strict();
 
-/** 名册：最多 20 个 gameplay 身份。 */
+/** 名册：最多 15 个 gameplay 身份，即序章正式上场人数。 */
 export const rosterSchema = z
   .object({
     schemaVersion: z.literal(1),
     rosterId: configRefSchema,
-    agents: z.array(rosterAgentSchema).min(1).max(20, "名册最多包含 20 个身份"),
+    agents: z.array(rosterAgentSchema).min(1).max(15, "名册最多包含 15 个身份"),
   })
   .strict();
 

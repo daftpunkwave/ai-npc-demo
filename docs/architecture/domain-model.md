@@ -1,6 +1,6 @@
 # 领域模型：命令、事件、状态与投影
 
-> 单机也需保留的席位与动作者字段见 [02-authority-economy-fairness.md — 首版要留的接口](../design/multiplayer/02-authority-economy-fairness.md)。当前迁移缺口见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
+> 单机也需保留的席位与动作者字段见 [02-authority-economy-fairness.md — 首版要留的接口](../design/multiplayer/02-authority-economy-fairness.md)。当前迁移缺口见 [IMPLEMENTATION-STATUS.md — 席位契约](../IMPLEMENTATION-STATUS.md#35-席位契约)。
 
 > 本文维护命令与事件目录、状态所有权及投影语义。待交付的命令和事件扩展在对应章节标明，HTTP 可用范围以 [api.md — 通用约定](api.md#1-通用约定) 为准。数值规则见 [规则](../game/rules.md)；信封、receipt 与错误码见 [公共契约](contracts.md)；事务与恢复语义见 [事件与状态](events-and-state.md)；表结构见 [存储](storage.md)。
 

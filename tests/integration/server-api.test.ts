@@ -181,15 +181,20 @@ function liveProjection(harness: GameHarness): PlayerProjection {
 
 /** 从内容包派生开局选项，用于断言注入结果原样返回。 */
 function contentStarts(harness: GameHarness): StartOption[] {
-  return [...harness.gameContent.starts.values()].map((start) => ({
-    factionId: start.factionId,
-    name: harness.gameContent.factions.get(start.factionId)?.name ?? start.factionId,
-    commission: start.commission,
-    contacts: start.contacts.map((agentId) => ({
-      agentId,
-      name: harness.gameContent.characters.get(agentId)?.name ?? agentId,
-    })),
-  }));
+  return [...harness.gameContent.starts.values()]
+    .filter((start) => start.enabled !== false)
+    .map((start) => ({
+      factionId: start.factionId,
+      name: harness.gameContent.factions.get(start.factionId)?.name ?? start.factionId,
+      commission: start.commission,
+      contacts: start.contacts.map((agentId) => ({
+        agentId,
+        name:
+          harness.gameContent.characters.get(agentId)?.name ??
+          harness.gameContent.factions.get(agentId)?.leaderName ??
+          agentId,
+      })),
+    }));
 }
 
 /** 用真实通信端口实现传输层会话读取端口；每个方法各自打开只读事务。 */
@@ -565,12 +570,13 @@ describe("服务端 API", () => {
     expect(before.statusCode).toBe(200);
     const beforeBody = campaignResponseSchema.parse(before.json());
     expect(beforeBody.campaign).toBeNull();
-    expect(beforeBody.starts).toHaveLength(5);
+    expect(beforeBody.starts).toHaveLength(1);
     expect(beforeBody.starts.find((start) => start.factionId === "human-neutral")).toEqual({
       factionId: "human-neutral",
       name: "灰港公社",
       commission: "整理物资与消息，召集一次议事。",
       contacts: [
+        { agentId: "npc-wenzhao", name: "闻昭" },
         { agentId: "npc-yinuo", name: "伊诺" },
         { agentId: "npc-wenyuan", name: "温原" },
       ],
@@ -589,7 +595,7 @@ describe("服务端 API", () => {
       outcome: null,
       startTick: 0,
     });
-    expect(afterBody.starts).toHaveLength(5);
+    expect(afterBody.starts).toHaveLength(1);
 
     // 时钟随投影返回；campaign 响应只含 campaign 与开局选项。
     const view = await app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
@@ -853,7 +859,7 @@ describe("服务端 API", () => {
     expect(branchBusinessRows(value)).toEqual(before);
 
     // 玩家角色也不允许不在 playerCommands 中的命令；裁决早于网关，不写回执与事件。
-    const forbiddenType = gameCommandEnvelope("policy.set", {}, value.host.ids("cmd"));
+    const forbiddenType = gameCommandEnvelope("scenario.draft", {}, value.host.ids("cmd"));
     const deniedType = await app.inject({
       method: "POST",
       url: "/api/v1/commands",

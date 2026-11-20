@@ -67,7 +67,14 @@ export interface GameFaction {
   readonly factionId: string;
   readonly name: string;
   readonly kind: "human" | "species";
-  readonly homeNodeId: string;
+  /** 人类派系的党部驻地；外域没有城内党部。 */
+  readonly factionHomeNodeId?: string;
+  /** 人类派系的前哨驻地。 */
+  readonly outpostNodeId?: string;
+  /** 外域派系的领地节点。 */
+  readonly territoryNodeId?: string;
+  readonly leaderCharacterId?: string;
+  readonly leaderName?: string;
 }
 
 /** 内容索引中角色视图的最小结构。 */
@@ -122,6 +129,8 @@ export interface GameDutyDelegation {
 /** 内容索引中的派系开局配置。 */
 export interface GameStart {
   readonly factionId: string;
+  /** 只影响玩家可选开局；false 的开局保留数据完整性校验但不进入 campaign.start。 */
+  readonly enabled?: boolean;
   readonly contacts: readonly string[];
   readonly commission: string;
   readonly playerDelegation: {

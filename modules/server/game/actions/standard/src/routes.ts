@@ -6,8 +6,8 @@
 import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
 import type { DispatchInput } from "./plan-types";
 
-/** 追风或谷寻参与侦察时，按内容道路重算逐路行程：每条道路减 1，至少 1 tick。 */
-const scoutGuideAgentIds: readonly string[] = ["npc-zhuifeng", "npc-guxun"];
+/** 追风或祁录参与侦察时，按内容道路重算逐路行程：每条道路减 1，至少 1 tick。 */
+const scoutGuideAgentIds: readonly string[] = ["species-fauna", "npc-qilu"];
 
 export interface PlannedRoute {
   readonly roadIds: string[];
@@ -155,7 +155,7 @@ export function computeTaskRoute(
     if (route === null) {
       return null;
     }
-    const helpers = participants.includes("npc-suhui") || participants.includes("npc-linwu");
+    const helpers = participants.includes("npc-muzhi");
     return {
       ...route,
       duration: Math.max(1, route.travelTicks - (helpers ? 2 : 0)),

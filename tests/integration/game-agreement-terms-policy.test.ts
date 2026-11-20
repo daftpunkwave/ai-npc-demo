@@ -263,9 +263,9 @@ describe("条款校验边界", () => {
     ]);
     expect(share.commandStatus).toBe("rejected");
     expect(share.reasonCode).toBe("invalid-terms");
-    // 水闸分配只能由 human-neutral 承担。
-    const water = proposeAgreementCommand(value, playerAuth(value), ["player-1", "human-neutral"], [
-      { kind: "water-allocation", obligorId: "player-1", policy: "rotation", untilTick: 20 },
+    // 水闸分配只能由占公社席的玩家承担；其他派系党魁没有授权。
+    const water = proposeAgreementCommand(value, playerAuth(value), ["player-1", "human-pacifist"], [
+      { kind: "water-allocation", obligorId: "human-pacifist", policy: "rotation", untilTick: 20 },
     ]);
     expect(water.commandStatus).toBe("rejected");
     expect(water.reasonCode).toBe("invalid-terms");

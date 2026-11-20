@@ -129,7 +129,7 @@ describe("装配驱动的模块选择与启动", () => {
       expect(runtime.contributors).toHaveLength(7);
       expect(runtime.contributors.map((contributor) => contributor.moduleId)).toContain("game.scenario.watergate");
       const clockPlan = startup.plan.modules.find((module) => module.moduleId === "game.clock.controlled");
-      expect(clockPlan?.config).toMatchObject({ secondsPerTick: 10 });
+      expect(clockPlan?.config).toMatchObject({ secondsPerTick: 20 });
       expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(14);
     } finally {
       await started.started.dispose();

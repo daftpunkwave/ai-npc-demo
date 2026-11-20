@@ -137,7 +137,7 @@ describe("世界核心", () => {
     const startReceipt = start(value);
     expect(startReceipt.commandStatus).toBe("accepted");
     const policyReceipt = value.authority.commands.execute(
-      strategicAuth(value),
+      playerAuth(value),
       gameCommandEnvelope(
         "policy.set",
         { key: "watergate.allocation", value: "rotation" },
@@ -146,6 +146,25 @@ describe("世界核心", () => {
     );
     expect(policyReceipt.commandStatus).toBe("rejected");
     expect(policyReceipt.reasonCode).toBe("paused");
+    // 内容包只启用公社席；其余四个开局不进入 campaign.start。
+    const disabledStart = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("campaign.start", { factionId: "human-pacifist" }, value.host.ids("cmd")),
+    );
+    expect(disabledStart.commandStatus).toBe("rejected");
+    expect(disabledStart.reasonCode).toBe("unknown-faction");
+    // 其他派系党魁没有公社水闸授权；即使世界已开局也按 no-authority 拒绝。
+    setGameClock(value, { worldTick: 0, mode: "running" });
+    const otherReceipt = value.authority.commands.execute(
+      strategicAuth(value, "human-pacifist"),
+      gameCommandEnvelope(
+        "policy.set",
+        { key: "watergate.allocation", value: "rotation" },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(otherReceipt.commandStatus).toBe("rejected");
+    expect(otherReceipt.reasonCode).toBe("no-authority");
   });
 
   it("每日结算按分配扣减指标与公共供给", async () => {
@@ -153,7 +172,7 @@ describe("世界核心", () => {
     expect(start(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 1, mode: "running" });
     const policy = value.authority.commands.execute(
-      strategicAuth(value),
+      playerAuth(value),
       gameCommandEnvelope(
         "policy.set",
         { key: "watergate.allocation", value: "rotation" },
@@ -384,7 +403,7 @@ describe("世界核心", () => {
             const ports = context.modules as {
               readonly "game.world": { moveCharacter(agentId: string, nodeId: string): unknown };
             };
-            ports["game.world"].moveCharacter("npc-cenyan", "grayharbor");
+            ports["game.world"].moveCharacter("npc-wenzhao", "pass");
             return { kind: "accepted" };
           },
         },
@@ -392,12 +411,12 @@ describe("世界核心", () => {
     });
     const receipt = value.authority.commands.execute(
       createSystemAuth(value.worldId, value.branchId),
-      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000001", agentId: "npc-cenyan", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
+      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000001", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("accepted");
     expect(receipt.acceptedEventIds.length).toBeGreaterThan(0);
-    expect(receipt.resultingVersions["character:npc-cenyan"]).toBeGreaterThan(0);
-    expect(readGameAggregate(value, "character", "npc-cenyan")).toMatchObject({ nodeId: "grayharbor" });
+    expect(receipt.resultingVersions["character:npc-wenzhao"]).toBeGreaterThan(0);
+    expect(readGameAggregate(value, "character", "npc-wenzhao")).toMatchObject({ nodeId: "pass" });
   });
 
   it("绑定端口在同一事务内写入，拒绝时整体回滚", async () => {
@@ -413,19 +432,19 @@ describe("世界核心", () => {
             const ports = context.modules as {
               readonly "game.world": { moveCharacter(agentId: string, nodeId: string): unknown };
             };
-            ports["game.world"].moveCharacter("npc-cenyan", "grayharbor");
+            ports["game.world"].moveCharacter("npc-wenzhao", "pass");
             return { kind: "rejected", reasonCode: "task-not-cancellable", safeMessage: "回滚测试" };
           },
         },
       ],
     });
-    const before = readGameAggregate(value, "character", "npc-cenyan");
+    const before = readGameAggregate(value, "character", "npc-wenzhao");
     const receipt = value.authority.commands.execute(
       createSystemAuth(value.worldId, value.branchId),
-      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000002", agentId: "npc-cenyan", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
+      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000002", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("rejected");
-    expect(readGameAggregate(value, "character", "npc-cenyan")).toEqual(before);
+    expect(readGameAggregate(value, "character", "npc-wenzhao")).toEqual(before);
     expect(readGameEventTypes(value)).not.toContain("CharacterMoved");
   });
 
@@ -440,13 +459,13 @@ describe("世界核心", () => {
           type: "probe.ask",
           handler: (context) => {
             // 该模块没有声明 character，WorldTx 必须拒绝这次写入。
-            context.tx.put("character", "npc-cenyan", { agentId: "npc-cenyan" });
+            context.tx.put("character", "npc-wenzhao", { agentId: "npc-wenzhao" });
             return { kind: "accepted" };
           },
         },
       ],
     });
-    const characterBefore = readGameAggregate(value, "character", "npc-cenyan");
+    const characterBefore = readGameAggregate(value, "character", "npc-wenzhao");
     const receiptCount = () =>
       value.storage.transact((tx) => tx.branch(value.branchId).table("command_receipts").list()).length;
     const receiptsBefore = receiptCount();
@@ -455,12 +474,12 @@ describe("世界核心", () => {
         createSystemAuth(value.worldId, value.branchId),
         gameCommandEnvelope(
           "probe.ask",
-          { probeId: "prb-000000000003", agentId: "npc-cenyan", askedBy: "player-1", question: "越权写入" },
+          { probeId: "prb-000000000003", agentId: "npc-wenzhao", askedBy: "player-1", question: "越权写入" },
           value.host.ids("cmd"),
         ),
       ),
     ).toThrowError(/不能写入聚合类型 character/);
-    expect(readGameAggregate(value, "character", "npc-cenyan")).toEqual(characterBefore);
+    expect(readGameAggregate(value, "character", "npc-wenzhao")).toEqual(characterBefore);
     expect(receiptCount()).toBe(receiptsBefore);
   });
 });
@@ -486,12 +505,12 @@ describe("世界端口", () => {
             state: row["state_json"] as never,
           })),
       }), content, value.host.ids);
-      capture.push(world.character("npc-cenyan") as unknown as Json);
+      capture.push(world.character("npc-wenzhao") as unknown as Json);
       capture.push(world.team("team-commons") as unknown as Json);
       capture.push(world.drawAuthority("player-1", "sp-commons") as unknown as Json);
       capture.push(world.drawAuthority("human-neutral", "sp-commons") as unknown as Json);
     });
-    expect(capture[0]).toMatchObject({ agentId: "npc-cenyan", nodeId: "pass" });
+    expect(capture[0]).toMatchObject({ agentId: "npc-wenzhao", nodeId: "grayharbor" });
     expect(capture[1]).toMatchObject({ teamId: "team-commons", status: "idle" });
     expect(capture[2]).toMatchObject({ kind: "delegation" });
     expect(capture[3]).toMatchObject({ kind: "owner" });
@@ -512,9 +531,9 @@ describe("世界端口", () => {
         host: value.host,
       });
       // 世界模块读取自己声明的角色聚合。
-      expect(txFor(gameModuleIds.world).get("character", "npc-cenyan")).not.toBeNull();
+      expect(txFor(gameModuleIds.world).get("character", "npc-wenzhao")).not.toBeNull();
       // 通信模块没有声明 character，越权读取直接失败。
-      expect(() => txFor(gameModuleIds.comms).get("character", "npc-cenyan")).toThrowError(DomainError);
+      expect(() => txFor(gameModuleIds.comms).get("character", "npc-wenzhao")).toThrowError(DomainError);
       // 未注册模块没有作用域声明，必须明确失败而不是获得默认权限。
       expect(() => txFor("game.missing")).toThrowError(/未注册/);
     });

@@ -259,4 +259,4 @@ ToolDefinition/ToolBinding 的 schema 见 [工具](../agent/tools.md)，modelId/
 
 席位信息接入后，服务端从认证、开局与控制权记录解析来源席位和实际动作者。系统事件与外域行动可以没有人类席位，投影关联的是授权观察席位。读取早期日志时，只有历史证据足以确定归属才可补齐席位。具体接口与兼容表示随迁移定稿。参见 [02-authority-economy-fairness.md — Demo 席位接口](../design/multiplayer/02-authority-economy-fairness.md#九demo-必须留的接口清单)。
 
-现有公共 schema 有合法与非法输入测试。scope、幂等、玩家重连投影和装配冲突的验证由对应的集成测试与目录检查承载。席位字段和旧记录兼容的待交付项见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
+现有公共 schema 有合法与非法输入测试。scope、幂等、玩家重连投影和装配冲突的验证由对应的集成测试与目录检查承载。席位字段和旧记录兼容的待交付项见 [IMPLEMENTATION-STATUS.md — 席位契约](../IMPLEMENTATION-STATUS.md#35-席位契约)。

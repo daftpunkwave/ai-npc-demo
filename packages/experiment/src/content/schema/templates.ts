@@ -162,7 +162,10 @@ export const contentLocaleSchema = z
       [...watergateAllocationSchema.options, ...roadStatusSchema.options],
       textSchema,
     ),
-    resources: exactRecord(["supply", "energy", "medical"], textSchema),
+    resources: exactRecord(
+      ["supply", "energy", "medical", "materials", "food", "water"],
+      textSchema,
+    ),
     resourceLevels: exactRecord(["scarce", "adequate", "surplus"], textSchema),
     nodes: z.record(z.string().min(1), textSchema),
     facilities: z.record(z.string().min(1), textSchema),

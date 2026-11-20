@@ -56,7 +56,7 @@ describe("部署配置", () => {
       dataDir: join(root, "data"),
       assemblyRef: "local-slg-standard-v1",
       modelLayoutRef: "shared-model-layout-v1",
-      rosterRef: "standard-20",
+      rosterRef: "standard-15",
       configuredTokens: {},
     });
   });

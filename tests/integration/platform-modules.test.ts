@@ -30,7 +30,8 @@ describe("platform 模块", () => {
     const instance = await accessPolicyModuleDefinition.create(input("platform.access-policy.roster", {}));
     const port = instance.port as AccessPolicyPort;
     expect(port.authorize({ principalId: "player-1", role: "player", action: "command", commandType: "campaign.start" })).toMatchObject({ allowed: true });
-    expect(port.authorize({ principalId: "player-1", role: "player", action: "command", commandType: "policy.set" })).toMatchObject({ allowed: false });
+    expect(port.authorize({ principalId: "player-1", role: "player", action: "command", commandType: "policy.set" })).toMatchObject({ allowed: true });
+    expect(port.authorize({ principalId: "player-1", role: "player", action: "command", commandType: "scenario.draft" })).toMatchObject({ allowed: false });
     expect(port.authorize({ principalId: "operator-1", role: "operator", action: "console" })).toMatchObject({ allowed: true });
     expect(port.authorize({ principalId: "player-1", role: "player", action: "console" })).toMatchObject({ allowed: false });
     expect(port.authorize({ principalId: "player-1", role: "player", action: "player" })).toMatchObject({ allowed: true });

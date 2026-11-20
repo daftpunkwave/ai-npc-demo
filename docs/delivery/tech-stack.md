@@ -164,7 +164,7 @@ S10 的 `dev` 启动 server/client，`build` 构建 client。S11 加入 console 
 
 本地启动时，将仓库根目录的环境变量示例复制为 `.env`（已在 `.gitignore`）。服务端读取配置前调用 `process.loadEnvFile()`，没有该文件时继续使用进程环境。浏览器侧不读取密钥，API 使用相对路径 `/api/v1/...`。[.env.example — 当前环境变量示例](../../.env.example)
 
-当前服务端开发默认值为 `standard-20`。正式序章的 `standard-15` 需要和内容包、启动默认值及 `.env.example` 一同迁移。[IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)
+当前服务端默认名册为 `standard-15`，序章只开放公社开局。名册 schema 的单份上限同步为 15 个身份；部署级 15 个活动身份配额随 Agent 运行时的激活事务接入，见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
 部署参数只有这一个来源：主机、两个端口、数据目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `NPC_DATA_DIR`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/ai-npc.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
 

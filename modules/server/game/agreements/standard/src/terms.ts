@@ -22,6 +22,18 @@ export function termDeadline(term: Term): number {
   return term.byTick;
 }
 
+/**
+ * 水闸义务人必须是当前 campaign 中占公社席的党魁；AI 公社党魁以其派系 ID 承担，
+ * 玩家则以 campaign.playerId 承担，不能用其他派系或未开局身份代签。
+ */
+function controlsWatergate(context: TermContext, obligorId: string): boolean {
+  if (obligorId === "human-neutral") {
+    return true;
+  }
+  const campaign = context.modules["game.world"].campaign();
+  return campaign !== null && campaign.playerId === obligorId && campaign.factionId === "human-neutral";
+}
+
 /** 校验单条条款；合法返回 null。 */
 export function validateTerm(context: TermContext, term: Term, parties: readonly string[]): ReasonCode | null {
   const content = requireGameContent(context.content);
@@ -70,7 +82,7 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
       return "invalid-terms";
     }
   } else if (term.kind === "water-allocation") {
-    if (term.obligorId !== "human-neutral") {
+    if (!controlsWatergate(context, term.obligorId)) {
       return "invalid-terms";
     }
   } else if (term.kind === "delegate") {

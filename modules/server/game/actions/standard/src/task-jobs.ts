@@ -56,9 +56,9 @@ function allowedNodesForTask(
     return road === undefined ? [] : [teamNodeId, road.a, road.b];
   }
   if (task.taskType === "rescue") {
-    const params = task.params as { readonly groupId: string };
+    const params = task.params as { readonly groupId: string; readonly toNodeId: string };
     const group = content.groups.get(params.groupId);
-    return group === undefined ? [] : [teamNodeId, group.nodeId];
+    return group === undefined ? [] : [teamNodeId, group.nodeId, params.toNodeId];
   }
   if (task.taskType === "repair") {
     return [teamNodeId, "grayharbor"];

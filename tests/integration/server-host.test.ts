@@ -327,19 +327,14 @@ describe("服务端宿主", () => {
     const session = await loginSession(host, "player-token");
     const headers = { authorization: `Bearer ${session}` };
 
-    // 开局前没有 campaign，但仍返回合法结构与内容包声明的五个开局。
+    // 开局前没有 campaign，但仍返回合法结构与内容包声明的唯一开放开局。
     const before = await host.app.inject({ method: "GET", url: "/api/v1/campaign", headers });
     expect(before.statusCode).toBe(200);
     const beforeBody = campaignResponseSchema.parse(before.json());
     expect(beforeBody.campaign).toBeNull();
-    expect(beforeBody.starts.map((start) => start.factionId)).toEqual([
-      "human-independent",
-      "human-earth-alliance",
-      "human-pacifist",
-      "human-alien-accord",
-      "human-neutral",
-    ]);
+    expect(beforeBody.starts.map((start) => start.factionId)).toEqual(["human-neutral"]);
     expect(beforeBody.starts.find((start) => start.factionId === "human-neutral")?.contacts).toEqual([
+      { agentId: "npc-wenzhao", name: "闻昭" },
       { agentId: "npc-yinuo", name: "伊诺" },
       { agentId: "npc-wenyuan", name: "温原" },
     ]);
@@ -612,7 +607,7 @@ describe("服务端宿主", () => {
       expect(spec.seed).toMatch(/^[0-9a-f]{32}$/);
       expect(spec.seed).not.toBe("generated");
       expect(spec.moduleAssemblyRef).toBe("local-slg-standard-v1");
-      expect(spec.rosterRef).toBe("standard-20");
+      expect(spec.rosterRef).toBe("standard-15");
       expect(spec.modelLayoutRef).toBe("shared-model-layout-v1");
       const manifest = run["manifest_json"] as {
         readonly seed: string;
@@ -621,15 +616,15 @@ describe("服务端宿主", () => {
         readonly agentSlots: StorageCell;
       };
       expect(manifest.seed).toBe(spec.seed);
-      expect(manifest.selection).toMatchObject({ moduleAssemblyRef: "local-slg-standard-v1", rosterRef: "standard-20" });
-      expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.1.1" });
+      expect(manifest.selection).toMatchObject({ moduleAssemblyRef: "local-slg-standard-v1", rosterRef: "standard-15" });
+      expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.2.0" });
       expect(manifest.agentSlots).toBeNull();
       expect(run["manifest_hash"]).toMatch(/^[0-9a-f]{64}$/);
       runId = String(run["run_id"]);
       manifestHash = run["manifest_hash"];
       branchId = first.branchId;
       const world = first.storage.transact((tx) => tx.rows("worlds").get({ world_id: first.worldId }));
-      expect(world).toMatchObject({ pack_id: "earth-2964-v1", content_version: "0.1.1" });
+      expect(world).toMatchObject({ pack_id: "earth-2964-v1", content_version: "0.2.0" });
     } finally {
       await first.close();
     }
@@ -654,7 +649,7 @@ describe("服务端宿主", () => {
     };
     expect(resumedSpec.seed).toMatch(/^[0-9a-f]{32}$/);
     expect(resumedSpec.moduleAssemblyRef).toBe("local-slg-standard-v1");
-    expect(resumedSpec.rosterRef).toBe("standard-20");
+    expect(resumedSpec.rosterRef).toBe("standard-15");
     expect(resumedSpec.modelLayoutRef).toBe("shared-model-layout-v1");
     expect(resumed?.["manifest_hash"]).toBe(manifestHash);
     expect(second.storage.transact((tx) => tx.rows("runs").list({ mode: "live" }))).toHaveLength(1);
@@ -713,7 +708,7 @@ describe("服务端宿主", () => {
     }
 
     await expect(startHost(options)).rejects.toThrow(
-      /contentVersion 不一致.*9\.9\.9.*0\.1\.1.*删除 NPC_DATA_DIR 对应的开发数据目录/,
+      /contentVersion 不一致.*9\.9\.9.*0\.2\.0.*删除 NPC_DATA_DIR 对应的开发数据目录/,
     );
   });
 
