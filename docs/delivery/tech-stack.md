@@ -1,6 +1,6 @@
 # 技术栈、工程约定与本地运行
 
-> 状态：实现规范，首版照此搭建，不再二选一。版本约束取自 2026-11 npm 上的最新主版本，实际版本以 `pnpm-lock.yaml` 锁定为准；本机已验证 Node v26.13.1 的 `node:sqlite` 无需参数即可使用（WAL、`VACUUM INTO`、`backup()` 正常）。目录职责见 [代码目录](../architecture/code-structure.md)，实施顺序见 [构建计划](build-plan.md)。
+> 本文规定首版技术栈与工程约定。已经引入的依赖以 `pnpm-lock.yaml` 锁定的版本为准。本机已验证 Node v26.13.1 支持 `node:sqlite` 的 WAL、`VACUUM INTO` 和 `backup()`。参见 [code-structure.md — 代码目录](../architecture/code-structure.md)、[build-plan.md — 构建计划](build-plan.md)。
 
 ## 1. 选型一览
 
@@ -10,7 +10,7 @@
 | 包管理 | pnpm workspaces | `pnpm@12` | Node 25 起不再自带 corepack，用 `npm install -g pnpm@12` 安装 |
 | 语言 | TypeScript | `typescript@^7` | `strict: true`；只用于类型检查（`noEmit`） |
 | 运行 TS | tsx | `tsx@^4` | 服务端开发、启动与 `scripts/*.ts` 都用 tsx 直接运行源码 |
-| HTTP/WS | Fastify | `fastify@^5`、`@fastify/websocket@^11`、`@fastify/static@^10` | 只在 `transport.http-ws.fastify` 适配器内出现 |
+| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`。S11 引入 `@fastify/static@^10` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器 |
 | 数据库 | SQLite | Node 内置 `node:sqlite`（`DatabaseSync`） | 同步 API、WAL、单写者；只在 `platform.storage.sqlite` 适配器内出现 |
 | 校验 | Zod | `zod@^4` | 所有 DTO、配置、内容与 LLM 输出的唯一运行时校验；`z.toJSONSchema()` 生成工具与输出 schema |
 | 配置/内容 | YAML | `yaml@^2` | `config/**`、`content/**` 都是 YAML，读入后用 Zod 校验 |
@@ -252,7 +252,7 @@ export default defineConfig({
 
 TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 PEP 257 模块 docstring（位于可选 shebang/编码声明之后），shell 用 `#`，SQL 用 `--`，CSS 用块注释，HTML 用原生注释；有 shebang 时保留首行，header 紧随其后。JSON、锁文件、二进制、第三方代码与生成产物不插入注释；数据配置不伪装成源码。Markdown 用标题与范围说明，不强塞代码式 header。函数仅在非直观约束或原因需要解释时注释，不机械重复签名。
 
-S03 的边界检查负责 header 存在性、原生格式及禁止开发文档/阶段引用的回归检查；职责与依赖描述是否准确仍须人工复核。当前尚无检查实现，不把规范视为已通过验证。
+`pnpm check:boundaries` 已检查 header 的存在性、原生格式和开发文档或阶段引用。职责与依赖描述的准确性由人工复核。
 
 ## 8. 测试放置
 

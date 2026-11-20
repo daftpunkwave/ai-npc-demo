@@ -1,6 +1,6 @@
 # Agent Runtime：事件到行为的宿主管线
 
-> 状态：待实现规范。TypeScript 全栈、Node 模块化单体、SQLite 单写者；状态、接口和任务名称都是目标契约。
+> 状态：目标。`packages/agent-runtime` 已有包骨架，turn、调度与工具网关尚未接入服务端。实现顺序见 [build-plan.md — 构建计划](../delivery/build-plan.md#5-agent-管线)。
 
 ## 1. 运行边界
 

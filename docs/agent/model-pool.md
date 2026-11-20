@@ -1,6 +1,6 @@
 # 集中模型池与 Agent 挂载
 
-> 状态：待实现规范。供应商连接、模型参数集中定义，Agent 通过挂载引用；本文未锁定真实模型、价格、吞吐量或 SDK 版本。
+> 状态：目标。供应商连接和模型配置由模型池集中定义，Agent 通过挂载引用。本文给出路由、排队和预算契约。
 
 ## 1. 核心关系
 
@@ -39,66 +39,26 @@ policy 指决策策略，配置字段统一写 decision。purpose 不允许插�
 
 只有启用该能力的 profile 才要求对应挂载；memory.none 不强制配 maintenance 模型，纯规则压缩不要求 compression 模型，未启用 embedding 不要求向量模型。
 
-evaluation 由独立 evaluator 配置引用 modelId，调用主体类型为 evaluator；它不是第 21 个 NPC，没有 gameplay 工具、世界写权限或个人记忆。gameplay mounts 只能挂载前五类 purpose，不接受 evaluation。
+evaluation 由独立 evaluator 配置引用 `modelId`，调用主体类型为 evaluator。评估主体只执行评分。gameplay `mounts` 只接受前五类 purpose。
 
 ## 4. 目标配置示例
 
-下例展示同一模型挂载全部 15 个 Agent（文件 `config/model-layouts/shared-model-layout-v1.yaml`），参数仅为设计起点；endpoint 与外部模型名由 `.env` 提供并需通过连接测试，不代表真实可用供应商。各适配器的字段含义见 [模型传输](model-transport.md)。
+三个目标布局位于 `config/model-layouts/`。连接、生成参数、能力、限流及输出上限使用下表引用的 `connections` 和 `models` 配置。真实供应商须通过连通性与能力预检。
+
+| 布局 | 挂载 | 连接与模型配置 |
+|---|---|---|
+| `shared-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-chat` | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
+| `claude-model-layout-v1.yaml` | `decision` 挂载 `npc-claude`，`speech` 与 `memory-maintenance` 挂载 `npc-chat` | [model-transport.md — Anthropic 配置](model-transport.md#41-配置)、[model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
+| `deterministic-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-fixture` | [model-transport.md — 确定性适配器](model-transport.md#5-确定性适配器测试) |
+
+下面是共享布局的挂载片段，以伊诺为例。正式布局按 `standard-15` 填入全部 Agent ID，测试布局按所选测试名册填写。名单见 [00-scope-and-invariants.md — 15 个上场身份](../00-scope-and-invariants.md#11-15-个上场身份)。
 
 ~~~yaml
 schemaVersion: 1
 layoutId: shared-model-layout-v1
-connections:
-  openai-compat:
-    adapterId: platform.model-transport.openai-compatible
-    endpoint: env:NPC_OPENAI_COMPAT_BASE_URL
-    credentialRef: env:NPC_OPENAI_COMPAT_API_KEY
-    rateLimitKey: openai-compat-account
-models:
-  npc-chat:
-    connectionId: openai-compat
-    externalModel: env:NPC_OPENAI_COMPAT_MODEL
-    parameters:
-      temperature: 0.6
-      maxTokensField: max_tokens
-    capabilities:
-      toolCalling: true
-      strictTools: false
-      structuredOutput: json_object
-      assistantReplay: standard
-      contextWindowTokens: 64000
-      maxOutputTokens: 4096
-      embedding: false
-      embeddingDimensions: null
-    limits:
-      maxConcurrent: 2
-      requestsPerMinute: 20
-      tokensPerMinute: 40000
-      requestTimeoutMs: 30000
-    maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
 mounts:
   - modelId: npc-chat
-    agentIds:
-      - human-independent
-      - human-earth-alliance
-      - human-pacifist
-      - human-alien-accord
-      - human-neutral
-      - species-fauna
-      - species-flora
-      - species-extraterrestrial
-      - npc-cenyan
-      - npc-linwu
-      - npc-qiaoshu
-      - npc-yinuo
-      - npc-shenli
-      - npc-guxun
-      - npc-tangzhen
-      - npc-suhui
-      - npc-wenyuan
-      - npc-zhuifeng
-      - npc-qingzhi
-      - npc-luo
+    agentIds: [npc-yinuo]
     purposes: [decision, speech, memory-maintenance]
 evaluator:
   enabled: false
@@ -106,41 +66,7 @@ evaluator:
   modelId: npc-chat
 ~~~
 
-这是共享模型的完整挂载示例，不表示所有策略都必须进行模型反思。首版的压缩是纯规则实现，不需要 compression 挂载；embedding 未启用，需要时在 models 声明向量模型，并为所需主体增加不冲突的 embedding 挂载。
-
-同一目录下另有两份布局。`claude-model-layout-v1.yaml` 让全部 Agent 的 decision 使用 Claude，speech 与记忆整理仍用 OpenAI 兼容模型：
-
-~~~yaml
-schemaVersion: 1
-layoutId: claude-model-layout-v1
-connections:
-  openai-compat: { adapterId: platform.model-transport.openai-compatible, endpoint: env:NPC_OPENAI_COMPAT_BASE_URL, credentialRef: env:NPC_OPENAI_COMPAT_API_KEY, rateLimitKey: openai-compat-account }
-  anthropic: { adapterId: platform.model-transport.anthropic, credentialRef: env:ANTHROPIC_API_KEY, rateLimitKey: anthropic-account }
-models:
-  npc-chat:          # identical to shared-model-layout-v1
-    connectionId: openai-compat
-    externalModel: env:NPC_OPENAI_COMPAT_MODEL
-    parameters: { temperature: 0.6, maxTokensField: max_tokens }
-    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: standard, contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }
-    limits: { maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000, requestTimeoutMs: 30000 }
-    maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
-  npc-claude:
-    connectionId: anthropic
-    externalModel: claude-opus-5-5
-    parameters: { effort: medium, serverSideFallback: default, strictTools: false }
-    limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
-    maxOutputTokensByPurpose: { decision: 16000, speech: 4000, memory-maintenance: 4000 }
-mounts:
-  - { modelId: npc-claude, agentIds: [<the same 15 agent ids as above>], purposes: [decision] }
-  - { modelId: npc-chat, agentIds: [<the same 15 agent ids as above>], purposes: [speech, memory-maintenance] }
-evaluator: { enabled: false, principalId: evaluator-judge, modelId: npc-chat }
-~~~
-
-（`<the same 15 agent ids as above>` 在实际文件里要写出完整列表，与上例相同。）`deterministic-model-layout-v1.yaml` 只有一个连接 `fixtures`（`adapterId: platform.model-transport.deterministic`、`fixtureFiles: [tests/fixtures/model/default.jsonl]`，见 [模型传输](model-transport.md) 第 5 节）与一个模型 `npc-fixture`（`externalModel: deterministic-v1`，`maxOutputTokensByPurpose` 与 npc-chat 相同），全部 15 个 Agent 的 decision、speech、memory-maintenance 都挂到 `npc-fixture`。
-
-让 npc-cenyan 使用另一模型时，在 models 增加一次定义，并从原挂载的对应 purpose 移除该身份，再新增指向新 modelId 的挂载。不能保留重叠挂载后再依赖“最后一条优先”。
-
-若一个 Agent 的 decision 和 speech 使用不同模型，拆成两条 purpose 不重叠的挂载；不把两份 LLM 配置复制到角色档案。配置 UI 应同时提供“按模型看挂载”和“按角色看已解析路由”。
+Claude 布局沿用上例的 evaluator 配置。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
 
 ## 5. 解析与 run 冻结
 
@@ -249,7 +175,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 
 1. 预检时把 `mounts` 展开成 `(agentId, purpose) → modelId` 的映射；任何键出现两次即拒绝，不按“后者覆盖”。
 2. 由 `modelId` 找到 model 与 connection，解析 `env:` 值（外部模型名、endpoint）与 `credentialRef`（密钥只交给适配器，不写进任何记录）。
-3. `maxOutputTokens` 取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值（Anthropic 模型的思考也计入输出，所以 Claude 布局显式配置为 decision 16000、speech 4000、整理 4000）。这是发给供应商的硬上限；预算预留用 profile 的 `reserveOutputTokens`，结算按实际用量。
+3. `maxOutputTokens` 取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值。它是发给供应商的硬上限。预算按 profile 的 `reserveOutputTokens` 预留，按实际用量结算。Anthropic 模型的思考也计入输出，具体上限见 [model-transport.md — Anthropic 配置](model-transport.md#41-配置)。
 4. 生成去密钥的路由表（agentId、purpose、modelId、connectionId、adapterId、externalModel、参数 hash）写入 manifest。
 
 ### 12.3 排队、限流与重试

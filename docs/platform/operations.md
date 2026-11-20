@@ -2,7 +2,7 @@
 
 > **设计权威（2026-11-20）：** 多人的席位、托管、权威与运营口径见 [design/multiplayer/02-authority-economy-fairness.md](../design/multiplayer/02-authority-economy-fairness.md)。本文保留 Demo 单人运营口径；冲突时以 `docs/design/` 为准。
 
-> 状态：目标规范，接口尚未实现。范围和身份数量以 [00](../00-scope-and-invariants.md) 为准；本文定义玩家暂停/恢复、三个非人类势力导演席位、内容发布及故障操作。控制台运行在服务端 `:3000/console`，由 `console` 域模块贡献页面，见 [两个本地端口](../architecture/two-endpoints.md)。
+> 状态：部分实现。服务端已提供玩家暂停、继续、存档、恢复与重新开局。三势力席位、剧情运营接口和控制台页面为目标。本文规定运营与故障处理。参见 [00-scope-and-invariants.md — 序章范围](../00-scope-and-invariants.md)、[api.md — HTTP 与 WebSocket API](../architecture/api.md)、[two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
 
 ## 1. 操作身份
 

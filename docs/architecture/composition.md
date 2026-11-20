@@ -1,6 +1,6 @@
 # 积木组合与配置生效
 
-> 状态：目标设计。本文说明如何把模块、内容、身份、策略、模型和工具装配成可运行、可对比的组合；各配置文件的完整格式见 [配置](../platform/configuration.md) 第 10 节。模块清单见 [模块目录](module-catalog.md)，描述符与生命周期见 [插件机制](plugins.md)，配置 schema 以 [配置](../platform/configuration.md) 为唯一规范；本文不另建第二套落盘格式。
+> 状态：部分实现。`server` 已实现装配解析、模块配置校验与在线 RunSpec、manifest 的冻结。浏览器装配握手可返回空模块集，`client`、`console` 的浏览器端装配，以及 Agent 策略、模型与工具的运行期绑定为目标。本文规定组合语义。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[configuration.md — 配置格式](../platform/configuration.md#10-完整配置文件首版)。
 
 ## 1. 五类对象分开
 
