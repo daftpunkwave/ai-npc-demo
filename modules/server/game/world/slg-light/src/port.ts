@@ -238,20 +238,18 @@ class SlgWorldPort implements GameWorldPort {
       return { kind: "owner", factionId: stockpile.ownerFactionId };
     }
     const delegations = this.findDelegations(principalId, stockpileId).map((entry) => entry.state);
-    const first = delegations[0];
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 未开启该选项，属误报。
-    if (first === undefined) {
-      return { kind: "none" };
+    for (const first of delegations) {
+      return {
+        kind: "delegation",
+        delegationId: first.delegationId,
+        remaining: delegations.reduce(
+          (remaining, delegation) => addAmounts(remaining, delegation.remaining),
+          { supply: 0, energy: 0, medical: 0 },
+        ),
+        untilTick: Math.min(...delegations.map((delegation) => delegation.untilTick)),
+      };
     }
-    return {
-      kind: "delegation",
-      delegationId: first.delegationId,
-      remaining: delegations.reduce(
-        (remaining, delegation) => addAmounts(remaining, delegation.remaining),
-        { supply: 0, energy: 0, medical: 0 },
-      ),
-      untilTick: Math.min(...delegations.map((delegation) => delegation.untilTick)),
-    };
+    return { kind: "none" };
   }
 
   /** 查找覆盖该库存点的有效委托；stockpileId 为 null 的仅队伍委托不提供动用权。 */

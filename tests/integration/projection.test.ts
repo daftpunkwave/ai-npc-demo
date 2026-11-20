@@ -28,6 +28,7 @@ import {
   dispatchTask,
   PARTIAL_SUPPLY_TRANSPORT,
   proposeAgreement,
+  proposeAndAccept,
   proposeAsPlayer,
 } from "./game-agreement-support";
 
@@ -168,6 +169,35 @@ describe("玩家投影", () => {
       publicClaim: "公平透明",
     });
     expect(view.characters.find((character) => character.agentId === "species-extraterrestrial")?.publicClaim).toBe("精确");
+  });
+
+  it("库存委托投影聚合全部有效委托并使用最早到期 tick", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    proposeAndAccept(
+      value,
+      strategicAuth(value, "human-neutral"),
+      playerAuth(value),
+      ["human-neutral", "player-1"],
+      [
+        {
+          kind: "delegate",
+          obligorId: "human-neutral",
+          granteeId: "player-1",
+          teamIds: ["team-commons"],
+          stockpileId: "sp-commons",
+          maxDraw: { supply: 2, energy: 1, medical: 0 },
+          untilTick: 100,
+        },
+      ],
+    );
+
+    expect(
+      projection(value).stockpiles.find((stockpile) => stockpile.stockpileId === "sp-commons")?.delegation,
+    ).toEqual({
+      remaining: { supply: 17, energy: 7, medical: 4 },
+      untilTick: 100,
+    });
   });
 
   it("自己的任务给出完整信息，其他队伍只给在途摘要，完成后状态与伤情正确", async () => {

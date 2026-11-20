@@ -48,12 +48,14 @@ export const PARTIAL_SUPPLY_TRANSPORT: Json = {
  * 注册一个 afterEach 释放的 harness 工厂；返回创建并完成开局的异步函数。
  * 各测试文件只需持有一个工厂，避免重复复制 active 列表与释放样板。
  */
-export function useStartedGameHarnesses(): () => Promise<GameHarness> {
+export function useStartedGameHarnesses(): (
+  options?: Parameters<typeof createTrackedGameHarness>[1],
+) => Promise<GameHarness> {
   const active: GameHarness[] = [];
   afterEach(async () => {
     await disposeTrackedGameHarnesses(active);
   });
-  return async () => createStartedCampaignHarness(active);
+  return async (options = {}) => createStartedCampaignHarness(active, options);
 }
 
 /** 以指定主体走命令网关提交命令。 */
@@ -62,8 +64,11 @@ export function executeCommand(value: GameHarness, auth: AuthContext, type: Comm
 }
 
 /** 创建独立 harness 并完成人类中立阵营开局；开局被拒时立即失败。 */
-export async function createStartedCampaignHarness(active: GameHarness[]): Promise<GameHarness> {
-  const value = await createTrackedGameHarness(active);
+export async function createStartedCampaignHarness(
+  active: GameHarness[],
+  options: Parameters<typeof createTrackedGameHarness>[1] = {},
+): Promise<GameHarness> {
+  const value = await createTrackedGameHarness(active, options);
   expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
   return value;
 }

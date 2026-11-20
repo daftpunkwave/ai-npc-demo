@@ -4,6 +4,7 @@
  * 禁止用固定任务状态替代规则结算。
  */
 import type { AuthContext, Json } from "@ai-npc/contracts";
+import type { GameWorldPort } from "@ai-npc/module-sdk";
 import { describe, expect, it } from "vitest";
 import {
   acceptTaskInvitation,
@@ -883,9 +884,13 @@ describe("任务资源写入失败的事务边界", () => {
       .sort();
     expect(delegationIds).toHaveLength(2);
 
+    const [firstDelegationId, secondDelegationId] = delegationIds;
+    if (firstDelegationId === undefined || secondDelegationId === undefined) {
+      throw new Error("缺少测试所需的委托");
+    }
     const caps = new Map([
-      [delegationIds[0]!, 2],
-      [delegationIds[1]!, 3],
+      [firstDelegationId, 2],
+      [secondDelegationId, 3],
     ]);
     value.storage.transact((tx) => {
       const table = tx.branch(value.branchId).table("aggregate_state");
@@ -923,5 +928,32 @@ describe("任务资源写入失败的事务边界", () => {
     for (const delegationId of delegationIds) {
       expect(delegationBalance(value, delegationId).remaining.supply).toBe(caps.get(delegationId));
     }
+  });
+
+  it("旧 provider 只返回单份委托 ID 时仍记录任务扣减", async () => {
+    const value = await harness({
+      worldPortWrapper: (port) => {
+        const legacyPort = Object.create(port) as GameWorldPort;
+        legacyPort.drawDelegation = (principalId, stockpileId, delta) => {
+          const result = port.drawDelegation(principalId, stockpileId, delta);
+          return result.ok
+            ? { ok: true, delegationId: result.delegationId }
+            : result;
+        };
+        return legacyPort;
+      },
+    });
+
+    const taskId = dispatchTask(value, playerAuth(value), PARTIAL_SUPPLY_TRANSPORT);
+    expect((readGameAggregate(value, "task", taskId) as unknown as {
+      readonly delegationDraws: readonly {
+        readonly delegationId: string;
+        readonly amount: ResourceTriple;
+      }[];
+    }).delegationDraws).toEqual([
+      expect.objectContaining({
+        amount: { supply: 5, energy: 0, medical: 0 },
+      }),
+    ]);
   });
 });

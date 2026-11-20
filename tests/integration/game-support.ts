@@ -23,6 +23,7 @@ import {
   type GameClockPort,
   type GameContent,
   type GameModulePorts,
+  type GameWorldPort,
   type ModuleBinder,
   type ScopedWorldTxFactory,
   type WorldTx,
@@ -96,11 +97,13 @@ function bindGamePorts(
   txFor: ScopedWorldTxFactory,
   gameContent: GameContent,
   host: FakeHost,
+  worldPortWrapper?: (port: GameWorldPort) => GameWorldPort,
 ): GameModulePorts {
   // 按依赖顺序构造：世界端口先于通信，通信/世界/行动/地图先于协议统计。
   const map = createMapPort(txFor, gameContent, host.ids);
   const resources = createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 });
-  const world = createWorldPort(txFor, gameContent, host.ids);
+  const baseWorld = createWorldPort(txFor, gameContent, host.ids);
+  const world = worldPortWrapper?.(baseWorld) ?? baseWorld;
   const comms = createCommsPort(() => txFor(gameModuleIds.comms), gameContent, host.ids, world);
   const actions = createActionsPort(txFor);
   return {
@@ -158,6 +161,8 @@ export async function createGameHarness(options: {
    * 包装必须完整转发 StoragePort，不得改变事务、分支 scope 与读写语义。
    */
   readonly storageWrapper?: (storage: StoragePort) => StoragePort;
+  /** 可选的 world 端口包装：用于验证旧 provider 结果兼容路径。 */
+  readonly worldPortWrapper?: (port: GameWorldPort) => GameWorldPort;
 } = {}): Promise<GameHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
   const baseHost = createFakeHost();
@@ -199,7 +204,8 @@ export async function createGameHarness(options: {
     );
     const content = loadContentPack("content", "earth-2964-v1");
     const gameContent = toGameContent(content);
-    const binder: ModuleBinder = (txFor) => bindGamePorts(txFor, gameContent, host);
+    const binder: ModuleBinder = (txFor) =>
+      bindGamePorts(txFor, gameContent, host, options.worldPortWrapper);
     const authority = new Authority({
       storage,
       host,

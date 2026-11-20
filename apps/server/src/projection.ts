@@ -20,6 +20,7 @@ import {
   type TeamView,
   type TermKind,
 } from "@ai-npc/contracts";
+import { addAmounts } from "@ai-npc/module-sdk";
 import type {
   AgreementView as AgreementPortView,
   GameActionsPort,
@@ -113,9 +114,19 @@ function stockpileViews(input: {
     if (stockpile === null) {
       continue;
     }
-    const delegation = delegations.find(
+    const activeDelegations = delegations.filter(
       (candidate) => candidate.stockpileId === init.stockpileId && candidate.untilTick >= tick,
     );
+    const delegation =
+      activeDelegations.length === 0
+        ? null
+        : {
+            remaining: activeDelegations.reduce(
+              (remaining, candidate) => addAmounts(remaining, candidate.remaining),
+              { supply: 0, energy: 0, medical: 0 },
+            ),
+            untilTick: Math.min(...activeDelegations.map((candidate) => candidate.untilTick)),
+          };
     const levels = resources.level(init.stockpileId);
     views.push({
       stockpileId: stockpile.stockpileId,
@@ -124,11 +135,8 @@ function stockpileViews(input: {
       supplyLevel: levels.supply,
       energyLevel: levels.energy,
       medicalLevel: levels.medical,
-      amounts: delegation === undefined ? null : stockpile.amount,
-      delegation:
-        delegation === undefined
-          ? null
-          : { remaining: delegation.remaining, untilTick: delegation.untilTick },
+      amounts: delegation === null ? null : stockpile.amount,
+      delegation,
     });
   }
   return views.sort((left, right) => left.stockpileId.localeCompare(right.stockpileId));
