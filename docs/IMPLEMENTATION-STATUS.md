@@ -1,7 +1,7 @@
 # 实现状态与迁移清单
 
 > 本页记录代码与内容相对 [00-scope-and-invariants.md — 序章范围](00-scope-and-invariants.md)、[rules.md — 序章规则](game/rules.md) 的差距。完成迁移后更新这里的状态。实施顺序见 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览)。
-> 2026-11-20 核对基线为 `0654f50`（#35），Demo 与运行内容版本均为 `0.1.0`。
+> 2026-11-20 核对基线为 `0654f50`（#35）；Demo 版本为 `0.1.0`，运行内容版本为 `0.1.1`。
 
 ## 1. 总览
 

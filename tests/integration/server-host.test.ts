@@ -622,14 +622,14 @@ describe("服务端宿主", () => {
       };
       expect(manifest.seed).toBe(spec.seed);
       expect(manifest.selection).toMatchObject({ moduleAssemblyRef: "local-slg-standard-v1", rosterRef: "standard-20" });
-      expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.1.0" });
+      expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.1.1" });
       expect(manifest.agentSlots).toBeNull();
       expect(run["manifest_hash"]).toMatch(/^[0-9a-f]{64}$/);
       runId = String(run["run_id"]);
       manifestHash = run["manifest_hash"];
       branchId = first.branchId;
       const world = first.storage.transact((tx) => tx.rows("worlds").get({ world_id: first.worldId }));
-      expect(world).toMatchObject({ pack_id: "earth-2964-v1", content_version: "0.1.0" });
+      expect(world).toMatchObject({ pack_id: "earth-2964-v1", content_version: "0.1.1" });
     } finally {
       await first.close();
     }
@@ -713,7 +713,7 @@ describe("服务端宿主", () => {
     }
 
     await expect(startHost(options)).rejects.toThrow(
-      /contentVersion 不一致.*9\.9\.9.*0\.1\.0.*删除 NPC_DATA_DIR 对应的开发数据目录/,
+      /contentVersion 不一致.*9\.9\.9.*0\.1\.1.*删除 NPC_DATA_DIR 对应的开发数据目录/,
     );
   });
 

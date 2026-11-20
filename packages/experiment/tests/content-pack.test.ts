@@ -55,7 +55,7 @@ function captureLoadingError(load: () => unknown): LoadingError {
 describe("内容包加载", () => {
   it("完整内容包通过 schema 与交叉检查", () => {
     const pack = loadContentPack(contentRoot, packId);
-    expect(pack.pack.contentVersion).toBe("0.1.0");
+    expect(pack.pack.contentVersion).toBe("0.1.1");
     expect(pack.pack.defaultScenario).toBe("watergate-v1");
     expect(pack.index.nodes.size).toBe(6);
     expect(pack.index.roads.size).toBe(9);
