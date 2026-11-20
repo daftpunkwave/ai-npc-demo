@@ -101,14 +101,14 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | S→C | `hello` | `protocolVersion`、`principalId`、`channels`（本会话可订阅的频道） |
 | C→S | `subscribe` | `channel`、`fromStreamSeq`（首次为 `null`） |
-| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`data`（整份投影） |
+| S→C | `snapshot` | `channel`、`streamSeq`、`data`。`player` 频道另带 `projectionVersion`；控制台频道不使用投影版本 |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
 | S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。已实现 `dialogue` 和 `notification`，`timeline` 为目标 |
 | C→S | `ack` | `channel`、`streamSeq` |
 | C→S / S→C | `ping` / `pong` | — |
 | S→C | `error` | `code`、`safeMessage` |
 
-控制台频道已有权限规则，获准的频道可出现在 `hello.channels` 中，数据推送为目标。
+控制台频道按权限出现在 `hello.channels` 中，订阅时和世界变化后推送对应快照。
 
 | 频道 | 角色 | 推送内容 | 状态 |
 |---|---|---|---|
@@ -182,7 +182,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 请求参数 | 响应 |
 |---|---|---|
-| `GET /timeline` | `branchId`、`fromSeq`、`limit`（≤ 200）、`types`、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；每项标注 `audience` |
+| `GET /timeline` | `branchId`、`fromSeq`、`limit`（≤ 200）、`order`（`asc`/`desc`）、`types`、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件 |
 | `GET /agents` | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }` |
 | `GET /agents/{agentId}/inspector` | `branchId` | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn |
 | `GET /agents/{agentId}/memory` | `branchId`、`revision` | `{ revision, records: MemoryRecord[] }` |
