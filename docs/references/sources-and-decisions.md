@@ -2,7 +2,7 @@
 
  > **权威：** 完整参考、取舍与审查记录见 [design/sources-and-review.md](../design/sources-and-review.md) 与 [design/REVIEW.md](../design/REVIEW.md)。冲突时以 `docs/design/` 为准。
 
-> 核验记录：2026-11-17/18。参考项目只能证明其被读到的机制，不能证明本仓库已具备相同能力。所有正式范围以 [序章切片范围](../00-scope-and-invariants.md) 为准。
+> 参考项目核验于 2026-11-17 至 18，记忆论文核验于 2026-11-20。所列机制取自对应资料，本项目的范围由 [00-scope-and-invariants.md — 序章切片范围](../00-scope-and-invariants.md) 定义。
 
 ## 1. 实际依据
 
@@ -15,6 +15,10 @@
 规则写事实、LLM 写理解；L0 到 L6 分类、来源链、知情边界和后台整理都在该文定义，不引自仓库外资料。
 
 场景适配在本仓库完成：隔离键为 world/branch/agent；世界合同与主观承诺分开；规则只保留 authority，memory 对 policy 的输入显式可调；审计历史不随角色遗忘删除。
+
+Park 等人的记忆流按新近性、重要性和相关性检索，并把反思写回记忆流，可与 M2 的观察流和反思策略对照。 [Generative Agents: Interactive Simulacra of Human Behavior](https://arxiv.org/html/2304.03442v2)
+
+Packer 等人的 MemGPT 使用分层内存与虚拟上下文管理，可与 M3 的分层读取和整理策略对照。在本项目中，实际召回、证据完整性与模型费用由相同初态和输入的实验比较。 [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560)
 
 ### agent-prism
 

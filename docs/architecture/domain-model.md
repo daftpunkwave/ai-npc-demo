@@ -184,7 +184,7 @@ COMMIT
 | `task.dispatch` | P A S | `{ taskType, teamId, invitees?: string[], params, departAfterTicks?: number }` | actions（调用 world、map、resources 的 ops） | `TaskDispatched`、`ResourcesReserved`、`TaskInvitationIssued`×n | 按 [规则](../game/rules.md) 第 6 节的校验顺序 |
 | `task.respond` | A | `{ taskId, response: "accept"\|"decline", reasonCode?: ReasonCode }` | actions | `TaskInvitationAnswered` | `not-invited`、`invitation-closed` |
 | `task.cancel` | P A S | `{ taskId }` | actions | `TaskCancelled`、`ResourcesReleased`（如有） | `task-not-cancellable`、`no-authority` |
-| `policy.set` | A S；P 的水闸权限见下文 | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
+| `policy.set` | A、S、P（玩家权限为序章目标，仅水闸） | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
 | `scenario.draft` | O | `{ cardId, version, triggerAtTick, effects: CardEffect[], note }` | scenario | 无事件；写入 `status` 为 `draft` 的 `scenario-card` | `version-conflict`（同一卡片已登记）、`invalid-effect`（效果引用内容不存在）、`deadline-out-of-range`（不在发布窗口内） |
 | `scenario.publish` | O | `{ cardId, version, triggerAtTick }` | scenario | `ScenarioCardPublished`，并安排 `scenario.card` job | `card-not-draft`、`version-conflict`、`deadline-out-of-range` |
 | `scenario.withdraw` | O | `{ cardId }` | scenario | `ScenarioCardWithdrawn` | `card-already-triggered` |
@@ -200,7 +200,7 @@ COMMIT
 - 公社党魁通过玩家命令提交公开广播正文。comms 按公开广播规则计算并冻结送达，提交 `MessageSent`；玩家入口与 Agent 的 `speech.commit` 批准流程独立。
 - t144 程序案需要提案与投票命令以及席位归属校验。提案和投票依 [rules.md — t144 程序案](../game/rules.md#101-t144-程序案) 裁决，经命令网关与事务提交。
 
-`campaign.start` 按 [content-pack.md — 开局内容](../game/content-pack.md#8-五席开局startsyaml本切片只启用公社) 逐条提交开局消息。事件 `MessageSent` 的 `fromId` 为发件人，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliveries` 为玩家与发件人各自 tick 0 的条目（按 principalId 排序）。剧情卡消息的 `channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。
+`campaign.start` 按 [content-pack.md — 开局内容](../game/content-pack.md#8-五席开局startsyaml本切片只启用公社) 逐条提交开局消息。事件 `MessageSent` 的 `fromId` 为发件人，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliveries` 为玩家与发件人各自 tick 0 的条目（按 principalId 排序）。剧情卡消息的 `channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。剧情卡的定向投递与知识授权按显式主体 ID 执行。公社玩家的开局水账来自 `starts.knowledge`，谷寻的定向来信直接投递给 `player-1`。
 
 规则 job：
 
@@ -290,7 +290,7 @@ type AudienceSpec =
 宿主在事件提交后计算每个主体是否“有资格获知”（硬 ACL），结果交给感知模块决定何时、以何种细度形成观察（见 [感知](../agent/perception.md) 第 11 节）。规则：
 
 1. `public`：所有主体都有资格。例外：通信事件还必须在 `deliveries` 中有该主体；公开广播中继中断时只冻结与发布者同节点的接收者（[规则](../game/rules.md) 第 9 节）。
-2. `node`：事件提交时位于该节点的角色有资格；玩家只在 grayharbor 有位置；战略 Agent 没有位置，不会通过 node 受众获知。
+2. `node`：事件提交时位于该节点的主体有资格。玩家位于 `grayharbor`，AI 党魁、支持者及外域 Agent 按世界状态中的当前位置判定。序章开局位置见 [rules.md — 队伍、角色与群体](../game/rules.md#5-队伍角色与群体)。
 3. `principals` 与 `faction`：名单内主体有资格。
 4. `system`：任何 gameplay 主体都没有资格。
 5. 送达时间：通信事件按本主体的 `deliveries[].deliverAtTick` 送达，不取全体最大值；无该主体条目则不送达。其余事件在提交的 tick 送达。
@@ -354,9 +354,9 @@ receipt 与 `TaskFailed` 的 `reasonCode` 只能取下表的值；同一个码�
 内容加载器对 [内容包](../game/content-pack.md) 的每个文件做 Zod 校验，另外做以下交叉检查，任何一项失败都拒绝启动：
 
 - 所有 ID 唯一；道路端点、库存点/队伍/群体所在节点、证据位置都指向存在的节点。
-- 受控道路的 `controlledBy` 是存在的派系；每个派系恰好有一个同名战略 Agent 身份。
+- 受控道路的 `controlledBy` 须引用有效派系。AI 党魁与外域 Agent 使用各自的派系 ID。玩家占公社席时由 `player-1` 承担该席的玩家行为。
 - 角色 `factionId` 存在；`initialRelations.targetId` 指向存在的主体；`trust ∈ [-2, 2]`。
 - 开局与职责委托引用的队伍、库存点都属于委托方派系。
-- 剧情卡效果只使用允许的 `kind`；`speakerId`、`from`、`to`、`aboutIds` 都是存在的主体或 `src-*` 来源。
+- 剧情卡效果只使用允许的 `kind`。发件署名、传闻引用与实际收件人分别校验。静态署名可以引用未上场名册成员，`to` 只接受有效的收件主体。证据和秘密的 `heldBy` 校验直接获授权的主体。见 [content-pack.md — 序章内容契约](../game/content-pack.md#9-序章剧情卡scenarioswatergate-v1yaml)。
 - 名册中的 `agentId` 都是存在的派系或角色，且总数不超过 15。
 - 模板与词表覆盖完整（[内容包](../game/content-pack.md) 第 12 节）。

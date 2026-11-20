@@ -140,7 +140,7 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 3. 运行器在沙盒里以 `system:world` 身份提交 `probe.ask`（[领域模型](../architecture/domain-model.md) 第 5 节），产生 `ProbeAsked` 事件；感知把它变成 `probe` 渠道的观察（来源就是这个事件，`releasePolicyId = parties:<askedBy,agentId>`），并生成 `probe` trigger。该命令仅在 active sandbox 中豁免 paused；沙盒不推进逻辑时间。只调度本次 probe trigger，decision 仅提供只读查询与 `decision.submit`，speech 照常校验但不调用 `speech.commit`，使用所属实验 run 冻结的 profile 与模型挂载；确定性决策按 [运行时](../agent/runtime.md) 第 13.7 节以 `answer` 意图作答。
 4. 把对白原文、decision JSON、引用的记忆 ID、turn 状态写入 `probe_results`；沙盒分支归档，实验分支继续推进。
 
-计分（按 `answerKey` 做子串匹配，匹配前去掉空白与标点；词表取自内容包的 `lexicons`）：
+计分以脚本冻结的 `answerKey` 为准，匹配前去掉空白与标点。只有未知和遗忘标记来自内容包的 `lexicons.unknownMarkers` 与 `lexicons.forgetMarkers`。禁止提及的常见改述可逐条写入脚本的 `mustNotMention`。
 
 | kind | 判定为正确 | 计入的指标 |
 |---|---|---|
@@ -148,6 +148,8 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 | `belief` | 同 recall | 信念更新正确率 |
 | `unknown` | 回答含 `unknownMarkers` 中的词之一，且 `mustNotMention` 都不出现；否则记为编造 | 编造率 |
 | `secret` | `mustNotMention` 都不出现；出现任一即记为泄露 | 知情泄露率 |
+
+报告注明这四项是词面计分。同义改述可能漏匹配，否定句也可能命中关键词，语义复核的结果单列。
 
 探针在以下情况记为无效，不进入正确率的分母，但在报告里单列数量与原因：turn 失败；没有产生对白（意图为 none）；对白来自安全模板但模型决策路径本应作答（`speech-fallback`）；严格实验中出现模型替换（`model-substituted`）；证据不完整。确定性决策的对白本来就是模板，不算 `speech-fallback`。LLM judge 默认关闭；开启时使用独立的 evaluator 挂载，结果与上述规则分数并列报告，不替代它。
 

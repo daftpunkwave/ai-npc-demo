@@ -42,7 +42,7 @@
 | 写序章规则 | [game/rules.md](game/rules.md) → [game/content-pack.md](game/content-pack.md) → [domain-model.md](architecture/domain-model.md) |
 | 做多人（设计层） | [design/multiplayer/README.md](design/multiplayer/README.md) → [01-seats-and-clock.md](design/multiplayer/01-seats-and-clock.md) → [02-authority-economy-fairness.md](design/multiplayer/02-authority-economy-fairness.md) |
 | 排资产 | [design/assets/README.md](design/assets/README.md) → [01-inventory.md](design/assets/01-inventory.md) → [02-modeling-spec.md](design/assets/02-modeling-spec.md) |
-| 研究评估 | [memory.md](agent/memory.md) → [evaluation.md](platform/evaluation.md) → [observability.md](platform/observability.md) |
+| 研究评估 | [memory.md](agent/memory.md) → [runtime.md](agent/runtime.md) → [evaluation.md](platform/evaluation.md) → [observability.md](platform/observability.md) |
 | 运营与策划 | [game/content-pack.md](game/content-pack.md) → [operations.md](platform/operations.md) → [design/gameplay/05-chapter.md](design/gameplay/05-chapter.md) |
 
 ## 4. 负责关系：每个主题只有一个负责文档
@@ -89,7 +89,7 @@
 1. **设计改动只改 `docs/design/`。** 它是仓库内唯一的设计权威，不设外部镜像，也不从仓库外同步。
 2. **切片范围的改动只改 `00-scope-and-invariants.md`。** 各工程文档引用它，不复制范围定义。
 3. **规则数值只有一个来源。** 序章的阈值、日耗、门槛与加成写在 [game/rules.md](game/rules.md)；初始库存与内容数据写在 [game/content-pack.md](game/content-pack.md)；设计目标值写在 `design/balance/`。三处不重复定义同一组数字。
-4. **未实现的系统只写“不实现 + 接口”，不写简化版规则。** 城建、法案、支持/吞并、袭击、四季、多人都不在切片内。
+4. **序章文档只定义切片内的规则。** 切片外系统的入口与接口以 [00-scope-and-invariants.md — 序章切片范围](00-scope-and-invariants.md#1-切片范围) 为准。
 5. **文档链接使用“原始文件名 — 中文名称”。** 未存在的目标文件、代码示例与无可访问地址的来源不伪造链接。
 6. **变更后运行 `pnpm check:docs`。** 它检查根 `README.md`、`AGENTS.md`、服务端 README 和 `docs/**/*.md` 的相对链接、标题锚点与 Markdown 表格列数。
 7. 工程文档标注交付状态时沿用 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览) 的「已实现」「部分实现」「目标」。部分实现需写清已交付范围，具体迁移项见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。

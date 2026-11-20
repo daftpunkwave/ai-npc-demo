@@ -23,9 +23,9 @@ PRAGMA busy_timeout = 5000;
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
 
-本节的 DDL 是 0001 的基线；后续迁移只追加结构与索引，不改既有表：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`。两份迁移的完整语句见 §2.1。
+本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`。两份迁移的完整语句见 §2.1。
 
-`agent_activations` 在 0001 中的 20 人注释是历史记录，表约束只校验激活状态枚举。目标配额为部署内 15 个活动身份，由激活事务统一检查。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。
+`agent_activations` 保存单个身份的激活状态。部署级配额为 15 个活动身份，由激活事务检查跨分支总数。现有数据库迁移只约束单行状态。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。
 
 ```sql
 -- ===== deployment scope =====
@@ -209,7 +209,7 @@ CREATE TABLE conversation_lines (       -- read projection maintained by game.co
   PRIMARY KEY (branch_id, conversation_id, seq)
 );
 
-CREATE TABLE agent_activations (        -- quota: at most 20 rows with status 'active' across non-frozen branches
+CREATE TABLE agent_activations (
   branch_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('active', 'dormant')),

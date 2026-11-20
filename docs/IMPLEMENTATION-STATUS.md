@@ -17,7 +17,7 @@
 | 时钟 | 20 秒/tick | 三份现有装配与时钟模块默认值均为 10 秒/tick | **待改** |
 | 资源 | 序章结算 3 种库存，t168 交接 6 种城市资源 | 库存契约只定义 `supply`/`energy`/`medical` | **缺 t168 交接** |
 | 地图 | 序章 6 节点、9 条路 | 6 节点、9 条路 | **已对齐序章** |
-| 剧情卡 | 标准装配九张，t2–t144 | 数量与时点已对齐，部分署名和唤醒身份仍用旧编制 | **部分实现** |
+| 剧情卡 | 标准装配九张，t2–t144 | 数量与时点已对齐。部分署名与唤醒身份仍用旧编制，谷寻的私信目标仍为公社 AI 主体 | **部分实现** |
 | 三项仪表 | 中继 45、果园 50、迁徙 50；日结顺序 | 已实现 | **已对齐** |
 | t144 程序案 | 五席各 1 票，3 票通过 | 剧情卡发出议事邀请，目前没有表决状态、事件或议事录 | **目标** |
 | 序章终点 | t168 评估后切片结束 | 已提交评估并标记 campaign 为 `evaluated`，时钟仍可推进 | **待改** |
@@ -37,7 +37,7 @@
 
 6. 时钟模块默认值与三份装配的 `secondsPerTick` 从 10 迁到 20，并同步依赖该值的测试。已冻结 run 的配置按恢复兼容规则处理。
 7. t168 提交 `ChapterStageEvaluated` 后结束序章，停止时钟推进并保留存档。按 [00-scope-and-invariants.md — 序章资源边界](00-scope-and-invariants.md#12-序章资源边界) 验证资源交接。
-8. S22 交付 t144 程序案，补齐提案与投票命令、`MotionDecided` 事件、议事录和玩家投影。表决截止和缺席结案时点待定稿。`ChapterStageEvaluated` 携带程序案结果，S23 验证表决门槛与完整章节交接。参见 [domain-model.md — 命令目录](architecture/domain-model.md#5-命令目录)、[domain-model.md — 事件目录](architecture/domain-model.md#6-事件目录)。
+8. 交付序章程序案需补齐提案与投票命令、`MotionDecided` 公共事件和感知模板、议事录、玩家投影及其词条。`ChapterStageEvaluated` 携带程序案结果。表决截止和缺席结案时点待定稿。验收覆盖表决门槛、授权投影与完整章节交接。参见 [domain-model.md — 命令目录](architecture/domain-model.md#5-命令目录)、[perception.md — 观察内容](agent/perception.md#114-观察内容)。
 
 ### 2.3 内容与配置
 
@@ -45,8 +45,10 @@
 10. `starts.yaml` 只启用 `human-neutral`，其余四席用 `enabled: false`。加载器和开局命令须共同执行该限制。补上闻昭的 `npc-wenzhao` 接触入口及第三条开局消息。参见 [content-pack.md — 开局内容](game/content-pack.md#8-五席开局startsyaml本切片只启用公社)。
 11. `scenarios/watergate-v1.yaml` 的 `speakerId` 允许 43 名册中未上场的署名（沈砾、苏回、谷寻），事件不实例化、不调用模型；若加载器把 `speakerId` 校验成 roster 成员，需放行 signature-only speaker。`wake-agents` 只唤醒 7 名党魁/外域，不唤醒 8 名支持者。同时把 4 张卡的署名从 `npc-qingzhi`、`npc-luo`、`npc-zhuifeng`、`npc-tangzhen` 改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`，与 [content-pack](game/content-pack.md) 第 9 节一致。
 12. `locale/zh-CN.yaml` 的 `playerName` 改为“党魁”；`resources` 增加 `materials`/`food`/`water` 词条（t168 用）。
-13. 世界名与 system 模板已对齐。名册与其余数据修改按内容包版本规则推进。参见 [content-pack.md — 序章内容契约](game/content-pack.md#1-文件清单)。
+13. 世界名与 system 模板已对齐。玩家的水账已由 `starts.knowledge` 授予，待移除 `evidence.yaml` 中指向公社 AI 主体的旧授权。谷寻定向来信改投 `player-1`。温原和阿禾的运输技能迁到 `transport`，评估脚本同步角色 ID 与探针词表。内容变更按包版本推进。参见 [content-pack.md — 序章内容契约](game/content-pack.md)。
 14. `factions.yaml` 的 `homeNodeId` 拆成 `factionHomeNodeId` + `outpostNodeId`（人类）与 `territoryNodeId`（外域）；见 [content-pack](game/content-pack.md) 第 4 节。
+
+**通信和受潮结算待对齐。** 当前通信代码给战略 Agent 按无位置处理，需要接入党魁的灰港开局位置与外域实际位置。受潮卡直接提交库存增减，扣减若会触及预留则拒绝该效果。目标为在事务内按可用量扣减，保留预留，并继续完成当天结算。参见 [rules.md — 序章结算规则](game/rules.md)。
 
 ### 2.4 表现与客户端
 
@@ -56,7 +58,7 @@
 ### 2.5 公共契约迁移
 
 17. 将公社党魁的水闸 `policy.set` 和条款义务人接入统一授权，按已开局的玩家和派系记录校验。玩家公开广播复用现有送达机制，命令名与正文限制待定稿。参见 [rules.md — 政策](game/rules.md#8-政策)、[api.md — 玩家命令权限](architecture/api.md#31-玩家命令权限)。
-18. 对照设计补齐 `seatId` 与 `actorId` 的持久记录、会话授权、命令、事件、投影和存档回放。先明确系统、外域与多席共享事件的归属，以及既有记录的版本与读取规则。参见 [02-authority-economy-fairness.md — 首版接口保留项](design/multiplayer/02-authority-economy-fairness.md)、[contracts.md — 契约演进](architecture/contracts.md#7-契约演进)。
+18. 补齐 `seatId` 与 `actorId` 的持久记录、会话授权、命令、事件、投影和存档回放。先定稿存储与接口字段，验证人类席位归属、外域与系统来源、多席表决和既有记录兼容读取。参见 [contracts.md — 契约演进](architecture/contracts.md#7-契约演进)。
 19. 暂停与继续当前在时钟状态提交后单独写入 `operationId` 结果，进程在两次提交之间退出时重试可能出现版本冲突。需要补齐原子性并验证崩溃后的同键重试。参见 [operations.md — 时钟与运行状态](platform/operations.md#2-时钟与运行状态)。
 
 ## 3. 迁移顺序

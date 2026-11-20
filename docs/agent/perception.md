@@ -267,6 +267,8 @@ interface ObservationContent {
 | `ScenarioCompensationApplied` | `剧情卡状态已更新。` |
 | `ScenarioOverrideApplied` | `剧情卡状态已更新。` |
 
+序章程序案交付时，`MotionDecided` 增加观察模板「程序案表决结束，结果已记入议事录。」按公开通报渠道投递，观察只取已经提交的逐席票、结果和议程顺序。参见 [domain-model.md — 事件目录](../architecture/domain-model.md#6-事件目录)。
+
 `{termText}` 用 `termTemplates.<kind>` 渲染单个条款，`{termsText}` 是全部条款的渲染结果用“；”连接。各条款模板：
 
 | kind | 模板 |

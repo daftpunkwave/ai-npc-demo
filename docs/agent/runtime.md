@@ -6,9 +6,11 @@
 
 首版是单玩家、单权威世界；本切片玩家是公社党魁，其余四席由 AI 党魁运行。世界观统一，动态知识按主体授权，选择派系不会复制世界真值或 NPC 人格。
 
-完整 roster 为 8 名公社支持者、4 名 AI 党魁、3 名外域 Agent，共 15 个。在线世界与实验分支的活跃身份合计不得超过 15；15 个身份不等于同时发出 15 个模型请求。
+完整 roster 为 8 名公社支持者、4 名 AI 党魁、3 名外域 Agent。在线、实验和探针合计最多激活 15 个 gameplay 身份，模型请求另有并发与排队限制。
 
-完整 15 个 Agent 实验需要暂停在线运行，再逐分支执行。休眠快照不占活跃名额，恢复前原子预留名额；policy、speech 和记忆整理属于同一身份的任务，不额外创造 Agent。
+在线满员时，完整名册实验先暂停在线世界并释放身份名额，再逐分支激活。恢复前原子预留名额。policy、speech 和记忆整理共用同一身份。参见 [operations.md — 故障与配额操作](../platform/operations.md#9-故障与配额操作)。
+
+开放世界的每日行动次数与关键决策预算由目标玩法定义。序章调度使用 trigger、冷却和模型预算，评估时按实际模型决策及调用记录计费。参见 [11-agent-actions.md — Agent 行动](../design/gameplay/11-agent-actions.md)。
 
 Runtime 负责推进统一管线、预算、租约和证据；模块（插件）实现各阶段策略。世界服务独立裁决行动，renderer 只显示结果，模型响应不能直接改 SQLite 世界状态。感知、记忆、上下文、压缩、工具视图与决策都通过与其他职能相同的 ModuleDefinition/catalog 注册，实例作用域为 agent；调度作用在整次 run 上，实例作用域为 run。runtime 本身是宿主固定管线，不在模块目录中。
 
@@ -205,6 +207,8 @@ worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不�
 | turn 执行 | 调度器创建的 turn | 13.3 节 |
 | 投影推送 | 新领域事件、turn 状态变化 | 更新玩家投影与控制台频道并经 WS 推送 |
 
+在线时钟提交世界日结后继续推进。记忆整理由后台 worker 认领，经过模型池队列与并发限制。只有依赖整理水位的 Agent turn 按就绪规则等待。受控 step 按本 tick 的收敛条件等待到期整理，以便重复验证同一输入。参见 [model-pool.md — 全池公平队列与背压](model-pool.md#7-全池公平队列与背压)。
+
 ### 13.2 调度器（`agent.scheduling.fair`）
 
 trigger 来源与优先级：
@@ -233,7 +237,7 @@ scheduling:
     patrolHour: 8          # strategic agents only
 ```
 
-唤醒建议：时钟每推进到一个新 tick T，调度器对每个已激活、由 agent 控制的 Agent 调用一次 `memory.proposeWakeups({ worldTick: T })`；对返回的每条 `atTick ≤ T` 的建议，以 `dedupeKey` 写入 `triggers.dedupe_key` 创建 `prospective` trigger（已存在则跳过，所以每条建议只触发一次）。巡检 trigger 的 `dedupeKey` 为 `patrol:<agentId>:<day>`。
+每推进一个 tick，调度器向已激活且由 Agent 控制的身份请求 `memory.proposeWakeups({ worldTick: T })`，对已到期建议按 `dedupeKey` 创建 `prospective` trigger。推进到 `patrolHour` 时，调度器为其中的战略 Agent 写入当日 `patrol` trigger，以 `patrol:<agentId>:<day>` 去重。巡检从时钟产生，独立于感知观察与记忆建议。
 
 每次调度：
 
@@ -279,7 +283,7 @@ turn 的默认预算与失败策略（Agent profile，完整默认值见 [配置
 
 ```yaml
 budgets:
-  maxModelCallsPerTurn: 6     # decision rounds + nudges + speech + speech retry
+  maxModelCallsPerTurn: 6     # total request limit across the turn, including retries
   maxDecisionRounds: 4
   maxToolCallsPerTurn: 8
   maxToolCallsPerRound: 3
@@ -293,12 +297,14 @@ readiness:
 failurePolicy: strict         # strict | online-fallback (RunSpec.failurePolicy overrides it)
 ```
 
+所有模型阶段共用 `maxModelCallsPerTurn` 硬上限。发出请求、nudge 后再次询问、重试或重新规划前都检查剩余额度，模型池的重试同样消耗额度。有效决定完成前耗尽预算时，turn 标记 `budget-exhausted`。决定含有对白意图但没有额度生成或重试对白时，走安全模板并记录 `speech-fallback` 与预算原因。
+
 | 失败点 | strict（实验默认） | online-fallback（在线世界默认） |
 |---|---|---|
 | 记忆未就绪（等待超时，或 13.4 节的“整理失败”） | turn failed（`not-ready`），样本无效 | 等待超过 `onlineDegradeAfterMs` 或整理失败时，用当前已提交的 revision 继续，turn 标记 `degraded` |
 | decision 模型失败或 `invalid-decision` | turn failed；玩家看到 `ui.noReply`“（对方暂未回应）” | 同左 |
 | speech 失败 | 安全模板，标记 `speech-fallback` | 同左 |
-| 预算耗尽 | turn 以 `budget-exhausted` 结束，已提交的命令保留 | 同左 |
+| 预算在有效决定前耗尽 | turn 以 `budget-exhausted` 结束，已提交的命令保留 | 同左 |
 
 ### 13.4 冻结 InputFrontier 与就绪判定
 

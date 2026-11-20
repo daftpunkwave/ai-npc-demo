@@ -65,8 +65,7 @@
 ```ts
 interface CommandEnvelope {
   commandId: string;                 // client generated, "cmd-..." ; reuse it when retrying
-  type: string;                      // see domain-model §5; players may use: campaign.start, dialogue.say,
-                                     // information.share, agreement.propose, agreement.respond, task.dispatch, task.cancel
+  type: string;                      // for player command permissions, see the next section
   schemaVersion: 1;
   expectedVersions?: Record<string, number>; // "aggregateType:aggregateId" -> version
   payload: Json;
@@ -90,7 +89,9 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 3.1 玩家命令权限
 
-当前玩家接口只接受上面列出的七类命令，提交 `policy.set` 会返回 403。序章目标通过同一命令路由开放公社玩家的水闸政策、公开广播和程序案交互。政策键、当前 campaign 的席位控制权和实际发起者由服务端裁决。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
+**已实现**：`POST /api/v1/commands` 接受 `campaign.start`、`dialogue.say`、`information.share`、`agreement.propose`、`agreement.respond`、`task.dispatch` 和 `task.cancel`。玩家提交 `policy.set` 会返回 403。
+
+**序章目标**：同一接口接受公社党魁玩家设置 `watergate.allocation` 的 `policy.set`，并承载玩家广播及程序案交互。服务端使用认证和已开局的席位记录裁决权限。广播及程序案命令的具体请求格式待定。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
 
 ## 4. WebSocket：`GET /api/v1/streams?ticket=<ticket>`
 
@@ -112,7 +113,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 频道 | 角色 | 推送内容 | 状态 |
 |---|---|---|---|
 | `player` | player | `PlayerProjection` 快照与增量；新对话行、提醒用 `append` | 已实现 |
-| `console.health` | operator、researcher | 每 2 秒一次健康摘要（采用 `GET /api/v1/console/health` 的首版完整结构） | 目标 |
+| `console.health` | operator、researcher | 每 2 秒一次健康摘要，结构与 [运行总览的目标响应](#51-运行总览与模块装配) 一致 | 目标 |
 | `console.timeline` | researcher | 新领域事件与生命周期事件的摘要（`append`） | 目标 |
 | `console.turns` | researcher | turn 状态变化（`append`） | 目标 |
 
