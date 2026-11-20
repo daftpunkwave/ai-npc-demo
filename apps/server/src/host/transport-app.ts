@@ -4,7 +4,7 @@
  * 禁止在传输层内重算授权、把内部错误细节交给客户端，或在创建失败后留下已启动资源。
  */
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Authority } from "@ai-npc/authority";
 import type { AuthContext, HostServices, ResolvedModuleSet, StartOption } from "@ai-npc/contracts";
@@ -106,6 +106,8 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
   const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent } = input;
   const consoleStaticDir = resolve(process.cwd(), "apps/server/console-static");
+  // 开发宿主与控制台构建并行启动；目录先存在，路由在空目录上登记，构建完成后无需重启服务端。
+  mkdirSync(consoleStaticDir, { recursive: true });
   try {
     return await runtime.transport.createApp({
       authority,
@@ -209,7 +211,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
           moduleId: "transport.http-ws.fastify",
           moduleVersion: "1.0.0",
         }),
-      ...(existsSync(consoleStaticDir) ? { consoleStaticDir } : {}),
+      consoleStaticDir,
       onInternalError: (message, error) => {
         host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
       },

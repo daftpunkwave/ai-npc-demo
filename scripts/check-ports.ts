@@ -8,6 +8,11 @@ import { rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { projectRoot, systemCommandPath } from "./processes";
+import {
+  macOSListenerArgs,
+  parseMacOSListeners,
+  type ListenerRecord,
+} from "./port-listeners";
 
 const expectedPorts = [3000, 5173] as const;
 // 项目只允许本机 HTTP，这两个地址不会承载远端或凭据流量。
@@ -17,11 +22,6 @@ const clientUrl = "http://127.0.0.1:5173/";
 interface ProcessRecord {
   readonly pid: number;
   readonly parentPid: number;
-}
-
-interface ListenerRecord {
-  readonly pid: number;
-  readonly port: number;
 }
 
 interface ProcessSnapshot {
@@ -116,23 +116,11 @@ function linuxListeners(): readonly ListenerRecord[] {
 }
 
 function macOSListeners(): readonly ListenerRecord[] {
-  const output = execFileSync(systemCommandPath("lsof"), ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pc"], {
+  const output = execFileSync(systemCommandPath("lsof"), macOSListenerArgs, {
     encoding: "utf8",
     windowsHide: true,
   });
-  const records: ListenerRecord[] = [];
-  let pid = 0;
-  for (const line of output.split(/\r?\n/)) {
-    if (line.startsWith("p")) {
-      pid = Number(line.slice(1));
-    } else if (line.startsWith("n") && pid > 0) {
-      const match = /:(\d+)$/.exec(line);
-      if (match !== null) {
-        records.push({ pid, port: Number(match[1]) });
-      }
-    }
-  }
-  return records;
+  return parseMacOSListeners(output);
 }
 
 function snapshot(rootPid: number): ProcessSnapshot {

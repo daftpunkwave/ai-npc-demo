@@ -14,7 +14,7 @@
         "check:boundaries": "tsx scripts/check-boundaries.ts",
         "check:catalog": "tsx scripts/check-catalog.ts",
         "dev:server": "tsx apps/server/src/main.ts",
-        "dev:client": "vite --config apps/client/vite.config.ts",
+        "dev:client": "vite apps/client --config apps/client/vite.config.ts",
         "dev": "tsx scripts/dev.ts",
         "build": "vite build apps/client --config apps/client/vite.config.ts && vite build apps/console --config apps/console/vite.config.ts",
         "start": "tsx scripts/start.ts",
