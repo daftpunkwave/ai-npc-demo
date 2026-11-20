@@ -372,30 +372,42 @@ describe("剧情卡", () => {
     expect(deliveries?.map((delivery) => delivery.principalId)).toContain("player-1");
   });
 
-  it("库存调整只扣可用量，预留不被击穿", async () => {
+  it("声明 clampToAvailable 的调整只扣可用量，不击穿预留", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 2, mode: "running" });
     value.authority.jobs.runDue(value.branchId, 2);
     expect(readGameAggregate(value, "scenario-card", "card-relay-alarm")).toMatchObject({ status: "triggered" });
+    const energyBefore = (readGameAggregate(value, "stockpile", "sp-commons") as {
+      readonly amount: { readonly energy: number };
+    }).amount.energy;
 
-    // 可用量 2（amount 5、reserved 3）：-10 的调整只扣 2，预留保持 3。
+    // 可用量 2（amount 5、reserved 3）：负向 -10 只扣 2，预留保持 3；同一效果里的正向能源照常增加。
     setStockpileSupply(value, "sp-commons", { amount: 5, reserved: 3 });
     const partial = compensateCommand(value, "card-relay-alarm", [
-      { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "受潮" },
+      {
+        kind: "stockpile-adjust",
+        stockpileId: "sp-commons",
+        delta: { supply: -10, energy: 4 },
+        reason: "受潮",
+        clampToAvailable: true,
+      },
     ]);
     expect(partial.commandStatus).toBe("accepted");
     expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
-      amount: { supply: 3 },
+      amount: { supply: 3, energy: energyBefore + 4 },
       reserved: { supply: 3 },
     });
-    expect(lastStockpileAdjustment(value)).toMatchObject({ stockpileId: "sp-commons", delta: { supply: -2 } });
+    expect(lastStockpileAdjustment(value)).toMatchObject({
+      stockpileId: "sp-commons",
+      delta: { supply: -2, energy: 4 },
+    });
 
     // 可用量为 0：效果按空操作完成，不提交零额调整事件。
     setStockpileSupply(value, "sp-commons", { amount: 3, reserved: 3 });
     const adjustedBefore = readGameEvents(value).filter((event) => event.type === "StockpileAdjusted").length;
     const empty = compensateCommand(value, "card-relay-alarm", [
-      { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "受潮" },
+      { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "受潮", clampToAvailable: true },
     ]);
     expect(empty.commandStatus).toBe("accepted");
     expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
@@ -403,6 +415,27 @@ describe("剧情卡", () => {
       reserved: { supply: 3 },
     });
     expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(adjustedBefore);
+  });
+
+  it("未声明 clampToAvailable 的调整保持整体成功或失败", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 2, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 2);
+    expect(readGameAggregate(value, "scenario-card", "card-relay-alarm")).toMatchObject({ status: "triggered" });
+
+    // 可用量 2 时提交 -10：不夹取，整体失败并回滚，库存与预留都不变。
+    setStockpileSupply(value, "sp-commons", { amount: 5, reserved: 3 });
+    expect(() =>
+      compensateCommand(value, "card-relay-alarm", [
+        { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "补偿" },
+      ]),
+    ).toThrow(/库存调整失败/);
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 5 },
+      reserved: { supply: 3 },
+    });
+    expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(0);
   });
 
   it("覆盖成功后在同一事务标记污染，重启读取仍可见", async () => {

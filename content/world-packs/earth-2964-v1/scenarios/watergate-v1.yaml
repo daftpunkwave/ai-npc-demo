@@ -39,7 +39,7 @@ cards:
     version: 1
     trigger: { atTick: 72 }
     effects:
-      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮 }
+      - { kind: stockpile-adjust, stockpileId: sp-commons, delta: { supply: -10 }, reason: 仓储受潮, clampToAvailable: true }
       - { kind: broadcast, speakerId: npc-wenyuan, text: 仓库受潮，库存需要重新清点。 }
   - cardId: card-migration-season
     version: 1
