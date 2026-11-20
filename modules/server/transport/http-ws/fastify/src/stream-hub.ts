@@ -272,26 +272,74 @@ export class StreamHub {
   /**
    * 发布投影；失败时安全上报并让玩家连接改发完整快照。
    * 失败的发布没有推进 streamSeq，继续补发旧增量会让客户端停在旧视图；
-   * 清空重放缓冲并标记 needsSnapshot，订阅中的连接立即尝试快照，其余在下次订阅或 ack 时重建。
+   * 清空重放缓冲并重建基线，订阅中的连接立即补发快照，其余在下次订阅或 ack 时重建。
    */
+  // eslint-disable-next-line no-unused-vars -- 上报回调的类型参数名用于表达调用契约，运行时由调用方传入。
   publishWithResync(report: (message: string, error: unknown) => void): void {
+    const reportSafely = (message: string, error: unknown): void => {
+      try {
+        report(message, error);
+      } catch {
+        // 上报失败不能反过来影响已提交操作或连接清理。
+      }
+    };
     try {
       this.publish();
     } catch (error) {
-      report("projection publish failed", error);
-      this.resyncPlayers();
+      reportSafely("projection publish failed", error);
+      try {
+        this.resyncPlayers(reportSafely);
+      } catch (error) {
+        reportSafely("projection resync failed", error);
+      }
     }
   }
 
-  /** 投影基线失效后的恢复：清空旧增量，所有玩家连接改为等待完整快照。 */
-  private resyncPlayers(): void {
+  /** 投影基线失效后的恢复：清空旧增量，按当前投影重建基线并向订阅中的玩家补发完整快照。 */
+  // eslint-disable-next-line no-unused-vars -- 上报回调的类型参数名用于表达调用契约，运行时由调用方传入。
+  private resyncPlayers(report: (message: string, error: unknown) => void): void {
     this.replay.resetAll(this.branchId, this.generation);
     const players = [...this.connections.values()].filter((connection) => connection.isPlayer);
     for (const connection of players) {
       connection.needsSnapshot = true;
     }
+    let projection: PlayerProjection;
+    try {
+      projection = this.options.projection();
+    } catch (error) {
+      report("projection resync failed", error);
+      return;
+    }
+    let payload: string;
+    try {
+      payload = JSON.stringify({
+        type: "snapshot",
+        channel: playerChannel,
+        streamSeq: this.streamSeq,
+        projectionVersion: this.projectionVersion,
+        data: projection,
+      });
+    } catch (error) {
+      report("projection resync failed", error);
+      return;
+    }
+    // 快照已经包含当前状态；先推进增量基线，避免下一次 publish 重复追加快照里已有的条目。
+    try {
+      this.lastProjection = Object.freeze({ ...projection });
+      this.lastFieldText = fieldTexts(projection);
+    } catch (error) {
+      report("projection resync failed", error);
+      return;
+    }
     for (const connection of players) {
-      this.sender.flushPendingSnapshot(connection);
+      // 过期会话可能在读取投影期间失效；activeSession 会撤销会话并关闭其连接，不能再补发快照。
+      if (this.sessions.activeSession(connection.sessionId) === null) {
+        continue;
+      }
+      if (!connection.subscriptions.has(playerChannel)) {
+        continue;
+      }
+      this.sender.sendSerializedSnapshot(connection, payload);
     }
   }
 

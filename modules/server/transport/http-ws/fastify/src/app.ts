@@ -164,7 +164,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     close,
     inject,
     // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
-    notifyWorldChanged: () => hub.publishWithResync(report),
+    notifyWorldChanged: () => {
+      hub.publishWithResync(report);
+    },
     address,
     streamStats: () => hub.stats(),
   };

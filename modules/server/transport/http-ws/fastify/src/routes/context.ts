@@ -40,6 +40,7 @@ export interface RouteContext {
   readonly identityByToken: ReadonlyMap<string, ServerIdentity>;
   readonly branch: OnlineBranch;
   /** 传输层内部错误的安全上报口；回调自身抛错不会改变已确定的 HTTP 响应或连接清理。 */
+  // eslint-disable-next-line no-unused-vars -- 函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly reportInternalError: (message: string, error: unknown) => void;
 }
 

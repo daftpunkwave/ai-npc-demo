@@ -201,6 +201,38 @@ describe("WS 流中心", () => {
     }
   });
 
+  it("重同步不向已过期会话补发快照", () => {
+    let now = 0;
+    let failNext = false;
+    const hub = createHub({
+      projection: () => {
+        if (failNext) {
+          failNext = false;
+          throw new Error("projection broken");
+        }
+        return projection(0);
+      },
+      now: () => now,
+      sessionTtlMs: 100,
+      sweepIntervalMs: 100_000,
+    });
+    try {
+      const session = hub.login({ token: "player-login-token", auth: playerAuth });
+      const socket = openStream(hub, session.sessionId);
+      socket.drain();
+
+      now = 101;
+      failNext = true;
+      hub.publishWithResync(() => {});
+
+      // 会话在重同步前已过期：activeSession 撤销会话并关闭连接，不再补发玩家投影。
+      expect(socket.closed).toMatchObject({ code: 4401, reason: "session expired" });
+      expect(socket.sent).toEqual([]);
+    } finally {
+      hub.close();
+    }
+  });
+
   it("慢连接超过缓冲阈值时丢弃增量并标记快照，不阻塞其他连接", () => {
     let current = projection(0);
     const hub = createHub({ projection: () => current, maxBufferedBytes: 128 });
