@@ -117,13 +117,17 @@ export class SqliteTransaction implements StorageTransaction {
       this.database,
       this.catalog,
       requireUnscopedTable(this.catalog, table),
-      () => this.assertActive(),
+      () => {
+        this.assertActive();
+      },
     );
   }
 
   branch(branchId: string): ScopedBranchStorage {
     this.assertActive();
-    return createBranchAccess(this.database, this.catalog, branchId, () => this.assertActive());
+    return createBranchAccess(this.database, this.catalog, branchId, () => {
+      this.assertActive();
+    });
   }
 
   savepoint<T>(name: string, fn: () => T): T {

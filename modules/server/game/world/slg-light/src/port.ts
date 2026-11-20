@@ -239,6 +239,7 @@ class SlgWorldPort implements GameWorldPort {
     }
     const delegations = this.findDelegations(principalId, stockpileId).map((entry) => entry.state);
     const first = delegations[0];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 未开启该选项，属误报。
     if (first === undefined) {
       return { kind: "none" };
     }
