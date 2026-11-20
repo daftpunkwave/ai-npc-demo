@@ -166,7 +166,8 @@ function inlineReferences(node: Json, root: Json, stack: readonly string[]): Jso
 }
 
 /**
- * 把对象 schema 规范为模型 strict profile：全部属性必填且禁止额外属性。
+ * 把固定属性对象规范为模型 strict profile：全部属性必填并禁止额外属性。
+ * 无固定属性的自由对象保留开放语义；strict profile 无法表达的组合直接拒绝。
  * 嵌套对象同样处理，数组元素递归清洗。
  */
 function cleanNode(node: Json, path: string): Json {
@@ -231,11 +232,14 @@ function cleanNode(node: Json, path: string): Json {
     ? cleaned.properties as { [key: string]: Json }
     : undefined;
   const propertyNames = properties === undefined ? [] : Object.keys(properties);
+  if (propertyNames.length > 0 && hasAdditionalProperties && additionalProperties !== false) {
+    throw new TypeError(`strict profile 无法表达固定属性与开放 additionalProperties 的组合: ${path}`);
+  }
   const allowsAdditionalProperties =
     hasAdditionalProperties &&
     additionalProperties !== undefined &&
     (additionalProperties === true || isJsonObject(additionalProperties));
-  const isObjectType = cleaned.type === "object" || hasProperties || allowsAdditionalProperties;
+  const isObjectType = cleaned.type === "object" || hasProperties || hasAdditionalProperties;
   const preservesFreeFormObject =
     propertyNames.length === 0 && (allowsAdditionalProperties || !hasAdditionalProperties);
   if (isObjectType && preservesFreeFormObject) {

@@ -55,7 +55,7 @@ describe("JSON Schema 清洗", () => {
         nested: {
           type: "object",
           properties: { flag: { type: "boolean" } },
-          additionalProperties: true,
+          additionalProperties: false,
         },
       },
       required: ["name"],
@@ -254,15 +254,16 @@ describe("JSON Schema 清洗", () => {
       additionalProperties: {},
     });
     expect(
-      cleanJsonSchemaForModel({
-        type: "object",
-        properties: { id: { type: "string" } },
-        additionalProperties: { type: "number" },
-      }),
-    ).toEqual({
-      type: "object",
-      properties: { id: { type: "string" } },
-      required: ["id"],
+      () =>
+        cleanJsonSchemaForModel({
+          type: "object",
+          properties: { id: { type: "string" } },
+          additionalProperties: { type: "number" },
+        }),
+    ).toThrow(TypeError);
+    expect(cleanJsonSchemaForModel({ additionalProperties: false })).toEqual({
+      properties: {},
+      required: [],
       additionalProperties: false,
     });
     expect(cleanJsonSchemaForModel(z.toJSONSchema(z.object({}).strict()))).toEqual({
