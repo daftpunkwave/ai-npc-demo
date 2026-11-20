@@ -233,6 +233,26 @@ describe("WS 流中心", () => {
     }
   });
 
+  it("投影无法序列化时重同步只上报，不向调用方抛出", () => {
+    const errors: string[] = [];
+    const circular = projection(0) as PlayerProjection & { self?: unknown };
+    circular.self = circular;
+    let broken = false;
+    const hub = createHub({ projection: () => (broken ? circular : projection(0)) });
+    try {
+      const session = hub.login({ token: "player-login-token", auth: playerAuth });
+      const socket = openStream(hub, session.sessionId);
+      socket.drain();
+
+      broken = true;
+      expect(() => hub.publishWithResync((message) => errors.push(message))).not.toThrow();
+      expect(errors).toEqual(["projection publish failed", "projection resync failed"]);
+      expect(socket.sent).toEqual([]);
+    } finally {
+      hub.close();
+    }
+  });
+
   it("慢连接超过缓冲阈值时丢弃增量并标记快照，不阻塞其他连接", () => {
     let current = projection(0);
     const hub = createHub({ projection: () => current, maxBufferedBytes: 128 });
