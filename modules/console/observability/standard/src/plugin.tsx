@@ -52,7 +52,7 @@ function ObservabilityPage(): ReactNode {
       }, 1_500);
     };
 
-    const connectStream = async (): Promise<void> => {
+    async function connectStream(): Promise<void> {
       const generation = connectionGeneration + 1;
       connectionGeneration = generation;
       try {
@@ -99,7 +99,7 @@ function ObservabilityPage(): ReactNode {
           scheduleReconnect();
         }
       }
-    };
+    }
 
     const start = async (): Promise<void> => {
       try {
