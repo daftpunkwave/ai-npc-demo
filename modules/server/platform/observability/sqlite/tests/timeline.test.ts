@@ -25,11 +25,14 @@ function row(): Record<string, StorageValue> {
   };
 }
 
-function storageWith(calls: QueryCall[]): StoragePort {
+function storageWith(
+  calls: QueryCall[],
+  lifecycleRows: readonly Record<string, StorageValue>[] = [],
+): StoragePort {
   const transaction = {
     all(sql: string, parameters: readonly StorageValue[] = []) {
       calls.push({ sql, parameters });
-      return sql.includes("FROM domain_events") ? [row()] : [];
+      return sql.includes("FROM domain_events") ? [row()] : lifecycleRows;
     },
   } as unknown as StorageTransaction;
   return {
@@ -61,5 +64,35 @@ describe("ObservabilityPort timeline", () => {
     expect(domainCall?.sql).toContain("ORDER BY world_seq DESC");
     expect(domainCall?.parameters.at(-1)).toBe(10);
     expect(domainCall?.parameters).not.toContain(30);
+  });
+
+  it("生命周期事件按 subject_id 筛选，并与领域事件统一按时间截取", () => {
+    const calls: QueryCall[] = [];
+    const port = new ObservabilityPort(
+      storageWith(calls, [{
+        seq: 2,
+        type: "AgentActivated",
+        subject_id: "human-independent",
+        payload_json: "{}",
+        created_at: "2026-01-01T00:00:20.000Z",
+      }]),
+      { timelineLimit: 200 },
+    );
+
+    const response = port.timeline({
+      branchId: "br-000000000001",
+      fromSeq: 0,
+      limit: 1,
+      order: "desc",
+      types: ["AgentActivated", "late.event"],
+      agentId: "human-independent",
+    });
+
+    expect(response.events).toEqual([
+      expect.objectContaining({ kind: "lifecycle", type: "AgentActivated" }),
+    ]);
+    const lifecycleCall = calls[1];
+    expect(lifecycleCall?.sql).toContain("subject_id = ?");
+    expect(lifecycleCall?.sql).toContain("ORDER BY created_at DESC");
   });
 });

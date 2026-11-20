@@ -103,13 +103,13 @@ export class ObservabilityPort {
       );
       domainParameters.push(query.agentId, query.agentId);
       lifecycleConditions.push(
-        `EXISTS (
+        `(subject_id = ? OR EXISTS (
           SELECT 1 FROM json_tree(payload_json) AS payload_value
            WHERE payload_value.type IN ('text', 'integer', 'real')
              AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
-        )`,
+        ))`,
       );
-      lifecycleParameters.push(query.agentId);
+      lifecycleParameters.push(query.agentId, query.agentId);
     }
     if (query.nodeId !== undefined) {
       const nodeFilter = `EXISTS (
@@ -123,6 +123,7 @@ export class ObservabilityPort {
       lifecycleParameters.push(query.nodeId);
     }
     domainParameters.push(limit);
+    lifecycleParameters.push(limit);
     const rows = this.storage.transact((tx) =>
       tx.all(
         `SELECT world_seq, world_tick, event_id, type, principal_id, audience_json,
@@ -134,7 +135,7 @@ export class ObservabilityPort {
         domainParameters,
       ),
     );
-    const events: TimelineItem[] = rows.map((row) => {
+    const domainEvents: TimelineItem[] = rows.map((row) => {
       const type = String(row["type"]);
       const payload = parseJson(row["payload_json"]);
       return {
@@ -151,35 +152,44 @@ export class ObservabilityPort {
         createdAt: String(row["committed_at"]),
       };
     });
-    if (events.length < limit) {
-      lifecycleParameters.push(limit - events.length);
-      const lifecycle = this.storage.transact((tx) =>
-        tx.all(
-          `SELECT seq, type, subject_id, payload_json, created_at
-             FROM lifecycle_events
-            WHERE ${lifecycleConditions.join(" AND ")}
-            ORDER BY seq ${direction}
-            LIMIT ?`,
-          lifecycleParameters,
-        ),
-      );
-      for (const row of lifecycle) {
-        const type = String(row["type"]);
-        events.push({
-          kind: "lifecycle",
-          worldSeq: null,
-          worldTick: null,
-          eventId: null,
-          type,
-          principalId: row["subject_id"] === null ? null : String(row["subject_id"]) as TimelineItem["principalId"],
-          audience: null,
-          summaryZh: `${type} · ${row["subject_id"] === null ? "系统" : String(row["subject_id"])}`,
-          payload: parseJson(row["payload_json"]),
-          correlationId: null,
-          createdAt: String(row["created_at"]),
-        });
-      }
-    }
+    const lifecycleRows = this.storage.transact((tx) =>
+      tx.all(
+        `SELECT seq, type, subject_id, payload_json, created_at
+           FROM lifecycle_events
+          WHERE ${lifecycleConditions.join(" AND ")}
+          ORDER BY created_at ${direction}, seq ${direction}
+          LIMIT ?`,
+        lifecycleParameters,
+      ),
+    );
+    const lifecycleEvents: TimelineItem[] = lifecycleRows.map((row) => {
+      const type = String(row["type"]);
+      return {
+        kind: "lifecycle",
+        worldSeq: null,
+        worldTick: null,
+        eventId: null,
+        type,
+        principalId: row["subject_id"] === null ? null : String(row["subject_id"]) as TimelineItem["principalId"],
+        audience: null,
+        summaryZh: `${type} · ${row["subject_id"] === null ? "系统" : String(row["subject_id"])}`,
+        payload: parseJson(row["payload_json"]),
+        correlationId: null,
+        createdAt: String(row["created_at"]),
+      };
+    });
+    const directionFactor = query.order === "desc" ? -1 : 1;
+    const events = [...domainEvents, ...lifecycleEvents]
+      .sort((left, right) => {
+        const byTime = left.createdAt.localeCompare(right.createdAt);
+        if (byTime !== 0) {
+          return byTime * directionFactor;
+        }
+        return (left.worldSeq ?? -1) - (right.worldSeq ?? -1) === 0
+          ? 0
+          : ((left.worldSeq ?? -1) - (right.worldSeq ?? -1)) * directionFactor;
+      })
+      .slice(0, limit);
     return { events };
   }
 

@@ -24,45 +24,43 @@ function ObservabilityPage(): ReactNode {
   const host = usePort<ConsoleHostPort>("host.console");
   const [events, setEvents] = useState<readonly TimelineItem[]>([]);
   const [agents, setAgents] = useState<readonly AgentStatusView[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      host.api.consoleTimeline({
-        branchId: host.session.branchId,
-        fromSeq: 0,
-        limit: 100,
-        order: "desc",
-      }),
-      host.api.consoleAgents(host.session.branchId),
-    ])
-      .then(([timeline, agentResponse]) => {
-        if (!cancelled) {
-          setEvents(timeline.events);
-          setAgents(agentResponse.agents);
-          setError(null);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [host.api, host.session.branchId]);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let stream: StreamClient | null = null;
-    void host.api
-      .streamTicket()
-      .then((ticket) => {
-        if (cancelled) {
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let connectionGeneration = 0;
+
+    const clearReconnect = (): void => {
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
+
+    const scheduleReconnect = (): void => {
+      if (cancelled || reconnectTimer !== null) {
+        return;
+      }
+      setStreamError("时间线实时连接已断开，正在重连");
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connectStream();
+      }, 1_500);
+    };
+
+    const connectStream = async (): Promise<void> => {
+      const generation = connectionGeneration + 1;
+      connectionGeneration = generation;
+      try {
+        const ticket = await host.api.streamTicket();
+        if (cancelled || generation !== connectionGeneration) {
           return;
         }
+        stream?.close();
         stream = new StreamClient({
           url: host.api.webSocketUrl(ticket.ticket),
           channel: "console.timeline",
@@ -73,37 +71,87 @@ function ObservabilityPage(): ReactNode {
             }
             try {
               const timeline = timelineResponseSchema.parse(message.data);
-              if (!cancelled) {
+              if (!cancelled && generation === connectionGeneration) {
                 setEvents(timeline.events);
-                setError(null);
+                setTimelineError(null);
+                setStreamError(null);
               }
             } catch (cause) {
-              if (!cancelled) {
-                setError(cause instanceof Error ? cause.message : String(cause));
+              if (!cancelled && generation === connectionGeneration) {
+                setTimelineError(cause instanceof Error ? cause.message : String(cause));
               }
+            }
+          },
+          onClose: () => {
+            if (!cancelled && generation === connectionGeneration) {
+              scheduleReconnect();
             }
           },
           onError: (cause) => {
-            if (!cancelled) {
-              setError(cause instanceof Error ? cause.message : String(cause));
+            if (!cancelled && generation === connectionGeneration) {
+              setStreamError(cause instanceof Error ? cause.message : String(cause));
             }
           },
         });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause));
+      } catch (cause) {
+        if (!cancelled && generation === connectionGeneration) {
+          setStreamError(cause instanceof Error ? cause.message : String(cause));
+          scheduleReconnect();
         }
-      });
+      }
+    };
+
+    const start = async (): Promise<void> => {
+      try {
+        const timeline = await host.api.consoleTimeline({
+          branchId: host.session.branchId,
+          fromSeq: 0,
+          limit: 100,
+          order: "desc",
+        });
+        if (!cancelled) {
+          setEvents(timeline.events);
+          setTimelineError(null);
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setTimelineError(cause instanceof Error ? cause.message : String(cause));
+        }
+      }
+      if (!cancelled) {
+        await connectStream();
+      }
+    };
+
+    void start();
     return () => {
       cancelled = true;
+      connectionGeneration += 1;
+      clearReconnect();
       stream?.close();
     };
   }, [host.api, host.session.branchId]);
 
-  if (error !== null) {
-    return <div className="console-error" role="alert">{error}</div>;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    void host.api
+      .consoleAgents(host.session.branchId)
+      .then((agentResponse) => {
+        if (cancelled) {
+          return;
+        }
+        setAgents(agentResponse.agents);
+        setAgentError(null);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setAgentError(cause instanceof Error ? cause.message : String(cause));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [host.api, host.session.branchId]);
   return (
     <section className="console-page" data-testid="console-page-observability">
       <header className="console-page-head">
@@ -116,7 +164,13 @@ function ObservabilityPage(): ReactNode {
       </header>
       <div className="console-split observability-split">
         <section className="console-panel">
-          <header><h2>世界时间线</h2><span>{events.length} 条</span></header>
+          <header>
+            <h2>世界时间线</h2>
+            <span>{events.length} 条{streamError === null ? "" : " · 重连中"}</span>
+          </header>
+          {timelineError === null ? null : (
+            <div className="console-error" role="alert">时间线读取失败：{timelineError}</div>
+          )}
           <div className="timeline-list">
             {events.length === 0 ? (
               <p className="console-empty">当前分支尚无领域事件。</p>
@@ -137,6 +191,9 @@ function ObservabilityPage(): ReactNode {
         </section>
         <section className="console-panel">
           <header><h2>Agent 状态</h2><span>{agents.length} 个激活</span></header>
+          {agentError === null ? null : (
+            <div className="console-error" role="alert">Agent 状态读取失败：{agentError}</div>
+          )}
           <div className="agent-list">
             {agents.length === 0 ? (
               <p className="console-empty">Agent 运行时尚未接入，当前没有激活身份。</p>
