@@ -105,11 +105,11 @@ const defaultRosterRef = "standard-20";
 /** 打开并启动宿主核心；调用方负责之后的传输装配与端口监听。 */
 export async function createHostCore(options: HostOptions): Promise<HostCore> {
   assertDistinctTokens([
-    { label: "玩家令牌", credential: options.playerToken },
-    { label: "控制台令牌", credential: options.consoleToken },
-    { label: "operator 单角色令牌", credential: options.operatorToken },
-    { label: "researcher 单角色令牌", credential: options.researcherToken },
-    { label: "evaluator 单角色令牌", credential: options.evaluatorToken },
+    { label: "player token", credential: options.playerToken },
+    { label: "console token", credential: options.consoleToken },
+    { label: "operator role token", credential: options.operatorToken },
+    { label: "researcher role token", credential: options.researcherToken },
+    { label: "evaluator role token", credential: options.evaluatorToken },
   ]);
   const dataDir = resolve(options.dataDir);
   if (dataDir.length <= 3 || /^[A-Za-z]:\\?$/.test(dataDir)) {
@@ -365,9 +365,9 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     // 启动失败时逆序释放已创建实例；清理失败只记日志，保留原始启动错误。
     try {
       await disposeInReverse([
-        { label: "存储", dispose: () => storageStarted.dispose() },
+        { label: "storage", dispose: () => storageStarted.dispose() },
         {
-          label: "已启动模块",
+          label: "started modules",
           dispose: async () => {
             await activeStarted?.dispose();
           },
@@ -383,7 +383,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   // 最后一道运行时防线：类型上均已赋值，避免将来重构漏赋值后静默返回未初始化状态。
   const runtimeState: readonly unknown[] = [activeStarted, serverRuntime, sessionAssemblies, active, activeStartup];
   if (runtimeState.some((value) => value === null || value === undefined)) {
-    await disposeInReverse([{ label: "存储", dispose: () => storageStarted.dispose() }]);
+    await disposeInReverse([{ label: "storage", dispose: () => storageStarted.dispose() }]);
     throw new Error("宿主运行时未初始化");
   }
   return {
