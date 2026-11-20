@@ -22,7 +22,6 @@ import {
   parseEvent,
   pendingEntry,
   stringValue,
-  triggerFromRow,
 } from "./runtime-records";
 
 export interface EventConsumerInput {
