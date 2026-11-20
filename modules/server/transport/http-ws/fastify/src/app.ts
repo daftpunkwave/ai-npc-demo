@@ -121,6 +121,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
         branchId: branch.branchId,
         fromSeq: 0,
         limit: 100,
+        order: "desc",
       }) as unknown as Json;
     }
     return null;

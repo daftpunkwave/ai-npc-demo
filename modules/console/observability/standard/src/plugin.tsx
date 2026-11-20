@@ -5,14 +5,15 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type {
-  AgentStatusView,
-  ModuleCreateInput,
-  ModuleInstance,
-  SessionDescriptor,
-  TimelineItem,
+import {
+  timelineResponseSchema,
+  type AgentStatusView,
+  type ModuleCreateInput,
+  type ModuleInstance,
+  type SessionDescriptor,
+  type TimelineItem,
 } from "@ai-npc/contracts";
-import type { ApiClient } from "@ai-npc/client-protocol";
+import { StreamClient, type ApiClient } from "@ai-npc/client-protocol";
 
 interface ConsoleHostPort {
   readonly api: ApiClient;
@@ -32,12 +33,13 @@ function ObservabilityPage(): ReactNode {
         branchId: host.session.branchId,
         fromSeq: 0,
         limit: 100,
+        order: "desc",
       }),
       host.api.consoleAgents(host.session.branchId),
     ])
       .then(([timeline, agentResponse]) => {
         if (!cancelled) {
-          setEvents([...timeline.events].reverse());
+          setEvents(timeline.events);
           setAgents(agentResponse.agents);
           setError(null);
         }
@@ -49,6 +51,53 @@ function ObservabilityPage(): ReactNode {
       });
     return () => {
       cancelled = true;
+    };
+  }, [host.api, host.session.branchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let stream: StreamClient | null = null;
+    void host.api
+      .streamTicket()
+      .then((ticket) => {
+        if (cancelled) {
+          return;
+        }
+        stream = new StreamClient({
+          url: host.api.webSocketUrl(ticket.ticket),
+          channel: "console.timeline",
+          fromStreamSeq: null,
+          onMessage: (message) => {
+            if (message.type !== "snapshot" || message.channel !== "console.timeline") {
+              return;
+            }
+            try {
+              const timeline = timelineResponseSchema.parse(message.data);
+              if (!cancelled) {
+                setEvents(timeline.events);
+                setError(null);
+              }
+            } catch (cause) {
+              if (!cancelled) {
+                setError(cause instanceof Error ? cause.message : String(cause));
+              }
+            }
+          },
+          onError: (cause) => {
+            if (!cancelled) {
+              setError(cause instanceof Error ? cause.message : String(cause));
+            }
+          },
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      });
+    return () => {
+      cancelled = true;
+      stream?.close();
     };
   }, [host.api, host.session.branchId]);
 

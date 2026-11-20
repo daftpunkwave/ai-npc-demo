@@ -146,12 +146,17 @@ export function registerConsoleRoutes(context: RouteContext): void {
     }
     const agentId = queryText(request.query, "agentId");
     const nodeId = queryText(request.query, "nodeId");
+    const order = queryText(request.query, "order");
+    if (order !== undefined && order !== "asc" && order !== "desc") {
+      return sendHttpError(reply, "validation", "order 必须是 asc 或 desc");
+    }
     const branchId = queryText(request.query, "branchId") ?? branch.branchId;
     return timelineResponseSchema.parse(
       options.console.timeline({
         branchId,
         fromSeq,
         limit,
+        ...(order === undefined ? {} : { order }),
         ...(types === undefined ? {} : { types }),
         ...(agentId === undefined ? {} : { agentId }),
         ...(nodeId === undefined ? {} : { nodeId }),

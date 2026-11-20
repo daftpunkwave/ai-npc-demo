@@ -555,6 +555,36 @@ describe("服务端宿主", () => {
     });
     expect(timeline.statusCode).toBe(200);
     expect(timeline.json()).toEqual({ events: [] });
+    host.storage.transact((tx) => {
+      const events = tx.branch(host.branchId).table("domain_events");
+      for (let seq = 1; seq <= 31; seq += 1) {
+        events.put({
+          world_seq: seq,
+          event_id: `evt-${String(seq).padStart(12, "0")}`,
+          world_tick: 0,
+          type: seq === 31 ? "LateMatched" : "EarlierIgnored",
+          schema_version: 1,
+          principal_id: "player-1",
+          causation_ids_json: [],
+          correlation_id: `corr-${String(seq).padStart(12, "0")}`,
+          audience_json: [{ kind: "public" }],
+          payload_json: {
+            agentId: seq === 31 ? "human-independent" : "human-neutral",
+            nodeId: seq === 31 ? "node-gate" : "node-harbor",
+          },
+          committed_at: "2026-01-01T00:00:00.000Z",
+        });
+      }
+    });
+    const lateTimeline = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/timeline?fromSeq=0&limit=10&order=desc&types=LateMatched&agentId=human-independent&nodeId=node-gate",
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(lateTimeline.statusCode).toBe(200);
+    expect(lateTimeline.json()).toMatchObject({
+      events: [{ type: "LateMatched", worldSeq: 31 }],
+    });
     const tooManyTimelineTypes = Array.from({ length: 21 }, (_, index) => `event.${index}`).join(",");
     const invalidTimeline = await host.app.inject({
       method: "GET",
@@ -562,6 +592,12 @@ describe("服务端宿主", () => {
       headers: { ...consoleHeaders, "x-active-role": "researcher" },
     });
     expect(invalidTimeline.statusCode).toBe(400);
+    const invalidOrder = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/timeline?order=sideways",
+      headers: { ...consoleHeaders, "x-active-role": "researcher" },
+    });
+    expect(invalidOrder.statusCode).toBe(400);
     const agents = await host.app.inject({
       method: "GET",
       url: `/api/v1/console/agents?branchId=${host.branchId}`,
@@ -605,16 +641,20 @@ describe("服务端宿主", () => {
       consoleClient.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
       expect(await consoleClient.next()).toMatchObject({ type: "error", code: "forbidden" });
       consoleClient.send({ type: "subscribe", channel: "console.health", fromStreamSeq: null });
-      expect(await consoleClient.next()).toMatchObject({
+      const healthSnapshot = await consoleClient.next();
+      expect(healthSnapshot).toMatchObject({
         type: "snapshot",
         channel: "console.health",
         data: { ports: { client: 5173, server: port } },
       });
+      expect(healthSnapshot).not.toHaveProperty("projectionVersion");
       consoleClient.send({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null });
-      expect(await consoleClient.next()).toMatchObject({
+      const initialTimelineSnapshot = await consoleClient.next();
+      expect(initialTimelineSnapshot).toMatchObject({
         type: "snapshot",
         channel: "console.timeline",
       });
+      expect(initialTimelineSnapshot).not.toHaveProperty("projectionVersion");
       host.app.notifyWorldChanged();
       let timelineSnapshot: unknown = null;
       for (let attempt = 0; attempt < 4; attempt += 1) {

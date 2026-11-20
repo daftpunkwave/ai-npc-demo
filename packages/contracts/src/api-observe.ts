@@ -18,6 +18,7 @@ export const timelineQuerySchema = z
     branchId: z.string().min(1).optional(),
     fromSeq: z.number().int().nonnegative(),
     limit: z.number().int().min(1).max(200),
+    order: z.enum(["asc", "desc"]).optional(),
     types: z.array(z.string().min(1)).optional(),
     agentId: principalIdSchema.optional(),
     nodeId: z.string().min(1).optional(),

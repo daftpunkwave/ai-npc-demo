@@ -34,17 +34,35 @@ export const streamSubscribeMessageSchema = z
 
 export type StreamSubscribeMessage = z.infer<typeof streamSubscribeMessageSchema>;
 
-export const streamSnapshotMessageSchema = z
+const streamSnapshotBaseSchema = z
   .object({
     type: z.literal("snapshot"),
     channel: streamChannelSchema,
     streamSeq: z.number().int().nonnegative(),
-    projectionVersion: z.number().int().nonnegative(),
     data: jsonValueSchema,
+  });
+
+export const playerStreamSnapshotMessageSchema = streamSnapshotBaseSchema
+  .extend({
+    channel: z.literal("player"),
+    projectionVersion: z.number().int().nonnegative(),
   })
   .strict();
 
+export const consoleStreamSnapshotMessageSchema = streamSnapshotBaseSchema
+  .extend({
+    channel: z.enum(["console.health", "console.timeline", "console.turns"]),
+  })
+  .strict();
+
+export const streamSnapshotMessageSchema = z.union([
+  playerStreamSnapshotMessageSchema,
+  consoleStreamSnapshotMessageSchema,
+]);
+
 export type StreamSnapshotMessage = z.infer<typeof streamSnapshotMessageSchema>;
+export type PlayerStreamSnapshotMessage = z.infer<typeof playerStreamSnapshotMessageSchema>;
+export type ConsoleStreamSnapshotMessage = z.infer<typeof consoleStreamSnapshotMessageSchema>;
 
 /** 投影增量补丁：键为玩家投影的顶层字段名，值为该字段的新值；空对象只表示版本推进。 */
 export const streamProjectionDeltaSchema = z.record(z.string().min(1), jsonValueSchema);
@@ -101,7 +119,7 @@ export const streamErrorMessageSchema = z
 export type StreamErrorMessage = z.infer<typeof streamErrorMessageSchema>;
 
 /** 服务端可推送的 WS 消息。 */
-export const serverStreamMessageSchema = z.discriminatedUnion("type", [
+export const serverStreamMessageSchema = z.union([
   streamHelloMessageSchema,
   streamSnapshotMessageSchema,
   streamDeltaMessageSchema,

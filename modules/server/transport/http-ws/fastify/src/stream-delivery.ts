@@ -153,7 +153,6 @@ export class SocketSender {
         type: "snapshot",
         channel,
         streamSeq,
-        projectionVersion: streamSeq,
         data,
       });
     } catch {

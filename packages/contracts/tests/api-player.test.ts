@@ -258,6 +258,25 @@ describe("认证、会话与玩家接口 DTO", () => {
     expect(streamChannelSchema.safeParse("console.audit").success).toBe(false);
   });
 
+  it("玩家快照带投影版本，控制台快照显式不带该字段", () => {
+    expect(streamSnapshotMessageSchema.safeParse(snapshotMessage).success).toBe(true);
+    const consoleSnapshot = {
+      type: "snapshot",
+      channel: "console.timeline",
+      streamSeq: 5,
+      data: { events: [] },
+    };
+    expect(streamSnapshotMessageSchema.safeParse(consoleSnapshot).success).toBe(true);
+    expect(
+      streamSnapshotMessageSchema.safeParse({
+        ...consoleSnapshot,
+        projectionVersion: 5,
+      }).success,
+    ).toBe(false);
+    const { projectionVersion: _projectionVersion, ...playerWithoutVersion } = snapshotMessage;
+    expect(streamSnapshotMessageSchema.safeParse(playerWithoutVersion).success).toBe(false);
+  });
+
   it("每类请求与响应 DTO 都有合法与非法样例", () => {
     for (const [name, schema, valid, invalid] of dtoRows) {
       expect(schema.safeParse(valid).success, `${name} 应接受合法样例`).toBe(true);

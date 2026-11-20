@@ -265,6 +265,7 @@ export class ApiClient {
     readonly branchId?: string;
     readonly fromSeq?: number;
     readonly limit?: number;
+    readonly order?: "asc" | "desc";
     readonly types?: readonly string[];
     readonly agentId?: string;
     readonly nodeId?: string;
@@ -275,6 +276,7 @@ export class ApiClient {
         branchId: input.branchId,
         fromSeq: input.fromSeq ?? 0,
         limit: input.limit ?? 100,
+        order: input.order,
         types: input.types?.join(","),
         agentId: input.agentId,
         nodeId: input.nodeId,
