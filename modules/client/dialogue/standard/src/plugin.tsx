@@ -3,7 +3,14 @@
  * 依赖玩家投影、选择端口、宿主 API 与 React 视图；不读取 Agent 私有记忆或原始 prompt。
  * 禁止展示未提交模型输出，或在命令被拒时保留乐观成功状态。
  */
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
   ConversationLine,
@@ -55,6 +62,7 @@ function DialogueView(): ReactNode {
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const conversationRequest = useRef(0);
   const character = selectedCharacter(state?.projection, selection);
   const agentId = character?.agentId ?? null;
 
@@ -63,14 +71,25 @@ function DialogueView(): ReactNode {
       if (agentId === null) {
         return;
       }
+      const request = conversationRequest.current + 1;
+      conversationRequest.current = request;
+      const requestedAgent = agentId;
       try {
         const response = await api.conversation(agentId, undefined, 80);
-        if (!cancelled()) {
+        if (
+          !cancelled() &&
+          request === conversationRequest.current &&
+          requestedAgent === agentId
+        ) {
           setLines(response.lines);
           setConversationError(null);
         }
       } catch (error) {
-        if (!cancelled()) {
+        if (
+          !cancelled() &&
+          request === conversationRequest.current &&
+          requestedAgent === agentId
+        ) {
           setConversationError(error instanceof Error ? error.message : String(error));
         }
       }
@@ -90,6 +109,7 @@ function DialogueView(): ReactNode {
     void loadConversation(() => cancelled);
     return () => {
       cancelled = true;
+      conversationRequest.current += 1;
     };
   }, [agentId, loadConversation]);
 
