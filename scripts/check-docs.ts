@@ -4,7 +4,7 @@
  * 禁止修改文档、访问网络或把外部绝对 URL 当成必须可达的本地目标。
  */
 /* eslint-disable security/detect-non-literal-fs-filename -- 只扫描仓库内的文档目录与文档内相对链接，路径均由仓库根目录解析。 */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,10 +28,13 @@ interface TableColumnMismatch {
   readonly actual: number;
 }
 
+// eslint-disable-next-line no-unused-vars -- 参数名仅声明输出回调签名。
+type DiagnosticWriter = (text: string) => void;
+
 interface DocsCliOptions {
   readonly root?: string;
-  readonly writeStdout?: (text: string) => void;
-  readonly writeStderr?: (text: string) => void;
+  readonly writeStdout?: DiagnosticWriter;
+  readonly writeStderr?: DiagnosticWriter;
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -342,6 +345,7 @@ export function runDocsCheckCli(options: DocsCliOptions = {}): number {
   return 0;
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === scriptPath) {
+const entryPath = process.argv.at(1);
+if (entryPath !== undefined && existsSync(entryPath) && realpathSync(entryPath) === realpathSync(scriptPath)) {
   process.exitCode = runDocsCheckCli();
 }
