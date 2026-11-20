@@ -12,6 +12,9 @@ test("控制台显示运行总览并在评估角色下禁用装配页", async ({
 
   const moduleNav = page.getByTestId("console-nav-module-admin");
   await expect(moduleNav).toBeEnabled();
+  await page.getByTestId("console-role").selectOption("researcher");
+  await page.getByTestId("console-nav-observability").click();
+  await expect(page.getByTestId("console-page-observability")).toBeVisible();
   await page.getByTestId("console-role").selectOption("evaluator");
   await expect(moduleNav).toBeDisabled();
   await expect(page.getByTestId("console-role-denied")).toBeVisible();

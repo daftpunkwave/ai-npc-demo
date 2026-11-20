@@ -31,8 +31,15 @@ export interface WorldViewPort {
   pause(): Promise<void>;
   resume(): Promise<void>;
   save(label: string): Promise<void>;
+  refreshError(): string | null;
   sendDialogue(agentId: string, text: string): Promise<boolean>;
   sendCommand(type: string, payload: Json): Promise<boolean>;
+}
+
+interface CommandSubmissionResult {
+  readonly accepted: boolean;
+  /** 命令已被网关受理，但投影重取失败；调用方应单独重试 refresh。 */
+  readonly refreshError: string | null;
 }
 
 function errorMessage(error: unknown): string {
@@ -52,6 +59,7 @@ class WorldViewController implements WorldViewPort {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private lastError: string | null = null;
+  private lastRefreshError: string | null = null;
 
   constructor(input: {
     readonly api: ApiClient;
@@ -87,6 +95,10 @@ class WorldViewController implements WorldViewPort {
     return this.lastError;
   }
 
+  refreshError(): string | null {
+    return this.lastRefreshError;
+  }
+
   async bootstrap(): Promise<void> {
     await this.refreshCampaign();
     if (this.campaign?.campaign != null) {
@@ -104,6 +116,8 @@ class WorldViewController implements WorldViewPort {
       projectionVersion: response.projectionVersion,
       projection: response.projection,
     });
+    this.lastError = null;
+    this.lastRefreshError = null;
   }
 
   async startCampaign(factionId: string): Promise<void> {
@@ -152,18 +166,16 @@ class WorldViewController implements WorldViewPort {
   }
 
   async sendDialogue(agentId: string, text: string): Promise<boolean> {
-    const receipt = await this.command.send("dialogue.say", {
-      targetAgentId: agentId,
-      text,
-    });
-    await this.refresh();
-    return receipt.commandStatus === "accepted";
+    return this.trackSubmission(
+      await this.submitCommand("dialogue.say", {
+        targetAgentId: agentId,
+        text,
+      }),
+    );
   }
 
   async sendCommand(type: string, payload: Json): Promise<boolean> {
-    const receipt = await this.command.send(type, payload);
-    await this.refresh();
-    return receipt.commandStatus === "accepted";
+    return this.trackSubmission(await this.submitCommand(type, payload));
   }
 
   projection(): PlayerProjection | null {
@@ -180,6 +192,26 @@ class WorldViewController implements WorldViewPort {
 
   private async refreshCampaign(): Promise<void> {
     this.campaign = await this.api.campaign();
+  }
+
+  private async submitCommand(type: string, payload: Json): Promise<CommandSubmissionResult> {
+    const receipt = await this.command.send(type, payload);
+    let refreshError: string | null = null;
+    try {
+      await this.refresh();
+    } catch (error) {
+      refreshError = errorMessage(error);
+      this.lastError = refreshError;
+    }
+    return {
+      accepted: receipt.commandStatus === "accepted",
+      refreshError,
+    };
+  }
+
+  private trackSubmission(result: CommandSubmissionResult): boolean {
+    this.lastRefreshError = result.refreshError;
+    return result.accepted;
   }
 
   private async connectStream(): Promise<void> {

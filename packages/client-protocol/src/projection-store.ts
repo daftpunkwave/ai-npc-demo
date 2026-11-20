@@ -60,7 +60,7 @@ export class ProjectionStore {
     worldId: string,
     branchId: string,
   ): ProjectionApplyResult {
-    if (message.channel !== "player") {
+    if (message.channel !== "player" || !("projectionVersion" in message)) {
       throw new DomainError("validation", "玩家投影不能应用非 player 频道快照");
     }
     const projection = playerProjectionSchema.parse(message.data);
@@ -71,10 +71,7 @@ export class ProjectionStore {
       projectionVersion: message.projectionVersion,
       projection,
     };
-    this.state = next;
-    this.snapshotRequired = false;
-    this.emit();
-    return { state: next, needsSnapshot: false, changed: true };
+    return this.commitSnapshot(next);
   }
 
   applyDelta(message: StreamDeltaMessage): ProjectionApplyResult {
@@ -94,15 +91,12 @@ export class ProjectionStore {
       projectionVersion: message.projectionVersion,
       projection,
     };
-    this.state = next;
-    this.snapshotRequired = false;
-    this.emit();
-    return { state: next, needsSnapshot: false, changed: true };
+    return this.commit(next);
   }
 
   applyAppend(message: StreamAppendMessage): ProjectionApplyResult {
-    if (message.channel !== "player" || this.state === null) {
-      return { state: this.state, needsSnapshot: false, changed: false };
+    if (message.channel !== "player" || this.state === null || this.snapshotRequired) {
+      return { state: this.state, needsSnapshot: this.snapshotRequired, changed: false };
     }
     const current = this.state;
     if (message.kind === "dialogue") {
@@ -115,9 +109,7 @@ export class ProjectionStore {
         conversations: [...current.projection.conversations, line],
       };
       const next: ProjectionState = { ...current, projection };
-      this.state = next;
-      this.emit();
-      return { state: next, needsSnapshot: false, changed: true };
+      return this.commit(next);
     }
     if (message.kind === "notification") {
       const notification = playerNotificationViewSchema.parse(message.item);
@@ -135,9 +127,7 @@ export class ProjectionStore {
         notifications: [...current.projection.notifications, notification],
       };
       const next: ProjectionState = { ...current, projection };
-      this.state = next;
-      this.emit();
-      return { state: next, needsSnapshot: false, changed: true };
+      return this.commit(next);
     }
     return { state: current, needsSnapshot: false, changed: false };
   }
@@ -157,16 +147,39 @@ export class ProjectionStore {
       projectionVersion: input.projectionVersion,
       projection,
     };
-    this.state = next;
-    this.snapshotRequired = false;
-    this.emit();
-    return { state: next, needsSnapshot: false, changed: true };
+    return this.commitSnapshot(next);
   }
 
   clear(): void {
     this.state = null;
     this.snapshotRequired = true;
     this.emit();
+  }
+
+  private commitSnapshot(next: ProjectionState): ProjectionApplyResult {
+    const current = this.state;
+    if (
+      current !== null &&
+      (current.worldId !== next.worldId ||
+        current.branchId !== next.branchId ||
+        next.streamSeq < current.streamSeq ||
+        (next.streamSeq === current.streamSeq &&
+          next.projectionVersion < current.projectionVersion))
+    ) {
+      return {
+        state: current,
+        needsSnapshot: this.snapshotRequired,
+        changed: false,
+      };
+    }
+    return this.commit(next);
+  }
+
+  private commit(next: ProjectionState): ProjectionApplyResult {
+    this.state = next;
+    this.snapshotRequired = false;
+    this.emit();
+    return { state: next, needsSnapshot: false, changed: true };
   }
 
   private emit(): void {

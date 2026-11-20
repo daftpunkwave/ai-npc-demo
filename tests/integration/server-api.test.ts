@@ -4,7 +4,10 @@
  * 禁止用静态回执替代命令网关，也不在用例间复用连接或服务器。
  */
 import { randomBytes, randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DomainError,
@@ -25,9 +28,11 @@ import {
 import {
   buildPlayerProjection,
   createServerApp,
+  createTransportApp,
   type CommandReceiptReadPort,
   type ServerApp,
   type ServerAppInjectResponse,
+  type TransportAppInput,
 } from "@ai-npc/app-server";
 import {
   accessPolicyModuleDefinition,
@@ -223,6 +228,7 @@ interface AppOverrides {
   readonly accessPolicyConfig?: Json;
   /** 收集传输层上报的内部错误；缺省保持静默。 */
   readonly onInternalError?: (message: string, error: unknown) => void;
+  readonly consoleStaticDir?: string;
 }
 
 /** 用真实回执表构造只读查询端口；传输层不接触表结构。 */
@@ -291,6 +297,9 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     tokens: (kind) => `${kind}-${randomUUID()}`,
     ...(overrides.onInternalError === undefined ? {} : { onInternalError: overrides.onInternalError }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),
+    ...(overrides.consoleStaticDir === undefined
+      ? {}
+      : { consoleStaticDir: overrides.consoleStaticDir }),
   });
   apps.push(app);
   return app;
@@ -1818,6 +1827,45 @@ describe("服务端 API", () => {
     });
     expect(preflight.statusCode).toBe(204);
     expect(preflight.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
+  });
+
+  it("控制台构建前注册静态路由，产物出现后无需重启即可提供页面", async () => {
+    const value = await createTrackedGameHarness(active);
+    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-"));
+    const staticDir = join(directory, "console-static");
+    try {
+      mkdirSync(staticDir);
+      const app = await appFor(value, { consoleStaticDir: staticDir });
+      const beforeBuild = await app.inject({ method: "GET", url: "/console/" });
+      expect(beforeBuild.statusCode).toBe(404);
+
+      writeFileSync(join(staticDir, "index.html"), "<div>console built</div>");
+      const afterBuild = await app.inject({ method: "GET", url: "/console/timeline" });
+      expect(afterBuild.statusCode).toBe(200);
+      expect(afterBuild.body).toContain("console built");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("控制台静态目录创建失败时释放已初始化资源", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-failure-"));
+    const blocker = join(directory, "not-a-directory");
+    writeFileSync(blocker, "blocked");
+    let disposed = 0;
+    try {
+      await expect(
+        createTransportApp({
+          consoleStaticDir: join(blocker, "console-static"),
+          disposeOnFailure: async () => {
+            disposed += 1;
+          },
+        } as unknown as TransportAppInput),
+      ).rejects.toThrow();
+      expect(disposed).toBe(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("传输端口只经最小应用接口监听与关闭", async () => {

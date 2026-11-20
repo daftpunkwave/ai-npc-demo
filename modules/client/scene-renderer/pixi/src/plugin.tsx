@@ -32,7 +32,11 @@ interface ProjectionLike {
 interface SelectionLike {
   subscribe(listener: (selection: unknown) => void): () => void;
   getSnapshot(): unknown;
-  select(selection: { kind: "node"; id: string }): void;
+  select(
+    selection:
+      | { readonly kind: "node"; readonly id: string }
+      | { readonly kind: "character"; readonly id: string },
+  ): void;
 }
 
 const colors = {
@@ -150,7 +154,7 @@ function drawScene(
       marker.eventMode = "static";
       marker.cursor = "pointer";
       marker.on("pointertap", (_event: FederatedPointerEvent) => {
-        selection.select({ kind: "node", id: character.nodeId });
+        selection.select({ kind: "character", id: character.agentId });
       });
       world.addChild(marker);
     });

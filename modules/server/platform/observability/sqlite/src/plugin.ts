@@ -10,6 +10,7 @@ import {
   type Json,
   type ModuleCreateInput,
   type ModuleInstance,
+  type StorageValue,
   type StoragePort,
   type TimelineItem,
   type TimelineResponse,
@@ -42,6 +43,7 @@ export interface TimelineQuery {
   readonly branchId: string;
   readonly fromSeq: number;
   readonly limit: number;
+  readonly order?: "asc" | "desc";
   readonly types?: readonly string[];
   readonly agentId?: string;
   readonly nodeId?: string;
@@ -79,31 +81,64 @@ export class ObservabilityPort {
 
   timeline(query: TimelineQuery): TimelineResponse {
     const limit = Math.min(query.limit, this.maxTimelineLimit);
+    const direction = query.order === "desc" ? "DESC" : "ASC";
+    const domainConditions = ["branch_id = ?", "world_seq > ?"];
+    const domainParameters: StorageValue[] = [query.branchId, query.fromSeq];
+    const lifecycleConditions = ["branch_id = ?"];
+    const lifecycleParameters: StorageValue[] = [query.branchId];
+    if (query.types !== undefined && query.types.length > 0) {
+      const placeholders = query.types.map(() => "?").join(", ");
+      domainConditions.push(`type IN (${placeholders})`);
+      lifecycleConditions.push(`type IN (${placeholders})`);
+      domainParameters.push(...query.types);
+      lifecycleParameters.push(...query.types);
+    }
+    if (query.agentId !== undefined) {
+      domainConditions.push(
+        `(principal_id = ? OR EXISTS (
+          SELECT 1 FROM json_tree(payload_json) AS payload_value
+          WHERE payload_value.type = 'text'
+             AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
+        ))`,
+      );
+      domainParameters.push(query.agentId, query.agentId);
+      lifecycleConditions.push(
+        `(subject_id = ? OR EXISTS (
+          SELECT 1 FROM json_tree(payload_json) AS payload_value
+           WHERE payload_value.type = 'text'
+             AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
+        ))`,
+      );
+      lifecycleParameters.push(query.agentId, query.agentId);
+    }
+    if (query.nodeId !== undefined) {
+      const nodeFilter = `EXISTS (
+        SELECT 1 FROM json_tree(payload_json) AS payload_value
+         WHERE payload_value.type = 'text'
+           AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
+      )`;
+      domainConditions.push(nodeFilter);
+      lifecycleConditions.push(nodeFilter);
+      domainParameters.push(query.nodeId);
+      lifecycleParameters.push(query.nodeId);
+    }
+    domainParameters.push(limit);
+    lifecycleParameters.push(limit);
     const rows = this.storage.transact((tx) =>
       tx.all(
         `SELECT world_seq, world_tick, event_id, type, principal_id, audience_json,
                 payload_json, correlation_id, committed_at
            FROM domain_events
-          WHERE branch_id = ? AND world_seq > ?
-          ORDER BY world_seq ASC
+          WHERE ${domainConditions.join(" AND ")}
+          ORDER BY world_seq ${direction}
           LIMIT ?`,
-        [query.branchId, query.fromSeq, Math.min(500, limit * 3)],
+        domainParameters,
       ),
     );
-    const events: TimelineItem[] = [];
-    for (const row of rows) {
+    const domainEvents: TimelineItem[] = rows.map((row) => {
       const type = String(row["type"]);
-      if (query.types !== undefined && !query.types.includes(type)) {
-        continue;
-      }
       const payload = parseJson(row["payload_json"]);
-      if (query.agentId !== undefined && !containsText(payload, query.agentId) && row["principal_id"] !== query.agentId) {
-        continue;
-      }
-      if (query.nodeId !== undefined && !containsText(payload, query.nodeId)) {
-        continue;
-      }
-      events.push({
+      return {
         kind: "domain",
         worldSeq: Number(row["world_seq"]),
         worldTick: Number(row["world_tick"]),
@@ -115,42 +150,46 @@ export class ObservabilityPort {
         payload,
         correlationId: String(row["correlation_id"]),
         createdAt: String(row["committed_at"]),
-      });
-      if (events.length >= limit) {
-        break;
-      }
-    }
-    if (events.length < limit) {
-      const lifecycle = this.storage.transact((tx) =>
-        tx.all(
-          `SELECT seq, type, subject_id, payload_json, created_at
-             FROM lifecycle_events
-            WHERE branch_id = ?
-            ORDER BY seq DESC
-            LIMIT ?`,
-          [query.branchId, limit - events.length],
-        ),
-      );
-      for (const row of lifecycle) {
-        const type = String(row["type"]);
-        if (query.types !== undefined && !query.types.includes(type)) {
-          continue;
+      };
+    });
+    const lifecycleRows = this.storage.transact((tx) =>
+      tx.all(
+        `SELECT seq, type, subject_id, payload_json, created_at
+           FROM lifecycle_events
+          WHERE ${lifecycleConditions.join(" AND ")}
+          ORDER BY created_at ${direction}, seq ${direction}
+          LIMIT ?`,
+        lifecycleParameters,
+      ),
+    );
+    const lifecycleEvents: TimelineItem[] = lifecycleRows.map((row) => {
+      const type = String(row["type"]);
+      return {
+        kind: "lifecycle",
+        worldSeq: null,
+        worldTick: null,
+        eventId: null,
+        type,
+        principalId: row["subject_id"] === null ? null : String(row["subject_id"]) as TimelineItem["principalId"],
+        audience: null,
+        summaryZh: `${type} · ${row["subject_id"] === null ? "系统" : String(row["subject_id"])}`,
+        payload: parseJson(row["payload_json"]),
+        correlationId: null,
+        createdAt: String(row["created_at"]),
+      };
+    });
+    const directionFactor = query.order === "desc" ? -1 : 1;
+    const events = [...domainEvents, ...lifecycleEvents]
+      .sort((left, right) => {
+        const byTime = left.createdAt.localeCompare(right.createdAt);
+        if (byTime !== 0) {
+          return byTime * directionFactor;
         }
-        events.push({
-          kind: "lifecycle",
-          worldSeq: null,
-          worldTick: null,
-          eventId: null,
-          type,
-          principalId: row["subject_id"] === null ? null : String(row["subject_id"]) as TimelineItem["principalId"],
-          audience: null,
-          summaryZh: `${type} · ${row["subject_id"] === null ? "系统" : String(row["subject_id"])}`,
-          payload: parseJson(row["payload_json"]),
-          correlationId: null,
-          createdAt: String(row["created_at"]),
-        });
-      }
-    }
+        return (left.worldSeq ?? -1) - (right.worldSeq ?? -1) === 0
+          ? 0
+          : ((left.worldSeq ?? -1) - (right.worldSeq ?? -1)) * directionFactor;
+      })
+      .slice(0, limit);
     return { events };
   }
 
@@ -187,19 +226,6 @@ function parseJson(value: unknown): Json {
     throw new DomainError("invalid-state", "观测记录的 JSON 列不是文本");
   }
   return jsonValueSchema.parse(JSON.parse(value));
-}
-
-function containsText(value: Json, needle: string): boolean {
-  if (typeof value === "string") {
-    return value.includes(needle);
-  }
-  if (Array.isArray(value)) {
-    return value.some((item) => containsText(item, needle));
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.values(value).some((item) => containsText(item, needle));
-  }
-  return false;
 }
 
 export async function createObservabilityModule(input: ModuleCreateInput): Promise<ModuleInstance> {
