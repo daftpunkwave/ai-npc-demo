@@ -17,7 +17,7 @@
 | 时钟 | 20 秒/tick | 三份现有装配与时钟模块默认值均为 10 秒/tick | **待改** |
 | 资源 | 序章结算 3 种库存，t168 交接 6 种城市资源 | 库存契约只定义 `supply`/`energy`/`medical` | **缺 t168 交接** |
 | 地图 | 序章 6 节点、9 条路 | 6 节点、9 条路 | **已对齐序章** |
-| 剧情卡 | 标准装配九张，t2–t144 | 数量与时点已对齐。部分署名与唤醒身份仍用旧编制，谷寻的私信目标仍为公社 AI 主体 | **部分实现** |
+| 剧情卡 | 标准装配九张，t2–t144 | 数量与时点已对齐，谷寻的私信已投给 `player-1`。部分署名与唤醒身份仍用旧编制 | **部分实现** |
 | 三项仪表 | 中继 45、果园 50、迁徙 50；日结顺序 | 已实现 | **已对齐** |
 | t144 程序案 | 五席各 1 票，3 票通过 | 剧情卡发出议事邀请，目前没有表决状态、事件或议事录 | **目标** |
 | 序章终点 | t168 评估后切片结束 | 已提交评估并标记 campaign 为 `evaluated`，时钟仍可推进 | **待改** |
@@ -45,10 +45,10 @@
 10. `starts.yaml` 只启用 `human-neutral`，其余四席用 `enabled: false`。加载器和开局命令须共同执行该限制。补上闻昭的 `npc-wenzhao` 接触入口及第三条开局消息。参见 [content-pack.md — 开局内容](game/content-pack.md#8-五席开局startsyaml本切片只启用公社)。
 11. `scenarios/watergate-v1.yaml` 的 `speakerId` 允许 43 名册中未上场的署名（沈砾、苏回、谷寻），事件不实例化、不调用模型；若加载器把 `speakerId` 校验成 roster 成员，需放行 signature-only speaker。`wake-agents` 只唤醒 7 名党魁/外域，不唤醒 8 名支持者。同时把 4 张卡的署名从 `npc-qingzhi`、`npc-luo`、`npc-zhuifeng`、`npc-tangzhen` 改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`，与 [content-pack](game/content-pack.md) 第 9 节一致。
 12. `locale/zh-CN.yaml` 的 `playerName` 改为“党魁”；`resources` 增加 `materials`/`food`/`water` 词条（t168 用）。
-13. 世界名与 system 模板已对齐。玩家的水账已由 `starts.knowledge` 授予，待移除 `evidence.yaml` 中指向公社 AI 主体的旧授权。谷寻定向来信改投 `player-1`。温原和阿禾的运输技能迁到 `transport`，评估脚本同步角色 ID 与探针词表。内容变更按包版本推进。参见 [content-pack.md — 序章内容契约](game/content-pack.md)。
+13. 世界名与 system 模板已对齐。玩家的水账已由 `starts.knowledge` 授予，待移除 `evidence.yaml` 中指向公社 AI 主体的旧授权。谷寻定向来信已改投 `player-1`；温原的运输技能已改为 `transport`，阿禾尚未进入内容包，补档时按同一词表写入；评估脚本仍需同步角色 ID 与探针词表。内容变更按包版本推进。参见 [content-pack.md — 序章内容契约](game/content-pack.md)。
 14. `factions.yaml` 的 `homeNodeId` 拆成 `factionHomeNodeId` + `outpostNodeId`（人类）与 `territoryNodeId`（外域）；见 [content-pack](game/content-pack.md) 第 4 节。
 
-**通信和受潮结算待对齐。** 当前通信代码给战略 Agent 按无位置处理，需要接入党魁的灰港开局位置与外域实际位置。受潮卡直接提交库存增减，扣减若会触及预留则拒绝该效果。目标为在事务内按可用量扣减，保留预留，并继续完成当天结算。参见 [rules.md — 序章结算规则](game/rules.md)。
+**通信位置待对齐。** 当前通信代码给战略 Agent 按无位置处理，需要接入党魁的灰港开局位置与外域实际位置。受潮卡已在同一事务内按可用量扣减并保留预留（`clampToAvailable`），当天的日结照常执行。参见 [rules.md — 序章结算规则](game/rules.md)。
 
 ### 2.4 表现与客户端
 
