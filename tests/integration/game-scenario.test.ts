@@ -355,6 +355,23 @@ describe("剧情卡", () => {
     expect(stockpileSupply(value, "sp-commons")).toBe(supplyBefore - 1);
   });
 
+  it("剧情卡定向消息投给玩家主体", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 26, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 26);
+
+    const message = readGameEvents(value).find(
+      (event) =>
+        event.type === "MessageSent" &&
+        (event.payload as { readonly fromId?: string }).fromId === "npc-guxun",
+    );
+    expect(message?.payload).toMatchObject({ to: ["player-1"], channel: "message", intentKind: "scenario" });
+    const deliveries = (message?.payload as { readonly deliveries?: readonly { readonly principalId: string }[] })
+      ?.deliveries;
+    expect(deliveries?.map((delivery) => delivery.principalId)).toContain("player-1");
+  });
+
   it("库存调整只扣可用量，预留不被击穿", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
