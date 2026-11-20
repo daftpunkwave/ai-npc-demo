@@ -258,7 +258,7 @@ describe("认证、会话与玩家接口 DTO", () => {
     expect(streamChannelSchema.safeParse("console.audit").success).toBe(false);
   });
 
-  it("玩家快照带投影版本，控制台快照显式不带该字段", () => {
+  it("玩家快照带投影版本，控制台兼容字段固定为零", () => {
     expect(streamSnapshotMessageSchema.safeParse(snapshotMessage).success).toBe(true);
     const consoleSnapshot = {
       type: "snapshot",
