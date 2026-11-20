@@ -2,7 +2,7 @@
 
 > 世界提交、时钟任务、scope、水位、快照与恢复的语义由本文维护。Agent 运行流程的细节见 [runtime](../agent/runtime.md)。
 
-## 1. 一次交互的完整链路
+## 1. 一次交互的完整处理流程
 
 ~~~mermaid
 sequenceDiagram

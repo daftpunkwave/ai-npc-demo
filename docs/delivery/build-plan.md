@@ -62,7 +62,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 
 ## 1. 步骤总览
 
-状态按当前仓库的产出记录。「已实现」表示本步功能已落地，「部分实现」表示仍有交付缺口，「目标」表示本步功能待实现。服务端可运行，下一阶段先补齐 S05 和 S07–S09 的序章差距，再验收 S10。具体差距见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
+状态按当前仓库的产出记录。“已实现”表示本步功能已落地，“部分实现”表示仍有交付缺口，“目标”表示本步功能待实现。服务端可运行，下一阶段先补齐 S05 和 S07–S09 的序章差距，再验收 S10。具体差距见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
 | 阶段 | 步骤 | 产出 | 对应切片 | 状态 |
 |---|---|---|---|---|
@@ -77,7 +77,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 | 浏览器两端 | S11 | 控制台宿主、首批页面与服务端接口 | A | 部分实现。已有精简版控制台健康 API |
 | 浏览器两端 | S12 | 双端端口检查 | A | 目标 |
 | Agent 管线 | S13–S18 | 感知与调度、记忆 M0/M1、上下文与工具网关、turn 主循环、模型池、模型适配器 | A | 目标。运行时包已有骨架 |
-| 切片 A 验收 | S19 | 三核心角色闭环 | A | 目标 |
+| 切片 A 验收 | S19 | 三核心角色端到端验证 | A | 目标 |
 | 记忆对比 | S20–S21 | M2、M3、实验与探针、评估页面 | B | 目标 |
 | 完整切片 | S22–S23 | 15 个身份的完整运行、t144 程序案、运营与剧情页面 | C | 目标 |
 | 可插拔验收 | S24 | 四类模块替换与证据 | M | 部分实现。服务端剧情替换有规则测试 |
@@ -241,7 +241,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 
 ## 6. 切片 A 验收
 
-### S19 三核心角色闭环
+### S19 三核心角色端到端验证
 
 - **先读**：[路线与验收](roadmap-and-acceptance.md) 第 2 节、[观测](../platform/observability.md) 第 4、8 节、[两个端口](../architecture/two-endpoints.md) 第 10 节、本文 0.3 节 S19 行。
 - **产出**：0.3 节分配给 S19 的路由；补全 `console.observability.standard`（Agent 检查器、turn 详情、trace）；`console.model-mounts.standard`（只读视图与校验）、`console.faction-ops.standard` 的时钟与存档部分、`console.debug.standard`；`config/profiles/variants/memory-m1-structured-ledger.yaml`（供本步场景测试使用）；`tests/scenarios/slice-a.test.ts`。

@@ -10,7 +10,7 @@
 
 ### 记忆分层设计
 
-记忆设计的分层思路（L0 世界事件日志、L1 episodic、L2 relation、L3 belief、L4 prospective、L5 core、L6 public）、显著度门控、容量、衰减、检索打分与「引用才强化」都写在[记忆](../agent/memory.md) 第 3、11 节，本仓库文档是唯一依据。
+记忆设计的分层思路（L0 世界事件日志、L1 episodic、L2 relation、L3 belief、L4 prospective、L5 core、L6 public）、显著度门控、容量、衰减、检索打分与“引用才强化”都写在[记忆](../agent/memory.md) 第 3、11 节，本仓库文档是唯一依据。
 
 规则写事实、LLM 写理解；L0 到 L6 分类、来源链、知情边界和后台整理都在该文定义，不引自仓库外资料。
 

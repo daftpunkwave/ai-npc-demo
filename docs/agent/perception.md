@@ -8,7 +8,7 @@
 
 序章玩家是公社党魁，不会把公社 AI 党魁的全部感知授予玩家。15 个 gameplay Agent 包括 8 名公社支持者、4 名 AI 党魁和 3 名外域 Agent；每个主体都有独立的 scope、位置/职责与授权，详见 [角色](../game/characters.md)。
 
-perception 不负责记忆的遗忘/检索、情绪持久化、完整 prompt 或行动结算。它给 memory/runtime 提供观察；读取完整世界日志做评分的研究员不属于 NPC 感知链路。
+perception 不负责记忆的遗忘/检索、情绪持久化、完整 prompt 或行动结算。它给 memory/runtime 提供观察；读取完整世界日志做评分的研究员不属于 NPC 感知流程。
 
 ## 2. 三层知识边界
 
@@ -44,7 +44,7 @@ PerceptionPlan 返回新增观察候选、延迟队列操作、聚合变更、�
 
 scannedThroughSeq 是内部扫描 frontier，不发送模型；它可跨过没有获准观察的事件。observationSeq 与 worldSeq 分别表示角色观察序和 branch 事实序，不能数值混比或跨 branch 当全局时钟。
 
-输入事件信封统一使用 `causationIds`，观察以来源引用保留链路。模型使用不透明来源 ID，不能凭连续全局序号推测发生了多少秘密事件。
+输入事件信封统一使用 `causationIds`，观察以来源引用保留因果追溯链。模型使用不透明来源 ID，不能凭连续全局序号推测发生了多少秘密事件。
 
 ## 4. 三个初始策略
 
@@ -75,7 +75,7 @@ scannedThroughSeq 是内部扫描 frontier，不发送模型；它可跨过没�
 
 公开广播、派系简报、当面对话和私信都是显式渠道。A 将情报交给 B，先提交 InformationShared 命令；authority 检查发送者知识依据、允许受众和渠道，再形成 B 可获知的新事件。
 
-转述观察保留原声称者、直接发送者、时间和置信度。“伊诺转来巡裔的说法”不能压成“伊诺亲眼看见袭击”。多级转述保留链路摘要与来源引用，传播跳数/置信策略可配置。
+转述观察保留原声称者、直接发送者、时间和置信度。“伊诺转来巡裔的说法”不能压成“伊诺亲眼看见袭击”。多级转述保留传播链条摘要与来源引用，传播跳数/置信策略可配置。
 
 根庭通过根网共享信息也是世界规则赋予的渠道，不是直接查询其他根庭角色的 memory table。渠道可以断开、限速或仅覆盖部分地点；既定生物能力放在版本化规则中，不能由 Agent 自行扩展。
 
@@ -267,7 +267,7 @@ interface ObservationContent {
 | `ScenarioCompensationApplied` | `剧情卡状态已更新。` |
 | `ScenarioOverrideApplied` | `剧情卡状态已更新。` |
 
-序章程序案交付时，`MotionDecided` 增加观察模板「程序案表决结束，结果已记入议事录。」按公开通报渠道投递，观察只取已经提交的逐席票、结果和议程顺序。参见 [domain-model.md — 事件目录](../architecture/domain-model.md#6-事件目录)。
+序章程序案交付时，`MotionDecided` 增加观察模板“程序案表决结束，结果已记入议事录。”按公开通报渠道投递，观察只取已经提交的逐席票、结果和议程顺序。参见 [domain-model.md — 事件目录](../architecture/domain-model.md#6-事件目录)。
 
 `{termText}` 用 `termTemplates.<kind>` 渲染单个条款，`{termsText}` 是全部条款的渲染结果用“；”连接。各条款模板：
 

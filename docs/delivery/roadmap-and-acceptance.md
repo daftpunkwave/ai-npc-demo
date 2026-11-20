@@ -16,11 +16,11 @@
 
 每步交付包含可运行场景、确定性工程断言、生成式行为观察和可追踪 artifact。工程正确性必须可重复；远程模型的逐字输出不作为确定性断言。
 
-## 2. A：三核心角色的 TS / 灰盒双端闭环
+## 2. A：三核心角色的 TS / 灰盒双端贯通验证
 
 范围：岑雁、林芜、乔述，六节点地图，单玩家沙盘，一组共享模型/工具，运输或救援行动与一项有后果的承诺；两个本地端口、server/client/console 三个宿主、最小模块装配与最小控制台页面。
 
-先用确定性 decision adapter 与 deterministic model transport 验证事务和链路，再接真实模型。model、memory、perception、context、game 规则与 client UI 均通过公共 ports 装配，不能以“先做 demo”为由把直接 SDK 调用或世界写库塞入 UI。
+先用确定性 decision adapter 与 deterministic model transport 验证事务流与调用链，再接真实模型。model、memory、perception、context、game 规则与 client UI 均通过公共 ports 装配，不能以“先做 demo”为由把直接 SDK 调用或世界写库塞入 UI。
 
 | 场景 | 通过条件 | 证据 |
 |---|---|---|
