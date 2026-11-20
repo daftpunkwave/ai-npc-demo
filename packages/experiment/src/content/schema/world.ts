@@ -20,7 +20,7 @@ export const contentPackSchema = z
   .object({
     schemaVersion,
     packId: contentIdSchema,
-    contentVersion: z.string().regex(/^\d+\.\d+\.\d+$/, "内容版本必须形如 1.0.0"),
+    contentVersion: z.string().regex(/^\d+\.\d+\.\d+$/, "内容版本必须为 major.minor.patch 格式"),
     defaultScenario: textSchema,
     files: z.array(textSchema).min(1),
     scenarios: z.array(textSchema).min(1),

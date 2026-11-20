@@ -25,14 +25,14 @@
 # pack.yaml
 schemaVersion: 1
 packId: earth-2964-v1
-contentVersion: "1.1.0"
+contentVersion: "0.1.0"
 defaultScenario: watergate-v1
 files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]
 scripts: [scripts/s-promise.yaml, scripts/s-rumor.yaml, scripts/s-secret.yaml]
 ```
 
-> 版本说明：`1.1.0` 只把 system 模板中的世界名改为《炉边议会》，不改规则字段与占位符。恢复 `1.0.0` 的旧 run 会因 `contentVersion` 不匹配被明确拒绝，需重新开局。
+`contentVersion` 标识每次 run 冻结的内容，资产清单的 `contentVersion` 必须与 `pack.yaml` 一致。正式发布前，开发存档版本不匹配时可重置开发数据后重新开局。参见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)。
 
 ## 2. 公开世界观（lore.yaml）
 

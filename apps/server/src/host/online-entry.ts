@@ -66,7 +66,10 @@ export function readOnlineEntry(tx: StorageTransaction): OnlineEntry | null {
 
 /** 内容版本不兼容时给出冻结值与当前值，便于定位是哪一次内容发布。 */
 export function contentVersionMismatch(frozen: string, current: string, scope: string): Error {
-  return new Error(`内容包 contentVersion 不一致：${scope} 冻结「${frozen}」，当前内容包「${current}」；拒绝启动`);
+  return new Error(
+    `内容包 contentVersion 不一致：${scope} 冻结「${frozen}」，当前内容包「${current}」；拒绝启动。` +
+    "开发阶段可在停服后删除 NPC_DATA_DIR 对应的开发数据目录，再重启以创建新 run。",
+  );
 }
 
 /** 已启动的存储实例必须与在线装配声明的存储配置一致，避免用错误设置继续运行。 */

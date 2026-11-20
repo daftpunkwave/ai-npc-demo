@@ -27,3 +27,5 @@
 - 宿主事务的 module scope 临时拥有全部游戏聚合，只为投影/时钟读端口提供事务上下文；命令写入仍由 authority 的模块 ownership 校验。
 - 首次启动检测到已有 online 分支时直接复用；不覆盖已有世界。重启沿用已冻结的装配与 run，不按当前入参重建。
 - worker 按时钟模块有效配置的 `secondsPerTick` 推进，运行 due job/clock step/consumer；时钟读写只经模块端口，宿主不重复实现时钟状态。
+
+开发期间遇到 `contentVersion` 不匹配时，重置开发数据后重新开局。参见 [operations.md — 重置开发数据](../../docs/platform/operations.md#101-重置开发数据)。

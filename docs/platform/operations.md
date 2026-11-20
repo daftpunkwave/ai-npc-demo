@@ -152,3 +152,10 @@ failurePolicy: online-fallback
 模板只保存引用，不写 `seed`：首次启动由宿主生成随机 seed，并把实际装配引用、名册、模型布局与 seed 写入 RunSpec；同一时刻冻结 manifest（含模块解析配置、`contentVersion` 与上述摘要）。之后每次启动都读取 `world_aliases('online')` 指向的已冻结 run，不回写当前入参。
 
 在线世界默认使用 `online-fallback`（允许已声明的降级并标记），实验 run 默认使用 `strict`；两者的区别见 [运行时](../agent/runtime.md) 第 13.3 节。
+
+### 10.1 重置开发数据
+
+在线 run 冻结的 `contentVersion` 与当前内容包不一致时，服务端在监听前拒绝启动。正式发布前，可以删除开发数据后重新开局。
+
+1. 停止服务，删除 `NPC_DATA_DIR` 指向的 Demo 开发数据目录（默认 `./data`）。该目录包含开发存档和自动生成的本地令牌。
+2. 执行 `pnpm dev:server`。服务端使用当前内容包重新建库并创建在线世界和 run。
