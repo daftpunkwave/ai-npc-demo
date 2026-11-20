@@ -158,8 +158,14 @@ function assertLegacyPublishedChecksums(
   }
   const appliedVersions = new Set(applied.map((migration) => migration.version));
   for (const migration of migrations) {
-    const expected = PUBLISHED_MIGRATION_CHECKSUMS[migration.version];
-    if (expected !== undefined && appliedVersions.has(migration.version) && migration.checksum !== expected) {
+    if (
+      !appliedVersions.has(migration.version) ||
+      !Object.hasOwn(PUBLISHED_MIGRATION_CHECKSUMS, migration.version)
+    ) {
+      continue;
+    }
+    const expected = PUBLISHED_MIGRATION_CHECKSUMS[migration.version] as string;
+    if (migration.checksum !== expected) {
       migrationFailure(`数据库已应用迁移 ${migration.version} 的内容校验和不一致`, {
         version: migration.version,
         expected,

@@ -238,18 +238,19 @@ class SlgWorldPort implements GameWorldPort {
       return { kind: "owner", factionId: stockpile.ownerFactionId };
     }
     const delegations = this.findDelegations(principalId, stockpileId).map((entry) => entry.state);
-    for (const first of delegations) {
-      return {
-        kind: "delegation",
-        delegationId: first.delegationId,
-        remaining: delegations.reduce(
-          (remaining, delegation) => addAmounts(remaining, delegation.remaining),
-          { supply: 0, energy: 0, medical: 0 },
-        ),
-        untilTick: Math.min(...delegations.map((delegation) => delegation.untilTick)),
-      };
+    if (delegations.length === 0) {
+      return { kind: "none" };
     }
-    return { kind: "none" };
+    const first = delegations[0] as DelegationState;
+    return {
+      kind: "delegation",
+      delegationId: first.delegationId,
+      remaining: delegations.reduce(
+        (remaining, delegation) => addAmounts(remaining, delegation.remaining),
+        { supply: 0, energy: 0, medical: 0 },
+      ),
+      untilTick: Math.min(...delegations.map((delegation) => delegation.untilTick)),
+    };
   }
 
   /** 查找覆盖该库存点的有效委托；stockpileId 为 null 的仅队伍委托不提供动用权。 */
@@ -383,10 +384,10 @@ class SlgWorldPort implements GameWorldPort {
     delta: ResourceAmounts,
   ): { readonly ok: true; readonly delegationId: string; readonly allocations: readonly DelegationAllocation[] } | OpFailure {
     const candidates = this.findDelegations(principalId, stockpileId).map((entry) => entry.state);
-    const first = candidates[0];
-    if (first === undefined) {
+    if (candidates.length === 0) {
       return failure("draw-limit-exceeded");
     }
+    const first = candidates[0] as DelegationState;
     if (totalAmount(delta) === 0) {
       return { ok: true, delegationId: first.delegationId, allocations: [] };
     }
