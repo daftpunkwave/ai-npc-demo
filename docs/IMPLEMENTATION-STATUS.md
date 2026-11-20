@@ -5,7 +5,7 @@
 
 ## 1. 总览
 
-服务端、玩家客户端和控制台首批页面已能启动并通过 HTTP/WS 协作。目录登记 17 个服务端模块、12 个客户端模块实现和 3 个控制台页面；三份主装配均包含非空 client/console 绑定。正式名册 `standard-15`、15 个上场身份、公社单席开局、20 秒/tick、t168 暂停与公社玩家水闸权限已落地；玩家可完成开局、选择角色和提交对白，控制台可查看运行总览、模块装配、时间线和 Agent 状态。部署级身份配额、t144 程序案、玩家广播、席位契约、六资源交接与 Agent 认知管线仍待交付。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
+服务端、玩家客户端和控制台首批页面已能启动并通过 HTTP/WS 协作。目录登记 17 个主装配服务端模块、12 个客户端模块实现和 3 个控制台页面；三份主装配均包含非空 client/console 绑定。Agent 感知、公平调度、M0 无长期记忆与 M1 结构化账本已具备独立模块和测试装配；主装配接入、上下文、决策循环与模型路径仍待交付。正式名册 `standard-15`、15 个上场身份、公社单席开局、20 秒/tick、t168 暂停与公社玩家水闸权限已落地；玩家可完成开局、选择角色和提交对白，控制台可查看运行总览、模块装配、时间线和 Agent 状态。部署级身份配额、t144 程序案、玩家广播、席位契约与六资源交接仍待交付。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
 
 | 项 | 规格 | 当前实现 | 状态 |
 |---|---|---|---|
@@ -37,6 +37,7 @@
 7. **玩家客户端**：新增类型化 HTTP/WS 客户端、授权投影 reducer、命令幂等重试与 12 个客户端模块；公社开局、岑雁对话、HUD、地点/人物/任务侧栏和本机设置走同一服务端协议。
 8. **控制台首批页面**：新增控制台宿主、运行总览、模块装配和研究时间线；服务端提供健康、模块目录、装配详情、时间线和 Agent 摘要，并将 HTTP 请求跨度写入 `trace_spans`。
 9. **双端运行与端口检查**：新增 `dev`、`build`、`start`、Playwright e2e 和端口检查。开发与生产启动只监听 `5173`、`3000`，占用 `3000` 时启动明确失败。
+10. **Agent 感知与记忆基础**：感知消费者持久化延迟观察与 trigger，公平调度创建租约隔离的 turn；M0 只推进观察与派生水位，M1 将经历、关系、承诺与自报要点写入结构化账本。记忆发布保存不可变 revision，维护与引用强化在 actor 事务外生成计划并按 revision CAS；冲突计划可 rebase 或重算，整理租约在重启后恢复，到期承诺按去重键生成 `prospective` trigger。
 
 ## 3. 剩余迁移项
 
@@ -68,9 +69,9 @@
 
 当前装配新增了观测与模块管理能力；已有在线 run 若冻结的是缺少这些绑定的旧装配，恢复时会因当前必需能力闭包不满足而失败。显式后继 run 或分支迁移尚未实现，迁移必须保留旧 manifest、seed、源分支和事件历史，不得按新配置静默改写旧 run。迁移与验收条件由 [Issue #50](https://github.com/daftpunkwave/ai-npc-demo/issues/50) 跟踪。
 
-### 3.8 剩余表现与认知管线
+### 3.8 剩余表现与 Agent 管线
 
-玩家灰盒和控制台首批页面已交付基础交互。完整证据/提案/派遣工作流、正式 3D 资产、Agent 运行时、模型池、记忆与剩余控制台页面仍待后续交付。灰盒只证明交互与可读性；3D 资产按 [design/assets/02-modeling-spec.md](design/assets/02-modeling-spec.md) 单独验收。
+玩家灰盒和控制台首批页面已交付基础交互。感知、调度与 M0/M1 记忆组件已通过独立装配验证，但主装配尚无 Agent profile 与 `agentSlots`，turn 主循环、上下文、工具网关、模型池及 M2/M3 仍待后续交付。完整证据/提案/派遣工作流、正式 3D 资产与剩余控制台页面也仍待交付。灰盒只证明交互与可读性；3D 资产按 [design/assets/02-modeling-spec.md](design/assets/02-modeling-spec.md) 单独验收。
 
 ## 4. 迁移顺序
 
