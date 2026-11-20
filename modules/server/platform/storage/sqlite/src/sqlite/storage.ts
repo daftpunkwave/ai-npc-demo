@@ -38,6 +38,8 @@ export class SqliteStorage implements StoragePort {
   private database: DatabaseSync | null = null;
   private catalog: StorageCatalog | null = null;
   private inTransaction = false;
+  private opening: Promise<void> | null = null;
+  private lifecycleEpoch = 0;
 
   constructor(config: StorageConfig, host: HostServices) {
     this.config = config;
@@ -45,10 +47,32 @@ export class SqliteStorage implements StoragePort {
   }
 
   /** 打开库文件并执行未应用的迁移；重复调用无副作用，失败时连接会被关闭后重新抛出。 */
-  async open(): Promise<void> {
+  open(): Promise<void> {
     if (this.database !== null) {
-      return;
+      return Promise.resolve();
     }
+    if (this.opening !== null) {
+      return this.opening;
+    }
+    const epoch = this.lifecycleEpoch;
+    const opening = this.openInternal(epoch);
+    this.opening = opening;
+    void opening.then(
+      () => {
+        if (this.opening === opening) {
+          this.opening = null;
+        }
+      },
+      () => {
+        if (this.opening === opening) {
+          this.opening = null;
+        }
+      },
+    );
+    return opening;
+  }
+
+  private async openInternal(epoch: number): Promise<void> {
     const dataDir = resolve(this.config.dataDir);
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- 数据库路径由宿主注入的 dataDir 推导，不是请求入参。
     mkdirSync(dataDir, { recursive: true });
@@ -61,6 +85,9 @@ export class SqliteStorage implements StoragePort {
         this.host.logger,
         this.host.hash,
       );
+      if (epoch !== this.lifecycleEpoch) {
+        throw new DomainError("cancelled", "存储适配器打开已取消");
+      }
       const catalog = resolveCatalog(database);
       this.database = database;
       this.catalog = catalog;
@@ -77,6 +104,7 @@ export class SqliteStorage implements StoragePort {
 
   /** 关闭连接；重复调用安全。关闭失败时保留句柄以便重试。 */
   close(): void {
+    this.lifecycleEpoch += 1;
     const database = this.database;
     if (database === null) {
       return;

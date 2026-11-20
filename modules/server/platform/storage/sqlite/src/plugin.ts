@@ -18,6 +18,10 @@ export function createSqliteStorageModule(input: ModuleCreateInput): Promise<Mod
         throw new DomainError("cancelled", "存储适配器启动已取消");
       }
       await storage.open();
+      if (signal.aborted) {
+        storage.close();
+        throw new DomainError("cancelled", "存储适配器启动已取消");
+      }
     },
     drain: async () => {
       // 存储适配器没有需要排空的在途任务：所有写入都在宿主事务内同步完成。

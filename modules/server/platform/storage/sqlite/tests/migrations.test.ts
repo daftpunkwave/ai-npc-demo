@@ -246,6 +246,17 @@ describe("迁移校验和", () => {
         code: "invalid-state",
         details: { version: 2 },
       });
+      const columns = upgraded
+        .prepare("SELECT name FROM pragma_table_info('schema_migrations')")
+        .all()
+        .map((row) => String(row["name"]));
+      expect(columns).not.toContain("checksum");
+      expect(
+        upgraded
+          .prepare("SELECT version FROM schema_migrations ORDER BY version")
+          .all()
+          .map((row) => Number(row["version"])),
+      ).toEqual([1, 2, 3]);
     } finally {
       if (legacy !== null) {
         closeDatabase(legacy);

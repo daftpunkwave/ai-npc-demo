@@ -13,6 +13,13 @@ import { DomainError, type HostLogger, type HostServices, type Json } from "@ai-
 /** 迁移文件目录：与本模块源码一起交付，不读环境变量或用户目录。 */
 export const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../migrations/", import.meta.url));
 
+/** 校验和功能上线前已发布迁移的固定内容指纹。 */
+const PUBLISHED_MIGRATION_CHECKSUMS: Readonly<Record<number, string>> = {
+  1: "094af55f72d0e55734d543297bdc094f73167714b6ba0b37202a067706cd5529",
+  2: "0952dd9b3492bd09bdbd345393bdc2b8576d26affbfa3b52fd62090963f9487e",
+  3: "69297c06204b3a8fa24a7573fe2fc086b54bc59b19e27157a45fadb6711c0932",
+};
+
 const MIGRATION_FILE_PATTERN = /^(\d{4})_([a-z0-9-]+)\.sql$/;
 
 /** 一条已加载的迁移：编号、名称、路径与 SQL 正文。 */
@@ -141,6 +148,27 @@ function assertAppliedChecksums(
   }
 }
 
+function assertLegacyPublishedChecksums(
+  database: DatabaseSync,
+  migrations: readonly StorageMigration[],
+  applied: readonly AppliedMigration[],
+): void {
+  if (hasChecksumColumn(database)) {
+    return;
+  }
+  const appliedVersions = new Set(applied.map((migration) => migration.version));
+  for (const migration of migrations) {
+    const expected = PUBLISHED_MIGRATION_CHECKSUMS[migration.version];
+    if (expected !== undefined && appliedVersions.has(migration.version) && migration.checksum !== expected) {
+      migrationFailure(`数据库已应用迁移 ${migration.version} 的内容校验和不一致`, {
+        version: migration.version,
+        expected,
+        actual: migration.checksum,
+      });
+    }
+  }
+}
+
 /**
  * 执行尚未应用的迁移；每条迁移在自己的写事务内完成，失败时该条整体回滚。
  * 返回本次实际执行的迁移编号，便于宿主记录启动证据。
@@ -164,6 +192,8 @@ export async function applyMigrations(
   }
   if (hasChecksumColumn(database)) {
     assertAppliedChecksums(database, migrations);
+  } else {
+    assertLegacyPublishedChecksums(database, migrations, applied);
   }
   const appliedSet = new Set(applied.map((migration) => migration.version));
   const executed: number[] = [];
