@@ -141,6 +141,15 @@ function lastStockpileAdjustment(value: GameHarness): Json | undefined {
   return events[events.length - 1]?.payload;
 }
 
+/** 删除库存的运行时聚合，用于构造「内容里有库存点、运行状态缺失」的边界。 */
+function removeStockpileAggregate(value: GameHarness, stockpileId: string): void {
+  value.storage.transact((tx) => {
+    tx.branch(value.branchId)
+      .table("aggregate_state")
+      .delete({ aggregate_type: "stockpile", aggregate_id: stockpileId });
+  });
+}
+
 /** 用同一 dataDir 上的新存储连接读取持久化剧情运行状态，作为进程重启后读取的证据。 */
 async function readPersistedRunState(dataDir: string, branchId: string, scenarioId: string): Promise<ScenarioRunState> {
   const host = createFakeHost();
@@ -435,6 +444,24 @@ describe("剧情卡", () => {
       amount: { supply: 5 },
       reserved: { supply: 3 },
     });
+    expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(0);
+  });
+
+  it("引用的库存缺少运行时状态时显式失败", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 2, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 2);
+    expect(readGameAggregate(value, "scenario-card", "card-relay-alarm")).toMatchObject({ status: "triggered" });
+
+    // 聚合缺失时不能把可用量当成 0 并跳过效果，否则卡片看似结算、实际没有生效。
+    removeStockpileAggregate(value, "sp-commons");
+    expect(() =>
+      compensateCommand(value, "card-relay-alarm", [
+        { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -10 }, reason: "受潮", clampToAvailable: true },
+      ]),
+    ).toThrow(/没有运行时状态/);
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toBeNull();
     expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(0);
   });
 

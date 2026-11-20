@@ -85,6 +85,12 @@ function clampToAvailable(
   stockpileId: string,
   delta: ResourceDelta,
 ): ResourceDelta {
+  // 缺少运行时状态时不能把可用量当成 0：那会让效果静默变成空操作。
+  if (resources.stockpile(stockpileId) === null) {
+    throw new DomainError("invalid-state", `剧情卡引用的库存点 ${stockpileId} 没有运行时状态`, {
+      details: { stockpileId },
+    });
+  }
   const clamp = (value: number | undefined, resource: ResourceId): number | undefined =>
     value === undefined || value >= 0 ? value : Math.max(value, -resources.available(stockpileId, resource));
   const supply = clamp(delta.supply, "supply");
