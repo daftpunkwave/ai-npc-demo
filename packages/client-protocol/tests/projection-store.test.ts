@@ -27,6 +27,14 @@ function projection(): PlayerProjection {
   };
 }
 
+function projectionAtTick(worldTick: number): PlayerProjection {
+  const value = projection();
+  return {
+    ...value,
+    clock: { ...value.clock, worldTick },
+  };
+}
+
 function snapshot(streamSeq: number): StreamSnapshotMessage {
   return {
     type: "snapshot",
@@ -99,6 +107,25 @@ describe("ProjectionStore", () => {
     expect(store.getSnapshot()?.projection.clock.worldTick).toBe(9);
   });
 
+  it("同一流序号下较旧的投影版本不会覆盖当前状态", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(
+      { ...snapshot(8), projectionVersion: 8, data: projectionAtTick(8) },
+      "wld-000000000001",
+      "br-000000000001",
+    );
+
+    const stale = store.applySnapshot(
+      { ...snapshot(8), projectionVersion: 7, data: projectionAtTick(7) },
+      "wld-000000000001",
+      "br-000000000001",
+    );
+
+    expect(stale).toMatchObject({ changed: false, needsSnapshot: false });
+    expect(store.getSnapshot()?.projectionVersion).toBe(8);
+    expect(store.getSnapshot()?.projection.clock.worldTick).toBe(8);
+  });
+
   it("不同分支的晚到快照不会覆盖当前分支", () => {
     const store = new ProjectionStore();
     store.applySnapshot(snapshot(3), "wld-000000000001", "br-000000000001");
@@ -111,6 +138,28 @@ describe("ProjectionStore", () => {
 
     expect(staleBranch.changed).toBe(false);
     expect(store.getSnapshot()?.branchId).toBe("br-000000000001");
+  });
+
+  it("REST 替换快照同样拒绝跨分支状态", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(
+      { ...snapshot(3), data: projectionAtTick(3) },
+      "wld-000000000001",
+      "br-000000000001",
+    );
+
+    const staleBranch = store.replaceSnapshot({
+      worldId: "wld-000000000001",
+      branchId: "br-000000000002",
+      streamSeq: 4,
+      projectionVersion: 4,
+      projection: projectionAtTick(4),
+    });
+
+    expect(staleBranch).toMatchObject({ changed: false, needsSnapshot: false });
+    expect(store.getSnapshot()?.branchId).toBe("br-000000000001");
+    expect(store.streamSeq).toBe(3);
+    expect(store.getSnapshot()?.projection.clock.worldTick).toBe(3);
   });
 
   it("重复对白 append 不重复写入", () => {
