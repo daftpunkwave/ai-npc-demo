@@ -23,7 +23,7 @@
 
 运行状态从 `running` 经 `pausing` 进入 `paused`；恢复从 `paused` 经 `resuming` 回到 `running`；单步从 `paused` 经 `stepping` 回到 `paused`。保存和分支切换只在受控暂停点进行。每次状态转换记录操作者、原因、前后状态和幂等操作 ID。
 
-当前暂停与继续的幂等结果和时钟状态分两次提交。若两次提交之间进程退出，原请求重试可能收到版本冲突。见 [IMPLEMENTATION-STATUS.md — 公共契约迁移](../IMPLEMENTATION-STATUS.md#25-公共契约迁移)。
+当前暂停与继续的幂等结果和时钟状态分两次提交。若两次提交之间进程退出，原请求重试可能收到版本冲突。见 [IMPLEMENTATION-STATUS.md — 时钟操作原子性](../IMPLEMENTATION-STATUS.md#36-时钟操作原子性)。
 
 `worldTick` 是持久逻辑时间。运行时按部署配置推进；暂停和默认离线期间不推进，不计算离线战争或按真实天数衰减记忆。请求耗时和控制租约的服务时间独立记录，不参与剧情时间。
 
