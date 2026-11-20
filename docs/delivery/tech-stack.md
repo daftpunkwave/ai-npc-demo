@@ -162,41 +162,13 @@ S10 的 `dev` 启动 server/client，`build` 构建 client。S11 加入 console 
 
 ## 5. 环境变量
 
-根目录提交 `.env.example`，开发者复制为 `.env`（已在 `.gitignore`）。服务端入口在读取配置前调用 `process.loadEnvFile()`（文件不存在时跳过）。浏览器侧不读取任何密钥，API 一律用相对路径 `/api/v1/...`。
+本地启动时，将仓库根目录的环境变量示例复制为 `.env`（已在 `.gitignore`）。服务端读取配置前调用 `process.loadEnvFile()`，没有该文件时继续使用进程环境。浏览器侧不读取密钥，API 使用相对路径 `/api/v1/...`。[.env.example — 当前环境变量示例](../../.env.example)
 
-```dotenv
-# deployment (two listeners only)
-NPC_SERVER_HOST=127.0.0.1
-NPC_SERVER_PORT=3000
-NPC_CLIENT_PORT=5173
-NPC_DATA_DIR=./data
-NPC_LOG_LEVEL=info
-
-# runtime selection for the online world (operations.md §10)
-NPC_ASSEMBLY=local-slg-standard-v1
-NPC_MODEL_LAYOUT=shared-model-layout-v1
-NPC_ROSTER=standard-20
-
-# local login tokens; generated and printed once when empty
-NPC_PLAYER_TOKEN=
-NPC_CONSOLE_TOKEN=
-# optional single-role console tokens
-NPC_OPERATOR_TOKEN=
-NPC_RESEARCHER_TOKEN=
-NPC_EVALUATOR_TOKEN=
-
-# OpenAI-compatible provider (DeepSeek, Kimi, Qwen, Ollama, vLLM ...)
-NPC_OPENAI_COMPAT_BASE_URL=https://provider.example/v1
-NPC_OPENAI_COMPAT_API_KEY=
-NPC_OPENAI_COMPAT_MODEL=
-
-# Anthropic Claude (read by credentialRef env:ANTHROPIC_API_KEY)
-ANTHROPIC_API_KEY=
-```
+当前服务端开发默认值为 `standard-20`。正式序章的 `standard-15` 需要和内容包、启动默认值及 `.env.example` 一同迁移。[IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)
 
 部署参数只有这一个来源：主机、两个端口、数据目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `NPC_DATA_DIR`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/ai-npc.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
 
-环境变量示例取自当前 `.env.example`。正式名册与默认值切换见 [IMPLEMENTATION-STATUS.md — 身份与名册](../IMPLEMENTATION-STATUS.md#21-身份与名册)。开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)。
+开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)。
 
 ## 6. 本地双端拓扑
 
