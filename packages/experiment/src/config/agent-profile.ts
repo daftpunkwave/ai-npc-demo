@@ -121,7 +121,7 @@ function applyPatch(
   patch: AgentProfileDocument,
 ): AgentProfileDocument {
   const next = patch.patch ?? patch;
-  const slots = { ...(current.slots ?? {}) };
+  const slots = { ...current.slots };
   for (const slot of agentSlots) {
     const selected = next.slots?.[slot];
     if (selected !== undefined) {

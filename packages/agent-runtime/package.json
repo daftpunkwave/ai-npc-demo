@@ -7,7 +7,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ai-npc/authority": "workspace:*",
     "@ai-npc/contracts": "workspace:*",
     "@ai-npc/experiment": "workspace:*",
     "@ai-npc/module-sdk": "workspace:*"

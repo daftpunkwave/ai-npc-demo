@@ -920,9 +920,6 @@ importers:
 
   packages/agent-runtime:
     dependencies:
-      '@ai-npc/authority':
-        specifier: workspace:*
-        version: link:../authority
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../contracts

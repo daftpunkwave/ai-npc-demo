@@ -62,15 +62,5 @@ export type {
   AgentProfileDocument,
   ResolvedAgentProfile,
 } from "./config/agent-profile";
-export {
-  loadModelLayout,
-  modelLayoutSchema,
-  modelMountsJson,
-  resolveModelMounts,
-  validateModelLayout,
-} from "./config/model-layout";
-export type { ModelLayout, ResolvedModelMount } from "./config/model-layout";
-export { loadToolset, toolsetSchema } from "./config/toolset";
-export type { Toolset } from "./config/toolset";
 export { LoadingError } from "./loading/errors";
 export type { LoadingErrorCode } from "./loading/errors";

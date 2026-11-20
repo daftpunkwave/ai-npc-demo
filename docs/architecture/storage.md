@@ -23,7 +23,7 @@ PRAGMA busy_timeout = 5000;
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
 
-本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 的已发布内容指纹。0002 与 0003 的完整语句见 §2.1。
+本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 的已发布内容指纹，0005 为 `turn_runs` 增加逻辑创建 tick `created_tick`。0002 与 0003 的完整语句见 §2.1。
 
 `agent_activations` 保存单个身份的激活状态。目标配额为部署内 15 个活动身份：接入激活事务后，由该事务在同一次提交中统计跨分支的活动身份并拒绝第 16 个。当前迁移只约束单行状态，尚未实施跨分支检查；接入前任何部署都可以超过 15 个活动身份。现状和迁移见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 

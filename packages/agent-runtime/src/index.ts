@@ -5,8 +5,7 @@
  */
 export const packageName = "@ai-npc/agent-runtime";
 
-export { ApprovedSpeechStore } from "./approved-speech";
-export { activateAgentRoster } from "./activation";
+export { activateAgentRoster, activateAgentRosterInTransaction } from "./activation";
 export type { ActivationResult } from "./activation";
 export { AgentRuntime } from "./runtime";
 export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";

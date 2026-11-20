@@ -176,7 +176,14 @@ export function renderObservation(input: {
   };
   return {
     full: detail,
-    summary: { ...detail, summaryZh, facts: {}, claim: null },
+    summary: {
+      summaryZh,
+      subjectIds: [...detail.subjectIds],
+      nodeId: detail.nodeId,
+      refs: {},
+      facts: {},
+      claim: null,
+    },
     releasePolicyId: releasePolicy(input.event),
     knownAtTick: deliveryTick(payload, input.agentId, input.event.worldTick),
   };
