@@ -1,7 +1,7 @@
 /**
- * 创建 Fastify HTTP/WS 应用：装配流中心与路由上下文，按认证、玩家、运营、流与控制台域注册路由，
+ * 创建 Fastify HTTP/WS 应用：装配流中心与路由上下文，按认证、玩家、运营、控制台运营、流与控制台域注册路由，
  * 并提供统一错误响应、监听/关闭/注入的最小接口。
- * 依赖 auth、玩家、运营、流与控制台路由模块，装配的权限端口与身份令牌；不直接查存储表。
+ * 依赖 auth、玩家、运营、控制台运营、流与控制台路由模块，装配的权限端口与身份令牌；不直接查存储表。
  * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名与回调参数名用于表达调用契约。 */
@@ -13,6 +13,7 @@ import { DomainError, type Json, type StreamChannel } from "@ai-npc/contracts";
 import { StreamHub } from "./stream-hub";
 import { channelsFor, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
 import { registerAuthRoutes } from "./routes/auth-routes";
+import { registerConsoleOperationsRoutes } from "./routes/console-operations-routes";
 import { registerConsoleRoutes } from "./routes/console-routes";
 import { registerOperationsRoutes } from "./routes/operations-routes";
 import { registerPlayerRoutes } from "./routes/player-routes";
@@ -200,6 +201,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerOperationsRoutes(context);
   registerStreamRoutes(context);
   registerConsoleRoutes(context);
+  registerConsoleOperationsRoutes(context);
   registerErrorHandling(app, report);
 
   /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */

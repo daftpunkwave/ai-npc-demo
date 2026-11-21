@@ -8,14 +8,14 @@
 playerCommands:
   - campaign.start
   - dialogue.say
-consoleRoles: [operator, researcher]
+consoleRoles: [operator, researcher, evaluator]
 ```
 
 ## 行为
 
 - `player`：只允许玩家角色进入玩家路由。
 - `command`：玩家只允许 `playerCommands`；operator 允许；其他角色拒绝。
-- `console`：只允许 `consoleRoles` 中的角色（默认 operator 与 researcher）。
+- `console`：只允许 `consoleRoles` 中的角色（默认 operator、researcher 与 evaluator）；具体页面再用允许角色列表收紧。
 - `console-session`：控制台装配握手对 operator、researcher、evaluator 开放。
 - `channel`：按 API 第 4 节的角色映射放行 `player`、`console.health`、`console.timeline`、`console.turns`。
 - 返回值只含 `allowed` 与 `reason`，不泄漏策略细节。

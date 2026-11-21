@@ -70,6 +70,8 @@ const expectedReasonCodes = {
     "no-change",
     "unknown-policy",
     "card-not-draft",
+    "card-not-triggered",
+    "card-not-found",
     "card-already-triggered",
     "invalid-effect",
     "campaign-exists",

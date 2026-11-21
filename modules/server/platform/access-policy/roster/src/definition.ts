@@ -19,7 +19,8 @@ export const accessPolicyConfigSchema = z
       "task.cancel",
       "policy.set",
     ]),
-    consoleRoles: z.array(z.enum(["operator", "researcher", "evaluator"])).default(["operator", "researcher"]),
+    // 控制台通用门禁允许的角色；具体页面再用 allowedRoles 收紧，默认与启动令牌的角色集合一致。
+    consoleRoles: z.array(z.enum(["operator", "researcher", "evaluator"])).default(["operator", "researcher", "evaluator"]),
   })
   .strict();
 

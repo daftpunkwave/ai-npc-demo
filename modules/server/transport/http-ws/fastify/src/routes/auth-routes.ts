@@ -6,6 +6,7 @@
 import {
   loginRequestSchema,
   loginResponseSchema,
+  protocolVersion,
   sessionAssemblyQuerySchema,
   sessionAssemblyResponseSchema,
   type SessionDescriptor,
@@ -62,7 +63,7 @@ export function registerAuthRoutes(context: RouteContext): void {
       roles: session.auth.roles as SessionRole[],
       worldId: options.worldId,
       branchId: branch.branchId,
-      protocolVersion: "1",
+      protocolVersion,
       serverAssembly: options.assembly,
       clientAssembly: options.sessionAssembly?.client ?? null,
     };

@@ -7,6 +7,7 @@
 import type {
   AuthContext,
   ConversationLine,
+  IdPrefix,
   Json,
   PlayerNotificationView,
   PlayerProjection,
@@ -60,7 +61,7 @@ export interface StreamHubOptions {
   readonly channelSnapshot?: (channel: StreamChannel) => Json | null;
   /** 按会话角色计算可订阅频道；准入裁决由传输层的策略端口完成。 */
   readonly channelsFor: (auth: AuthContext) => readonly StreamChannel[];
-  readonly ids: (prefix: string) => string;
+  readonly ids: (prefix: IdPrefix) => string;
   readonly tokens: (kind: "session" | "ticket") => string;
   readonly now?: () => number;
   /** 玩家连接数变化通知；宿主据此启动断线自动暂停计时。 */

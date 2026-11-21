@@ -6,6 +6,7 @@
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type {
   CardEffect,
+  IdPrefix,
   MessageIntentKind,
   MeterChangeCause,
   NumericMeterId,
@@ -13,7 +14,9 @@ import type {
   ResourceAmounts,
   ResourceDelta,
   ResourceId,
+  ResourceLevel,
   RoadStatus,
+  ScenarioCardStatus,
   StorageTransaction,
   TaskStatus,
   TaskType,
@@ -22,11 +25,13 @@ import type {
 } from "@ai-npc/contracts";
 import type { WorldTx } from "./ports";
 
+export type { ResourceLevel, ScenarioCardStatus };
+
 /** 只取调用模块自己作用域事务的工厂；模块端口不得借它读取或改写其他模块的聚合。 */
 export type OwnWorldTxFactory = () => WorldTx;
 
-/** 宿主 ID 生成器的游戏端口视图；参数为 ID 前缀。 */
-export type GameIdFactory = (...args: [string]) => string;
+/** 宿主 ID 生成器的游戏端口视图；参数为契约登记的 ID 前缀。 */
+export type GameIdFactory = (...args: [IdPrefix]) => string;
 
 /** 首版游戏模块的稳定模块 ID；端口实现与装配共享同一组常量。 */
 export const gameModuleIds = {
@@ -246,9 +251,7 @@ export interface RouteResult {
   readonly travelTicks: number;
 }
 
-/** 资源展示等级。 */
-export type ResourceLevel = "scarce" | "adequate" | "surplus";
-
+/** 资源展示等级；与公共契约的库存等级词表一致。 */
 /** 库存点快照。 */
 export interface StockpileView {
   readonly stockpileId: string;
@@ -564,11 +567,11 @@ export interface GameAgreementsPort {
   countsAsOf(tick: number): AgreementCounts;
 }
 
-/** 剧情卡查询端口；具体卡状态由剧情模块拥有。 */
+/** 剧情卡查询端口；具体卡状态由剧情模块拥有，词表与公共契约一致。 */
 export interface ScenarioCardView {
   readonly cardId: string;
   readonly version: number;
-  readonly status: "draft" | "published" | "triggered" | "withdrawn";
+  readonly status: ScenarioCardStatus;
   readonly triggerAtTick: number;
 }
 

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  agreementProposePayloadSchema,
   cardEffectSchema,
   commandPayloadSchemas,
   commandRequestSchema,
@@ -135,6 +136,14 @@ describe("命令目录", () => {
   it("载荷映射键与类型目录完全一致", () => {
     expect(Object.keys(commandPayloadSchemas).sort()).toEqual([...expectedCommandTypes].sort());
     expectInvalid(commandTypeSchema, "campaign.pause");
+  });
+
+  it("agreement.propose 的默认有效期为 24，显式值原样保留", () => {
+    const base = { parties: ["player-1", "human-neutral"], terms: [deliverTerm] };
+    expect(agreementProposePayloadSchema.parse(base).expiresInTicks).toBe(24);
+    expect(
+      agreementProposePayloadSchema.parse({ ...base, expiresInTicks: 168 }).expiresInTicks,
+    ).toBe(168);
   });
 
   it.each(expectedCommandTypes)("命令 %s 的合法载荷通过且拒绝额外字段", (type) => {

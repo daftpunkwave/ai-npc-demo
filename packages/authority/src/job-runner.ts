@@ -177,6 +177,7 @@ export class JobRunner {
       correlationId: `job:${jobId}`,
       scope: registration.owner,
       host: this.host,
+      eventSchemas: this.registry.eventSchemas(),
     });
     const context = createHandlerContext({
       auth: createSystemAuth(branch.worldId, branchId),

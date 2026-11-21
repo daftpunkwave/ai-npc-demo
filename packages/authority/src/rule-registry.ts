@@ -3,7 +3,14 @@
  * 依赖公共契约的命令类型与领域错误，以及 authority 的注册类型；注册顺序即处理器执行顺序。
  * 禁止自动扫描模块、允许两个模块拥有同一聚合类型，或在注册后静默覆盖已有处理器。
  */
-import { DomainError, commandTypeSchema, type CommandType, type Json } from "@ai-npc/contracts";
+import {
+  DomainError,
+  commandTypeSchema,
+  domainEventPayloadSchemas,
+  type CommandType,
+  type EventPayloadSchema,
+  type Json,
+} from "@ai-npc/contracts";
 import type { HandlerContext } from "@ai-npc/module-sdk";
 import type {
   AfterCommandHook,
@@ -98,6 +105,12 @@ export class RuleRegistry {
   private readonly jobs = new Map<string, RegisteredJob>();
   private readonly clockSteps: StoredClockStep[] = [];
   private readonly consumers: StoredEventConsumer[] = [];
+  /** 可写入事务的事件类型及其 payload schema；公共契约事件在构造时登记，扩展事件由模块显式登记。 */
+  private readonly eventSchemaMap = new Map<string, EventPayloadSchema>(
+    Object.entries(domainEventPayloadSchemas),
+  );
+  /** 消费者订阅校验推迟到消费启动前，避免扩展事件的登记顺序影响装配结果。 */
+  private consumerSubscriptionsValidated = false;
   private nextOrder = 0;
 
   /** 注册一个模块；重复模块 ID、聚合所有权或处理器类型都在启动前失败。 */
@@ -123,6 +136,27 @@ export class RuleRegistry {
         });
       }
       ownsAggregates.add(aggregateType);
+    }
+
+    const eventsToAdd = new Map<string, EventPayloadSchema>();
+    for (const event of contributor.events ?? []) {
+      requireNonEmpty(event.type, "events.type", moduleId);
+      if (Object.hasOwn(domainEventPayloadSchemas, event.type)) {
+        assemblyFailure(`模块 ${moduleId} 登记的扩展事件 ${event.type} 与公共事件目录冲突`, {
+          moduleId,
+          type: event.type,
+        });
+      }
+      if (this.eventSchemaMap.has(event.type) || eventsToAdd.has(event.type)) {
+        assemblyFailure(`事件类型 ${event.type} 已登记`, { moduleId, type: event.type });
+      }
+      if (typeof event.payloadSchema?.safeParse !== "function") {
+        assemblyFailure(`事件 ${event.type} 的 payloadSchema 不是可校验的 schema`, {
+          moduleId,
+          type: event.type,
+        });
+      }
+      eventsToAdd.set(event.type, event.payloadSchema);
     }
 
     const commandsToAdd: { readonly type: CommandType; readonly handler: StoredCommandHandler }[] = [];
@@ -209,6 +243,9 @@ export class RuleRegistry {
     };
     this.nextOrder += 1;
     this.contributors.set(moduleId, scope);
+    for (const [type, payloadSchema] of eventsToAdd) {
+      this.eventSchemaMap.set(type, payloadSchema);
+    }
     for (const aggregateType of ownsAggregates) {
       this.aggregateOwners.set(aggregateType, moduleId);
     }
@@ -226,6 +263,9 @@ export class RuleRegistry {
     }
     for (const consumer of consumersToAdd) {
       this.consumers.push({ ...consumer, owner: scope });
+    }
+    if (consumersToAdd.length > 0) {
+      this.consumerSubscriptionsValidated = false;
     }
     return scope;
   }
@@ -282,8 +322,33 @@ export class RuleRegistry {
     return this.clockSteps;
   }
 
+  /** 所有消费者订阅的事件类型必须已由公共契约或模块显式登记；在首次消费前统一校验。 */
+  private assertConsumerSubscriptions(): void {
+    if (this.consumerSubscriptionsValidated) {
+      return;
+    }
+    const registered = new Set(this.eventSchemaMap.keys());
+    for (const consumer of this.consumers) {
+      for (const type of consumer.eventTypes ?? []) {
+        if (!registered.has(type)) {
+          assemblyFailure(
+            `消费者 ${consumer.consumerId} 订阅了未登记的事件类型 ${type}`,
+            { consumerId: consumer.consumerId, type },
+          );
+        }
+      }
+    }
+    this.consumerSubscriptionsValidated = true;
+  }
+
   consumerList(): readonly StoredEventConsumer[] {
+    this.assertConsumerSubscriptions();
     return this.consumers;
+  }
+
+  /** 当前可写入事务的事件类型与 payload schema；扩展事件由模块注册时显式加入。 */
+  eventSchemas(): ReadonlyMap<string, EventPayloadSchema> {
+    return this.eventSchemaMap;
   }
 
   contributor(moduleId: string): ContributorScope | undefined {

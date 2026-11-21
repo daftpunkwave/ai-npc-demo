@@ -334,11 +334,11 @@ describe("剧情卡", () => {
     };
     expect(compensateCommand(value, DRAFT_CARD, [compensationEffect])).toMatchObject({
       commandStatus: "rejected",
-      reasonCode: "invalid-effect",
+      reasonCode: "card-not-triggered",
     });
     expect(compensateCommand(value, "card-unknown", [compensationEffect])).toMatchObject({
       commandStatus: "rejected",
-      reasonCode: "invalid-effect",
+      reasonCode: "card-not-found",
     });
     expect(stockpileSupply(value, "sp-commons")).toBe(supplyBefore);
     expect(types(value)).not.toContain("ScenarioCompensationApplied");
@@ -362,6 +362,20 @@ describe("剧情卡", () => {
     expect(event?.payload).toEqual({ cardId: "card-relay-alarm", version: 1, note: "补偿" });
     expect(readGameEventAudience(value, "ScenarioCompensationApplied")).toEqual([{ kind: "system" }]);
     expect(stockpileSupply(value, "sp-commons")).toBe(supplyBefore - 1);
+  });
+
+  it("已触发卡片的效果引用不存在时仍返回 invalid-effect", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 2, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 2);
+    expect(compensateCommand(value, "card-relay-alarm", [
+      { kind: "stockpile-adjust", stockpileId: "sp-unknown", delta: { supply: -1 }, reason: "补偿" },
+    ])).toMatchObject({
+      commandStatus: "rejected",
+      reasonCode: "invalid-effect",
+    });
+    expect(types(value)).not.toContain("ScenarioCompensationApplied");
   });
 
   it("剧情卡定向消息投给玩家主体", async () => {

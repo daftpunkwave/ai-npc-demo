@@ -14,6 +14,8 @@ export interface TickAuthority {
     run(branchId: string): number;
     /** 额外返回是否有步骤请求在本次 tick 收尾后停止时钟（章节终点）。 */
     runDetailed(branchId: string): { readonly executed: number; readonly stopRequested: boolean };
+    /** 读取持久时钟停止点；有登记时禁止继续推进或恢复时钟。 */
+    pendingStop(branchId: string): boolean;
   };
   readonly consumers: {
     run(branchId: string): { readonly processed: number; readonly scanned: number };
@@ -91,8 +93,9 @@ function completeTick(input: WorldTickContext, worldTick: number): WorldTickResu
   const executedJobs = input.authority.jobs.runDue(input.branchId, worldTick);
   const clockSteps = input.authority.clock.runDetailed(input.branchId);
   const consumers = input.authority.consumers.run(input.branchId);
-  // 章节评估等步骤声明终点后，在所有阶段提交完成时暂停时钟，保留存档与资源交接数据。
-  if (clockSteps.stopRequested) {
+  // 章节评估等步骤声明终点后，在所有阶段提交完成时暂停时钟，保留存档与资源交接数据；
+  // 持久停止点让崩溃后重启的补完路径也能补做暂停。
+  if (clockSteps.stopRequested || input.authority.clock.pendingStop(input.branchId)) {
     const paused = input.clock.pause(input.branchId);
     if (!paused.ok) {
       throw new DomainError("invalid-state", "章节终点暂停时钟失败", {
@@ -116,6 +119,18 @@ export function advanceWorldTick(input: AdvanceWorldTickInput): WorldTickResult 
   if (!Number.isSafeInteger(input.targetTick) || input.targetTick < 1) {
     throw new DomainError("validation", "目标 tick 必须是正整数", {
       details: { targetTick: input.targetTick },
+    });
+  }
+  // 终局停止点已持久化时先补做暂停（幂等），再拒绝越过章节终点推进。
+  if (input.authority.clock.pendingStop(input.branchId)) {
+    const paused = input.clock.pause(input.branchId);
+    if (!paused.ok) {
+      throw new DomainError("invalid-state", "章节终点暂停时钟失败", {
+        details: { branchId: input.branchId, targetTick: input.targetTick },
+      });
+    }
+    throw new DomainError("invalid-state", "章节终点已登记，不能推进 tick", {
+      details: { branchId: input.branchId, targetTick: input.targetTick },
     });
   }
   const worldTick = commitClockTick(input);

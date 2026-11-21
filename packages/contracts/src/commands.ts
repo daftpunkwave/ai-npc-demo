@@ -27,32 +27,10 @@ import {
 export * from "./command-values";
 export * from "./command-payloads";
 
-/** 全部命令类型，顺序与领域命令目录一致。 */
-export const commandTypes = [
-  "campaign.start",
-  "dialogue.say",
-  "speech.commit",
-  "seat.say",
-  "information.share",
-  "agreement.propose",
-  "agreement.respond",
-  "task.dispatch",
-  "task.respond",
-  "task.cancel",
-  "policy.set",
-  "scenario.draft",
-  "scenario.publish",
-  "scenario.withdraw",
-  "scenario.compensate",
-  "scenario.override",
-  "probe.ask",
-] as const;
-
-export type CommandType = (typeof commandTypes)[number];
-
-export const commandTypeSchema = z.enum(commandTypes);
-
-/** 命令类型到载荷 schema 的映射，供命令网关按 type 查 schema 校验。 */
+/**
+ * 命令目录的唯一登记表：键为命令类型，值为该命令的 payload schema。
+ * 顺序与领域命令目录一致；命令类型、查找表与判别联合都由它派生，新增命令只改这里。
+ */
 export const commandPayloadSchemas = {
   "campaign.start": campaignStartPayloadSchema,
   "dialogue.say": dialogueSayPayloadSchema,
@@ -73,29 +51,27 @@ export const commandPayloadSchemas = {
   "probe.ask": probeAskPayloadSchema,
 } as const;
 
-export type CommandPayload = z.infer<(typeof commandPayloadSchemas)[CommandType]>;
+/** 全部命令类型，直接由登记表键派生，避免目录与 schema 脱节。 */
+export type CommandType = keyof typeof commandPayloadSchemas;
 
+export const commandTypes = Object.keys(commandPayloadSchemas) as readonly CommandType[];
+
+export const commandTypeSchema = z.enum(commandTypes as unknown as [CommandType, ...CommandType[]]);
+
+/** 指定命令类型的 payload 数据形状。 */
 export type CommandPayloadFor<T extends CommandType> = z.infer<(typeof commandPayloadSchemas)[T]>;
 
-/** 已校验的命令请求：type 判别 payload，外层信封字段由 envelopes 负责。 */
-export const commandRequestSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("campaign.start"), payload: campaignStartPayloadSchema }).strict(),
-  z.object({ type: z.literal("dialogue.say"), payload: dialogueSayPayloadSchema }).strict(),
-  z.object({ type: z.literal("speech.commit"), payload: speechCommitPayloadSchema }).strict(),
-  z.object({ type: z.literal("seat.say"), payload: seatSayPayloadSchema }).strict(),
-  z.object({ type: z.literal("information.share"), payload: informationSharePayloadSchema }).strict(),
-  z.object({ type: z.literal("agreement.propose"), payload: agreementProposePayloadSchema }).strict(),
-  z.object({ type: z.literal("agreement.respond"), payload: agreementRespondPayloadSchema }).strict(),
-  z.object({ type: z.literal("task.dispatch"), payload: taskDispatchPayloadSchema }).strict(),
-  z.object({ type: z.literal("task.respond"), payload: taskRespondPayloadSchema }).strict(),
-  z.object({ type: z.literal("task.cancel"), payload: taskCancelPayloadSchema }).strict(),
-  z.object({ type: z.literal("policy.set"), payload: policySetPayloadSchema }).strict(),
-  z.object({ type: z.literal("scenario.draft"), payload: scenarioDraftPayloadSchema }).strict(),
-  z.object({ type: z.literal("scenario.publish"), payload: scenarioPublishPayloadSchema }).strict(),
-  z.object({ type: z.literal("scenario.withdraw"), payload: scenarioWithdrawPayloadSchema }).strict(),
-  z.object({ type: z.literal("scenario.compensate"), payload: scenarioCompensatePayloadSchema }).strict(),
-  z.object({ type: z.literal("scenario.override"), payload: scenarioOverridePayloadSchema }).strict(),
-  z.object({ type: z.literal("probe.ask"), payload: probeAskPayloadSchema }).strict(),
-]);
+export type CommandPayload = z.infer<(typeof commandPayloadSchemas)[CommandType]>;
 
-export type CommandRequest = z.infer<typeof commandRequestSchema>;
+/** 已校验的命令请求：type 判别 payload，外层信封字段由 envelopes 负责。 */
+export type CommandRequest = {
+  [T in CommandType]: { readonly type: T; readonly payload: CommandPayloadFor<T> };
+}[CommandType];
+
+const commandRequestOptions = commandTypes.map((type) =>
+  z.object({ type: z.literal(type), payload: commandPayloadSchemas[type] }).strict(),
+);
+
+export const commandRequestSchema: z.ZodType<CommandRequest> = z.union(
+  commandRequestOptions,
+) as unknown as z.ZodType<CommandRequest>;

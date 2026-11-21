@@ -14,6 +14,7 @@ import type {
   ClockView,
   CommandEnvelope,
   CommandReceipt,
+  IdPrefix,
   Json,
   PlayerProjection,
   ResolvedModuleSet,
@@ -127,7 +128,7 @@ export type SnapshotCreateHook = (input: SnapshotCreateArgs) => SnapshotCreateRe
 export type SnapshotRestoreHook = (input: SnapshotRestoreArgs) => RestoreSnapshotResult;
 export type ResetHook = (operationId: string, principalId: string) => BranchClockResult;
 /** ID 与令牌生成由宿主注入，传输层不自行创建随机源。 */
-export type IdGenerator = (prefix: string) => string;
+export type IdGenerator = (prefix: IdPrefix) => string;
 export type TokenIssuer = (kind: "session" | "ticket") => string;
 /** 在线分支切换通知；宿主据此更新自身的内存入口。 */
 export type BranchChangedHook = (nextBranchId: string) => void;

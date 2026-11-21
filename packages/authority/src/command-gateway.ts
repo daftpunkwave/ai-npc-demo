@@ -10,6 +10,7 @@ import {
   canonicalJson,
   commandEnvelopeSchema,
   commandRequestSchema,
+  isSupportedCommandEnvelopeSchemaVersion,
   type AuthContext,
   type CommandEnvelope,
   type CommandReceipt,
@@ -164,7 +165,7 @@ export class CommandGateway {
     if (!isPauseExempt(type, auth, branch) && clock.mode !== "running" && clock.mode !== "stepping") {
       return this.rejectionReceipt(branchStorage, auth, envelope, payloadHash, clock, "paused", "世界时钟当前不可推进");
     }
-    if (envelope.schemaVersion !== 1) {
+    if (!isSupportedCommandEnvelopeSchemaVersion(envelope.schemaVersion)) {
       return this.rejectionReceipt(
         branchStorage,
         auth,
@@ -358,6 +359,7 @@ export class CommandGateway {
       correlationId: envelope.commandId,
       scope: owner,
       host: this.host,
+      eventSchemas: this.registry.eventSchemas(),
       collector,
     });
   }

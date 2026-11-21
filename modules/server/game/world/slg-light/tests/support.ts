@@ -66,6 +66,17 @@ export class TestWorldTx implements WorldTx {
   cancelJobs(_idempotencyKeyPrefix: string): void {
     // 世界模块测试不执行已调度 job。
   }
+
+  private readonly clockStops: { readonly requestId: string; readonly tick: number }[] = [];
+
+  requestClockStop(requestId: string, _reason: string): void {
+    this.clockStops.push({ requestId, tick: this.worldTick });
+  }
+
+  /** 已登记的持久时钟停止点，供测试断言章节终点与业务结果同事务提交。 */
+  stopRequests(): readonly { readonly requestId: string; readonly tick: number }[] {
+    return this.clockStops;
+  }
 }
 
 /** 供模块创建与规则贡献测试使用的确定性 HostServices。 */

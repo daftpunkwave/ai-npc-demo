@@ -47,6 +47,7 @@ export const idPrefixes = [
   "trg",
   "exp",
   "rum",
+  "fact",
 ] as const;
 
 export type IdPrefix = (typeof idPrefixes)[number];

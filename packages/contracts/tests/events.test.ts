@@ -160,7 +160,7 @@ const validPayloads: Record<EventType, unknown> = {
     aboutIds: ["species-fauna"],
     text: "听说巡裔袭击了补给车队。",
   },
-  WorldFactRecorded: { factId: "fact-1", factType: "ConvoyDelayed", payload: { text: "延误 6 小时" } },
+  WorldFactRecorded: { factId: "fact-k3j9x0a1b2c3", factType: "ConvoyDelayed", payload: { text: "延误 6 小时" } },
   AgentsSummoned: {
     agentIds: ["human-neutral", "species-fauna"],
     reason: "council",

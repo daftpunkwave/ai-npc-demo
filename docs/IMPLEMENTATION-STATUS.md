@@ -5,7 +5,7 @@
 
 ## 1. 总览
 
-服务端、玩家客户端和控制台首批页面已能启动并通过 HTTP/WS 协作。目录登记 17 个主装配服务端模块、12 个客户端模块实现和 3 个控制台页面；三份主装配均包含非空 client/console 绑定。Agent 感知、公平调度、M0 无长期记忆与 M1 结构化账本已具备独立模块和测试装配；主装配接入、上下文、决策循环与模型路径仍待交付。正式名册 `standard-15`、15 个上场身份、公社单席开局、20 秒/tick、t168 暂停与公社玩家水闸权限已落地；玩家可完成开局、选择角色和提交对白，控制台可查看运行总览、模块装配、时间线和 Agent 状态。部署级身份配额、t144 程序案、玩家广播、席位契约与六资源交接仍待交付。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
+服务端、玩家客户端和控制台首批页面已能启动并通过 HTTP/WS 协作。目录登记 17 个主装配服务端模块、12 个客户端模块实现和 3 个控制台页面；三份主装配均包含非空 client/console 绑定。Agent 感知、公平调度、M0 无长期记忆与 M1 结构化账本已具备独立模块和测试装配；主装配接入、上下文、决策循环与模型路径仍待交付。正式名册 `standard-15`、15 个上场身份、公社单席开局、20 秒/tick、t168 暂停与公社玩家水闸权限已落地；玩家可完成开局、选择角色和提交对白，控制台可查看运行总览、模块装配、时间线和 Agent 状态，operator 可经控制台入口暂停/继续、创建快照与恢复。部署级身份配额、t144 程序案、玩家广播、席位契约与六资源交接仍待交付。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
 
 | 项 | 规格 | 当前实现 | 状态 |
 |---|---|---|---|
@@ -24,6 +24,7 @@
 | 表现 | 2.5D 序章灰盒，后续目标为 3D | PixiJS 灰盒已实现基础节点、道路、角色与选择；正式 3D 待后续 | **部分实现** |
 | 玩家客户端 | 登录、开局、授权投影、人物/地点、对话、HUD、设置、通知 | 已实现，`player-start` e2e 通过 | **已实现基础流程** |
 | 控制台首批页面 | 运行总览、模块装配、时间线、Agent 摘要 | 已实现，`console-basic` e2e 与角色权限测试通过 | **已实现首批页面** |
+| 控制台运营 API | 按角色提供时钟、存档与恢复 | operator 可暂停/继续、创建快照与恢复，operator 与 researcher 可列快照；入口只作用于在线分支 | **已实现** |
 | 双端端口 | 只监听 5173 与 3000 | 开发/生产启动均验证，占用 3000 时启动失败 | **已对齐** |
 
 ## 2. 本次已对齐
@@ -31,7 +32,7 @@
 1. **名册与身份**：新增 `config/rosters/standard-15.yaml`，同步 `core-3`、`.env.example`、`config/runs/online-default.yaml` 与服务端默认 `rosterRef`。单人正式名册的 schema 上限改为 15。
 2. **内容包 0.2.0**：`factions.yaml` 拆分为 `factionHomeNodeId`、`outpostNodeId`、`territoryNodeId`，并补上党魁、秘密与关系；`characters.yaml` 对齐 8 名公社支持者和 3 名外域 Agent，新增 `characterId` 与 `secret`；`starts.yaml` 只启用公社席，并补上闻昭的第三条开局消息；`world-init.yaml` 的职责委托改用党魁运行身份；`evidence.yaml` 清理旧身份持有者；`locale/zh-CN.yaml` 的玩家称呼改为“党魁”并补齐材料、食物、水词条。
 3. **剧情卡署名**：把青枝、洛、追风、唐箴的署名改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`；沈砾、苏回、谷寻保留为 signature-only 署名，不实例化。内容加载器、剧情模块与剧情卡校验共用同一份名单。
-4. **时钟与章节终点**：20 秒/tick 写入时钟模块默认值与三份装配。章节评估步骤在 t168 返回停止请求，tick 收尾后暂停时钟；tick 169 被拒绝，存档保留。
+4. **时钟与章节终点**：20 秒/tick 写入时钟模块默认值与三份装配。章节评估步骤在 t168 把停止请求与评估结果同事务写入持久停止点，tick 收尾后暂停时钟；崩溃后重启或补完会补做幂等暂停并拒绝 t169，存档保留。
 5. **公社玩家权限**：玩家会话可以提交 `watergate.allocation` 的 `policy.set`，处理器按 campaign 的 `playerId` 与 `factionId` 裁决；其他派系党魁返回 `no-authority`。`water-allocation` 条款允许玩家 `player-1` 作为义务人，改策违约按 `PolicyChanged.byId` 记到协议。
 6. **任务规则身份**：任务加成从旧角色 ID 迁移到 15 人编制，并按队伍所属派系限定本派支持者：穆枝参与本派救援减 2 tick，祁录参与本派侦察每条道路减 1 tick，陶安参与本派修复 +10，陆沉参与本派迁徙道路护送 +4；追风对任何队伍的侦察与迁徙道路护送同效，洛参与非 `team-star` 修复 +15，这两项不按本派判定。救援参与人允许在医疗目的地节点加入。
 7. **玩家客户端**：新增类型化 HTTP/WS 客户端、授权投影 reducer、命令幂等重试与 12 个客户端模块；公社开局、岑雁对话、HUD、地点/人物/任务侧栏和本机设置走同一服务端协议。

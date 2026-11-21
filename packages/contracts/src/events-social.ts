@@ -127,7 +127,7 @@ export const rumorSpreadPayloadSchema = z
 /** 叙事事实：只允许首版登记过的 factType，正文由卡片声明。 */
 export const worldFactRecordedPayloadSchema = z
   .object({
-    factId: z.string().min(1),
+    factId: idSchemas.fact,
     factType: z.literal("ConvoyDelayed"),
     payload: jsonValueSchema,
   })

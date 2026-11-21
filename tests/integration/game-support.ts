@@ -16,6 +16,7 @@ import type {
   StoragePort,
   StorageRawRow,
 } from "@ai-npc/contracts";
+import { domainEventPayloadSchemas } from "@ai-npc/contracts";
 import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
 import {
@@ -71,6 +72,9 @@ export function createMemoryTx(worldTick = 0): WorldTx {
     },
     cancelJobs() {
       // 端口测试不取消 job。
+    },
+    requestClockStop() {
+      // 端口测试不登记持久时钟停止点。
     },
   };
 }
@@ -483,6 +487,7 @@ export function withGamePorts<T>(harness: GameHarness, run: (ports: GameModulePo
         correlationId: `test:projection-read:${moduleId}`,
         scope: { moduleId: "test.projection-read", ownsAggregates: new Set(projectionAggregateTypes), order: 0 },
         host: harness.host,
+        eventSchemas: new Map(Object.entries(domainEventPayloadSchemas)),
       });
     return run(bindGamePorts(txFor, harness.gameContent, harness.host));
   });

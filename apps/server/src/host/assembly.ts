@@ -11,6 +11,7 @@ import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import {
   assemblyDescriptorSchema,
+  protocolVersion,
   type AssemblyDescriptor,
   type CapabilityRef,
   type Json,
@@ -186,7 +187,7 @@ export async function resolveServerAssembly(
     plan,
     modules: {
       realm: "server",
-      protocolVersion: "1",
+      protocolVersion,
       modules,
       capabilities: boundCapabilities(assembly, plan, "server"),
       assemblyHash,
@@ -218,7 +219,7 @@ export async function resolveSessionAssemblies(
     const modules = await moduleRefs(plan, hash);
     return {
       realm,
-      protocolVersion: "1",
+      protocolVersion,
       modules,
       capabilities: boundCapabilities(assembly, plan, realm),
       assemblyHash: await computeAssemblyHash({ assembly, realm, plan, hash }),

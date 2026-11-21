@@ -14,6 +14,7 @@ import {
   clockViewSchema,
   invitationViewSchema,
 } from "./projection";
+import { scenarioCardStatusSchema } from "./scenario";
 /** 席位控制者类型：Agent 或真人。 */
 export const seatControllerKindSchema = z.enum(["agent", "human"]);
 
@@ -190,7 +191,7 @@ export const scenarioCardContentSchema = z
 
 export type ScenarioCardContent = z.infer<typeof scenarioCardContentSchema>;
 
-/** 分支内卡片状态视图。 */
+/** 分支内卡片状态视图；与剧情模块持有的卡片生命周期词表一致。 */
 export const scenarioCardViewSchema = z
   .object({
     cardId: contentIdSchemas.card,
@@ -198,7 +199,7 @@ export const scenarioCardViewSchema = z
     source: z.enum(["builtin", "draft"]),
     triggerAtTick: z.number().int().nonnegative(),
     effects: z.array(cardEffectSchema).min(1),
-    status: z.enum(["scheduled", "triggered", "withdrawn"]).nullable(),
+    status: scenarioCardStatusSchema.nullable(),
     triggeredAtTick: z.number().int().nonnegative().nullable(),
   })
   .strict();

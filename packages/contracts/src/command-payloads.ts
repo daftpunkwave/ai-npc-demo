@@ -43,6 +43,9 @@ export const speechCommitPayloadSchema = z
   })
   .strict();
 
+/** 已通过契约校验的 speech.commit payload。 */
+export type SpeechCommitPayload = z.infer<typeof speechCommitPayloadSchema>;
+
 export const seatSayPayloadSchema = z
   .object({
     to: z.array(principalIdSchema).min(1),
@@ -57,11 +60,15 @@ export const informationSharePayloadSchema = z
   })
   .strict();
 
+/**
+ * 协议提案；`expiresInTicks` 未给出时默认 24，允许范围 1–168。
+ * 超过上限由协议模块以 `deadline-out-of-range` 拒绝，不做静默钳制。
+ */
 export const agreementProposePayloadSchema = z
   .object({
     parties: z.array(principalIdSchema).min(2),
     terms: z.array(termSchema).min(1),
-    expiresInTicks: z.number().int().positive().optional(),
+    expiresInTicks: z.number().int().positive().default(24),
   })
   .strict()
   .superRefine((proposal, context) => {

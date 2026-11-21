@@ -2,7 +2,7 @@
 
 > 本文定义 Demo 单人运营。多人席位、托管与权威设计见 [02-authority-economy-fairness.md — 权威与公平](../design/multiplayer/02-authority-economy-fairness.md)。
 
-> 状态：部分实现。服务端已提供玩家暂停、继续、存档、恢复与重新开局。三势力席位、剧情运营接口和控制台页面为目标。本文规定运营与故障处理。参见 [00-scope-and-invariants.md — 序章范围](../00-scope-and-invariants.md)、[api.md — HTTP 与 WebSocket API](../architecture/api.md)、[two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
+> 状态：部分实现。玩家自助入口与控制台运营入口都已提供暂停、继续、存档与恢复：玩家经 `/api/v1/campaign/*`，operator 经 `/api/v1/console/campaign/*`，快照列表另允许 researcher 只读；重新开局只在玩家自助入口提供。三势力席位、剧情运营接口与控制台页面仍为目标。本文规定运营与故障处理。参见 [00-scope-and-invariants.md — 序章范围](../00-scope-and-invariants.md)、[api.md — HTTP 与 WebSocket API](../architecture/api.md)、[two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
 
 ## 1. 操作身份
 
@@ -23,7 +23,7 @@
 
 运行状态从 `running` 经 `pausing` 进入 `paused`；恢复从 `paused` 经 `resuming` 回到 `running`；单步从 `paused` 经 `stepping` 回到 `paused`。保存和分支切换只在受控暂停点进行。每次状态转换记录操作者、原因、前后状态和幂等操作 ID。
 
-当前暂停与继续的幂等结果和时钟状态分两次提交。若两次提交之间进程退出，原请求重试可能收到版本冲突。见 [IMPLEMENTATION-STATUS.md — 时钟操作原子性](../IMPLEMENTATION-STATUS.md#36-时钟操作原子性)。
+当前暂停与继续的幂等结果和时钟状态分两次提交。若两次提交之间进程退出，原请求重试可能收到版本冲突。见 [IMPLEMENTATION-STATUS.md — 时钟操作原子性](../IMPLEMENTATION-STATUS.md#36-时钟操作原子性)。章节终点等终局暂停由步骤在业务事务内登记持久停止点，重启或补完路径据此补做幂等暂停，并拒绝继续推进逻辑时间。
 
 `worldTick` 是持久逻辑时间。运行时按部署配置推进；暂停和默认离线期间不推进，不计算离线战争或按真实天数衰减记忆。请求耗时和控制租约的服务时间独立记录，不参与剧情时间。
 
@@ -100,7 +100,7 @@
 
 ## 8. 目标请求 API 与通用规则
 
-接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，席位、时钟、存档与运行申请在第 5.3 节，剧情卡在第 5.4 节。
+接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，控制台运营的时钟、存档与恢复在第 5.3 节，席位与运行申请也在第 5.3 节，剧情卡在第 5.4 节。
 
 玩家入口与控制台入口都在服务端同一端口；路由前缀区分权限域，不能因为控制台与玩家同源就复用玩家 scope。相同幂等键和 payload 返回原 receipt；相同键不同 payload 返回冲突。accepted 只表示已接纳，不等于异步任务 completed。服务端决定 principal/scope，不能信任模型或客户端自报授权身份。
 

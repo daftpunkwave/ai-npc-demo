@@ -98,7 +98,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `platform.evaluation.standard` | service | run | `platform.evaluation` | 审计重放、开环重决策、闭环运行、指标与报告 |
 | `platform.operations.standard` | service | run | `platform.operations` | 暂停/快照/恢复、席位交接、内容发布与补偿操作 |
 | `platform.module-admin.standard` | service | deployment | `platform.module-admin` | catalog 快照、装配预检、diff、冻结与更换流程 |
-| `platform.secrets.env` | service | deployment | `platform.secrets` | 只向服务端适配器解析 credentialRef，浏览器永远拿不到 |
+| `platform.secrets.env` | adapter | deployment | `platform.secrets` | 只向服务端适配器解析 credentialRef，浏览器永远拿不到 |
 | `platform.model-transport.openai-compatible` | adapter | deployment | `platform.model-transport` | Chat Completions 协议（DeepSeek、Kimi、通义、Ollama、vLLM 等）；映射见 [模型传输](../agent/model-transport.md) 第 3 节 |
 | `platform.model-transport.anthropic` | adapter | deployment | `platform.model-transport` | Anthropic 官方 SDK 的 Messages API；映射见 [模型传输](../agent/model-transport.md) 第 4 节 |
 | `platform.model-transport.deterministic` | adapter | deployment | `platform.model-transport` | CI/测试用确定性响应，不产生外部费用；只出现在测试装配 |
@@ -208,7 +208,7 @@ M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `
 
 `check:catalog` 扫描 `config/assemblies/*.yaml`，并用与宿主启动相同的 kernel 解析器逐装配执行：
 
-- 模块 ID 与能力名唯一、版本与 apiVersion 相容、配置 schema 严格、未知字段拒绝；
+- 模块 ID 与能力名唯一、版本与 apiVersion 相容（不在受支持 apiVersion 集合中的模块在装配解析阶段拒绝）、配置 schema 严格、未知字段拒绝；
 - realm/kind 白名单、能力命名空间与绑定匹配；
 - 能力闭包：必需能力均有 provider；无缺失依赖、无环，提供者先于消费者的拓扑顺序；
 - 实例作用域兼容、重复绑定检测；

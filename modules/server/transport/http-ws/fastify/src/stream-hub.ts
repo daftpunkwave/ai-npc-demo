@@ -3,7 +3,7 @@
  * 依赖公共契约的投影类型、权限回调、注入时钟、会话注册表、重放缓冲与发送器。
  * 禁止无限保留过期会话、未消费票据或断线重放缓冲，也禁止在慢连接上堆积推送。
  */
-import type { Json, PlayerProjection, StreamChannel } from "@ai-npc/contracts";
+import { protocolVersion, type Json, type PlayerProjection, type StreamChannel } from "@ai-npc/contracts";
 import { handleClientMessage } from "./client-messages";
 import { ReplayStore } from "./replay-store";
 import { SessionRegistry } from "./session-registry";
@@ -168,7 +168,7 @@ export class StreamHub {
     });
     this.sender.sendMessage(socket, {
       type: "hello",
-      protocolVersion: "1",
+      protocolVersion,
       principalId: session.auth.principalId,
       channels,
     });
