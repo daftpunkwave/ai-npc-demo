@@ -28,6 +28,7 @@
 | `prb` | 探针结果 | `rr` | 运行申请 |
 | `mnt` | 记忆整理任务 | `trg` | trigger |
 | `exp` | 实验 | `rum` | 传闻 |
+| `fact` | 叙事事实 | | |
 
 内容 ID：节点用节点名（`grayharbor`），道路 `r-*`，库存点 `sp-*`，队伍 `team-*`，群体 `grp-*`，证据 `ev-*`，秘密 `sec-*`，剧情卡 `card-*`，非 Agent 来源 `src-*`。
 
@@ -274,7 +275,7 @@ COMMIT
 
 通信事件的 `deliveries: { principalId: string; deliverAtTick: number }[]` 是提交时冻结、按 principalId 排序去重的实际投递名单（含发送者的立即回显）；单事件不再有标量 deliverAtTick。逐接收者延迟、中断时混合受众的处理见规则第 9 节；投影只读取自己的 delivery。
 
-事件 `type` 一旦发布不得改名；新增字段需有默认语义，破坏性变化提高 `schemaVersion`（见 [公共契约](contracts.md) 第 7 节）。
+事件 `type` 一旦发布不得改名；新增字段需有默认语义，破坏性变化提高 `schemaVersion`（见 [公共契约](contracts.md) 第 7 节）。事件 schema 表由公共契约事件与模块显式登记的扩展事件组成：未登记的事件类型不能写入事务，消费者订阅未登记类型会在注册阶段失败。读取旧事件时按登记的支持版本判定是否需要迁移。
 
 ## 7. 受众与可见性
 

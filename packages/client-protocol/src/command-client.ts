@@ -3,7 +3,7 @@
  * 依赖类型化 API 客户端的命令入口；不解释业务拒绝，也不重放成功后产生的新命令。
  * 禁止每次重试重新生成 commandId，或把 rejected receipt 当作网络失败改写状态。
  */
-import { DomainError, type CommandEnvelope, type CommandReceipt, type Json } from "@ai-npc/contracts";
+import { DomainError, commandEnvelopeSchemaVersion, type CommandEnvelope, type CommandReceipt, type Json } from "@ai-npc/contracts";
 import type { ApiClient } from "./http";
 
 export interface CommandClientOptions {
@@ -55,7 +55,7 @@ export class CommandClient {
     const envelope: CommandEnvelope = {
       commandId: this.newCommandId(),
       type,
-      schemaVersion: 1,
+      schemaVersion: commandEnvelopeSchemaVersion,
       payload,
       ...(expectedVersions === undefined ? {} : { expectedVersions: { ...expectedVersions } }),
     };

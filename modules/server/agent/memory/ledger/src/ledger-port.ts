@@ -7,6 +7,7 @@
 import type {
   AgentMemoryQuery,
   AgentObservation,
+  IdPrefix,
   MemoryBundle,
   MemoryChangePlan,
 } from "@ai-npc/contracts";
@@ -36,7 +37,7 @@ import {
   relationSummary,
 } from "./ledger-model";
 
-type Ids = (prefix: string) => string;
+type Ids = (prefix: IdPrefix) => string;
 
 export class LedgerMemoryPort implements MemoryPort {
   constructor(

@@ -5,7 +5,7 @@
  * 禁止直接改写协议聚合、放宽任务 schema 或绕过命令网关伪造履约事实。
  */
 import { TransactionWorldTx } from "@ai-npc/authority";
-import type { AuthContext, CommandType, Json, Term } from "@ai-npc/contracts";
+import { domainEventPayloadSchemas, type AuthContext, type CommandType, type Json, type Term } from "@ai-npc/contracts";
 import { gameModuleIds, type TaskView } from "@ai-npc/module-sdk";
 import { createActionsPort } from "@ai-npc/mod-game-actions-standard";
 import { afterEach, describe, expect, it } from "vitest";
@@ -103,6 +103,7 @@ function taskView(value: GameHarness, taskId: string): TaskView | null {
       correlationId: "test:game-agreement-window",
       scope: { moduleId: gameModuleIds.actions, ownsAggregates: new Set(["task"]), order: 0 },
       host: value.host,
+      eventSchemas: new Map(Object.entries(domainEventPayloadSchemas)),
     });
     return createActionsPort(() => tx).task(taskId);
   });

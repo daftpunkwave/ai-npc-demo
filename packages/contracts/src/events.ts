@@ -126,6 +126,12 @@ export type DomainEventPayloadSchemas = typeof domainEventPayloadSchemas;
 
 export type DomainEventType = keyof DomainEventPayloadSchemas;
 
+/**
+ * 领域事件 payload schema 的最小类型。
+ * 公共目录中的事件直接使用 zod schema；扩展事件由模块显式登记同形状的 schema。
+ */
+export type EventPayloadSchema = z.ZodType;
+
 /** 领域事件类型全集，直接由登记表键派生，避免目录与 schema 脱节。 */
 export const domainEventTypes = Object.keys(domainEventPayloadSchemas) as readonly DomainEventType[];
 

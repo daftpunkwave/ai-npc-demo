@@ -3,7 +3,7 @@
  * Builds relation modifiers and row versions from authorized observations.
  * Must not infer facts beyond the frozen observation or global contract tables.
  */
-import type { MemoryChangePlan } from "@ai-npc/contracts";
+import type { IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
@@ -19,7 +19,7 @@ import {
   stringArray,
 } from "./ledger-model";
 
-type Ids = (prefix: string) => string;
+type Ids = (prefix: IdPrefix) => string;
 
 export function buildRelations(
   events: readonly LedgerEvent[],

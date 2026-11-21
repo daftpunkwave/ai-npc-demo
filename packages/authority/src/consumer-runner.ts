@@ -238,6 +238,7 @@ export class EventConsumerRunner {
       correlationId: `event:${event.eventId}`,
       scope: consumer.owner,
       host: this.host,
+      eventSchemas: this.registry.eventSchemas(),
     });
     const context = createHandlerContext({
       auth: createSystemAuth(branch.worldId, branchId),

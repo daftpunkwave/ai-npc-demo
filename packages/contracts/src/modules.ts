@@ -5,6 +5,7 @@
  */
 /* eslint-disable no-unused-vars -- 本文件是模块与装配契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import { z } from "zod";
+import type { IdPrefix } from "./ids";
 import { jsonValueSchema, type Json } from "./json";
 
 /** 运行域。 */
@@ -209,9 +210,9 @@ export interface HostTracer {
   span<T>(name: string, attrs: Json, fn: () => T): T;
 }
 
-/** 模块获取时间、随机源、ID 与 I/O 的唯一入口。 */
+/** 模块获取时间、随机源、ID 与 I/O 的唯一入口；ID 前缀必须来自契约目录。 */
 export interface HostServices {
-  ids(prefix: string): string;
+  ids(prefix: IdPrefix): string;
   nowIso(): string;
   monotonicMs(): number;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;

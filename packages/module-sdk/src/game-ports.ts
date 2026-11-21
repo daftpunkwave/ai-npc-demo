@@ -6,6 +6,7 @@
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type {
   CardEffect,
+  IdPrefix,
   MessageIntentKind,
   MeterChangeCause,
   NumericMeterId,
@@ -25,8 +26,8 @@ import type { WorldTx } from "./ports";
 /** 只取调用模块自己作用域事务的工厂；模块端口不得借它读取或改写其他模块的聚合。 */
 export type OwnWorldTxFactory = () => WorldTx;
 
-/** 宿主 ID 生成器的游戏端口视图；参数为 ID 前缀。 */
-export type GameIdFactory = (...args: [string]) => string;
+/** 宿主 ID 生成器的游戏端口视图；参数为契约登记的 ID 前缀。 */
+export type GameIdFactory = (...args: [IdPrefix]) => string;
 
 /** 首版游戏模块的稳定模块 ID；端口实现与装配共享同一组常量。 */
 export const gameModuleIds = {

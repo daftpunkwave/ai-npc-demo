@@ -5,6 +5,7 @@
  */
 import {
   DomainError,
+  isSupportedProtocolVersion,
   type HostServices,
   type Json,
   type ModuleDefinition,
@@ -100,6 +101,13 @@ function selectedDefinitions(
   definitions: readonly ModuleDefinition[],
   resolved: ResolvedModuleSet,
 ): readonly ModuleDefinition[] {
+  if (!isSupportedProtocolVersion(resolved.protocolVersion)) {
+    throw new DomainError(
+      "assembly-incompatible",
+      `服务端协议版本 ${resolved.protocolVersion} 不受当前客户端支持`,
+      { details: { protocolVersion: resolved.protocolVersion, realm: resolved.realm } },
+    );
+  }
   const catalog = new Map(definitions.map((definition) => [definition.id, definition]));
   const selected: ModuleDefinition[] = [];
   for (const reference of resolved.modules) {

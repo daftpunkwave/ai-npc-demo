@@ -43,6 +43,9 @@ export const speechCommitPayloadSchema = z
   })
   .strict();
 
+/** 已通过契约校验的 speech.commit payload。 */
+export type SpeechCommitPayload = z.infer<typeof speechCommitPayloadSchema>;
+
 export const seatSayPayloadSchema = z
   .object({
     to: z.array(principalIdSchema).min(1),
