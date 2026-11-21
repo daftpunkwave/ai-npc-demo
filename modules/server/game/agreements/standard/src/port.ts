@@ -1,6 +1,6 @@
 /**
  * 实现协议查询端口：协议视图与截至指定 tick 的履约/违约计数。
- * 依赖协议聚合、本模块 scoped WorldTx、组合根注入的行动/通信/世界/地图只读端口与主体派系映射。
+ * 依赖协议聚合、本模块 scoped WorldTx、组合根注入的行动/通信/世界/地图只读端口与内容派系索引。
  * 禁止在查询中改写协议、执行条款校验、触发履约事件或直接读取其他模块的私有聚合。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将泛型查询结果误判为 any。 */
@@ -12,7 +12,7 @@ import {
   type OwnWorldTxFactory,
   type ShareQuery,
 } from "@ai-npc/module-sdk";
-import { isAgreementSatisfied, type FulfillmentFacts } from "./fulfillment";
+import { isAgreementSatisfied, resolvePrincipalFaction, type FulfillmentFacts } from "./fulfillment";
 import { readAgreementState, type AgreementState } from "./state";
 
 function toView(state: AgreementState): AgreementView {
@@ -36,16 +36,16 @@ function toView(state: AgreementState): AgreementView {
 class StandardAgreementsPort implements GameAgreementsPort {
   private readonly ownTx: OwnWorldTxFactory;
   private readonly queries: AgreementQueryPorts;
-  private readonly factionOfPrincipal: (principalId: string) => string | null;
+  private readonly factions: ReadonlyMap<string, unknown>;
 
   constructor(
     ownTx: OwnWorldTxFactory,
     queries: AgreementQueryPorts,
-    factionOfPrincipal: (principalId: string) => string | null,
+    factions: ReadonlyMap<string, unknown>,
   ) {
     this.ownTx = ownTx;
     this.queries = queries;
-    this.factionOfPrincipal = factionOfPrincipal;
+    this.factions = factions;
   }
 
   private tx() {
@@ -123,20 +123,22 @@ class StandardAgreementsPort implements GameAgreementsPort {
   /** 履约事实：已完成任务、证据分享与主体/队伍归属全部经注入的依赖读取。 */
   private fulfillmentFacts(): FulfillmentFacts {
     const teams = new Map(this.queries.world.teams().map((team) => [team.teamId, team.ownerFactionId]));
+    // 一次统计计算内复用同一份 campaign 快照，避免按主体重复读取；不在模块绑定时缓存。
+    const campaign = this.queries.world.campaign();
     return {
       completedTasks: this.queries.actions.completedTasks(),
       hasShare: (query: ShareQuery) => this.queries.comms.hasShare(query),
       factionOfTeam: (teamId) => teams.get(teamId) ?? null,
-      factionOfPrincipal: this.factionOfPrincipal,
+      factionOfPrincipal: (principalId) => resolvePrincipalFaction(principalId, this.factions, campaign),
     };
   }
 }
 
-/** 构造绑定到当前事务的协议端口；依赖与主体派系映射由组合根按依赖顺序注入。 */
+/** 构造绑定到当前事务的协议端口；依赖与内容派系索引由组合根按依赖顺序注入。 */
 export function createAgreementsPort(
   ownTx: OwnWorldTxFactory,
   queries: AgreementQueryPorts,
-  factionOfPrincipal: (principalId: string) => string | null,
+  factions: ReadonlyMap<string, unknown>,
 ): GameAgreementsPort {
-  return new StandardAgreementsPort(ownTx, queries, factionOfPrincipal);
+  return new StandardAgreementsPort(ownTx, queries, factions);
 }

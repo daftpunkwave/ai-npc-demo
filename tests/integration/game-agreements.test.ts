@@ -452,6 +452,16 @@ describe("协议", () => {
             currentTaskId: null,
           },
         ],
+        // 当前 campaign 的玩家是 player-1，按映射代表 human-neutral。
+        campaign: () => ({
+          campaignId: "cmp-000000000001",
+          factionId: "human-neutral",
+          playerId: "player-1",
+          chapterId: "watergate",
+          startTick: 0,
+          status: "running",
+          outcome: null,
+        }),
       },
       map: {
         roadStatus: (roadId) => {
@@ -463,9 +473,7 @@ describe("协议", () => {
     const port = createAgreementsPort(
       () => tx,
       queries,
-      // 替换端口时同样注入主体派系映射：player-1 是当前 campaign 玩家，代表 human-neutral。
-      (principalId) =>
-        principalId === "player-1" || principalId === "human-neutral" ? "human-neutral" : null,
+      new Map<string, unknown>([["human-neutral", {}]]),
     );
     // 三条由替换端口提供的事实满足：完成任务、证据分享、水闸分配；
     // 仍在义务期的通行条款因道路关闭计为违约。

@@ -7,7 +7,6 @@ export const packageName = "@ai-npc/mod-game-agreements-standard";
 
 export { agreementsModuleDefinition } from "./definition";
 export { createAgreementsContributor } from "./contributor";
-export { resolvePrincipalFaction } from "./fulfillment";
 export { createAgreementsPort } from "./port";
 export { agreementStateSchema, readAgreementState } from "./state";
 export type { AgreementState } from "./state";
