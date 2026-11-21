@@ -42,7 +42,7 @@ apps/client 只保留启动、模块装载、依赖与能力校验、扩展槽�
 
 ## 4. 客户端数据流
 
-数据先从 transport 进入 authorized projection reducer，转为 typed scene/UI view-model，再交给已装载的功能模块。网络 reducer 属于可替换的客户端投影模块，通过 ProjectionPort 提供只读订阅和版本信息；模块不能各自维护一份互相矛盾的权威世界。
+数据先从 transport 进入 authorized projection reducer，转为 typed scene/UI view-model，再交给已装载的功能模块。网络 reducer 属于可替换的客户端投影模块，通过 ProjectionPort 提供只读订阅和版本信息；模块不能各自维护一份互相矛盾的权威世界。章节名、时钟刻度与界面文字经 `GET /api/v1/content` 只读一次，与授权投影分开，界面模块不把文案写进源码。
 
 客户端维护 worldTick、projectionVersion、streamSeq 与当前 branch 标识。断线重连时携带最后确认的游标续传；缺口过大就重取快照。重连不会新建 NPC，进入实验分支必须有可见标识。
 

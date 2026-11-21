@@ -57,6 +57,7 @@ function createFakeClock(initial: ClockState): {
 function createLifecycleFor(
   harness: AuthorityHarness,
   clock: GameClockPort,
+  campaignStarted: () => boolean = () => true,
 ): ReturnType<typeof createLifecycle> {
   const active = { branchId: harness.branchId, worldId: harness.worldId };
   const host = createFakeHost();
@@ -67,6 +68,7 @@ function createLifecycleFor(
     authority: harness.authority,
     active,
     autoPauseAfterDisconnectMs: 60_000,
+    campaignStarted,
     disposeResources: async () => {},
   });
 }
@@ -94,6 +96,31 @@ function seedJob(harness: AuthorityHarness, kind: string, handler: () => void): 
 }
 
 describe("宿主 worker 恢复", () => {
+  it("未开局时拒绝继续时钟，避免把 campaign.start 挤到非零 tick", async () => {
+    const harness = await createAuthorityHarness();
+    harnesses.push(harness);
+    const fakeClock = createFakeClock({
+      worldTick: 0,
+      mode: "paused",
+      secondsPerTick: 1,
+      runVersion: 0,
+      stepTargetTick: null,
+    });
+    const lifecycle = createLifecycleFor(harness, fakeClock.port, () => false);
+    try {
+      let caught: unknown;
+      try {
+        lifecycle.control("start", 0);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: "not-ready" });
+      expect(fakeClock.state()).toMatchObject({ mode: "paused", runVersion: 0 });
+    } finally {
+      await lifecycle.close();
+    }
+  });
+
   it("持续失败时保持 degraded，恢复请求返回 not-ready 且时钟不变", async () => {
     const harness = await createAuthorityHarness();
     harnesses.push(harness);

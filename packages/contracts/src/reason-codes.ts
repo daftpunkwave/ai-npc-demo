@@ -54,6 +54,7 @@ export const reasonCodeGroups = {
     "invalid-effect",
     "campaign-exists",
     "unknown-faction",
+    "world-tick-not-zero",
   ],
   agentRefusal: [
     "danger",

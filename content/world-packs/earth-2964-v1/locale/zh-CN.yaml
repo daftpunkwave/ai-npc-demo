@@ -42,6 +42,7 @@ reasonCodes:
   invalid-effect: 剧情卡效果不合法。
   campaign-exists: 战役已经开始。
   unknown-faction: 未知的派系。
+  world-tick-not-zero: 世界时钟已推进，只能在 t0 开局。
   danger: 太危险。
   duty: 不在职责范围内。
   past-breach: 对方上次没有兑现。
@@ -109,8 +110,15 @@ ui:
   waitingReply: 等待回应
   reconnecting: 重连中
   serverUnavailable: 服务端不可连接
+  sessionExpired: 会话已失效，请重新登录。
   incompleteAssembly: 组合不完整
   moduleNotLoaded: 模块未装载
+  chapterKicker: 序章 / 第一周
+  startBriefing: 你是灰港公社党魁。七日之内，粮仓、果园与迁徙通道会同时逼近临界点。对话会留下记录，承诺会改变关系，公开广播无法收回。
+  hudKicker: 灰港 / 序章
+  siteLabel: 灰港现场
+  sceneLabel: 灰港近城
+  consoleTitle: 灰港控制台
 lexicons:
   taskKeywords:
     - { word: 护送, taskType: escort }

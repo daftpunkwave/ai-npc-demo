@@ -176,7 +176,7 @@ flowchart LR
 
 | 页面模块 | 角色 | 数据来源 | 视图 | 操作 |
 |---|---|---|---|---|
-| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 端口、三个 realm 的就绪状态、装配 hash、时钟、各队列长度、水位落后的 Agent、预算消耗、最近 20 条失败 | 无 |
+| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度、水位落后的 Agent、预算消耗、最近 20 条失败 | 无 |
 | `console.module-admin.standard` | operator、researcher | `/console/modules`、`/console/assemblies*` | catalog 表（按 realm 筛选）、装配列表、各 realm 的解析结果 | 粘贴装配 YAML 做预检，显示错误与相对当前装配的 diff；operator 可保存为草稿 |
 | `console.model-mounts.standard` | operator、researcher | `/console/model-layouts*` | 布局列表；布局详情（连接只显示适配器、主机名与 `credentialRef` 名称）；“按模型看挂载”与“按角色看路由”两个视图 | 校验草稿、保存草稿；operator 可对某个模型做一次计费的连通性测试 |
 | `console.faction-ops.standard` | operator | `/console/ops/*`、`/console/campaign/*`、`/console/run-requests` | 三个席位的控制方式、epoch、租约；接管后的席位视图（只含该身份合法获知的信息与待处理事项）；时钟状态；存档列表；玩家的运行申请 | 接管/交还（填写原因）；以席位身份提交命令（消息 `seat.say`、协议提出与回复、`policy.set`、派遣）；暂停/继续/单步 N tick；存档；恢复（先 dry-run 再确认）；批准或拒绝运行申请 |

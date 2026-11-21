@@ -200,6 +200,12 @@ h1, h2, p, dl, dd { margin-top: 0; }
   font-size: 0.66rem;
 }
 
+.health-chip-degraded {
+  color: var(--red);
+  border-color: #6b403b;
+  background: #241817;
+}
+
 .module-count,
 .branch-chip { color: var(--accent); }
 

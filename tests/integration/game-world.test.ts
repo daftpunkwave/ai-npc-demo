@@ -333,17 +333,31 @@ describe("世界核心", () => {
     ).toBe(0);
   });
 
-  it("非零启动 tick 时按 startTick 计算每日与章节边界", async () => {
+  it("开局前已推进时钟时 campaign.start 被拒且不写入 campaign", async () => {
     const value = await harness();
     setGameClock(value, { worldTick: 5, mode: "running" });
-    expect(start(value).commandStatus).toBe("accepted");
-    setGameClock(value, { worldTick: 173, mode: "running" });
+    const receipt = start(value);
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("world-tick-not-zero");
+    expect(readGameAggregate(value, "campaign", "campaign")).toBeNull();
+    expect(readGameEventTypes(value)).not.toContain("CampaignStarted");
+  });
+
+  it("t0 开局后日结与章节评估落在绝对 tick 24 与 168", async () => {
+    const value = await harness();
+    const started = start(value);
+    expect(started.commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "campaign", "campaign")).toMatchObject({ startTick: 0 });
+    setGameClock(value, { worldTick: 24, mode: "running" });
     value.authority.clock.run(value.branchId);
-    expect(readGameAggregate(value, "campaign", "campaign")).toMatchObject({
-      startTick: 5,
-      status: "evaluated",
-    });
-    expect(readGameEventTypes(value)).toContain("DayPassed");
+    setGameClock(value, { worldTick: 168, mode: "running" });
+    value.authority.clock.run(value.branchId);
+    const events = readGameEvents(value);
+    // tick 168 按规则先做第七笔日结，再做序章评估。
+    expect(events.filter((event) => event.type === "DayPassed").map((event) => event.worldTick)).toEqual([24, 168]);
+    expect(
+      events.filter((event) => event.type === "ChapterStageEvaluated").map((event) => event.worldTick),
+    ).toEqual([168]);
   });
 
   it("控制方可以通过政策命令关闭道路", async () => {

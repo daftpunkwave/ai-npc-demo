@@ -108,6 +108,20 @@
   font-size: 0.75rem;
 }
 
+.hud-connection {
+  padding: 3px 8px;
+  color: var(--warning);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.hud-connection-expired {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
 .hud-message {
   position: absolute;
   top: 80px;

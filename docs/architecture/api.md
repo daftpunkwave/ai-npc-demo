@@ -54,6 +54,7 @@
 | 方法与路径 | 请求 | 响应 |
 |---|---|---|
 | `GET /api/v1/campaign` | — | `{ campaign: CampaignView \| null, starts: StartOption[] }`（类型见第 9 节） |
+| `GET /api/v1/content` | — | `{ chapterTitle, clock: { secondsPerTick, evaluationTick, motionTick }, ui: ClientUiText }`：客户端只读内容视图，章节名与界面文字取自内容包，时钟刻度取自装配配置；任何已认证会话可读 |
 | `POST /api/v1/commands` | `CommandEnvelope` | `CommandReceipt` |
 | `GET /api/v1/commands/{commandId}` | — | `CommandReceipt`；不存在返回 404 |
 | `GET /api/v1/world/view` | — | `{ streamSeq, projectionVersion, projection: PlayerProjection }`（[领域模型](domain-model.md) 第 8.1 节） |
@@ -134,11 +135,11 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回两个端口、三个 realm、服务端装配 hash、各模块 ready 状态、当前时钟和无 Agent 运行时的队列摘要。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、两个端口、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；尚无数据来源的 `turnsRunning`、`maintenanceQueued`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /health`（已实现） | operator、researcher | — | `{ ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning, maintenanceQueued, modelQueue }, laggingAgents, budgets, recentFailures }` |
+| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, modelQueue? }, laggingAgents?, budgets, recentFailures }` |
 | `GET /modules?realm=`（已实现） | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
 | `GET /assemblies`（已实现） | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
 | `GET /assemblies/{assemblyId}`（已实现） | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |
@@ -224,9 +225,10 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 接口组 | player | operator | researcher | evaluator |
 |---|---|---|---|---|
 | `/auth/*`、`/session`、`/streams/ticket` | ✓ | ✓ | ✓ | ✓ |
+| `/content` | ✓ | ✓ | ✓ | ✓ |
 | `/session/assembly?realm=client` | ✓ | ✓ | ✓ | ✓ |
 | `/session/assembly?realm=console` | ✗ | ✓ | ✓ | ✓ |
-| 第 3 节玩家接口 | ✓ | ✗ | ✗ | ✗ |
+| 第 3 节其余玩家接口 | ✓ | ✗ | ✗ | ✗ |
 | 5.1 总览与装配 | ✗ | ✓ | ✓（只读） | ✗ |
 | 5.2 模型池 | ✗ | ✓ | ✓（只读） | ✗ |
 | 5.3 席位与运营 | ✗ | ✓（时钟、存档、恢复） | 只读快照列表 | ✗ |
@@ -284,6 +286,19 @@ interface CampaignView {
 }
 
 interface SnapshotView { snapshotId: string; label: string; worldTick: number; day: number; createdAt: string; createdBy: string }
+
+interface ClientUiText {
+  noReply: string; waitingReply: string; reconnecting: string; serverUnavailable: string;
+  sessionExpired: string; incompleteAssembly: string; moduleNotLoaded: string;
+  chapterKicker: string; startBriefing: string; hudKicker: string; siteLabel: string;
+  sceneLabel: string; consoleTitle: string;
+}
+
+interface ClientContentView {
+  chapterTitle: string;
+  clock: { secondsPerTick: number; evaluationTick: number; motionTick: number };
+  ui: ClientUiText;
+}
 
 interface ConversationLine {
   seq: number;

@@ -1,6 +1,6 @@
 /**
- * 使用 PixiJS 绘制授权投影中的节点、道路、角色与队伍，并把点选写回共享选择端口。
- * 依赖客户端投影、相机与等距投影端口；不读取未授权数据或预测服务器裁决。
+ * 使用 PixiJS 绘制授权投影中的节点、道路、角色与队伍，场景名称取自客户端内容视图，并把点选写回共享选择端口。
+ * 依赖客户端投影、内容视图、相机与等距投影端口；不读取未授权数据或预测服务器裁决。
  * 禁止把画布动画当成世界事实，也禁止遗漏卸载时的画布与事件资源清理。
  */
 import {
@@ -12,12 +12,13 @@ import {
 } from "pixi.js";
 import { useEffect, useRef, type ReactNode } from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
+import type { ClientContentView, ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
 import type { ProjectionState } from "@ai-npc/client-protocol";
 
 interface WorldViewLike {
   subscribe(listener: (state: ProjectionState | null) => void): () => void;
   getSnapshot(): ProjectionState | null;
+  getContent(): ClientContentView | null;
 }
 
 interface CameraLike {
@@ -168,6 +169,7 @@ function PixiScene(): ReactNode {
   const selection = usePort<SelectionLike>("client.input");
   const state = usePortSubscription<ProjectionState | null>("client.world-view");
   const cameraState = usePortSubscription<{ x: number; y: number; zoom: number }>("client.camera");
+  const content = worldView.getContent();
   const hostRef = useRef<{ appendChild(node: unknown): unknown } | null>(null);
   const appRef = useRef<Application | null>(null);
   const rootRef = useRef<Container | null>(null);
@@ -230,7 +232,7 @@ function PixiScene(): ReactNode {
     <div className="scene-host" data-testid="scene-renderer-pixi">
       <div className="scene-canvas" ref={hostRef as never} />
       <div className="scene-caption">
-        <span>灰港近城</span>
+        {content === null ? null : <span>{content.ui.sceneLabel}</span>}
         <span>{state === null ? "等待投影" : `${state.projection.map.nodes.length} 个地点`}</span>
       </div>
     </div>

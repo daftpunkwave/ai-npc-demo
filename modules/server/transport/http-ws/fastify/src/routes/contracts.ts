@@ -12,6 +12,7 @@ import type {
   ModulesResponse,
   AuthContext,
   ClockView,
+  ClientContentView,
   CommandEnvelope,
   CommandReceipt,
   IdPrefix,
@@ -206,6 +207,8 @@ export interface ServerAppOptions {
   };
   /** 玩家可选开局；未接线时不返回开局选项。 */
   readonly starts?: () => readonly StartOption[];
+  /** 客户端只读内容视图；未接线时内容端点返回服务未就绪。 */
+  readonly content?: () => ClientContentView;
   /** 玩家会话读取端口；未接线时返回服务未就绪。 */
   readonly conversation?: ConversationReadPort;
   /** 控制台首批只读页面；未接线时保留最小健康回退。 */

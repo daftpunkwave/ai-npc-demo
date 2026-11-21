@@ -4,4 +4,4 @@
  */
 export const packageName = "@ai-npc/mod-client-world-view-standard";
 export { worldViewModuleDefinition } from "./definition";
-export type { WorldViewPort } from "./plugin";
+export type { WorldViewConnectionState, WorldViewPort } from "./plugin";

@@ -71,7 +71,8 @@ export function registerConsoleRoutes(context: RouteContext): void {
       return;
     }
     if (options.console === undefined) {
-      return { status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } };
+      // 没有控制台端口时不得返回伪造的 ready 摘要；交给统一 503 not-ready。
+      return sendHttpError(reply, "not-ready", "控制台健康摘要尚未就绪");
     }
     return consoleHealthResponseSchema.parse(options.console.health());
   });

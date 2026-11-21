@@ -152,10 +152,11 @@ const scenarioCard = {
 };
 
 const consoleHealth = {
+  status: "ready",
   ports: { client: 5173, server: 3000 },
   realms: ["server", "client", "console"],
   assemblyHash: "assembly-hash",
-  modules: [{ moduleId: "game.clock.controlled", version: "1.0.0", status: "started" }],
+  modules: [{ moduleId: "game.clock.controlled", version: "1.0.0", status: "ready" }],
   clock: { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 0 },
   queues: { turnsQueued: 0, turnsRunning: 0, maintenanceQueued: 0, modelQueue: 0 },
   laggingAgents: 0,
@@ -166,11 +167,12 @@ const consoleHealth = {
 /** 单条合法 + 非法样例的 DTO 表。 */
 const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["装配来源", assemblySourceSchema, "repo", "cache"],
-  ["模块状态", consoleModuleStatusSchema, { moduleId: "game.clock.controlled", version: "1.0.0", status: "started" }, { moduleId: "clock", version: "1", status: "started" }],
+  ["模块状态", consoleModuleStatusSchema, { moduleId: "game.clock.controlled", version: "1.0.0", status: "ready" }, { moduleId: "clock", version: "1", status: "started" }],
   ["队列摘要", consoleQueueSummarySchema, consoleHealth.queues, { ...consoleHealth.queues, turnsQueued: -1 }],
   ["预算摘要", consoleBudgetSummarySchema, consoleHealth.budgets[0], { scope: "run", key: "tokens", used: 0, limit: null, unit: "seconds" }],
   ["失败摘要", consoleFailureSummarySchema, { code: "provider-failed", safeMessage: "供应商失败", occurredAt: "2026-11-18T00:00:00.000Z", traceId: null }, { code: "nope", safeMessage: "x", occurredAt: "x", traceId: null }],
   ["控制台健康", consoleHealthResponseSchema, consoleHealth, { ...consoleHealth, laggingAgents: -1 }],
+  ["控制台健康降级", consoleHealthResponseSchema, { ...consoleHealth, status: "degraded" }, { ...consoleHealth, status: "starting" }],
   [
     "模块描述",
     moduleDescriptorViewSchema,

@@ -1,14 +1,15 @@
 /**
- * 展示当前获准的公社开局，并调用世界视图端口提交 campaign.start 与继续时钟。
- * 依赖授权 campaign 选项与 React 交互；不预写世界状态或自动选择其他派系。
+ * 展示当前获准的公社开局，章节名、开场白与时钟刻度取自客户端内容视图，并调用世界视图端口提交 campaign.start 与继续时钟。
+ * 依赖授权 campaign 选项、内容视图与 React 交互；不预写世界状态或自动选择其他派系。
  * 禁止在命令失败后关闭开局页或伪造进入游戏。
  */
 import { useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { CampaignResponse, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { CampaignResponse, ClientContentView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 
 interface WorldViewLike {
   getCampaign(): CampaignResponse | null;
+  getContent(): ClientContentView | null;
   subscribe(listener: (state: unknown) => void): () => void;
   getSnapshot(): unknown;
   startCampaign(factionId: string): Promise<void>;
@@ -18,6 +19,11 @@ function FactionStartView(): ReactNode {
   const worldView = usePort<WorldViewLike>("client.world-view");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const content = worldView.getContent();
+  if (content === null) {
+    // 模块只在 bootstrap 成功后挂载；缺内容时不退回硬编码文案。
+    return null;
+  }
   const campaign = worldView.getCampaign();
   if (campaign?.campaign != null) {
     return null;
@@ -46,12 +52,9 @@ function FactionStartView(): ReactNode {
           <span />
           <span />
         </div>
-        <span className="eyebrow">序章 / 第一周</span>
-        <h1>水闸之前</h1>
-        <p className="start-lead">
-          你是灰港公社党魁。七日之内，粮仓、果园与迁徙通道会同时逼近临界点。
-          对话会留下记录，承诺会改变关系，公开广播无法收回。
-        </p>
+        <span className="eyebrow">{content.ui.chapterKicker}</span>
+        <h1>{content.chapterTitle}</h1>
+        <p className="start-lead">{content.ui.startBriefing}</p>
         {start === undefined ? (
           <div className="start-unavailable" role="alert">
             当前装配没有启用公社开局，无法进入世界。
@@ -81,8 +84,8 @@ function FactionStartView(): ReactNode {
         {error === null ? null : <p className="inline-error" role="alert">{error}</p>}
         <footer>
           <span>单玩家</span>
-          <span>20 秒 / 游戏小时</span>
-          <span>t168 评估</span>
+          <span>{content.clock.secondsPerTick} 秒 / 游戏小时</span>
+          <span>t{content.clock.evaluationTick} 评估</span>
         </footer>
       </section>
       <aside className="start-thesis">
@@ -90,7 +93,7 @@ function FactionStartView(): ReactNode {
         <ol>
           <li>确认三项城市读数何时越过临界值</li>
           <li>把对话转成可执行、可追责的任务与协议</li>
-          <li>在 t144 前为程序案争取足够支持</li>
+          <li>在 t{content.clock.motionTick} 前为程序案争取足够支持</li>
         </ol>
       </aside>
     </div>
