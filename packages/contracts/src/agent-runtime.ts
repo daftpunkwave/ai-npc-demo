@@ -268,6 +268,7 @@ export const contextBuildRequestSchema = z
     budget: z
       .object({
         maxInputTokens: z.number().int().positive(),
+        reservedOutputTokens: z.number().int().nonnegative(),
         safetyTokens: z.number().int().nonnegative(),
         toolLoopReserveTokens: z.number().int().nonnegative(),
         segmentBudgets: z.record(z.string().min(1), z.number().int().nonnegative()),

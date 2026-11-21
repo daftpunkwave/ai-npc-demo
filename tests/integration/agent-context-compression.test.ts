@@ -1,5 +1,5 @@
 /**
- * 核心职责：验证有序上下文空段省略，以及窗口压缩的阈值、尾部保留和剔除报告。
+ * 核心职责：验证有序上下文空段省略、预算上限，以及窗口压缩的阈值、尾部保留和剔除报告。
  * 交互契约：通过 kernel 解析的小装配取得真实模块端口，不进入主装配。
  * 约束与禁忌：不得手工实例化模块或把不可压缩内容伪装为成功。
  */
@@ -83,12 +83,127 @@ describe("Ordered context and window compression", () => {
     expect(artifact.segments.some((segment) => segment.segmentId === "memory")).toBe(false);
   });
 
+  it("输出预留收紧有效输入上限，超限时不返回 ready", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.modelWindowTokens = 7000;
+    request.budget.maxInputTokens = 8000;
+    request.budget.safetyTokens = 200;
+    request.budget.toolLoopReserveTokens = 0;
+    request.budget.segmentBudgets.history = 7000;
+    request.historyText = "旧".repeat(6500);
+
+    request.budget.reservedOutputTokens = 0;
+    expect((await harness.context.build(request)).status).toBe("ready");
+
+    request.budget.reservedOutputTokens = 500;
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("over-budget");
+    expect(built.failureReason).toBe("request-over-budget");
+  });
+
+  it("窗口不足以容纳输出预留与安全余量时显式失败", async () => {
+    const harness = await createAgentContextToolsHarness("agent.compression.window");
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.modelWindowTokens = 1700;
+    request.budget.maxInputTokens = 8000;
+    request.budget.reservedOutputTokens = 1500;
+    request.budget.safetyTokens = 300;
+
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("over-budget");
+    expect(built.failureReason).toBe("request-over-budget");
+
+    const pipeline = new AgentContextPipeline({
+      context: harness.context,
+      compression: harness.compression,
+      host: harness.host,
+    });
+    const prepared = await pipeline.prepareFirstRequest(request);
+    expect(prepared.ready).toBe(false);
+    expect(prepared.compressionStatus).toBe("cannot-fit");
+    expect(prepared.lossReport).toMatchObject({
+      reason: "window-exhausted",
+      effectiveMaxTokens: 0,
+      targetTokens: 0,
+    });
+  });
+
+  it("工具循环预留从首轮目标上限中扣除", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.modelWindowTokens = 7000;
+    request.budget.maxInputTokens = 8000;
+    request.budget.reservedOutputTokens = 500;
+    request.budget.safetyTokens = 200;
+    request.budget.segmentBudgets.history = 7000;
+    request.historyText = "旧".repeat(6000);
+
+    request.budget.toolLoopReserveTokens = 0;
+    expect((await harness.context.build(request)).status).toBe("ready");
+
+    request.budget.toolLoopReserveTokens = 500;
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("over-budget");
+    expect(built.failureReason).toBe("request-over-budget");
+  });
+
+  it("speech 不扣除工具循环预留", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.phase = "speech";
+    request.modelWindowTokens = 10000;
+    request.budget.maxInputTokens = 8000;
+    request.budget.reservedOutputTokens = 1500;
+    request.budget.safetyTokens = 300;
+    request.budget.toolLoopReserveTokens = 1600;
+    request.budget.segmentBudgets.history = 7500;
+    request.historyText = "旧".repeat(7000);
+
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("ready");
+  });
+
+  it("压缩管线与构建器使用同一有效输入上限", async () => {
+    const harness = await createAgentContextToolsHarness("agent.compression.window");
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.modelWindowTokens = 7000;
+    request.budget.maxInputTokens = 8000;
+    request.budget.reservedOutputTokens = 500;
+    request.budget.safetyTokens = 200;
+    request.budget.toolLoopReserveTokens = 0;
+    request.budget.segmentBudgets.history = 7000;
+    request.historyText = Array.from({ length: 10 }, (_, index) => {
+      const speaker = index % 2 === 0 ? "党魁" : "岑雁";
+      return `- [dlg-${String(index + 1).padStart(12, "0")}] ${speaker}：${"旧话".repeat(250)}`;
+    }).join("\n");
+
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("ready");
+
+    const pipeline = new AgentContextPipeline({
+      context: harness.context,
+      compression: harness.compression,
+      host: harness.host,
+    });
+    const prepared = await pipeline.prepareFirstRequest(request);
+    expect(prepared.compressionStatus).toBe("compressed");
+    expect(prepared.ready).toBe(true);
+    expect(prepared.lossReport).toMatchObject({ effectiveMaxTokens: 6300 });
+  });
+
   it("首轮请求前由上下文管线触发窗口压缩", async () => {
     const harness = await createAgentContextToolsHarness("agent.compression.window");
     harnesses.push(harness);
     const request = baseContextRequest();
     request.modelWindowTokens = 500;
     request.budget.maxInputTokens = 500;
+    request.budget.reservedOutputTokens = 0;
     request.budget.safetyTokens = 0;
     request.budget.toolLoopReserveTokens = 100;
     request.budget.segmentBudgets.history = 5000;

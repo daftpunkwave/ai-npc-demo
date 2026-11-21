@@ -23,6 +23,7 @@ export * from "./modules";
 export * from "./storage";
 export * from "./model";
 export * from "./agent-runtime";
+export * from "./context-budget";
 export * from "./schema-profile";
 export * from "./versions";
 export * from "./api";
