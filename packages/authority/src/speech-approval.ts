@@ -1,37 +1,31 @@
 /**
  * 校验 speech.commit 引用的人工批准结果是否可用于当前主体与受众。
- * 依赖公共契约的认证上下文和 module-sdk 的已批准对白类型；只做同步只读判断。
- * 禁止在这里生成对白、扩大受众或把未批准结果当作可提交事实。
+ * 依赖公共契约的认证上下文、speech.commit payload schema 与 module-sdk 的已批准对白类型；只做同步只读判断。
+ * 禁止在这里生成对白、扩大受众、把未批准结果当作可提交事实，或维护与契约 schema 不同步的第二套解析。
  */
-/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的联合类型误判为 any。 */
-import { DomainError, type AuthContext, type Json } from "@ai-npc/contracts";
+import {
+  DomainError,
+  speechCommitPayloadSchema,
+  type AuthContext,
+  type Json,
+  type SpeechCommitPayload,
+} from "@ai-npc/contracts";
 import type { ApprovedSpeech } from "@ai-npc/module-sdk";
-
-/** speech.commit 中 authority 需要预检的字段。 */
-export interface SpeechCommitPayload {
-  readonly approvedSpeechArtifactRef: string;
-  readonly channel: "dialogue" | "message" | "broadcast";
-  readonly audience: readonly string[];
-}
 
 /** 从已通过契约 schema 校验的 payload 中取出 speech 预检字段。 */
 export function readSpeechCommitPayload(payload: Json): SpeechCommitPayload {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    throw new DomainError("invalid-state", "speech.commit payload 不是对象");
+  const parsed = speechCommitPayloadSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new DomainError("invalid-state", "speech.commit payload 不符合公共契约", {
+      details: {
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.map((segment) => String(segment)).join("."),
+          message: issue.message,
+        })),
+      },
+    });
   }
-  const ref = payload["approvedSpeechArtifactRef"];
-  const channel = payload["channel"];
-  const audience = payload["audience"];
-  if (typeof ref !== "string" || ref.length === 0) {
-    throw new DomainError("invalid-state", "speech.commit payload 缺少批准结果引用");
-  }
-  if (channel !== "dialogue" && channel !== "message" && channel !== "broadcast") {
-    throw new DomainError("invalid-state", "speech.commit payload 的 channel 不合法");
-  }
-  if (!Array.isArray(audience) || audience.some((item) => typeof item !== "string")) {
-    throw new DomainError("invalid-state", "speech.commit payload 的 audience 不合法");
-  }
-  return { approvedSpeechArtifactRef: ref, channel, audience: audience as string[] };
+  return parsed.data;
 }
 
 function normalizedAudience(values: readonly string[]): readonly string[] {

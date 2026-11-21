@@ -24,6 +24,7 @@ import {
   type PlayerProjection,
   type ResolvedModuleSet,
   type StartOption,
+  type IdPrefix,
 } from "@ai-npc/contracts";
 import {
   buildPlayerProjection,
@@ -313,7 +314,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
       { token: "console-token", auth: operatorAuth(harness) },
       { token: "researcher-token", auth: { ...operatorAuth(harness), principalId: "researcher-1", kind: "researcher", roles: ["researcher"] } },
     ],
-    ids: (prefix: string) => harness.host.ids(prefix),
+    ids: (prefix: IdPrefix) => harness.host.ids(prefix),
     tokens: (kind) => `${kind}-${randomUUID()}`,
     ...(overrides.onInternalError === undefined ? {} : { onInternalError: overrides.onInternalError }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),

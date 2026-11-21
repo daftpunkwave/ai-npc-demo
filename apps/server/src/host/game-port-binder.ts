@@ -9,6 +9,7 @@ import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@ai-npc/
 import {
   gamePortCapabilities,
   type GameContent,
+  type GameIdFactory,
   type GameModulePorts,
   type GamePortBindContext,
   type GameRuleContributor,
@@ -21,7 +22,7 @@ export interface GameModulePublicPort {
   readonly bind: (
     txFor: ScopedWorldTxFactory,
     content: GameContent,
-    ids: (prefix: string) => string,
+    ids: GameIdFactory,
     context: GamePortBindContext,
   ) => unknown;
   readonly contributor?: GameRuleContributor<GameModulePorts, unknown>;

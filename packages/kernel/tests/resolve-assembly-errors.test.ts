@@ -58,6 +58,25 @@ describe("装配解析错误路径", () => {
     expect(detailsText(error)).toContain("client");
   });
 
+  it("不支持模块契约版本时拒绝装配", () => {
+    const futureClock = fakeModule({
+      id: "game.clock.controlled",
+      instanceScope: "run",
+      apiVersion: "2",
+      provides: [capability("game.clock", "exactly-one", "run")],
+      configSchema: z.strictObject({ secondsPerTick: z.number().int().positive().default(10) }),
+    });
+    const assembly = makeAssembly({
+      server: { bindings: [binding("game.clock", "game.clock.controlled")] },
+    });
+    const error = expectDomainError(
+      () => resolveRealmPlan({ assembly, realm: "server", catalog: catalogOf(futureClock) }),
+      "assembly-incompatible",
+    );
+    expect(detailsText(error)).toContain("apiVersion");
+    expect(detailsText(error)).toContain("2");
+  });
+
   it("绑定模块未声明该能力时报错", () => {
     const assembly = makeAssembly({
       server: { bindings: [binding("game.world", "game.clock.controlled")] },

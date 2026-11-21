@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { loadContentPack } from "@ai-npc/experiment";
-import type { ModuleCreateInput } from "@ai-npc/contracts";
+import type { IdPrefix, ModuleCreateInput } from "@ai-npc/contracts";
 import type { GameContent, WorldTx } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { createMemoryTx, toGameContent } from "./game-support";
@@ -32,7 +32,7 @@ describe("模块实例端口", () => {
   it("地图模块实例可绑定并查询路径", async () => {
     const instance = await mapModuleDefinition.create(input(mapModuleDefinition, host));
     const port = instance.port as {
-      bind(txFor: () => WorldTx, content: GameContent, ids: (prefix: string) => string): {
+      bind(txFor: () => WorldTx, content: GameContent, ids: (prefix: IdPrefix) => string): {
         findRoute(query: { fromNodeId: string; toNodeId: string; factionId: string; atTick: number; withCargo: boolean }): unknown;
       };
     };
@@ -63,7 +63,7 @@ describe("模块实例端口", () => {
       bind(
         txFor: () => WorldTx,
         content: GameContent,
-        ids: (prefix: string) => string,
+        ids: (prefix: IdPrefix) => string,
         context: {
           readonly ports: Readonly<Record<string, unknown>>;
           readonly callerModuleId: string | null;

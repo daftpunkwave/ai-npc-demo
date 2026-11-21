@@ -7,6 +7,7 @@
 import {
   DomainError,
   agentSlots as agentSlotNames,
+  isSupportedModuleApiVersion,
   type AgentSlot,
   type AssemblyDescriptor,
   type CapabilityBinding,
@@ -149,6 +150,20 @@ function pickDefinition(
     throw new DomainError("realm-violation", `模块 ${definition.id} 属于 ${definition.realm} realm，不能装配到 ${realm}`, {
       details: { ...locator, moduleId: definition.id, moduleRealm: definition.realm, realm },
     });
+  }
+  if (!isSupportedModuleApiVersion(definition.apiVersion)) {
+    throw new DomainError(
+      "assembly-incompatible",
+      `模块 ${definition.id} 的契约版本 ${definition.apiVersion} 不受当前宿主支持`,
+      {
+        details: {
+          ...locator,
+          moduleId: definition.id,
+          apiVersion: definition.apiVersion,
+          realm,
+        },
+      },
+    );
   }
   if (realm === "server" && definition.requiresRemote.length > 0) {
     throw new DomainError("assembly-incompatible", `模块 ${definition.id} 声明了仅浏览器使用的远端能力，不能装入服务端 realm`, {

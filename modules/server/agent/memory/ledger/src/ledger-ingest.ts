@@ -3,7 +3,7 @@
  * Builds deterministic ingestion rows from a frozen revision view.
  * Must not bypass the memory host or infer records from unobserved events.
  */
-import type { AgentObservation } from "@ai-npc/contracts";
+import type { AgentObservation, IdPrefix } from "@ai-npc/contracts";
 import type { RevisionView } from "@ai-npc/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
@@ -23,7 +23,7 @@ import {
 import { buildProspective } from "./ledger-prospective";
 import { buildRelations } from "./ledger-relations";
 
-type Ids = (prefix: string) => string;
+type Ids = (prefix: IdPrefix) => string;
 
 export function buildIngestion(
   observations: readonly AgentObservation[],

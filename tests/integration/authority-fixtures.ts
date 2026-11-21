@@ -4,6 +4,7 @@
  * 禁止在这里放宽断言或共享测试之间的数据库状态。
  */
 import type { Json } from "@ai-npc/contracts";
+import { z } from "zod";
 import type { RuleContributor } from "@ai-npc/authority";
 import type { ApprovedSpeech } from "@ai-npc/module-sdk";
 import {
@@ -47,6 +48,20 @@ export function counterModule(state: TestState): RuleContributor {
   return {
     moduleId: "test.counter",
     ownsAggregates: ["counter", "consumed", "job-log"],
+    events: [
+      {
+        type: "TestCounterChanged",
+        payloadSchema: z.object({ count: z.number().int(), taskId: z.string().min(1) }).strict(),
+      },
+      {
+        type: "TestCampaignStarted",
+        payloadSchema: z.object({ count: z.number().int() }).strict(),
+      },
+      {
+        type: "TestSpeechSubmitted",
+        payloadSchema: z.object({ artifactRef: z.string().min(1) }).strict(),
+      },
+    ],
     commands: [
       {
         type: "task.cancel",
@@ -56,6 +71,10 @@ export function counterModule(state: TestState): RuleContributor {
             return { kind: "rejected", reasonCode: "task-not-cancellable", safeMessage: "测试拒绝" };
           }
           const count = incrementCounter(context);
+          if (taskId === "task-000000000012") {
+            // 未在 events 中登记的事件类型必须被事务拒绝；用该分支验证回滚与无 receipt。
+            context.tx.emit("TestUnregisteredEvent", { count }, [{ kind: "public" }]);
+          }
           context.tx.emit("TestCounterChanged", { count, taskId }, [{ kind: "public" }]);
           if (taskId === "task-000000000007") {
             context.tx.put("audit", "audit-1", { lastTaskId: taskId });

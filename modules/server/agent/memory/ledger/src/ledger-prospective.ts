@@ -3,7 +3,7 @@
  * Builds and closes prospective memory rows without changing formal contracts.
  * Must not invent a deadline that is absent from this or an earlier observation.
  */
-import type { AgentObservation, MemoryChangePlan } from "@ai-npc/contracts";
+import type { AgentObservation, IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
@@ -20,7 +20,7 @@ import {
   objectValue,
 } from "./ledger-model";
 
-type Ids = (prefix: string) => string;
+type Ids = (prefix: IdPrefix) => string;
 
 export function buildProspective(
   events: readonly LedgerEvent[],

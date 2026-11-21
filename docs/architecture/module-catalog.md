@@ -208,7 +208,7 @@ M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `
 
 `check:catalog` 扫描 `config/assemblies/*.yaml`，并用与宿主启动相同的 kernel 解析器逐装配执行：
 
-- 模块 ID 与能力名唯一、版本与 apiVersion 相容、配置 schema 严格、未知字段拒绝；
+- 模块 ID 与能力名唯一、版本与 apiVersion 相容（不在受支持 apiVersion 集合中的模块在装配解析阶段拒绝）、配置 schema 严格、未知字段拒绝；
 - realm/kind 白名单、能力命名空间与绑定匹配；
 - 能力闭包：必需能力均有 provider；无缺失依赖、无环，提供者先于消费者的拓扑顺序；
 - 实例作用域兼容、重复绑定检测；

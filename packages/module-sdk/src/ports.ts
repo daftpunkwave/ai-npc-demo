@@ -9,6 +9,7 @@ import {
   type AgentModelCallResult,
   type AudienceSpec,
   type AuthContext,
+  type IdPrefix,
   type Json,
   type ModuleCreateInput,
   type ModuleDefinition,
@@ -131,7 +132,8 @@ export interface HandlerContext<TModulePorts, TContentIndex> {
    * 不得把 taskId、turnId 等随机生成的 ID 作为输入。
    */
   readonly rng: (...seedParts: string[]) => () => number;
-  readonly ids: (prefix: string) => string;
+  /** 运行中 ID 生成；前缀必须来自契约 `idPrefixes`，未知前缀在编译期被拒绝。 */
+  readonly ids: (prefix: IdPrefix) => string;
 }
 
 /** scoped 模型调用的作用域：由模型池按 run 与主体绑定，模块不能跨主体复用。 */

@@ -4,7 +4,7 @@
  * Depends on a frozen revision view and deterministic memory-plan contracts.
  * Must not run model calls or publish state outside the host actor transaction.
  */
-import type { MaintenanceTask, MemoryChangePlan } from "@ai-npc/contracts";
+import type { IdPrefix, MaintenanceTask, MemoryChangePlan } from "@ai-npc/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
@@ -26,7 +26,7 @@ import {
   relationModifierWeight,
 } from "./ledger-model";
 
-type Ids = (prefix: string) => string;
+type Ids = (prefix: IdPrefix) => string;
 
 export function buildMaintenance(
   task: MaintenanceTask,

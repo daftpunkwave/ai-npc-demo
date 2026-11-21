@@ -11,6 +11,7 @@ import {
   canonicalJson,
   type ForkBranchResult,
   type HostServices,
+  type IdPrefix,
   type Json,
   type StorageCell,
   type StoragePort,
@@ -294,7 +295,7 @@ export class SqliteSaveService {
     this.host = host;
   }
 
-  private nextId(prefix: string): string {
+  private nextId(prefix: IdPrefix): string {
     return this.host.ids(prefix);
   }
 

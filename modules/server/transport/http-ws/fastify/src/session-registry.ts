@@ -3,11 +3,12 @@
  * 依赖注入的 ID/令牌生成与时钟；不持有连接、不发送消息，撤销会话时只回调宿主清理。
  * 禁止无限保留过期会话或未消费票据，也禁止在认证时改写票据状态。
  */
+import type { IdPrefix } from "@ai-npc/contracts";
 import type { StreamIdentity, StreamSession, StreamTicket } from "./stream-types";
 
 export interface SessionRegistryOptions {
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
-  readonly ids: (prefix: string) => string;
+  readonly ids: (prefix: IdPrefix) => string;
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly tokens: (kind: "session" | "ticket") => string;
   readonly now: () => number;

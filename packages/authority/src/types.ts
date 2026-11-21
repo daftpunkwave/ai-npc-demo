@@ -9,6 +9,7 @@ import type {
   CommandEnvelope,
   CommandType,
   EventEnvelope,
+  EventPayloadSchema,
   HostServices,
   Json,
   PrincipalKind,
@@ -60,10 +61,18 @@ export interface EventConsumerRegistration<TModules = unknown, TContent = unknow
   readonly handler: (context: HandlerContext<TModules, TContent>, event: EventEnvelope) => unknown;
 }
 
-/** 单个模块贡献的命令、后续钩子、job、时钟步骤与事件消费者。 */
+/** 单个模块贡献的命令、后续钩子、job、时钟步骤、事件消费者与扩展事件。 */
 export interface RuleContributor<TModules = unknown, TContent = unknown> {
   readonly moduleId: string;
   readonly ownsAggregates: readonly string[];
+  /**
+   * 模块显式登记的扩展领域事件；未登记的事件类型不能写入事务。
+   * 与公共事件目录同名会在注册时失败。
+   */
+  readonly events?: readonly {
+    readonly type: string;
+    readonly payloadSchema: EventPayloadSchema;
+  }[];
   readonly commands?: readonly {
     readonly type: CommandType;
     readonly handler: CommandHandler<TModules, TContent>;

@@ -255,7 +255,7 @@ ToolDefinition/ToolBinding 的 schema 见 [工具](../agent/tools.md)，modelId/
 
 ## 7. 契约演进
 
-公共 API 在 v1 中不改变既有字段的含义；新增可选字段需要有默认语义，破坏性变更使用新的 schemaVersion 和迁移。事件旧版本保留 reader/upcaster 与原始 payload，不原地重写日志。模块 apiVersion 与内容 schemaVersion 分别校验，不能混成一个版本号。assembly 增加新 realm 或新能力类别属于契约升级，必须记录兼容窗口与迁移说明。
+公共 API 在 v1 中不改变既有字段的含义；新增可选字段需要有默认语义，破坏性变更使用新的 schemaVersion 和迁移。事件旧版本保留 reader/upcaster 与原始 payload，不原地重写日志。模块 apiVersion、命令信封 schemaVersion、领域事件 schemaVersion 与 HTTP/WS 协议版本集中登记在公共契约中，各自独立演进；装配解析、命令网关、事件写入与浏览器握手只按该登记判断兼容性，不各自写死字面量。模块 apiVersion 与内容 schemaVersion 分别校验，不能混成一个版本号。assembly 增加新 realm 或新能力类别属于契约升级，必须记录兼容窗口与迁移说明。
 
 席位信息接入后，服务端从认证、开局与控制权记录解析来源席位和实际动作者。系统事件与外域行动可以没有人类席位，投影关联的是授权观察席位。读取早期日志时，只有历史证据足以确定归属才可补齐席位。具体接口与兼容表示随迁移定稿。参见 [02-authority-economy-fairness.md — Demo 席位接口](../design/multiplayer/02-authority-economy-fairness.md#九demo-必须留的接口清单)。
 

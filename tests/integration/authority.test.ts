@@ -89,6 +89,35 @@ describe("authority command gateway", () => {
     });
   });
 
+  it("rejects an unregistered domain event and rolls back the transaction", async () => {
+    await withHarness(async (harness) => {
+      expectDomainCode(
+        () =>
+          harness.authority.commands.execute(
+            playerAuth(harness),
+            taskCancelEnvelope(harness, "task-000000000012", "cmd-000000000014"),
+          ),
+        "validation",
+      );
+      expect(readAggregate(harness, "counter", "counter")).toBeNull();
+      expect(countBranchRows(harness, "domain_events")).toBe(0);
+      expect(countBranchRows(harness, "command_receipts")).toBe(0);
+    });
+  });
+
+  it("rejects an unsupported command envelope schema version", async () => {
+    await withHarness(async (harness) => {
+      const envelope = {
+        ...taskCancelEnvelope(harness, "task-000000000001", "cmd-000000000015"),
+        schemaVersion: 2,
+      };
+      const receipt = harness.authority.commands.execute(playerAuth(harness), envelope);
+      expect(receipt.commandStatus).toBe("rejected");
+      expect(receipt.reasonCode).toBe("invalid-params");
+      expect(readAggregate(harness, "counter", "counter")).toBeNull();
+    });
+  });
+
   it("rejects expectedVersions mismatches and reports resulting versions on success", async () => {
     await withHarness(async (harness) => {
       harness.storage.transact((tx) => {

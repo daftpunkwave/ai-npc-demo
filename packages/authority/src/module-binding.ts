@@ -69,6 +69,7 @@ export function createScopedWorldTxFactory(input: ModuleScopeInput): ScopedWorld
       correlationId: input.correlationId(moduleId),
       scope: owner,
       host: input.host,
+      eventSchemas: input.registry.eventSchemas(),
       collector: input.collector,
     });
     bound.set(moduleId, tx);

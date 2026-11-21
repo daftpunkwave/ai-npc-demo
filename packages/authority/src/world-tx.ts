@@ -6,10 +6,11 @@
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import {
   DomainError,
+  domainEventSchemaVersion,
   eventEnvelopeSchema,
-  getDomainEventPayloadSchema,
   jsonValueSchema,
   type AudienceSpec,
+  type EventPayloadSchema,
   type Json,
   type StorageTable,
   type StorageTransaction,
@@ -35,6 +36,8 @@ export interface WorldTxOptions {
   readonly correlationId: string;
   readonly scope: ContributorScope;
   readonly host: HostServices;
+  /** 可写入事务的事件类型与 payload schema；未登记的事件类型一律拒绝。 */
+  readonly eventSchemas: ReadonlyMap<string, EventPayloadSchema>;
   readonly collector?: TxCollector;
 }
 
@@ -80,6 +83,7 @@ export class TransactionWorldTx implements WorldTx {
   private readonly correlationId: string;
   private readonly scope: ContributorScope;
   private readonly host: HostServices;
+  private readonly eventSchemas: ReadonlyMap<string, EventPayloadSchema>;
   private readonly collector: TxCollector;
 
   constructor(options: WorldTxOptions) {
@@ -97,6 +101,7 @@ export class TransactionWorldTx implements WorldTx {
     this.correlationId = options.correlationId;
     this.scope = options.scope;
     this.host = options.host;
+    this.eventSchemas = options.eventSchemas;
     this.collector = options.collector ?? { eventIds: [], versions: {} };
     const branch = options.storageTx.branch(options.branchId);
     this.aggregateTable = branch.table("aggregate_state");
@@ -171,27 +176,28 @@ export class TransactionWorldTx implements WorldTx {
       throw new DomainError("validation", "事件类型不能为空");
     }
     const json = requireJson(payload, "事件 payload");
-    // 已登记的事件类型必须满足公共契约的 payload schema；未登记类型留给扩展与测试模块。
-    const payloadSchema = getDomainEventPayloadSchema(type);
-    if (payloadSchema !== undefined) {
-      const payloadResult = payloadSchema.safeParse(json);
-      if (!payloadResult.success) {
-        throw new DomainError("validation", `事件 ${type} 的 payload 不合法`, {
-          details: {
-            type,
-            issues: payloadResult.error.issues.map((issue) => ({
-              path: issue.path.map((segment) => String(segment)).join("."),
-              message: issue.message,
-            })),
-          },
-        });
-      }
+    // 未登记的事件类型不能落库：公共契约与模块显式登记的扩展事件构成唯一目录。
+    const payloadSchema = this.eventSchemas.get(type);
+    if (payloadSchema === undefined) {
+      throw new DomainError("validation", `事件类型 ${type} 未登记`, { details: { type } });
+    }
+    const payloadResult = payloadSchema.safeParse(json);
+    if (!payloadResult.success) {
+      throw new DomainError("validation", `事件 ${type} 的 payload 不合法`, {
+        details: {
+          type,
+          issues: payloadResult.error.issues.map((issue) => ({
+            path: issue.path.map((segment) => String(segment)).join("."),
+            message: issue.message,
+          })),
+        },
+      });
     }
     const worldSeq = nextSequence(this.eventsTable, "world_seq");
     const eventId = this.host.ids("evt");
     const envelope = eventEnvelopeSchema.safeParse({
       eventId,
-      schemaVersion: 1,
+      schemaVersion: domainEventSchemaVersion,
       worldId: this.worldId,
       branchId: this.branchId,
       worldSeq,
