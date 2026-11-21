@@ -1,6 +1,7 @@
 /**
  * 验证运营操作的持久化幂等：暂停、继续、快照、恢复与重开按认证主体与 operationId 去重，
- * 首次结果跨在线别名切换和进程重启有效；同键不同内容 409，结构非法 400 且零写入。
+ * 首次结果跨在线别名切换和进程重启有效；同键不同内容 409，结构非法 400 且零写入；
+ * 可重试失败不锁定 operationId，重试可换版本重新执行并覆盖失败记录。
  * 依赖真实宿主、SQLite 存储与 HTTP inject；不伪造幂等记录或跳过存储事务。
  * 禁止用进程内缓存替代部署级表，也不在用例间复用数据目录。
  */
@@ -8,8 +9,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { errorResponseSchema, snapshotListResponseSchema, type Json, type StorageCell } from "@ai-npc/contracts";
-import { startHost, type RunningHost } from "@ai-npc/app-server";
+import {
+  DomainError,
+  errorResponseSchema,
+  snapshotListResponseSchema,
+  type Json,
+  type StorageCell,
+} from "@ai-npc/contracts";
+import { OperationJournal, operationRequestHash, startHost, type RunningHost } from "@ai-npc/app-server";
+import type { OperationKey } from "@ai-npc/app-server";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
@@ -386,5 +394,180 @@ describe("运营操作幂等", () => {
     });
     expect(rejected.statusCode).toBe(200);
     expect(rejected.json()).toMatchObject({ commandStatus: "rejected", reasonCode: "paused" });
+  }, 30_000);
+});
+
+/** 构造暂停请求的幂等键；时钟控制的内容包含 expectedRunVersion。 */
+function pauseKey(host: RunningHost, operationId: string, expectedRunVersion: number): OperationKey {
+  return {
+    kind: "pause",
+    worldId: host.worldId,
+    principalId: "player-1",
+    operationId,
+    requestHash: operationRequestHash("pause", { expectedRunVersion }),
+  };
+}
+
+/** 读取部署级幂等记录，用于断言失败记录被重试结果替换或保留终态。 */
+function idempotencyRow(
+  host: RunningHost,
+  operationId: string,
+): Readonly<Record<string, StorageCell>> | null {
+  return host.storage.transact((tx) =>
+    tx.rows("operation_idempotency").get({
+      world_id: host.worldId,
+      principal_id: "player-1",
+      operation_id: operationId,
+    }),
+  );
+}
+
+/** 捕获一次同步抛错，便于断错误类型与错误码。 */
+function captureError(fn: () => unknown): unknown {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
+describe("运营失败记录的重试语义", () => {
+  it("可重试失败视为未提交：同一 operationId 可换版本重试、更新记录并在成功后转为终态", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
+    const operationId = "op-000000000071";
+    const versionZero = pauseKey(host, operationId, 0);
+    journal.recordFailure(versionZero, new DomainError("invalid-state", "时钟暂停暂时失败", { retryable: true }));
+
+    // 可重试失败不锁死同一 operationId：同版本与换版本的回放都不抛错、不返回结果。
+    expect(journal.replay(versionZero, (value) => value)).toBeNull();
+    const versionOne = pauseKey(host, operationId, 1);
+    expect(journal.replay(versionOne, (value) => value)).toBeNull();
+
+    // 重试再次失败更新失败记录，不保留过期错误与旧请求哈希。
+    journal.recordFailure(versionOne, new DomainError("not-ready", "时钟仍不可用", { retryable: true }));
+    expect(idempotencyRow(host, operationId)).toMatchObject({
+      request_hash: versionOne.requestHash,
+      error_code: "not-ready",
+      error_safe_message: "时钟仍不可用",
+    });
+
+    // 重试成功覆盖失败记录；此后同键同内容返回成功结果。
+    const clock: Json = { worldTick: 0, mode: "paused", secondsPerTick: 20, runVersion: 2, stepTargetTick: null };
+    const versionTwo = pauseKey(host, operationId, 2);
+    journal.recordSuccessStandalone(versionTwo, clock);
+    expect(journal.replay(versionTwo, (value) => value)).toEqual(clock);
+    expect(idempotencyRow(host, operationId)).toMatchObject({
+      status: "succeeded",
+      request_hash: versionTwo.requestHash,
+    });
+
+    // 成功结果是终态：同一 operationId 换回旧版本内容返回幂等冲突。
+    const conflict = captureError(() => journal.replay(versionZero, (value) => value));
+    expect(conflict).toBeInstanceOf(DomainError);
+    expect((conflict as DomainError).code).toBe("idempotency-conflict");
+  }, 30_000);
+
+  it("不可重试失败保持终态：重放同一错误、换 payload 仍冲突，且失败记录不覆盖成功结果", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
+    const operationId = "op-000000000072";
+    const terminal = pauseKey(host, operationId, 5);
+    journal.recordFailure(terminal, new DomainError("version-conflict", "时钟版本冲突"));
+    const firstFailure = captureError(() => journal.replay(terminal, (value) => value));
+    expect(firstFailure).toBeInstanceOf(DomainError);
+    expect((firstFailure as DomainError).code).toBe("version-conflict");
+    expect((firstFailure as DomainError).safeMessage).toBe("时钟版本冲突");
+
+    // 终态失败记录不因再次回放被替换；同键不同 payload 仍是幂等冲突。
+    const changedPayload = pauseKey(host, operationId, 6);
+    const conflict = captureError(() => journal.replay(changedPayload, (value) => value));
+    expect(conflict).toBeInstanceOf(DomainError);
+    expect((conflict as DomainError).code).toBe("idempotency-conflict");
+
+    // 已提交成功结果不会被后续失败记录覆盖。
+    const successKey = pauseKey(host, "op-000000000073", 0);
+    const clock: Json = { worldTick: 0, mode: "paused", secondsPerTick: 20, runVersion: 1, stepTargetTick: null };
+    journal.recordSuccessStandalone(successKey, clock);
+    journal.recordFailure(successKey, new DomainError("invalid-state", "不应覆盖成功结果", { retryable: true }));
+    expect(journal.replay(successKey, (value) => value)).toEqual(clock);
+  }, 30_000);
+
+  it("可重试失败后同一 operationId 用新版本重试返回成功而不是幂等冲突", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const session = await loginSession(host, "player-token");
+    const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
+    const operationId = "op-000000000074";
+
+    // 首次尝试按旧版本记录可重试失败；随后时钟由另一个操作推进到 running（runVersion 1）。
+    journal.recordFailure(
+      pauseKey(host, operationId, 0),
+      new DomainError("invalid-state", "时钟暂停暂时失败", { retryable: true }),
+    );
+    const resume = await post(host, session, "/api/v1/campaign/resume", {
+      operationId: "op-000000000075",
+      expectedRunVersion: 0,
+    });
+    expect(resume.statusCode).toBe(200);
+
+    // 同一 operationId 换新版本重试：不再返回幂等冲突，而是重新执行并成功覆盖失败记录。
+    const retried = await post(host, session, "/api/v1/campaign/pause", {
+      operationId,
+      expectedRunVersion: 1,
+    });
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json()).toMatchObject({ mode: "paused", runVersion: 2 });
+    expect(idempotencyRow(host, operationId)).toMatchObject({
+      status: "succeeded",
+      request_hash: pauseKey(host, operationId, 1).requestHash,
+    });
+
+    // 成功后的终态：同一 operationId 换回旧版本请求内容仍是幂等冲突。
+    const stale = await post(host, session, "/api/v1/campaign/pause", {
+      operationId,
+      expectedRunVersion: 0,
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(stale.json()).error.code).toBe("idempotency-conflict");
+  }, 30_000);
+});
+
+describe("坏快照的错误分类", () => {
+  it("冻结分支状态不一致的恢复请求返回稳定 invalid-state 而不是 plugin-failed", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const session = await loginSession(host, "player-token");
+    const snapshot = await post(host, session, "/api/v1/campaign/snapshots", {
+      operationId: "op-000000000081",
+      label: "待破坏快照",
+    });
+    expect(snapshot.statusCode).toBe(200);
+    const snapshotId = (snapshot.json() as { readonly snapshotId: string }).snapshotId;
+    const frozenBranchId = host.storage.transact((tx) =>
+      tx.rows("snapshots").get({ snapshot_id: snapshotId })?.["frozen_branch_id"],
+    );
+    const frozen = host.storage.transact((tx) =>
+      tx.rows("branches").get({ branch_id: String(frozenBranchId) }),
+    );
+    if (frozen === null) {
+      throw new Error(`快照 ${snapshotId} 缺少冻结分支`);
+    }
+    host.storage.transact((tx) => {
+      tx.rows("branches").put({ ...frozen, status: "active" });
+    });
+
+    const response = await post(host, session, "/api/v1/campaign/restore", {
+      operationId: "op-000000000082",
+      snapshotId,
+    });
+    expect(response.statusCode).toBe(409);
+    const body = errorResponseSchema.parse(response.json());
+    expect(body.error.code).toBe("invalid-state");
+    expect(body.error.code).not.toBe("plugin-failed");
+    expect(body.error.safeMessage).toContain("冻结分支状态");
   }, 30_000);
 });

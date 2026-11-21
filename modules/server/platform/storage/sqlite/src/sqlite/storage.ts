@@ -1,7 +1,8 @@
 /**
  * 单写 SQLite 存储适配器实现：打开数据目录、执行迁移，提供同步事务、分支复制与备份。
  * 依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/transaction/fork/backup 实现与端口契约。
- * 禁止在事务内 await、向调用方暴露连接、跳过迁移失败，或在同一连接上并发提交两个事务。
+ * 禁止在事务内 await、向调用方暴露连接、跳过迁移失败、在同一连接上并发提交两个事务，
+ * 或在回滚失败后继续复用状态不可信的连接。
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -38,6 +39,8 @@ export class SqliteStorage implements StoragePort {
   private database: DatabaseSync | null = null;
   private catalog: StorageCatalog | null = null;
   private inTransaction = false;
+  /** 回滚失败后的连接根因；非空时所有数据访问立即失败，直到关闭并重新打开。 */
+  private fatalFailure: { readonly rollbackError: unknown; readonly originalError: unknown } | null = null;
   private opening: Promise<void> | null = null;
   private lifecycleEpoch = 0;
 
@@ -48,6 +51,9 @@ export class SqliteStorage implements StoragePort {
 
   /** 打开库文件并执行未应用的迁移；重复调用无副作用，失败时连接会被关闭后重新抛出。 */
   open(): Promise<void> {
+    if (this.fatalFailure !== null) {
+      return Promise.reject(this.unusableConnectionError());
+    }
     if (this.database !== null) {
       return Promise.resolve();
     }
@@ -102,7 +108,7 @@ export class SqliteStorage implements StoragePort {
     }
   }
 
-  /** 关闭连接；重复调用安全。关闭失败时保留句柄以便重试。 */
+  /** 关闭连接；重复调用安全。关闭失败时保留句柄与不可用标记以便重试。 */
   close(): void {
     this.lifecycleEpoch += 1;
     const database = this.database;
@@ -112,13 +118,24 @@ export class SqliteStorage implements StoragePort {
     closeDatabase(database);
     this.database = null;
     this.catalog = null;
+    this.fatalFailure = null;
   }
 
   get isOpen(): boolean {
-    return this.database !== null;
+    return this.database !== null && this.fatalFailure === null;
+  }
+
+  /** 构造连接不可用的领域错误；根因保存在 cause，避免后续调用只看到模糊的 SQLite 事务错误。 */
+  private unusableConnectionError(): DomainError {
+    return new DomainError("invalid-state", "存储连接在事务回滚失败后不可用，需要重启服务端", {
+      cause: this.fatalFailure,
+    });
   }
 
   private requireDatabase(): DatabaseSync {
+    if (this.fatalFailure !== null) {
+      throw this.unusableConnectionError();
+    }
     if (this.database === null) {
       throw new DomainError("not-ready", "存储适配器尚未打开");
     }
@@ -161,10 +178,10 @@ export class SqliteStorage implements StoragePort {
         try {
           database.exec("ROLLBACK");
         } catch (rollbackError) {
-          this.host.logger.error("存储事务回滚失败", { message: errorMessage(rollbackError) });
-          throw new DomainError("invalid-state", "存储事务回滚失败，连接状态不再可信", {
-            cause: { rollbackError, originalError: error },
-          });
+          // 回滚失败后连接可能仍停在事务里：显式标记不可用并保留根因，后续调用立即失败而不是发出模糊的 SQLite 错误。
+          this.fatalFailure = { rollbackError, originalError: error };
+          this.host.logger.error("存储事务回滚失败，连接已标记不可用", { message: errorMessage(rollbackError) });
+          throw this.unusableConnectionError();
         }
       }
       throw error;

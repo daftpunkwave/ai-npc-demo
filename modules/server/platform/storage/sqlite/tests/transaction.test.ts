@@ -1,13 +1,32 @@
 /**
- * 验证同步事务语义：提交、异常回滚、异步回调拒绝、保存点局部回滚与嵌套事务拒绝。
+ * 验证同步事务语义：提交、异常回滚、异步回调拒绝、保存点局部回滚、嵌套事务拒绝，
+ * 以及 ROLLBACK 失败后连接被标记不可用并保留根因。
  * 依赖存储模块测试助手与存储端口契约。
  * 禁止在测试中执行真实网络、让测试共享数据目录或忽略回滚后的残留数据断言。
  */
-import { describe, expect, it } from "vitest";
-import type { ScopedBranchStorage, StorageTable, StorageTransaction } from "@ai-npc/contracts";
-import { expectDomainError, openStorageHarness } from "./support";
+import { describe, expect, it, vi } from "vitest";
+import type { DatabaseSync } from "node:sqlite";
+import { DomainError, type ScopedBranchStorage, type StoragePort, type StorageTable, type StorageTransaction } from "@ai-npc/contracts";
+import { SqliteStorage } from "../src/sqlite/storage";
+import {
+  createFakeHost,
+  createTempDataDir,
+  expectDomainError,
+  openStorageHarness,
+  removeTempDataDir,
+} from "./support";
 
 const BRANCH_ID = "brn-tx";
+
+/** 捕获一次同步抛错，便于断言错误类型与根因。 */
+function captureError(fn: () => unknown): unknown {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
 
 function writeAggregate(tx: StorageTransaction, aggregateId: string): void {
   tx.branch(BRANCH_ID)
@@ -281,6 +300,113 @@ describe("同步事务", () => {
       );
     } finally {
       await harness.dispose();
+    }
+  });
+
+  it("ROLLBACK 失败后连接标记不可用，后续调用立即返回带根因的领域错误", async () => {
+    const harness = await openStorageHarness();
+    const internal = harness.port as unknown as { readonly database: DatabaseSync | null };
+    const database = internal.database;
+    if (database === null) {
+      throw new Error("存储适配器尚未打开");
+    }
+    const originalExec = database.exec.bind(database);
+    const execSpy = vi.spyOn(database, "exec").mockImplementation((sql: string) => {
+      if (sql.trim().toUpperCase() === "ROLLBACK") {
+        throw new Error("注入的 ROLLBACK 失败");
+      }
+      originalExec(sql);
+    });
+    try {
+      const originalError = new Error("处理器失败");
+      let failedTransaction: StorageTransaction | null = null;
+      const first = captureError(() =>
+        harness.port.transact((tx) => {
+          failedTransaction = tx;
+          throw originalError;
+        }),
+      );
+      expect(first).toBeInstanceOf(DomainError);
+      expect((first as DomainError).code).toBe("invalid-state");
+      expect((first as DomainError).safeMessage).toContain("回滚失败");
+
+      // 连接已被标记不可用：后续读写立即失败，根因包含原始错误与 ROLLBACK 失败，而非模糊的 SQLite 事务错误。
+      expect((harness.port as StoragePort & { readonly isOpen: boolean }).isOpen).toBe(false);
+      const second = captureError(() => harness.port.transact((tx) => tx.get("SELECT 1 AS value")));
+      expect(second).toBeInstanceOf(DomainError);
+      expect((second as DomainError).code).toBe("invalid-state");
+      expect((second as DomainError).safeMessage).toContain("不可用");
+      const cause = (second as DomainError).cause as
+        | { readonly rollbackError?: unknown; readonly originalError?: unknown }
+        | null;
+      expect(cause).not.toBeNull();
+      expect(cause?.rollbackError).toBeInstanceOf(Error);
+      expect((cause?.rollbackError as Error).message).toBe("注入的 ROLLBACK 失败");
+      expect((cause?.originalError as Error).message).toBe("处理器失败");
+
+      // 分支复制与整库备份同样先经过 requireDatabase，不能继续使用失效连接。
+      const transaction = failedTransaction as StorageTransaction | null;
+      expect(transaction).not.toBeNull();
+      const forkFailure = captureError(() =>
+        harness.port.forkBranch(transaction as StorageTransaction, {
+          srcBranchId: BRANCH_ID,
+          dstBranchId: "brn-tx-fork",
+          kind: "experiment",
+          runId: "run-tx-fork",
+        }),
+      );
+      expect(forkFailure).toBeInstanceOf(DomainError);
+      expect((forkFailure as DomainError).code).toBe("invalid-state");
+      expect((forkFailure as DomainError).safeMessage).toContain("不可用");
+      const backupFailure = captureError(() => harness.port.backup());
+      expect(backupFailure).toBeInstanceOf(DomainError);
+      expect((backupFailure as DomainError).code).toBe("invalid-state");
+      expect((backupFailure as DomainError).safeMessage).toContain("不可用");
+    } finally {
+      execSpy.mockRestore();
+      await harness.dispose();
+    }
+  });
+
+  it("回滚失败后成功关闭连接会清除不可用状态并允许重新打开", async () => {
+    const dataDir = createTempDataDir();
+    const storage = new SqliteStorage({ dataDir, inlineArtifactMaxBytes: 65536 }, createFakeHost());
+    let execSpy: ReturnType<typeof vi.spyOn> | null = null;
+    try {
+      await storage.open();
+      const internal = storage as unknown as { readonly database: DatabaseSync | null };
+      const database = internal.database;
+      if (database === null) {
+        throw new Error("存储适配器尚未打开");
+      }
+      const originalExec = database.exec.bind(database);
+      execSpy = vi.spyOn(database, "exec").mockImplementation((sql: string) => {
+        if (sql.trim().toUpperCase() === "ROLLBACK") {
+          throw new Error("注入的 ROLLBACK 失败");
+        }
+        originalExec(sql);
+      });
+      const failure = captureError(() =>
+        storage.transact(() => {
+          throw new Error("处理器失败");
+        }),
+      );
+      expect(failure).toBeInstanceOf(DomainError);
+      expect(storage.isOpen).toBe(false);
+
+      execSpy.mockRestore();
+      execSpy = null;
+      storage.close();
+      expect(storage.isOpen).toBe(false);
+
+      // 关闭成功清除不可用标记，重新打开后可以继续读写。
+      await storage.open();
+      expect(storage.isOpen).toBe(true);
+      expect(storage.transact((tx) => tx.get("SELECT 1 AS value")?.["value"])).toBe(1);
+    } finally {
+      execSpy?.mockRestore();
+      storage.close();
+      removeTempDataDir(dataDir);
     }
   });
 

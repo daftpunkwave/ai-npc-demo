@@ -1,12 +1,12 @@
 /**
  * 验证 SQLite 存档：创建快照时复制源分支为冻结分支、快照列表只含当前 campaign，
  * 恢复在同一事务内沿用源 run 的 RunSpec 与 manifest、结束旧 run、归档旧分支并切换在线别名；
- * 另覆盖快照不完整时的 dry-run 拒绝、调用方事务回滚与别名写入失败注入后零残留。
+ * 另覆盖快照不完整时的 dry-run 拒绝、坏快照按稳定领域错误码失败、调用方事务回滚与别名写入失败注入后零残留。
  * 依赖真实 SQLite 分支存储、宿主 ID/时间服务与游戏 harness 的种子分支和时钟。
  * 禁止用改写快照行或别名的方式伪造恢复成功，也禁止用假存储替代回滚验证。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { Json, StoragePort, StorageTable, StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type ErrorCode, type Json, type StoragePort, type StorageTable, type StorageTransaction } from "@ai-npc/contracts";
 import { SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
 import {
   createTrackedGameHarness,
@@ -109,6 +109,19 @@ function persistenceOf(value: GameHarness): {
       alias: typeof aliasBranch === "string" ? aliasBranch : null,
     };
   });
+}
+
+/** 捕获一次同步抛错并断言它是稳定领域错误码；返回错误供安全文案断言。 */
+function expectDomainError(fn: () => unknown, code: ErrorCode): DomainError {
+  let caught: unknown;
+  try {
+    fn();
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(DomainError);
+  expect((caught as DomainError).code).toBe(code);
+  return caught as DomainError;
 }
 
 /** 用真实 SQLite 事务与分支复制，只在写入 world_aliases 时抛错，验证恢复事务整体回滚。 */
@@ -238,9 +251,83 @@ describe("SQLite 存档", () => {
     value.storage.transact((tx) => {
       tx.branch(snapshot.frozenBranchId).table("clock").delete({});
     });
-    expect(() => save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" })).toThrow(
-      /缺少时钟记录/,
+    const error = expectDomainError(
+      () => save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" }),
+      "invalid-state",
     );
+    expect(error.safeMessage).toContain("缺少时钟记录");
+    expect(persistenceOf(value)).toEqual(before);
+  });
+
+  it("坏快照的冻结分支、时钟、事件前沿与源 run 不一致返回稳定领域错误码", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 3, mode: "paused" });
+    const online = seedOnlineRun(value);
+    const save = new SqliteSaveService(value.storage, value.host);
+    const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "错误分类", createdBy: "operator-1" });
+    const restore = (): unknown =>
+      save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
+    const frozen = value.storage.transact((tx) =>
+      tx.rows("branches").get({ branch_id: snapshot.frozenBranchId }),
+    );
+    if (frozen === null) {
+      throw new Error(`快照 ${snapshot.snapshotId} 缺少冻结分支`);
+    }
+
+    // 冻结分支状态不一致：稳定 invalid-state，而不是 HTTP 500 plugin-failed。
+    value.storage.transact((tx) => {
+      tx.rows("branches").put({ ...frozen, status: "active" });
+    });
+    let before = persistenceOf(value);
+    const statusError = expectDomainError(restore, "invalid-state");
+    expect(statusError.safeMessage).toContain("冻结分支状态");
+    expect(persistenceOf(value)).toEqual(before);
+
+    // 冻结分支时钟与快照记录不一致。
+    value.storage.transact((tx) => {
+      tx.rows("branches").put({ ...frozen });
+      const clock = tx.branch(snapshot.frozenBranchId).table("clock").get({});
+      if (clock === null) {
+        throw new Error("缺少冻结分支时钟");
+      }
+      tx.branch(snapshot.frozenBranchId).table("clock").put({ ...clock, world_tick: snapshot.worldTick + 1 });
+    });
+    before = persistenceOf(value);
+    const tickError = expectDomainError(restore, "invalid-state");
+    expect(tickError.safeMessage).toContain("worldTick");
+    expect(persistenceOf(value)).toEqual(before);
+
+    // 快照事件前沿与冻结分支不一致。
+    value.storage.transact((tx) => {
+      const clock = tx.branch(snapshot.frozenBranchId).table("clock").get({});
+      if (clock === null) {
+        throw new Error("缺少冻结分支时钟");
+      }
+      tx.branch(snapshot.frozenBranchId).table("clock").put({ ...clock, world_tick: snapshot.worldTick });
+      const row = tx.rows("snapshots").get({ snapshot_id: snapshot.snapshotId });
+      if (row === null) {
+        throw new Error("缺少快照记录");
+      }
+      tx.rows("snapshots").put({ ...row, world_seq: snapshot.worldSeq + 1 });
+    });
+    before = persistenceOf(value);
+    const frontierError = expectDomainError(restore, "invalid-state");
+    expect(frontierError.safeMessage).toContain("worldSeq");
+    expect(persistenceOf(value)).toEqual(before);
+
+    // 源 run 缺失。
+    value.storage.transact((tx) => {
+      const row = tx.rows("snapshots").get({ snapshot_id: snapshot.snapshotId });
+      if (row === null) {
+        throw new Error("缺少快照记录");
+      }
+      tx.rows("snapshots").put({ ...row, world_seq: snapshot.worldSeq });
+      tx.rows("runs").delete({ run_id: online.runId });
+    });
+    before = persistenceOf(value);
+    const runError = expectDomainError(restore, "not-found");
+    expect(runError.safeMessage).toContain("不存在");
     expect(persistenceOf(value)).toEqual(before);
   });
 
