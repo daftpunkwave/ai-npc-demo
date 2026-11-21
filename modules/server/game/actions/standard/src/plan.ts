@@ -18,13 +18,12 @@ import {
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
+import { hasFactionSupporter, transportCapacitySupporterAgentId } from "./faction-bonus";
 import type { DispatchInput } from "./plan-types";
 import { computeTaskRoute } from "./routes";
 
 export type { DispatchInput } from "./plan-types";
 
-/** 温原参与运输时运力 +5。 */
-const capacityBonusAgentId = "npc-wenyuan";
 /** team-star 修复只需能源 10，供给库存点可为 null。 */
 const energyOnlyRepairTeamId = "team-star";
 
@@ -314,9 +313,13 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     return fail("team-not-at-origin", "队伍不在运输起点");
   }
 
-  // 第 6 步 over-capacity（仅运输，受邀者中有温原时运力 +5）。
+  // 第 6 步 over-capacity（仅运输，受邀者中有本派物资支持者时运力 +5）。
   if (resolved.cargoTotal !== null) {
-    const capacity = teamView.capacity + (resolved.invitees.includes(capacityBonusAgentId) ? 5 : 0);
+    const capacity =
+      teamView.capacity +
+      (hasFactionSupporter(content, team.ownerFactionId, resolved.invitees, transportCapacitySupporterAgentId)
+        ? 5
+        : 0);
     if (resolved.cargoTotal > capacity) {
       return fail("over-capacity", "货物超过队伍运力");
     }
