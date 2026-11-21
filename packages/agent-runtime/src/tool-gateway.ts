@@ -240,7 +240,17 @@ export class ToolGateway {
         payload: resolvedCommand.payload,
       };
       const receipt = await this.options.executeCommand(input.auth, envelope);
-      return this.persistReceipt(input, binding, definition, argsHash, args, envelope, receipt, current, operationId);
+      return this.persistReceipt({
+        input,
+        binding,
+        definition,
+        argsHash,
+        args,
+        envelope,
+        receipt,
+        current,
+        operationId,
+      });
     } catch (error) {
       return this.settleError(input, binding, argsHash, "execution-unknown", errorMessage(error), current, operationId, "unknown");
     }
@@ -289,17 +299,18 @@ export class ToolGateway {
     });
   }
 
-  private persistReceipt(
-    input: ToolCallExecutionInput,
-    binding: ToolBinding,
-    definition: ToolDefinition,
-    argsHash: string,
-    args: Json,
-    envelope: CommandEnvelope,
-    receipt: CommandReceipt,
-    current: ToolCallIdentity,
-    operationId: string,
-  ): Promise<ToolCallOutcome> {
+  private persistReceipt(resultInput: {
+    readonly input: ToolCallExecutionInput;
+    readonly binding: ToolBinding;
+    readonly definition: ToolDefinition;
+    readonly argsHash: string;
+    readonly args: Json;
+    readonly envelope: CommandEnvelope;
+    readonly receipt: CommandReceipt;
+    readonly current: ToolCallIdentity;
+    readonly operationId: string;
+  }): Promise<ToolCallOutcome> {
+    const { input, binding, definition, argsHash, args, envelope, receipt, current, operationId } = resultInput;
     const result = resultWithoutRef({
       executionStatus: "ok",
       commandStatus: receipt.commandStatus,
