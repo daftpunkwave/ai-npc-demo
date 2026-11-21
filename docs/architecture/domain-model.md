@@ -96,6 +96,7 @@ interface WorldTx {                        // one per transaction, scoped to the
   emit(type: string, payload: Json, audience: AudienceSpec[], causationIds?: string[]): string; // returns eventId
   schedule(kind: string, dueTick: number, idempotencyKey: string, payload: Json): void; // no-op if the key exists
   cancelJobs(idempotencyKeyPrefix: string): void;
+  requestClockStop(requestId: string, reason: string): void; // 与业务结果同事务提交的持久停止点
 }
 
 interface HandlerContext {

@@ -286,6 +286,81 @@ describe("在线 tick 顺序", () => {
     expect(readGameAggregate(value, "campaign", "campaign")).toMatchObject({ status: "evaluated" });
   });
 
+  it("评估提交后暂停失败：重启补完仍停在 t168 并拒绝 t169", { timeout: 60_000 }, async () => {
+    const value = await createTrackedGameHarness(active);
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    advanceRange(value, 1, 167);
+
+    // 注入“评估事务已提交、暂停时钟尚未提交”的崩溃窗口：第一次暂停调用失败。
+    const failingClock = Object.create(value.clock) as typeof value.clock;
+    let pauseAttempts = 0;
+    failingClock.pause = (branchId, expectedRunVersion) => {
+      pauseAttempts += 1;
+      if (pauseAttempts === 1) {
+        return { ok: false, reasonCode: "version-conflict" };
+      }
+      return value.clock.pause(branchId, expectedRunVersion);
+    };
+    expect(() =>
+      advanceWorldTick({
+        storage: value.storage,
+        authority: value.authority,
+        clock: failingClock,
+        branchId: value.branchId,
+        targetTick: 168,
+      }),
+    ).toThrow("章节终点暂停时钟失败");
+    expect(readTick(value.storage, value.branchId)).toBe(168);
+    expect(value.clock.read(value.branchId).mode).toBe("running");
+    // “章节已到终点、需要暂停”与评估结果在同一事务提交。
+    expect(
+      value.storage.transact((tx) =>
+        tx.branch(value.branchId).table("clock_stop_requests").list(),
+      ),
+    ).toEqual([expect.objectContaining({ request_id: "chapter-evaluated", requested_at_tick: 168 })]);
+
+    // 重启或补完路径只重跑幂等步骤，再根据持久停止点补做暂停。
+    const catchUp = catchUpWorldTick({
+      storage: value.storage,
+      authority: value.authority,
+      clock: value.clock,
+      branchId: value.branchId,
+    });
+    expect(catchUp.worldTick).toBe(168);
+    expect(value.clock.read(value.branchId)).toMatchObject({ worldTick: 168, mode: "paused" });
+    const events = readEvents(value.storage, value.branchId);
+    expect(events.filter((event) => event.type === "ChapterStageEvaluated")).toHaveLength(1);
+
+    // t169 推进被持久停止点拒绝，且不会写入新 tick。
+    expect(() =>
+      advanceWorldTick({
+        storage: value.storage,
+        authority: value.authority,
+        clock: value.clock,
+        branchId: value.branchId,
+        targetTick: 169,
+      }),
+    ).toThrow(/不能推进 tick/);
+    expect(readTick(value.storage, value.branchId)).toBe(168);
+
+    // 重复补完不产生新事件，也不递增 runVersion。
+    const runVersion = value.clock.read(value.branchId).runVersion;
+    catchUpWorldTick({
+      storage: value.storage,
+      authority: value.authority,
+      clock: value.clock,
+      branchId: value.branchId,
+    });
+    catchUpWorldTick({
+      storage: value.storage,
+      authority: value.authority,
+      clock: value.clock,
+      branchId: value.branchId,
+    });
+    expect(value.clock.read(value.branchId).runVersion).toBe(runVersion);
+    expect(readEvents(value.storage, value.branchId)).toEqual(events);
+  });
+
   it("阶段失败后补完同一 tick，不跳过结算也不重复提交", { timeout: 30_000 }, async () => {
     const value = await createTrackedGameHarness(active);
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");

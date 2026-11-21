@@ -31,7 +31,7 @@
 1. **名册与身份**：新增 `config/rosters/standard-15.yaml`，同步 `core-3`、`.env.example`、`config/runs/online-default.yaml` 与服务端默认 `rosterRef`。单人正式名册的 schema 上限改为 15。
 2. **内容包 0.2.0**：`factions.yaml` 拆分为 `factionHomeNodeId`、`outpostNodeId`、`territoryNodeId`，并补上党魁、秘密与关系；`characters.yaml` 对齐 8 名公社支持者和 3 名外域 Agent，新增 `characterId` 与 `secret`；`starts.yaml` 只启用公社席，并补上闻昭的第三条开局消息；`world-init.yaml` 的职责委托改用党魁运行身份；`evidence.yaml` 清理旧身份持有者；`locale/zh-CN.yaml` 的玩家称呼改为“党魁”并补齐材料、食物、水词条。
 3. **剧情卡署名**：把青枝、洛、追风、唐箴的署名改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`；沈砾、苏回、谷寻保留为 signature-only 署名，不实例化。内容加载器、剧情模块与剧情卡校验共用同一份名单。
-4. **时钟与章节终点**：20 秒/tick 写入时钟模块默认值与三份装配。章节评估步骤在 t168 返回停止请求，tick 收尾后暂停时钟；tick 169 被拒绝，存档保留。
+4. **时钟与章节终点**：20 秒/tick 写入时钟模块默认值与三份装配。章节评估步骤在 t168 把停止请求与评估结果同事务写入持久停止点，tick 收尾后暂停时钟；崩溃后重启或补完会补做幂等暂停并拒绝 t169，存档保留。
 5. **公社玩家权限**：玩家会话可以提交 `watergate.allocation` 的 `policy.set`，处理器按 campaign 的 `playerId` 与 `factionId` 裁决；其他派系党魁返回 `no-authority`。`water-allocation` 条款允许玩家 `player-1` 作为义务人，改策违约按 `PolicyChanged.byId` 记到协议。
 6. **任务规则身份**：任务加成从旧角色 ID 迁移到 15 人编制，并按队伍所属派系限定本派支持者：穆枝参与本派救援减 2 tick，祁录参与本派侦察每条道路减 1 tick，陶安参与本派修复 +10，陆沉参与本派迁徙道路护送 +4；追风对任何队伍的侦察与迁徙道路护送同效，洛参与非 `team-star` 修复 +15，这两项不按本派判定。救援参与人允许在医疗目的地节点加入。
 7. **玩家客户端**：新增类型化 HTTP/WS 客户端、授权投影 reducer、命令幂等重试与 12 个客户端模块；公社开局、岑雁对话、HUD、地点/人物/任务侧栏和本机设置走同一服务端协议。

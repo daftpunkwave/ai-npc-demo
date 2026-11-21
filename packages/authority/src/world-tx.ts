@@ -285,6 +285,29 @@ export class TransactionWorldTx implements WorldTx {
     }
   }
 
+  /**
+   * 登记持久时钟停止点：与当前事务的业务结果一起提交。
+   * 同一 requestId 重复登记保持首次登记内容，避免重试产生多份不同原因。
+   */
+  requestClockStop(requestId: string, reason: string): void {
+    if (requestId.trim().length === 0) {
+      throw new DomainError("validation", "时钟停止点 ID 不能为空");
+    }
+    if (reason.trim().length === 0) {
+      throw new DomainError("validation", "时钟停止原因不能为空");
+    }
+    const table = this.storageTx.branch(this.branchId).table("clock_stop_requests");
+    if (table.get({ request_id: requestId }) !== null) {
+      return;
+    }
+    table.put({
+      request_id: requestId,
+      reason,
+      requested_at_tick: this.worldTick,
+      created_at: this.host.nowIso(),
+    });
+  }
+
   /** 本次事务写入或删除过的聚合版本，键为 “聚合类型:聚合 ID”。 */
   resultingVersions(): Readonly<Record<string, number>> {
     return { ...this.collector.versions };
