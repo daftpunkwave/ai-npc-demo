@@ -35,7 +35,7 @@ epistemic 分两层：`AgentObservation.epistemic` 为 witnessed/reported/inferr
 | `prepareIngest` | 输入已授权观察批次与 baseRevision，产出 MemoryChangePlan | 宿主验证并原子提交记录/inbox/水位 |
 | `retrieve` | 输入 MemoryQuery，返回 MemoryBundle | 只读冻结版本，不推进时间或偷偷强化 |
 | `prepareMaintenance` | 输入到期任务、截止 tick/frontier、baseRevision，产出变更计划及调用引用 | 模型在事务外计算，宿主 CAS 发布 |
-| `recordUse` | 输入 turnId、实际注入/合法引用 ID、使用类型，产出强化计划 | 宿主幂等验证，不能信任任意模型自报 |
+| `recordUse` | 输入 turnId、实际注入/合法引用 ID、使用类型，产出强化计划 | 宿主校验来源 turn 与实际引用，不能信任任意模型自报 |
 | `export/import` | 输入检查点与兼容 schema，产出状态或显式迁移错误 | branch 暂停后执行，失败保留旧档 |
 
 模型调用走宿主 model port 与 `(agentId, purpose)` 挂载：整理使用 memory-maintenance，向量生成使用 embedding。插件配置只声明策略需求，不复制 provider、model、temperature 或凭据，见 [模型池](model-pool.md)。
@@ -202,6 +202,7 @@ interface NewMemoryRow {           // one row version; memoryId is new, or an ex
   lastReinforcedTick: number;      // validFromTick at creation
   tags: string[];                  // vocabulary in §11.2
   sourceObservationIds: string[];
+  sourceTurnId?: string;           // recordUse 新建记录必填为本 turn 的 turnId；其他变更计划省略
   content: { summaryZh: string; counterpartIds: string[]; data: Json };
 }
 
@@ -240,7 +241,7 @@ interface MemoryBundle {
 interface WakeupProposal { atTick: number; dedupeKey: string; reason: "self-due" | "other-due" | "intent"; memoryId: string; counterpartId: string | null }
 ```
 
-`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询），并携带宿主从已校验人格提取的 `MemoryAgentIdentity`，避免记忆插件旁路读取内容包。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`recordUse` 的引用集合还必须来自该 turn 实际注入或合法返回的记忆 ID，宿主不接受未召回的强化目标。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
+`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询），并携带宿主从已校验人格提取的 `MemoryAgentIdentity`，避免记忆插件旁路读取内容包。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`recordUse` 的引用集合还必须来自该 turn 实际注入或合法返回的记忆 ID，宿主不接受未召回的强化目标。`recordUse` 计划新建的记录还必须在 `sourceTurnId` 中回填输入的 `turnId`，其 `sourceObservationIds` 必须全部来自本 turn 的输入观察；记录 `content.data` 中的模块私有键不参与宿主校验。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
 
 ### 11.2 共用：显著度与标签
 
