@@ -55,6 +55,11 @@ function waterTerm(policy: "harbor-first" | "rotation", untilTick = 20): Term {
   return { kind: "water-allocation", obligorId: "human-neutral", policy, untilTick };
 }
 
+/** 水闸分配条款；义务人、policy 与期限由调用方指定。 */
+function waterTermFor(obligorId: string, policy: "harbor-first" | "rotation", untilTick = 20): Term {
+  return { kind: "water-allocation", obligorId, policy, untilTick };
+}
+
 /** 玩家提出通行条款，由道路控制方接受。 */
 function proposePassage(value: GameHarness): string {
   return proposeAsPlayer(value, "human-independent", ["player-1", "human-independent"], [passageTerm()]);
@@ -119,6 +124,25 @@ describe("协议条款履约", () => {
       shareEvidenceTerm(),
     ]);
     expectAgreement(value, agreementId, { status: "active" });
+
+    advanceToWithConsumers(value, 21);
+    expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "player-1" });
+  });
+
+  it("share-evidence 保持精确主体匹配，其他主体分享不计入玩家义务", async () => {
+    const value = await harness();
+    const agreementId = proposeAsPlayer(value, "human-neutral", ["player-1", "human-neutral"], [
+      shareEvidenceTerm(),
+    ]);
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    // 温原持有水闸分水账，但不是条款义务人；派系归属映射不扩大个人知识授权。
+    const share = executeCommand(value, strategicAuth(value, "npc-wenyuan"), "information.share", {
+      evidenceId: "ev-water-ledger",
+      audience: ["human-neutral"],
+    });
+    expect(share.commandStatus).toBe("accepted");
+    runConsumers(value);
+    expectAgreement(value, agreementId, { status: "active", fulfilledTerms: [] });
 
     advanceToWithConsumers(value, 21);
     expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "player-1" });
@@ -208,6 +232,39 @@ describe("协议条款履约", () => {
         (job) => job.kind === "agreement.breach" && job.idempotencyKey.startsWith(`agreement-breach:${agreementId}:`),
       ),
     ).toHaveLength(0);
+  });
+
+  it("派系为水闸义务人时，占席玩家改分配记为违约", async () => {
+    const value = await harness();
+    // 义务人写派系主体，实际改分配的是该派系 campaign 的玩家。
+    const agreementId = proposeWater(value, [waterTerm("harbor-first")]);
+    expectAgreement(value, agreementId, { status: "active", fulfilledTerms: [0], breachedTerms: [] });
+
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    const reallocate = executeCommand(value, playerAuth(value), "policy.set", {
+      key: "watergate.allocation",
+      value: "rotation",
+    });
+    expect(reallocate.commandStatus).toBe("accepted");
+    runConsumers(value);
+
+    expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "human-neutral" });
+  });
+
+  it("玩家为水闸义务人时，派系主体改分配记为违约", async () => {
+    const value = await harness();
+    const agreementId = proposeWater(value, [waterTermFor("player-1", "harbor-first")]);
+    expectAgreement(value, agreementId, { status: "active", fulfilledTerms: [0], breachedTerms: [] });
+
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    const reallocate = executeCommand(value, strategicAuth(value, "human-neutral"), "policy.set", {
+      key: "watergate.allocation",
+      value: "rotation",
+    });
+    expect(reallocate.commandStatus).toBe("accepted");
+    runConsumers(value);
+
+    expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "player-1" });
   });
 });
 

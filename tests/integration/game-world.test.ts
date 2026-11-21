@@ -83,6 +83,7 @@ function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: b
       "game.agreements": createAgreementsPort(
         () => txFor(gameModuleIds.agreements),
         { actions, comms, world, map },
+        value.gameContent.factions,
       ),
       "game.scenario": createScenarioPort(txFor),
     } satisfies GameModulePorts;

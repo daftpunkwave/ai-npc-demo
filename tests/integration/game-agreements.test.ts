@@ -401,7 +401,8 @@ describe("协议", () => {
       taskId: "task-000000000001",
       taskType: "transport",
       teamId: "team-commons",
-      dispatcherId: "player-1",
+      // 公社党魁派遣本派系队伍；义务人写成 campaign 玩家 player-1，靠主体派系映射归到一起。
+      dispatcherId: "human-neutral",
       invitees: [],
       participants: [],
       status: "completed",
@@ -451,6 +452,16 @@ describe("协议", () => {
             currentTaskId: null,
           },
         ],
+        // 当前 campaign 的玩家是 player-1，按映射代表 human-neutral。
+        campaign: () => ({
+          campaignId: "cmp-000000000001",
+          factionId: "human-neutral",
+          playerId: "player-1",
+          chapterId: "watergate",
+          startTick: 0,
+          status: "running",
+          outcome: null,
+        }),
       },
       map: {
         roadStatus: (roadId) => {
@@ -459,7 +470,11 @@ describe("协议", () => {
         },
       },
     };
-    const port = createAgreementsPort(() => tx, queries);
+    const port = createAgreementsPort(
+      () => tx,
+      queries,
+      new Map<string, unknown>([["human-neutral", {}]]),
+    );
     // 三条由替换端口提供的事实满足：完成任务、证据分享、水闸分配；
     // 仍在义务期的通行条款因道路关闭计为违约。
     expect(port.countsAsOf(30)).toEqual({ fulfilled: 3, breached: 1 });

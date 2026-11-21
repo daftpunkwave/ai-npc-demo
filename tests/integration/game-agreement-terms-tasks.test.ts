@@ -3,8 +3,10 @@
  * 依赖真实 SQLite、世界/地图/行动/通信/协议模块与 authority；任务与期限都经 job 推进，履约证据经消费者处理。
  * 禁止直接修改协议聚合、绕过命令网关或放宽条款校验。
  */
+import type { Json } from "@ai-npc/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  acceptAgreement,
   acceptTaskInvitation,
   advanceTicks,
   advanceToWithConsumers,
@@ -14,6 +16,7 @@ import {
   expectTermFulfilled,
   PARTIAL_SUPPLY_TRANSPORT,
   playerAuth,
+  proposeAgreement,
   proposeAsPlayer,
   readGameAggregate,
   strategicAuth,
@@ -44,6 +47,43 @@ function proposeRepair(value: GameHarness, byTick: number): string {
     { kind: "repair-relay", obligorId: "human-neutral", byTick },
   ]);
 }
+
+/** 玩家提出 10 点供给从 sp-commons 运到 sp-earth 的交付条款；其余当事人依次接受。 */
+function proposeSupplyDelivery(
+  value: GameHarness,
+  obligorId: string,
+  parties: readonly string[],
+  byTick = 20,
+): string {
+  const agreementId = proposeAgreement(value, playerAuth(value), parties, [
+    {
+      kind: "deliver",
+      obligorId,
+      resource: "supply",
+      amount: 10,
+      fromStockpileId: "sp-commons",
+      toStockpileId: "sp-earth",
+      byTick,
+    },
+  ]);
+  for (const party of parties) {
+    if (party !== "player-1") {
+      acceptAgreement(value, strategicAuth(value, party), agreementId);
+    }
+  }
+  return agreementId;
+}
+
+/** 从 sp-commons 向 sp-earth 运送 10 点供给的标准任务载荷。 */
+const SUPPLY_TRANSPORT: Json = {
+  taskType: "transport",
+  teamId: "team-commons",
+  params: {
+    fromStockpileId: "sp-commons",
+    toStockpileId: "sp-earth",
+    cargo: { supply: 10, energy: 0, medical: 0 },
+  },
+};
 
 describe("协议条款履约", () => {
   it("deliver 只完成部分运输：byTick+1 记违约并保留已记进度", async () => {
@@ -152,5 +192,55 @@ describe("协议条款履约", () => {
 
     advanceToWithConsumers(value, 21);
     expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "human-neutral" });
+  });
+
+  it("玩家为义务人时，其 campaign 派系队伍完成的有效运输计入履约", async () => {
+    const value = await harness();
+    const agreementId = proposeSupplyDelivery(value, "player-1", ["player-1", "human-neutral"]);
+    // 派遣者是公社党魁而不是玩家本人，队伍属于 campaign 的 human-neutral 派系。
+    const taskId = dispatchTask(value, strategicAuth(value, "human-neutral"), SUPPLY_TRANSPORT);
+    advanceTicks(value, 1, 7, { consumers: true });
+    expect(taskView(value, taskId)).toMatchObject({ status: "completed", completedAtTick: 7 });
+    expectTermFulfilled(value, { agreementId, termIndex: 0, obligorId: "player-1" });
+  });
+
+  it("派系为义务人时，玩家派遣其派系队伍完成的有效运输计入履约", async () => {
+    const value = await harness();
+    const agreementId = proposeSupplyDelivery(value, "human-neutral", ["player-1", "human-neutral"]);
+    const taskId = dispatchTask(value, playerAuth(value), SUPPLY_TRANSPORT);
+    advanceTicks(value, 1, 7, { consumers: true });
+    expect(taskView(value, taskId)).toMatchObject({ status: "completed", completedAtTick: 7 });
+    expectTermFulfilled(value, { agreementId, termIndex: 0, obligorId: "human-neutral" });
+  });
+
+  it("普通角色为义务人时，本人派遣并完成的有效运输计入履约", async () => {
+    const value = await harness();
+    const agreementId = proposeSupplyDelivery(value, "npc-wenyuan", [
+      "player-1",
+      "npc-wenyuan",
+      "human-neutral",
+    ]);
+    // 职责角色凭开局委托派遣本派系队伍，派遣者与义务人是同一主体。
+    const taskId = dispatchTask(value, strategicAuth(value, "npc-wenyuan"), SUPPLY_TRANSPORT);
+    advanceTicks(value, 1, 7, { consumers: true });
+    expect(taskView(value, taskId)).toMatchObject({ status: "completed", completedAtTick: 7 });
+    expectTermFulfilled(value, { agreementId, termIndex: 0, obligorId: "npc-wenyuan" });
+  });
+
+  it("普通角色为义务人时，派系主体派遣的任务不计入履约", async () => {
+    const value = await harness();
+    const agreementId = proposeSupplyDelivery(value, "npc-wenyuan", [
+      "player-1",
+      "npc-wenyuan",
+      "human-neutral",
+    ]);
+    const taskId = dispatchTask(value, strategicAuth(value, "human-neutral"), SUPPLY_TRANSPORT);
+    advanceTicks(value, 1, 20, { consumers: true });
+    expect(taskView(value, taskId)).toMatchObject({ status: "completed", completedAtTick: 7 });
+    // 普通角色不映射到所属派系，派系主体的派遣与执行不构成该角色的履约。
+    expectAgreement(value, agreementId, { status: "active", fulfilledTerms: [] });
+
+    advanceToWithConsumers(value, 21);
+    expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "npc-wenyuan" });
   });
 });

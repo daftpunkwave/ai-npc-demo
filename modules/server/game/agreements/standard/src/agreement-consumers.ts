@@ -5,9 +5,9 @@
  */
 import type { EventEnvelope, Term } from "@ai-npc/contracts";
 import type { AgreementState } from "./state";
-import { cargoAmount, taskMatchesTerm, taskServesObligor } from "./fulfillment";
+import { actorRepresentsObligor, cargoAmount, taskMatchesTerm, taskServesObligor } from "./fulfillment";
 import { fulfillTerm, markBreach } from "./agreement-lifecycle";
-import { asPorts, teamOwnerFaction, type AgreementContext } from "./agreement-shared";
+import { asPorts, fulfillmentFactions, type AgreementContext } from "./agreement-shared";
 
 /** 任务完成事件：按权威完成 tick 判定交付与其它任务类条款的履约。 */
 export function onTaskCompleted(context: AgreementContext, event: EventEnvelope): void {
@@ -18,7 +18,7 @@ export function onTaskCompleted(context: AgreementContext, event: EventEnvelope)
   }
   // 任务的 completedAtTick 是权威完成 tick，与消费者何时追平无关。
   const completedAtTick = task.completedAtTick;
-  const factionOfTeam = (teamId: string) => teamOwnerFaction(context, teamId);
+  const factions = fulfillmentFactions(context);
   for (const entry of context.tx.list<AgreementState>("agreement")) {
     const state = entry.state;
     if (state.status !== "active" && state.status !== "breached") {
@@ -33,7 +33,7 @@ export function onTaskCompleted(context: AgreementContext, event: EventEnvelope)
         term.kind !== "deliver" ||
         completedAtTick > term.byTick ||
         !taskMatchesTerm(term, task) ||
-        !taskServesObligor(term.obligorId, task, factionOfTeam)
+        !taskServesObligor(term.obligorId, task, factions)
       ) {
         continue;
       }
@@ -62,7 +62,7 @@ export function onTaskCompleted(context: AgreementContext, event: EventEnvelope)
       if (
         completedAtTick > term.byTick ||
         !taskMatchesTerm(term, task) ||
-        !taskServesObligor(term.obligorId, task, factionOfTeam)
+        !taskServesObligor(term.obligorId, task, factions)
       ) {
         continue;
       }
@@ -110,11 +110,12 @@ function policyBreachAt(
   term: Term,
   payload: { readonly key: string; readonly newValue: string; readonly byId: string },
   eventTick: number,
+  factionOfPrincipal: (principalId: string) => string | null,
 ): boolean {
   if (term.kind === "water-allocation") {
     return (
       payload.key === "watergate.allocation" &&
-      term.obligorId === payload.byId &&
+      actorRepresentsObligor(payload.byId, term.obligorId, factionOfPrincipal) &&
       payload.newValue !== term.policy &&
       eventTick <= term.untilTick
     );
@@ -122,7 +123,7 @@ function policyBreachAt(
   if (term.kind === "grant-passage") {
     return (
       payload.key === `road.status:${term.roadId}` &&
-      term.obligorId === payload.byId &&
+      actorRepresentsObligor(payload.byId, term.obligorId, factionOfPrincipal) &&
       payload.newValue === "closed" &&
       eventTick <= term.untilTick
     );
@@ -137,6 +138,7 @@ export function onPolicyChanged(context: AgreementContext, event: EventEnvelope)
     readonly newValue: string;
     readonly byId: string;
   };
+  const { factionOfPrincipal } = fulfillmentFactions(context);
   for (const entry of context.tx.list<AgreementState>("agreement")) {
     const state = entry.state;
     if (state.status !== "active" && state.status !== "breached" && state.status !== "fulfilled") {
@@ -148,7 +150,7 @@ export function onPolicyChanged(context: AgreementContext, event: EventEnvelope)
     // 一次政策事件可能命中同一协议的多条条款，按最新状态逐条累积，不能互相覆盖。
     let current = state;
     for (const [index, term] of current.terms.entries()) {
-      if (policyBreachAt(term, payload, event.worldTick)) {
+      if (policyBreachAt(term, payload, event.worldTick, factionOfPrincipal)) {
         current = markBreach(context, current, index);
       }
     }
