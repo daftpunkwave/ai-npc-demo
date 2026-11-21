@@ -93,6 +93,32 @@ function requireStorageText(row: StorageRow, column: string): string {
   return value;
 }
 
+/** 解析一行失败记录；阶段、原因码与状态都必须在登记集合内。 */
+function parseRuleFailureRow(row: StorageRow): RuleFailureRecord {
+  const phase = requireStorageString(row, "rule_failures", "phase");
+  if (phase !== "job" && phase !== "event" && phase !== "clock-step" && phase !== "worker") {
+    throw new DomainError("invalid-state", `rule_failures 记录的阶段 ${phase} 未登记`);
+  }
+  const reasonCode = requireStorageString(row, "rule_failures", "reason_code");
+  if (!isErrorCode(reasonCode)) {
+    throw new DomainError("invalid-state", `rule_failures 记录的原因码 ${reasonCode} 未登记`);
+  }
+  const status = requireStorageString(row, "rule_failures", "status");
+  if (status !== "retrying" && status !== "failed") {
+    throw new DomainError("invalid-state", `rule_failures 记录的状态 ${status} 非法`);
+  }
+  return {
+    phase,
+    subjectId: requireStorageString(row, "rule_failures", "subject_id"),
+    detail: requireStorageText(row, "detail"),
+    attempts: requireStorageNumber(row, "rule_failures", "attempts"),
+    reasonCode,
+    lastError: requireStorageString(row, "rule_failures", "last_error"),
+    status,
+    updatedAt: requireStorageString(row, "rule_failures", "updated_at"),
+  };
+}
+
 /** 读取一个主体的失败记录；没有失败时返回 null。 */
 export function readRuleFailure(
   tx: StorageTransaction,
@@ -104,27 +130,7 @@ export function readRuleFailure(
     subject_id: identity.subjectId,
     detail: identity.detail,
   });
-  if (row === null) {
-    return null;
-  }
-  const reasonCode = requireStorageString(row, "rule_failures", "reason_code");
-  if (!isErrorCode(reasonCode)) {
-    throw new DomainError("invalid-state", `rule_failures 记录的原因码 ${reasonCode} 未登记`);
-  }
-  const status = requireStorageString(row, "rule_failures", "status");
-  if (status !== "retrying" && status !== "failed") {
-    throw new DomainError("invalid-state", `rule_failures 记录的状态 ${status} 非法`);
-  }
-  return {
-    phase: identity.phase,
-    subjectId: identity.subjectId,
-    detail: identity.detail,
-    attempts: requireStorageNumber(row, "rule_failures", "attempts"),
-    reasonCode,
-    lastError: requireStorageString(row, "rule_failures", "last_error"),
-    status,
-    updatedAt: requireStorageString(row, "rule_failures", "updated_at"),
-  };
+  return row === null ? null : parseRuleFailureRow(row);
 }
 
 /** 写入或更新失败记录；status 由调用方给出的死信判定决定。 */
@@ -146,6 +152,24 @@ export function writeRuleFailure(
   });
 }
 
+/**
+ * 在调用方事务内追加一次失败尝试并返回是否达到死信上限。
+ * 事件消费者与时钟步骤共用同一计数口径；job 的尝试次数以 jobs 表为准。
+ */
+export function recordRuleAttempt(
+  tx: StorageTransaction,
+  branchId: string,
+  identity: RuleFailureIdentity,
+  error: unknown,
+  nowIso: string,
+): boolean {
+  const previous = readRuleFailure(tx, branchId, identity);
+  const attempts = (previous?.attempts ?? 0) + 1;
+  const deadLettered = attempts >= MAX_RULE_ATTEMPTS;
+  writeRuleFailure(tx, branchId, identity, { attempts, error, deadLettered, nowIso });
+  return deadLettered;
+}
+
 /** 处理器成功后清除失败记录，避免健康接口保留已恢复的历史。 */
 export function clearRuleFailure(
   tx: StorageTransaction,
@@ -159,7 +183,7 @@ export function clearRuleFailure(
   });
 }
 
-/** 读取最近已死信或仍待重试的失败记录，供健康摘要展示。 */
+/** 读取最近失败记录，供健康摘要展示。 */
 export function listRuleFailures(
   storage: StoragePort,
   branchId: string,
@@ -168,33 +192,7 @@ export function listRuleFailures(
   return storage.transact((tx) =>
     failureTable(tx, branchId)
       .list({}, { orderBy: [{ column: "updated_at", direction: "desc" }], limit })
-      .map((row) => {
-        const phase = requireStorageString(row, "rule_failures", "phase");
-        if (phase !== "job" && phase !== "event" && phase !== "clock-step" && phase !== "worker") {
-          throw new DomainError("invalid-state", `rule_failures 记录的阶段 ${phase} 未登记`);
-        }
-        const reasonCode = requireStorageString(row, "rule_failures", "reason_code");
-        if (!isErrorCode(reasonCode)) {
-          throw new DomainError("invalid-state", `rule_failures 记录的原因码 ${reasonCode} 未登记`);
-        }
-        const status = requireStorageString(row, "rule_failures", "status");
-        if (status !== "retrying" && status !== "failed") {
-          throw new DomainError("invalid-state", `rule_failures 记录的状态 ${status} 非法`);
-        }
-        const identity: RuleFailureIdentity = {
-          phase,
-          subjectId: requireStorageString(row, "rule_failures", "subject_id"),
-          detail: requireStorageText(row, "detail"),
-        };
-        return {
-          ...identity,
-          attempts: requireStorageNumber(row, "rule_failures", "attempts"),
-          reasonCode,
-          lastError: requireStorageString(row, "rule_failures", "last_error"),
-          status,
-          updatedAt: requireStorageString(row, "rule_failures", "updated_at"),
-        };
-      }),
+      .map(parseRuleFailureRow),
   );
 }
 

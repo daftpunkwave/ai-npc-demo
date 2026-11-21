@@ -23,6 +23,7 @@ export {
   clearRuleFailure,
   listRuleFailures,
   readRuleFailure,
+  recordRuleAttempt,
   writeRuleFailure,
   workerFailureIdentity,
 } from "./rule-failures";

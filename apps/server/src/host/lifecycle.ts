@@ -107,14 +107,16 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     recordLifecycleEvent("WorkerFailed", "system:tick-worker", { message, worldTick });
   };
 
-  /** 清理已恢复的 worker 失败记录；清理失败时保留记录，健康状态继续报告 degraded。 */
-  const clearWorkerFailure = (): void => {
+  /** 清理已恢复的 worker 失败记录；清理失败时保留记录并让健康状态继续报告 degraded。 */
+  const clearWorkerFailure = (): boolean => {
     try {
       storage.transact((tx) => clearRuleFailure(tx, active.branchId, workerFailureIdentity));
+      return true;
     } catch (error) {
       host.logger.error("worker 恢复状态清理失败", {
         message: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   };
 
@@ -130,52 +132,6 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
       });
       return true;
     }
-  };
-
-  /** 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。 */
-  const control = (mode: "pause" | "start", expectedRunVersion: number) => {
-    // 终局停止点已登记：先补做暂停（幂等），再明确拒绝恢复，避免时钟停留在 running。
-    if (mode === "start" && authority.clock.pendingStop(active.branchId)) {
-      runtime.clock.pause(active.branchId);
-      app?.notifyWorldChanged();
-      throw new DomainError("invalid-state", "章节已结束，不能恢复时钟", {
-        details: { branchId: active.branchId },
-      });
-    }
-    const result = mode === "pause"
-      ? runtime.clock.pause(active.branchId, expectedRunVersion)
-      : runtime.clock.start(active.branchId, expectedRunVersion);
-    if (!result.ok) {
-      throw result.reasonCode === "version-conflict"
-        ? new DomainError("version-conflict", "时钟版本冲突")
-        : new DomainError("invalid-state", "时钟控制参数非法");
-    }
-    // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时。
-    if (mode === "start" && playerConnections === 0) {
-      scheduleAutoPause();
-    }
-    // 运营恢复必须显式复位失败的 worker；仍失败时拒绝恢复并保留原因，而不是继续静默停摆。
-    if (mode === "start" && workerFailed) {
-      workerFailed = false;
-      try {
-        catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
-      } catch (error) {
-        workerFailed = true;
-        recordWorkerFailure(error);
-        app?.notifyWorldChanged();
-        throw new DomainError("not-ready", "worker 恢复失败，当前 tick 仍有未处理的失败项", {
-          cause: error,
-          details: { branchId: active.branchId },
-        });
-      }
-      clearWorkerFailure();
-      recordLifecycleEvent("WorkerRecovered", "system:tick-worker", {
-        worldTick: result.clock.worldTick,
-      });
-      schedule();
-      app?.notifyWorldChanged();
-    }
-    return clockView(result.clock);
   };
 
   const clearAutoPauseTimer = (): void => {
@@ -291,6 +247,67 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
       }
     }
   }
+
+  /**
+   * 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。
+   * 恢复必须先补完当前 tick 且清理持久失败记录，成功后才提交时钟启动，失败时时钟不变。
+   */
+  const control = (mode: "pause" | "start", expectedRunVersion: number) => {
+    // 终局停止点已登记：先补做暂停（幂等），再明确拒绝恢复，避免时钟停留在 running。
+    if (mode === "start" && authority.clock.pendingStop(active.branchId)) {
+      runtime.clock.pause(active.branchId);
+      app?.notifyWorldChanged();
+      throw new DomainError("invalid-state", "章节已结束，不能恢复时钟", {
+        details: { branchId: active.branchId },
+      });
+    }
+    const needsWorkerRecovery =
+      mode === "start" && (workerFailed || hasPersistedWorkerFailure());
+    if (needsWorkerRecovery) {
+      // 先按与时钟控制相同的版本语义预检，避免已开始恢复后才因版本冲突失败。
+      if (clockState().runVersion !== expectedRunVersion) {
+        throw new DomainError("version-conflict", "时钟版本冲突");
+      }
+      try {
+        catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
+      } catch (error) {
+        workerFailed = true;
+        recordWorkerFailure(error);
+        app?.notifyWorldChanged();
+        throw new DomainError("not-ready", "worker 恢复失败，当前 tick 仍有未处理的失败项", {
+          cause: error,
+          details: { branchId: active.branchId },
+        });
+      }
+      if (!clearWorkerFailure()) {
+        workerFailed = false;
+        throw new DomainError("not-ready", "worker 失败状态清理失败，健康状态仍为 degraded", {
+          details: { branchId: active.branchId },
+        });
+      }
+      workerFailed = false;
+      recordLifecycleEvent("WorkerRecovered", "system:tick-worker", {
+        worldTick: clockState().worldTick,
+      });
+    }
+    const result = mode === "pause"
+      ? runtime.clock.pause(active.branchId, expectedRunVersion)
+      : runtime.clock.start(active.branchId, expectedRunVersion);
+    if (!result.ok) {
+      throw result.reasonCode === "version-conflict"
+        ? new DomainError("version-conflict", "时钟版本冲突")
+        : new DomainError("invalid-state", "时钟控制参数非法");
+    }
+    if (needsWorkerRecovery) {
+      schedule();
+      app?.notifyWorldChanged();
+    }
+    // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时。
+    if (mode === "start" && playerConnections === 0) {
+      scheduleAutoPause();
+    }
+    return clockView(result.clock);
+  };
 
   return {
     attachApp(next: ServerApp): void {

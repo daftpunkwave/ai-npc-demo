@@ -17,13 +17,7 @@ import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";
 import type { RuleRegistry } from "./rule-registry";
-import {
-  MAX_RULE_ATTEMPTS,
-  RuleExecutionError,
-  clearRuleFailure,
-  readRuleFailure,
-  writeRuleFailure,
-} from "./rule-failures";
+import { RuleExecutionError, clearRuleFailure, recordRuleAttempt } from "./rule-failures";
 import { requireStorageNumber } from "./storage-values";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, StoredEventConsumer } from "./types";
@@ -172,15 +166,13 @@ export class EventConsumerRunner {
       detail: error.detail,
     };
     return this.storage.transact((tx) => {
-      const previous = readRuleFailure(tx, branchId, identity);
-      const attempts = (previous?.attempts ?? 0) + 1;
-      const deadLettered = attempts >= MAX_RULE_ATTEMPTS;
-      writeRuleFailure(tx, branchId, identity, {
-        attempts,
-        error: error.cause,
-        deadLettered,
-        nowIso: this.host.nowIso(),
-      });
+      const deadLettered = recordRuleAttempt(
+        tx,
+        branchId,
+        identity,
+        error.cause,
+        this.host.nowIso(),
+      );
       if (!deadLettered) {
         return false;
       }

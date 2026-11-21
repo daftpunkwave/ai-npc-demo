@@ -11,11 +11,11 @@ import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";
 import type { RuleRegistry } from "./rule-registry";
 import {
-  MAX_RULE_ATTEMPTS,
   RuleExecutionError,
   clearRuleFailure,
   readRuleFailure,
-  writeRuleFailure,
+  recordRuleAttempt,
+  type RuleFailureIdentity,
 } from "./rule-failures";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, StoredClockStep } from "./types";
@@ -77,18 +77,30 @@ export class ClockStepRunner {
       this.requireWritableBranch(tx, branchId);
       return readClock(tx, branchId).worldTick;
     });
-    const matching = this.registry.clockStepList().filter((step) => step.when(worldTick));
     let stopRequested = false;
     let executed = 0;
-    for (const step of matching) {
-      const identity = {
-        phase: "clock-step" as const,
+    for (const step of this.registry.clockStepList()) {
+      const identity: RuleFailureIdentity = {
+        phase: "clock-step",
         subjectId: step.stepId,
         detail: String(worldTick),
       };
       const previous = this.storage.transact((tx) => readRuleFailure(tx, branchId, identity));
       if (previous?.status === "failed") {
         // 同一 tick 的步骤达到重试上限后不再执行，避免毒丸永久阻塞后续步骤与 tick 收尾。
+        continue;
+      }
+      let matches: boolean;
+      try {
+        matches = step.when(worldTick);
+      } catch (error) {
+        // 命中判定本身失败也按步骤与 tick 计入重试，避免每次恢复都卡在筛选阶段。
+        if (this.recordFailure(branchId, identity, error)) {
+          continue;
+        }
+        throw error;
+      }
+      if (!matches) {
         continue;
       }
       executed += 1;
@@ -105,7 +117,7 @@ export class ClockStepRunner {
           throw error;
         }
         // 处理器失败时步骤事务已回滚；记录尝试次数，未达上限仍向宿主传播以停止推进。
-        if (!this.recordFailure(branchId, identity, error)) {
+        if (!this.recordFailure(branchId, identity, error.cause)) {
           throw error.cause ?? error;
         }
       }
@@ -116,21 +128,12 @@ export class ClockStepRunner {
   /** 记录一次时钟步骤失败；返回 true 表示达到死信上限。 */
   private recordFailure(
     branchId: string,
-    identity: { readonly phase: "clock-step"; readonly subjectId: string; readonly detail: string },
-    error: RuleExecutionError,
+    identity: RuleFailureIdentity,
+    error: unknown,
   ): boolean {
-    return this.storage.transact((tx) => {
-      const previous = readRuleFailure(tx, branchId, identity);
-      const attempts = (previous?.attempts ?? 0) + 1;
-      const deadLettered = attempts >= MAX_RULE_ATTEMPTS;
-      writeRuleFailure(tx, branchId, identity, {
-        attempts,
-        error: error.cause,
-        deadLettered,
-        nowIso: this.host.nowIso(),
-      });
-      return deadLettered;
-    });
+    return this.storage.transact((tx) =>
+      recordRuleAttempt(tx, branchId, identity, error, this.host.nowIso()),
+    );
   }
 
   /** 读取分支并确认其状态允许时钟步骤；不存在或不可写时明确失败。 */
