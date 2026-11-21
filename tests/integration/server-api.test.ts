@@ -15,8 +15,11 @@ import {
   commandReceiptSchema,
   conversationResponseSchema,
   errorResponseSchema,
+  healthResponseSchema,
   playerProjectionSchema,
+  protocolVersion,
   sessionAssemblyResponseSchema,
+  sessionDescriptorSchema,
   streamAppendMessageSchema,
   type ClockView,
   type CommandReceipt,
@@ -983,6 +986,30 @@ describe("服务端 API", () => {
     });
   });
 
+  it("健康、会话与装配握手使用集中登记的协议版本", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value, {
+      sessionAssembly: { client: clientAssembly, console: consoleAssembly },
+    });
+    const health = await app.inject({ method: "GET", url: "/api/v1/health" });
+    expect(healthResponseSchema.parse(health.json()).protocolVersion).toBe(protocolVersion);
+
+    const sessionToken = await login(app, "player-token");
+    const headers = { authorization: `Bearer ${sessionToken}` };
+    const session = sessionDescriptorSchema.parse(
+      (await app.inject({ method: "GET", url: "/api/v1/session", headers })).json(),
+    );
+    expect(session.protocolVersion).toBe(protocolVersion);
+    const assembly = sessionAssemblyResponseSchema.parse(
+      (await app.inject({
+        method: "GET",
+        url: "/api/v1/session/assembly?realm=client",
+        headers,
+      })).json(),
+    );
+    expect(assembly.protocolVersion).toBe(protocolVersion);
+  });
+
   it("玩家读接口统一 401 与 403：未登录拒绝，控制台角色不能访问", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value);
@@ -1166,7 +1193,7 @@ describe("服务端 API", () => {
     const auth = { authorization: `Bearer ${session}` };
 
     const subscriber = openStream(port, await ticketFor(app, session));
-    expect(await subscriber.next()).toMatchObject({ type: "hello", principalId: "player-1", channels: ["player"] });
+    expect(await subscriber.next()).toMatchObject({ type: "hello", protocolVersion, principalId: "player-1", channels: ["player"] });
     subscriber.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
     expect(await subscriber.next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 0 });
 
@@ -1475,7 +1502,7 @@ describe("服务端 API", () => {
     const session = await login(app, "player-token");
     const auth = { authorization: `Bearer ${session}` };
     const client = openStream(port, await ticketFor(app, session));
-    expect(await client.next()).toMatchObject({ type: "hello", principalId: "player-1", channels: ["player"] });
+    expect(await client.next()).toMatchObject({ type: "hello", protocolVersion, principalId: "player-1", channels: ["player"] });
 
     client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
     expect(await client.next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 0 });

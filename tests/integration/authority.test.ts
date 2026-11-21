@@ -89,6 +89,47 @@ describe("authority command gateway", () => {
     });
   });
 
+  it("persists the schema-parsed event payload instead of the raw input", async () => {
+    await withHarness(async (harness) => {
+      const receipt = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000013", "cmd-000000000016"),
+      );
+      expect(receipt.commandStatus).toBe("accepted");
+      const rows = harness.storage.transact((tx) =>
+        tx.all(
+          "SELECT payload_json FROM domain_events WHERE branch_id = ? AND type = ?",
+          [harness.branchId, "TestDefaultedEvent"],
+        ),
+      );
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(String(rows[0]?.["payload_json"]))).toEqual({ count: 7 });
+    });
+  });
+
+  it("job handlers write registered extension events through the same schema registry", async () => {
+    await withHarness(async (harness) => {
+      const receipt = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000014", "cmd-000000000017"),
+      );
+      expect(receipt.commandStatus).toBe("accepted");
+      setClock(harness, { worldTick: 5, mode: "running" });
+      expect(harness.authority.jobs.runDue(harness.branchId, 5)).toBe(1);
+      const rows = harness.storage.transact((tx) =>
+        tx.all(
+          "SELECT payload_json FROM domain_events WHERE branch_id = ? AND type = ?",
+          [harness.branchId, "TestCounterChanged"],
+        ),
+      );
+      expect(rows).toHaveLength(2);
+      expect(JSON.parse(String(rows[1]?.["payload_json"]))).toMatchObject({
+        count: 1,
+        taskId: "task-000000000014",
+      });
+    });
+  });
+
   it("rejects an unregistered domain event and rolls back the transaction", async () => {
     await withHarness(async (harness) => {
       expectDomainCode(

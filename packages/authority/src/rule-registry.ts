@@ -78,7 +78,6 @@ function normalizeEventTypes(
   eventTypes: readonly string[] | undefined,
   moduleId: string,
   consumerId: string,
-  registeredEventTypes: ReadonlySet<string>,
 ): ReadonlySet<string> | null {
   if (eventTypes === undefined || eventTypes.length === 0) {
     return null;
@@ -90,12 +89,6 @@ function normalizeEventTypes(
         moduleId,
         consumerId,
       });
-    }
-    if (!registeredEventTypes.has(type)) {
-      assemblyFailure(
-        `模块 ${moduleId} 的消费者 ${consumerId} 订阅了未登记的事件类型 ${type}`,
-        { moduleId, consumerId, type },
-      );
     }
     normalized.add(type);
   }
@@ -116,6 +109,8 @@ export class RuleRegistry {
   private readonly eventSchemaMap = new Map<string, EventPayloadSchema>(
     Object.entries(domainEventPayloadSchemas),
   );
+  /** 消费者订阅校验推迟到消费启动前，避免扩展事件的登记顺序影响装配结果。 */
+  private consumerSubscriptionsValidated = false;
   private nextOrder = 0;
 
   /** 注册一个模块；重复模块 ID、聚合所有权或处理器类型都在启动前失败。 */
@@ -163,10 +158,6 @@ export class RuleRegistry {
       }
       eventsToAdd.set(event.type, event.payloadSchema);
     }
-    const registeredEventTypes = new Set<string>([
-      ...this.eventSchemaMap.keys(),
-      ...eventsToAdd.keys(),
-    ]);
 
     const commandsToAdd: { readonly type: CommandType; readonly handler: StoredCommandHandler }[] = [];
     const afterToAdd: { readonly type: CommandType; readonly hook: StoredAfterCommandHook }[] = [];
@@ -238,12 +229,7 @@ export class RuleRegistry {
       seenConsumers.add(consumer.consumerId);
       consumersToAdd.push({
         consumerId: consumer.consumerId,
-        eventTypes: normalizeEventTypes(
-          consumer.eventTypes,
-          moduleId,
-          consumer.consumerId,
-          registeredEventTypes,
-        ),
+        eventTypes: normalizeEventTypes(consumer.eventTypes, moduleId, consumer.consumerId),
         handler: (context, event) => {
           return consumer.handler(context as unknown as HandlerContext<TModules, TContent>, event);
         },
@@ -277,6 +263,9 @@ export class RuleRegistry {
     }
     for (const consumer of consumersToAdd) {
       this.consumers.push({ ...consumer, owner: scope });
+    }
+    if (consumersToAdd.length > 0) {
+      this.consumerSubscriptionsValidated = false;
     }
     return scope;
   }
@@ -333,7 +322,27 @@ export class RuleRegistry {
     return this.clockSteps;
   }
 
+  /** 所有消费者订阅的事件类型必须已由公共契约或模块显式登记；在首次消费前统一校验。 */
+  private assertConsumerSubscriptions(): void {
+    if (this.consumerSubscriptionsValidated) {
+      return;
+    }
+    const registered = new Set(this.eventSchemaMap.keys());
+    for (const consumer of this.consumers) {
+      for (const type of consumer.eventTypes ?? []) {
+        if (!registered.has(type)) {
+          assemblyFailure(
+            `消费者 ${consumer.consumerId} 订阅了未登记的事件类型 ${type}`,
+            { consumerId: consumer.consumerId, type },
+          );
+        }
+      }
+    }
+    this.consumerSubscriptionsValidated = true;
+  }
+
   consumerList(): readonly StoredEventConsumer[] {
+    this.assertConsumerSubscriptions();
     return this.consumers;
   }
 

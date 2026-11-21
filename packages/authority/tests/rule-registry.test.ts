@@ -71,23 +71,74 @@ describe("扩展领域事件登记", () => {
     );
   });
 
-  it("消费者订阅未登记事件时拒绝", () => {
+  it("消费者可以先于事件提供者注册，消费启动前统一校验订阅", () => {
     const registry = new RuleRegistry();
-    expectAssemblyFailure(
-      () =>
-        registry.registerModule({
-          moduleId: "test.typo",
-          ownsAggregates: [],
-          consumers: [
-            {
-              consumerId: "typo-consumer",
-              eventTypes: ["TaskCompletedd"],
-              handler: () => undefined,
-            },
-          ],
-        }),
-      "未登记的事件类型",
-    );
+    registry.registerModule({
+      moduleId: "test.consumer",
+      ownsAggregates: [],
+      consumers: [
+        {
+          consumerId: "late-consumer",
+          eventTypes: ["TestLateEvent"],
+          handler: () => undefined,
+        },
+      ],
+    });
+    registry.registerModule({
+      moduleId: "test.producer",
+      ownsAggregates: [],
+      events: [{ type: "TestLateEvent", payloadSchema: campaignStartedPayloadSchema }],
+    });
+
+    expect(() => registry.consumerList()).not.toThrow();
+    expect(registry.consumerList()).toHaveLength(1);
+  });
+
+  it("相互订阅的模块不受注册顺序影响", () => {
+    const registry = new RuleRegistry();
+    registry.registerModule({
+      moduleId: "test.first",
+      ownsAggregates: [],
+      events: [{ type: "TestFirstEvent", payloadSchema: campaignStartedPayloadSchema }],
+      consumers: [
+        {
+          consumerId: "first-consumer",
+          eventTypes: ["TestSecondEvent"],
+          handler: () => undefined,
+        },
+      ],
+    });
+    registry.registerModule({
+      moduleId: "test.second",
+      ownsAggregates: [],
+      events: [{ type: "TestSecondEvent", payloadSchema: campaignStartedPayloadSchema }],
+      consumers: [
+        {
+          consumerId: "second-consumer",
+          eventTypes: ["TestFirstEvent"],
+          handler: () => undefined,
+        },
+      ],
+    });
+
+    expect(() => registry.consumerList()).not.toThrow();
+    expect(registry.consumerList()).toHaveLength(2);
+  });
+
+  it("消费者订阅未登记事件时在消费启动前拒绝", () => {
+    const registry = new RuleRegistry();
+    registry.registerModule({
+      moduleId: "test.typo",
+      ownsAggregates: [],
+      consumers: [
+        {
+          consumerId: "typo-consumer",
+          eventTypes: ["TaskCompletedd"],
+          handler: () => undefined,
+        },
+      ],
+    });
+    expectAssemblyFailure(() => registry.consumerList(), "未登记的事件类型");
   });
 
   it("payloadSchema 不是可校验 schema 时拒绝", () => {

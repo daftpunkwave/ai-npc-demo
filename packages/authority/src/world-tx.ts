@@ -193,6 +193,8 @@ export class TransactionWorldTx implements WorldTx {
         },
       });
     }
+    // 持久化 schema 解析后的结果：默认值、剥离与转换必须与校验结论一致。
+    const validatedPayload = requireJson(payloadResult.data, "事件 payload");
     const worldSeq = nextSequence(this.eventsTable, "world_seq");
     const eventId = this.host.ids("evt");
     const envelope = eventEnvelopeSchema.safeParse({
@@ -207,7 +209,7 @@ export class TransactionWorldTx implements WorldTx {
       causationIds: [...causationIds],
       correlationId: this.correlationId,
       audience: [...audience],
-      payload: json,
+      payload: validatedPayload,
     });
     if (!envelope.success) {
       throw new DomainError("validation", `事件 ${type} 的信封不合法`, {

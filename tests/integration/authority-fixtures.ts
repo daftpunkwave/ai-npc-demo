@@ -61,6 +61,10 @@ export function counterModule(state: TestState): RuleContributor {
         type: "TestSpeechSubmitted",
         payloadSchema: z.object({ artifactRef: z.string().min(1) }).strict(),
       },
+      {
+        type: "TestDefaultedEvent",
+        payloadSchema: z.object({ count: z.number().int().default(7) }).strict(),
+      },
     ],
     commands: [
       {
@@ -75,6 +79,10 @@ export function counterModule(state: TestState): RuleContributor {
             // 未在 events 中登记的事件类型必须被事务拒绝；用该分支验证回滚与无 receipt。
             context.tx.emit("TestUnregisteredEvent", { count }, [{ kind: "public" }]);
           }
+          if (taskId === "task-000000000013") {
+            // 事件 schema 的默认值必须进入持久化结果，而不是只用于校验。
+            context.tx.emit("TestDefaultedEvent", {}, [{ kind: "public" }]);
+          }
           context.tx.emit("TestCounterChanged", { count, taskId }, [{ kind: "public" }]);
           if (taskId === "task-000000000007") {
             context.tx.put("audit", "audit-1", { lastTaskId: taskId });
@@ -87,6 +95,8 @@ export function counterModule(state: TestState): RuleContributor {
             context.tx.cancelJobs("test-job:");
           } else if (taskId === "task-000000000010") {
             context.tx.schedule("test.job", 9, `test-job:${taskId}`, { taskId });
+          } else if (taskId === "task-000000000014") {
+            context.tx.schedule("test.job", 5, "test-job:event", { taskId });
           } else {
             context.tx.schedule("test.job", 5, `test-job:${taskId}`, { taskId });
           }
@@ -124,6 +134,10 @@ export function counterModule(state: TestState): RuleContributor {
           const taskId = (job.payload as { readonly taskId: string }).taskId;
           if (taskId === "task-000000000011") {
             throw new Error("simulated job failure");
+          }
+          if (taskId === "task-000000000014") {
+            // job 处理器同样只能写已登记事件；该分支验证 job 路径注入了事件注册表。
+            context.tx.emit("TestCounterChanged", { count: 1, taskId }, [{ kind: "public" }]);
           }
           const current = context.tx.get<{ readonly order: readonly string[] }>("job-log", "job-log");
           context.tx.put("job-log", "job-log", { order: [...(current?.state.order ?? []), taskId] });
