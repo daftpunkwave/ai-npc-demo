@@ -171,6 +171,20 @@ export const clockControlRequestSchema = z
 
 export type ClockControlRequest = z.infer<typeof clockControlRequestSchema>;
 
+/**
+ * 受控单步推进请求；ticks 不超过公共契约上限，时钟 provider 仍按装配的 maxStepTicks 复验。
+ * 进入 stepping 后由宿主逐 tick 推进，完成后时钟回到 paused。
+ */
+export const clockStepRequestSchema = z
+  .object({
+    operationId: idSchemas.op,
+    expectedRunVersion: z.number().int().nonnegative(),
+    ticks: z.number().int().min(1).max(24),
+  })
+  .strict();
+
+export type ClockStepRequest = z.infer<typeof clockStepRequestSchema>;
+
 export const clockResponseSchema = clockViewSchema;
 
 export const snapshotViewSchema = z

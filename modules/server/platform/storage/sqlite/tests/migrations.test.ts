@@ -70,7 +70,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -89,7 +89,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -289,8 +289,92 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
+      closeDatabase(upgraded);
+      upgraded = null;
+    } finally {
+      if (legacy !== null) {
+        closeDatabase(legacy);
+      }
+      if (upgraded !== null) {
+        closeDatabase(upgraded);
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("升级重建运营幂等表：既有行保留且 step 种类可写入", async () => {
+    const root = createTempDataDir();
+    const migrationsDirectory = join(root, "migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    const databasePath = join(root, "legacy-idempotency.db");
+    let legacy: ReturnType<typeof openDatabase> | null = null;
+    let upgraded: ReturnType<typeof openDatabase> | null = null;
+    try {
+      // 旧库停留在 step 种类加入之前的版本，并已写入一条既有幂等成功记录。
+      await copyMigrations(migrationsDirectory, host, 7);
+      legacy = openDatabase(databasePath);
+      await applyMigrations(legacy, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      legacy
+        .prepare(
+          `INSERT INTO operation_idempotency (
+             world_id, principal_id, operation_id, operation_kind, request_hash, status,
+             result_json, error_code, error_retryable, error_safe_message, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "wld-upgrade",
+          "player-1",
+          "op-000000000001",
+          "pause",
+          "hash-pause",
+          "succeeded",
+          JSON.stringify({ worldTick: 0, mode: "paused" }),
+          null,
+          0,
+          null,
+          host.nowIso(),
+        );
+      closeDatabase(legacy);
+      legacy = null;
+
+      await copyMigrations(migrationsDirectory, host);
+      upgraded = openDatabase(databasePath);
+      await applyMigrations(upgraded, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      const preserved = upgraded
+        .prepare(
+          "SELECT operation_kind, request_hash, status FROM operation_idempotency WHERE operation_id = ?",
+        )
+        .all("op-000000000001");
+      expect(preserved).toEqual([{ operation_kind: "pause", request_hash: "hash-pause", status: "succeeded" }]);
+      // 扩展后的 CHECK 允许写入 step 种类；索引随重建表一并恢复。
+      upgraded
+        .prepare(
+          `INSERT INTO operation_idempotency (
+             world_id, principal_id, operation_id, operation_kind, request_hash, status,
+             result_json, error_code, error_retryable, error_safe_message, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "wld-upgrade",
+          "console-admin",
+          "op-000000000002",
+          "step",
+          "hash-step",
+          "succeeded",
+          JSON.stringify({ worldTick: 1, mode: "stepping" }),
+          null,
+          0,
+          null,
+          host.nowIso(),
+        );
+      const kindIndex = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'operation_idempotency'")
+        .all()
+        .map((row) => String(row["name"]));
+      expect(kindIndex).toContain("operation_idempotency_kind");
       closeDatabase(upgraded);
       upgraded = null;
     } finally {
