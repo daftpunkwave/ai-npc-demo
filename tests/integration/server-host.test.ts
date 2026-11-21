@@ -4,7 +4,7 @@
  * 禁止用假存储替代首次启动路径，也禁止用当前入参覆盖已冻结的在线 run。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,9 +34,24 @@ const hosts: RunningHost[] = [];
 const dirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(hosts.splice(0).map(async (host) => host.close()));
+  // 先等待全部宿主关闭（单个失败不跳过其余），再删除全部已登记目录，最后汇总抛出：
+  // 删除目录必须晚于 SQLite 句柄释放，否则 Windows 上会与未关闭的存储竞争并抛 EBUSY。
+  const failures: unknown[] = [];
+  const closed = await Promise.allSettled(hosts.splice(0).map((host) => host.close()));
+  for (const result of closed) {
+    if (result.status === "rejected") {
+      failures.push(result.reason);
+    }
+  }
   for (const dir of dirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `服务端宿主测试清理未全部完成：${failures.length} 处失败`);
   }
 });
 
@@ -1613,6 +1628,10 @@ describe("服务端宿主", () => {
     // 存储最先创建、最后释放；其余已创建实例按创建逆序释放。
     expect(created[0]).toBe("storage");
     expect(disposed).toEqual([...created].reverse());
+
+    // 清理完成后存储句柄已释放：临时目录可直接删除（Windows 上未释放的 SQLite 句柄会使 rmSync 抛 EBUSY）。
+    rmSync(dataDir, { recursive: true, force: true });
+    mkdirSync(dataDir, { recursive: true });
 
     // 残留定时器或未关闭的存储会阻塞重试；使用真实定义在同一目录重新启动。
     const retried = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });

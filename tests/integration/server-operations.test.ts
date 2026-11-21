@@ -23,9 +23,24 @@ const hosts: RunningHost[] = [];
 const dirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(hosts.splice(0).map(async (host) => host.close()));
+  // 先等待全部宿主关闭（单个失败不跳过其余），再删除全部已登记目录，最后汇总抛出：
+  // 删除目录必须晚于 SQLite 句柄释放，否则 Windows 上会与未关闭的存储竞争并抛 EBUSY。
+  const failures: unknown[] = [];
+  const closed = await Promise.allSettled(hosts.splice(0).map((host) => host.close()));
+  for (const result of closed) {
+    if (result.status === "rejected") {
+      failures.push(result.reason);
+    }
+  }
   for (const dir of dirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `运营操作测试清理未全部完成：${failures.length} 处失败`);
   }
 });
 

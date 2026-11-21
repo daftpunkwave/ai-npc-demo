@@ -240,14 +240,21 @@ export async function createGameHarness(options: {
       branchId,
       content,
       gameContent,
+      // 必须先释放 SQLite 句柄再删目录；try/finally 保证 dispose 抛错时仍执行删除。
       dispose: async () => {
-        await instance.dispose();
-        rmSync(dataDir, { recursive: true, force: true });
+        try {
+          await instance.dispose();
+        } finally {
+          rmSync(dataDir, { recursive: true, force: true });
+        }
       },
     };
   } catch (error) {
-    await instance.dispose();
-    rmSync(dataDir, { recursive: true, force: true });
+    try {
+      await instance.dispose();
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
     throw error;
   }
 }
@@ -352,9 +359,18 @@ export async function createTrackedGameHarness(
   return created;
 }
 
-/** 释放所有已登记的 harness。 */
+/** 释放所有已登记的 harness；先等待全部释放完成再汇总抛出，避免首个失败让其余存储句柄悬空。 */
 export async function disposeTrackedGameHarnesses(active: GameHarness[]): Promise<void> {
-  await Promise.all(active.splice(0).map(async (harness) => harness.dispose()));
+  const results = await Promise.allSettled(active.splice(0).map((harness) => harness.dispose()));
+  const failures: unknown[] = [];
+  for (const result of results) {
+    if (result.status === "rejected") {
+      failures.push(result.reason);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `游戏测试环境释放未全部完成：${failures.length} 个 harness 失败`);
+  }
 }
 
 /** 以人类中立阵营开局，供各游戏模块测试复用。 */

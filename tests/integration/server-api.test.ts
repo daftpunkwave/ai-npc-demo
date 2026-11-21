@@ -70,8 +70,22 @@ afterEach(async () => {
   for (const client of clients.splice(0)) {
     client.close();
   }
-  await Promise.all(apps.splice(0).map(async (app) => app.close()));
-  await disposeTrackedGameHarnesses(active);
+  // 传输应用关闭失败时仍要释放 harness 的 SQLite 句柄；全部步骤完成后汇总错误。
+  const failures: unknown[] = [];
+  const closed = await Promise.allSettled(apps.splice(0).map((app) => app.close()));
+  for (const result of closed) {
+    if (result.status === "rejected") {
+      failures.push(result.reason);
+    }
+  }
+  try {
+    await disposeTrackedGameHarnesses(active);
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `服务端 API 测试清理未全部完成：${failures.length} 处失败`);
+  }
 });
 
 function clockView(harness: GameHarness): ClockView {
