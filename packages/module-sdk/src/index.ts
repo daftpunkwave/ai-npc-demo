@@ -11,6 +11,7 @@ export { REALM_NAMESPACES } from "./descriptor-constraints";
 export { createStatelessModule } from "./lifecycle";
 
 export { createScopedStateKey } from "./ports";
+export { isApprovedSpeechUsable } from "./speech-approval";
 export type {
   AggregateEntry,
   AggregateRecord,

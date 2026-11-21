@@ -220,7 +220,7 @@ COMMIT
 
 时钟步骤（不是 job，见 [规则](../game/rules.md) 第 1 节）：`T % 24 == 0` 时的每日结算（`DayPassed`、`MetersChanged`、阈值事件、`ResourcesConsumed`），`T == 168` 时的章节评估（`ChapterStageEvaluated`）。章节评估的阈值与 campaign 状态由 `game.world` 实现，由 `game.agreements` 在章节终点时钟步骤里调用 `game.world` 的评估操作并把截至当前 tick 的协议计数作为惰性入参传入；只有协议 provider 的章节终点步骤或宿主可以触发评估，其他消费者调用会被拒绝，世界模块因此不需要反向依赖协议模块。
 
-`speech.commit` 的正文只从宿主注入的 `approvedSpeech.read(approvedSpeechArtifactRef)` 取得；此端口只读已持久化且通过安全校验的 speech 结果，不做文件/网络 I/O。comms 校验 approved、agentId/turnId/branchId 与认证上下文一致，channel 与去重排序后的 audience 完全匹配，任何不符均 `speech-not-approved`。authority 在同一提交事务以 `(branchId, approvedSpeechArtifactRef)` 唯一消费绑定最终事件，禁止不同 commandId 重放；相同 commandId 只返回已有 receipt。拒绝事务不消费批准结果。probe speech 直接写 probe_results，不能走此命令。
+`speech.commit` 的正文只从宿主注入的 `approvedSpeech.read(approvedSpeechArtifactRef)` 取得；此端口只读已持久化且通过安全校验的 speech 结果，不做文件/网络 I/O。批准判定收敛在 `@ai-npc/module-sdk` 的 `isApprovedSpeechUsable`：authority 网关在进入处理器前校验一次；comms 处理器对同一事务内重新读取的结果用同一函数复验，避免只读索引在两次读取间变化后提交未经校验的正文。判定要求 approved、agentId/turnId/branchId 与认证上下文一致（`system` 发行者由宿主代发，不比对 agentId；认证上下文未携带 turn 时不比对 turnId），channel 与去重排序后的 audience 完全匹配，任何不符均 `speech-not-approved`。authority 在同一提交事务以 `(branchId, approvedSpeechArtifactRef)` 唯一消费绑定最终事件，禁止不同 commandId 重放；相同 commandId 只返回已有 receipt。拒绝事务不消费批准结果。probe speech 直接写 probe_results，不能走此命令。
 
 履约判定不是独立 job：`game.agreements` 订阅 `TaskCompleted`、`InformationShared`、`PolicyChanged`，在同一个事件消费事务里提交 `AgreementTermFulfilled`、`AgreementFulfilled` 或 `AgreementBreached`。收到 `TaskCompleted` 时通过 `game.actions.queries.task(taskId)` 读取已完成任务的 dispatcherId、params、participants 与完成状态进行条款匹配；不用扩大发给 gameplay 的事件 payload，也不能跨模块直接读聚合。
 

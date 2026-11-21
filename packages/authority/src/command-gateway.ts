@@ -19,7 +19,7 @@ import {
   type ScopedBranchStorage,
   type StorageTransaction,
 } from "@ai-npc/contracts";
-import type { HandlerResult } from "@ai-npc/module-sdk";
+import { isApprovedSpeechUsable, type HandlerResult } from "@ai-npc/module-sdk";
 import { readBranch, readClock, tryReadClock, type ClockRecord } from "./branch-state";
 import { checkExpectedVersions, isPauseExempt, issuesOf, parseCommandType, requireJsonResult } from "./command-validation";
 import { buildReceipt, readReceipt, writeReceipt, type ReceiptInput } from "./command-receipts";
@@ -29,7 +29,7 @@ import { bindModulePorts } from "./module-binding";
 import { isCommandIssuerAllowed } from "./issuer-policy";
 import type { RuleRegistry } from "./rule-registry";
 import { requireStorageString } from "./storage-values";
-import { isApprovedSpeechUsable, readSpeechCommitPayload } from "./speech-approval";
+import { readSpeechCommitPayload } from "./speech-approval";
 import type { CommandGatewayOptions, ContributorScope } from "./types";
 import { assertSynchronous, TransactionWorldTx, type TxCollector } from "./world-tx";
 
