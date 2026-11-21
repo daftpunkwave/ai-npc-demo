@@ -19,6 +19,18 @@ import {
   transportTaskParamsSchema,
 } from "./command-values";
 
+/**
+ * 命令载荷的统一输入上限。
+ * 文本上限与对白正文 300 字对齐；主体名单上限覆盖内容角色、派系战略主体与玩家的并集
+ * （共 17 个主体）并留出余量，避免一次命令派生出无界事件；协议条款上限 20，
+ * 限制一次提案能安排的违约检查 job 数量。
+ */
+const maxCommandTextLength = 300;
+const maxPrincipalListLength = 20;
+const maxAgreementTermCount = 20;
+/** 政策键是结构化的短键（如 `road.status:<roadId>`），不是自由文本。 */
+const maxPolicyKeyLength = 120;
+
 export const campaignStartPayloadSchema = z
   .object({
     factionId: z.string().min(1),
@@ -36,7 +48,7 @@ export const speechCommitPayloadSchema = z
   .object({
     channel: speechChannelSchema,
     conversationId: idSchemas.conv.nullable(),
-    audience: z.array(principalIdSchema).min(1),
+    audience: z.array(principalIdSchema).min(1).max(maxPrincipalListLength),
     approvedSpeechArtifactRef: idSchemas.art,
     intentKind: dialogueIntentKindSchema,
     replyToId: idSchemas.dlg.nullable(),
@@ -48,7 +60,7 @@ export type SpeechCommitPayload = z.infer<typeof speechCommitPayloadSchema>;
 
 export const seatSayPayloadSchema = z
   .object({
-    to: z.array(principalIdSchema).min(1),
+    to: z.array(principalIdSchema).min(1).max(maxPrincipalListLength),
     text: z.string().min(1).max(200),
   })
   .strict();
@@ -56,7 +68,7 @@ export const seatSayPayloadSchema = z
 export const informationSharePayloadSchema = z
   .object({
     evidenceId: contentIdSchemas.ev,
-    audience: z.array(principalIdSchema).min(1),
+    audience: z.array(principalIdSchema).min(1).max(maxPrincipalListLength),
   })
   .strict();
 
@@ -66,8 +78,8 @@ export const informationSharePayloadSchema = z
  */
 export const agreementProposePayloadSchema = z
   .object({
-    parties: z.array(principalIdSchema).min(2),
-    terms: z.array(termSchema).min(1),
+    parties: z.array(principalIdSchema).min(2).max(maxPrincipalListLength),
+    terms: z.array(termSchema).min(1).max(maxAgreementTermCount),
     expiresInTicks: z.number().int().positive().default(24),
   })
   .strict()
@@ -81,7 +93,7 @@ export const agreementRespondPayloadSchema = z
   .object({
     agreementId: idSchemas.agr,
     response: z.enum(["accept", "reject", "counter"]),
-    counterTerms: z.array(termSchema).min(1).optional(),
+    counterTerms: z.array(termSchema).min(1).max(maxAgreementTermCount).optional(),
   })
   .strict()
   .superRefine((response, context) => {
@@ -126,7 +138,7 @@ export const taskCancelPayloadSchema = z
 
 export const policySetPayloadSchema = z
   .object({
-    key: z.string().min(1),
+    key: z.string().min(1).max(maxPolicyKeyLength),
     value: z.string().min(1),
   })
   .strict();
@@ -137,7 +149,7 @@ export const scenarioDraftPayloadSchema = z
     version: z.number().int().positive(),
     triggerAtTick: z.number().int().nonnegative(),
     effects: z.array(cardEffectSchema).min(1),
-    note: z.string().min(1),
+    note: z.string().min(1).max(maxCommandTextLength),
   })
   .strict();
 
@@ -159,14 +171,14 @@ export const scenarioCompensatePayloadSchema = z
   .object({
     cardId: contentIdSchemas.card,
     effects: z.array(cardEffectSchema).min(1),
-    note: z.string().min(1),
+    note: z.string().min(1).max(maxCommandTextLength),
   })
   .strict();
 
 export const scenarioOverridePayloadSchema = z
   .object({
     effects: z.array(overrideEffectSchema).min(1),
-    note: z.string().min(1),
+    note: z.string().min(1).max(maxCommandTextLength),
   })
   .strict();
 
@@ -175,6 +187,6 @@ export const probeAskPayloadSchema = z
     probeId: idSchemas.prb,
     agentId: principalIdSchema,
     askedBy: principalIdSchema,
-    question: z.string().min(1),
+    question: z.string().min(1).max(maxCommandTextLength),
   })
   .strict();

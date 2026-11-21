@@ -25,6 +25,8 @@ export const reasonCodeGroups = {
     "obligor-not-party",
     "deadline-out-of-range",
     "not-a-party",
+    "unknown-party",
+    "counter-limit-reached",
     "agreement-not-open",
     "already-responded",
   ],

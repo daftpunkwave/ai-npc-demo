@@ -10,11 +10,13 @@ import { describe, expect, it } from "vitest";
 import {
   acceptAgreement,
   advanceTo,
+  agreementCount,
   createMemoryTx,
   dispatchTask,
   executeCommand,
   expectAgreement,
   gameEventTypes,
+  jobRows,
   playerAuth,
   proposeAgreement,
   proposeAgreementCommand,
@@ -126,6 +128,79 @@ describe("协议", () => {
       [{ kind: "principals", ids: ["player-1", "human-neutral"] }],
       [{ kind: "principals", ids: ["player-1", "human-neutral"] }],
     ]);
+  });
+
+  it("未知当事人被拒绝，且不写入协议或 job", async () => {
+    const value = await harness();
+    const jobsBefore = jobRows(value).length;
+    const proposal = proposeAgreementCommand(
+      value,
+      playerAuth(value),
+      ["player-1", "ghost-principal"],
+      [deliveryTerm(30)],
+    );
+    expect(proposal.commandStatus).toBe("rejected");
+    expect(proposal.reasonCode).toBe("unknown-party");
+    expect(agreementCount(value)).toBe(0);
+    expect(jobRows(value)).toHaveLength(jobsBefore);
+  });
+
+  it("超过当事人与条款数量上限的提案在契约层拒绝，不产生状态或 job", async () => {
+    const value = await harness();
+    const jobsBefore = jobRows(value).length;
+    const tooManyParties = proposeAgreementCommand(
+      value,
+      playerAuth(value),
+      ["player-1", ...Array.from({ length: 20 }, (_, index) => `ghost-${index}`)],
+      [deliveryTerm(30)],
+    );
+    expect(tooManyParties.commandStatus).toBe("rejected");
+    expect(tooManyParties.reasonCode).toBe("invalid-params");
+    const tooManyTerms = proposeAgreementCommand(
+      value,
+      playerAuth(value),
+      ["player-1", "human-neutral"],
+      Array.from({ length: 21 }, () => deliveryTerm(30)),
+    );
+    expect(tooManyTerms.commandStatus).toBe("rejected");
+    expect(tooManyTerms.reasonCode).toBe("invalid-params");
+    expect(agreementCount(value)).toBe(0);
+    expect(jobRows(value)).toHaveLength(jobsBefore);
+  });
+
+  it("还价保留原提案的到期 tick，不延长协议生命周期", async () => {
+    const value = await harness();
+    // 默认有效期 24 tick，原提案的绝对到期 tick 为 24。
+    const agreementId = proposeDelivery(value);
+    setGameClock(value, { worldTick: 10, mode: "running" });
+    const counter = respondAgreement(value, strategicAuth(value, "human-neutral"), agreementId, "counter", [
+      deliveryTerm(30, 8),
+    ]);
+    expect(counter.commandStatus).toBe("accepted");
+    const nextId = (counter.result as { readonly agreementId: string }).agreementId;
+    expect(readGameAggregate(value, "agreement", nextId)).toMatchObject({
+      version: 2,
+      expiresAtTick: 24,
+    });
+  });
+
+  it("还价版本达到上限后拒绝继续还价", async () => {
+    const value = await harness();
+    let agreementId = proposeDelivery(value);
+    const proposer = strategicAuth(value, "human-neutral");
+    const otherParty = playerAuth(value);
+    // version 从 1 起，每次还价加一；最多到 version 5，即允许四次还价。
+    for (let index = 0; index < 4; index += 1) {
+      const actor = index % 2 === 0 ? proposer : otherParty;
+      const counter = respondAgreement(value, actor, agreementId, "counter", [deliveryTerm(30, 8)]);
+      expect(counter.commandStatus).toBe("accepted");
+      agreementId = (counter.result as { readonly agreementId: string }).agreementId;
+      expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({ version: index + 2 });
+    }
+    const rejected = respondAgreement(value, proposer, agreementId, "counter", [deliveryTerm(30, 8)]);
+    expect(rejected.commandStatus).toBe("rejected");
+    expect(rejected.reasonCode).toBe("counter-limit-reached");
+    expect(agreementCount(value)).toBe(5);
   });
 
   it("过期 job 关闭未生效提案", async () => {

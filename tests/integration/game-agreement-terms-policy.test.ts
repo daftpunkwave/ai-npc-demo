@@ -251,11 +251,11 @@ describe("条款校验边界", () => {
     ]);
     expect(deliver.commandStatus).toBe("rejected");
     expect(deliver.reasonCode).toBe("invalid-terms");
-    // 岑雁不持有水闸分水账。
-    const share = proposeAgreementCommand(value, playerAuth(value), ["player-1", "npc-cenyan"], [
+    // 祁录不持有水闸分水账。
+    const share = proposeAgreementCommand(value, playerAuth(value), ["player-1", "npc-qilu"], [
       {
         kind: "share-evidence",
-        obligorId: "npc-cenyan",
+        obligorId: "npc-qilu",
         evidenceId: "ev-water-ledger",
         toPrincipalId: "human-neutral",
         byTick: 20,

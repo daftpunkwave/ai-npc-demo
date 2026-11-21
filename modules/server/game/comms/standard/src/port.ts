@@ -180,7 +180,11 @@ class StandardCommsPort implements GameCommsPort {
       .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
   }
 
-  /** 已送达给该主体的通信日志；未到送达 tick 或不在投递名单里的记录照常保留在聚合中但不返回。 */
+  /**
+   * 已送达给该主体的通信日志；未到送达 tick 或不在投递名单里的记录照常保留在聚合中但不返回。
+   * 保留窗口按送达 tick 取最近 limit 条：提交早但送达晚的消息在送达当刻仍落在窗口内，
+   * 不会被之后提交、更早送达的消息挤出收件箱。
+   */
   messagesFor(principalId: string, limit: number): readonly CommsMessageView[] {
     const limitValue = Math.max(0, Math.trunc(limit));
     if (limitValue === 0) {
@@ -209,7 +213,9 @@ class StandardCommsPort implements GameCommsPort {
     return delivered
       .sort(
         (left, right) =>
-          left.committedAtTick - right.committedAtTick || left.messageId.localeCompare(right.messageId),
+          left.deliverAtTick - right.deliverAtTick ||
+          left.committedAtTick - right.committedAtTick ||
+          left.messageId.localeCompare(right.messageId),
       )
       .slice(-limitValue);
   }

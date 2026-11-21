@@ -6,12 +6,22 @@
 import { describe, expect, it } from "vitest";
 import {
   agreementProposePayloadSchema,
+  agreementRespondPayloadSchema,
   cardEffectSchema,
   commandPayloadSchemas,
   commandRequestSchema,
   commandTypeSchema,
   commandTypes,
+  dialogueSayPayloadSchema,
+  informationSharePayloadSchema,
   overrideEffectSchema,
+  policySetPayloadSchema,
+  probeAskPayloadSchema,
+  scenarioCompensatePayloadSchema,
+  scenarioDraftPayloadSchema,
+  scenarioOverridePayloadSchema,
+  seatSayPayloadSchema,
+  speechCommitPayloadSchema,
   termSchema,
 } from "../src/index";
 import { expectInvalid, expectValid } from "./support";
@@ -207,6 +217,73 @@ describe("协议条款 Term", () => {
     expectInvalid(termSchema, { ...deliverTerm, obligorId: "" });
     expectInvalid(termSchema, { ...deliverTerm, amount: 0 });
     expectInvalid(termSchema, { ...deliverTerm, byTick: -1 });
+  });
+});
+
+describe("命令输入上限", () => {
+  const principals = Array.from({ length: 21 }, (_, index) => `principal-${index}`);
+  const withinLimit = principals.slice(0, 20);
+  const tooManyTerms = Array.from({ length: 21 }, () => deliverTerm);
+  const termsWithinLimit = Array.from({ length: 20 }, () => deliverTerm);
+  const longText = "长".repeat(301);
+  const maxText = "长".repeat(300);
+
+  it("政策键、自由文本与侦察问题拒绝超长输入", () => {
+    expectInvalid(policySetPayloadSchema, { key: "k".repeat(121), value: "rotation" });
+    expectValid(policySetPayloadSchema, { key: "k".repeat(120), value: "rotation" });
+    expectInvalid(dialogueSayPayloadSchema, { targetAgentId: agentId, text: longText });
+    expectInvalid(probeAskPayloadSchema, { ...(validPayloads["probe.ask"] as object), question: longText });
+    expectValid(probeAskPayloadSchema, { ...(validPayloads["probe.ask"] as object), question: maxText });
+    expectInvalid(scenarioDraftPayloadSchema, {
+      ...(validPayloads["scenario.draft"] as object),
+      note: longText,
+    });
+    expectInvalid(scenarioCompensatePayloadSchema, {
+      ...(validPayloads["scenario.compensate"] as object),
+      note: longText,
+    });
+    expectInvalid(scenarioOverridePayloadSchema, {
+      ...(validPayloads["scenario.override"] as object),
+      note: longText,
+    });
+  });
+
+  it("协议当事人与条款数量有上限，且上限内仍合法", () => {
+    expectInvalid(agreementProposePayloadSchema, { parties: principals, terms: [deliverTerm] });
+    expectInvalid(agreementProposePayloadSchema, {
+      parties: ["player-1", "human-neutral"],
+      terms: tooManyTerms,
+    });
+    expectValid(agreementProposePayloadSchema, {
+      parties: withinLimit,
+      terms: termsWithinLimit,
+      expiresInTicks: 24,
+    });
+    expectInvalid(agreementRespondPayloadSchema, {
+      agreementId,
+      response: "counter",
+      counterTerms: tooManyTerms,
+    });
+    expectValid(agreementRespondPayloadSchema, {
+      agreementId,
+      response: "counter",
+      counterTerms: termsWithinLimit,
+    });
+  });
+
+  it("通信受众名单有上限，且上限内仍合法", () => {
+    expectInvalid(speechCommitPayloadSchema, {
+      ...(validPayloads["speech.commit"] as object),
+      audience: principals,
+    });
+    expectValid(speechCommitPayloadSchema, {
+      ...(validPayloads["speech.commit"] as object),
+      audience: withinLimit,
+    });
+    expectInvalid(informationSharePayloadSchema, { evidenceId: "ev-flood-log", audience: principals });
+    expectValid(informationSharePayloadSchema, { evidenceId: "ev-flood-log", audience: withinLimit });
+    expectInvalid(seatSayPayloadSchema, { to: principals, text: "收到" });
+    expectValid(seatSayPayloadSchema, { to: withinLimit, text: "收到" });
   });
 });
 

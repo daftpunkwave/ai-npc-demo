@@ -17,6 +17,8 @@ reasonCodes:
   obligor-not-party: 承担义务的人不是当事人。
   deadline-out-of-range: 期限超出允许范围。
   not-a-party: 你不是这份协议的当事人。
+  unknown-party: 协议当事人里有不存在的身份。
+  counter-limit-reached: 还价次数已达上限。
   agreement-not-open: 协议已不在可回复状态。
   already-responded: 你已经回复过这份协议。
   team-busy: 队伍正忙。

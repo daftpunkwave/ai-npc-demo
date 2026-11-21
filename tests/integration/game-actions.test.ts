@@ -27,6 +27,7 @@ import {
   type GameHarness,
   type Receipt,
 } from "./game-agreement-support";
+import { withGamePorts } from "./game-support";
 
 const harness = useStartedGameHarnesses();
 
@@ -211,6 +212,33 @@ describe("任务行动", () => {
       expect(delayed[0]?.payload).toMatchObject({ taskId, cause: "road-risk" });
     }
     expect(readGameAggregate(value, "team", "team-rubble")).toMatchObject({ nodeId: "archive", status: "idle" });
+  });
+
+  it("侦察发现的知识按任务受众授予派遣者、参与者与队伍派系", async () => {
+    const value = await harness({ worldPortWrapper: withCommuneCapabilities(["scout"]) });
+    const taskId = dispatchTask(value, playerAuth(value), {
+      taskType: "scout",
+      teamId: "team-commons",
+      params: { nodeId: "watergate" },
+    });
+    advanceTo(value, 1);
+    advanceTo(value, 20);
+    expect(taskView(value, taskId)).toMatchObject({ status: "completed" });
+    expect(readGameEventAudience(value, "ScoutReported")).toEqual([
+      { kind: "principals", ids: ["player-1"] },
+      { kind: "faction", factionId: "human-neutral" },
+    ]);
+    // 知识授权与 ScoutReported 同一受众：派遣者、队伍派系战略主体与其角色可读，无关派系不可读。
+    const knowledge = withGamePorts(value, (ports) => ({
+      dispatcher: ports["game.comms"].knowledgeOf("player-1").map((entry) => entry.itemId),
+      faction: ports["game.comms"].knowledgeOf("human-neutral").map((entry) => entry.itemId),
+      factionMember: ports["game.comms"].knowledgeOf("npc-qilu").map((entry) => entry.itemId),
+      outsider: ports["game.comms"].knowledgeOf("species-fauna").map((entry) => entry.itemId),
+    }));
+    for (const itemIds of [knowledge.dispatcher, knowledge.faction, knowledge.factionMember]) {
+      expect(itemIds).toContain("ev-sluice-leak");
+    }
+    expect(knowledge.outsider).not.toContain("ev-sluice-leak");
   });
 
   it("任务取消释放预留并恢复委托与队伍", async () => {
