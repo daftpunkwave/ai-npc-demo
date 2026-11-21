@@ -77,6 +77,33 @@ function branchTable(host: RunningHost, name: string) {
   return host.storage.transact((tx) => tx.branch(host.branchId).table(name).list());
 }
 
+/** 在指定分支预置 status='active' 的活动身份，模拟其他 run 或分支占用的配额。 */
+function seedActiveAgents(host: RunningHost, branchId: string, agentIds: readonly string[]): void {
+  host.storage.transact((tx) => {
+    const table = tx.branch(branchId).table("agent_activations");
+    for (const agentId of agentIds) {
+      table.put({ agent_id: agentId, status: "active", updated_at: "2026-11-21T00:00:00.000Z" });
+    }
+  });
+}
+
+/** 新建一个同部署的活动实验分支，用于验证配额跨分支计数。 */
+function seedExperimentBranch(host: RunningHost, branchId: string): void {
+  host.storage.transact((tx) => {
+    tx.rows("branches").put({
+      branch_id: branchId,
+      world_id: host.worldId,
+      kind: "experiment",
+      status: "active",
+      parent_branch_id: null,
+      forked_at_world_seq: null,
+      run_id: null,
+      profile_hash: null,
+      created_at: "2026-11-21T00:00:00.000Z",
+    });
+  });
+}
+
 const rosterAgentIds = loadRoster("standard-15", { configDir: resolve("config"), env: process.env })
   .value.agents.map(({ agentId }) => agentId);
 
@@ -110,12 +137,7 @@ describe("主装配 campaign.start 名册激活配额", () => {
   it("活动身份已达 15 时开局按 budget-exhausted 拒绝且不落库", async () => {
     const host = await startStandardHost();
     // 预置 15 个外来活动身份，模拟实验或探针分支已占满部署级配额。
-    host.storage.transact((tx) => {
-      const table = tx.branch(host.branchId).table("agent_activations");
-      for (let index = 0; index < 15; index += 1) {
-        table.put({ agent_id: `agent-experiment-${index}`, status: "active", updated_at: "2026-11-21T00:00:00.000Z" });
-      }
-    });
+    seedActiveAgents(host, host.branchId, Array.from({ length: 15 }, (_, index) => `agent-experiment-${index}`));
     const envelope = gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000002");
 
     const receipt = host.authority.commands.execute(playerAuth(host), envelope);
@@ -137,5 +159,44 @@ describe("主装配 campaign.start 名册激活配额", () => {
     expect(replay).toEqual(receipt);
     expect(branchTable(host, "command_receipts")).toHaveLength(1);
     expect(activeActivationCount(host)).toBe(15);
+  }, 30_000);
+
+  it("部署级配额只差一名时开局同样拒绝且不产生写入", async () => {
+    const host = await startStandardHost();
+    // 名册需要 15 个名额，预置 1 个活动身份后开局将超出部署级 15 上限。
+    seedActiveAgents(host, host.branchId, ["agent-experiment-0"]);
+    const envelope = gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000003");
+
+    const receipt = host.authority.commands.execute(playerAuth(host), envelope);
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("budget-exhausted");
+    expect(receipt.acceptedEventIds).toEqual([]);
+
+    expect(branchTable(host, "aggregate_state")).toEqual([]);
+    expect(branchTable(host, "domain_events")).toEqual([]);
+    expect(branchTable(host, "controller_leases")).toEqual([]);
+    expect(branchTable(host, "agent_activations")).toHaveLength(1);
+    expect(activeActivationCount(host)).toBe(1);
+  }, 30_000);
+
+  it("其他活动分支占满配额时在线分支开局被拒绝且在线分支不落库", async () => {
+    const host = await startStandardHost();
+    // 配额计数覆盖部署内所有活动或暂停分支：实验分支占满 15 名额后在线开局同样被拒。
+    const experimentBranchId = "br-experiment-0001";
+    seedExperimentBranch(host, experimentBranchId);
+    seedActiveAgents(host, experimentBranchId, Array.from({ length: 15 }, (_, index) => `agent-experiment-${index}`));
+    const envelope = gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000004");
+
+    const receipt = host.authority.commands.execute(playerAuth(host), envelope);
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("budget-exhausted");
+    expect(receipt.acceptedEventIds).toEqual([]);
+
+    expect(branchTable(host, "aggregate_state")).toEqual([]);
+    expect(branchTable(host, "domain_events")).toEqual([]);
+    expect(branchTable(host, "controller_leases")).toEqual([]);
+    expect(branchTable(host, "agent_activations")).toEqual([]);
+    expect(activeActivationCount(host)).toBe(15);
+    expect(branchTable(host, "command_receipts")).toHaveLength(1);
   }, 30_000);
 });
