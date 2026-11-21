@@ -384,6 +384,7 @@ export const playerProjectionSchema = z
     characters: z.array(characterViewSchema),
     tasks: z.array(playerTaskViewSchema),
     agreements: z.array(agreementViewSchema),
+    /** 保留字段：首版规则只邀请 Agent 角色，玩家不会被邀请，因此恒为空数组。 */
     invitations: z.array(invitationViewSchema),
     conversations: z.array(conversationLineSchema),
     inbox: z.array(inboxItemViewSchema),

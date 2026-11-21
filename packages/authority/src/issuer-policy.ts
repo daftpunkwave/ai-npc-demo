@@ -6,7 +6,11 @@
 import type { AuthContext, CommandType, PrincipalKind } from "@ai-npc/contracts";
 import { effectivePrincipalKind } from "./types";
 
-/** 命令发行者矩阵，与领域命令目录的 issuer 列保持一致。 */
+/**
+ * 命令发行者矩阵，按契约主体类型表达：player / agent / operator / researcher / system。
+ * 领域模型命令目录中的席位（S）、运营（O）、宿主（H）与实验运行器（R）不逐字对应主体类型：
+ * 席位命令由 operator 发行，宿主与实验运行器使用 system，真人席位代发按 agent 裁决。
+ */
 export const commandIssuerKinds = {
   "campaign.start": ["player", "system"],
   "dialogue.say": ["player"],

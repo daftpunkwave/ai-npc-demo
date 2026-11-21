@@ -98,7 +98,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `platform.evaluation.standard` | service | run | `platform.evaluation` | 审计重放、开环重决策、闭环运行、指标与报告 |
 | `platform.operations.standard` | service | run | `platform.operations` | 暂停/快照/恢复、席位交接、内容发布与补偿操作 |
 | `platform.module-admin.standard` | service | deployment | `platform.module-admin` | catalog 快照、装配预检、diff、冻结与更换流程 |
-| `platform.secrets.env` | service | deployment | `platform.secrets` | 只向服务端适配器解析 credentialRef，浏览器永远拿不到 |
+| `platform.secrets.env` | adapter | deployment | `platform.secrets` | 只向服务端适配器解析 credentialRef，浏览器永远拿不到 |
 | `platform.model-transport.openai-compatible` | adapter | deployment | `platform.model-transport` | Chat Completions 协议（DeepSeek、Kimi、通义、Ollama、vLLM 等）；映射见 [模型传输](../agent/model-transport.md) 第 3 节 |
 | `platform.model-transport.anthropic` | adapter | deployment | `platform.model-transport` | Anthropic 官方 SDK 的 Messages API；映射见 [模型传输](../agent/model-transport.md) 第 4 节 |
 | `platform.model-transport.deterministic` | adapter | deployment | `platform.model-transport` | CI/测试用确定性响应，不产生外部费用；只出现在测试装配 |

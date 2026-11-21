@@ -17,6 +17,7 @@ export * from "./envelopes";
 export * from "./commands";
 export * from "./events";
 export * from "./projection";
+export * from "./scenario";
 export * from "./agent-world-view";
 export * from "./modules";
 export * from "./storage";

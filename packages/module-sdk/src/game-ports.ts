@@ -14,7 +14,9 @@ import type {
   ResourceAmounts,
   ResourceDelta,
   ResourceId,
+  ResourceLevel,
   RoadStatus,
+  ScenarioCardStatus,
   StorageTransaction,
   TaskStatus,
   TaskType,
@@ -22,6 +24,8 @@ import type {
   WatergateAllocation,
 } from "@ai-npc/contracts";
 import type { WorldTx } from "./ports";
+
+export type { ResourceLevel, ScenarioCardStatus };
 
 /** 只取调用模块自己作用域事务的工厂；模块端口不得借它读取或改写其他模块的聚合。 */
 export type OwnWorldTxFactory = () => WorldTx;
@@ -247,9 +251,7 @@ export interface RouteResult {
   readonly travelTicks: number;
 }
 
-/** 资源展示等级。 */
-export type ResourceLevel = "scarce" | "adequate" | "surplus";
-
+/** 资源展示等级；与公共契约的库存等级词表一致。 */
 /** 库存点快照。 */
 export interface StockpileView {
   readonly stockpileId: string;
@@ -565,11 +567,11 @@ export interface GameAgreementsPort {
   countsAsOf(tick: number): AgreementCounts;
 }
 
-/** 剧情卡查询端口；具体卡状态由剧情模块拥有。 */
+/** 剧情卡查询端口；具体卡状态由剧情模块拥有，词表与公共契约一致。 */
 export interface ScenarioCardView {
   readonly cardId: string;
   readonly version: number;
-  readonly status: "draft" | "published" | "triggered" | "withdrawn";
+  readonly status: ScenarioCardStatus;
   readonly triggerAtTick: number;
 }
 

@@ -12,6 +12,10 @@ import { asPorts, type AgreementContext } from "./agreement-shared";
 import { readAgreementState, type AgreementState } from "./state";
 import { validateTerms } from "./terms";
 
+/** 协议提案的默认有效期与允许的最长窗口；与公共契约的 payload 默认值保持一致。 */
+const defaultAgreementExpiryTicks = 24;
+const maxAgreementWindowTicks = 168;
+
 /** 新提案的初始状态；提出者默认已接受，其余当事人待回复。 */
 function initialState(
   context: AgreementContext,
@@ -116,12 +120,12 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
   return { ok: true };
 }
 
-/** 提出协议：提出者必须是当事人，条款需通过校验，期限上限为 168 tick。 */
+/** 提出协议：提出者必须是当事人，条款需通过校验，期限超过 168 tick 时显式拒绝。 */
 export function propose(context: AgreementContext, payload: Json): HandlerResult {
   const input = payload as unknown as {
     readonly parties: readonly string[];
     readonly terms: readonly Term[];
-    readonly expiresInTicks?: number;
+    readonly expiresInTicks: number;
   };
   const proposerId = effectivePrincipalId(context.auth);
   if (!input.parties.includes(proposerId)) {
@@ -131,7 +135,14 @@ export function propose(context: AgreementContext, payload: Json): HandlerResult
   if (invalid !== null) {
     return { kind: "rejected", reasonCode: invalid, safeMessage: "协议条款不合法" };
   }
-  const expiresAtTick = context.tx.worldTick + Math.min(input.expiresInTicks ?? 24, 168);
+  if (input.expiresInTicks > maxAgreementWindowTicks) {
+    return {
+      kind: "rejected",
+      reasonCode: "deadline-out-of-range",
+      safeMessage: `协议有效期不能超过 ${maxAgreementWindowTicks} tick`,
+    };
+  }
+  const expiresAtTick = context.tx.worldTick + input.expiresInTicks;
   const state = initialState(context, input.terms, input.parties, proposerId, null, 1, expiresAtTick);
   context.tx.put("agreement", state.agreementId, state);
   context.tx.emit(
@@ -198,7 +209,7 @@ export function respond(context: AgreementContext, payload: Json): HandlerResult
       actor,
       state.agreementId,
       state.version + 1,
-      context.tx.worldTick + 24,
+      context.tx.worldTick + defaultAgreementExpiryTicks,
     );
     context.tx.put("agreement", state.agreementId, { ...state, status: "superseded", supersededBy: next.agreementId });
     context.tx.put("agreement", next.agreementId, next);

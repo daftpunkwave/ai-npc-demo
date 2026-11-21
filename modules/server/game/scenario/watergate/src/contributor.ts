@@ -221,10 +221,10 @@ function compensate(context: ScenarioContext, payload: Json): HandlerResult {
   };
   const state = readCardState(context.tx, input.cardId);
   if (state === null) {
-    return { kind: "rejected", reasonCode: "invalid-effect", safeMessage: "补偿来源卡片不存在" };
+    return { kind: "rejected", reasonCode: "card-not-found", safeMessage: "补偿来源卡片不存在" };
   }
   if (state.status !== "triggered") {
-    return { kind: "rejected", reasonCode: "invalid-effect", safeMessage: "补偿来源卡片尚未触发" };
+    return { kind: "rejected", reasonCode: "card-not-triggered", safeMessage: "补偿来源卡片尚未触发" };
   }
   const invalidEffect = invalidEffectReferences(requireGameContent(context.content), input.effects);
   if (invalidEffect !== null) {

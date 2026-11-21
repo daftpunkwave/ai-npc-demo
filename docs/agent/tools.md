@@ -237,7 +237,7 @@ const ToolTerm = z.object({                   // flat version of the Term union;
 | `operation.inspect` | `{ operationId }` | 查询本身份操作的 receipt | `receipt`、`taskStatus` | 查询你本轮发出的某个操作是否已被受理。 |
 | `message.send` | `{ to: string[], intent: { kind, tone, reasonCode, subjectRef: string \| null, factRefs: string[] } }` | 先走对白流程生成并校验正文，再提交 `speech.commit`（channel message；`to` 为 `["public"]` 时为 broadcast，需要 broadcast 权限） | envelope + `messageId`、`deliverAtTick` | 给某人发一条消息。只描述想表达的意图和依据，正文由系统生成。 |
 | `information.share` | `{ evidenceId, audience: string[] }` | 命令 `information.share` | envelope + `shareId`、`deliverAtTick` | 把你持有的一条证据交给指定对象。 |
-| `agreement.propose` | `{ parties: string[], terms: ToolTerm[], expiresInTicks: number \| null }` | 命令 `agreement.propose` | envelope + `agreementId` | 提出一份协议。你提出即视为你已同意，其他当事人接受后生效。 |
+| `agreement.propose` | `{ parties: string[], terms: ToolTerm[], expiresInTicks?: number }`（默认 24，范围 1–168） | 命令 `agreement.propose` | envelope + `agreementId` | 提出一份协议。你提出即视为你已同意，其他当事人接受后生效。 |
 | `agreement.respond` | `{ agreementId, response: "accept" \| "reject" \| "counter", counterTerms: ToolTerm[] \| null }` | 命令 `agreement.respond` | envelope + `agreementStatus` | 接受、拒绝或还价一份发给你的协议提案。 |
 | `asset.dispatch` | `{ taskType, teamId, invitees: string[], params: DispatchParams, departAfterTicks: number \| null }` | 命令 `task.dispatch` | envelope + `taskId`、`departTick` | 派遣你有权调动的队伍执行运输、护送、救援、修复或侦察，可以邀请角色同行。 |
 | `task.respond` | `{ taskId, response: "accept" \| "decline", reasonCode }` | 命令 `task.respond` | envelope | 回复一项任务邀请：参加或拒绝，并说明理由类别。 |

@@ -488,7 +488,7 @@ describe("服务端宿主", () => {
       headers: { ...consoleHeaders, "x-active-role": "admin" },
     });
     expect(invalidRole.statusCode).toBe(403);
-    // 默认名册授权 operator 与 researcher；会话未持有的 evaluator 角色仍被拒绝。
+    // 控制台通用门禁默认授权 operator、researcher 与 evaluator；健康页允许角色列表只含 operator 与 researcher，因此 evaluator 仍被页面级校验拒绝。
     const researcherAllowed = await host.app.inject({
       method: "GET",
       url: "/api/v1/console/health",

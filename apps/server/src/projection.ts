@@ -612,6 +612,7 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
     characters,
     tasks,
     agreements,
+    // 首版规则只邀请 Agent 角色，玩家不会被邀请；字段保留给后续多席位邀请，当前恒为空。
     invitations: [],
     conversations,
     inbox,
