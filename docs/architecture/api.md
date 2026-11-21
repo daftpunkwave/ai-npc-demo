@@ -45,6 +45,8 @@
 | `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；玩家会话请求 `realm=console` 返回 403 |
 | `POST /api/v1/streams/ticket` | — | `{ ticket, expiresAt }` | 一次性 WS 票据，30 秒内有效 |
 
+会话数量有上限。容量满时服务端先清理过期会话，再淘汰没有活动 WS 连接且最早过期的会话；如果剩余会话都保持活动连接，登录返回 429 `budget-exhausted`（`retryable: true`），不会驱逐活跃会话。
+
 ## 3. 玩家 API（角色 `player`）
 
 本节是玩家自助入口：暂停、继续、存档、恢复与重新开局都由玩家会话直接作用于在线分支。控制台运营角色使用第 5.3 节的 `/api/v1/console/campaign/*` 入口；两者路径、角色与幂等主体各自独立，互不复用。
@@ -99,6 +101,8 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 ## 4. WebSocket：`GET /api/v1/streams?ticket=<ticket>`
 
 连接建立后，服务端先发 `hello`。客户端订阅 `player` 后接收快照与增量。所有消息都是 JSON 文本帧。
+
+客户端帧有 64 KiB 上限。超过上限的帧不会进入消息处理器，服务端审计该事件并以 1009 关闭连接；正常的 `subscribe`、`ack` 与 `ping` 帧远小于上限。
 
 | 方向 | 消息 | 字段 |
 |---|---|---|

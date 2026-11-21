@@ -253,6 +253,8 @@ interface AppOverrides {
   /** 收集传输层上报的内部错误；缺省保持静默。 */
   readonly onInternalError?: (message: string, error: unknown) => void;
   readonly consoleStaticDir?: string;
+  /** 覆盖会话容量上限；用于验证满容量时的拒绝语义。 */
+  readonly maxSessions?: number;
 }
 
 /** 用真实回执表构造只读查询端口；传输层不接触表结构。 */
@@ -324,6 +326,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     ...(overrides.consoleStaticDir === undefined
       ? {}
       : { consoleStaticDir: overrides.consoleStaticDir }),
+    ...(overrides.maxSessions === undefined ? {} : { maxSessions: overrides.maxSessions }),
   });
   apps.push(app);
   return app;
@@ -1376,6 +1379,15 @@ describe("服务端 API", () => {
       readonly code: string;
     }[] = [
       { label: "登录结构非法", method: "POST", url: "/api/v1/auth/login", payload: {}, status: 400, code: "validation" },
+      // 与合法令牌等长但内容不同：登录仍按 401 拒绝，不因摘要索引而放行。
+      {
+        label: "登录令牌等长错误",
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { token: "player-tokeN" },
+        status: 401,
+        code: "unauthenticated",
+      },
       { label: "未认证会话", method: "GET", url: "/api/v1/session", status: 401, code: "unauthenticated" },
       {
         label: "玩家访问控制台",
@@ -1923,6 +1935,64 @@ describe("服务端 API", () => {
 
     client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
     expect(await client.next()).toMatchObject({ type: "snapshot", streamSeq: 1 });
+  });
+
+  it("超过 WS 帧上限的连接以 1009 关闭，帧不进入消息处理器", async () => {
+    const value = await createTrackedGameHarness(active);
+    const reported: string[] = [];
+    const app = await appFor(value, {
+      onInternalError: (message) => {
+        reported.push(message);
+      },
+    });
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+
+    // 合法 subscribe 帧只有数百字节；带 70 KiB 填充的帧超过 64 KiB 上限。
+    client.send({
+      type: "subscribe",
+      channel: "player",
+      fromStreamSeq: null,
+      padding: "x".repeat(70 * 1024),
+    });
+    expect((await client.closed()).code).toBe(1009);
+    expect(reported).toContain("WS 帧超过上限");
+    // 超限帧不进入处理器：连接关闭前没有 snapshot/error 等响应帧。
+    await client.expectNoMessage(100);
+    await waitFor(() => app.streamStats().connections === 0);
+    expect(app.streamStats().sessions).toBe(1);
+  });
+
+  it("会话容量满时活跃连接保持在线，新登录返回 429", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value, { maxSessions: 1 });
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { token: "player-token" },
+    });
+    expect(rejected.statusCode).toBe(429);
+    const body = errorResponseSchema.parse(rejected.json());
+    expect(body.error).toMatchObject({ code: "budget-exhausted", retryable: true });
+    expect(body.error.safeMessage.length).toBeGreaterThan(0);
+
+    // 活跃会话不被驱逐：原连接仍可订阅并收到快照，原令牌仍可读取会话。
+    client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
+    expect(await client.next()).toMatchObject({ type: "snapshot", channel: "player" });
+    const stillAuthenticated = await app.inject({
+      method: "GET",
+      url: "/api/v1/session",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(stillAuthenticated.statusCode).toBe(200);
+    expect(app.streamStats()).toMatchObject({ sessions: 1, connections: 1 });
   });
 
   it("注销关闭该会话的连接并使其票据失效，不影响其他会话", async () => {

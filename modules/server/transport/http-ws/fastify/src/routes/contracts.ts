@@ -235,6 +235,8 @@ export interface ServerAppOptions {
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
   /** 认证、票据与过期判断使用的当前毫秒时间；默认 Date.now，测试可注入。 */
   readonly now?: () => number;
+  /** 会话数量上限；缺省沿用流中心默认值。容量满时只淘汰无活动连接的会话。 */
+  readonly maxSessions?: number;
   /** 已构建控制台静态资源目录；不存在时不注册 /console/* 页面。 */
   readonly consoleStaticDir?: string;
   /** 观测写入口；失败不得改变已经确定的 HTTP 响应。 */
