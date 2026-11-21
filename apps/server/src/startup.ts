@@ -92,8 +92,13 @@ export async function startServer(options: StartServerOptions): Promise<StartupH
     try {
       staged.publish();
     } catch (error) {
-      // 令牌已输出且本进程继续使用；发布失败只影响跨重启复用，明确报告而不静默降级。
-      logError(`[ai-npc] 凭据文件原子发布失败，本次令牌仅在当前进程有效：${errorMessage(error)}`);
+      // 凭据无法持久化时不能把“监听已就绪”当成成功：关闭宿主并让启动失败，旧凭据文件保持不变。
+      try {
+        await running.close();
+      } catch (closeError) {
+        logError(`[ai-npc] 凭据发布失败后关闭宿主失败：${errorMessage(closeError)}`);
+      }
+      throw new Error(`凭据文件原子发布失败，启动已终止：${errorMessage(error)}`, { cause: error });
     }
   }
   return running;

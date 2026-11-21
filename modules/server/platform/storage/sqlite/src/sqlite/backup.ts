@@ -1,11 +1,20 @@
 /**
- * 用 VACUUM INTO 生成整库一致副本：先写入同目录暂存文件，校验非空与完整性后原子改名为最终 .db。
- * 依赖 node:fs 创建目录、原子改名、设置权限与失败清理，node:sqlite 执行 VACUUM INTO 与完整性检查；
- * 时间戳与暂存文件名的唯一后缀由宿主注入，公共契约提供备份类型。
+ * 用 VACUUM INTO 生成整库一致副本：先写入 0700 暂存目录，校验非空与完整性并收紧权限，
+ * 再以硬链接独占发布为最终 .db；发布后按数量保留策略清理旧备份。
+ * 依赖 node:fs 创建目录、原子链接、权限与失败清理，node:sqlite 执行 VACUUM INTO 与完整性检查；
+ * 时间戳与暂存文件名由宿主注入，公共契约提供备份类型。
  * 禁止复制正在写入的库文件、在事务内执行备份、覆盖已有备份文件，或让未通过完整性检查的文件以最终名称出现。
  */
 /* eslint-disable security/detect-non-literal-fs-filename -- 备份目录由配置的 dataDir 推导，label 已由 backupOptionsSchema 限定为小写字母/数字/连字符。 */
-import { chmodSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  linkSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -16,24 +25,32 @@ import {
   type HostServices,
 } from "@ai-npc/contracts";
 
-/** 已发布备份的运行时记录：路径、字节数、完整性校验结果与实际权限位（Windows 权限位语义受限）。 */
+/** 备份保留上限：成功发布后只保留最近的若干份，避免无界增长。 */
+export const maxRetainedBackups = 20;
+
+/** 已发布备份的运行记录：路径、字节数、完整性结论、实际权限位与保留清理结果。 */
 export interface PublishedBackup extends BackupResult {
   readonly integrityCheck: "ok";
   readonly mode: number;
+  readonly retentionLimit: number;
+  readonly removedBackups: number;
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** 删除暂存备份；文件已不存在视为已清理，其余失败返回原因供调用方记录。 */
-function removeStagingFile(stagingPath: string): string | null {
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException).code;
+}
+
+/** 删除暂存目录；目录已不存在视为已清理，其余失败返回原因供调用方记录。 */
+function removeStagingDirectory(stagingDirectory: string): string | null {
   try {
-    unlinkSync(stagingPath);
+    rmSync(stagingDirectory, { recursive: true, force: true });
     return null;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    return code === "ENOENT" ? null : errorMessage(error);
+    return errorMessage(error);
   }
 }
 
@@ -66,7 +83,57 @@ function verifyStagedBackup(stagingPath: string): void {
   }
 }
 
-/** 在数据目录下生成一份可重新打开的整库备份；同名文件已存在时追加序号而不是覆盖。 */
+/**
+ * 独占发布暂存备份：用硬链接创建最终名称，已存在时追加序号重试，避免并发备份互相覆盖。
+ * 返回实际发布的路径；链接由同一目录内的暂存文件生成，不复制内容。
+ */
+function publishStagedBackup(stagingPath: string, backupDir: string, baseName: string): string {
+  for (let suffix = 1; suffix <= maxRetainedBackups * 5; suffix += 1) {
+    const candidate = join(backupDir, suffix === 1 ? `${baseName}.db` : `${baseName}-${suffix}.db`);
+    try {
+      linkSync(stagingPath, candidate);
+      return candidate;
+    } catch (error) {
+      if (errorCode(error) !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  throw new Error("同名备份候选过多，无法独占发布");
+}
+
+/**
+ * 按文件名时间戳保留最近的 maxRetainedBackups 份备份，删除更旧的文件。
+ * 清理失败只记录日志，不回滚已经成功发布的备份。
+ */
+function pruneBackups(backupDir: string, host: HostServices, currentPath: string): number {
+  let names: readonly string[];
+  try {
+    names = readdirSync(backupDir)
+      .filter((name) => /^ai-npc-.*\.db$/.test(name))
+      .sort()
+      .reverse();
+  } catch (error) {
+    host.logger.warn("读取备份目录失败，跳过保留清理", { message: errorMessage(error) });
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names.slice(maxRetainedBackups)) {
+    const path = join(backupDir, name);
+    if (path === currentPath) {
+      continue;
+    }
+    try {
+      unlinkSync(path);
+      removed += 1;
+    } catch (error) {
+      host.logger.warn("清理旧备份失败", { path, message: errorMessage(error) });
+    }
+  }
+  return removed;
+}
+
+/** 在数据目录下生成一份可重新打开的整库备份；同名文件已存在时占用下一个序号而不是覆盖。 */
 export function backupDatabase(
   database: DatabaseSync,
   dataDir: string,
@@ -78,29 +145,36 @@ export function backupDatabase(
   mkdirSync(backupDir, { recursive: true });
   const stamp = timestampForFileName(host.nowIso());
   const baseName = parsed.label === undefined ? `ai-npc-${stamp}` : `ai-npc-${stamp}-${parsed.label}`;
-  let targetPath = join(backupDir, `${baseName}.db`);
-  let suffix = 2;
-  while (existsSync(targetPath)) {
-    targetPath = join(backupDir, `${baseName}-${suffix}.db`);
-    suffix += 1;
-  }
-  // 暂存名带宿主生成的唯一后缀且不以 .db 结尾：崩溃或失败时不会被当作有效备份。
-  const stagingPath = join(backupDir, `${baseName}.${host.ids("backup")}.partial`);
+  // 暂存目录权限 0700：VACUUM INTO 生成期间的内容不会先以默认权限暴露给其他用户。
+  const stagingDirectory = join(backupDir, `${baseName}.${host.ids("backup")}.partial`);
+  const stagingPath = join(stagingDirectory, "backup.db");
   try {
+    mkdirSync(stagingDirectory, { recursive: true, mode: 0o700 });
     database.exec(`VACUUM INTO '${escapeSqlString(stagingPath)}'`);
     verifyStagedBackup(stagingPath);
     // VACUUM INTO 生成的文件继承进程默认权限；发布前显式收紧为仅当前用户可读写。
     chmodSync(stagingPath, 0o600);
     const stats = statSync(stagingPath);
     const mode = stats.mode & 0o777;
-    renameSync(stagingPath, targetPath);
-    return { path: targetPath, byteSize: stats.size, integrityCheck: "ok", mode };
+    const targetPath = publishStagedBackup(stagingPath, backupDir, baseName);
+    const removedBackups = pruneBackups(backupDir, host, targetPath);
+    return {
+      path: targetPath,
+      byteSize: stats.size,
+      integrityCheck: "ok",
+      mode,
+      retentionLimit: maxRetainedBackups,
+      removedBackups,
+    };
   } catch (error) {
-    const cleanupError = removeStagingFile(stagingPath);
-    const cleanupSuffix = cleanupError === null ? "" : `；删除暂存文件失败：${cleanupError}`;
+    const cleanupError = removeStagingDirectory(stagingDirectory);
+    const cleanupSuffix = cleanupError === null ? "" : `；删除暂存目录失败：${cleanupError}`;
     throw new DomainError("invalid-state", `生成 SQLite 备份失败：${errorMessage(error)}${cleanupSuffix}`, {
       cause: error,
-      details: { targetPath, stagingPath },
+      details: { stagingPath },
     });
+  } finally {
+    // 成功发布后硬链接已保留内容，暂存目录必须清理；失败时由上面的清理分支处理。
+    removeStagingDirectory(stagingDirectory);
   }
 }

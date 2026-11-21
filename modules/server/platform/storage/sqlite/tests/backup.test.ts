@@ -9,7 +9,7 @@ import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { DomainError } from "@ai-npc/contracts";
-import { backupDatabase } from "../src/sqlite/backup";
+import { backupDatabase, maxRetainedBackups } from "../src/sqlite/backup";
 import { createFakeHost, createTempDataDir, expectDomainError, openStorageHarness, removeTempDataDir, startStorage } from "./support";
 
 /** 从备份实现发出的 VACUUM INTO 语句中取出暂存文件路径，供失败注入使用。 */
@@ -157,4 +157,19 @@ describe("整库备份", () => {
       await harness.dispose();
     }
   });
-});
+  it('成功发布后按数量保留最近备份', async () => {
+    const harness = await openStorageHarness();
+    try {
+      const paths: string[] = [];
+      for (let index = 0; index < maxRetainedBackups + 2; index += 1) {
+        harness.host.nowIso = () => `2026-01-01T00:00:${String(index).padStart(2, "0")}.000Z`;
+        paths.push(harness.port.backup({ label: "rotate" }).path);
+      }
+      const backups = readdirSync(join(harness.dataDir, "backups")).sort();
+      expect(backups).toHaveLength(maxRetainedBackups);
+      expect(backups).not.toContain(basename(paths[0] ?? ""));
+      expect(backups).toContain(basename(paths.at(-1) ?? ""));
+    } finally {
+      await harness.dispose();
+    }
+  });});

@@ -219,6 +219,8 @@ export class SqliteStorage implements StoragePort {
       byteSize: result.byteSize,
       integrityCheck: result.integrityCheck,
       mode: result.mode,
+      retentionLimit: result.retentionLimit,
+      removedBackups: result.removedBackups,
     });
     return result;
   }

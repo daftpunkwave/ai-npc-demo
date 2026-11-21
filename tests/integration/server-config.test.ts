@@ -403,20 +403,26 @@ describe("启动编排", () => {
     });
     const lines: string[] = [];
     const errorLines: string[] = [];
+    const provider = createFakeHostProvider();
+    let caught: unknown;
     try {
       await startServer({
         config,
-        startHost: createFakeHostProvider().startHost,
+        startHost: provider.startHost,
         logLine: (line) => { lines.push(line); },
         logError: (line) => { errorLines.push(line); },
       });
+    } catch (error) {
+      caught = error;
     } finally {
       restoreImplementations(actual);
     }
-    // 令牌已经输出且进程继续可用；失败只影响跨重启复用，但必须明确报告。
+    // 凭据无法持久化时启动必须失败并关闭宿主；已打印的本次登录地址不再视为可用。
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("凭据文件原子发布失败");
+    expect((caught as Error).message).toContain("启动已终止");
+    expect(provider.state.closeCalls).toBe(1);
     expect(lines.some((line) => line.includes("console login:"))).toBe(true);
-    expect(errorLines).toHaveLength(1);
-    expect(errorLines[0]).toContain("凭据文件原子发布失败");
     expect(readFileSync(filePath, "utf8")).toBe(previous);
     expect(readdirSync(config.dataDir)).toEqual([credentialsFileName]);
   });
