@@ -26,6 +26,8 @@ import {
   advanceTicks,
   advanceTo,
   dispatchTask,
+  executeCommand,
+  operatorAuth,
   PARTIAL_SUPPLY_TRANSPORT,
   proposeAgreement,
   proposeAndAccept,
@@ -564,5 +566,70 @@ describe("提醒与收件箱的内容边界", () => {
       text: "听说昨夜巡裔在隘口附近袭击了补给车队。",
       worldTick: 50,
     });
+  });
+
+  it("提交早、送达晚的消息在送达当刻仍出现在收件箱", async () => {
+    const remoteText = "早提交但晚送达的确认。";
+    const remoteArtifactRef = "art-000000000000";
+    const speeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
+      [remoteArtifactRef]: {
+        text: remoteText,
+        agentId: "species-fauna",
+        turnId: "turn-000000000000",
+        branchId: "br-000000000000",
+        audience: ["player-1"],
+        channel: "message",
+        approved: true,
+      },
+    };
+    // npc-wenyuan 与玩家同在灰港，消息立即送达；用于把窗口挤出末尾 50 条。
+    for (let index = 1; index <= 50; index += 1) {
+      speeches[`art-${String(index).padStart(12, "0")}`] = {
+        text: `同节点消息 ${index}`,
+        agentId: "npc-wenyuan",
+        turnId: `turn-${String(index).padStart(12, "0")}`,
+        branchId: "br-000000000000",
+        audience: ["player-1"],
+        channel: "message",
+        approved: true,
+      };
+    }
+    const value = await harness({ approvedSpeech: { read: (ref) => speeches[ref] ?? null } });
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    // 中继降级时异地消息 +3 tick：tick 0 提交的消息到 tick 3 才送达。
+    expect(
+      executeCommand(value, operatorAuth(value), "scenario.override", {
+        effects: [{ kind: "meter-set", meter: "relay.stability", value: 25 }],
+        note: "测试中继降级",
+      }).commandStatus,
+    ).toBe("accepted");
+    const commitMessage = (agentId: string, artifactRef: string) =>
+      value.authority.commands.execute(
+        strategicAuth(value, agentId),
+        gameCommandEnvelope(
+          "speech.commit",
+          {
+            channel: "message",
+            conversationId: null,
+            audience: ["player-1"],
+            approvedSpeechArtifactRef: artifactRef,
+            intentKind: "inform",
+            replyToId: null,
+          },
+          value.host.ids("cmd"),
+        ),
+      );
+    expect(commitMessage("species-fauna", remoteArtifactRef).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 1, mode: "running" });
+    for (let index = 1; index <= 50; index += 1) {
+      expect(commitMessage("npc-wenyuan", `art-${String(index).padStart(12, "0")}`).commandStatus).toBe("accepted");
+    }
+    expect(projection(value).inbox.map((item) => item.text)).not.toContain(remoteText);
+
+    // 送达 tick 变为 3：窗口按送达时间保留，早提交的消息不会因提交顺序被挤出。
+    setGameClock(value, { worldTick: 3, mode: "running" });
+    const inbox = projection(value).inbox;
+    expect(inbox.map((item) => item.text)).toContain(remoteText);
+    expect(inbox).toHaveLength(50);
   });
 });

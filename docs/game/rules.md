@@ -116,7 +116,7 @@
 | escort 护送 | `roadId`、`durationTicks`（6–24，默认 12） | escort | 若不在道路端点，先赶到最近端点，再巡护 `durationTicks` | 无 | 巡护期（从到达端点起 `durationTicks` 个 tick）内出发、经过该道路的任务，对该道路跳过风险抽样；完成时若为迁徙道路，`migration.safety +12`（本派治安/向导支持者参与再 +4，本切片为陆沉；追风参与同效） |
 | rescue 救援 | `groupId`、`toNodeId`（须有医疗设施）、`medicalStockpileId`（须在 `toNodeId`） | rescue | 队伍 → 群体所在节点 → `toNodeId` 的行程；本派医政/救援支持者参与时总用时 −2（至少 1；本切片为穆枝） | 预留医疗材料，数量等于伤员数 | 消耗预留；群体状态变为 rescued，伤员数归 0；`migration.safety +10` |
 | repair 修复 | `target: relay`、`energyStockpileId`、`supplyStockpileId` | repair | 先赶到 grayharbor，再工作 6 tick | 能源 10、供给 5（`team-star` 只需能源 10，`supplyStockpileId` 可为 null）；库存点必须在 grayharbor 或队伍出发节点 | `relay.stability` 按第 4 节增加 |
-| scout 侦察 | `nodeId` | scout | 赶到目标节点，再观察 2 tick；本派情报/侦察支持者（本切片为祁录）或追风参与时每条道路 −1（每条至少 1） | 无 | 提交 `ScoutReported`（受众：派遣者、参与者、队伍所属派系），内容为节点相邻道路状态、在场角色、群体状态；该节点上 `discoverable: true` 的证据经 world 的 `discoverEvidence` op 提交 `EvidenceDiscovered`，再经 comms 的 `grantKnowledge` op 授予受众知识（同一事务） |
+| scout 侦察 | `nodeId` | scout | 赶到目标节点，再观察 2 tick；本派情报/侦察支持者（本切片为祁录）或追风参与时每条道路 −1（每条至少 1） | 无 | 提交 `ScoutReported`（受众：派遣者、参与者、队伍所属派系），内容为节点相邻道路状态、在场角色、群体状态；该节点上 `discoverable: true` 的证据经 world 的 `discoverEvidence` op 提交 `EvidenceDiscovered`，再经 comms 的 `grantKnowledge` op 授予受众知识（同一事务）；知识的受众与 `ScoutReported` 相同，即派遣者、参与者与队伍所属派系（战略 Agent 及其角色） |
 
 取消（`task.cancel`，由派遣者或队伍所属派系的战略 Agent 发起）：
 
@@ -153,13 +153,15 @@
 ```text
 proposed --其余当事人都 accept--> active --全部条款履约--> fulfilled
 proposed --任一当事人 reject--> rejected
-proposed --任一当事人 counter--> superseded（同时生成 version+1 的新提案，提出者为还价方）
+proposed --任一当事人 counter--> superseded（同时生成 version+1 的新提案，提出者为还价方，保留原 expiresAtTick）
 proposed --到 expiresAtTick 仍未生效--> expired（默认在提出后 24 tick；显式 expiresInTicks 允许 1–168，超过 168 返回 deadline-out-of-range，不静默钳制）
 active   --任一条款违约--> breached（其余条款继续追踪，只记录，不改变状态）
 ```
 
 - **提出者在提出时即视为已接受**（`responses[proposerId] = "accept"`）；还价同理，还价方视为已接受新版本。因此两方协议只需另一方 accept 一次即生效；提出者再对自己的提案回复时返回 `already-responded`。
-- 当事人至少两个且互不相同，必须包含提出者；每个条款的义务人都必须是当事人；`byTick`/`untilTick` 必须晚于当前 tick，且不超过当前 tick + 168。
+- 当事人至少两个且互不相同，必须包含提出者；每个当事人都必须是当前世界的已知主体（内容角色、派系战略 Agent 或当前 campaign 的玩家），未知主体返回 `unknown-party`。每个条款的义务人都必须是当事人；`byTick`/`untilTick` 必须晚于当前 tick，且不超过当前 tick + 168。
+- 一次提案与一次还价的条款数都不超过 20 条，避免一份协议一次性安排大量违约检查 job。
+- 还价只替换条款与提出者，保留原提案的绝对到期 tick，不重置为当前 tick + 24，因此反复还价不会延长协商窗口。版本号从 1 起，每次还价加一，达到 5 个版本后拒绝继续还价，原因码 `counter-limit-reached`。
 - 玩家可以成为当事人；玩家承担的资源类义务不能超过其委托余额。
 - 违约检查由每个待履约条款在 `byTick + 1` 的 job 触发，产生 `AgreementBreached`（带 `termIndex` 与 `obligorId`）。
 

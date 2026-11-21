@@ -4,7 +4,12 @@
  * 禁止替当事人应答、跳过生效前校验，或在写入失败时保留部分生效结果。
  */
 import type { Json, ReasonCode, Term } from "@ai-npc/contracts";
-import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@ai-npc/module-sdk";
+import {
+  effectivePrincipalId,
+  principalsAudience,
+  requireGameContent,
+  type HandlerResult,
+} from "@ai-npc/module-sdk";
 import { isSustainedTerm } from "./fulfillment";
 import { finishIfFulfilled } from "./agreement-lifecycle";
 import { cancelAgreementJobs, scheduleBreaches, scheduleExpiry } from "./agreement-schedule";
@@ -12,9 +17,31 @@ import { asPorts, type AgreementContext } from "./agreement-shared";
 import { readAgreementState, type AgreementState } from "./state";
 import { validateTerms } from "./terms";
 
-/** 协议提案的默认有效期与允许的最长窗口；与公共契约的 payload 默认值保持一致。 */
-const defaultAgreementExpiryTicks = 24;
+/** 协议允许的最长有效期；与公共契约 payload 的允许范围保持一致。 */
 const maxAgreementWindowTicks = 168;
+
+/**
+ * 协议允许的最大版本号。版本在每次还价时加一，限制版本即限制还价次数：
+ * 避免反复还价把提案无限期拖下去，也让客户端能以有界历史展示协商过程。
+ */
+const maxAgreementVersion = 5;
+
+/**
+ * 校验当事人中每个主体都是当前世界可承担的已知主体：
+ * 内容角色、派系战略 Agent（含人类党魁与外域 Agent）或当前 campaign 的玩家。
+ * 只确认存在性，具体条款权限仍由条款校验与生效写入裁决。
+ */
+function findUnknownParty(context: AgreementContext, parties: readonly string[]): string | null {
+  const content = requireGameContent(context.content);
+  const campaignPlayerId = context.modules["game.world"].campaign()?.playerId;
+  for (const party of parties) {
+    const known = content.characters.has(party) || content.factions.has(party) || party === campaignPlayerId;
+    if (!known) {
+      return party;
+    }
+  }
+  return null;
+}
 
 /** 新提案的初始状态；提出者默认已接受，其余当事人待回复。 */
 function initialState(
@@ -120,7 +147,7 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
   return { ok: true };
 }
 
-/** 提出协议：提出者必须是当事人，条款需通过校验，期限超过 168 tick 时显式拒绝。 */
+/** 提出协议：提出者在当事人内、当事人都是已知主体、条款需通过校验；期限超过 168 tick 时显式拒绝。 */
 export function propose(context: AgreementContext, payload: Json): HandlerResult {
   const input = payload as unknown as {
     readonly parties: readonly string[];
@@ -130,6 +157,14 @@ export function propose(context: AgreementContext, payload: Json): HandlerResult
   const proposerId = effectivePrincipalId(context.auth);
   if (!input.parties.includes(proposerId)) {
     return { kind: "rejected", reasonCode: "not-a-party", safeMessage: "提出者必须是当事人" };
+  }
+  const unknownParty = findUnknownParty(context, input.parties);
+  if (unknownParty !== null) {
+    return {
+      kind: "rejected",
+      reasonCode: "unknown-party",
+      safeMessage: `协议当事人 ${unknownParty} 不是当前世界中的已知主体`,
+    };
   }
   const invalid = validateTerms(context, input.terms, input.parties);
   if (invalid !== null) {
@@ -197,11 +232,19 @@ export function respond(context: AgreementContext, payload: Json): HandlerResult
     return { kind: "accepted" };
   }
   if (input.response === "counter") {
+    if (state.version >= maxAgreementVersion) {
+      return {
+        kind: "rejected",
+        reasonCode: "counter-limit-reached",
+        safeMessage: `还价次数已达上限（最多 ${maxAgreementVersion} 个版本）`,
+      };
+    }
     const terms = input.counterTerms ?? [];
     const invalid = validateTerms(context, terms, state.parties);
     if (invalid !== null) {
       return { kind: "rejected", reasonCode: invalid, safeMessage: "还价条款不合法" };
     }
+    // 还价只替换条款与提出者，不重置到期时间：协商不能延长原提案的生命周期。
     const next = initialState(
       context,
       terms,
@@ -209,7 +252,7 @@ export function respond(context: AgreementContext, payload: Json): HandlerResult
       actor,
       state.agreementId,
       state.version + 1,
-      context.tx.worldTick + defaultAgreementExpiryTicks,
+      state.expiresAtTick,
     );
     context.tx.put("agreement", state.agreementId, { ...state, status: "superseded", supersededBy: next.agreementId });
     context.tx.put("agreement", next.agreementId, next);

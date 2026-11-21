@@ -310,11 +310,12 @@ describe("协议委托与授权", () => {
 
   it("通行条款只能由道路控制方的战略 Agent 生效", async () => {
     const value = await harness();
-    const sameFactionCharacter = proposeAgreementCommand(value, playerAuth(value), ["player-1", "npc-cenyan"], [
-      passageTerm("npc-cenyan"),
+    // human-earth-alliance 是已知派系主体，但不是 r-gh-ps 的控制方。
+    const nonController = proposeAgreementCommand(value, playerAuth(value), ["player-1", "human-earth-alliance"], [
+      passageTerm("human-earth-alliance"),
     ]);
-    expect(sameFactionCharacter.commandStatus).toBe("rejected");
-    expect(sameFactionCharacter.reasonCode).toBe("invalid-terms");
+    expect(nonController.commandStatus).toBe("rejected");
+    expect(nonController.reasonCode).toBe("invalid-terms");
     const agreementId = proposePassage(value);
     expectAgreement(value, agreementId, { status: "active" });
     expect(eventPayloads(value, "PassageGranted")).toEqual([

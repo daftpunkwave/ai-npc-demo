@@ -16,6 +16,7 @@
 | 幂等 | 世界命令用 `commandId`。时钟、快照、接管等控制操作用请求体里的 `operationId`，重复请求复用已记录的结果 |
 | 并发控制 | 控制操作带 `expectedRunVersion` 或 `expectedEpoch`；不一致返回 409 |
 | 分支 | 玩家接口总是作用于 `world_aliases('online')` 指向的分支；控制台运营入口可以用查询参数 `branchId` 指定分支，缺省为在线分支。当前版本只支持在线分支：`branchId` 与在线分支不一致时返回 400 `validation`，不会静默改作用分支 |
+| 输入上限 | 世界命令的文本、主体名单与协议条款数量由公共契约统一限制（见 [公共契约](contracts.md) 第 1 节）；超限命令返回 200 + `commandStatus: "rejected"` 的 receipt，原因码 `invalid-params` |
 | 错误 | 见第 7 节；业务拒绝不是 HTTP 错误，而是 200 + `commandStatus: "rejected"` 的 receipt |
 
 ## 2. 认证、会话与健康检查

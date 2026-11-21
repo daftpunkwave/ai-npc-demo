@@ -181,8 +181,8 @@ COMMIT
 | `speech.commit` | agent、system | `{ channel: "dialogue"\|"message"\|"broadcast", conversationId: string\|null, audience: string[], approvedSpeechArtifactRef, intentKind, replyToId: string\|null }` | comms | `DialogueSubmitted` 或 `MessageSent` | `speech-not-approved`、`relay-down`、`paused`、`no-authority`（无广播权） |
 | `seat.say` | operator | `{ to: string[], text }`（1–200 字，真人席位直接写的话） | comms | `MessageSent`（channel `seat`，没有 speech artifact） | `paused`、`relay-down`、`no-authority` |
 | `information.share` | player、agent、operator | `{ evidenceId, audience: string[] }` | comms | `InformationShared`、`KnowledgeGranted`×n | `evidence-not-held`、`secret-not-shareable`、`relay-down`、`paused` |
-| `agreement.propose` | player、agent、operator | `{ parties: string[], terms: Term[], expiresInTicks?: number }`（默认 24，范围 1–168） | agreements | `AgreementProposed` | `invalid-terms`、`obligor-not-party`、`no-authority`、`deadline-out-of-range` |
-| `agreement.respond` | player、agent、operator | `{ agreementId, response: "accept"\|"reject"\|"counter", counterTerms?: Term[] }` | agreements | `AgreementResponded`，以及视情况 `AgreementActivated`（+生效效果事件）、`AgreementRejected`、`AgreementSuperseded`+`AgreementProposed` | `not-a-party`、`agreement-not-open`、`already-responded` |
+| `agreement.propose` | player、agent、operator | `{ parties: string[], terms: Term[], expiresInTicks?: number }`（parties 2–20 人、terms 1–20 条；默认 24，范围 1–168） | agreements | `AgreementProposed` | `invalid-terms`、`unknown-party`、`obligor-not-party`、`no-authority`、`deadline-out-of-range` |
+| `agreement.respond` | player、agent、operator | `{ agreementId, response: "accept"\|"reject"\|"counter", counterTerms?: Term[] }`（counterTerms 1–20 条） | agreements | `AgreementResponded`，以及视情况 `AgreementActivated`（+生效效果事件）、`AgreementRejected`、`AgreementSuperseded`+`AgreementProposed` | `not-a-party`、`agreement-not-open`、`already-responded`、`counter-limit-reached` |
 | `task.dispatch` | player、agent、operator | `{ taskType, teamId, invitees?: string[], params, departAfterTicks?: number }` | actions（调用 world、map、resources 的 ops） | `TaskDispatched`、`ResourcesReserved`、`TaskInvitationIssued`×n | 按 [规则](../game/rules.md) 第 6 节的校验顺序 |
 | `task.respond` | agent | `{ taskId, response: "accept"\|"decline", reasonCode?: ReasonCode }` | actions | `TaskInvitationAnswered` | `not-invited`、`invitation-closed` |
 | `task.cancel` | player、agent、operator | `{ taskId }` | actions | `TaskCancelled`、`ResourcesReleased`（如有） | `task-not-cancellable`、`no-authority` |
@@ -318,7 +318,7 @@ type AudienceSpec =
 | `agreements` | 玩家是当事人的协议 | 当事人 |
 | `invitations` | 发给玩家的邀请（首版玩家不会被邀请，保留字段） | — |
 | `conversations` | 玩家参与的会话最近 50 条 | 当事人 |
-| `inbox` | 发给玩家的消息、公开广播与传闻（标注来源与“传闻”） | 定向/公开 |
+| `inbox` | 发给玩家的消息、公开广播与传闻（标注来源与“传闻”）；保留窗口按送达 tick 取最近 50 条已送达记录，提交早但送达晚的消息在送达当刻仍可读到 | 定向/公开 |
 | `notebook` | 玩家持有知识授权的证据（标题、正文、来源）；玩家亲历的事件摘要 | 玩家知识 |
 | `awaitingReplyFrom` | 玩家说完最后一句后、尚未回话且 turn 正在排队或进行中的角色 ID | 只暴露“正在处理”状态，不含内容 |
 | `notifications` | 由投影规则生成的提醒：`urgent`（受邀/失败/危机）、`deadline`（玩家协议 24 tick 内到期）、`invite`（收到提案）、`public`（广播） | 派生 |
@@ -347,7 +347,7 @@ receipt 与 `TaskFailed` 的 `reasonCode` 只能取下表的值；同一个码�
 |---|---|
 | 通用 | `invalid-params`、`unknown-target`、`no-authority`、`paused`、`not-ready`、`idempotency-conflict`、`version-conflict`、`stale-controller`、`stale-turn`、`budget-exhausted` |
 | 通信 | `relay-down`、`speech-not-approved`、`evidence-not-held`、`secret-not-shareable` |
-| 协议 | `invalid-terms`、`obligor-not-party`、`deadline-out-of-range`、`not-a-party`、`agreement-not-open`、`already-responded` |
+| 协议 | `invalid-terms`、`obligor-not-party`、`deadline-out-of-range`、`not-a-party`、`unknown-party`、`counter-limit-reached`、`agreement-not-open`、`already-responded` |
 | 任务 | `team-busy`、`capability-missing`、`route-unavailable`、`route-closed`、`insufficient-resource`、`draw-limit-exceeded`、`over-capacity`、`participant-unavailable`、`team-not-at-origin`、`task-not-cancellable`、`not-invited`、`invitation-closed` |
 | 政策与剧情 | `no-change`、`unknown-policy`、`card-not-draft`、`card-not-triggered`、`card-not-found`、`card-already-triggered`、`invalid-effect`、`campaign-exists`、`unknown-faction` |
 | Agent 拒绝理由（`task.respond`、对白意图用） | `danger`、`duty`、`past-breach`、`low-trust`、`lack-resources`、`policy`、`need-guarantee`、`injured`、`busy`、`none` |

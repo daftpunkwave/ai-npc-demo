@@ -62,6 +62,20 @@ function applyRiskInjuries(context: CompletionContext, task: TaskState, complete
   }
 }
 
+/**
+ * 把事件受众中的派系展开成具体主体：派系战略 Agent 与所属派系角色。
+ * 侦察知识必须与 `ScoutReported` 使用同一受众策略，否则队伍派系能收到事件却拿不到证据授权。
+ */
+function factionPrincipals(content: GameContent, factionId: string): string[] {
+  const principals = [factionId];
+  for (const character of content.characters.values()) {
+    if (character.factionId === factionId) {
+      principals.push(character.agentId);
+    }
+  }
+  return principals;
+}
+
 function scoutReport(context: CompletionContext, task: TaskState, nodeId: string): void {
   const content = requireGameContent(context.content);
   const ports = context.modules;
@@ -83,6 +97,15 @@ function scoutReport(context: CompletionContext, task: TaskState, nodeId: string
     },
     taskAudience(content, task),
   );
+  // 知识受众与 ScoutReported 一致：派遣者、参与者与队伍所属派系（战略 Agent 与其角色）。
+  const ownerFactionId = content.teams.get(task.teamId)?.ownerFactionId;
+  const knowledgeRecipients = [
+    ...new Set([
+      task.dispatcherId,
+      ...task.participants,
+      ...(ownerFactionId === undefined ? [] : factionPrincipals(content, ownerFactionId)),
+    ]),
+  ].sort((left, right) => left.localeCompare(right));
   for (const evidence of content.evidence.values()) {
     if (evidence.nodeId !== nodeId || evidence.discoverable !== true) {
       continue;
@@ -93,7 +116,7 @@ function scoutReport(context: CompletionContext, task: TaskState, nodeId: string
       taskId: task.taskId,
     });
     if (discovered.ok) {
-      for (const principalId of [task.dispatcherId, ...task.participants]) {
+      for (const principalId of knowledgeRecipients) {
         ports["game.comms"].grantKnowledge({
           principalId,
           itemId: evidence.evidenceId,

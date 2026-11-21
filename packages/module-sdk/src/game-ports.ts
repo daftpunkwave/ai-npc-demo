@@ -638,7 +638,7 @@ export interface GameCommsPort {
   sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
-  /** 已送达给该主体的通信日志：只含投递名单里有该主体且已到送达 tick 的记录，按提交 tick 升序取最近 limit 条。 */
+  /** 已送达给该主体的通信日志：只含投递名单里有该主体且已到送达 tick 的记录，按送达 tick 升序取最近 limit 条。 */
   messagesFor(principalId: string, limit: number): readonly CommsMessageView[];
   /** 该主体参与的会话 ID，按 ID 升序。 */
   conversationsOf(principalId: string): readonly string[];

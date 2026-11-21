@@ -83,6 +83,8 @@ InputFrontier 由 scope 绑定，是每个 Agent 的冻结边界；多主体快�
 
 时间顺序上，occurredAtTick 不晚于 sensedAtTick，sensedAtTick 不晚于 knownAtTick；confidence 必须是 0 到 1 的有限数，channel 从已注册渠道解析。运行中经历到的观察，来源不能为空；contentRefs 只用于版本化背景，不能替代经历证据。JSON 只是传输形态，实际 payload 按 type 和 schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
 
+命令载荷的文本与数组边界由公共 schema 统一约束：对白正文 1–300 字，席位发言 1–200 字，侦察问题与剧情卡说明不超过 300 字，政策键不超过 120 字；主体名单（协议当事人、通信受众、席位收件人）不超过 20 个，协议提案与还价的条款各不超过 20 条。超出上限的载荷在 schema 层被拒绝，返回 `invalid-params`，不进入处理器，也不产生状态、事件或 job。
+
 ## 2. 命令与 receipt
 
 CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文或宿主附加。模型不能靠自报 author 取得权限。
