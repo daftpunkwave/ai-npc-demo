@@ -4,7 +4,7 @@
 
 ## 1. 通用约定
 
-当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送与控制台健康/时间线推送，以及第 5.1 节的健康、模块目录、装配列表与装配详情。预检、草稿、其他控制台页面和各实验接口仍按目标状态后续交付。
+当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送与控制台健康/时间线推送、第 5.1 节的健康、模块目录、装配列表与装配详情，以及第 5.3 节的暂停、继续、快照创建/列表与恢复控制台入口（单步仍为目标）。预检、草稿、席位接管、其他控制台页面和各实验接口仍按目标状态后续交付。
 
 | 项 | 约定 |
 |---|---|
@@ -15,7 +15,7 @@
 | Origin | 请求带 `Origin` 头时，必须是 `http://127.0.0.1:5173` 或 `http://127.0.0.1:3000`，否则返回 403；WS 握手同样检查 |
 | 幂等 | 世界命令用 `commandId`。时钟、快照、接管等控制操作用请求体里的 `operationId`，重复请求复用已记录的结果 |
 | 并发控制 | 控制操作带 `expectedRunVersion` 或 `expectedEpoch`；不一致返回 409 |
-| 分支 | 玩家接口总是作用于 `world_aliases('online')` 指向的分支；控制台接口可以用查询参数 `branchId` 指定，缺省为在线分支 |
+| 分支 | 玩家接口总是作用于 `world_aliases('online')` 指向的分支；控制台运营入口可以用查询参数 `branchId` 指定分支，缺省为在线分支。当前版本只支持在线分支：`branchId` 与在线分支不一致时返回 400 `validation`，不会静默改作用分支 |
 | 错误 | 见第 7 节；业务拒绝不是 HTTP 错误，而是 200 + `commandStatus: "rejected"` 的 receipt |
 
 ## 2. 认证、会话与健康检查
@@ -45,6 +45,8 @@
 | `POST /api/v1/streams/ticket` | — | `{ ticket, expiresAt }` | 一次性 WS 票据，30 秒内有效 |
 
 ## 3. 玩家 API（角色 `player`）
+
+本节是玩家自助入口：暂停、继续、存档、恢复与重新开局都由玩家会话直接作用于在线分支。控制台运营角色使用第 5.3 节的 `/api/v1/console/campaign/*` 入口；两者路径、角色与幂等主体各自独立，互不复用。
 
 | 方法与路径 | 请求 | 响应 |
 |---|---|---|
@@ -123,7 +125,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ## 5. 控制台 API（`/api/v1/console/*`）
 
-本节首批只读接口已实现，包括健康、模块目录、装配列表/详情、时间线与 Agent 状态摘要；预检、草稿、模型池、席位运营、剧情和调试接口仍为目标。
+本节已实现的接口包括第 5.1 节的健康、模块目录、装配列表/详情，第 5.3 节的暂停、继续、快照创建/列表与恢复，以及第 5.5 节的时间线与 Agent 状态摘要。预检、草稿、模型池、席位接管与运行申请、剧情和调试接口仍为目标。
 
 ### 5.1 运行总览与模块装配
 
@@ -158,13 +160,15 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `POST /ops/controllers/{agentId}/renew` | operator | `{ controllerEpoch }` | `{ leaseExpiresAt }`（续期 10 分钟） |
 | `GET /ops/seats/{agentId}/view` | operator（须持有该席位租约） | — | `{ worldView: AgentWorldView, inbox, agreements, invitations }`：只有该身份合法获知的内容 |
 | `POST /ops/seats/{agentId}/commands` | operator（须持有该席位租约） | `CommandEnvelope` | `CommandReceipt`；以该 agentId 身份、当前 epoch 提交 |
-| `POST /campaign/pause` / `resume` | operator | `{ operationId, expectedRunVersion }` | `ClockView` |
+| `POST /campaign/pause` / `resume`（已实现） | operator | `{ operationId, expectedRunVersion }` | `ClockView` |
 | `POST /campaign/step` | operator | `{ operationId, expectedRunVersion, ticks }`（1–24） | `ClockView`（mode 为 stepping，结束后回到 paused） |
-| `POST /campaign/snapshots` | operator | `{ operationId, label }` | `{ snapshotId, worldTick }` |
-| `GET /campaign/snapshots` | operator、researcher | — | `{ snapshots: SnapshotView[] }` |
-| `POST /campaign/restore` | operator | `{ operationId, snapshotId, dryRun: boolean }` | dryRun 时返回 `{ ok, checks }`；否则返回 `{ branchId, clock }` |
+| `POST /campaign/snapshots`（已实现） | operator | `{ operationId, label }` | `{ snapshotId, worldTick }` |
+| `GET /campaign/snapshots`（已实现） | operator、researcher | — | `{ snapshots: SnapshotView[] }` |
+| `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId }` | `{ branchId, clock }`；创建后继在线分支，旧分支保留。`dryRun` 只读预检尚未实现，恢复前由服务端执行内部一致性校验 |
 | `GET /run-requests` | operator | — | 玩家的 run 申请列表 |
 | `POST /run-requests/{requestId}/approve` / `reject` | operator | `{ note }` | approve 返回 `{ runId }` |
+
+已实现的运营入口位于 `/api/v1/console/campaign/*`，与第 3 节玩家自助入口路径独立。查询参数 `branchId` 可省略，省略时作用于在线分支；当前版本只支持在线分支，显式传入与在线分支不同的值返回 400 `validation`。快照列表与玩家入口一致，只列当前 campaign 的存档。
 
 ### 5.4 剧情卡
 
@@ -220,7 +224,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 第 3 节玩家接口 | ✓ | ✗ | ✗ | ✗ |
 | 5.1 总览与装配 | ✗ | ✓ | ✓（只读） | ✗ |
 | 5.2 模型池 | ✗ | ✓ | ✓（只读） | ✗ |
-| 5.3 席位与运营 | ✗ | ✓ | 只读快照列表 | ✗ |
+| 5.3 席位与运营 | ✗ | ✓（时钟、存档、恢复） | 只读快照列表 | ✗ |
 | 5.4 剧情卡 | ✗ | ✓ | 只能 override | ✗ |
 | 5.5 可观测与调试 | ✗ | ✗ | ✓ | ✗ |
 | 5.6 评估与导出 | ✗ | ✗ | ✓ | 只读 run 与报告 |
