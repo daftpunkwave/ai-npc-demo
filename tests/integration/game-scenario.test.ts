@@ -424,9 +424,21 @@ describe("剧情卡", () => {
       reserved: { supply: 3 },
     });
     expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(adjustedBefore);
+
+    // reserved 为 0 时仍按可用量截断：库存 5 扣掉 5，事件只记录实扣量。
+    setStockpileSupply(value, "sp-commons", { amount: 5, reserved: 0 });
+    const truncated = compensateCommand(value, "card-relay-alarm", [
+      { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -100 }, reason: "受潮", clampToAvailable: true },
+    ]);
+    expect(truncated.commandStatus).toBe("accepted");
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 0 },
+      reserved: { supply: 0 },
+    });
+    expect(lastStockpileAdjustment(value)).toMatchObject({ stockpileId: "sp-commons", delta: { supply: -5 } });
   });
 
-  it("未声明 clampToAvailable 的调整保持整体成功或失败", async () => {
+  it("未声明 clampToAvailable 的调整整笔成功或失败，不静默截断", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 2, mode: "running" });
@@ -444,6 +456,41 @@ describe("剧情卡", () => {
       amount: { supply: 5 },
       reserved: { supply: 3 },
     });
+    expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(0);
+  });
+
+  it("reserved 为 0 时未声明 clamp 的超量调整整笔失败且不提交事件", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 2, mode: "running" });
+    value.authority.jobs.runDue(value.branchId, 2);
+    expect(readGameAggregate(value, "scenario-card", "card-relay-alarm")).toMatchObject({ status: "triggered" });
+
+    // 库存 5、reserved 0、申请 -100：若先截断再与预留比较，截断窗口会把它当作成功。
+    setStockpileSupply(value, "sp-commons", { amount: 5, reserved: 0 });
+    const eventsBefore = readGameEvents(value);
+    expect(() =>
+      compensateCommand(value, "card-relay-alarm", [
+        { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -100 }, reason: "补偿" },
+      ]),
+    ).toThrow(/库存调整失败/);
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 5 },
+      reserved: { supply: 0 },
+    });
+    expect(readGameEvents(value)).toHaveLength(eventsBefore.length);
+
+    // 多资源中能源不足：供给不得被部分扣减，整笔失败且不提交事件。
+    expect(() =>
+      compensateCommand(value, "card-relay-alarm", [
+        { kind: "stockpile-adjust", stockpileId: "sp-commons", delta: { supply: -1, energy: -13 }, reason: "补偿" },
+      ]),
+    ).toThrow(/库存调整失败/);
+    expect(readGameAggregate(value, "stockpile", "sp-commons")).toMatchObject({
+      amount: { supply: 5, energy: 12 },
+      reserved: { supply: 0 },
+    });
+    expect(readGameEvents(value)).toHaveLength(eventsBefore.length);
     expect(readGameEvents(value).filter((event) => event.type === "StockpileAdjusted")).toHaveLength(0);
   });
 
