@@ -303,4 +303,60 @@ describe("迁移校验和", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("升级时为已评估 campaign 补建持久时钟停止点", async () => {
+    const root = createTempDataDir();
+    const migrationsDirectory = join(root, "migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    const databasePath = join(root, "legacy.db");
+    let legacy: ReturnType<typeof openDatabase> | null = null;
+    let upgraded: ReturnType<typeof openDatabase> | null = null;
+    try {
+      // 旧库停留在新增停止点表之前的版本，并已写入一个评估完成的 campaign 与暂停时钟。
+      await copyMigrations(migrationsDirectory, host, 6);
+      legacy = openDatabase(databasePath);
+      await applyMigrations(legacy, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      legacy
+        .prepare("INSERT INTO worlds (world_id, pack_id, content_version, created_at) VALUES (?, ?, ?, ?)")
+        .run("wld-upgrade", "earth-2964-v1", "v1", host.nowIso());
+      legacy
+        .prepare(
+          "INSERT INTO branches (branch_id, world_id, kind, status, parent_branch_id, forked_at_world_seq, run_id, profile_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run("brn-upgrade", "wld-upgrade", "online", "active", null, null, null, null, host.nowIso());
+      legacy
+        .prepare(
+          "INSERT INTO aggregate_state (branch_id, aggregate_type, aggregate_id, version, state_json) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run("brn-upgrade", "campaign", "campaign", 2, JSON.stringify({ status: "evaluated", startTick: 0 }));
+      legacy
+        .prepare(
+          "INSERT INTO clock (branch_id, world_tick, mode, seconds_per_tick, run_version, step_target_tick, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run("brn-upgrade", 168, "paused", 20, 3, null, host.nowIso());
+      closeDatabase(legacy);
+      legacy = null;
+
+      await copyMigrations(migrationsDirectory, host);
+      upgraded = openDatabase(databasePath);
+      await applyMigrations(upgraded, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      const stops = upgraded
+        .prepare("SELECT branch_id, request_id, requested_at_tick FROM clock_stop_requests ORDER BY branch_id")
+        .all();
+      expect(stops).toEqual([
+        { branch_id: "brn-upgrade", request_id: "chapter-evaluated", requested_at_tick: 168 },
+      ]);
+      closeDatabase(upgraded);
+      upgraded = null;
+    } finally {
+      if (legacy !== null) {
+        closeDatabase(legacy);
+      }
+      if (upgraded !== null) {
+        closeDatabase(upgraded);
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

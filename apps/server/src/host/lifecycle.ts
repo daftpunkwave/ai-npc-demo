@@ -249,13 +249,51 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
   }
 
   /**
+   * 补完当前 tick 并清理持久失败状态；成功后才允许提交时钟恢复。
+   * 补完失败时保留 worker 失败状态并拒绝恢复；清理失败时健康状态保持 degraded。
+   */
+  const recoverWorker = (expectedRunVersion: number): void => {
+    // 先按与时钟控制相同的版本语义预检，避免已开始恢复后才因版本冲突失败。
+    if (clockState().runVersion !== expectedRunVersion) {
+      throw new DomainError("version-conflict", "时钟版本冲突");
+    }
+    try {
+      catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
+    } catch (error) {
+      workerFailed = true;
+      recordWorkerFailure(error);
+      app?.notifyWorldChanged();
+      throw new DomainError("not-ready", "worker 恢复失败，当前 tick 仍有未处理的失败项", {
+        cause: error,
+        details: { branchId: active.branchId },
+      });
+    }
+    if (!clearWorkerFailure()) {
+      workerFailed = false;
+      throw new DomainError("not-ready", "worker 失败状态清理失败，健康状态仍为 degraded", {
+        details: { branchId: active.branchId },
+      });
+    }
+    workerFailed = false;
+    recordLifecycleEvent("WorkerRecovered", "system:tick-worker", {
+      worldTick: clockState().worldTick,
+    });
+  };
+
+  /**
    * 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。
    * 恢复必须先补完当前 tick 且清理持久失败记录，成功后才提交时钟启动，失败时时钟不变。
    */
   const control = (mode: "pause" | "start", expectedRunVersion: number) => {
-    // 终局停止点已登记：先补做暂停（幂等），再明确拒绝恢复，避免时钟停留在 running。
+    // 终局停止点已登记：先补完当前 tick 并清理 worker 失败状态，再确认时钟保持暂停并拒绝恢复。
     if (mode === "start" && authority.clock.pendingStop(active.branchId)) {
-      runtime.clock.pause(active.branchId);
+      recoverWorker(expectedRunVersion);
+      const paused = runtime.clock.pause(active.branchId);
+      if (!paused.ok) {
+        throw new DomainError("invalid-state", "章节终点暂停时钟失败", {
+          details: { branchId: active.branchId, reasonCode: paused.reasonCode },
+        });
+      }
       app?.notifyWorldChanged();
       throw new DomainError("invalid-state", "章节已结束，不能恢复时钟", {
         details: { branchId: active.branchId },
@@ -264,31 +302,7 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     const needsWorkerRecovery =
       mode === "start" && (workerFailed || hasPersistedWorkerFailure());
     if (needsWorkerRecovery) {
-      // 先按与时钟控制相同的版本语义预检，避免已开始恢复后才因版本冲突失败。
-      if (clockState().runVersion !== expectedRunVersion) {
-        throw new DomainError("version-conflict", "时钟版本冲突");
-      }
-      try {
-        catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
-      } catch (error) {
-        workerFailed = true;
-        recordWorkerFailure(error);
-        app?.notifyWorldChanged();
-        throw new DomainError("not-ready", "worker 恢复失败，当前 tick 仍有未处理的失败项", {
-          cause: error,
-          details: { branchId: active.branchId },
-        });
-      }
-      if (!clearWorkerFailure()) {
-        workerFailed = false;
-        throw new DomainError("not-ready", "worker 失败状态清理失败，健康状态仍为 degraded", {
-          details: { branchId: active.branchId },
-        });
-      }
-      workerFailed = false;
-      recordLifecycleEvent("WorkerRecovered", "system:tick-worker", {
-        worldTick: clockState().worldTick,
-      });
+      recoverWorker(expectedRunVersion);
     }
     const result = mode === "pause"
       ? runtime.clock.pause(active.branchId, expectedRunVersion)
