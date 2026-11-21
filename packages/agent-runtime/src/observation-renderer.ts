@@ -93,25 +93,29 @@ function renderTemplate(template: string, values: Readonly<Record<string, string
   return template.replace(/\{\{?([A-Za-z][A-Za-z0-9]*)\}?\}/g, (_match, key: string) => values[key] ?? "");
 }
 
+function partiesPolicy(principalIds: readonly string[]): string {
+  const sorted = [...new Set(principalIds)].sort((left, right) => left === right ? 0 : left < right ? -1 : 1);
+  return `parties:${sorted.join(",")}`;
+}
+
 function releasePolicy(event: PerceptionRequest["event"]): string {
   if (event.type === "InformationShared") {
     return `holders:${string(object(event.payload)["evidenceId"])}`;
   }
   if (event.type === "ProbeAsked") {
     const probe = probeAskedPayloadSchema.parse(event.payload);
-    return `parties:${[...new Set([probe.askedBy, probe.agentId])].sort().join(",")}`;
+    return partiesPolicy([probe.askedBy, probe.agentId]);
   }
   const audience = event.audience.map(object);
   if (audience.some((entry) => entry["kind"] === "public")) return "public";
   const principalIds = audience
     .filter((audience) => audience["kind"] === "principals")
     .flatMap((audience) => Array.isArray(audience["ids"]) ? audience["ids"] : [])
-    .filter((id): id is string => typeof id === "string")
-    .sort();
-  if (principalIds.length > 0) return `parties:${principalIds.join(",")}`;
+    .filter((id): id is string => typeof id === "string");
+  if (principalIds.length > 0) return partiesPolicy(principalIds);
   const faction = audience.find((entry) => entry["kind"] === "faction");
   if (faction !== undefined) return `faction:${string(faction["factionId"])}`;
-  return audience.some((entry) => entry["kind"] === "node") ? "public" : "private";
+  return "private";
 }
 
 function deliveryTick(payload: JsonObject, agentId: string, eventTick: number): number {
@@ -147,7 +151,9 @@ export function renderObservation(input: {
 }): PerceptionRequest["rendered"] {
   const payload = object(input.event.payload);
   const template = input.content.prompts.observationTemplates[input.event.type as keyof typeof input.content.prompts.observationTemplates] ?? "事件状态已更新。";
-  const summaryZh = renderTemplate(template, templateValues(input.content, payload));
+  const summaryZh = input.full
+    ? renderTemplate(template, templateValues(input.content, payload))
+    : `${input.event.type} · ${nodeName(input.content.locale, string(payload["nodeId"]))} · ${nameOf(input.content, input.event.principalId)}`;
   const subjectIds = [
     payload["agentId"],
     payload["speakerId"],
@@ -188,7 +194,7 @@ export function renderObservation(input: {
       facts: {},
       claim: null,
     },
-    releasePolicyId: releasePolicy(input.event),
+    releasePolicyId: input.full ? releasePolicy(input.event) : "public",
     knownAtTick: deliveryTick(payload, input.agentId, input.event.worldTick),
   };
 }

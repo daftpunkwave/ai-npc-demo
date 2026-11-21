@@ -12,7 +12,7 @@ import type {
   StoragePort,
 } from "@ai-npc/contracts";
 import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
-import type { PerceptionPort } from "@ai-npc/module-sdk";
+import type { NewAgentTrigger, PerceptionPort, PerceptionRequest } from "@ai-npc/module-sdk";
 import type { AgentModuleHandle } from "./agent-module-handle";
 import { renderObservation } from "./observation-renderer";
 import {
@@ -40,13 +40,13 @@ export interface EventConsumerInput {
   };
 }
 
-function eligible(
+function visibleAudience(
   event: EventEnvelope,
   agentId: string,
   factionId: string,
   nodeId: string | null,
-): boolean {
-  return event.audience.some((entry) => {
+): EventEnvelope["audience"] {
+  return event.audience.filter((entry) => {
     const value = asRecord(entry);
     if (value["kind"] === "public") return true;
     if (value["kind"] === "system") return false;
@@ -85,44 +85,39 @@ export class PerceptionEventConsumer {
     const plans: {
       readonly agentId: string;
       readonly observations: readonly AgentObservation[];
-      readonly triggers: readonly import("@ai-npc/module-sdk").NewAgentTrigger[];
+      readonly triggers: readonly NewAgentTrigger[];
       readonly scannedThroughSeq: number;
     }[] = [];
     for (const agent of this.input.roster.agents) {
       const perception = this.perception.get(agent.agentId);
       if (perception === undefined) continue;
       const world = this.input.readWorld(agent.agentId);
-      if (!eligible(event, agent.agentId, world.factionId, world.nodeId)) {
+      const audience = visibleAudience(event, agent.agentId, world.factionId, world.nodeId);
+      if (audience.length === 0) {
         plans.push({ agentId: agent.agentId, observations: [], triggers: [], scannedThroughSeq: event.worldSeq });
         continue;
       }
+      const detailedAudience = audience.filter(({ kind }) => kind !== "node");
+      const full = detailedAudience.length > 0;
+      const projectedEvent: PerceptionRequest["event"] = {
+        eventId: event.eventId,
+        worldSeq: event.worldSeq,
+        worldTick: event.worldTick,
+        type: event.type,
+        principalId: event.principalId,
+        causationIds: event.causationIds,
+        audience: (full ? detailedAudience : audience) as readonly Json[],
+        payload: full ? event.payload : { nodeId: world.nodeId },
+      };
       const rendered = renderObservation({
         content: this.input.content,
-        event: {
-          eventId: event.eventId,
-          worldSeq: event.worldSeq,
-          worldTick: event.worldTick,
-          type: event.type,
-          principalId: event.principalId,
-          causationIds: event.causationIds,
-          audience: event.audience as unknown as readonly Json[],
-          payload: event.payload,
-        },
+        event: projectedEvent,
         agentId: agent.agentId,
-        full: true,
+        full,
       });
       const result = perception.port.perceive({
         scope: { worldId: this.input.worldId, branchId: this.input.branchId, agentId: agent.agentId },
-        event: {
-          eventId: event.eventId,
-          worldSeq: event.worldSeq,
-          worldTick: event.worldTick,
-          type: event.type,
-          principalId: event.principalId,
-          causationIds: event.causationIds,
-          audience: event.audience as unknown as readonly Json[],
-          payload: event.payload,
-        },
+        event: projectedEvent,
         observer: {
           nodeId: world.nodeId,
           factionId: world.factionId,
