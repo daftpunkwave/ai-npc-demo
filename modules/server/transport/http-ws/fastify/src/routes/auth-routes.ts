@@ -11,6 +11,7 @@ import {
   sessionAssemblyResponseSchema,
   type SessionDescriptor,
 } from "@ai-npc/contracts";
+import { findTokenEntry } from "../timing-safe-token";
 import {
   authenticate,
   bearer,
@@ -29,7 +30,8 @@ export function registerAuthRoutes(context: RouteContext): void {
     if (!body.success) {
       return sendHttpError(reply, "validation", "登录请求结构不合法");
     }
-    const identity = identityByToken.get(body.data.token);
+    // 身份令牌表规模受装配身份数约束；用常量时间比较逐项查找，不用 Map 普通相等。
+    const identity = findTokenEntry(identityByToken, body.data.token);
     if (identity === undefined) {
       return sendHttpError(reply, "unauthenticated", "登录令牌无效");
     }

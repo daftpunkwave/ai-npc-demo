@@ -45,7 +45,12 @@ export function parseModuleDirectory(directory: string): ModulePathInfo | null {
 function serverAdapterExtras(modulePath: ModulePathInfo): AdapterExtras {
   switch (modulePath.identifier) {
     case "transport.http-ws.fastify":
-      return { external: ["fastify"], externalPrefixes: ["@fastify/"], nodeBuiltins: [] };
+      // 传输层用 node:crypto 的 timingSafeEqual 比较身份、会话与票据令牌。
+      return {
+        external: ["fastify"],
+        externalPrefixes: ["@fastify/"],
+        nodeBuiltins: ["node:crypto"],
+      };
     case "platform.storage.sqlite":
       return {
         external: [],

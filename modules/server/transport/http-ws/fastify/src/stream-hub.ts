@@ -77,6 +77,8 @@ export class StreamHub {
       onSessionRevoked: (sessionId, reason) => {
         this.revokeSessionConnections(sessionId, reason);
       },
+      // 容量淘汰优先选择没有活动连接的会话；活跃连接由本类计数，不交给注册表猜测。
+      hasActiveConnection: (sessionId) => (this.sessionConnections.get(sessionId) ?? 0) > 0,
     });
     this.replay = new ReplayStore({
       now: this.now,
@@ -104,7 +106,7 @@ export class StreamHub {
     this.replay.resetAll(branchId, this.generation);
   }
 
-  /** 创建会话；到达上限时先撤销过期会话，再淘汰最早创建的会话。 */
+  /** 创建会话；容量不足时先清理过期会话，再淘汰无活动连接的会话，全部活跃时拒绝新会话。 */
   login(identity: StreamIdentity): StreamSession {
     this.ensureSweepTimer();
     this.maybeSweep();

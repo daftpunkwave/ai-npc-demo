@@ -59,6 +59,21 @@ export type {
 } from "./routes/contracts";
 
 /**
+ * 客户端 WS 帧上限：客户端只发送 subscribe/ack/ping，公共 schema 不含文本载荷，
+ * 合法帧只有数百字节；64 KiB 为后续可选字段留出余量，同时避免超长帧占用接收缓冲。
+ */
+const maxWebSocketPayloadBytes = 64 * 1024;
+
+/** ws 在接收帧超过 maxPayload 时抛出带该稳定错误码的 RangeError，并自行以 1009 发起关闭。 */
+function isWebSocketPayloadTooLarge(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { readonly code?: unknown }).code === "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+  );
+}
+
+/**
  * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
  * 其余未预期错误一律 500 plugin-failed，safeMessage 不携带内部细节。
  * 4xx 属于预期拒绝，不写内部错误；5xx 交宿主记录，避免静默失败。
@@ -96,7 +111,18 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   };
   const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
   await app.register(cors, { origin: [...allowedOrigins] });
-  await app.register(websocket);
+  await app.register(websocket, {
+    options: { maxPayload: maxWebSocketPayloadBytes },
+    errorHandler: (error, socket) => {
+      if (isWebSocketPayloadTooLarge(error)) {
+        // ws 已按 1009 发起关闭；这里只审计，不再 terminate，避免关闭帧被丢弃后客户端只看到异常断开。
+        report("WS 帧超过上限", error);
+        return;
+      }
+      // 其余连接错误保持框架默认的立即终止，交由流中心的 error 监听清理连接状态。
+      socket.terminate();
+    },
+  });
   if (options.consoleStaticDir !== undefined) {
     await app.register(fastifyStatic, {
       root: options.consoleStaticDir,
@@ -137,6 +163,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     ...(options.onPlayerConnectionsChanged === undefined
       ? {}
       : { onPlayerConnectionsChanged: options.onPlayerConnectionsChanged }),
+    ...(options.maxSessions === undefined ? {} : { maxSessions: options.maxSessions }),
     onBranchChanged: (nextBranchId) => {
       branch.branchId = nextBranchId;
       options.onBranchChanged?.(nextBranchId);

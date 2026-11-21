@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  DomainError,
   playerProjectionSchema,
   type AuthContext,
   type PlayerProjection,
@@ -368,6 +369,72 @@ describe("WS 流中心", () => {
       }
       expect(hub.stats().replayBuffers).toBeLessThanOrEqual(2);
       expect(hub.stats().connections).toBe(3);
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("会话满容量时保留活跃连接并以明确错误拒绝新会话", () => {
+    const hub = createHub({ maxSessions: 1 });
+    try {
+      const active = hub.login({ token: "player-login-token", auth: playerAuth });
+      const socket = openStream(hub, active.sessionId);
+      socket.drain();
+
+      let failure: unknown;
+      try {
+        hub.login({ token: "player-login-token", auth: playerAuth });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(DomainError);
+      expect((failure as DomainError).code).toBe("budget-exhausted");
+      expect((failure as DomainError).retryable).toBe(true);
+
+      // 活跃会话不被驱逐：连接仍在线、令牌仍有效、仍能收到推送。
+      expect(socket.closed).toBeNull();
+      expect(hub.authenticate(active.token)).not.toBeNull();
+      expect(hub.stats()).toMatchObject({ sessions: 1, connections: 1 });
+      hub.publish();
+      expect(lastFrame(socket, "delta")).toMatchObject({ type: "delta" });
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("容量满时淘汰无活动连接中最早过期的会话，不驱逐活跃会话", () => {
+    let now = 0;
+    const hub = createHub({ now: () => now, maxSessions: 2, sweepIntervalMs: 100_000 });
+    try {
+      // 活跃会话的过期时间更早，但它持有连接；淘汰只能选择无连接、稍晚过期的会话。
+      const active = hub.login({ token: "player-login-token", auth: playerAuth });
+      now += 60_000;
+      const idle = hub.login({ token: "player-login-token", auth: playerAuth });
+      const socket = openStream(hub, active.sessionId);
+      socket.drain();
+
+      now += 60_000;
+      const replacement = hub.login({ token: "player-login-token", auth: playerAuth });
+      expect(hub.authenticate(idle.token)).toBeNull();
+      expect(hub.authenticate(active.token)).not.toBeNull();
+      expect(hub.authenticate(replacement.token)).not.toBeNull();
+      expect(socket.closed).toBeNull();
+      expect(hub.stats()).toMatchObject({ sessions: 2, connections: 1 });
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("容量满时先清理过期会话再接纳新会话", () => {
+    let now = 0;
+    const hub = createHub({ now: () => now, maxSessions: 1, sessionTtlMs: 100 });
+    try {
+      const expired = hub.login({ token: "player-login-token", auth: playerAuth });
+      now = 101;
+      const fresh = hub.login({ token: "player-login-token", auth: playerAuth });
+      expect(hub.authenticate(expired.token)).toBeNull();
+      expect(hub.authenticate(fresh.token)).not.toBeNull();
+      expect(hub.stats().sessions).toBe(1);
     } finally {
       hub.close();
     }

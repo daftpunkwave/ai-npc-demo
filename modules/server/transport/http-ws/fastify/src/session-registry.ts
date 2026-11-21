@@ -1,10 +1,11 @@
 /**
  * 管理 WS 会话与一次性票据：登录、认证、注销、票据签发/消费、过期清理与容量上限。
- * 依赖注入的 ID/令牌生成与时钟；不持有连接、不发送消息，撤销会话时只回调宿主清理。
- * 禁止无限保留过期会话或未消费票据，也禁止在认证时改写票据状态。
+ * 依赖注入的 ID/令牌生成、时钟与活动连接查询；不持有连接、不发送消息，撤销会话时只回调宿主清理。
+ * 禁止无限保留过期会话或未消费票据，禁止在认证时改写票据状态，也禁止为腾位驱逐有活动连接的会话。
  */
-import type { IdPrefix } from "@ai-npc/contracts";
+import { DomainError, type IdPrefix } from "@ai-npc/contracts";
 import type { StreamIdentity, StreamSession, StreamTicket } from "./stream-types";
+import { timingSafeTokenEquals } from "./timing-safe-token";
 
 export interface SessionRegistryOptions {
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
@@ -21,6 +22,9 @@ export interface SessionRegistryOptions {
   /** 会话被撤销（过期、注销或容量淘汰）时通知流中心关闭连接并清理缓冲。 */
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   readonly onSessionRevoked: (sessionId: string, reason: string) => void;
+  /** 会话是否有活动 WS 连接；容量淘汰只考虑没有活动连接的会话。 */
+  // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
+  readonly hasActiveConnection: (sessionId: string) => boolean;
 }
 
 /** 会话与票据的独立存储；所有撤销都经回调交给流中心做连接清理。 */
@@ -34,10 +38,13 @@ export class SessionRegistry {
     this.options = options;
   }
 
-  /** 创建会话；到达上限时先撤销过期会话，再淘汰最早过期的会话。 */
+  /**
+   * 创建会话；容量不足时先清理过期会话，再淘汰无活动连接中最早过期的会话。
+   * 全部会话仍保持活动连接时以 budget-exhausted 拒绝新会话，不驱逐活跃会话。
+   */
   login(identity: StreamIdentity): StreamSession {
     if (this.sessions.size >= this.options.maxSessions) {
-      this.evictSession();
+      this.ensureSessionCapacity();
     }
     const session: StreamSession = {
       sessionId: this.options.ids("ses"),
@@ -54,7 +61,7 @@ export class SessionRegistry {
 
   /** 按令牌读取仍有效的会话；过期时立即撤销并返回 null，分支取当前在线入口。 */
   authenticate(token: string): StreamSession | null {
-    const session = this.sessions.get(token);
+    const session = this.findSessionByToken(token);
     if (session === undefined) {
       return null;
     }
@@ -67,7 +74,7 @@ export class SessionRegistry {
 
   /** 注销令牌对应的会话；缺失、重复注销都保持幂等。 */
   logout(token: string): void {
-    const session = this.sessions.get(token);
+    const session = this.findSessionByToken(token);
     if (session !== undefined) {
       this.revokeSession(session.sessionId, "logged out");
     }
@@ -89,9 +96,14 @@ export class SessionRegistry {
     if (value === undefined) {
       return undefined;
     }
-    const ticket = this.tickets.get(value);
-    this.tickets.delete(value);
-    return ticket;
+    for (const [candidate, ticket] of this.tickets) {
+      if (!timingSafeTokenEquals(candidate, value)) {
+        continue;
+      }
+      this.tickets.delete(candidate);
+      return ticket;
+    }
+    return undefined;
   }
 
   /** 读取仍有效的会话；过期时撤销并返回 null。 */
@@ -153,12 +165,33 @@ export class SessionRegistry {
     this.options.onSessionRevoked(sessionId, reason);
   }
 
-  private evictSession(): void {
-    let victim: StreamSession | undefined;
-    for (const session of this.sessionById.values()) {
+  private findSessionByToken(token: string): StreamSession | undefined {
+    for (const [candidate, session] of this.sessions) {
+      if (timingSafeTokenEquals(candidate, token)) {
+        return session;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * 容量不足时按“过期 → 无活动连接中最早过期”的顺序腾位。
+   * 全部会话仍有活动连接时以 budget-exhausted 拒绝：该码表达容量配额耗尽，
+   * retryable 表示等待会话过期或注销后可以重试，响应由传输层统一映射为 429。
+   */
+  private ensureSessionCapacity(): void {
+    for (const session of [...this.sessionById.values()]) {
       if (session.expiresAt <= this.options.now()) {
         this.revokeSession(session.sessionId, "session expired");
-        return;
+      }
+    }
+    if (this.sessions.size < this.options.maxSessions) {
+      return;
+    }
+    let victim: StreamSession | undefined;
+    for (const session of this.sessionById.values()) {
+      if (this.options.hasActiveConnection(session.sessionId)) {
+        continue;
       }
       if (victim === undefined || session.expiresAt < victim.expiresAt) {
         victim = session;
@@ -166,7 +199,9 @@ export class SessionRegistry {
     }
     if (victim !== undefined) {
       this.revokeSession(victim.sessionId, "session capacity evicted");
+      return;
     }
+    throw new DomainError("budget-exhausted", "会话容量已满", { retryable: true });
   }
 
   private evictTicket(): void {
