@@ -683,13 +683,13 @@ export interface GameCommsPort {
 }
 
 /**
- * 协议统计读取的其他模块只读事实：已完成任务、证据分享、世界指标/队伍与道路状态。
+ * 协议统计读取的其他模块只读事实：已完成任务、证据分享、世界指标/队伍/campaign 与道路状态。
  * 由组合根按已声明能力注入；协议端口不再按实现 ID 读取对方私有聚合。
  */
 export interface AgreementQueryPorts {
   readonly actions: Pick<GameActionsPort, "completedTasks">;
   readonly comms: Pick<GameCommsPort, "hasShare">;
-  readonly world: Pick<GameWorldPort, "meters" | "teams">;
+  readonly world: Pick<GameWorldPort, "meters" | "teams" | "campaign">;
   readonly map: Pick<GameMapPort, "roadStatus">;
 }
 

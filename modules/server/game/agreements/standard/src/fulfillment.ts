@@ -1,20 +1,53 @@
 /**
  * 按条款判断「截至期限是否已由已提交事实满足」，供协议事件消费、期限 job 与章节统计共用。
- * 依赖公共条款、行动模块的任务视图与协议聚合状态；全部函数同步且无副作用。
+ * 依赖公共条款、行动模块的任务视图、内容派系索引与协议聚合状态；全部函数同步且无副作用。
  * 只有协议生效之后、条款期限之前完成的任务或提交的分享才算履约；
  * 禁止用消费时钟、未提交事实、生效前的事实或期限之后的完成来判定履约，也禁止在这里写聚合或发事件。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名用于表达调用契约。 */
 /* eslint-disable security/detect-object-injection -- cargo 的键来自受限枚举 ResourceId，任务参数已由调用方按条款收窄。 */
 import type { ResourceId, Term } from "@ai-npc/contracts";
-import type { ShareQuery, TaskView } from "@ai-npc/module-sdk";
+import type { CampaignView, ShareQuery, TaskView } from "@ai-npc/module-sdk";
 import type { AgreementState } from "./state";
 
-/** 履约事实来源：已完成任务、证据分享查询与队伍所属派系解析。 */
-export interface FulfillmentFacts {
+/** 协议主体与队伍到派系的映射；履约判定只在下列两个函数里解释「谁代表谁」。 */
+export interface FulfillmentFactions {
+  readonly factionOfTeam: (teamId: string) => string | null;
+  readonly factionOfPrincipal: (principalId: string) => string | null;
+}
+
+/** 履约事实来源：已完成任务、证据分享查询与主体/队伍归属解析。 */
+export interface FulfillmentFacts extends FulfillmentFactions {
   readonly completedTasks: readonly TaskView[];
   readonly hasShare: (query: ShareQuery) => boolean;
-  readonly factionOfTeam: (teamId: string) => string | null;
+}
+
+/**
+ * 协议主体到派系的统一映射：派系主体归属自身，当前 campaign 的玩家归属 campaign.factionId；
+ * 普通角色与未知主体返回 null，保持自身主体语义，不把角色当成整个派系。
+ */
+export function resolvePrincipalFaction(
+  principalId: string,
+  factions: ReadonlyMap<string, unknown>,
+  campaign: CampaignView | null,
+): string | null {
+  if (factions.has(principalId)) {
+    return principalId;
+  }
+  return campaign !== null && campaign.playerId === principalId ? campaign.factionId : null;
+}
+
+/** 实际行为人是否代表义务人：同一主体，或两者归属同一个非空派系。 */
+export function actorRepresentsObligor(
+  actorId: string,
+  obligorId: string,
+  factionOfPrincipal: (principalId: string) => string | null,
+): boolean {
+  if (actorId === obligorId) {
+    return true;
+  }
+  const actorFaction = factionOfPrincipal(actorId);
+  return actorFaction !== null && actorFaction === factionOfPrincipal(obligorId);
 }
 
 /** 通行与水闸条款在义务期内仍可能违约，属于持续义务而不是一次性完成。 */
@@ -37,13 +70,20 @@ function completedInWindow(task: TaskView, sinceTick: number, byTick: number): b
   return task.completedAtTick !== null && task.completedAtTick >= sinceTick && task.completedAtTick <= byTick;
 }
 
-/** 任务由义务人派遣，或由义务人派系的队伍执行。 */
+/**
+ * 任务是否代表义务人：派遣者代表义务人，或执行任务队伍所属派系代表义务人。
+ * 队伍按派系主体参与映射，因此普通角色义务人仍然只接受本人派遣。
+ */
 export function taskServesObligor(
   obligorId: string,
   task: TaskView,
-  factionOfTeam: (teamId: string) => string | null,
+  factions: FulfillmentFactions,
 ): boolean {
-  return task.dispatcherId === obligorId || factionOfTeam(task.teamId) === obligorId;
+  if (actorRepresentsObligor(task.dispatcherId, obligorId, factions.factionOfPrincipal)) {
+    return true;
+  }
+  const teamFaction = factions.factionOfTeam(task.teamId);
+  return teamFaction !== null && actorRepresentsObligor(teamFaction, obligorId, factions.factionOfPrincipal);
 }
 
 /** 一条已完成任务是否满足条款要求的类型与参数；不判断期限与义务人。 */
@@ -104,7 +144,7 @@ export function isTermSatisfied(term: Term, facts: FulfillmentFacts, sinceTick: 
     (task) =>
       completedInWindow(task, sinceTick, term.byTick) &&
       taskMatchesTerm(term, task) &&
-      taskServesObligor(term.obligorId, task, facts.factionOfTeam),
+      taskServesObligor(term.obligorId, task, facts),
   );
   if (term.kind === "deliver") {
     const delivered = matched.reduce((total, task) => total + cargoAmount(task, term.resource), 0);

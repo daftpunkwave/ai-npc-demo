@@ -116,7 +116,11 @@ function bindGamePorts(
     "game.world": world,
     "game.comms": comms,
     "game.actions": actions,
-    "game.agreements": createAgreementsPort(() => txFor(gameModuleIds.agreements), { actions, comms, world, map }),
+    "game.agreements": createAgreementsPort(
+      () => txFor(gameModuleIds.agreements),
+      { actions, comms, world, map },
+      gameContent.factions,
+    ),
     "game.scenario": createScenarioPort(txFor),
   };
 }
