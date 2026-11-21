@@ -9,5 +9,5 @@ export {
   gameToolsModuleDefinition,
   type GameToolsConfig,
 } from "./definition";
-export { toolsetDocumentSchema, type ToolsetDocument } from "./toolset";
+export { toolsetDocumentSchema, type ToolsetDocument } from "@ai-npc/contracts";
 export type { GameToolsCatalogPort } from "./plugin";

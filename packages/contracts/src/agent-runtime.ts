@@ -358,6 +358,21 @@ export const toolBindingSchema = z
 
 export type ToolBinding = z.infer<typeof toolBindingSchema>;
 
+export const toolsetEntrySchema = toolBindingSchema.pick({
+  toolId: true,
+  version: true,
+  permissionProfile: true,
+  viewConstraints: true,
+}).extend({ budgetProfile: z.enum(["query", "command"]) });
+
+export const toolsetDocumentSchema = z.object({
+  schemaVersion: z.literal(1),
+  toolsetId: z.string().min(1),
+  tools: z.array(toolsetEntrySchema).min(1),
+}).strict();
+
+export type ToolsetDocument = z.infer<typeof toolsetDocumentSchema>;
+
 export const toolExecutionResultSchema = z
   .object({
     executionStatus: z.enum(["ok", "error", "unknown"]),
