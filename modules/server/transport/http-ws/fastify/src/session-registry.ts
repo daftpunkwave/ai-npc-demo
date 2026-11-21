@@ -5,7 +5,7 @@
  */
 import { DomainError, type IdPrefix } from "@ai-npc/contracts";
 import type { StreamIdentity, StreamSession, StreamTicket } from "./stream-types";
-import { timingSafeTokenEquals } from "./timing-safe-token";
+import { timingSafeTokenEquals, tokenDigest } from "./timing-safe-token";
 
 export interface SessionRegistryOptions {
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
@@ -27,12 +27,22 @@ export interface SessionRegistryOptions {
   readonly hasActiveConnection: (sessionId: string) => boolean;
 }
 
-/** 会话与票据的独立存储；所有撤销都经回调交给流中心做连接清理。 */
+/** 票据索引项：摘要键只用于定位候选，原始令牌用于命中判定。 */
+interface TicketEntry {
+  readonly token: string;
+  readonly ticket: StreamTicket;
+}
+
+/**
+ * 会话与票据的独立存储；所有撤销都经回调交给流中心做连接清理。
+ * 会话与票据以 SHA-256 摘要为索引键，避免未认证请求用任意令牌触发全表扫描；
+ * 摘要只负责定位候选，命中与否仍由原始令牌的常量时间比较决定。
+ */
 export class SessionRegistry {
   private readonly options: SessionRegistryOptions;
-  private readonly sessions = new Map<string, StreamSession>();
+  private readonly sessionsByDigest = new Map<string, StreamSession>();
   private readonly sessionById = new Map<string, StreamSession>();
-  private readonly tickets = new Map<string, StreamTicket>();
+  private readonly ticketsByDigest = new Map<string, TicketEntry>();
 
   constructor(options: SessionRegistryOptions) {
     this.options = options;
@@ -43,7 +53,7 @@ export class SessionRegistry {
    * 全部会话仍保持活动连接时以 budget-exhausted 拒绝新会话，不驱逐活跃会话。
    */
   login(identity: StreamIdentity): StreamSession {
-    if (this.sessions.size >= this.options.maxSessions) {
+    if (this.sessionsByDigest.size >= this.options.maxSessions) {
       this.ensureSessionCapacity();
     }
     const session: StreamSession = {
@@ -54,7 +64,7 @@ export class SessionRegistry {
       token: this.options.tokens("session"),
       expiresAt: this.options.now() + this.options.sessionTtlMs,
     };
-    this.sessions.set(session.token, session);
+    this.sessionsByDigest.set(tokenDigest(session.token), session);
     this.sessionById.set(session.sessionId, session);
     return session;
   }
@@ -82,12 +92,15 @@ export class SessionRegistry {
 
   /** 签发一次性 WS 票据；未消费票据在过期后由清理路径删除。 */
   issueTicket(sessionId: string): { readonly ticket: string; readonly expiresAt: number } {
-    if (this.tickets.size >= this.options.maxTickets) {
+    if (this.ticketsByDigest.size >= this.options.maxTickets) {
       this.evictTicket();
     }
     const ticket = this.options.tokens("ticket");
     const expiresAt = this.options.now() + this.options.ticketTtlMs;
-    this.tickets.set(ticket, { sessionId, expiresAt });
+    this.ticketsByDigest.set(tokenDigest(ticket), {
+      token: ticket,
+      ticket: { sessionId, expiresAt },
+    });
     return { ticket, expiresAt };
   }
 
@@ -96,14 +109,13 @@ export class SessionRegistry {
     if (value === undefined) {
       return undefined;
     }
-    for (const [candidate, ticket] of this.tickets) {
-      if (!timingSafeTokenEquals(candidate, value)) {
-        continue;
-      }
-      this.tickets.delete(candidate);
-      return ticket;
+    const digest = tokenDigest(value);
+    const entry = this.ticketsByDigest.get(digest);
+    if (entry === undefined || !timingSafeTokenEquals(entry.token, value)) {
+      return undefined;
     }
-    return undefined;
+    this.ticketsByDigest.delete(digest);
+    return entry.ticket;
   }
 
   /** 读取仍有效的会话；过期时撤销并返回 null。 */
@@ -126,26 +138,26 @@ export class SessionRegistry {
         this.revokeSession(session.sessionId, "session expired");
       }
     }
-    for (const [ticketValue, ticket] of [...this.tickets]) {
-      if (ticket.expiresAt <= now) {
-        this.tickets.delete(ticketValue);
+    for (const [digest, entry] of [...this.ticketsByDigest]) {
+      if (entry.ticket.expiresAt <= now) {
+        this.ticketsByDigest.delete(digest);
       }
     }
   }
 
   sessionCount(): number {
-    return this.sessions.size;
+    return this.sessionsByDigest.size;
   }
 
   ticketCount(): number {
-    return this.tickets.size;
+    return this.ticketsByDigest.size;
   }
 
   /** 关闭清理：丢弃全部会话与票据，不再回调流中心。 */
   clear(): void {
-    this.sessions.clear();
+    this.sessionsByDigest.clear();
     this.sessionById.clear();
-    this.tickets.clear();
+    this.ticketsByDigest.clear();
   }
 
   private revokeSession(sessionId: string, reason: string): void {
@@ -154,24 +166,25 @@ export class SessionRegistry {
       return;
     }
     this.sessionById.delete(sessionId);
-    if (this.sessions.get(session.token) === session) {
-      this.sessions.delete(session.token);
+    const digest = tokenDigest(session.token);
+    if (this.sessionsByDigest.get(digest) === session) {
+      this.sessionsByDigest.delete(digest);
     }
-    for (const [ticketValue, ticket] of [...this.tickets]) {
-      if (ticket.sessionId === sessionId) {
-        this.tickets.delete(ticketValue);
+    for (const [ticketDigest, entry] of [...this.ticketsByDigest]) {
+      if (entry.ticket.sessionId === sessionId) {
+        this.ticketsByDigest.delete(ticketDigest);
       }
     }
     this.options.onSessionRevoked(sessionId, reason);
   }
 
+  /** 先用摘要定位候选，再对原始令牌做常量时间比较；摘要碰撞不能冒充合法令牌。 */
   private findSessionByToken(token: string): StreamSession | undefined {
-    for (const [candidate, session] of this.sessions) {
-      if (timingSafeTokenEquals(candidate, token)) {
-        return session;
-      }
+    const session = this.sessionsByDigest.get(tokenDigest(token));
+    if (session === undefined || !timingSafeTokenEquals(session.token, token)) {
+      return undefined;
     }
-    return undefined;
+    return session;
   }
 
   /**
@@ -185,7 +198,7 @@ export class SessionRegistry {
         this.revokeSession(session.sessionId, "session expired");
       }
     }
-    if (this.sessions.size < this.options.maxSessions) {
+    if (this.sessionsByDigest.size < this.options.maxSessions) {
       return;
     }
     let victim: StreamSession | undefined;
@@ -207,18 +220,18 @@ export class SessionRegistry {
   private evictTicket(): void {
     let victim: string | undefined;
     let victimExpiresAt = Number.POSITIVE_INFINITY;
-    for (const [ticketValue, ticket] of this.tickets) {
-      if (ticket.expiresAt <= this.options.now()) {
-        this.tickets.delete(ticketValue);
+    for (const [digest, entry] of this.ticketsByDigest) {
+      if (entry.ticket.expiresAt <= this.options.now()) {
+        this.ticketsByDigest.delete(digest);
         return;
       }
-      if (ticket.expiresAt < victimExpiresAt) {
-        victim = ticketValue;
-        victimExpiresAt = ticket.expiresAt;
+      if (entry.ticket.expiresAt < victimExpiresAt) {
+        victim = digest;
+        victimExpiresAt = entry.ticket.expiresAt;
       }
     }
     if (victim !== undefined) {
-      this.tickets.delete(victim);
+      this.ticketsByDigest.delete(victim);
     }
   }
 }

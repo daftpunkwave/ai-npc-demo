@@ -439,4 +439,30 @@ describe("WS 流中心", () => {
       hub.close();
     }
   });
+
+  it("等长错误令牌不认证也不注销原会话，票据保持一次性消费", () => {
+    const hub = createHub();
+    try {
+      const session = hub.login({ token: "player-login-token", auth: playerAuth });
+      // 等长但内容不同：查找命中摘要候选后由常量时间比较拒绝。
+      const tampered = `${session.token.slice(0, -1)}${session.token.endsWith("0") ? "1" : "0"}`;
+      expect(tampered).toHaveLength(session.token.length);
+      expect(hub.authenticate(tampered)).toBeNull();
+
+      // 用错误令牌注销是幂等的，不会撤销真实会话。
+      hub.logout(tampered);
+      expect(hub.authenticate(session.token)).not.toBeNull();
+
+      // 票据只消费一次：第一次握手成功，第二次同一票据被拒绝。
+      const ticket = hub.issueTicket(session.sessionId).ticket;
+      const accepted = new FakeSocket();
+      hub.accept(accepted, ticket);
+      expect(accepted.closed).toBeNull();
+      const reused = new FakeSocket();
+      hub.accept(reused, ticket);
+      expect(reused.closed?.code).toBe(4401);
+    } finally {
+      hub.close();
+    }
+  });
 });

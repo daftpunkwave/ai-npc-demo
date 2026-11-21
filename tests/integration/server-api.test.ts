@@ -1379,6 +1379,15 @@ describe("服务端 API", () => {
       readonly code: string;
     }[] = [
       { label: "登录结构非法", method: "POST", url: "/api/v1/auth/login", payload: {}, status: 400, code: "validation" },
+      // 与合法令牌等长但内容不同：登录仍按 401 拒绝，不因摘要索引而放行。
+      {
+        label: "登录令牌等长错误",
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { token: "player-tokeN" },
+        status: 401,
+        code: "unauthenticated",
+      },
       { label: "未认证会话", method: "GET", url: "/api/v1/session", status: 401, code: "unauthenticated" },
       {
         label: "玩家访问控制台",

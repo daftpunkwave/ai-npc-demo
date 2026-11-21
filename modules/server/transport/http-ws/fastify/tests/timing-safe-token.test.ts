@@ -4,7 +4,7 @@
  * 约束与禁忌：不断言执行耗时，也不依赖随机源或真实网络；恒定性由实现改用 timingSafeEqual 保证。
  */
 import { describe, expect, it } from "vitest";
-import { findTokenEntry, timingSafeTokenEquals } from "../src/timing-safe-token";
+import { findTokenEntry, timingSafeTokenEquals, tokenDigest } from "../src/timing-safe-token";
 
 describe("timingSafeTokenEquals", () => {
   it("完全相同的令牌返回 true", () => {
@@ -26,6 +26,14 @@ describe("timingSafeTokenEquals", () => {
   it("按 UTF-8 字节比较多字节内容", () => {
     expect(timingSafeTokenEquals("令牌-一", "令牌-一")).toBe(true);
     expect(timingSafeTokenEquals("令牌-一", "令牌-二")).toBe(false);
+  });
+});
+
+describe("tokenDigest", () => {
+  it("对同一令牌稳定，对不同令牌给出不同摘要", () => {
+    expect(tokenDigest("player-token")).toBe(tokenDigest("player-token"));
+    expect(tokenDigest("player-token")).not.toBe(tokenDigest("player-tokeN"));
+    expect(tokenDigest("player-token")).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
