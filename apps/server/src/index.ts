@@ -42,6 +42,8 @@ export type {
 } from "./host/module-catalog";
 export { buildPlayerProjection } from "./projection";
 export { advanceWorldTick, catchUpWorldTick } from "./tick";
+export { createLifecycle } from "./host/lifecycle";
+export type { HostLifecycle, LifecycleInput } from "./host/lifecycle";
 export type {
   AdvanceWorldTickInput,
   TickAuthority,
