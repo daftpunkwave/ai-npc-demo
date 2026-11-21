@@ -104,8 +104,9 @@ export function compressWindow(
   requestedTargetTokens: number,
   config: WindowCompressionConfig,
 ): ReturnType<AgentCompressionPort["compress"]> {
-  const triggerTokens = config.triggerRatio * effectiveMaxTokens;
+  const configuredTriggerTokens = config.triggerRatio * effectiveMaxTokens;
   const targetTokens = Math.max(1, Math.min(requestedTargetTokens, config.targetTokenRatio * effectiveMaxTokens));
+  const triggerTokens = Math.min(configuredTriggerTokens, targetTokens);
   if (artifact.tokenEstimate <= triggerTokens) {
     return {
       status: "not-triggered",
@@ -115,6 +116,7 @@ export function compressWindow(
         policy: "window",
         effectiveMaxTokens,
         triggerTokens,
+        configuredTriggerTokens,
         inputTokens: artifact.tokenEstimate,
         outputTokens: artifact.tokenEstimate,
         targetTokens,
@@ -139,6 +141,7 @@ export function compressWindow(
       policy: "window",
       effectiveMaxTokens,
       triggerTokens,
+      configuredTriggerTokens,
       targetTokens,
       inputTokens: artifact.tokenEstimate,
       outputTokens,

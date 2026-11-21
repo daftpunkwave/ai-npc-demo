@@ -136,7 +136,7 @@ function buildMemorySegment(
         ...bundle.items.map((item) => item.releasePolicyId),
         ...request.observations.map((observation) => observation.releasePolicyId),
       ]),
-      protected: core.length > 0 || relations.length > 0,
+      protected: core.length > 0 || relations.length > 0 || bundle.items.some((item) => item.mustInclude),
     },
     omissions,
     fits: true,
@@ -291,6 +291,13 @@ export class OrderedBlocksContextBuilder implements AgentContextPort {
       : !built.fits || tokenEstimate > targetTokens
         ? "over-budget"
         : "ready";
+    const failureReason = status === "ready"
+      ? null
+      : !built.fits
+        ? "protected-content-over-budget"
+        : status === "not-ready"
+          ? "not-ready"
+          : "request-over-budget";
     const artifactWithoutId = {
       parentArtifactId: null,
       session: request.session,
@@ -308,7 +315,7 @@ export class OrderedBlocksContextBuilder implements AgentContextPort {
       ],
       omissions: dedupeOmissions(built.omissions),
       tokenEstimate,
-      failureReason: status === "ready" ? null : status,
+      failureReason,
     } satisfies Omit<ContextArtifact, "artifactId" | "hash">;
     return {
       artifactId: this.host.ids("art"),

@@ -7,7 +7,13 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import type { CommandEnvelope, CommandReceipt, Json, NormalizedToolCall, ToolExecutionResult } from "@ai-npc/contracts";
-import { ToolGateway, type ToolGatewayTurn } from "@ai-npc/agent-runtime";
+import {
+  assertToolCallResultPairing,
+  StoredAgentArtifactStore,
+  ToolGateway,
+  type AgentArtifactStore,
+  type ToolGatewayTurn,
+} from "@ai-npc/agent-runtime";
 import { toolsetDocumentSchema } from "@ai-npc/mod-agent-tools-game-tools";
 import {
   createAgentContextToolsHarness,
@@ -132,6 +138,41 @@ describe("Tool view and gateway", () => {
     expect(projection.omissions).toContainEqual({ toolId: "asset.dispatch", reason: "empty-enum", field: "teamId" });
   });
 
+  it("缺失动态授权集合时失败关闭并省略工具", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let calls = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => {
+        calls += 1;
+        return receipt(harness.host, envelope);
+      },
+    });
+    const bareTurn = { ...turn(["team-unused"]), narrowing: {} };
+    const projection = gateway.projectTools(bareTurn);
+    expect(projection.tools.some((tool) => tool.name === "asset_dispatch")).toBe(false);
+    expect(projection.omissions).toContainEqual({
+      toolId: "asset.dispatch",
+      reason: "missing-authorization",
+      field: "teamId",
+    });
+    const args = dispatchArguments("team-unused");
+    const outcome = await gateway.executeCall({
+      ...bareTurn,
+      providerCallId: "provider-call-missing-auth",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    });
+    expect(outcome.result.reasonCode).toBe("no-authority");
+    expect(calls).toBe(0);
+  });
   it("越权 team 参数不发送命令", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
@@ -160,6 +201,50 @@ describe("Tool view and gateway", () => {
     expect(result.result.reasonCode).toBe("no-authority");
   });
 
+  it("已结算调用参数冲突时保留原结果记录", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let calls = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => {
+        calls += 1;
+        return receipt(harness.host, envelope);
+      },
+    });
+    const args = dispatchArguments("team-allowed");
+    const first = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-conflict",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    });
+    const conflict = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-conflict",
+      wireName: "asset_dispatch",
+      arguments: dispatchArguments("team-other"),
+      argumentsRaw: JSON.stringify(dispatchArguments("team-other")),
+    });
+    expect(conflict.result.reasonCode).toBe("idempotency-conflict");
+    expect(calls).toBe(1);
+    expect(harness.storage.transact((tx) => tx.rows("artifacts").get({
+      artifact_id: first.rawArtifact.artifactId,
+    }))).not.toBeNull();
+    expect(harness.storage.transact((tx) => tx.rows("tool_calls").get({
+      tool_call_id: first.toolCallId,
+    }))).toMatchObject({
+      status: "settled",
+      raw_artifact_id: first.rawArtifact.artifactId,
+      execution_status: "ok",
+    });
+  });
   it("删除 null 字段并用同一 operationId 返回原结果", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
@@ -247,6 +332,42 @@ describe("Tool view and gateway", () => {
     expect(calls).toBe(2);
     expect(envelopes[0]?.commandId).toBe(envelopes[1]?.commandId);
   });
+  it("artifact 持久化异步失败时结算为 unknown", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const stored = new StoredAgentArtifactStore(harness.storage, harness.host);
+    let failNextPut = true;
+    const artifacts: AgentArtifactStore = {
+      get: (artifactId) => stored.get(artifactId),
+      put: async (input) => {
+        if (failNextPut) {
+          failNextPut = false;
+          throw new Error("artifact write failed");
+        }
+        return stored.put(input);
+      },
+    };
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      artifacts,
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+    });
+    const args = dispatchArguments("team-allowed");
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-persist-failure",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    });
+    expect(outcome.result.executionStatus).toBe("unknown");
+    expect(outcome.result.reasonCode).toBe("execution-unknown");
+  });
   it("同一响应批次为每个 call 生成同 callId 的结果", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
@@ -269,6 +390,51 @@ describe("Tool view and gateway", () => {
     expect(gateway.resultMessages(outcomes).filter((message) => message.role === "tool").map((message) => message.toolCallId)).toEqual(["provider-call-a", "provider-call-b"]);
   });
 
+  it("重复、缺失和多余 callId 的配对会失败", () => {
+    const call: NormalizedToolCall = {
+      id: "provider-call-a",
+      name: "world_inspect",
+      arguments: { nodeId: null },
+      argumentsRaw: "{}",
+      parseError: null,
+    };
+    expect(() => assertToolCallResultPairing([call, call], [])).toThrow("duplicate");
+    expect(() => assertToolCallResultPairing([call], [])).toThrow("no result");
+    expect(() => assertToolCallResultPairing([], [{
+      providerCallId: "provider-call-extra",
+      modelText: "{}",
+      isError: false,
+    }])).toThrow("no matching call");
+  });
+  it("已结算调用引用缺失 artifact 时拒绝复用", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+    });
+    const args = dispatchArguments("team-allowed");
+    const first = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-missing-artifact",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    });
+    harness.storage.transact((tx) => tx.rows("artifacts").delete({ artifact_id: first.rawArtifact.artifactId }));
+    await expect(gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-missing-artifact",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    })).rejects.toThrow("artifact");
+  });
   it("三份工具集均可解析且战略集不提供 task.respond", () => {
     expect(toolset("character-default").tools).toHaveLength(12);
     expect(toolset("character-broadcaster").tools.find((entry) => entry.toolId === "message.send")?.permissionProfile)

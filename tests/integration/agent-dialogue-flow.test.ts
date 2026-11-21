@@ -49,7 +49,7 @@ function intent(kind: DialogueIntent["kind"], factRefs: readonly string[] = []):
 function speechInput(options: {
   readonly intent: DialogueIntent;
   readonly leaks?: readonly string[];
-  readonly taskStatus?: "pending" | "running" | "completed";
+  readonly taskStatus?: "pending" | "running" | "completed" | "failed" | "cancelled";
   readonly factSummary?: string;
 }): SpeechApprovalInput {
   const facts = options.factSummary === undefined ? [] : [{
@@ -136,8 +136,9 @@ describe("Dialogue flow", () => {
     const result = await setup.dialogue.commit(speechInput({
       intent: intent("answer"),
       leaks: ["北侧", "撤离"],
-    }), () => {
+    }), (request) => {
       attempts += 1;
+      expect(Object.keys(request).sort()).toEqual(["output", "system", "user"]);
       return { utterance: "根庭会从北侧撤离。", citedRefs: [] };
     });
     expect(attempts).toBe(2);
@@ -176,6 +177,21 @@ describe("Dialogue flow", () => {
     expect(validation.attempts.every((attempt) => attempt.failedChecks.includes("status-claims"))).toBe(true);
   });
 
+  it("失败、取消或缺少完成凭据时仍拦截完成声明", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const setup = flow(harness, []);
+    for (const taskStatus of ["failed", "cancelled"] as const) {
+      const result = await setup.dialogue.approve(speechInput({
+        intent: intent("answer"),
+        taskStatus,
+      }), () => ({ utterance: "补给已经完成。", citedRefs: [] }));
+      expect(result.artifact.fallback, taskStatus).toBe(true);
+    }
+    const missingReceipt = await setup.dialogue.approve(speechInput({ intent: intent("answer") }), () =>
+      ({ utterance: "补给已经完成。", citedRefs: [] }));
+    expect(missingReceipt.artifact.fallback).toBe(true);
+  });
   it("每个 intent 都能由安全模板生成非空且无占位符的对白", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
@@ -214,8 +230,9 @@ describe("Dialogue flow", () => {
     const envelopes: CommandEnvelope[] = [];
     const setup = flow(harness, envelopes);
     const speech: SpeechApprovalInput = {
-      ...speechInput({ intent: intent("inform") }),
-      channel: "message",
+      ...speechInput({ intent: intent("acknowledge") }),
+      intent: { ...intent("acknowledge"), audience: ["npc-wenzhao"] },
+      channel: "dialogue",
     };
     const turn: ToolGatewayTurn = {
       session: speech.session,
@@ -230,7 +247,7 @@ describe("Dialogue flow", () => {
       narrowing: {},
     };
     const result = await setup.dialogue.executeMessage({
-      arguments: { to: ["player-1"], intent: speech.intent },
+      arguments: { to: ["player-1"], intent: intent("inform") },
       turn,
       operationId: "op-000000000001",
       commandId: "cmd-000000000001",
@@ -243,8 +260,26 @@ describe("Dialogue flow", () => {
     expect(envelopes[0]).toMatchObject({
       commandId: "cmd-000000000001",
       type: "speech.commit",
-      payload: { channel: "message", audience: ["player-1"] },
+      payload: { channel: "message", audience: ["player-1"], intentKind: "inform" },
     });
+  });
+  it("auth scope、acting agent 或 turnId 不匹配时拒绝生成", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const setup = flow(harness, []);
+    const base = speechInput({ intent: intent("answer") });
+    await expect(setup.dialogue.approve({
+      ...base,
+      auth: { ...base.auth, branchId: "br-000000000099" },
+    })).rejects.toThrow("auth scope");
+    await expect(setup.dialogue.approve({
+      ...base,
+      auth: { ...base.auth, actingAsAgentId: "npc-wenzhao" },
+    })).rejects.toThrow("auth subject");
+    await expect(setup.dialogue.approve({
+      ...base,
+      auth: { ...base.auth, turnId: "turn-000000000099" },
+    })).rejects.toThrow("auth turnId");
   });
   it("公开受众不能披露 private fact", async () => {
     const harness = await createAgentContextToolsHarness();

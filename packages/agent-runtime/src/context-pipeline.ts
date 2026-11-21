@@ -33,6 +33,21 @@ export class AgentContextPipeline {
 
   async prepareFirstRequest(input: ContextBuildRequest): Promise<PreparedContext> {
     const built = await this.options.context.build(input);
+    const eligibleForCompression = built.status === "ready" ||
+      (built.status === "over-budget" && built.failureReason === "request-over-budget");
+    if (!eligibleForCompression) {
+      return {
+        artifact: built,
+        compressionStatus: "not-triggered",
+        lossReport: {
+          policy: "skipped",
+          reason: "ineligible-context-status",
+          status: built.status,
+          failureReason: built.failureReason,
+        },
+        ready: built.status === "ready",
+      };
+    }
     const effectiveMaxTokens = Math.max(
       1,
       Math.min(input.budget.maxInputTokens, input.modelWindowTokens - input.budget.safetyTokens),

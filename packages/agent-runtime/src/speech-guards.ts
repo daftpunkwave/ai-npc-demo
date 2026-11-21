@@ -65,16 +65,14 @@ export function validateSpeechOutput(input: SpeechGuardInput): SpeechValidation 
     .flatMap((secret) => secret.leakTerms)
     .find((term) => term.length > 0 && utterance.includes(term));
   const leakPassed = leaked === undefined;
-  const hasPending = input.receipts.some((receipt) =>
-    receipt.taskStatus === "pending" || receipt.taskStatus === "running");
+  const hasCompletedTask = input.receipts.some((receipt) => receipt.taskStatus === "completed");
   const hasRejected = input.receipts.some((receipt) => receipt.commandStatus === "rejected");
-  const completionClaim = hasPending
-    ? input.completionClaims.find((term) => utterance.includes(term))
-    : undefined;
+  const completionClaim = input.completionClaims.find((term) => utterance.includes(term));
   const progressClaim = hasRejected
     ? input.progressClaims.find((term) => utterance.includes(term))
     : undefined;
-  const statusPassed = completionClaim === undefined && progressClaim === undefined;
+  const completionAllowed = completionClaim === undefined || hasCompletedTask;
+  const statusPassed = completionAllowed && progressClaim === undefined;
   const checks: SpeechCheck[] = [
     { name: "schema", passed: schemaPassed, reason: schemaPassed ? null : "speech output schema or length is invalid" },
     { name: "cited-refs", passed: refsPassed, reason: refsPassed ? null : "citedRefs contains an undisclosable or unknown reference" },

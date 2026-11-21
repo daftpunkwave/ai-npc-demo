@@ -54,7 +54,7 @@ export class ToolOutcomeStore {
       turn_id: input.turnId,
       attempt_id: input.attemptId,
       provider_call_id: input.providerCallId,
-    }));
+    }, { orderBy: [{ column: "created_at", direction: "asc" }] }));
     return rows[0] ?? null;
   }
 
@@ -180,7 +180,7 @@ export class ToolOutcomeStore {
     };
   }
 
-  loadSettled(row: Readonly<Record<string, StorageCell>>): ToolCallOutcome {
+  async loadSettled(row: Readonly<Record<string, StorageCell>>): Promise<ToolCallOutcome> {
     const rawArtifactId = storageString(row, "raw_artifact_id");
     const viewArtifactId = storageString(row, "view_artifact_id");
     const raw = this.options.artifacts.get(rawArtifactId);

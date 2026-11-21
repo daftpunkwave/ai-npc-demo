@@ -21,7 +21,7 @@ export interface ToolNarrowingValues {
 
 export interface NarrowedToolOmission {
   readonly toolId: string;
-  readonly reason: "empty-enum";
+  readonly reason: "empty-enum" | "missing-authorization";
   readonly field: string;
 }
 
@@ -88,13 +88,18 @@ export function narrowToolsForTurn(
     const definition: ToolDefinition | null = tools.definition(binding.toolId, binding.version);
     if (definition === null) throw new Error(`tool definition missing for ${binding.toolId}@${binding.version}`);
     const dynamic = dynamicFieldFor(binding.toolId, values);
-    if (dynamic !== null && dynamic.values !== undefined && dynamic.values.length === 0) {
-      omissions.push({ toolId: binding.toolId, reason: "empty-enum", field: dynamic.field });
-      continue;
+    let inputSchema = definition.inputSchema;
+    if (dynamic !== null) {
+      if (dynamic.values === undefined) {
+        omissions.push({ toolId: binding.toolId, reason: "missing-authorization", field: dynamic.field });
+        continue;
+      }
+      if (dynamic.values.length === 0) {
+        omissions.push({ toolId: binding.toolId, reason: "empty-enum", field: dynamic.field });
+        continue;
+      }
+      inputSchema = narrowSchema(definition.inputSchema, dynamic.field, dynamic.values);
     }
-    const inputSchema = dynamic === null || dynamic.values === undefined
-      ? definition.inputSchema
-      : narrowSchema(definition.inputSchema, dynamic.field, dynamic.values);
     projected.push({
       name: toModelToolName(definition.toolId),
       description: definition.description,

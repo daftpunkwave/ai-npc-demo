@@ -4,6 +4,7 @@
  * 约束与禁忌：不得复用 decision 会话、把秘密注入请求、绕过 authority 或提交未经批准的正文。
  */
 import {
+  dialogueIntentSchema,
   speechArtifactSchema,
   type AuthContext,
   type CommandEnvelope,
@@ -75,7 +76,7 @@ export interface SpeechPreparation {
 }
 
 export type SpeechGenerator = (
-  request: SpeechPreparation,
+  request: SpeechGenerationRequest,
   attempt: number,
 ) => SpeechGenerationOutput | Promise<SpeechGenerationOutput>;
 
@@ -101,6 +102,27 @@ export interface DialogueFlowOptions {
   readonly executeCommand?: (auth: AuthContext, envelope: CommandEnvelope) => CommandReceipt | Promise<CommandReceipt>;
 }
 
+function messageIntentFromArguments(value: Json): DialogueIntent | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as { readonly [key: string]: Json };
+  const to = record["to"];
+  const rawIntent = record["intent"];
+  if (!Array.isArray(to) || to.length === 0 || to.length > 4 ||
+      to.some((item) => typeof item !== "string" || item.length === 0)) return null;
+  if (typeof rawIntent !== "object" || rawIntent === null || Array.isArray(rawIntent)) return null;
+  if (to.includes("public") && (to.length !== 1 || to[0] !== "public")) return null;
+  const intent = rawIntent as { readonly [key: string]: Json };
+  const parsed = dialogueIntentSchema.safeParse({
+    kind: intent["kind"],
+    audience: to,
+    tone: intent["tone"],
+    reasonCode: intent["reasonCode"],
+    subjectRef: intent["subjectRef"],
+    factRefs: intent["factRefs"],
+  });
+  if (!parsed.success || parsed.data.kind === "none") return null;
+  return parsed.data;
+}
 function renderTemplate(template: string, values: Readonly<Record<string, string>>): string {
   return template.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/gu, (_match, key: string) => values[key] ?? "");
 }
@@ -229,7 +251,7 @@ export class DialogueFlow {
     if (generator !== undefined) {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
-          const candidate = await generator(preparation, attempt);
+          const candidate = await generator(preparation.request, attempt);
           const validation = this.validate(input, preparation, candidate);
           attempts.push({
             attempt,
@@ -350,13 +372,16 @@ export class DialogueFlow {
     readonly speech: SpeechApprovalInput;
     readonly generator?: SpeechGenerator;
   }): Promise<MessageExecutionResult> {
-    if (input.speech.channel !== "message" && input.speech.channel !== "broadcast") {
-      throw new Error("message tool must use message or broadcast speech channel");
-    }
+    const messageIntent = messageIntentFromArguments(input.arguments);
+    if (messageIntent === null) throw new Error("message.send arguments are invalid");
     if (input.speech.turnId !== input.turn.turnId || input.speech.agentId !== input.turn.agentId) {
       throw new Error("message speech input does not match the active tool turn");
     }
-    const committed = await this.commitWithCommandId(input.speech, input.commandId, input.generator);
+    const channel = messageIntent.audience.length === 1 && messageIntent.audience[0] === "public"
+      ? "broadcast"
+      : "message";
+    const speech: SpeechApprovalInput = { ...input.speech, intent: messageIntent, channel };
+    const committed = await this.commitWithCommandId(speech, input.commandId, input.generator);
     return { receipt: committed.receipt, output: committed.receipt.result ?? {} };
   }
 

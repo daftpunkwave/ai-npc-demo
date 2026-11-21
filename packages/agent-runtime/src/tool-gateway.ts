@@ -114,9 +114,9 @@ export class ToolGateway {
     if (existing !== null && existing["status"] === "settled") {
       const toolId = this.toolIdForWireName(input.wireName);
       if (toolId === existing["tool_id"] && argsHash === existing["args_hash"]) {
-        return this.store.loadSettled(existing);
+        return await this.store.loadSettled(existing);
       }
-      return this.settleError(input, null, argsHash, "idempotency-conflict", "Tool call retry changed its tool or arguments.", existing);
+      return this.settleError(input, null, argsHash, "idempotency-conflict", "Tool call retry changed its tool or arguments.");
     }
 
     const toolId = this.toolIdForWireName(input.wireName);
@@ -172,7 +172,7 @@ export class ToolGateway {
         detail: "Query completed.",
         data: output,
       });
-      return this.store.persistOutcome({ input, binding, definition, argsHash, args, command: null, output, partialResult: result, toolCall: current });
+      return await this.store.persistOutcome({ input, binding, definition, argsHash, args, command: null, output, partialResult: result, toolCall: current });
     } catch (error) {
       return this.settleError(input, binding, argsHash, "execution-unknown", errorMessage(error), current, null, "unknown");
     }
@@ -208,7 +208,7 @@ export class ToolGateway {
     if (reusable !== null) {
       const commandId = reusable["command_id"] as string | null;
       const current = this.store.ensureToolCall(input, binding, argsHash, operationId, commandId, existing);
-      const loaded = this.store.loadSettled(reusable);
+      const loaded = await this.store.loadSettled(reusable);
       this.store.attachArtifactsToCall(current.toolCallId, loaded.rawArtifact, loaded.viewArtifact, loaded.result, operationId, commandId);
       return { ...loaded, providerCallId: input.providerCallId, toolCallId: current.toolCallId, toolId: binding.toolId };
     }
@@ -228,7 +228,7 @@ export class ToolGateway {
     }
     try {
       if (binding.toolId === "message.send") {
-        return this.executeMessageTool(input, binding, definition, argsHash, args, current, operationId, commandId);
+        return await this.executeMessageTool(input, binding, definition, argsHash, args, current, operationId, commandId);
       }
       if (resolvedCommand === null) {
         return this.settleError(input, binding, argsHash, "invalid-params", "Command resolution failed.", current);
@@ -240,7 +240,7 @@ export class ToolGateway {
         payload: resolvedCommand.payload,
       };
       const receipt = await this.options.executeCommand(input.auth, envelope);
-      return this.persistReceipt({
+      return await this.persistReceipt({
         input,
         binding,
         definition,
@@ -286,7 +286,7 @@ export class ToolGateway {
       detail: message.receipt.safeMessage ?? (message.receipt.commandStatus === "accepted" ? "Message accepted." : "Message rejected."),
       data: message.output,
     });
-    return this.store.persistOutcome({
+    return await this.store.persistOutcome({
       input,
       binding,
       definition,
@@ -299,7 +299,7 @@ export class ToolGateway {
     });
   }
 
-  private persistReceipt(resultInput: {
+  private async persistReceipt(resultInput: {
     readonly input: ToolCallExecutionInput;
     readonly binding: ToolBinding;
     readonly definition: ToolDefinition;
@@ -321,7 +321,7 @@ export class ToolGateway {
       detail: receipt.safeMessage ?? (receipt.commandStatus === "accepted" ? "Command accepted." : "Command rejected."),
       data: receipt.result ?? {},
     });
-    return this.store.persistOutcome({
+    return await this.store.persistOutcome({
       input,
       binding,
       definition,
@@ -380,7 +380,7 @@ export class ToolGateway {
       detail,
       data: { error: reasonCode },
     });
-    return this.store.persistOutcome({
+    return await this.store.persistOutcome({
       input,
       binding: effectiveBinding,
       definition,
@@ -400,7 +400,8 @@ export class ToolGateway {
   ): string | null {
     const field = dynamicFieldName(toolId);
     const allowedValues = allowedDynamicValues(toolId, narrowing);
-    if (field === null || allowedValues === undefined) return null;
+    if (field === null) return null;
+    if (allowedValues === undefined) return "Dynamic authorization is missing for this tool.";
     const rawValue = typeof args === "object" && args !== null && !Array.isArray(args) ? args[field] : undefined;
     return typeof rawValue === "string" && allowedValues.includes(rawValue)
       ? null

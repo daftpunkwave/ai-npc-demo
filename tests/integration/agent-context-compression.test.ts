@@ -115,10 +115,91 @@ describe("Ordered context and window compression", () => {
     artifact.tokenEstimate = 100;
     const result = harness.compression.compress({ artifact, effectiveMaxTokens: 1000, targetTokens: 600 });
     expect(result.status).toBe("not-triggered");
-    expect(result.lossReport).toMatchObject({ inputTokens: 100, outputTokens: 100, triggerTokens: 800 });
+    expect(result.lossReport).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 100,
+      triggerTokens: 600,
+      configuredTriggerTokens: 800,
+    });
     expect(result.segments).toBe(artifact.segments);
   });
 
+  it("请求目标低于触发阈值时仍按目标预算触发压缩", async () => {
+    const harness = await createAgentContextToolsHarness("agent.compression.window");
+    harnesses.push(harness);
+    const artifact = artifactWithHistory();
+    artifact.tokenEstimate = 150;
+    const result = harness.compression.compress({
+      artifact,
+      effectiveMaxTokens: 1000,
+      targetTokens: 100,
+    });
+    expect(result.status).toBe("compressed");
+    expect(result.lossReport).toMatchObject({
+      triggerTokens: 100,
+      configuredTriggerTokens: 800,
+      targetTokens: 100,
+    });
+  });
+
+  it("受保护内容超预算时不压缩且保持失败状态", async () => {
+    const harness = await createAgentContextToolsHarness("agent.compression.window");
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.inputText = "关".repeat(500);
+    request.budget.segmentBudgets.input = 20;
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("over-budget");
+    expect(built.failureReason).toBe("protected-content-over-budget");
+    const pipeline = new AgentContextPipeline({
+      context: harness.context,
+      compression: harness.compression,
+      host: harness.host,
+    });
+    const prepared = await pipeline.prepareFirstRequest(request);
+    expect(prepared.ready).toBe(false);
+    expect(prepared.compressionStatus).toBe("not-triggered");
+    expect(prepared.lossReport).toMatchObject({ reason: "ineligible-context-status" });
+  });
+
+  it("记忆未就绪时保持 not-ready 状态", async () => {
+    const harness = await createAgentContextToolsHarness("agent.compression.window");
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.memoryBundle.status = "not-ready";
+    const pipeline = new AgentContextPipeline({
+      context: harness.context,
+      compression: harness.compression,
+      host: harness.host,
+    });
+    const prepared = await pipeline.prepareFirstRequest(request);
+    expect(prepared.artifact.status).toBe("not-ready");
+    expect(prepared.ready).toBe(false);
+    expect(prepared.compressionStatus).toBe("not-triggered");
+  });
+
+  it("含 mustInclude 的记忆段标记为受保护", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.memoryBundle = {
+      ...request.memoryBundle,
+      status: "ok",
+      items: [{
+        memoryId: "mem-000000000001",
+        kind: "episodic",
+        epistemic: "verified-event",
+        summaryZh: "必须保留的事实",
+        validFromTick: 1,
+        score: 1,
+        mustInclude: true,
+        releasePolicyId: "parties:human-independent,player-1",
+        sourceObservationIds: ["obs-000000000001"],
+      }],
+    };
+    const built = await harness.context.build(request);
+    expect(built.segments.find((segment) => segment.kind === "memory")?.protected).toBe(true);
+  });
   it("触发后保留最近历史组并按 memory、world 顺序裁剪", async () => {
     const harness = await createAgentContextToolsHarness("agent.compression.window");
     harnesses.push(harness);
