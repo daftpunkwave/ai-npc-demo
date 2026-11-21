@@ -75,6 +75,11 @@ export interface WorldTx {
   emit(type: string, payload: Json, audience: readonly AudienceSpec[], causationIds?: readonly string[]): string;
   schedule(kind: string, dueTick: number, idempotencyKey: string, payload: Json): void;
   cancelJobs(idempotencyKeyPrefix: string): void;
+  /**
+   * 登记一个持久时钟停止点，与本次事务的业务结果一起提交。
+   * 宿主据此在重启或恢复后补做暂停，并拒绝继续推进逻辑时间；重复登记同一 requestId 幂等。
+   */
+  requestClockStop(requestId: string, reason: string): void;
 }
 
 /** 只读事务视图：事件订阅与查询处理器不能登记聚合写入、事件或 job。 */

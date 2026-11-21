@@ -29,7 +29,7 @@ describe("整库备份", () => {
         expect(backup.prepare("PRAGMA integrity_check").get()?.["integrity_check"]).toBe("ok");
         const worlds = backup.prepare("SELECT world_id FROM worlds").all();
         expect(worlds.map((row) => row["world_id"])).toEqual(["wld-1"]);
-        expect(backup.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()?.["version"]).toBe(6);
+        expect(backup.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()?.["version"]).toBe(7);
       } finally {
         backup.close();
       }

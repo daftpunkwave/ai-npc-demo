@@ -245,5 +245,7 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
   );
   const campaign: CampaignState = { ...record.state, status: "evaluated", outcome };
   context.tx.put("campaign", "campaign", campaign);
+  // 把“章节已到终点、需要暂停”与评估结果写在同一事务：即使暂停提交前崩溃，重启后也能补做。
+  context.tx.requestClockStop("chapter-evaluated", "序章评估完成，切片结束");
   return { stopClock: true };
 }

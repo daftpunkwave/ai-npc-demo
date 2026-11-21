@@ -134,6 +134,14 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
 
   /** 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。 */
   const control = (mode: "pause" | "start", expectedRunVersion: number) => {
+    // 终局停止点已登记：先补做暂停（幂等），再明确拒绝恢复，避免时钟停留在 running。
+    if (mode === "start" && authority.clock.pendingStop(active.branchId)) {
+      runtime.clock.pause(active.branchId);
+      app?.notifyWorldChanged();
+      throw new DomainError("invalid-state", "章节已结束，不能恢复时钟", {
+        details: { branchId: active.branchId },
+      });
+    }
     const result = mode === "pause"
       ? runtime.clock.pause(active.branchId, expectedRunVersion)
       : runtime.clock.start(active.branchId, expectedRunVersion);
@@ -250,15 +258,27 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     try {
       const clock = clockState();
       if (clock.mode === "running") {
-        advanceWorldTick({
-          storage,
-          clock: runtime.clock,
-          authority,
-          branchId: active.branchId,
-          targetTick: clock.worldTick + 1,
-        });
-        clearWorkerFailure();
-        app?.notifyWorldChanged();
+        if (authority.clock.pendingStop(active.branchId)) {
+          // 终局已登记：补做一次暂停，不把预期的章节终点当成 worker 失败。
+          const paused = runtime.clock.pause(active.branchId);
+          if (!paused.ok) {
+            host.logger.warn("章节终点补做暂停未生效", {
+              branchId: active.branchId,
+              reason: paused.reasonCode,
+            });
+          }
+          app?.notifyWorldChanged();
+        } else {
+          advanceWorldTick({
+            storage,
+            clock: runtime.clock,
+            authority,
+            branchId: active.branchId,
+            targetTick: clock.worldTick + 1,
+          });
+          clearWorkerFailure();
+          app?.notifyWorldChanged();
+        }
       }
     } catch (error) {
       workerFailed = true;

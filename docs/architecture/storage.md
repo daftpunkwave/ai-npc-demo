@@ -196,6 +196,15 @@ CREATE TABLE rule_failures (             -- 有界重试与死信记录；成功
 );
 CREATE INDEX rule_failures_status_updated ON rule_failures (branch_id, status, updated_at);
 
+CREATE TABLE clock_stop_requests (       -- 终局停止点：与业务结果同事务提交，重启后补做暂停
+  branch_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  requested_at_tick INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (branch_id, request_id)
+);
+
 CREATE TABLE consumer_offsets (
   branch_id TEXT NOT NULL,
   consumer_id TEXT NOT NULL,

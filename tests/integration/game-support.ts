@@ -72,6 +72,9 @@ export function createMemoryTx(worldTick = 0): WorldTx {
     cancelJobs() {
       // 端口测试不取消 job。
     },
+    requestClockStop() {
+      // 端口测试不登记持久时钟停止点。
+    },
   };
 }
 
