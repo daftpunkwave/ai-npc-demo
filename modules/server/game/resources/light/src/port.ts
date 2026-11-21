@@ -60,6 +60,15 @@ function amountOf(amountsValue: ResourceAmounts, resource: ResourceId): number {
   }
 }
 
+/** 取出增减量中需要从可用量扣减的部分：负向字段取绝对值，正向或缺失字段记为 0。 */
+function deductionOf(delta: ResourceDelta): ResourceAmounts {
+  return {
+    supply: Math.max(0, -(delta.supply ?? 0)),
+    energy: Math.max(0, -(delta.energy ?? 0)),
+    medical: Math.max(0, -(delta.medical ?? 0)),
+  };
+}
+
 function reservationOf(state: StockpileState, taskId: string): ResourceAmounts | null {
   return state.reservations.find((entry) => entry.taskId === taskId)?.amount ?? null;
 }
@@ -324,10 +333,12 @@ class LightResourcesPort implements GameResourcesPort {
     if (state === null) {
       return failure("invalid-params");
     }
-    const nextAmount = applyDelta(state.amount, input.delta);
-    if (!coversAmounts(nextAmount, state.reserved)) {
+    // 非 clamp 调整必须在写入前按可用量（amount − reserved）校验全部负向字段：
+    // 若先套用 applyDelta 截断再与 reserved 比较，reserved 为 0 时会把超量扣减误判为成功。
+    if (!coversAmounts(subtractAmounts(state.amount, state.reserved), deductionOf(input.delta))) {
       return failure("insufficient-resource");
     }
+    const nextAmount = applyDelta(state.amount, input.delta);
     const applied: ResourceDelta = {};
     if (nextAmount.supply !== state.amount.supply) {
       applied.supply = nextAmount.supply - state.amount.supply;
