@@ -129,6 +129,25 @@ describe("协议条款履约", () => {
     expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "player-1" });
   });
 
+  it("share-evidence 保持精确主体匹配，其他主体分享不计入玩家义务", async () => {
+    const value = await harness();
+    const agreementId = proposeAsPlayer(value, "human-neutral", ["player-1", "human-neutral"], [
+      shareEvidenceTerm(),
+    ]);
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    // 温原持有水闸分水账，但不是条款义务人；派系归属映射不扩大个人知识授权。
+    const share = executeCommand(value, strategicAuth(value, "npc-wenyuan"), "information.share", {
+      evidenceId: "ev-water-ledger",
+      audience: ["human-neutral"],
+    });
+    expect(share.commandStatus).toBe("accepted");
+    runConsumers(value);
+    expectAgreement(value, agreementId, { status: "active", fulfilledTerms: [] });
+
+    advanceToWithConsumers(value, 21);
+    expectTermBreached(value, agreementId, { termIndex: 0, obligorId: "player-1" });
+  });
+
   it("grant-passage 与 water-allocation 生效即履约，义务期内违反持续义务时记违约", async () => {
     const value = await harness();
     const passageId = proposePassage(value);
