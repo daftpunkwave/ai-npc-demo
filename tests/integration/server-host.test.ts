@@ -677,6 +677,166 @@ describe("服务端宿主", () => {
     }
   }, 30_000);
 
+  it("控制台运营入口按角色矩阵提供时钟、存档与恢复，玩家自助入口仍只接受玩家", async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      operatorToken: "operator-token",
+      researcherToken: "researcher-token",
+    });
+    hosts.push(host);
+    const playerSession = await loginSession(host, "player-token");
+    const operatorSession = await loginSession(host, "operator-token");
+    const researcherSession = await loginSession(host, "researcher-token");
+    const playerHeaders = { authorization: `Bearer ${playerSession}` };
+    const operatorHeaders = { authorization: `Bearer ${operatorSession}`, "x-active-role": "operator" };
+    const researcherHeaders = { authorization: `Bearer ${researcherSession}`, "x-active-role": "researcher" };
+
+    const started = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: playerHeaders,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000601"),
+    });
+    expect(started.statusCode).toBe(200);
+    const clockBefore = clockRow(host);
+
+    // 玩家自助入口仍只接受 player：operator 令牌调用返回 403，且不改写时钟。
+    const playerEntry = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/pause",
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000601", expectedRunVersion: Number(clockBefore["run_version"]) },
+    });
+    expect(playerEntry.statusCode).toBe(403);
+    expect(errorResponseSchema.parse(playerEntry.json()).error.code).toBe("forbidden");
+
+    // 玩家会话即使自报 operator 角色也不能访问控制台运营入口。
+    const playerConsole = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/pause",
+      headers: { ...playerHeaders, "x-active-role": "operator" },
+      payload: { operationId: "op-000000000602", expectedRunVersion: Number(clockBefore["run_version"]) },
+    });
+    expect(playerConsole.statusCode).toBe(403);
+
+    // 控制台请求必须带会话持有的 X-Active-Role。
+    const missingRole = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/pause",
+      headers: { authorization: `Bearer ${operatorSession}` },
+      payload: { operationId: "op-000000000603", expectedRunVersion: Number(clockBefore["run_version"]) },
+    });
+    expect(missingRole.statusCode).toBe(403);
+    expect(errorResponseSchema.parse(missingRole.json()).error.safeMessage).toContain("X-Active-Role");
+    expect(clockRow(host)).toEqual(clockBefore);
+
+    // researcher 只读快照列表；时钟控制与恢复仍仅 operator。
+    const initialSnapshots = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/campaign/snapshots",
+      headers: researcherHeaders,
+    });
+    expect(initialSnapshots.statusCode).toBe(200);
+    expect(initialSnapshots.json()).toEqual({ snapshots: [] });
+    const researcherPause = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/pause",
+      headers: researcherHeaders,
+      payload: { operationId: "op-000000000604", expectedRunVersion: Number(clockBefore["run_version"]) },
+    });
+    expect(researcherPause.statusCode).toBe(403);
+    expect(clockRow(host)).toEqual(clockBefore);
+
+    // operator 继续再暂停：断言持久化时钟确实切换，且响应携带新的运行版本。
+    const resumeResponse = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/resume",
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000605", expectedRunVersion: Number(clockRow(host)["run_version"]) },
+    });
+    expect(resumeResponse.statusCode).toBe(200);
+    const resumedClock = resumeResponse.json<{ readonly mode: string; readonly runVersion: number }>();
+    expect(resumedClock.mode).toBe("running");
+    expect(clockRow(host)["mode"]).toBe("running");
+
+    const pauseResponse = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/pause",
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000606", expectedRunVersion: resumedClock.runVersion },
+    });
+    expect(pauseResponse.statusCode).toBe(200);
+    expect(pauseResponse.json()).toMatchObject({ mode: "paused" });
+    expect(clockRow(host)["mode"]).toBe("paused");
+
+    // 非在线分支的 branchId 显式传入返回 400，不静默忽略；在线分支可正常传入。
+    const wrongBranch = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/pause?branchId=br-000000000001",
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000607", expectedRunVersion: Number(clockRow(host)["run_version"]) },
+    });
+    expect(wrongBranch.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(wrongBranch.json()).error.code).toBe("validation");
+
+    // operator 在 tick 3 创建快照；只读列表与持久化记录一致。
+    setBranchClock(host, host.branchId, 3);
+    const created = await host.app.inject({
+      method: "POST",
+      url: `/api/v1/console/campaign/snapshots?branchId=${host.branchId}`,
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000608", label: "operator 存档" },
+    });
+    expect(created.statusCode).toBe(200);
+    const snapshotId = created.json<{ readonly snapshotId: string; readonly worldTick: number }>();
+    expect(snapshotId.worldTick).toBe(3);
+    expect(
+      host.storage.transact((tx) => tx.rows("snapshots").get({ snapshot_id: snapshotId.snapshotId })),
+    ).toMatchObject({ label: "operator 存档", created_by: "console-operator", world_tick: 3 });
+    for (const headers of [operatorHeaders, researcherHeaders]) {
+      const listed = await host.app.inject({
+        method: "GET",
+        url: `/api/v1/console/campaign/snapshots?branchId=${host.branchId}`,
+        headers,
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toMatchObject({
+        snapshots: [expect.objectContaining({ snapshotId: snapshotId.snapshotId, createdBy: "console-operator" })],
+      });
+    }
+
+    // 把旧在线分支推到 tick 5 后恢复：后继分支应回到快照的 tick 3，并切换在线别名。
+    const sourceBranchId = host.branchId;
+    setBranchClock(host, sourceBranchId, 5);
+    const restored = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/restore",
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000609", snapshotId: snapshotId.snapshotId },
+    });
+    expect(restored.statusCode).toBe(200);
+    const restoredBody = restored.json<{
+      readonly branchId: string;
+      readonly clock: { readonly worldTick: number; readonly mode: string };
+    }>();
+    expect(restoredBody.branchId).not.toBe(sourceBranchId);
+    expect(restoredBody.clock).toMatchObject({ worldTick: 3, mode: "paused" });
+    expect(host.branchId).toBe(restoredBody.branchId);
+    expect(host.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }))).toMatchObject({
+      branch_id: restoredBody.branchId,
+    });
+
+    const researcherRestore = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/restore",
+      headers: researcherHeaders,
+      payload: { operationId: "op-000000000610", snapshotId: snapshotId.snapshotId },
+    });
+    expect(researcherRestore.statusCode).toBe(403);
+  }, 30_000);
+
   it("生产宿主使用默认 fencing 拒绝无 turn 的 Agent 命令", async () => {
     const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);
