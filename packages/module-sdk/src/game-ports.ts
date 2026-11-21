@@ -495,6 +495,7 @@ export interface GameWorldPort {
 /**
  * 通信模块读取世界事实的最小只读视图：指标与角色位置。
  * 组合根注入已绑定的世界端口；通信模块不再按世界模块 ID 直接读取聚合。
+ * 世界状态只记录有角色记录的主体位置；内容包没有角色定义的人类 AI 党魁由内容包派系驻地补足。
  */
 export type CommsWorldFacts = Pick<GameWorldPort, "meters" | "character">;
 
@@ -634,7 +635,7 @@ export interface CommsKnowledgeView {
 
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
-  /** 两个主体此刻是否在同一节点；无位置主体（战略 Agent、未知主体）与任何人都不同节点。 */
+  /** 两个主体此刻是否在同一节点；位置未知的主体（未知主体、内容包有角色定义但世界状态缺少记录的主体）与任何人都不同节点。 */
   sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;
@@ -683,13 +684,13 @@ export interface GameCommsPort {
 }
 
 /**
- * 协议统计读取的其他模块只读事实：已完成任务、证据分享、世界指标/队伍与道路状态。
+ * 协议统计读取的其他模块只读事实：已完成任务、证据分享、世界指标/队伍/campaign 与道路状态。
  * 由组合根按已声明能力注入；协议端口不再按实现 ID 读取对方私有聚合。
  */
 export interface AgreementQueryPorts {
   readonly actions: Pick<GameActionsPort, "completedTasks">;
   readonly comms: Pick<GameCommsPort, "hasShare">;
-  readonly world: Pick<GameWorldPort, "meters" | "teams">;
+  readonly world: Pick<GameWorldPort, "meters" | "teams" | "campaign">;
   readonly map: Pick<GameMapPort, "roadStatus">;
 }
 

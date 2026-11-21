@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { PlayerProjection } from "@ai-npc/contracts";
-import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
+import { factionStandingNode, type ApprovedSpeechReader } from "@ai-npc/module-sdk";
 import { buildPlayerProjection } from "@ai-npc/app-server";
 import {
   createGameHarness,
@@ -171,6 +171,14 @@ describe("玩家投影", () => {
       publicClaim: "公平透明",
     });
     expect(view.characters.find((character) => character.agentId === "species-extraterrestrial")?.publicClaim).toBe("精确");
+    // 无角色定义的 AI 党魁与通信端口共用同一个派系驻地解析函数。
+    const independentFaction = value.gameContent.factions.get("human-independent");
+    if (independentFaction === undefined) {
+      throw new Error("内容包缺少 human-independent 派系");
+    }
+    expect(view.characters.find((character) => character.agentId === "human-independent")?.nodeId).toBe(
+      factionStandingNode(independentFaction),
+    );
   });
 
   it("库存委托投影聚合全部有效委托并使用最早到期 tick", async () => {

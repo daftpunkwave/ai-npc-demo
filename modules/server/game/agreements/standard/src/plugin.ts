@@ -1,6 +1,6 @@
 /**
  * 创建标准协议模块实例；没有后台任务，端口由宿主按事务绑定。
- * 依赖无状态生命周期骨架、规则贡献、端口工厂与组合根已绑定的只读查询端口。
+ * 依赖无状态生命周期骨架、规则贡献、端口工厂、内容派系索引与组合根已绑定的只读查询端口。
  * 禁止在 create 阶段读取内容、创建协议或订阅事件。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
@@ -32,12 +32,8 @@ function queryPortsOf(context: GamePortBindContext): AgreementQueryPorts {
 /** 协议模块实例的公开端口同时暴露事务绑定器与规则贡献。 */
 export function createAgreementsModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   return createStatelessModule(input, {
-    bind: (
-      txFor: ScopedWorldTxFactory,
-      _content: GameContent,
-      _ids: GameIdFactory,
-      context: GamePortBindContext,
-    ) => createAgreementsPort(() => txFor(input.moduleId), queryPortsOf(context)),
+    bind: (txFor: ScopedWorldTxFactory, content: GameContent, _ids: GameIdFactory, context: GamePortBindContext) =>
+      createAgreementsPort(() => txFor(input.moduleId), queryPortsOf(context), content.factions),
     contributor: createAgreementsContributor(),
   });
 }

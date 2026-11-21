@@ -20,7 +20,7 @@ import {
   type TeamView,
   type TermKind,
 } from "@ai-npc/contracts";
-import { addAmounts } from "@ai-npc/module-sdk";
+import { addAmounts, factionStandingNode } from "@ai-npc/module-sdk";
 import type {
   AgreementView as AgreementPortView,
   GameActionsPort,
@@ -196,7 +196,12 @@ function characterViews(input: {
   }
   if (input.world.campaign() !== null) {
     for (const faction of input.content.factions.values()) {
-      if (present.has(faction.factionId) || faction.leaderName === undefined) {
+      // 有角色定义的主体只从世界状态取位置；内容包驻地只补无角色定义的人类 AI 党魁。
+      if (
+        present.has(faction.factionId) ||
+        input.content.characters.has(faction.factionId) ||
+        faction.leaderName === undefined
+      ) {
         continue;
       }
       const presentation = faction as typeof faction & {
@@ -209,10 +214,8 @@ function characterViews(input: {
       if (presentation.playerSeat !== undefined) {
         continue;
       }
-      const nodeId =
-        faction.factionHomeNodeId ??
-        faction.outpostNodeId ??
-        faction.territoryNodeId;
+      // 内容包没有角色定义的人类 AI 党魁用派系驻地补位，与通信的位置口径共用同一纯函数。
+      const nodeId = factionStandingNode(faction);
       if (nodeId === undefined) {
         continue;
       }
