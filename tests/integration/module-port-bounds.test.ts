@@ -95,17 +95,24 @@ const assembly = assemblyDescriptorSchema.parse({
   },
 });
 
-/** 构造真实解析计划，并让世界模块的绑定函数记录它收到的依赖端口。 */
+/** 构造真实解析计划，并让世界模块的绑定函数记录它收到的依赖端口与调用方。 */
 function planWithInstances() {
   const plan = resolveRealmPlan({ assembly, realm: "server", catalog: [mapDefinition, worldDefinition] });
   let worldDependencyPorts: Readonly<Record<string, unknown>> | null = null;
+  let worldCaller: { readonly moduleId: string | null; readonly provides: readonly string[] } | null = null;
+  const bindOrder: string[] = [];
   const mapPort: GameModulePublicPort = {
-    bind: () => ({ port: "map" }),
+    bind: () => {
+      bindOrder.push(mapDefinition.id);
+      return { port: "map" };
+    },
     contributor: { moduleId: mapDefinition.id, ownsAggregates: [] },
   };
   const worldPort: GameModulePublicPort = {
     bind: (_txFor, _content, _ids, context) => {
+      bindOrder.push(worldDefinition.id);
       worldDependencyPorts = context.ports;
+      worldCaller = { moduleId: context.callerModuleId, provides: context.callerProvides };
       return { port: "world" };
     },
     contributor: { moduleId: worldDefinition.id, ownsAggregates: [] },
@@ -118,6 +125,8 @@ function planWithInstances() {
     plan,
     instances,
     worldDependencyPorts: () => worldDependencyPorts,
+    worldCaller: () => worldCaller,
+    bindOrder: () => bindOrder,
   };
 }
 
@@ -167,6 +176,42 @@ describe("游戏模块端口边界", () => {
     expect(ports["game.map"]).toEqual({ port: "map" });
     expect(() => ports["game.world"]).toThrow(/未声明能力 game\.world/);
     expect(fixture.worldDependencyPorts()).toMatchObject({ "game.map": { port: "map" } });
+    // 绑定顺序来自 kernel 的拓扑解析：提供者先于消费者。
+    expect(fixture.bindOrder()).toEqual([mapDefinition.id, worldDefinition.id]);
+  });
+
+  it("绑定器把调用方身份传给端口，宿主视图的调用方为 null", () => {
+    const fixture = planWithInstances();
+    const { binder } = resolveGameModuleBindings({
+      plan: fixture.plan,
+      instances: fixture.instances,
+      content: {} as GameContent,
+      host: createFakeHost(),
+    });
+
+    binder(txFor, worldDefinition.id);
+    expect(fixture.worldCaller()).toEqual({
+      moduleId: worldDefinition.id,
+      provides: ["game.world"],
+    });
+    binder(txFor, null);
+    expect(fixture.worldCaller()).toEqual({ moduleId: null, provides: [] });
+  });
+
+  it("端口视图不通过反射暴露未声明能力", () => {
+    const fixture = planWithInstances();
+    const { binder } = resolveGameModuleBindings({
+      plan: fixture.plan,
+      instances: fixture.instances,
+      content: {} as GameContent,
+      host: createFakeHost(),
+    });
+
+    const ports = binder(txFor, worldDefinition.id) as GameModulePorts;
+    expect(Object.keys(ports).sort()).toEqual(["game.map", "game.world"]);
+    expect(Object.getOwnPropertyDescriptor(ports, "game.agreements")).toBeUndefined();
+    expect("game.agreements" in ports).toBe(false);
+    expect(Object.values(ports)).toEqual([{ port: "map" }, { port: "world" }]);
   });
 
   it("未知模块不获得任何端口视图", () => {

@@ -60,12 +60,25 @@ describe("模块实例端口", () => {
   it("世界模块实例可绑定并读取空世界", async () => {
     const instance = await worldModuleDefinition.create(input(worldModuleDefinition, host));
     const port = instance.port as {
-      bind(txFor: () => WorldTx, content: GameContent, ids: (prefix: string) => string): {
+      bind(
+        txFor: () => WorldTx,
+        content: GameContent,
+        ids: (prefix: string) => string,
+        context: {
+          readonly ports: Readonly<Record<string, unknown>>;
+          readonly callerModuleId: string | null;
+          readonly callerProvides: readonly string[];
+        },
+      ): {
         campaign(): unknown;
         meters(): unknown;
       };
     };
-    const world = port.bind(() => createMemoryTx(), content, host.ids);
+    const world = port.bind(() => createMemoryTx(), content, host.ids, {
+      ports: {},
+      callerModuleId: null,
+      callerProvides: [],
+    });
     expect(world.campaign()).toBeNull();
     expect(world.meters()).toBeNull();
   });

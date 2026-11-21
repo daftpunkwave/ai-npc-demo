@@ -478,9 +478,10 @@ export interface GameWorldPort {
    * 在章节终点评估：按协议模块提供的截至当前 tick 的计数，写入 campaign 的 evaluated 状态并提交
    * `ChapterStageEvaluated`。未到章节长度或已成为 evaluated 时返回 undefined；评估成功后返回
    * `{ stopClock: true }` 供时钟步骤请求暂停。
-   * 计数由协议模块作为入参传入，使章节评估不必让世界反向依赖协议模块。
+   * 计数以惰性函数传入：只有确认到达评估时机后才遍历协议状态。
+   * 实现方只允许协议 provider 的章节终点时钟步骤与宿主调用该操作，一般消费者调用立即失败。
    */
-  evaluateChapter(counts: AgreementCounts): { readonly stopClock: true } | undefined;
+  evaluateChapter(counts: () => AgreementCounts): { readonly stopClock: true } | undefined;
   discoverEvidence(input: {
     readonly evidenceId: string;
     readonly discoveredBy: string;
@@ -721,12 +722,17 @@ export const gamePortCapabilities = Object.keys(gamePortCapabilityRegistry) as r
 export type GamePortCapability = keyof typeof gamePortCapabilityRegistry;
 
 /**
- * 组合根绑定模块端口时提供的已绑定端口快照。
- * 只包含该模块 provides 与 requires 声明的游戏能力，访问未声明的能力会立即失败；
+ * 组合根绑定模块端口时提供的已绑定端口快照与调用方身份。
+ * 端口只包含该模块 provides 与 requires 声明的游戏能力，访问未声明的能力会立即失败；
+ * 调用方身份供需要校验触发来源的端口区分宿主、特定职责 provider 与一般消费者。
  * 绑定器按依赖顺序构造端口，模块不得借端口快照读取对方聚合。
  */
 export interface GamePortBindContext {
   readonly ports: Readonly<Partial<GameModulePorts>>;
+  /** 请求该端口视图的处理器的所有者模块；null 表示宿主自身。 */
+  readonly callerModuleId: string | null;
+  /** 请求方模块提供的能力；宿主自身为空数组。 */
+  readonly callerProvides: readonly string[];
 }
 
 /** 可空的操作结果；成功时允许携带结果数据。 */

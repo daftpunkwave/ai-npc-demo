@@ -21,11 +21,12 @@ export function createAgreementsContributor(): GameRuleContributor<GameModulePor
     clockSteps: [
       {
         // 章节终点由协议模块触发：它持有协议计数，而世界模块不应反向依赖协议模块。
+        // 计数以惰性函数传入，世界模块确认到达评估时机后才遍历协议状态。
         stepId: "agreements.chapter-evaluation",
         when: (tick) => tick > 0,
         handler: (context, tick) => {
           const ports = asPorts(context);
-          return ports["game.world"].evaluateChapter(ports["game.agreements"].countsAsOf(tick));
+          return ports["game.world"].evaluateChapter(() => ports["game.agreements"].countsAsOf(tick));
         },
       },
     ],

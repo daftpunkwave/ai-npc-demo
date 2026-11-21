@@ -111,6 +111,46 @@ describe("模块能力声明对账", () => {
     expect(violations.map((violation) => violation.code)).toContain("capability-unknown");
   });
 
+  it("注释与字符串字面量里的能力名不算访问", () => {
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "// ports[\"game.world\"] 只是注释",
+          "const label = \"ports[\\\"game.world\\\"]\";",
+          "const declared = [\"game.world\"];",
+          "export const roads = roadsOf(declared, label);",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    expect(checkModuleCapabilityUsage({ root, definitions: [map, world] })).toEqual([]);
+  });
+
+  it("跨行索引访问与解构键都能被发现", () => {
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "export const roads = ports[",
+          "  \"game.world\"",
+          "];",
+          "const { \"game.world\": state } = context.modules;",
+          "export const combined = [roads, state];",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations.filter((violation) => violation.code === "capability-undeclared")).toHaveLength(2);
+    expect(violations.map((violation) => violation.file)).toEqual([
+      expect.stringContaining("map/six-nodes"),
+      expect.stringContaining("map/six-nodes"),
+    ]);
+  });
+
   it("访问与声明一致时没有违规", () => {
     const root = fixture({
       ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),

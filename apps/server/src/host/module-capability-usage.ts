@@ -2,7 +2,8 @@
  * 核心职责：静态对账模块描述符的 provides/requires 与模块源码实际访问的能力端口。
  * 交互契约：只读取仓库 modules 目录下的手写源码与已登记模块定义，不执行模块代码、不访问存储；
  * 对账结果交给目录预检汇总，供 `pnpm check:catalog` 在启动前发现漏声明、多余声明与拼写错误。
- * 约束与禁忌：不按模块 ID 猜测实现、不跳过读不到源码的模块，也不把能力访问限制成运行期才暴露的问题。
+ * 约束与禁忌：不按模块 ID 猜测实现、不跳过读不到源码的模块，也不把能力访问限制成运行期才暴露的问题；
+ * 只识别源码中写死能力 ID 的索引访问与对象键，动态键（如 `ports[variable]`）属于无法静态求值的形式，不在此检查。
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -16,12 +17,165 @@ export interface CapabilityUsageViolation {
 }
 
 /**
- * 能力 ID 的访问形态：`["game.world"]`、`context.ports["platform.storage"]` 等。
- * 要求左方括号前是标识符、`)` 或 `]`，避免把 `requiresRemote: ["platform.x"]` 这类声明数组当成访问。
+ * 能力 ID 在源码中的两种访问形态：
+ * - 索引访问：`["game.world"]`，包括 `x?.["game.world"]` 与跨行写法；
+ * - 声明解构：`const { "game.world": world } = context.modules`。
+ * 扫描器跳过注释与普通字符串，避免把注释文字或频道名等对象键误判为能力使用；
  * 浏览器 realm 通过 client-sdk 的 `usePort` 取端口，不走索引访问，因此只对 server 模块做源码对账。
  */
-const capabilityAccessPattern =
-  /(?<=[\w\])$])\s*\[\s*["']((?:game|platform|client|console|agent|transport)\.[a-z0-9-]+)["']\s*\]/g;
+const capabilityIdPattern = /^(?:game|platform|client|console|agent|transport)\.[a-z0-9-]+$/;
+
+function countNewlines(text: string, from: number, to: number): number {
+  let count = 0;
+  for (let index = from; index < to; index += 1) {
+    if (text[index] === "\n") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** 读取从 quoteIndex 开始的引号字符串；不是合法能力 ID 时返回 null。 */
+function readCapabilityString(
+  text: string,
+  quoteIndex: number,
+): { readonly capability: string; readonly end: number } | null {
+  const quote = text[quoteIndex];
+  if (quote !== '"' && quote !== "'") {
+    return null;
+  }
+  let end = quoteIndex + 1;
+  let value = "";
+  while (end < text.length) {
+    const current = text[end];
+    if (current === "\\") {
+      return null;
+    }
+    if (current === quote) {
+      break;
+    }
+    value += current;
+    end += 1;
+  }
+  if (end >= text.length || !capabilityIdPattern.test(value)) {
+    return null;
+  }
+  return { capability: value, end: end + 1 };
+}
+
+/** 跳过空白字符，返回下一个有效位置与经过的换行数。 */
+function skipTrivia(
+  text: string,
+  from: number,
+): { readonly index: number; readonly newlines: number } {
+  let index = from;
+  let newlines = 0;
+  while (index < text.length) {
+    const current = text[index];
+    if (current === "\n") {
+      newlines += 1;
+      index += 1;
+      continue;
+    }
+    if (current === " " || current === "\t" || current === "\r") {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  return { index, newlines };
+}
+
+/** 跳过普通字符串或模板字符串，返回结束位置；用于避免把字符串内容当成代码。 */
+function skipStringLiteral(text: string, from: number): number {
+  const quote = text[from];
+  let index = from + 1;
+  while (index < text.length) {
+    const current = text[index];
+    if (current === "\\") {
+      index += 2;
+      continue;
+    }
+    index += 1;
+    if (current === quote) {
+      break;
+    }
+  }
+  return index;
+}
+
+/** 返回指定位置之前最近的标识符，用于识别 `const`/`let`/`var` 声明。 */
+function previousWord(text: string, index: number): string {
+  let end = index - 1;
+  while (end >= 0 && /\s/.test(text[end] ?? "")) {
+    end -= 1;
+  }
+  let start = end;
+  while (start >= 0 && /[\w$]/.test(text[start] ?? "")) {
+    start -= 1;
+  }
+  return text.slice(start + 1, end + 1);
+}
+
+/** 解构声明只接受 `const`/`let`/`var` 之后的对象模式；普通对象字面量不计为能力访问。 */
+const declarationKeywords: ReadonlySet<string> = new Set(["const", "let", "var"]);
+
+/**
+ * 扫描一个对象解构模式里作为键的能力 ID。
+ * 只在模式第 1 层识别字符串键，嵌套默认值里的表达式由主扫描继续处理。
+ */
+function destructuringKeys(
+  text: string,
+  braceIndex: number,
+): readonly { readonly capability: string; readonly newlines: number }[] {
+  const hits: { capability: string; newlines: number }[] = [];
+  let depth = 0;
+  let newlines = 0;
+  let index = braceIndex;
+  while (index < text.length) {
+    const current = text[index];
+    if (current === "\n") {
+      newlines += 1;
+      index += 1;
+      continue;
+    }
+    if (current === "/" && text[index + 1] === "/") {
+      const end = text.indexOf("\n", index + 2);
+      index = end === -1 ? text.length : end;
+      continue;
+    }
+    if (current === "/" && text[index + 1] === "*") {
+      const end = text.indexOf("*/", index + 2);
+      const endIndex = end === -1 ? text.length : end + 2;
+      newlines += countNewlines(text, index, endIndex);
+      index = endIndex;
+      continue;
+    }
+    if (current === '"' || current === "'" || current === "`") {
+      if (depth === 1) {
+        const literal = readCapabilityString(text, index);
+        if (literal !== null) {
+          const after = skipTrivia(text, literal.end);
+          if (text[after.index] === ":") {
+            hits.push({ capability: literal.capability, newlines });
+          }
+        }
+      }
+      index = skipStringLiteral(text, index);
+      continue;
+    }
+    if (current === "{") {
+      depth += 1;
+    } else if (current === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return hits;
+      }
+    }
+    index += 1;
+  }
+  return hits;
+}
 
 /** 一个模块源码目录及其对应的登记定义。 */
 interface ModuleSource {
@@ -57,7 +211,7 @@ function findModuleDirectories(root: string): string[] {
     return [];
   }
   walk("modules");
-  return found.sort();
+  return found.sort((left, right) => left.localeCompare(right));
 }
 
 /** 按 workspace 目录规则把模块目录映射为模块 ID 前缀。 */
@@ -89,20 +243,75 @@ function sourceFilesOf(directory: string): readonly string[] {
     }
   };
   walk(sourceDirectory);
-  return files.sort();
+  return files.sort((left, right) => left.localeCompare(right));
 }
 
-/** 抽取一个源码文件中按能力 ID 访问端口的行与能力名。 */
+/** 返回指定位置之前最近的代码字符，用于区分索引访问与声明数组。 */
+function previousSignificantChar(text: string, index: number): string {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/.test(text[cursor] ?? "")) {
+    cursor -= 1;
+  }
+  return cursor < 0 ? "" : (text[cursor] ?? "");
+}
+
+/** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */
 function capabilityAccesses(file: string): readonly { readonly capability: string; readonly line: number }[] {
+  const text = readFileSync(file, "utf8");
   const accesses: { capability: string; line: number }[] = [];
-  const lines = readFileSync(file, "utf8").split(/\r?\n/);
-  for (const [index, text] of lines.entries()) {
-    for (const match of text.matchAll(capabilityAccessPattern)) {
-      const capability = match[1];
-      if (capability !== undefined) {
-        accesses.push({ capability, line: index + 1 });
+  let line = 1;
+  let index = 0;
+  while (index < text.length) {
+    const current = text[index];
+    if (current === "\n") {
+      line += 1;
+      index += 1;
+      continue;
+    }
+    if (current === "/" && text[index + 1] === "/") {
+      const end = text.indexOf("\n", index + 2);
+      index = end === -1 ? text.length : end;
+      continue;
+    }
+    if (current === "/" && text[index + 1] === "*") {
+      const end = text.indexOf("*/", index + 2);
+      const endIndex = end === -1 ? text.length : end + 2;
+      line += countNewlines(text, index, endIndex);
+      index = endIndex;
+      continue;
+    }
+    if (current === '"' || current === "'" || current === "`") {
+      const end = skipStringLiteral(text, index);
+      line += countNewlines(text, index, end);
+      index = end;
+      continue;
+    }
+    if (current === "{") {
+      if (declarationKeywords.has(previousWord(text, index))) {
+        for (const key of destructuringKeys(text, index)) {
+          accesses.push({ capability: key.capability, line: line + key.newlines });
+        }
+      }
+      index += 1;
+      continue;
+    }
+    if (current === "[") {
+      const inner = skipTrivia(text, index + 1);
+      const literal = readCapabilityString(text, inner.index);
+      if (literal !== null) {
+        const after = skipTrivia(text, literal.end);
+        const receiver = previousSignificantChar(text, index);
+        const isIndexAccess =
+          text[after.index] === "]" && (/[\w$)\]]/.test(receiver) || receiver === "?");
+        if (isIndexAccess) {
+          accesses.push({ capability: literal.capability, line: line + inner.newlines });
+          line += inner.newlines + after.newlines;
+          index = after.index + 1;
+          continue;
+        }
       }
     }
+    index += 1;
   }
   return accesses;
 }

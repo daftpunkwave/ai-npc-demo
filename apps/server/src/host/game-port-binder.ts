@@ -10,6 +10,7 @@ import {
   gamePortCapabilities,
   type GameContent,
   type GameModulePorts,
+  type GamePortBindContext,
   type GameRuleContributor,
   type ModuleBinder,
   type ScopedWorldTxFactory,
@@ -21,7 +22,7 @@ export interface GameModulePublicPort {
     txFor: ScopedWorldTxFactory,
     content: GameContent,
     ids: (prefix: string) => string,
-    context: { readonly ports: Readonly<Partial<GameModulePorts>> },
+    context: GamePortBindContext,
   ) => unknown;
   readonly contributor?: GameRuleContributor<GameModulePorts, unknown>;
 }
@@ -54,22 +55,59 @@ function gameCapabilitiesOf(planned: PlannedModule): readonly string[] {
     .filter(isGameCapability);
 }
 
+/** 请求端口视图的调用方身份；宿主自身与具体模块用于区分端口触发来源。 */
+interface PortCaller {
+  readonly moduleId: string | null;
+  readonly provides: readonly string[];
+}
+
+/** 一次绑定请求的调用方：宿主拿全部端口，模块拿自身与 requires。 */
+function callerOf(
+  bindings: readonly GameModuleBinding[],
+  moduleId: string | null,
+): PortCaller {
+  if (moduleId === null) {
+    return { moduleId: null, provides: [] };
+  }
+  const binding = bindings.find((candidate) => candidate.moduleId === moduleId);
+  if (binding === undefined) {
+    throw new DomainError("module-missing", `模块 ${moduleId} 未注册游戏端口绑定`, {
+      details: { moduleId },
+    });
+  }
+  return { moduleId, provides: binding.provides };
+}
+
 /** 把调用方处理器可见的端口收窄到自身能力与 requires；其余能力访问立即失败。 */
 function restrictGamePorts(
   ports: Readonly<Record<string, unknown>>,
   allowed: ReadonlySet<string>,
   moduleId: string,
 ): GameModulePorts {
+  const isUndeclared = (property: PropertyKey): boolean =>
+    typeof property === "string" && isGameCapability(property) && !allowed.has(property);
   return new Proxy(ports, {
     get(target, property, receiver) {
-      if (typeof property === "string" && isGameCapability(property) && !allowed.has(property)) {
+      if (isUndeclared(property)) {
         throw new DomainError(
           "forbidden",
-          `模块 ${moduleId} 未声明能力 ${property}，不能读取该端口`,
-          { details: { moduleId, capability: property } },
+          `模块 ${moduleId} 未声明能力 ${String(property)}，不能读取该端口`,
+          { details: { moduleId, capability: String(property) } },
         );
       }
       return Reflect.get(target, property, receiver);
+    },
+    has(target, property) {
+      return !isUndeclared(property) && Reflect.has(target, property);
+    },
+    ownKeys(target) {
+      return Reflect.ownKeys(target).filter((property) => !isUndeclared(property));
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (isUndeclared(property)) {
+        return undefined;
+      }
+      return Reflect.getOwnPropertyDescriptor(target, property);
     },
   }) as unknown as GameModulePorts;
 }
@@ -83,6 +121,7 @@ function bindGamePorts(
   txFor: ScopedWorldTxFactory,
   content: GameContent,
   host: HostServices,
+  caller: PortCaller,
 ): Readonly<Record<string, unknown>> {
   const bound: Record<string, unknown> = {};
   for (const binding of bindings) {
@@ -99,6 +138,8 @@ function bindGamePorts(
     }
     const port = binding.bind(txFor, content, (prefix) => host.ids(prefix), {
       ports: dependencyPorts as Readonly<Partial<GameModulePorts>>,
+      callerModuleId: caller.moduleId,
+      callerProvides: caller.provides,
     });
     for (const capability of binding.provides) {
       bound[capability] = port;
@@ -157,7 +198,8 @@ export function resolveGameModuleBindings(input: {
   }
 
   const binder: ModuleBinder = (txFor, moduleId) => {
-    const ports = bindGamePorts(bindings, txFor, input.content, input.host);
+    const caller = callerOf(bindings, moduleId);
+    const ports = bindGamePorts(bindings, txFor, input.content, input.host, caller);
     if (moduleId === null) {
       return ports;
     }

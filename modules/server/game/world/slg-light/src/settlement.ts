@@ -205,11 +205,12 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
 
 /**
  * 在章节评估事务内执行一次；未到章节长度或已评估的 campaign 直接返回。
- * 协议计数由调用方（协议模块的章节终点时钟步骤）作为入参传入，世界模块不反向依赖协议模块。
+ * 协议计数由调用方（协议模块的章节终点时钟步骤）以惰性函数传入，只在确认到达评估时机后才求值；
+ * 世界模块不反向依赖协议模块。
  */
 export function runChapterEvaluation(
   tx: WorldTx,
-  counts: AgreementCounts,
+  loadCounts: () => AgreementCounts,
   chapterLengthTicks = 168,
 ): { readonly stopClock: true } | undefined {
   const record = readWorldState(tx, "campaign", "campaign", campaignStateSchema);
@@ -226,6 +227,7 @@ export function runChapterEvaluation(
     return undefined;
   }
   const meters = metersView(meterRecord.state);
+  const counts = loadCounts();
   const unmet: NumericMeterId[] = [];
   if (meters["relay.stability"] < 40) {
     unmet.push("relay.stability");

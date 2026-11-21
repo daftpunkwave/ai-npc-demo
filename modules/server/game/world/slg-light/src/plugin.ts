@@ -4,7 +4,13 @@
  * 禁止在 create 阶段读取内容、时钟或初始化 campaign。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import {
+  createStatelessModule,
+  type GameContent,
+  type GameIdFactory,
+  type GamePortBindContext,
+  type ScopedWorldTxFactory,
+} from "@ai-npc/module-sdk";
 import { createWorldContributor } from "./contributor";
 import { worldConfigSchema } from "./definition";
 import { createWorldPort } from "./port";
@@ -14,10 +20,17 @@ export function createWorldModule(input: ModuleCreateInput): Promise<ModuleInsta
   const config = worldConfigSchema.parse(input.config);
   return createStatelessModule(input, {
     bind: (
-      txFor: Parameters<typeof createWorldPort>[0],
-      content: Parameters<typeof createWorldPort>[1],
-      ids: Parameters<typeof createWorldPort>[2],
-    ) => createWorldPort(txFor, content, ids, { chapterLengthTicks: config.chapterLengthTicks }),
+      txFor: ScopedWorldTxFactory,
+      content: GameContent,
+      ids: GameIdFactory,
+      context: GamePortBindContext,
+    ) =>
+      createWorldPort(txFor, content, ids, {
+        chapterLengthTicks: config.chapterLengthTicks,
+        // 章节计数来自协议 provider；其他消费者的世界端口不得触发评估。
+        allowChapterEvaluation:
+          context.callerModuleId === null || context.callerProvides.includes("game.agreements"),
+      }),
     contributor: createWorldContributor(),
   });
 }
