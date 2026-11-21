@@ -85,6 +85,29 @@ describe("platform 模块", () => {
     expect(calls).toContain("restore:snap-1:run-9");
   });
 
+  it("运营服务在 stepping 中的非幂等快照先暂停", () => {
+    const calls: string[] = [];
+    const clock = { worldTick: 2, day: 1, hour: 2, mode: "stepping" as const, runVersion: 3 };
+    const driver: OperationsDriver = {
+      clock: () => ({ mode: clock.mode, runVersion: clock.runVersion }),
+      pause: (expected) => {
+        calls.push(`pause:${expected}`);
+        return { ...clock, mode: "paused", runVersion: expected + 1 };
+      },
+      resume: (expected) => ({ ...clock, mode: "running", runVersion: expected + 1 }),
+      step: (expected) => ({ ...clock, mode: "stepping", runVersion: expected + 1 }),
+      snapshot: (input) => {
+        calls.push(`snapshot:${input.label}`);
+        return { snapshotId: "snap-1", worldTick: clock.worldTick };
+      },
+      restore: () => ({ branchId: "br-1" }),
+      reset: () => ({ branchId: "br-2", clock }),
+    };
+    const service = new OperationsService(driver);
+    expect(service.snapshot("单步中存档", "operator-1")).toMatchObject({ snapshotId: "snap-1" });
+    expect(calls).toEqual(["pause:3", "snapshot:单步中存档"]);
+  });
+
   it("传输模块只接受回环地址与合法端口", async () => {
     const instance = await transportModuleDefinition.create(input("transport.http-ws.fastify", { port: 3000 }));
     const port = instance.port as TransportPort;

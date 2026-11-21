@@ -334,6 +334,10 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
       mode !== "pause" && (workerFailed || hasPersistedWorkerFailure());
     if (needsWorkerRecovery) {
       recoverWorker(expectedRunVersion);
+      // 恢复成功即重建推进调度：即便随后的时钟控制被拒绝（如 stepping 中重复单步），
+      // worker 也已重新驱动，不会留下无驱动方的 running/stepping 残留。
+      schedule();
+      app?.notifyWorldChanged();
     }
     const result = mode === "pause"
       ? runtime.clock.pause(active.branchId, expectedRunVersion)
@@ -344,10 +348,6 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
       throw result.reasonCode === "version-conflict"
         ? new DomainError("version-conflict", "时钟版本冲突")
         : new DomainError("invalid-state", "时钟控制参数非法");
-    }
-    if (needsWorkerRecovery) {
-      schedule();
-      app?.notifyWorldChanged();
     }
     // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时；单步是 operator 发起的有界推进，不参与。
     if (mode === "start" && playerConnections === 0) {

@@ -609,7 +609,7 @@ async function postConsole(
   session: string,
   url: string,
   payload: Record<string, Json>,
-  role: string = "operator",
+  role = "operator",
 ) {
   return host.app.inject({
     method: "POST",

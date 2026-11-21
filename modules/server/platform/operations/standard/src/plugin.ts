@@ -103,7 +103,8 @@ export class OperationsService {
       return this.driver.idempotent.snapshot(operation, { label, createdBy });
     }
     const clock = this.driver.clock();
-    if (clock.mode === "running") {
+    // 非幂等回退与幂等路径同语义：运行或单步中都先受控暂停，不在 stepping 中间冻结存档。
+    if (clock.mode === "running" || clock.mode === "stepping") {
       this.driver.pause(clock.runVersion);
     }
     return this.driver.snapshot({ label, createdBy });
