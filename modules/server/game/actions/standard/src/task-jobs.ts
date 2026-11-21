@@ -7,6 +7,7 @@
 import type { ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
 import { principalsAudience, requireGameContent } from "@ai-npc/module-sdk";
 import { completeTask, failTask } from "./completion";
+import { hasFactionSupporter, transportCapacitySupporterAgentId } from "./faction-bonus";
 import { refundDelegation, releaseReserved, settleRepairMaterials } from "./reservations";
 import { rollRisk } from "./risk";
 import { computeTaskRoute } from "./routes";
@@ -114,7 +115,11 @@ export function depart(context: ActionContext, taskId: string): void {
   }
   if (task.taskType === "transport") {
     const params = task.params as { readonly cargo: ResourceAmounts };
-    const capacity = team.capacity + (participants.includes("npc-wenyuan") ? 5 : 0);
+    const capacity =
+      team.capacity +
+      (hasFactionSupporter(content, team.ownerFactionId, participants, transportCapacitySupporterAgentId)
+        ? 5
+        : 0);
     if (params.cargo.supply + params.cargo.energy + params.cargo.medical > capacity) {
       failDeparture(context, task, "over-capacity");
       return;

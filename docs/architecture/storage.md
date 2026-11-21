@@ -182,6 +182,20 @@ CREATE TABLE jobs (                     -- tick-driven, synchronous rule/percept
 );
 CREATE INDEX jobs_due ON jobs (branch_id, status, due_tick, seq);
 
+CREATE TABLE rule_failures (             -- 有界重试与死信记录；成功路径删除对应行
+  branch_id TEXT NOT NULL,
+  phase TEXT NOT NULL CHECK (phase IN ('job', 'event', 'clock-step', 'worker')),
+  subject_id TEXT NOT NULL,             -- jobId / 消费者 ID / 步骤 ID / tick-worker
+  detail TEXT NOT NULL,                 -- 事件 ID、tick 或空字符串
+  attempts INTEGER NOT NULL,
+  reason_code TEXT NOT NULL,            -- 领域错误码或 plugin-failed
+  last_error TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('retrying', 'failed')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (branch_id, phase, subject_id, detail)
+);
+CREATE INDEX rule_failures_status_updated ON rule_failures (branch_id, status, updated_at);
+
 CREATE TABLE consumer_offsets (
   branch_id TEXT NOT NULL,
   consumer_id TEXT NOT NULL,

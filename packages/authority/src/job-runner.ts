@@ -1,12 +1,20 @@
 /**
  * 按 (dueTick, seq) 执行到期的规则 job，并在每个 job 的独立事务内提交状态、事件与完成标记。
  * 依赖存储事务、job 注册表、系统认证与 WorldTx；job 处理器必须同步且不等待外部 I/O。
- * 禁止重复执行已完成 job、跳过幂等键、在分支冻结后继续推进，或吞掉 handler 异常只标完成。
+ * 禁止重复执行已完成 job、跳过幂等键、在分支冻结后继续推进，或吞掉 handler 异常只标完成；
+ * 处理器失败时回滚事务、记录尝试次数与最后错误，达到上限后标记 failed 并继续后续 job。
  */
 import { DomainError, type StorageTransaction } from "@ai-npc/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";
+import {
+  MAX_RULE_ATTEMPTS,
+  RuleExecutionError,
+  clearRuleFailure,
+  failureMessage,
+  writeRuleFailure,
+} from "./rule-failures";
 import { requireStorageNumber, requireStorageString, readJsonCell } from "./storage-values";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, DueJob } from "./types";
@@ -43,13 +51,35 @@ export class JobRunner {
     this.runSeed = options.runSeed;
   }
 
-  /** 执行所有 due_tick 不大于 tick 的 scheduled job，返回实际执行条数。 */
+  /** 执行所有 due_tick 不大于 tick 的 scheduled job，返回实际结算条数。 */
   runDue(branchId: string, tick: number): number {
     if (!Number.isSafeInteger(tick) || tick < 0) {
       throw new DomainError("validation", "job 推进 tick 必须是非负安全整数", { details: { tick } });
     }
     let executed = 0;
-    while (this.storage.transact((tx) => this.executeNext(tx, branchId, tick))) {
+    for (;;) {
+      let hasWork: boolean;
+      try {
+        hasWork = this.storage.transact((tx) => this.executeNext(tx, branchId, tick));
+      } catch (error) {
+        if (!(error instanceof RuleExecutionError)) {
+          throw error;
+        }
+        // 处理器失败时事务已回滚；单独提交尝试次数与最后错误，达到上限后隔离该 job。
+        if (!this.recordFailure(branchId, error)) {
+          throw error.cause ?? error;
+        }
+        executed += 1;
+        if (executed > maxJobsPerRun) {
+          throw new DomainError("invalid-state", "单次 job 推进超过安全上限，可能存在自我调度循环", {
+            details: { branchId, tick, maxJobsPerRun },
+          });
+        }
+        continue;
+      }
+      if (!hasWork) {
+        break;
+      }
       executed += 1;
       if (executed > maxJobsPerRun) {
         throw new DomainError("invalid-state", "单次 job 推进超过安全上限，可能存在自我调度循环", {
@@ -58,6 +88,37 @@ export class JobRunner {
       }
     }
     return executed;
+  }
+
+  /**
+   * 记录一次 job 处理器失败并判断是否达到死信上限。
+   * 返回 false 表示仍可重试，由 runDue 把原始错误交给宿主停止推进。
+   */
+  private recordFailure(branchId: string, error: RuleExecutionError): boolean {
+    return this.storage.transact((tx) => {
+      const jobsTable = tx.branch(branchId).table("jobs");
+      const row = jobsTable.get({ job_id: error.subjectId });
+      if (row === null) {
+        throw new DomainError("invalid-state", `失败 job ${error.subjectId} 在事务回滚后不存在`, {
+          details: { jobId: error.subjectId },
+        });
+      }
+      const attempts = requireStorageNumber(row, "jobs", "attempts") + 1;
+      const deadLettered = attempts >= MAX_RULE_ATTEMPTS;
+      writeRuleFailure(
+        tx,
+        branchId,
+        { phase: "job", subjectId: error.subjectId, detail: "" },
+        { attempts, error: error.cause, deadLettered, nowIso: this.host.nowIso() },
+      );
+      jobsTable.put({
+        ...row,
+        status: deadLettered ? "failed" : "scheduled",
+        attempts,
+        last_error: failureMessage(error.cause),
+      });
+      return deadLettered;
+    });
   }
 
   private executeNext(tx: StorageTransaction, branchId: string, tick: number): boolean {
@@ -139,13 +200,19 @@ export class JobRunner {
       host: this.host,
       runSeed: this.runSeed,
     });
-    const outcome = registration.handler(context, dueJob);
-    assertSynchronous(outcome, `job ${kind} 处理器`);
+    try {
+      const outcome = registration.handler(context, dueJob);
+      assertSynchronous(outcome, `job ${kind} 处理器`);
+    } catch (error) {
+      throw new RuleExecutionError("job", jobId, "", error);
+    }
     jobsTable.put({
       ...row,
       status: "done",
       attempts: requireStorageNumber(row, "jobs", "attempts") + 1,
+      last_error: null,
     });
+    clearRuleFailure(tx, branchId, { phase: "job", subjectId: jobId, detail: "" });
     return true;
   }
 }
