@@ -1,9 +1,9 @@
 /**
- * 验证任务派遣、邀请、运输完成、救援、修复、侦察与取消回滚。
+ * 验证任务派遣、邀请、运输完成、救援、修复、侦察、随队加成的本派限定与取消回滚。
  * 依赖真实 SQLite、世界/通信/行动/协议模块、内容包与 authority；不启动网络。
  * 禁止用固定任务状态替代规则结算。
  */
-import type { AuthContext, Json } from "@ai-npc/contracts";
+import type { AuthContext, Json, TaskType } from "@ai-npc/contracts";
 import type { GameWorldPort } from "@ai-npc/module-sdk";
 import { describe, expect, it } from "vitest";
 import {
@@ -29,6 +29,25 @@ import {
 } from "./game-agreement-support";
 
 const harness = useStartedGameHarnesses();
+
+/**
+ * 内容包只给公社队运输与修复能力，而随队加成规则按队伍所属派系通用。
+ * 为了让本派救援、侦察、护送加成在真实结算链路上可达，测试用只读世界端口包装为公社队补上对应能力；
+ * 只改读取视图，不改写持久化世界状态。
+ */
+function withCommuneCapabilities(capabilities: readonly TaskType[]): (port: GameWorldPort) => GameWorldPort {
+  return (port) => {
+    const wrapped = Object.create(port) as GameWorldPort;
+    wrapped.team = (teamId) => {
+      const team = port.team(teamId);
+      if (team === null || team.teamId !== "team-commons") {
+        return team;
+      }
+      return { ...team, capabilities: [...new Set([...team.capabilities, ...capabilities])] };
+    };
+    return wrapped;
+  };
+}
 
 /** 以指定主体提交 task.dispatch；返回回执，由调用方断言接受或拒绝。 */
 function dispatchAs(value: GameHarness, auth: AuthContext, payload: Json): Receipt {
@@ -363,20 +382,20 @@ describe("派遣校验顺序", () => {
 });
 
 describe("任务用时与参与者", () => {
-  it("救援同一条路线：穆枝参与总用时减 2", async () => {
-    const invited = await harness();
-    const helperTaskId = dispatchTask(invited, strategicAuth(invited, "human-pacifist"), {
+  it("救援同一条路线：跨派邀请穆枝不减时，仍按原行程完成", async () => {
+    const crossFaction = await harness();
+    const crossTaskId = dispatchTask(crossFaction, strategicAuth(crossFaction, "human-pacifist"), {
       taskType: "rescue",
       teamId: "team-truce",
       invitees: ["npc-muzhi"],
       departAfterTicks: 1,
       params: { groupId: "grp-injured-migrants", toNodeId: "grayharbor", medicalStockpileId: "sp-truce" },
     });
-    acceptTaskInvitation(invited, "npc-muzhi", helperTaskId);
-    advanceTo(invited, 1);
-    const helperTask = taskView(invited, helperTaskId);
-    expect(helperTask).toMatchObject({ status: "running", departTick: 1, route: ["r-gh-ps"] });
-    expect(helperTask.nominalCompletionTick - 1).toBe(4);
+    acceptTaskInvitation(crossFaction, "npc-muzhi", crossTaskId);
+    advanceTo(crossFaction, 1);
+    const crossTask = taskView(crossFaction, crossTaskId);
+    expect(crossTask).toMatchObject({ status: "running", departTick: 1, route: ["r-gh-ps"] });
+    expect(crossTask.nominalCompletionTick - 1).toBe(6);
 
     const plain = await harness();
     const plainTaskId = dispatchTask(plain, strategicAuth(plain, "human-pacifist"), {
@@ -431,6 +450,234 @@ describe("任务用时与参与者", () => {
     });
     expect(unavailable.commandStatus).toBe("rejected");
     expect(unavailable.reasonCode).toBe("participant-unavailable");
+  });
+});
+
+describe("任务随队加成的本派限定", () => {
+  it("修复：本派工务支持者参与 +10，跨派邀请陶安仍只算基础值", async () => {
+    const sameFaction = await harness();
+    const sameTaskId = dispatchTask(sameFaction, strategicAuth(sameFaction, "human-neutral"), {
+      taskType: "repair",
+      teamId: "team-commons",
+      invitees: ["npc-taoan"],
+      departAfterTicks: 1,
+      params: { target: "relay", energyStockpileId: "sp-commons", supplyStockpileId: "sp-commons" },
+    });
+    acceptTaskInvitation(sameFaction, "npc-taoan", sameTaskId);
+    advanceTo(sameFaction, 1);
+    advanceTo(sameFaction, 7);
+    // 45 + 25（普通队基础）+ 10（本派工务支持者）。
+    expect(readGameAggregate(sameFaction, "meters", "meters")).toMatchObject({ "relay.stability": 80 });
+
+    // team-star 属于 species-extraterrestrial，陶安属于 human-neutral；跨派邀请不得叠加 +10。
+    const crossFaction = await harness();
+    const crossTaskId = dispatchTask(crossFaction, strategicAuth(crossFaction, "species-extraterrestrial"), {
+      taskType: "repair",
+      teamId: "team-star",
+      invitees: ["npc-taoan"],
+      departAfterTicks: 1,
+      params: { target: "relay", energyStockpileId: "sp-star", supplyStockpileId: null },
+    });
+    acceptTaskInvitation(crossFaction, "npc-taoan", crossTaskId);
+    advanceTo(crossFaction, 1);
+    advanceTo(crossFaction, 6);
+    advanceTo(crossFaction, 12);
+    // 45 + 40（team-star 基础），陶安跨派不叠加。
+    expect(readGameAggregate(crossFaction, "meters", "meters")).toMatchObject({ "relay.stability": 85 });
+  });
+
+  it("修复：洛参与非 team-star 任务的 +15 不按本派限定", async () => {
+    const value = await harness();
+    // 先把洛从锚区送到灰港，才能与本派工务支持者一起参加公社修复。
+    const moveId = dispatchTask(value, strategicAuth(value, "species-extraterrestrial"), {
+      taskType: "transport",
+      teamId: "team-star",
+      invitees: ["species-extraterrestrial"],
+      departAfterTicks: 2,
+      params: { fromStockpileId: "sp-star", toStockpileId: "sp-commons", cargo: { supply: 0, energy: 1, medical: 0 } },
+    });
+    acceptTaskInvitation(value, "species-extraterrestrial", moveId);
+    advanceTo(value, 2);
+    advanceTo(value, 8);
+    expect(readGameAggregate(value, "character", "species-extraterrestrial")).toMatchObject({ nodeId: "grayharbor" });
+
+    const taskId = dispatchTask(value, strategicAuth(value, "human-neutral"), {
+      taskType: "repair",
+      teamId: "team-commons",
+      invitees: ["npc-taoan", "species-extraterrestrial"],
+      departAfterTicks: 1,
+      params: { target: "relay", energyStockpileId: "sp-commons", supplyStockpileId: "sp-commons" },
+    });
+    acceptTaskInvitation(value, "npc-taoan", taskId);
+    acceptTaskInvitation(value, "species-extraterrestrial", taskId);
+    advanceTo(value, 9);
+    advanceTo(value, 15);
+    // 45 + 25（基础）+ 10（本派陶安）+ 15（洛）= 95。
+    expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ "relay.stability": 95 });
+  });
+
+  it("救援：本派医政支持者参与时总用时 −2", async () => {
+    const sameFaction = await harness({ worldPortWrapper: withCommuneCapabilities(["rescue"]) });
+    const sameTaskId = dispatchTask(sameFaction, strategicAuth(sameFaction, "human-neutral"), {
+      taskType: "rescue",
+      teamId: "team-commons",
+      invitees: ["npc-muzhi"],
+      departAfterTicks: 1,
+      params: { groupId: "grp-injured-migrants", toNodeId: "grayharbor", medicalStockpileId: "sp-commons" },
+    });
+    acceptTaskInvitation(sameFaction, "npc-muzhi", sameTaskId);
+    advanceTo(sameFaction, 1);
+    const sameTask = taskView(sameFaction, sameTaskId);
+    expect(sameTask).toMatchObject({ status: "running", departTick: 1, route: ["r-gh-ps", "r-gh-ps"] });
+    // 灰港→隘口→灰港共 12 tick，本派医政支持者参与减 2。
+    expect(sameTask.nominalCompletionTick - 1).toBe(10);
+
+    const plain = await harness({ worldPortWrapper: withCommuneCapabilities(["rescue"]) });
+    const plainTaskId = dispatchTask(plain, strategicAuth(plain, "human-neutral"), {
+      taskType: "rescue",
+      teamId: "team-commons",
+      departAfterTicks: 1,
+      params: { groupId: "grp-injured-migrants", toNodeId: "grayharbor", medicalStockpileId: "sp-commons" },
+    });
+    advanceTo(plain, 1);
+    expect(taskView(plain, plainTaskId).nominalCompletionTick - 1).toBe(12);
+  });
+
+  it("侦察：本派情报支持者参与时每条道路 −1，跨派邀请祁录不减时", async () => {
+    const sameFaction = await harness({ worldPortWrapper: withCommuneCapabilities(["scout"]) });
+    const sameTaskId = dispatchTask(sameFaction, strategicAuth(sameFaction, "human-neutral"), {
+      taskType: "scout",
+      teamId: "team-commons",
+      invitees: ["npc-qilu"],
+      departAfterTicks: 1,
+      params: { nodeId: "orchard" },
+    });
+    acceptTaskInvitation(sameFaction, "npc-qilu", sameTaskId);
+    advanceTo(sameFaction, 1);
+    const sameTask = taskView(sameFaction, sameTaskId);
+    expect(sameTask).toMatchObject({ status: "running", route: ["r-gh-or"] });
+    // r-gh-or 行程 5 减 1，加观察 2。
+    expect(sameTask.nominalCompletionTick - 1).toBe(6);
+
+    // 祁录属于 human-neutral，team-rubble 属于 human-independent；跨派邀请不减时。
+    const crossFaction = await harness();
+    const crossTaskId = dispatchTask(crossFaction, strategicAuth(crossFaction, "human-independent"), {
+      taskType: "scout",
+      teamId: "team-rubble",
+      invitees: ["npc-qilu"],
+      departAfterTicks: 1,
+      params: { nodeId: "grayharbor" },
+    });
+    acceptTaskInvitation(crossFaction, "npc-qilu", crossTaskId);
+    advanceTo(crossFaction, 1);
+    const crossTask = taskView(crossFaction, crossTaskId);
+    expect(crossTask).toMatchObject({ status: "running", route: ["r-gh-ps"] });
+    // r-gh-ps 行程 6 不减免，加观察 2。
+    expect(crossTask.nominalCompletionTick - 1).toBe(8);
+  });
+
+  it("护送：本派治安支持者参与时迁徙安全 +16，跨派邀请陆沉只给 +12", async () => {
+    const sameFaction = await harness({ worldPortWrapper: withCommuneCapabilities(["escort"]) });
+    const sameTaskId = dispatchTask(sameFaction, strategicAuth(sameFaction, "human-neutral"), {
+      taskType: "escort",
+      teamId: "team-commons",
+      invitees: ["npc-luchen"],
+      departAfterTicks: 1,
+      params: { roadId: "r-gh-ps", durationTicks: 6 },
+    });
+    acceptTaskInvitation(sameFaction, "npc-luchen", sameTaskId);
+    advanceTo(sameFaction, 1);
+    advanceTo(sameFaction, 7);
+    // 50 + 12（迁徙道路基础）+ 4（本派治安支持者）。
+    expect(readGameAggregate(sameFaction, "meters", "meters")).toMatchObject({ "migration.safety": 66 });
+
+    const crossFaction = await harness();
+    const crossTaskId = dispatchTask(crossFaction, strategicAuth(crossFaction, "human-independent"), {
+      taskType: "escort",
+      teamId: "team-rubble",
+      invitees: ["npc-luchen"],
+      departAfterTicks: 1,
+      params: { roadId: "r-gh-ps", durationTicks: 6 },
+    });
+    acceptTaskInvitation(crossFaction, "npc-luchen", crossTaskId);
+    advanceTo(crossFaction, 1);
+    advanceTo(crossFaction, 7);
+    // 50 + 12，陆沉跨派不叠加 +4。
+    expect(readGameAggregate(crossFaction, "meters", "meters")).toMatchObject({ "migration.safety": 62 });
+  });
+
+  it("护送：追风参与时对非本派队伍仍按设计 +4", async () => {
+    const value = await harness();
+    const taskId = dispatchTask(value, strategicAuth(value, "human-independent"), {
+      taskType: "escort",
+      teamId: "team-rubble",
+      invitees: ["species-fauna"],
+      departAfterTicks: 1,
+      params: { roadId: "r-gh-ps", durationTicks: 6 },
+    });
+    acceptTaskInvitation(value, "species-fauna", taskId);
+    advanceTo(value, 1);
+    advanceTo(value, 7);
+    // 追风属于 species-fauna，team-rubble 属于 human-independent；按设计同效，仍 +4。
+    expect(readGameAggregate(value, "meters", "meters")).toMatchObject({ "migration.safety": 66 });
+  });
+
+  it("运输：本派物资支持者参与时运力 +5，跨派邀请温原不增加运力", async () => {
+    const sameFaction = await harness();
+    const sameTaskId = dispatchTask(sameFaction, strategicAuth(sameFaction, "human-neutral"), {
+      taskType: "transport",
+      teamId: "team-commons",
+      invitees: ["npc-wenyuan"],
+      departAfterTicks: 1,
+      params: {
+        fromStockpileId: "sp-commons",
+        toStockpileId: "sp-earth",
+        cargo: { supply: 22, energy: 0, medical: 0 },
+      },
+    });
+    acceptTaskInvitation(sameFaction, "npc-wenyuan", sameTaskId);
+    advanceTo(sameFaction, 1);
+    expect(taskView(sameFaction, sameTaskId)).toMatchObject({ status: "running" });
+    advanceTo(sameFaction, 7);
+    // 22 超过公社队基础运力 20，只有本派物资支持者随队才允许出发。
+    expect(taskView(sameFaction, sameTaskId)).toMatchObject({ status: "completed" });
+    expect(readGameAggregate(sameFaction, "team", "team-commons")).toMatchObject({
+      nodeId: "orchard",
+      status: "idle",
+    });
+
+    const crossFaction = await harness();
+    // 先让温原随公社队到达果园，再从地生队发起跨派运输。
+    const moveId = dispatchTask(crossFaction, playerAuth(crossFaction), {
+      taskType: "transport",
+      teamId: "team-commons",
+      invitees: ["npc-wenyuan"],
+      departAfterTicks: 2,
+      params: {
+        fromStockpileId: "sp-commons",
+        toStockpileId: "sp-earth",
+        cargo: { supply: 10, energy: 0, medical: 0 },
+      },
+    });
+    acceptTaskInvitation(crossFaction, "npc-wenyuan", moveId);
+    advanceTo(crossFaction, 2);
+    advanceTo(crossFaction, 8);
+    expect(readGameAggregate(crossFaction, "character", "npc-wenyuan")).toMatchObject({ nodeId: "orchard" });
+
+    // team-earth 属于 human-earth-alliance，温原属于 human-neutral；跨派邀请不得按 +5 运力放行。
+    const cross = dispatchAs(crossFaction, strategicAuth(crossFaction, "human-earth-alliance"), {
+      taskType: "transport",
+      teamId: "team-earth",
+      invitees: ["npc-wenyuan"],
+      departAfterTicks: 2,
+      params: {
+        fromStockpileId: "sp-earth",
+        toStockpileId: "sp-commons",
+        cargo: { supply: 12, energy: 0, medical: 0 },
+      },
+    });
+    expect(cross.commandStatus).toBe("rejected");
+    expect(cross.reasonCode).toBe("over-capacity");
   });
 });
 
