@@ -19,7 +19,7 @@ import {
 } from "../src/index";
 import { expectInvalid, expectValid } from "./support";
 
-/** 运行中 ID 的 37 个前缀，按用途分组固定，用于目录完整性断言。 */
+/** 运行中 ID 的 38 个前缀，按用途分组固定，用于目录完整性断言。 */
 const expectedPrefixes = [
   "wld",
   "br",
@@ -50,6 +50,7 @@ const expectedPrefixes = [
   "trc",
   "spn",
   "snap",
+  "backup",
   "ses",
   "prb",
   "rr",
