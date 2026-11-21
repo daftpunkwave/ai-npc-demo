@@ -52,7 +52,8 @@ class StandardCommsPort implements GameCommsPort {
   /**
    * 同一份事务内的位置，按“世界状态优先，无角色记录者取内容包驻地”判定：
    * 有角色记录的 Agent（8 名公社支持者与 3 名外域 Agent）取世界状态当前节点，随任务移动更新；
-   * 玩家取内容包声明的玩家节点；无角色记录的人类 AI 党魁以派系 ID 行动，取内容包派系驻地链。
+   * 有角色定义但世界状态缺少记录时位置未知，不拿静态驻地冒充，否则会错误地绕过中继延迟或中断拒绝。
+   * 玩家取内容包声明的玩家节点；内容包没有角色定义的人类 AI 党魁以派系 ID 行动，取内容包派系驻地链。
    * 本切片 AI 党魁不参加任务、没有移动路径；将来若允许其移动，必须把位置写入世界状态，
    * 否则这里的派系驻地会与地图位置不一致。未知主体没有位置。
    */
@@ -65,7 +66,10 @@ class StandardCommsPort implements GameCommsPort {
       return this.content.playerNodeId;
     }
     const faction = this.content.factions.get(principalId);
-    return faction === undefined ? null : factionStandingNode(faction) ?? null;
+    if (faction === undefined || this.content.characters.has(principalId)) {
+      return null;
+    }
+    return factionStandingNode(faction) ?? null;
   }
 
   /** 两个主体此刻是否在同一节点；任一方没有位置时都不算同节点。 */

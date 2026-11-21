@@ -111,8 +111,8 @@ export function requireGameContent(content: unknown): GameContent {
 
 /**
  * 内容包声明的派系驻地节点：人类派系优先党部，其次前哨；外域派系只有领地。
- * 只供没有世界状态角色记录的主体（如人类 AI 党魁）作为位置口径；有角色记录的主体必须先取世界状态，
- * 这样任务移动后的最新位置不会被内容包的静态驻地覆盖。
+ * 调用方只在内容包没有对应角色定义时使用本函数（人类 AI 党魁）；有角色定义的主体先取世界状态，
+ * 世界状态缺少记录时位置未知，不能退回这里，否则任务移动后的最新位置会被静态驻地覆盖。
  */
 export function factionStandingNode(
   faction: Pick<GameFaction, "factionHomeNodeId" | "outpostNodeId" | "territoryNodeId">,

@@ -585,7 +585,7 @@ describe("通信", () => {
     // 岑雁没有角色记录，按内容包派系驻地（灰港）与玩家同节点，不按异地延迟。
     expect(port.sameNode("player-1", "human-independent")).toBe(true);
     expect(port.deliverAt("dialogue", "player-1", "human-independent")).toBe(10);
-    // 追风有角色记录，但替换端口没有返回位置；退回内容包领地（隘口），按异地降级延迟 2 tick。
+    // 追风在内容包有角色定义，但替换端口没有返回其世界状态位置；按位置未知处理，不退回静态领地。
     expect(port.sameNode("player-1", "species-fauna")).toBe(false);
     expect(port.deliverAt("dialogue", "player-1", "species-fauna")).toBe(12);
 
@@ -600,11 +600,13 @@ describe("通信", () => {
     expect(movedPort.deliverAt("dialogue", "player-1", "human-independent")).toBe(12);
 
     // 指标由替换端口提供：缺失即按中继中断处理，不读取任何世界聚合。
+    // 有角色定义但缺少世界状态记录的主体同样没有位置，中继中断时不可达。
     const down = createCommsPort(() => createMemoryTx(10), value.gameContent, value.host.ids, {
       ...world,
       meters: () => null,
     });
     expect(down.relayState()).toBe("down");
+    expect(down.deliverAt("dialogue", "player-1", "species-fauna")).toBe("relay-down");
     expect(down.deliverAt("message", "player-1", "species-fauna")).toBe("relay-down");
   });
 
