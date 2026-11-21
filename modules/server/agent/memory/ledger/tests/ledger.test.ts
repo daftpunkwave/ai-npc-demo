@@ -956,6 +956,7 @@ describe("structured ledger", () => {
     expect(valid.inserts).toHaveLength(1);
     expect(valid.inserts[0]?.epistemic).toBe("reported-claim");
     expect(valid.inserts[0]?.releasePolicyId).toBe("private:sec-test");
+    expect(valid.inserts[0]?.sourceTurnId).toBe("turn-000000000001");
 
     const invalid = memory.recordUse({
       scope,
