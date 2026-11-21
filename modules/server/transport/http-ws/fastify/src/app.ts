@@ -36,6 +36,7 @@ export type {
   BranchChangedHook,
   BranchClockResult,
   ClockControlHook,
+  ClockStepHook,
   CommandReceiptReadPort,
   ConversationReadPort,
   ConversationReadQuery,

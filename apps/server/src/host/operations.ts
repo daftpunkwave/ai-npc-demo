@@ -1,5 +1,5 @@
 /**
- * 运营编排：组合基础操作与幂等执行，向传输层暴露暂停/继续、快照、恢复与重开。
+ * 运营编排：组合基础操作与幂等执行，向传输层暴露暂停/继续、受控单步、快照、恢复与重开。
  * 依赖运营模块的服务工厂、基础操作与幂等执行；不直接操作传输、路由或存储表。
  * 禁止改写幂等语义、跳过暂停排空或绕过 operationId 重放首次结果。
  */
@@ -28,6 +28,7 @@ export function createOperationsHost(input: OperationsHostInput): ReturnType<Ope
     clock: () => input.clockState(),
     pause: (expected) => input.control("pause", expected),
     resume: (expected) => input.control("start", expected),
+    step: (expected, ticks) => input.control("step", expected, ticks),
     snapshot: (snapshotInput) =>
       primitives.createDrainedSnapshot({ label: snapshotInput.label, createdBy: snapshotInput.createdBy }),
     restore: (restoreInput) => primitives.restoreOnlineRun(restoreInput),

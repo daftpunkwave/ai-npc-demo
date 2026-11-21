@@ -4,7 +4,7 @@
 
 ## 1. 通用约定
 
-当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送与控制台健康/时间线推送、第 5.1 节的健康、模块目录、装配列表与装配详情，以及第 5.3 节的暂停、继续、快照创建/列表与恢复控制台入口（单步仍为目标）。预检、草稿、席位接管、其他控制台页面和各实验接口仍按目标状态后续交付。
+当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送与控制台健康/时间线推送、第 5.1 节的健康、模块目录、装配列表与装配详情，以及第 5.3 节的暂停、继续、单步、快照创建/列表与恢复控制台入口。预检、草稿、席位接管、其他控制台页面和各实验接口仍按目标状态后续交付。
 
 | 项 | 约定 |
 |---|---|
@@ -131,7 +131,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ## 5. 控制台 API（`/api/v1/console/*`）
 
-本节已实现的接口包括第 5.1 节的健康、模块目录、装配列表/详情，第 5.3 节的暂停、继续、快照创建/列表与恢复，以及第 5.5 节的时间线与 Agent 状态摘要。预检、草稿、模型池、席位接管与运行申请、剧情和调试接口仍为目标。
+本节已实现的接口包括第 5.1 节的健康、模块目录、装配列表/详情，第 5.3 节的暂停、继续、单步、快照创建/列表与恢复，以及第 5.5 节的时间线与 Agent 状态摘要。预检、草稿、模型池、席位接管与运行申请、剧情和调试接口仍为目标。
 
 ### 5.1 运行总览与模块装配
 
@@ -167,7 +167,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `GET /ops/seats/{agentId}/view` | operator（须持有该席位租约） | — | `{ worldView: AgentWorldView, inbox, agreements, invitations }`：只有该身份合法获知的内容 |
 | `POST /ops/seats/{agentId}/commands` | operator（须持有该席位租约） | `CommandEnvelope` | `CommandReceipt`；以该 agentId 身份、当前 epoch 提交 |
 | `POST /campaign/pause` / `resume`（已实现） | operator | `{ operationId, expectedRunVersion }` | `ClockView` |
-| `POST /campaign/step` | operator | `{ operationId, expectedRunVersion, ticks }`（1–24） | `ClockView`（mode 为 stepping，结束后回到 paused） |
+| `POST /campaign/step`（已实现） | operator | `{ operationId, expectedRunVersion, ticks }`（1–24） | `ClockView`：进入 `stepping` 模式，宿主按 tick 间隔逐 tick 推进到目标后回到 `paused`；推进失败或章节终点时按 [运营](../platform/operations.md) 第 2 节退出 |
 | `POST /campaign/snapshots`（已实现） | operator | `{ operationId, label }` | `{ snapshotId, worldTick }` |
 | `GET /campaign/snapshots`（已实现） | operator、researcher | — | `{ snapshots: SnapshotView[] }` |
 | `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId }` | `{ branchId, clock }`；创建后继在线分支，旧分支保留。`dryRun` 只读预检尚未实现，恢复前由服务端执行内部一致性校验 |
@@ -231,7 +231,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 第 3 节其余玩家接口 | ✓ | ✗ | ✗ | ✗ |
 | 5.1 总览与装配 | ✗ | ✓ | ✓（只读） | ✗ |
 | 5.2 模型池 | ✗ | ✓ | ✓（只读） | ✗ |
-| 5.3 席位与运营 | ✗ | ✓（时钟、存档、恢复） | 只读快照列表 | ✗ |
+| 5.3 席位与运营 | ✗ | ✓（时钟、单步、存档、恢复） | 只读快照列表 | ✗ |
 | 5.4 剧情卡 | ✗ | ✓ | 只能 override | ✗ |
 | 5.5 可观测与调试 | ✗ | ✗ | ✓ | ✗ |
 | 5.6 评估与导出 | ✗ | ✗ | ✓ | 只读 run 与报告 |

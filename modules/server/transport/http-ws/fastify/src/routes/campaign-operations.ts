@@ -10,6 +10,7 @@ import {
   campaignResetResponseSchema,
   clockControlRequestSchema,
   clockResponseSchema,
+  clockStepRequestSchema,
   snapshotCreateRequestSchema,
   snapshotCreateResponseSchema,
   snapshotListResponseSchema,
@@ -40,6 +41,8 @@ export interface CampaignOperationsRegistration {
   readonly restrictToOnlineBranch?: boolean;
   /** 是否注册“重新开局”；玩家入口启用，控制台入口不提供。 */
   readonly includeReset?: boolean;
+  /** 是否注册“受控单步推进”；当前只有控制台运营入口提供。 */
+  readonly includeStep?: boolean;
 }
 
 /** 读取可选 branchId 查询参数：缺省返回 undefined，非法值返回 null 由路由按 400 拒绝。 */
@@ -136,6 +139,27 @@ export function registerCampaignOperations(
     publishProjection();
     return clockResponseSchema.parse(clock);
   });
+
+  if (registration.includeStep === true) {
+    app.post(`${registration.prefix}/step`, (request, reply) => {
+      const session = authorize(request, reply, registration.authorize);
+      if (session === null) {
+        return;
+      }
+      const body = clockStepRequestSchema.safeParse(request.body);
+      if (!body.success) {
+        return sendHttpError(reply, "validation", "单步推进请求结构不合法");
+      }
+      const clock = options.step(
+        body.data.operationId,
+        body.data.expectedRunVersion,
+        body.data.ticks,
+        session.auth.principalId,
+      );
+      publishProjection();
+      return clockResponseSchema.parse(clock);
+    });
+  }
 
   app.post(`${registration.prefix}/snapshots`, (request, reply) => {
     const session = authorize(request, reply, registration.authorize);

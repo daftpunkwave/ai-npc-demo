@@ -10,6 +10,7 @@ import {
   clientStreamMessageSchema,
   clockControlRequestSchema,
   clockResponseSchema,
+  clockStepRequestSchema,
   consoleActiveRoleSchema,
   consoleRequestContextSchema,
   conversationQuerySchema,
@@ -128,6 +129,7 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
     { conversationId: "conv-1", lines: [] },
   ],
   ["时钟控制请求", clockControlRequestSchema, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 2 }, { operationId: "op-k3j9x0a1b2c3" }],
+  ["时钟单步请求", clockStepRequestSchema, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 2, ticks: 24 }, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 2, ticks: 25 }],
   ["时钟响应", clockResponseSchema, { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 0 }, { mode: "stopped" }],
   [
     "快照视图",

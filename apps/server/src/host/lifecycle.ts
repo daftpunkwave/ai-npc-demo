@@ -1,5 +1,5 @@
 /**
- * 宿主生命周期：时钟控制、运营生命周期审计、断线自动暂停、在线 tick worker 与关闭释放。
+ * 宿主生命周期：时钟控制（含受控单步）、运营生命周期审计、断线自动暂停、在线 tick worker 与关闭释放。
  * 依赖时钟 provider、authority 的 tick 推进、存储事务、传输应用通知与组合根提供的释放回调。
  * 禁止在 worker 失败后继续推进时钟、跳过断线宽限或在关闭时跳过资源释放。
  */
@@ -14,7 +14,7 @@ import {
 } from "@ai-npc/authority";
 import type { ClockState } from "@ai-npc/module-sdk";
 import type { HostServices } from "@ai-npc/contracts";
-import { advanceWorldTick, catchUpWorldTick } from "../tick";
+import { advanceSteppingTick, advanceWorldTick, catchUpWorldTick } from "../tick";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";
 import type { ServerApp, ServerRuntime } from "./module-catalog";
@@ -39,6 +39,8 @@ export interface HostLifecycle {
   attachApp(app: ServerApp): void;
   clockState(): ClockState;
   control(mode: "pause" | "start", expectedRunVersion: number): ReturnType<typeof clockView>;
+  /** 受控单步：从 paused 进入 stepping，宿主 worker 逐 tick 推进并回到 paused。 */
+  control(mode: "step", expectedRunVersion: number, ticks: number): ReturnType<typeof clockView>;
   handlePlayerConnections(connected: number): void;
   healthStatus(): "ready" | "degraded";
   start(): void;
@@ -238,6 +240,17 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
           clearWorkerFailure();
           app?.notifyWorldChanged();
         }
+      } else if (clock.mode === "stepping") {
+        // 受控单步：按同一间隔推进一个 tick；到达目标或章节终点时由推进函数收尾回 paused。
+        advanceSteppingTick({
+          storage,
+          clock: runtime.clock,
+          authority,
+          branchId: active.branchId,
+          current: clock,
+        });
+        clearWorkerFailure();
+        app?.notifyWorldChanged();
       }
     } catch (error) {
       workerFailed = true;
@@ -284,18 +297,25 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
   };
 
   /**
-   * 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。
-   * 恢复必须先补完当前 tick 且清理持久失败记录，成功后才提交时钟启动，失败时时钟不变。
+   * 暂停/继续/受控单步：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。
+   * 恢复必须先补完当前 tick 且清理持久失败记录，成功后才提交时钟启动，失败时时钟不变；
+   * 单步从 paused 进入 stepping 后交回 worker 按间隔推进，不在此处同步跑完整步。
    */
-  const control = (mode: "pause" | "start", expectedRunVersion: number) => {
+  const control = (
+    mode: "pause" | "start" | "step",
+    expectedRunVersion: number,
+    ticks?: number,
+  ): ReturnType<typeof clockView> => {
     // 未开局就推进时钟会让 campaign.start 永久落在非零 tick；必须在入口拒绝。
-    if (mode === "start" && !campaignStarted()) {
-      throw new DomainError("not-ready", "campaign 尚未开始，不能继续时钟", {
-        details: { branchId: active.branchId },
-      });
+    if (mode !== "pause" && !campaignStarted()) {
+      throw new DomainError(
+        "not-ready",
+        mode === "step" ? "campaign 尚未开始，不能单步推进时钟" : "campaign 尚未开始，不能继续时钟",
+        { details: { branchId: active.branchId } },
+      );
     }
-    // 终局停止点已登记：先补完当前 tick 并清理 worker 失败状态，再确认时钟保持暂停并拒绝恢复。
-    if (mode === "start" && authority.clock.pendingStop(active.branchId)) {
+    // 终局停止点已登记：先补完当前 tick 并清理 worker 失败状态，再确认时钟保持暂停并拒绝推进。
+    if (mode !== "pause" && authority.clock.pendingStop(active.branchId)) {
       recoverWorker(expectedRunVersion);
       const paused = runtime.clock.pause(active.branchId);
       if (!paused.ok) {
@@ -304,28 +324,32 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
         });
       }
       app?.notifyWorldChanged();
-      throw new DomainError("invalid-state", "章节已结束，不能恢复时钟", {
-        details: { branchId: active.branchId },
-      });
+      throw new DomainError(
+        "invalid-state",
+        mode === "step" ? "章节已结束，不能单步推进时钟" : "章节已结束，不能恢复时钟",
+        { details: { branchId: active.branchId } },
+      );
     }
     const needsWorkerRecovery =
-      mode === "start" && (workerFailed || hasPersistedWorkerFailure());
+      mode !== "pause" && (workerFailed || hasPersistedWorkerFailure());
     if (needsWorkerRecovery) {
       recoverWorker(expectedRunVersion);
+      // 恢复成功即重建推进调度：即便随后的时钟控制被拒绝（如 stepping 中重复单步），
+      // worker 也已重新驱动，不会留下无驱动方的 running/stepping 残留。
+      schedule();
+      app?.notifyWorldChanged();
     }
     const result = mode === "pause"
       ? runtime.clock.pause(active.branchId, expectedRunVersion)
-      : runtime.clock.start(active.branchId, expectedRunVersion);
+      : mode === "step"
+        ? runtime.clock.step(active.branchId, ticks ?? 0, expectedRunVersion)
+        : runtime.clock.start(active.branchId, expectedRunVersion);
     if (!result.ok) {
       throw result.reasonCode === "version-conflict"
         ? new DomainError("version-conflict", "时钟版本冲突")
         : new DomainError("invalid-state", "时钟控制参数非法");
     }
-    if (needsWorkerRecovery) {
-      schedule();
-      app?.notifyWorldChanged();
-    }
-    // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时。
+    // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时；单步是 operator 发起的有界推进，不参与。
     if (mode === "start" && playerConnections === 0) {
       scheduleAutoPause();
     }

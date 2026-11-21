@@ -1,5 +1,5 @@
 /**
- * 在线世界的固定 tick 执行顺序：写入时钟、到期 job、时钟步骤、事件消费者。
+ * 在线世界的固定 tick 执行顺序：写入时钟、到期 job、时钟步骤、事件消费者；stepping 模式按同一顺序逐 tick 推进并在达标或终局后收尾。
  * 依赖存储事务读取分支状态、authority 的 job/时钟/消费者执行器、时钟模块端口与宿主时间服务。
  * 每个阶段各自提交事务；时钟读写只经模块端口，禁止在这里解析或改写 clock 行。
  */
@@ -28,6 +28,9 @@ export interface TickClockPort {
   setTick(branchId: string, tick: number): ClockState;
   pause(branchId: string, expectedRunVersion?: number): { readonly ok: boolean };
 }
+
+/** 单步推进额外需要的时钟端口视图：收尾单步并回到 paused。 */
+export type SteppingClockPort = TickClockPort & { finishStep(branchId: string): ClockState };
 
 /** 补完当前 tick 与推进下一 tick 共用的运行环境。 */
 export interface WorldTickContext {
@@ -144,4 +147,47 @@ export function advanceWorldTick(input: AdvanceWorldTickInput): WorldTickResult 
 export function catchUpWorldTick(input: WorldTickContext): WorldTickResult {
   const worldTick = input.clock.read(input.branchId).worldTick;
   return completeTick(input, worldTick);
+}
+
+/** 单步推进的输入：在共用运行环境上补充收尾端口与调用方刚读到的时钟快照。 */
+export interface AdvanceSteppingInput extends WorldTickContext {
+  readonly clock: SteppingClockPort;
+  readonly current: ClockState;
+}
+
+/** 单步推进结果：finished 表示本步已收尾（完成、被章节终点截断或时钟已离开 stepping）。 */
+export interface SteppingTickResult extends WorldTickResult {
+  readonly finished: boolean;
+}
+
+/** 无实际阶段执行的空计数；收尾与截断路径只改时钟模式。 */
+const idleTickCounts = { executedJobs: 0, executedClockSteps: 0, consumers: { processed: 0, scanned: 0 } } as const;
+
+/**
+ * 推进 stepping 模式一个 tick：到达目标或章节终点时收尾并回到 paused。
+ * 任一阶段失败时错误向上传播，时钟停留在 stepping；暂停与恢复仍是有效退出路径。
+ */
+export function advanceSteppingTick(input: AdvanceSteppingInput): SteppingTickResult {
+  // 章节终点已登记：补做幂等暂停，本步视为被终局截断，与运行中终局同语义。
+  if (input.authority.clock.pendingStop(input.branchId)) {
+    const paused = input.clock.pause(input.branchId);
+    if (!paused.ok) {
+      throw new DomainError("invalid-state", "章节终点暂停时钟失败", {
+        details: { branchId: input.branchId, worldTick: input.current.worldTick },
+      });
+    }
+    return { worldTick: input.current.worldTick, ...idleTickCounts, finished: true };
+  }
+  const target = input.current.stepTargetTick;
+  // 目标缺失或已达成（如重启后补完现场）：只收尾单步，不重复推进。
+  if (target === null || input.current.worldTick >= target) {
+    return { worldTick: input.clock.finishStep(input.branchId).worldTick, ...idleTickCounts, finished: true };
+  }
+  const result = advanceWorldTick({ ...input, targetTick: input.current.worldTick + 1 });
+  const after = input.clock.read(input.branchId);
+  // 推进后仍在 stepping 且达标时收尾；被章节终点暂停时 mode 已离开 stepping，无需再收尾。
+  if (after.mode === "stepping" && after.stepTargetTick !== null && after.worldTick >= after.stepTargetTick) {
+    return { ...result, finished: true, worldTick: input.clock.finishStep(input.branchId).worldTick };
+  }
+  return { ...result, finished: after.mode !== "stepping" };
 }

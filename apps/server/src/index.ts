@@ -44,11 +44,14 @@ export type {
   ServerIdentity,
 } from "./host/module-catalog";
 export { buildPlayerProjection } from "./projection";
-export { advanceWorldTick, catchUpWorldTick } from "./tick";
+export { advanceSteppingTick, advanceWorldTick, catchUpWorldTick } from "./tick";
 export { createLifecycle } from "./host/lifecycle";
 export type { HostLifecycle, LifecycleInput } from "./host/lifecycle";
 export type {
+  AdvanceSteppingInput,
   AdvanceWorldTickInput,
+  SteppingClockPort,
+  SteppingTickResult,
   TickAuthority,
   TickClockPort,
   WorldTickContext,

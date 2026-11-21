@@ -138,7 +138,12 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       }
     },
     clockState: () => lifecycle.clockState(),
-    control: (mode, expectedRunVersion) => lifecycle.control(mode, expectedRunVersion),
+    control: (mode, expectedRunVersion, ticks) => {
+      if (mode === "step") {
+        return lifecycle.control("step", expectedRunVersion, ticks ?? 0);
+      }
+      return lifecycle.control(mode, expectedRunVersion);
+    },
     catchUpCurrentTick: () => {
       if (lifecycle.clockState().mode === "paused") agents?.fenceTurns("snapshot");
       catchUpWorldTick({
