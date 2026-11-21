@@ -1,10 +1,11 @@
 /**
- * 验证部署配置解析、固定双端拓扑、令牌冲突预检与凭据文件生成复用。
- * 依赖临时目录与环境变量快照；不启动宿主、不监听端口。
- * 禁止读取开发者本机 .env 或把真实令牌写入仓库。
+ * 验证部署配置解析、固定双端拓扑、令牌冲突预检、凭据文件原子写入与启动顺序。
+ * 依赖临时目录、环境变量快照与可注入的宿主替身；不启动真实宿主、不监听端口。
+ * 禁止读取开发者本机 .env、把真实令牌写入仓库，或用非原子写入的断言掩盖失败路径。
  */
-import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,8 +13,12 @@ import {
   loadDeploymentConfig,
   parseDeploymentConfig,
   resolveCredentials,
+  startServer,
   startupLogLines,
 } from "@ai-npc/app-server";
+import type { DeploymentConfig, HostOptions, StartupHost } from "@ai-npc/app-server";
+
+vi.mock("node:fs", { spy: true });
 
 const dirs: string[] = [];
 
@@ -43,6 +48,51 @@ afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/** 启动编排的可观测替身：记录宿主启动、监听与关闭次数，并按需注入监听失败。 */
+interface FakeHostProvider {
+  readonly state: {
+    startCalls: number;
+    listenCalls: number;
+    closeCalls: number;
+    readonly options: HostOptions[];
+  };
+  readonly startHost: (options: HostOptions) => Promise<StartupHost>;
+}
+
+function createFakeHostProvider(listenError?: Error): FakeHostProvider {
+  const state: FakeHostProvider["state"] = { startCalls: 0, listenCalls: 0, closeCalls: 0, options: [] };
+  const host: StartupHost = {
+    transport: { host: "127.0.0.1", port: 3000 },
+    listen: async () => {
+      state.listenCalls += 1;
+      if (listenError !== undefined) {
+        throw listenError;
+      }
+    },
+    close: async () => {
+      state.closeCalls += 1;
+    },
+  };
+  return {
+    state,
+    startHost: async (options: HostOptions) => {
+      state.startCalls += 1;
+      state.options.push(options);
+      return host;
+    },
+  };
+}
+
+function credentialsPathOf(config: DeploymentConfig): string {
+  return join(config.dataDir, credentialsFileName);
+}
+
+/** 用真实 fs 模块恢复一次性 mock 实现，避免失败用例把注入实现泄漏给后续用例。 */
+function restoreImplementations(actual: typeof import("node:fs")): void {
+  vi.mocked(fs.writeFileSync).mockImplementation(actual.writeFileSync);
+  vi.mocked(fs.renameSync).mockImplementation(actual.renameSync);
+}
 
 describe("部署配置", () => {
   it("缺省解析为固定双端拓扑与默认数据目录", () => {
@@ -230,6 +280,159 @@ describe("登录凭据", () => {
     const config = parseDeploymentConfig({ env: {}, projectRoot: root });
     const resolved = resolveCredentials(config, { generate: (role) => `${role}-generated-token` });
     expect(statSync(resolved.filePath).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe("启动编排", () => {
+  it("凭据写入中途失败时在监听前终止，旧文件保持可用且不留暂存文件", async () => {
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    const filePath = credentialsPathOf(config);
+    mkdirSync(config.dataDir, { recursive: true });
+    const previous = `${JSON.stringify({ version: 1, playerToken: "stored-player" }, null, 2)}\n`;
+    writeFileSync(filePath, previous, "utf8");
+
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const writeSpy = vi.mocked(fs.writeFileSync);
+    writeSpy.mockImplementationOnce((target, data) => {
+      // 模拟写入中途失败：暂存文件已经出现部分内容，正式文件尚未发布。
+      actual.writeFileSync(target, String(data).slice(0, 12), "utf8");
+      throw new Error("注入的凭据写入失败");
+    });
+    const provider = createFakeHostProvider();
+    try {
+      await expect(startServer({
+        config,
+        startHost: provider.startHost,
+        logLine: () => {},
+        logError: () => {},
+      })).rejects.toThrow(/写入凭据文件失败/);
+    } finally {
+      restoreImplementations(actual);
+    }
+    expect(provider.state.startCalls).toBe(0);
+    expect(provider.state.listenCalls).toBe(0);
+    expect(readFileSync(filePath, "utf8")).toBe(previous);
+    expect(readdirSync(config.dataDir)).toEqual([credentialsFileName]);
+  });
+
+  it("宿主启动失败时丢弃暂存文件且不发布凭据文件", async () => {
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    const startHost = async (): Promise<StartupHost> => {
+      throw new Error("注入的宿主启动失败");
+    };
+    await expect(startServer({ config, startHost, logLine: () => {}, logError: () => {} }))
+      .rejects.toThrow(/注入的宿主启动失败/);
+    expect(readdirSync(config.dataDir)).toEqual([]);
+  });
+
+  it("监听失败时丢弃暂存文件，不发布正式凭据文件", async () => {
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    const provider = createFakeHostProvider(new Error("EADDRINUSE"));
+    const errorLines: string[] = [];
+    await expect(startServer({
+      config,
+      startHost: provider.startHost,
+      logLine: () => {},
+      logError: (line) => { errorLines.push(line); },
+    })).rejects.toThrow(/监听 127\.0\.0\.1:3000 失败: EADDRINUSE/);
+    expect(provider.state.listenCalls).toBe(1);
+    expect(provider.state.closeCalls).toBe(1);
+    expect(errorLines).toEqual([]);
+    expect(readdirSync(config.dataDir)).toEqual([]);
+  });
+
+  it("监听成功并输出登录地址后才原子发布完整凭据文件", async () => {
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    const filePath = credentialsPathOf(config);
+    const lines: string[] = [];
+    const existedWhileLogging: boolean[] = [];
+    const provider = createFakeHostProvider();
+    const running = await startServer({
+      config,
+      startHost: provider.startHost,
+      logLine: (line) => {
+        lines.push(line);
+        existedWhileLogging.push(existsSync(filePath));
+      },
+      logError: () => {},
+    });
+
+    expect(provider.state.listenCalls).toBe(1);
+    expect(provider.state.closeCalls).toBe(0);
+    expect(running.transport).toEqual({ host: "127.0.0.1", port: 3000 });
+    // 输出登录地址时正式凭据文件尚未发布，避免“已落盘却从未展示”。
+    expect(existedWhileLogging).toEqual([false, false, false]);
+    expect(existsSync(filePath)).toBe(true);
+    expect(readdirSync(config.dataDir)).toEqual([credentialsFileName]);
+
+    const contents = readFileSync(filePath, "utf8");
+    expect(contents.endsWith("\n")).toBe(true);
+    const stored = JSON.parse(contents) as Record<string, string | number>;
+    expect(stored).toMatchObject({ version: 1 });
+    expect(Object.keys(stored).sort()).toEqual(["consoleToken", "playerToken", "version"]);
+    const playerToken = String(stored["playerToken"]);
+    const consoleToken = String(stored["consoleToken"]);
+    expect(lines[0]).toBe("[ai-npc] server ready: http://127.0.0.1:3000");
+    expect(lines).toContain(`[ai-npc] player  login: http://127.0.0.1:5173/#token=${encodeURIComponent(playerToken)}`);
+    expect(lines).toContain(`[ai-npc] console login: http://127.0.0.1:3000/console/#token=${encodeURIComponent(consoleToken)}`);
+
+    const reused = resolveCredentials(config, {
+      generate: () => {
+        throw new Error("发布完成的令牌不应重新生成");
+      },
+    });
+    expect(reused.generated).toEqual([]);
+    expect(reused.tokens).toEqual({ player: playerToken, console: consoleToken });
+  });
+
+  it("原子发布失败时保留旧凭据文件并明确报告，不静默降级", async () => {
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    const filePath = credentialsPathOf(config);
+    mkdirSync(config.dataDir, { recursive: true });
+    const previous = `${JSON.stringify({ version: 1, playerToken: "stored-player" }, null, 2)}\n`;
+    writeFileSync(filePath, previous, "utf8");
+
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    vi.mocked(fs.renameSync).mockImplementationOnce(() => {
+      throw new Error("注入的原子发布失败");
+    });
+    const lines: string[] = [];
+    const errorLines: string[] = [];
+    const provider = createFakeHostProvider();
+    let caught: unknown;
+    try {
+      await startServer({
+        config,
+        startHost: provider.startHost,
+        logLine: (line) => { lines.push(line); },
+        logError: (line) => { errorLines.push(line); },
+      });
+    } catch (error) {
+      caught = error;
+    } finally {
+      restoreImplementations(actual);
+    }
+    // 凭据无法持久化时启动必须失败并关闭宿主；已打印的本次登录地址不再视为可用。
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("凭据文件原子发布失败");
+    expect((caught as Error).message).toContain("启动已终止");
+    expect(provider.state.closeCalls).toBe(1);
+    expect(lines.some((line) => line.includes("console login:"))).toBe(true);
+    expect(readFileSync(filePath, "utf8")).toBe(previous);
+    expect(readdirSync(config.dataDir)).toEqual([credentialsFileName]);
+  });
+
+  it.skipIf(process.platform === "win32")("原子发布后的凭据文件权限为仅当前用户可读写", async () => {
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    const provider = createFakeHostProvider();
+    await startServer({ config, startHost: provider.startHost, logLine: () => {}, logError: () => {} });
+    expect(statSync(credentialsPathOf(config)).mode & 0o777).toBe(0o600);
   });
 });
 
