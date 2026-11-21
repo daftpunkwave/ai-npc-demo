@@ -222,6 +222,48 @@ describe("确定性 Agent turn", () => {
     ]);
   });
 
+  it("恢复待认领的 turn，并逐一回复调度前已有的独立会话", async () => {
+    const host = await hostWithAgents();
+    const submit = player();
+    submit(host, "campaign.start", { factionId: "human-neutral" });
+    clock(host, 0, "running");
+    const requests = ["你好。", "能帮忙护送吗？", "收到。"].map((text) =>
+      submit(host, "dialogue.say", { targetAgentId: target, text }));
+    clock(host, 0, "paused");
+    const queuedId = "turn-000000000001";
+    const first = await vi.waitFor(() => host.storage.transact((tx) => {
+      const pending = tx.branch(host.branchId).table("triggers").list({ agent_id: target, kind: "player-dialogue" });
+      expect(pending).toHaveLength(requests.length);
+      const trigger = pending.find((row) => row["source_ref"] === requests[0]?.acceptedEventIds[0]);
+      expect(trigger).toBeDefined();
+      return trigger;
+    }));
+    if (first === undefined) throw new Error("First conversation trigger has not been persisted");
+    host.storage.transact((tx) => {
+      const branch = tx.branch(host.branchId);
+      const lease = branch.table("controller_leases").get({ agent_id: target });
+      const runId = tx.rows("branches").get({ branch_id: host.branchId })?.["run_id"];
+      if (lease === null || typeof runId !== "string") throw new Error("Missing test Agent lease or run");
+      tx.rows("turn_runs").put({
+        turn_id: queuedId, branch_id: host.branchId, run_id: runId, agent_id: target,
+        agent_turn_index: 1, status: "queued", trigger_ids_json: [String(first["trigger_id"])],
+        input_frontier_json: null, memory_revision: null, profile_hash: "pending",
+        controller_epoch: Number(lease["controller_epoch"]), turn_lease_epoch: 0, lease_expires_at: null,
+        terminal_reason: null, effective_json: [], created_at: "2026-01-01T00:00:00.000Z", created_tick: 0,
+        started_at: null, ended_at: null,
+      });
+      branch.table("triggers").put({ ...first, consumed_by_turn_id: queuedId });
+    });
+    clock(host, 0, "running");
+    expect(await terminalTurn(host, 0)).toMatchObject({ turn_id: queuedId, status: "completed", turn_lease_epoch: 1 });
+    expect(await terminalTurn(host, requests.length - 1)).toMatchObject({ status: "completed" });
+    expect(events(host, "DialogueSubmitted", target).map((row) => row["payload_json"])).toEqual(
+      requests.map((request) => expect.objectContaining({
+        conversationId: (request.result as { readonly conversationId: string }).conversationId,
+      })),
+    );
+  });
+
   it("决策返回前发生接管时不提交旧对白，并释放该轮触发", async () => {
     const gate = holdFirstDecision();
     const host = await hostWithAgents({ moduleDefinitions: gate.definitions });
@@ -259,6 +301,38 @@ describe("确定性 Agent turn", () => {
     expect(turns(host)).toHaveLength(0);
     clock(host, 0, "running");
     expect(await terminalTurn(host, 0)).toMatchObject({ status: "completed" });
+  });
+
+  it("重开后关闭旧分支的在途 turn，新分支可以开局并回复玩家", async () => {
+    const gate = holdFirstDecision();
+    const host = await hostWithAgents({ moduleDefinitions: gate.definitions });
+    const submit = player();
+    submit(host, "campaign.start", { factionId: "human-neutral" });
+    clock(host, 0, "running");
+    submit(host, "dialogue.say", { targetAgentId: target, text: "你好。" });
+    await gate.entered;
+    const oldBranch = host.branchId;
+    const priorTurn = turns(host)[0]?.["turn_id"];
+    const login = await host.app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { token: "turn-player" } });
+    expect(login.statusCode).toBe(200);
+    const { sessionToken } = login.json<{ sessionToken: string }>();
+    const reset = await host.app.inject({
+      method: "POST", url: "/api/v1/campaign/reset", headers: { authorization: `Bearer ${sessionToken}` },
+      payload: { operationId: "op-000000000008" },
+    });
+    expect(reset.statusCode).toBe(200);
+    expect(host.branchId).not.toBe(oldBranch);
+    gate.release();
+    submit(host, "campaign.start", { factionId: "human-neutral" });
+    clock(host, 0, "running");
+    submit(host, "dialogue.say", { targetAgentId: target, text: "重开后你好。" });
+    expect(await terminalTurn(host, 0)).toMatchObject({ status: "completed" });
+    expect(events(host, "DialogueSubmitted", target)).toHaveLength(1);
+    const old = host.storage.transact((tx) => ({
+      turn: tx.rows("turn_runs").get({ turn_id: String(priorTurn) }),
+      replies: tx.branch(oldBranch).table("domain_events").count({ type: "DialogueSubmitted", principal_id: target }),
+    }));
+    expect(old).toMatchObject({ turn: { status: "cancelled" }, replies: 0 });
   });
 
   it.each([

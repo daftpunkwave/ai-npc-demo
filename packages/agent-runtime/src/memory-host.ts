@@ -83,15 +83,11 @@ export class MemoryHost {
           throw new Error(`memory module ${selection.module} is not registered`);
         }
         const handle = await AgentModuleHandle.create<MemoryPort>({
+          ...this.options,
           agentId: agent.agentId,
           moduleId: selection.module,
           config: selection.config,
           definition,
-          worldId: this.options.worldId,
-          branchId: this.options.branchId,
-          host: this.options.host,
-          signal: this.options.signal,
-          ...(this.options.ports === undefined ? {} : { ports: this.options.ports }),
         });
         this.modules.set(agent.agentId, handle);
         await this.store.initializeAgent(agent.agentId, selection.module);

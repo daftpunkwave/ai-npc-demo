@@ -68,13 +68,11 @@ export class AgentRuntime {
           throw new Error(`感知模块 ${selection.module} 未登记`);
         }
         this.perception.set(agent.agentId, await AgentModuleHandle.create<PerceptionPort>({
+          ...this.options,
           agentId: agent.agentId,
           moduleId: selection.module,
           config: selection.config,
           definition,
-          worldId: this.options.worldId,
-          branchId: this.options.branchId,
-          host: this.options.host,
           signal: this.abort.signal,
           ...(this.options.turnExecution === undefined ? {} : { ports: this.options.turnExecution.ports }),
         }));
@@ -241,7 +239,11 @@ export class AgentRuntime {
       paused: this.clockMode() === "paused",
       runId: this.options.runId,
     });
-    for (const { turnId, agentId } of scheduled) this.turns?.dispatch(turnId, agentId);
+    if (this.turns !== null) {
+      for (const { turnId, agentId } of this.scheduler.queuedTurns(this.options.runId)) {
+        this.turns.dispatch(turnId, agentId);
+      }
+    }
     if (scheduled.length > 0) this.options.onStateChange?.();
   }
 

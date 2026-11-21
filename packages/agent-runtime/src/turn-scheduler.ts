@@ -49,6 +49,12 @@ export class TurnScheduler {
     this.releaseOrphanedTriggers();
   }
 
+  queuedTurns(runId: string): readonly { readonly turnId: string; readonly agentId: string }[] {
+    return this.input.storage.transact((tx) => tx.rows("turn_runs")
+      .list({ branch_id: this.input.branchId, run_id: runId, status: "queued" })
+      .map((row) => ({ turnId: stringValue(row, "turn_id"), agentId: stringValue(row, "agent_id") })));
+  }
+
   schedule(input: {
     readonly tick: number;
     readonly paused: boolean;
@@ -71,8 +77,18 @@ export class TurnScheduler {
         strategic: agent.kind === "strategic",
       };
     });
-    const triggers = snapshot.triggers.map(triggerFromRow).filter((trigger) =>
-      snapshot.kind === "sandbox" ? trigger.kind === "probe" : trigger.kind !== "probe");
+    const separateTurns = new Set<string>();
+    const sandbox = snapshot.kind === "sandbox";
+    // 每条玩家发言创建独立会话。分开调度让每个会话都能收到回复。
+    const triggers = snapshot.triggers.map(triggerFromRow)
+      .sort((left, right) => left.createdTick - right.createdTick)
+      .filter(({ agentId, kind }) => {
+        if (sandbox !== (kind === "probe")) return false;
+        if (kind !== "player-dialogue" && kind !== "probe") return true;
+        if (separateTurns.has(agentId)) return false;
+        separateTurns.add(agentId);
+        return true;
+      });
     const lastTurnTickByAgent = this.lastTurnTicks(snapshot.turns);
     const plans = this.input.scheduling.plan({
       branchId: this.input.branchId,

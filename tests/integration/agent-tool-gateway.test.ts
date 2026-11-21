@@ -332,6 +332,42 @@ describe("Tool view and gateway", () => {
     expect(calls).toBe(2);
     expect(envelopes[0]?.commandId).toBe(envelopes[1]?.commandId);
   });
+  it("定向消息回执已提交时复用原 operation，避免重复发送", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let sent = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: () => { throw new Error("Message transport must use the speech executor"); },
+      executeMessage: ({ commandId }) => {
+        sent += 1;
+        const stored = {
+          ...receipt(harness.host, { commandId, type: "speech.commit", schemaVersion: 1, payload: {} }),
+          result: { messageId: "msg-000000000001" },
+        };
+        harness.storage.transact((tx) => tx.branch(testBranchId).table("command_receipts").put({
+          principal_id: testAgentId, command_id: commandId, command_type: "speech.commit",
+          payload_hash: "speech-test-payload", receipt_json: stored, created_at: harness.host.nowIso(),
+        }));
+        throw new Error("Response lost after commit");
+      },
+    });
+    const args = { to: ["player-1"], intent: { kind: "acknowledge", tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] } };
+    const call = {
+      ...turn([]), wireName: "message_send", arguments: args, argumentsRaw: JSON.stringify(args), operationId: "op-000000000003",
+    };
+    const missed = await gateway.executeCall({ ...call, providerCallId: "message-unknown" });
+    expect(missed.result.executionStatus).toBe("unknown");
+    const recovered = await gateway.executeCall({ ...call, providerCallId: "message-recovered" });
+    expect(recovered.result).toMatchObject({ commandStatus: "accepted", data: { messageId: "msg-000000000001" } });
+    expect(sent).toBe(1);
+  });
+
   it("artifact 持久化异步失败时结算为 unknown", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
