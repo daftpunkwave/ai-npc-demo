@@ -4,10 +4,8 @@
  * 禁止在出发时信任派遣时缓存的路线，也禁止把救援拆成不经过群体节点的单段路线。
  */
 import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
+import { externalGuideAgentId, hasFactionSupporter, rescueSupporterAgentId, scoutSupporterAgentId } from "./faction-bonus";
 import type { DispatchInput } from "./plan-types";
-
-/** 追风或祁录参与侦察时，按内容道路重算逐路行程：每条道路减 1，至少 1 tick。 */
-const scoutGuideAgentIds: readonly string[] = ["species-fauna", "npc-qilu"];
 
 export interface PlannedRoute {
   readonly roadIds: string[];
@@ -155,7 +153,7 @@ export function computeTaskRoute(
     if (route === null) {
       return null;
     }
-    const helpers = participants.includes("npc-muzhi");
+    const helpers = hasFactionSupporter(content, factionId, participants, rescueSupporterAgentId);
     return {
       ...route,
       duration: Math.max(1, route.travelTicks - (helpers ? 2 : 0)),
@@ -187,7 +185,10 @@ export function computeTaskRoute(
   if (route === null) {
     return null;
   }
-  const guided = participants.some((participant) => scoutGuideAgentIds.includes(participant));
+  // 侦察向导只认本派情报/侦察支持者；追风按设计对任何队伍同效。
+  const guided =
+    hasFactionSupporter(content, factionId, participants, scoutSupporterAgentId) ||
+    participants.includes(externalGuideAgentId);
   const travelTicks = guided ? guidedTravelTicks(content, route.roadIds, route.travelTicks) : route.travelTicks;
   return {
     roadIds: [...route.roadIds],
