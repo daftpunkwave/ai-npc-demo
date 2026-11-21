@@ -209,7 +209,7 @@ function validateUsePlan(
       throw new Error("memory use inserted a record that was not derived from this turn");
     }
     if (insert.sourceTurnId !== input.turnId) {
-      throw new Error("memory use inserted a record with a mismatched source turn");
+      throw new Error("memory use inserted a record whose source turn does not match this turn");
     }
   }
 }
