@@ -52,7 +52,8 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
         [effect.audience],
       );
     } else if (effect.kind === "stockpile-adjust") {
-      // 只有显式声明 clampToAvailable 的调整按可用量扣减；其余调整保持整体成功或失败。
+      // 只有显式声明 clampToAvailable 的调整按可用量（amount − reserved）截断；
+      // 其余调整交给资源端口整笔校验，任一资源不足就失败，不留下部分扣减。
       const delta = effect.clampToAvailable === true
         ? clampToAvailable(ports["game.resources"], effect.stockpileId, effect.delta)
         : effect.delta;

@@ -245,6 +245,7 @@ export class EventConsumerRunner {
       modules: bindModulePorts({
         binder: this.moduleBinder,
         fallback: this.modules,
+        moduleId: consumer.owner.moduleId,
         registry: this.registry,
         storageTx: tx,
         worldId: branch.worldId,

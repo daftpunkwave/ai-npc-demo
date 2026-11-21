@@ -90,9 +90,11 @@ export type ScopedWorldTxFactory = (moduleId: string) => WorldTx;
 
 /**
  * 宿主在每次处理器调用时绑定模块端口：传入的 txFor 与当前事务共享提交与回滚。
+ * moduleId 是当前处理器的所有者模块，绑定方据此只返回该模块自身与 requires 声明的端口；
+ * moduleId 为 null 表示宿主自己的只读视图，此时返回全部已装配端口。
  * 端口实现应在方法内部按自身模块 ID 取 tx，不能跨模块直接写聚合。
  */
-export type ModuleBinder = (txFor: ScopedWorldTxFactory) => unknown;
+export type ModuleBinder = (txFor: ScopedWorldTxFactory, moduleId: string | null) => unknown;
 
 /** 规则处理器的结果：接受（可携带结果）或按原因码拒绝，不能伪造 receipt 或异步任务状态。 */
 export type HandlerResult =

@@ -10,7 +10,7 @@ import { z } from "zod";
 const scenarioConfigSchema = z.object({}).strict();
 
 function definition(id: string): ModuleDefinition {
-  const requirements = ["game.world", "game.map", "game.resources", "game.comms", "game.actions"] as const;
+  const requirements = ["game.world", "game.map", "game.resources", "game.comms"] as const;
   return {
     id,
     realm: "server",

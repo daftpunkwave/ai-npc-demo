@@ -2,7 +2,10 @@
  * 汇总服务端宿主公开入口；传输应用由 transport provider 提供。
  * 不启动服务、不打开存储。
  */
-export { createServerApp } from "./host/module-catalog";
+export { createServerApp, resolveGameModuleBindings } from "./host/module-catalog";
+export type { GameModuleBindings, GameModulePublicPort } from "./host/game-port-binder";
+export { checkModuleCapabilityUsage } from "./host/module-capability-usage";
+export type { CapabilityUsageViolation } from "./host/module-capability-usage";
 export { checkCatalog, runCatalogCheckCli } from "./host/catalog-check";
 export type {
   CatalogCheckOptions,

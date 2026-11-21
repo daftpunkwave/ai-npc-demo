@@ -67,7 +67,7 @@ kernel 中不得出现角色姓名、派系 ID、SLG 资源、memory 类型、�
 | apps/server 的组合根 | 服务端 module 的公开定义、authority/agent-runtime 与通用宿主 |
 | apps/console 的组合根 | 控制台 module 的公开定义、client-sdk 与通用宿主；不持有服务端对象 |
 
-模块只能通过 requires 声明的 typed port 获得依赖；直接 import 另一个模块的实现、跨目录 deep import、通过全局 service locator 取依赖都不允许。requires 可以依赖 port，不能指定“调用某文件里的私有函数”。
+模块只能通过 requires 声明的 typed port 获得依赖；直接 import 另一个模块的实现、跨目录 deep import、通过全局 service locator 取依赖都不允许。requires 可以依赖 port，不能指定“调用某文件里的私有函数”。服务端规则处理器拿到的端口视图只包含该模块自身的 provides 与 requires；访问未声明的游戏能力立即失败，源码访问与 requires 的差异由 `pnpm check:catalog` 对账。
 
 公共 DTO、port 和协议 schema 归 contracts；模块私有 configSchema 和内部类型归模块自身。新增参数不应迫使修改 kernel；新增公共语义才升级对应契约。避免把所有业务类型塞进一个巨型公共对象。
 
@@ -126,7 +126,7 @@ SDK/数据库/PixiJS 类型停在适配器内部，不能进入世界领域接�
 
 ## 9. 架构守门
 
-自动检查 imports 与依赖 manifest、模块定义唯一性、port 版本/基数、跨 realm 能力、无隐式注册、状态所有权及必需 provider；目录层面的能力闭包、实例作用域与默认装配检查见 [模块目录](module-catalog.md)。缺失、循环或重复绑定在 ready 前拒绝，不增加宽泛 allowlist 绕过。
+自动检查 imports 与依赖 manifest、模块定义唯一性、port 版本/基数、跨 realm 能力、无隐式注册、状态所有权及必需 provider；`pnpm check:catalog` 另对账模块源码实际访问的能力与 provides/requires 声明，漏声明、多余声明和未登记能力都会在启动前失败。目录层面的能力闭包、实例作用域与默认装配检查见 [模块目录](module-catalog.md)。缺失、循环或重复绑定在 ready 前拒绝，不增加宽泛 allowlist 绕过。
 
 验收不只问“memory 能换吗”，而是问“新增或替换一个游戏、界面、基础设施或 Agent 功能时，是否只变该模块、显式 catalog/装配与配置，是否无需修改其他实现”。若公共 port 不足，先评审升级影响，不能靠 any 或万能 WorldContext 穿透边界。
 

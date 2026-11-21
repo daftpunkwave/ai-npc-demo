@@ -2,8 +2,7 @@
  * 在分支当前 tick 上运行已注册的时钟步骤，每个命中步骤在各自事务内按注册顺序提交。
  * 依赖存储事务、时钟步骤注册、系统认证与 WorldTx；每日结算与章节评估由 world 模块自行注册。
  * 禁止在时钟外另起定时器、跳过未注册步骤，或把同一 tick 的多个步骤合并进一个事务；
- * 步骤处理器失败时回滚步骤事务，达到重试上限后记录死信并在本 tick 跳过该步骤；
- * 持久时钟停止点由步骤在自身事务内登记，宿主据此补做暂停并拒绝越过终局推进。
+ * 步骤处理器失败时回滚步骤事务，达到重试上限后记录死信并在本 tick 跳过该步骤；持久时钟停止点由步骤在自身事务内登记，宿主据此补做暂停并拒绝越过终局推进。
  */
 import { DomainError, type StorageTransaction } from "@ai-npc/contracts";
 import { readBranch, readClock, type BranchRecord } from "./branch-state";
@@ -170,6 +169,7 @@ export class ClockStepRunner {
       modules: bindModulePorts({
         binder: this.moduleBinder,
         fallback: this.modules,
+        moduleId: step.owner.moduleId,
         registry: this.registry,
         storageTx: tx,
         worldId: branch.worldId,
