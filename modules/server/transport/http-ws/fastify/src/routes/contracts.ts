@@ -125,6 +125,13 @@ export interface BranchClockResult {
 
 /** 时钟控制回调：幂等键、期望版本与会话主体一起交给宿主执行。 */
 export type ClockControlHook = (operationId: string, expectedRunVersion: number, principalId: string) => ClockView;
+/** 受控单步回调：额外携带本步推进的 tick 数；宿主进入 stepping 后逐 tick 推进并收尾。 */
+export type ClockStepHook = (
+  operationId: string,
+  expectedRunVersion: number,
+  ticks: number,
+  principalId: string,
+) => ClockView;
 export type SnapshotCreateHook = (input: SnapshotCreateArgs) => SnapshotCreateResult;
 export type SnapshotRestoreHook = (input: SnapshotRestoreArgs) => RestoreSnapshotResult;
 export type ResetHook = (operationId: string, principalId: string) => BranchClockResult;
@@ -217,6 +224,8 @@ export interface ServerAppOptions {
   readonly clock: () => ClockView;
   readonly pause: ClockControlHook;
   readonly resume: ClockControlHook;
+  /** 受控单步推进；控制台入口经这里把请求交给宿主生命周期。 */
+  readonly step: ClockStepHook;
   readonly save: {
     createSnapshot: SnapshotCreateHook;
     listSnapshots: () => readonly SnapshotRecordView[];

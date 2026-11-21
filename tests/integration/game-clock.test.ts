@@ -38,6 +38,8 @@ describe("受控时钟", () => {
     const value = await harness();
     const clock = createClockPort(value.storage, { secondsPerTick: 10, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60_000 }, value.host.nowIso);
     expect(clock.pause(value.branchId, 99)).toMatchObject({ ok: false, reasonCode: "version-conflict" });
+    // 运行中不能进入单步：单步只从 paused 发起，避免与 worker 的自动推进竞争。
+    expect(clock.step(value.branchId, 1)).toMatchObject({ ok: false, reasonCode: "invalid-params" });
     expect(clock.step(value.branchId, 25)).toMatchObject({ ok: false, reasonCode: "invalid-params" });
     clock.pause(value.branchId);
     expect(() => clock.setTick(value.branchId, 1)).toThrow();

@@ -1,5 +1,5 @@
 /**
- * 运营操作的幂等执行：暂停/继续、快照、恢复与重开按 operationId 复用首次结果，冲突或失败记录同键。
+ * 运营操作的幂等执行：暂停/继续、受控单步、快照、恢复与重开按 operationId 复用首次结果，冲突或失败记录同键。
  * 依赖运营幂等日志、基础操作、存档 InTransaction 方法与时钟 provider；不重算业务结果。
  * 禁止在业务写入之外单独提交结果（时钟控制除外），或让不可重试失败与已提交成功结果被后续重试覆盖。
  */
@@ -30,7 +30,12 @@ export interface IdempotentOperationsInput {
   readonly active: LiveRunState;
   readonly journal: OperationJournal;
   readonly primitives: OperationsPrimitives;
-  readonly control: (mode: "pause" | "start", expectedRunVersion: number) => ClockView;
+  /** 时钟控制回调；step 携带本步推进的 tick 数。 */
+  readonly control: (
+    mode: "pause" | "start" | "step",
+    expectedRunVersion: number,
+    ticks?: number,
+  ) => ClockView;
 }
 
 /** 构造幂等执行入口；每个操作先查首次结果，再在业务事务内写入首次记录。 */
@@ -39,16 +44,18 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
   const save = runtime.save;
 
   /**
-   * 暂停/继续的幂等执行。时钟 provider 自持事务，结果记录只能随后单独提交，
+   * 时钟控制的幂等执行（暂停/继续/单步）。时钟 provider 自持事务，结果记录只能随后单独提交，
    * 两次提交之间崩溃会退化为重新执行一次时钟控制，不承诺该窗口的原子性。
    */
   const controlOperation = (
-    kind: "pause" | "resume",
+    kind: "pause" | "resume" | "step",
     expectedRunVersion: number,
     operation: OperationRequest,
+    ticks?: number,
   ): ClockView => {
     const key: OperationKey = primitives.operationKeyFor(kind, operation.principalId, operation.operationId, {
       expectedRunVersion,
+      ...(ticks === undefined ? {} : { ticks }),
     });
     const replayed = journal.replay(key, decodeClockOutcome);
     if (replayed !== null) {
@@ -56,7 +63,10 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
     }
     let clock: ClockView;
     try {
-      clock = control(kind === "pause" ? "pause" : "start", expectedRunVersion);
+      clock =
+        kind === "step"
+          ? control("step", expectedRunVersion, ticks ?? 0)
+          : control(kind === "pause" ? "pause" : "start", expectedRunVersion);
     } catch (error) {
       journal.recordFailure(key, error);
       throw error;
@@ -197,6 +207,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
   return {
     pause: (operation, expected) => controlOperation("pause", expected, operation),
     resume: (operation, expected) => controlOperation("resume", expected, operation),
+    step: (operation, expected, ticks) => controlOperation("step", expected, operation, ticks),
     snapshot: (operation, snapshotInput) => snapshotOperation(operation, snapshotInput),
     restore: (operation, restoreInput) => restoreOperation(operation, restoreInput),
     reset: (operation) => resetOperation(operation),

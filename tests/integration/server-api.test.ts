@@ -115,6 +115,25 @@ function setClockMode(harness: GameHarness, mode: ClockView["mode"], expected: n
   return clockView(harness);
 }
 
+/** 进入 stepping：写入模式与单步目标；返回的 ClockView 携带新的 runVersion。 */
+function setClockStepping(harness: GameHarness, expected: number, ticks: number): ClockView {
+  harness.storage.transact((tx) => {
+    const table = tx.branch(harness.branchId).table("clock");
+    const row = table.get({});
+    if (row === null || Number(row["run_version"]) !== expected) {
+      throw new Error("时钟版本冲突");
+    }
+    table.put({
+      ...row,
+      mode: "stepping",
+      step_target_tick: Number(row["world_tick"]) + ticks,
+      run_version: Number(row["run_version"]) + 1,
+      updated_at: harness.host.nowIso(),
+    });
+  });
+  return clockView(harness);
+}
+
 /** 分支业务表快照：验证授权拒绝发生在网关之前，没有回执、事件或世界状态写入。 */
 function branchBusinessRows(harness: GameHarness) {
   return harness.storage.transact((tx) => ({
@@ -323,6 +342,10 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     resume: (operationId: string, expected: number) => {
       void operationId;
       return setClockMode(harness, "running", expected);
+    },
+    step: (operationId: string, expected: number, ticks: number) => {
+      void operationId;
+      return setClockStepping(harness, expected, ticks);
     },
     save,
     reset: overrides.reset ?? (() => ({ branchId: harness.branchId, clock: clockView(harness) })),
@@ -1336,6 +1359,56 @@ describe("服务端 API", () => {
     const resumed = await app.inject({ method: "POST", url: "/api/v1/campaign/resume", headers: auth, payload: { operationId: "op-000000000002", expectedRunVersion: before.runVersion + 1 } });
     expect(resumed.statusCode).toBe(200);
     expect(resumed.json()).toMatchObject({ mode: "running", runVersion: before.runVersion + 2 });
+  });
+
+  it("控制台单步入口只对 operator 开放，玩家前缀不注册", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const consoleSession = await login(app, "console-token");
+    const consoleAuth = { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" };
+
+    const step = await app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/step",
+      headers: consoleAuth,
+      payload: { operationId: "op-000000000011", expectedRunVersion: 0, ticks: 2 },
+    });
+    expect(step.statusCode).toBe(200);
+    expect(step.json()).toMatchObject({ mode: "stepping", runVersion: 1 });
+    expect(clockView(value)).toMatchObject({ mode: "stepping" });
+
+    // ticks 越出公共契约上限返回 400；非法结构同样拒绝。
+    const tooMany = await app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/step",
+      headers: consoleAuth,
+      payload: { operationId: "op-000000000012", expectedRunVersion: 1, ticks: 25 },
+    });
+    expect(tooMany.statusCode).toBe(400);
+    const missingTicks = await app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/step",
+      headers: consoleAuth,
+      payload: { operationId: "op-000000000013", expectedRunVersion: 1 },
+    });
+    expect(missingTicks.statusCode).toBe(400);
+
+    // 玩家会话没有 operator 角色：控制台单步按 403 拒绝；玩家前缀不注册 step 路由。
+    const playerSession = await login(app, "player-token");
+    const forbidden = await app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/step",
+      headers: { authorization: `Bearer ${playerSession}`, "x-active-role": "operator" },
+      payload: { operationId: "op-000000000014", expectedRunVersion: 1, ticks: 1 },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    const playerPrefix = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/step",
+      headers: { authorization: `Bearer ${playerSession}` },
+      payload: { operationId: "op-000000000015", expectedRunVersion: 1, ticks: 1 },
+    });
+    expect(playerPrefix.statusCode).toBe(404);
   });
 
   it("同一 commandId 同内容返回原回执，换 payload 返回 409", async () => {

@@ -206,6 +206,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         operations.pause(expected, { operationId, principalId }),
       resume: (operationId, expected, principalId) =>
         operations.resume(expected, { operationId, principalId }),
+      step: (operationId, expected, ticks, principalId) =>
+        operations.step(expected, ticks, { operationId, principalId }),
       save: {
         createSnapshot: (snapshotInput) =>
           operations.snapshot(snapshotInput.label, snapshotInput.createdBy, {

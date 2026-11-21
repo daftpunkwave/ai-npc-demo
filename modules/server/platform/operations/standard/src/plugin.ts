@@ -1,5 +1,5 @@
 /**
- * 运营编排：暂停、继续、一致快照、恢复与重新开局的统一入口。
+ * 运营编排：暂停、继续、受控单步、一致快照、恢复与重新开局的统一入口。
  * 依赖调用方注入的时钟/存档/分支回调；不直接写存储。
  * 禁止跳过暂停保存快照，或把恢复/重开实现成覆盖旧分支。
  */
@@ -45,6 +45,7 @@ export interface RestoreInput {
 export interface IdempotentOperationsDriver {
   pause(operation: OperationRequest, expectedRunVersion: number): ClockView;
   resume(operation: OperationRequest, expectedRunVersion: number): ClockView;
+  step(operation: OperationRequest, expectedRunVersion: number, ticks: number): ClockView;
   snapshot(operation: OperationRequest, input: SnapshotInput): SnapshotView;
   restore(operation: OperationRequest, input: RestoreInput): RestoreOutcome;
   reset(operation: OperationRequest): {
@@ -59,6 +60,8 @@ export interface OperationsDriver {
   readonly clock: () => { readonly mode: string; readonly runVersion: number };
   readonly pause: (expectedRunVersion: number) => ClockView;
   readonly resume: (expectedRunVersion: number) => ClockView;
+  /** 受控单步推进：从 paused 进入 stepping，由宿主逐 tick 推进后回到 paused。 */
+  readonly step: (expectedRunVersion: number, ticks: number) => ClockView;
   readonly snapshot: (input: SnapshotInput) => SnapshotView;
   readonly restore: (input: RestoreInput) => RestoreOutcome;
   readonly reset: () => { readonly branchId: string; readonly clock: ClockView };
@@ -86,6 +89,13 @@ export class OperationsService {
       return this.driver.idempotent.resume(operation, expectedRunVersion);
     }
     return this.driver.resume(expectedRunVersion);
+  }
+
+  step(expectedRunVersion: number, ticks: number, operation?: OperationRequest): ClockView {
+    if (operation !== undefined && this.driver.idempotent !== undefined) {
+      return this.driver.idempotent.step(operation, expectedRunVersion, ticks);
+    }
+    return this.driver.step(expectedRunVersion, ticks);
   }
 
   snapshot(label: string, createdBy: string, operation?: OperationRequest): SnapshotView {

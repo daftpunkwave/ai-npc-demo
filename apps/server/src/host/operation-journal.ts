@@ -20,7 +20,7 @@ import {
 } from "@ai-npc/contracts";
 
 /** 运营操作种类；与 operation_idempotency.operation_kind 的约束一致。 */
-export type OperationKind = "pause" | "resume" | "snapshot" | "restore" | "reset";
+export type OperationKind = "pause" | "resume" | "step" | "snapshot" | "restore" | "reset";
 
 /** 请求体中的幂等键与认证主体；传输层校验请求结构后传入。 */
 export interface OperationActor {

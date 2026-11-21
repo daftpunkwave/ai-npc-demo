@@ -43,7 +43,12 @@ export interface OperationsPrimitivesInput {
   readonly content: ContentPack;
   readonly loadContext: ConfigLoadContext;
   readonly clockState: () => ClockState;
-  readonly control: (mode: "pause" | "start", expectedRunVersion: number) => ClockView;
+  /** 时钟控制回调；step 携带本步推进的 tick 数。 */
+  readonly control: (
+    mode: "pause" | "start" | "step",
+    expectedRunVersion: number,
+    ticks?: number,
+  ) => ClockView;
   /** 补完当前 tick 的到期 job 与消费者；由组合根绑定 authority 与存储。 */
   readonly catchUpCurrentTick: () => void;
   readonly activateRestoredRoster?: (tx: StorageTransaction, branchId: string) => void;
@@ -88,10 +93,10 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
     requestHash: operationRequestHash(kind, content),
   });
 
-  /** 快照前的受控准备：运行中先暂停，再幂等补完当前 tick 的到期 job 与消费者。 */
+  /** 快照前的受控准备：运行或单步中先暂停，再幂等补完当前 tick 的到期 job 与消费者。 */
   const prepareSnapshot = (): void => {
     const current = input.clockState();
-    if (current.mode === "running") {
+    if (current.mode === "running" || current.mode === "stepping") {
       input.control("pause", current.runVersion);
     }
     input.catchUpCurrentTick();

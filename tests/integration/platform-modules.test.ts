@@ -59,6 +59,10 @@ describe("platform 模块", () => {
         calls.push(`resume:${expected}`);
         return { ...clock, mode: "running", runVersion: expected + 1 };
       },
+      step: (expected, ticks) => {
+        calls.push(`step:${expected}:${ticks}`);
+        return { ...clock, mode: "stepping", runVersion: expected + 1 };
+      },
       snapshot: (input) => {
         calls.push(`snapshot:${input.label}`);
         return { snapshotId: "snap-1", worldTick: clock.worldTick };

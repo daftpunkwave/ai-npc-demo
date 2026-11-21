@@ -1,5 +1,5 @@
 /**
- * 验证运营操作的持久化幂等：暂停、继续、快照、恢复与重开按认证主体与 operationId 去重，
+ * 验证运营操作的持久化幂等：暂停、继续、受控单步、快照、恢复与重开按认证主体与 operationId 去重，
  * 首次结果跨在线别名切换和进程重启有效；同键不同内容 409，结构非法 400 且零写入；
  * 可重试失败不锁定 operationId，重试可换版本重新执行并覆盖失败记录。
  * 依赖真实宿主、SQLite 存储与 HTTP inject；不伪造幂等记录或跳过存储事务。
@@ -600,5 +600,156 @@ describe("坏快照的错误分类", () => {
     expect(body.error.code).toBe("invalid-state");
     expect(body.error.code).not.toBe("plugin-failed");
     expect(body.error.safeMessage).toContain("冻结分支状态");
+  }, 30_000);
+});
+
+/** 发起一次带控制台角色头的 POST；控制台运营入口按 X-Active-Role 裁决。 */
+async function postConsole(
+  host: RunningHost,
+  session: string,
+  url: string,
+  payload: Record<string, Json>,
+  role: string = "operator",
+) {
+  return host.app.inject({
+    method: "POST",
+    url,
+    headers: { authorization: `Bearer ${session}`, "x-active-role": role },
+    payload,
+  });
+}
+
+describe("受控单步的运营入口", () => {
+  it("operator 单步进入 stepping：重放返回首次结果，同键不同 ticks 冲突，过期版本冲突", async () => {
+    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    const player = await loginSession(host, "player-token");
+    const started = await post(host, player, "/api/v1/commands", {
+      ...gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000101"),
+    });
+    expect(started.statusCode).toBe(200);
+    const consoleSession = await loginSession(host, "console-token");
+
+    // 进入单步：时钟到 stepping、runVersion 递增、目标写为当前 tick + ticks。
+    const step = await postConsole(host, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000111",
+      expectedRunVersion: 0,
+      ticks: 2,
+    });
+    expect(step.statusCode).toBe(200);
+    const stepped = step.json() as Json;
+    expect(stepped).toMatchObject({ mode: "stepping", runVersion: 1, worldTick: 0 });
+    const steppingRow = clockRow(host, host.branchId);
+    expect(steppingRow["mode"]).toBe("stepping");
+    expect(Number(steppingRow["step_target_tick"])).toBe(2);
+
+    // 同键同内容重放返回首次结果，时钟不再变化。
+    const stepReplay = await postConsole(host, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000111",
+      expectedRunVersion: 0,
+      ticks: 2,
+    });
+    expect(stepReplay.statusCode).toBe(200);
+    expect(stepReplay.json()).toEqual(stepped);
+    expect(clockRow(host, host.branchId)).toEqual(steppingRow);
+
+    // 同键不同内容：换 ticks 返回 409 idempotency-conflict，零时钟写入。
+    const stepConflict = await postConsole(host, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000111",
+      expectedRunVersion: 0,
+      ticks: 3,
+    });
+    expect(stepConflict.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(stepConflict.json()).error.code).toBe("idempotency-conflict");
+
+    // 过期版本：新 operationId 携带错误版本返回 409 version-conflict，并按 operationId 记录失败。
+    const staleVersion = await postConsole(host, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000112",
+      expectedRunVersion: 99,
+      ticks: 1,
+    });
+    expect(staleVersion.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(staleVersion.json()).error.code).toBe("version-conflict");
+    const replayedFailure = await postConsole(host, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000112",
+      expectedRunVersion: 99,
+      ticks: 1,
+    });
+    expect(replayedFailure.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(replayedFailure.json()).error.code).toBe("version-conflict");
+
+    // 结构非法：ticks 越出公共契约上限返回 400，零写入。
+    const invalidBody = await postConsole(host, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000113",
+      expectedRunVersion: 0,
+      ticks: 25,
+    });
+    expect(invalidBody.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalidBody.json()).error.code).toBe("validation");
+  }, 30_000);
+
+  it("单步中的快照先受控暂停，重启把单步归位为暂停后仍可续步", async () => {
+    const dataDir = tempDataDir();
+    const first = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    const player = await loginSession(first, "player-token");
+    const started = await post(first, player, "/api/v1/commands", {
+      ...gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000121"),
+    });
+    expect(started.statusCode).toBe(200);
+    const consoleSession = await loginSession(first, "console-token");
+
+    const step = await postConsole(first, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000131",
+      expectedRunVersion: 0,
+      ticks: 2,
+    });
+    expect(step.statusCode).toBe(200);
+
+    // 单步未完成时创建快照：先受控暂停并清空单步目标，再冻结存档。
+    const snapshot = await post(first, player, "/api/v1/campaign/snapshots", {
+      operationId: "op-000000000132",
+      label: "单步中存档",
+    });
+    expect(snapshot.statusCode).toBe(200);
+    const afterSnapshot = clockRow(first, first.branchId);
+    expect(afterSnapshot["mode"]).toBe("paused");
+    expect(afterSnapshot["step_target_tick"]).toBeNull();
+
+    // 重新进入单步并立即关闭宿主：验证重启对单步状态的归位语义。
+    const restartStep = await postConsole(first, consoleSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000133",
+      expectedRunVersion: Number(afterSnapshot["run_version"]),
+      ticks: 2,
+    });
+    expect(restartStep.statusCode).toBe(200);
+    expect(clockRow(first, first.branchId)["mode"]).toBe("stepping");
+    await first.close();
+
+    const second = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(second);
+    expect(second.branchId).toBe(first.branchId);
+    // 重启按启动语义把非暂停时钟一律归位为 paused（崩溃一致性），单步目标一并清空：
+    // stepping 不会作为无驱动方的活动状态跨进程存活，剩余工作由启动补完路径收尾。
+    const afterRestart = clockRow(second, second.branchId);
+    expect(afterRestart["mode"]).toBe("paused");
+    expect(afterRestart["step_target_tick"]).toBeNull();
+
+    // 重启后可重新进入单步，再次获得有界推进。
+    const restartedSession = await loginSession(second, "console-token");
+    const resumedStep = await postConsole(second, restartedSession, "/api/v1/console/campaign/step", {
+      operationId: "op-000000000134",
+      expectedRunVersion: Number(afterRestart["run_version"]),
+      ticks: 2,
+    });
+    expect(resumedStep.statusCode).toBe(200);
+    expect(resumedStep.json()).toMatchObject({ mode: "stepping" });
+
+    // 新单步仍可暂停退出，不会卡在无法退出的单步模式。
+    const paused = await postConsole(second, restartedSession, "/api/v1/console/campaign/pause", {
+      operationId: "op-000000000135",
+      expectedRunVersion: Number(afterRestart["run_version"]) + 1,
+    });
+    expect(paused.statusCode).toBe(200);
+    expect(clockRow(second, second.branchId)).toMatchObject({ mode: "paused", step_target_tick: null });
   }, 30_000);
 });
