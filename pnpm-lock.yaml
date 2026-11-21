@@ -690,6 +690,27 @@ importers:
         specifier: ^4
         version: 4.6.7
 
+  modules/server/agent/memory/ledger:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+      zod:
+        specifier: ^4
+        version: 4.6.7
+
+  modules/server/agent/memory/none:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+
   modules/server/agent/perception/local:
     dependencies:
       '@ai-npc/contracts':
@@ -1037,6 +1058,12 @@ importers:
       '@ai-npc/kernel':
         specifier: workspace:*
         version: link:../packages/kernel
+      '@ai-npc/mod-agent-memory-ledger':
+        specifier: workspace:*
+        version: link:../modules/server/agent/memory/ledger
+      '@ai-npc/mod-agent-memory-none':
+        specifier: workspace:*
+        version: link:../modules/server/agent/memory/none
       '@ai-npc/mod-game-actions-standard':
         specifier: workspace:*
         version: link:../modules/server/game/actions/standard

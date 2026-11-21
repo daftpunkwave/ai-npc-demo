@@ -21,6 +21,7 @@ import {
   type SchedulingPort,
 } from "@ai-npc/module-sdk";
 import { loadContentPack, type ResolvedAgentProfile, type Roster } from "@ai-npc/experiment";
+import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
@@ -197,7 +198,10 @@ describe("Agent runtime 持久状态", () => {
       content: loadContentPack("content", "earth-2964-v1"),
       roster: value.roster,
       profiles: new Map([["human-independent", value.profile]]),
-      moduleDefinitions: new Map([[value.definition.id, value.definition]]),
+      moduleDefinitions: new Map([
+        [value.definition.id, value.definition],
+        [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+      ]),
       scheduling,
       maxConcurrentTurns: 1,
       worldId: "wld-000000000001",
@@ -247,6 +251,16 @@ describe("Agent runtime 持久状态", () => {
     await runtime.pump();
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("observations").list())).toHaveLength(1);
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("triggers").list())).toHaveLength(1);
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("memory_watermarks").get({ agent_id: "human-independent" }),
+    )).toMatchObject({
+      revision: 1,
+      observation_seq_consumed: 1,
+      derived_through_seq: 1,
+    });
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("memory_records").count({ agent_id: "human-independent" }),
+    )).toBe(0);
   });
 
   it("启动时取消遗留非终态 turn 并释放 trigger", async () => {
@@ -290,7 +304,10 @@ describe("Agent runtime 持久状态", () => {
       content: loadContentPack("content", "earth-2964-v1"),
       roster: value.roster,
       profiles: new Map([["human-independent", value.profile]]),
-      moduleDefinitions: new Map([[value.definition.id, value.definition]]),
+      moduleDefinitions: new Map([
+        [value.definition.id, value.definition],
+        [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+      ]),
       scheduling: { plan: () => [] },
       maxConcurrentTurns: 1,
       worldId: "wld-000000000001",
@@ -307,5 +324,41 @@ describe("Agent runtime 持久状态", () => {
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("triggers").get({ trigger_id: "trg-000000000001" }))).toMatchObject({
       consumed_by_turn_id: null,
     });
+  });
+
+  it("未配置记忆槽位时保持既有运行时启动路径", async () => {
+    const value = await fixture();
+    const profile: ResolvedAgentProfile = {
+      ...value.profile,
+      slots: {
+        ...value.profile.slots,
+        memory: undefined as never,
+      },
+    };
+    const runtime = new AgentRuntime({
+      storage: value.storage,
+      host: value.host,
+      content: loadContentPack("content", "earth-2964-v1"),
+      roster: value.roster,
+      profiles: new Map([["human-independent", profile]]),
+      moduleDefinitions: new Map([[value.definition.id, value.definition]]),
+      scheduling: { plan: () => [] },
+      maxConcurrentTurns: 1,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      runId: "run-000000000001",
+      readWorld: () => ({
+        nodeId: "grayharbor",
+        factionId: "human-independent",
+        worldViewText: "",
+        affairsText: "",
+      }),
+    });
+    await runtime.start();
+    resources.push({ dispose: () => runtime.dispose() });
+    await runtime.pump();
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("memory_watermarks").list(),
+    )).toHaveLength(0);
   });
 });

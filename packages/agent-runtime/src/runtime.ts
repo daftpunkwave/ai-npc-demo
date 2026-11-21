@@ -7,6 +7,8 @@ import type { HostServices, ModuleDefinition, StoragePort } from "@ai-npc/contra
 import type { SchedulingPort } from "@ai-npc/module-sdk";
 import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { PerceptionEventConsumer } from "./event-consumer";
+import { MemoryHost } from "./memory-host";
+import { memoryIdentityForAgent } from "./memory-identity";
 import { PerceptionModuleHandle } from "./perception-host";
 import { TurnScheduler } from "./turn-scheduler";
 
@@ -41,62 +43,94 @@ export class AgentRuntime {
   private readonly perception = new Map<string, PerceptionModuleHandle>();
   private readonly signal = new AbortController().signal;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private cycle: Promise<void> | null = null;
   private running = false;
   private stopped = false;
   private consumer: PerceptionEventConsumer | null = null;
+  private memory: MemoryHost | null = null;
   private scheduler: TurnScheduler | null = null;
 
   constructor(private readonly options: AgentRuntimeOptions) {}
 
   async start(): Promise<void> {
-    for (const agent of this.options.roster.agents) {
-      const selection = this.options.profiles.get(agent.agentId)?.slots.perception;
-      if (selection === undefined) {
-        throw new Error(`名册身份 ${agent.agentId} 缺少 perception profile`);
+    try {
+      for (const agent of this.options.roster.agents) {
+        const selection = this.options.profiles.get(agent.agentId)?.slots.perception;
+        if (selection === undefined) {
+          throw new Error(`名册身份 ${agent.agentId} 缺少 perception profile`);
+        }
+        const definition = this.options.moduleDefinitions.get(selection.module);
+        if (definition === undefined) {
+          throw new Error(`感知模块 ${selection.module} 未登记`);
+        }
+        this.perception.set(agent.agentId, await PerceptionModuleHandle.create({
+          agentId: agent.agentId,
+          moduleId: selection.module,
+          config: selection.config,
+          definition,
+          worldId: this.options.worldId,
+          branchId: this.options.branchId,
+          host: this.options.host,
+          signal: this.signal,
+        }));
       }
-      const definition = this.options.moduleDefinitions.get(selection.module);
-      if (definition === undefined) {
-        throw new Error(`感知模块 ${selection.module} 未登记`);
+      const memorySelections = this.options.roster.agents.map((agent) =>
+        this.options.profiles.get(agent.agentId)?.slots.memory,
+      );
+      if (memorySelections.some((selection) => selection !== undefined) &&
+          memorySelections.some((selection) => selection === undefined)) {
+        throw new Error("Agent 名册的记忆 profile 配置不完整");
       }
-      this.perception.set(agent.agentId, await PerceptionModuleHandle.create({
-        agentId: agent.agentId,
-        moduleId: selection.module,
-        config: selection.config,
-        definition,
+      if (memorySelections.every((selection) => selection !== undefined)) {
+        this.memory = new MemoryHost({
+          storage: this.options.storage,
+          host: this.options.host,
+          roster: this.options.roster,
+          profiles: this.options.profiles,
+          moduleDefinitions: this.options.moduleDefinitions,
+          identities: new Map(this.options.roster.agents.map((agent) => [
+            agent.agentId,
+            memoryIdentityForAgent(this.options.content, agent.agentId),
+          ])),
+          worldId: this.options.worldId,
+          branchId: this.options.branchId,
+          runId: this.options.runId,
+          signal: this.signal,
+        });
+        await this.memory.start();
+      }
+      this.consumer = new PerceptionEventConsumer({
+        storage: this.options.storage,
+        host: this.options.host,
+        content: this.options.content,
+        roster: this.options.roster,
+        profiles: this.options.profiles,
         worldId: this.options.worldId,
         branchId: this.options.branchId,
+        readWorld: this.options.readWorld,
+      }, this.perception);
+      this.scheduler = new TurnScheduler({
+        storage: this.options.storage,
         host: this.options.host,
-        signal: this.signal,
-      }));
+        roster: this.options.roster,
+        profiles: this.options.profiles,
+        scheduling: this.options.scheduling,
+        maxConcurrentTurns: this.options.maxConcurrentTurns,
+        branchId: this.options.branchId,
+      });
+      this.scheduler.recoverInterrupted();
+      this.running = true;
+      await this.runTrackedCycle();
+      this.schedule();
+    } catch (error) {
+      await this.dispose();
+      throw error;
     }
-    this.consumer = new PerceptionEventConsumer({
-      storage: this.options.storage,
-      host: this.options.host,
-      content: this.options.content,
-      roster: this.options.roster,
-      profiles: this.options.profiles,
-      worldId: this.options.worldId,
-      branchId: this.options.branchId,
-      readWorld: this.options.readWorld,
-    }, this.perception);
-    this.scheduler = new TurnScheduler({
-      storage: this.options.storage,
-      host: this.options.host,
-      roster: this.options.roster,
-      profiles: this.options.profiles,
-      scheduling: this.options.scheduling,
-      maxConcurrentTurns: this.options.maxConcurrentTurns,
-      branchId: this.options.branchId,
-    });
-    this.scheduler.recoverInterrupted();
-    this.running = true;
-    await this.runCycle();
-    this.schedule();
   }
 
   /** 测试与受控单步使用同一轮询逻辑。 */
   async pump(): Promise<void> {
-    await this.runCycle();
+    await this.runTrackedCycle();
   }
 
   async drain(): Promise<void> {
@@ -106,11 +140,16 @@ export class AgentRuntime {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    await this.cycle;
   }
 
   async dispose(): Promise<void> {
-    await this.drain();
     let firstError: unknown;
+    try {
+      await this.drain();
+    } catch (error) {
+      firstError = error;
+    }
     for (const handle of [...this.perception.values()].reverse()) {
       try {
         await handle.dispose();
@@ -119,13 +158,21 @@ export class AgentRuntime {
       }
     }
     this.perception.clear();
+    if (this.memory !== null) {
+      try {
+        await this.memory.dispose();
+      } catch (error) {
+        firstError ??= error;
+      }
+      this.memory = null;
+    }
     if (firstError !== undefined) throw firstError;
   }
 
   private schedule(): void {
     if (!this.running || this.stopped) return;
     this.timer = setTimeout(() => {
-      void this.runCycle()
+      void this.runTrackedCycle()
         .catch((error) => {
           this.options.host.logger.error("Agent runtime cycle failed", {
             message: error instanceof Error ? error.message : String(error),
@@ -136,11 +183,24 @@ export class AgentRuntime {
     this.timer.unref();
   }
 
+  private runTrackedCycle(): Promise<void> {
+    if (this.cycle !== null) return this.cycle;
+    const cycle = this.runCycle().finally(() => {
+      if (this.cycle === cycle) this.cycle = null;
+    });
+    this.cycle = cycle;
+    return cycle;
+  }
+
   private async runCycle(): Promise<void> {
     if (this.stopped || this.consumer === null || this.scheduler === null) return;
     const tick = this.clockTick();
     await this.consumer.consume(tick);
     this.consumer.flush(tick);
+    await this.memory?.ingestAll(tick);
+    this.memory?.proposeDueWakeups(tick);
+    await this.memory?.runDueMaintenance(tick);
+    if (this.stopped) return;
     this.scheduler.recoverExpired();
     this.scheduler.schedule({
       tick,

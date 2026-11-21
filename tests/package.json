@@ -21,6 +21,8 @@
                          "@ai-npc/mod-game-map-six-nodes":  "workspace:*",
                          "@ai-npc/mod-game-resources-light":  "workspace:*",
                          "@ai-npc/mod-game-world-slg-light":  "workspace:*",
+                         "@ai-npc/mod-agent-memory-ledger":  "workspace:*",
+                         "@ai-npc/mod-agent-memory-none":  "workspace:*",
                          "@ai-npc/mod-platform-storage-sqlite":  "workspace:*",
                          "@ai-npc/module-sdk":  "workspace:*",
                          "@ai-npc/observability":  "workspace:*",

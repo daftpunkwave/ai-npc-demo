@@ -112,9 +112,24 @@ export interface MemoryRecordView {
   };
 }
 
+/** Host-supplied identity context used by memory policies without exposing the content package. */
+export interface MemoryAgentIdentity {
+  readonly factionId: string;
+  readonly values: readonly string[];
+  readonly initialRelations: readonly {
+    readonly targetId: string;
+    readonly trust: number;
+  }[];
+  readonly personalityKeywords: Readonly<Record<
+    "agreement" | "rescue" | "resource" | "road" | "evidence",
+    readonly string[]
+  >>;
+}
+
 export interface RevisionView {
   readonly scope: MemoryScope;
   readonly revision: number;
+  readonly identity: MemoryAgentIdentity;
   readonly records: readonly MemoryRecordView[];
 }
 
@@ -142,7 +157,7 @@ export interface MemoryRecordUseInput {
 }
 
 export interface MemoryPort {
-  prepareIngest(input: MemoryIngestInput): MemoryChangePlan;
+  prepareIngest(input: MemoryIngestInput, view: RevisionView): MemoryChangePlan;
   retrieve(query: AgentMemoryQuery, view: RevisionView): MemoryBundle;
   planMaintenance(input: {
     readonly scope: MemoryScope;

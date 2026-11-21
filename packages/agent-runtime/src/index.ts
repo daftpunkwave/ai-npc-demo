@@ -9,3 +9,7 @@ export { activateAgentRoster, activateAgentRosterInTransaction } from "./activat
 export type { ActivationResult } from "./activation";
 export { AgentRuntime } from "./runtime";
 export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";
+export { MemoryHost } from "./memory-host";
+export type { MemoryHostOptions } from "./memory-host";
+export type { MemoryRecordUseRequest } from "./memory-publication";
+export { memoryIdentityForAgent } from "./memory-identity";

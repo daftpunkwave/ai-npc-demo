@@ -1,6 +1,6 @@
 # Agent Runtime：事件到行为的宿主管线
 
-> 状态：目标。`packages/agent-runtime` 已有包骨架，turn、调度与工具网关尚未接入服务端。实现顺序见 [build-plan.md — 构建计划](../delivery/build-plan.md#5-agent-管线)。
+> 状态：部分实现。`packages/agent-runtime` 已支持感知消费、延迟发布、trigger、公平调度、记忆摄入与整理；主装配接入、turn 主循环、工具网关与模型路径尚未完成。实现顺序见 [build-plan.md — 构建计划](../delivery/build-plan.md#5-agent-管线)。
 
 ## 1. 运行边界
 

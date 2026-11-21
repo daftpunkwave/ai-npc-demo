@@ -1,6 +1,6 @@
 # 记忆模块详细设计
 
-> 状态：目标。记忆策略用于验证经历怎样改变 NPC 的后续选择。通用模块/插件协议见 [插件机制](../architecture/plugins.md)，实验口径见 [评估](../platform/evaluation.md)。
+> 状态：部分实现。M0 与 M1 可作为 agent 级模块在独立测试装配中运行，MemoryPort 宿主负责观察摄入、不可变 revision、水位、整理租约、CAS/rebase 与承诺唤醒；主装配、M2/M3 及完整 turn 消费仍待接入。记忆策略用于验证经历怎样改变 NPC 的后续选择。通用模块/插件协议见 [插件机制](../architecture/plugins.md)，实验口径见 [评估](../platform/evaluation.md)。
 
 ## 1. 职责与不变量
 
@@ -160,9 +160,10 @@ memory:
 ```ts
 interface MemoryPort {
   // fold newly delivered observations (seq > consumed) into a plan; never calls a model
-  prepareIngest(input: { scope: MemoryScope; baseRevision: number; observations: AgentObservation[]; worldTick: number }): MemoryChangePlan;
+  prepareIngest(input: { scope: MemoryScope; baseRevision: number; observations: AgentObservation[]; worldTick: number },
+                view: RevisionView): MemoryChangePlan;
   // read-only, bound to a frozen revision
-  retrieve(query: MemoryQuery): MemoryBundle;
+  retrieve(query: MemoryQuery, view: RevisionView): MemoryBundle;
   // decide whether maintenance work is due; returns null when nothing is due (called by the host, runtime.md §13.1)
   planMaintenance(input: { scope: MemoryScope; revision: number; worldTick: number; observationSeqThrough: number;
                            trigger: "day-passed" | "importance" }): MaintenanceTask | null;
@@ -170,11 +171,20 @@ interface MemoryPort {
   runMaintenance(task: MaintenanceTask, view: RevisionView, model: ScopedModelPort | null): Promise<MemoryChangePlan>;
   // after a turn: reinforce validated citations and adjudicate model-reported noteworthy points
   recordUse(input: { scope: MemoryScope; baseRevision: number; turnId: string; citedMemoryIds: string[];
-                     noteworthy: Noteworthy[]; inputObservations: AgentObservation[]; worldTick: number }): MemoryChangePlan;
+                     noteworthy: Noteworthy[]; inputObservations: AgentObservation[]; worldTick: number },
+            view: RevisionView): MemoryChangePlan;
   // prospective wake-ups; the scheduler calls it once per tick (runtime.md §13.2); M0 and M2 return []
-  proposeWakeups(input: { scope: MemoryScope; revision: number; worldTick: number }): WakeupProposal[];
+  proposeWakeups(input: { scope: MemoryScope; revision: number; worldTick: number },
+                 view: RevisionView): WakeupProposal[];
   exportState(scope: MemoryScope, revision: number): MemoryCheckpoint;
   importState(scope: MemoryScope, checkpoint: MemoryCheckpoint): MemoryChangePlan; // throws on incompatible schema
+}
+
+interface MemoryAgentIdentity {
+  factionId: string;
+  values: string[];                       // stable persona values supplied by the host
+  initialRelations: { targetId: string; trust: number }[];
+  personalityKeywords: Record<"agreement" | "rescue" | "resource" | "road" | "evidence", string[]>;
 }
 
 interface NewMemoryRow {           // one row version; memoryId is new, or an existing id for a new version
@@ -230,7 +240,7 @@ interface MemoryBundle {
 interface WakeupProposal { atTick: number; dedupeKey: string; reason: "self-due" | "other-due" | "intent"; memoryId: string; counterpartId: string | null }
 ```
 
-`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询）。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
+`RevisionView` 是只读的冻结 revision 视图（按 [存储](../architecture/storage.md) 第 4 节的查询），并携带宿主从已校验人格提取的 `MemoryAgentIdentity`，避免记忆插件旁路读取内容包。宿主在 Agent 的 actor 队列里提交计划，冲突处理与 rebase 规则见 [运行时](runtime.md) 第 13.5 节；提交时写 `retired_revision`、插入新行、写 `memory_revisions` 与 `memory_watermarks`，全部在一个事务内完成。`recordUse` 的引用集合还必须来自该 turn 实际注入或合法返回的记忆 ID，宿主不接受未召回的强化目标。`prepareIngest`、`retrieve`、`recordUse`、`proposeWakeups`、`planMaintenance` 都是同步纯函数；只有 `runMaintenance` 是异步的，可以调用模型（`needsModel` 为 false 时宿主传入 null）。
 
 ### 11.2 共用：显著度与标签
 
