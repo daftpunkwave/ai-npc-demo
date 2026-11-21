@@ -23,7 +23,53 @@ export interface CapabilityUsageViolation {
  * 扫描器跳过注释与普通字符串，避免把注释文字或频道名等对象键误判为能力使用；
  * 浏览器 realm 通过 client-sdk 的 `usePort` 取端口，不走索引访问，因此只对 server 模块做源码对账。
  */
-const capabilityIdPattern = /^(?:game|platform|client|console|agent|transport)\.[a-z0-9-]+$/;
+const capabilityGroups: ReadonlySet<string> = new Set([
+  "game",
+  "platform",
+  "client",
+  "console",
+  "agent",
+  "transport",
+]);
+
+/** 判断字符串是否为契约能力 ID：`<group>.<family>`，family 只含小写字母、数字与连字符。 */
+function isCapabilityId(value: string): boolean {
+  const separator = value.indexOf(".");
+  if (separator <= 0 || separator !== value.lastIndexOf(".")) {
+    return false;
+  }
+  if (!capabilityGroups.has(value.slice(0, separator))) {
+    return false;
+  }
+  const family = value.slice(separator + 1);
+  if (family.length === 0) {
+    return false;
+  }
+  for (const character of family) {
+    const isLowercase = character >= "a" && character <= "z";
+    const isDigit = character >= "0" && character <= "9";
+    if (!isLowercase && !isDigit && character !== "-") {
+      return false;
+    }
+  }
+  return true;
+}
+
+const whitespaceCharacters: ReadonlySet<string> = new Set([" ", "\t", "\n", "\r"]);
+
+function isWhitespace(character: string | undefined): boolean {
+  return character !== undefined && whitespaceCharacters.has(character);
+}
+
+function isIdentifierCharacter(character: string | undefined): boolean {
+  if (character === undefined) {
+    return false;
+  }
+  const isLowercase = character >= "a" && character <= "z";
+  const isUppercase = character >= "A" && character <= "Z";
+  const isDigit = character >= "0" && character <= "9";
+  return isLowercase || isUppercase || isDigit || character === "_" || character === "$";
+}
 
 function countNewlines(text: string, from: number, to: number): number {
   let count = 0;
@@ -57,7 +103,7 @@ function readCapabilityString(
     value += current;
     end += 1;
   }
-  if (end >= text.length || !capabilityIdPattern.test(value)) {
+  if (end >= text.length || !isCapabilityId(value)) {
     return null;
   }
   return { capability: value, end: end + 1 };
@@ -107,11 +153,11 @@ function skipStringLiteral(text: string, from: number): number {
 /** 返回指定位置之前最近的标识符，用于识别 `const`/`let`/`var` 声明。 */
 function previousWord(text: string, index: number): string {
   let end = index - 1;
-  while (end >= 0 && /\s/.test(text[end] ?? "")) {
+  while (end >= 0 && isWhitespace(text[end])) {
     end -= 1;
   }
   let start = end;
-  while (start >= 0 && /[\w$]/.test(text[start] ?? "")) {
+  while (start >= 0 && isIdentifierCharacter(text[start])) {
     start -= 1;
   }
   return text.slice(start + 1, end + 1);
@@ -249,7 +295,7 @@ function sourceFilesOf(directory: string): readonly string[] {
 /** 返回指定位置之前最近的代码字符，用于区分索引访问与声明数组。 */
 function previousSignificantChar(text: string, index: number): string {
   let cursor = index - 1;
-  while (cursor >= 0 && /\s/.test(text[cursor] ?? "")) {
+  while (cursor >= 0 && isWhitespace(text[cursor])) {
     cursor -= 1;
   }
   return cursor < 0 ? "" : (text[cursor] ?? "");
@@ -302,7 +348,8 @@ function capabilityAccesses(file: string): readonly { readonly capability: strin
         const after = skipTrivia(text, literal.end);
         const receiver = previousSignificantChar(text, index);
         const isIndexAccess =
-          text[after.index] === "]" && (/[\w$)\]]/.test(receiver) || receiver === "?");
+          text[after.index] === "]" &&
+          (isIdentifierCharacter(receiver) || receiver === ")" || receiver === "]" || receiver === "?");
         if (isIndexAccess) {
           accesses.push({ capability: literal.capability, line: line + inner.newlines });
           line += inner.newlines + after.newlines;
