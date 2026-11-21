@@ -5,7 +5,8 @@
  * 禁止绕过解析计划引用模块实现、按当前入参重建已冻结的在线 run，或重复实现时钟状态与路由。
  */
 import { Authority } from "@ai-npc/authority";
-import type { StoragePort } from "@ai-npc/contracts";
+import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@ai-npc/agent-runtime";
+import { DomainError, type StoragePort } from "@ai-npc/contracts";
 import { catchUpWorldTick } from "./tick";
 import { createHostCore } from "./host/core";
 import { disposeInReverse } from "./host/dispose";
@@ -14,6 +15,7 @@ import type { LiveRunState } from "./host/live-state";
 import { clockConfigOf, type ServerApp, type TransportPort } from "./host/module-catalog";
 import type { HostOptions } from "./host/options";
 import { OperationJournal } from "./host/operation-journal";
+import { OnlineAgentHost } from "./host/online-agents";
 import { createOperationsHost } from "./host/operations";
 import { createReadPorts } from "./host/reads";
 import { createTransportApp } from "./host/transport-app";
@@ -37,20 +39,35 @@ export interface RunningHost {
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
 export async function startHost(options: HostOptions): Promise<RunningHost> {
   const core = await createHostCore(options);
-  const active: LiveRunState = { branchId: core.active.branchId, worldId: core.active.worldId };
+  let agents: OnlineAgentHost | null = null;
+  let app: ServerApp | null = null;
+  const active: LiveRunState = {
+    branchId: core.active.branchId, worldId: core.active.worldId,
+    onBranchChanged: () => agents?.requestSwitch(),
+  };
   const journal = new OperationJournal(core.storage, () => core.host.nowIso(), (message, error) => {
     core.host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
   });
 
+  const approvals = new SpeechApprovalIndex();
+  const rosterAgentIds = core.active.agents?.roster.agents.map(({ agentId }) => agentId);
   const authority = new Authority({
     storage: core.storage,
     host: core.host,
     content: core.gameContent,
     moduleBinder: core.runtime.binder,
     runSeed: core.active.runSpec.seed,
+    approvedSpeech: approvals,
   });
   for (const contributor of core.runtime.contributors) {
     authority.registerModule(contributor);
+  }
+  if (rosterAgentIds !== undefined) {
+    authority.hostAfterCommand(
+      "agent-runtime",
+      "campaign.start",
+      createCampaignStartActivationHook({ agentIds: rosterAgentIds, nowIso: () => core.host.nowIso() }),
+    );
   }
 
   const reads = createReadPorts({
@@ -61,6 +78,27 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     gameContent: core.gameContent,
     active,
   });
+  if (core.active.agents !== null) {
+    agents = new OnlineAgentHost({ core, active, reads, authority, approvals, onStateChange: () => app?.notifyWorldChanged() });
+  }
+  const disposeResources = (transportApp: ServerApp | null): Promise<void> => disposeInReverse([
+    { label: "storage", dispose: () => core.storageStarted.dispose() },
+    { label: "started modules", dispose: () => core.startedModules.dispose() },
+    { label: "online Agents", dispose: async () => { await agents?.close(); } },
+    ...(transportApp === null ? [] : [{ label: "transport", dispose: () => core.runtime.transport.close(transportApp) }]),
+  ]);
+  try {
+    await agents?.switch();
+  } catch (error) {
+    try {
+      await disposeResources(null);
+    } catch (cleanupError) {
+      core.host.logger.error("Agent startup cleanup failed", {
+        message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
+    throw error;
+  }
   const lifecycle = createLifecycle({
     host: core.host,
     storage: core.storage,
@@ -68,14 +106,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     authority,
     active,
     autoPauseAfterDisconnectMs: clockConfigOf(core.activeStartup.plan).autoPauseAfterDisconnectMs,
-    disposeResources: (app) =>
-      disposeInReverse([
-        { label: "storage", dispose: () => core.storageStarted.dispose() },
-        { label: "started modules", dispose: () => core.startedModules.dispose() },
-        ...(app === null
-          ? []
-          : [{ label: "transport", dispose: () => core.runtime.transport.close(app) }]),
-      ]),
+    disposeResources,
+    agentHealth: () => agents?.healthy ?? true,
   });
   const operations = createOperationsHost({
     host: core.host,
@@ -91,18 +123,30 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     contentVersion: core.contentVersion,
     content: core.content,
     loadContext: core.loadContext,
+    activateRestoredRoster: (tx, branchId) => {
+      if (rosterAgentIds === undefined) return;
+      if (!tx.branch(branchId).table("agent_activations").list().some((row) => row["status"] === "dormant")) return;
+      const activation = activateAgentRosterInTransaction({
+        tx, branchId, agentIds: rosterAgentIds, nowIso: core.host.nowIso(),
+      });
+      if (activation.kind === "rejected") {
+        throw new DomainError(activation.reasonCode, "Agent activation capacity exhausted.");
+      }
+    },
     clockState: () => lifecycle.clockState(),
     control: (mode, expectedRunVersion) => lifecycle.control(mode, expectedRunVersion),
-    catchUpCurrentTick: () =>
+    catchUpCurrentTick: () => {
+      if (lifecycle.clockState().mode === "paused") agents?.fenceTurns("snapshot");
       catchUpWorldTick({
         storage: core.storage,
         clock: core.runtime.clock,
         authority,
         branchId: active.branchId,
-      }),
+      });
+    },
   });
 
-  const app = await createTransportApp({
+  const transportApp = await createTransportApp({
     host: core.host,
     options,
     runtime: core.runtime,
@@ -114,18 +158,15 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     lifecycle,
     gameContent: core.gameContent,
     sessionAssembly: core.sessionAssembly,
-    disposeOnFailure: () =>
-      disposeInReverse([
-        { label: "storage", dispose: () => core.storageStarted.dispose() },
-        { label: "started modules", dispose: () => core.startedModules.dispose() },
-      ]),
+    disposeOnFailure: () => disposeResources(null),
   });
 
-  lifecycle.attachApp(app);
+  app = transportApp;
+  lifecycle.attachApp(transportApp);
   lifecycle.start();
 
   return {
-    app,
+    app: transportApp,
     storage: core.storage,
     authority,
     // 在线分支切换后仍反映当前在线入口，调用方不需要重新启动宿主即可读取。
@@ -136,7 +177,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
       return active.worldId;
     },
     transport: core.runtime.transport,
-    listen: () => core.runtime.transport.listen(app),
+    listen: () => core.runtime.transport.listen(transportApp),
     close: () => lifecycle.close(),
   };
 }

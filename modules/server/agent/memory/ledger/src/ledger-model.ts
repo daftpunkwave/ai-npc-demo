@@ -151,6 +151,7 @@ export function counterpartIdsOf(observation: AgentObservation, selfId: string):
   const ids = new Set<string>([
     ...stringArray(content["subjectIds"]),
     ...stringArray(facts["aboutIds"]),
+    ...stringArray(facts["parties"]),
   ]);
   for (const key of ["sourceId", "senderId", "fromId", "obligorId", "proposerId", "partyId", "dispatcherId", "inviteeId"]) {
     const value = claim?.[key] ?? facts[key];

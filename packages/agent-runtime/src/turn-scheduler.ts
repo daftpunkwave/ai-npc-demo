@@ -7,8 +7,7 @@ import type { HostServices, StoragePort } from "@ai-npc/contracts";
 import type { SchedulingPort } from "@ai-npc/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
-
-const terminalTurnStatuses = new Set(["completed", "failed", "cancelled", "budget-exhausted"]);
+import { cancelTurn, terminalTurnStatuses } from "./turn-lease";
 
 export interface TurnSchedulerInput {
   readonly storage: StoragePort;
@@ -18,17 +17,22 @@ export interface TurnSchedulerInput {
   readonly scheduling: SchedulingPort;
   readonly maxConcurrentTurns: number;
   readonly branchId: string;
+  readonly patrolHour?: number;
 }
 
 export class TurnScheduler {
   constructor(private readonly input: TurnSchedulerInput) {}
 
   recoverInterrupted(): void {
+    this.cancelActive("runtime-restarted");
+  }
+
+  cancelActive(reason: string): void {
     const interrupted = this.input.storage.transact((tx) =>
       tx.rows("turn_runs").list({ branch_id: this.input.branchId })
         .filter((row) => !terminalTurnStatuses.has(stringValue(row, "status"))),
     );
-    this.cancel(interrupted, "runtime-restarted");
+    this.cancel(interrupted, reason);
   }
 
   recoverExpired(): void {
@@ -49,10 +53,14 @@ export class TurnScheduler {
     readonly tick: number;
     readonly paused: boolean;
     readonly runId: string;
-  }): void {
+  }): readonly { readonly turnId: string; readonly agentId: string }[] {
+    if (this.input.patrolHour !== undefined && input.tick % 24 === this.input.patrolHour) {
+      this.schedulePatrols(input.tick);
+    }
     const snapshot = this.snapshot();
+    if (snapshot.branchStatus !== "active" && snapshot.branchStatus !== "paused") return [];
     const running = snapshot.turns.filter((row) => !terminalTurnStatuses.has(stringValue(row, "status")));
-    if (running.length >= this.input.maxConcurrentTurns) return;
+    if (running.length >= this.input.maxConcurrentTurns) return [];
     const agents = this.input.roster.agents.map((agent) => {
       const activation = snapshot.activations.find((row) => row["agent_id"] === agent.agentId);
       const lease = snapshot.leases.find((row) => row["agent_id"] === agent.agentId);
@@ -63,7 +71,8 @@ export class TurnScheduler {
         strategic: agent.kind === "strategic",
       };
     });
-    const triggers = snapshot.triggers.map(triggerFromRow);
+    const triggers = snapshot.triggers.map(triggerFromRow).filter((trigger) =>
+      snapshot.kind === "sandbox" ? trigger.kind === "probe" : trigger.kind !== "probe");
     const lastTurnTickByAgent = this.lastTurnTicks(snapshot.turns);
     const plans = this.input.scheduling.plan({
       branchId: this.input.branchId,
@@ -74,18 +83,23 @@ export class TurnScheduler {
       runningTurnAgentIds: running.map((row) => stringValue(row, "agent_id")),
       lastTurnTickByAgent,
     }).slice(0, Math.max(0, this.input.maxConcurrentTurns - running.length));
-    for (const plan of plans) {
-      this.createTurn(plan, snapshot, input.tick, input.runId);
-    }
+    return plans.flatMap((plan) => {
+      const turnId = this.createTurn(plan, snapshot, input.tick, input.runId);
+      return turnId === null ? [] : [{ turnId, agentId: plan.agentId }];
+    });
   }
 
   private snapshot() {
     return this.input.storage.transact((tx) => {
       const branch = tx.branch(this.input.branchId);
+      const row = tx.rows("branches").get({ branch_id: this.input.branchId });
       return {
+        kind: row?.["kind"],
+        branchStatus: row?.["status"],
         activations: branch.table("agent_activations").list(),
         leases: branch.table("controller_leases").list(),
-        triggers: branch.table("triggers").list().filter((row) => row["consumed_by_turn_id"] === null),
+        // 相同 tick 的触发按持久化顺序合并，随机生成的 ID 不参与排序。
+        triggers: tx.all("SELECT * FROM triggers WHERE branch_id = ? AND consumed_by_turn_id IS NULL ORDER BY rowid", [this.input.branchId]),
         turns: tx.rows("turn_runs").list({ branch_id: this.input.branchId }),
       };
     });
@@ -105,9 +119,9 @@ export class TurnScheduler {
     snapshot: ReturnType<TurnScheduler["snapshot"]>,
     tick: number,
     runId: string,
-  ): void {
+  ): string | null {
     const lease = snapshot.leases.find((row) => row["agent_id"] === plan.agentId);
-    if (lease === undefined || !this.input.profiles.has(plan.agentId)) return;
+    if (lease === undefined || !this.input.profiles.has(plan.agentId)) return null;
     const turnId = this.input.host.ids("turn");
     const index = snapshot.turns.filter((row) => row["agent_id"] === plan.agentId).length + 1;
     this.input.storage.transact((tx) => {
@@ -138,29 +152,39 @@ export class TurnScheduler {
         if (row !== null) triggers.put({ ...row, consumed_by_turn_id: turnId });
       }
     });
+    return turnId;
+  }
+
+  private schedulePatrols(tick: number): void {
+    this.input.storage.transact((tx) => {
+      const branchId = this.input.branchId;
+      const row = tx.rows("branches").get({ branch_id: branchId });
+      if (row?.["kind"] === "sandbox" || row?.["status"] !== "active") return;
+      const branch = tx.branch(branchId);
+      const triggers = branch.table("triggers");
+      for (const agent of this.input.roster.agents) {
+        if (agent.kind !== "strategic" ||
+          branch.table("agent_activations").get({ agent_id: agent.agentId })?.["status"] !== "active" ||
+          branch.table("controller_leases").get({ agent_id: agent.agentId })?.["controller_kind"] !== "agent") continue;
+        const key = `patrol:${agent.agentId}:${Math.floor(tick / 24)}`;
+        if (triggers.list({ dedupe_key: key }, { limit: 1 }).length > 0) continue;
+        triggers.put({
+          trigger_id: this.input.host.ids("trg"), agent_id: agent.agentId, kind: "patrol", priority: 10,
+          source_ref: key, created_tick: tick, dedupe_key: key, consumed_by_turn_id: null,
+        });
+      }
+    });
   }
 
   private cancel(rows: readonly Readonly<Record<string, unknown>>[], reason: string): void {
     if (rows.length === 0) return;
     this.input.storage.transact((tx) => {
       const turns = tx.rows("turn_runs");
-      const triggers = tx.branch(this.input.branchId).table("triggers");
       for (const row of rows) {
         const turnId = stringValue(row, "turn_id");
         const current = turns.get({ turn_id: turnId });
         if (current === null || terminalTurnStatuses.has(stringValue(current, "status"))) continue;
-        turns.put({
-          ...current,
-          status: "cancelled",
-          terminal_reason: reason,
-          ended_at: this.input.host.nowIso(),
-        });
-        for (const triggerId of Array.isArray(current["trigger_ids_json"])
-          ? current["trigger_ids_json"].filter((id): id is string => typeof id === "string")
-          : []) {
-          const trigger = triggers.get({ trigger_id: triggerId });
-          if (trigger !== null) triggers.put({ ...trigger, consumed_by_turn_id: null });
-        }
+        cancelTurn(tx, current, reason, this.input.host.nowIso());
       }
     });
   }

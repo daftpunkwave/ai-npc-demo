@@ -9,7 +9,7 @@ import {
   type HostServices,
   type ModuleDefinition,
 } from "@ai-npc/contracts";
-import { MemoryModuleHandle } from "../src/memory-module-handle";
+import { AgentModuleHandle } from "../src/agent-module-handle";
 
 const host: HostServices = {
   ids: (prefix) => `${prefix}-000000000001`,
@@ -36,7 +36,7 @@ const host: HostServices = {
   },
 };
 
-describe("MemoryModuleHandle", () => {
+describe("AgentModuleHandle", () => {
   it("disposes a module that fails during start", async () => {
     const startupError = new Error("start failed");
     let disposals = 0;
@@ -69,7 +69,7 @@ describe("MemoryModuleHandle", () => {
       }),
     };
 
-    await expect(MemoryModuleHandle.create({
+    await expect(AgentModuleHandle.create({
       agentId: "human-independent",
       moduleId: definition.id,
       config: {},

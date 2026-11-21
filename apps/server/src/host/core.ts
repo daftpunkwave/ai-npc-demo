@@ -31,6 +31,8 @@ import { computeCatalogHash, createModuleRegistry } from "@ai-npc/kernel";
 import type { GameClockPort, GameContent } from "@ai-npc/module-sdk";
 import { assertDistinctTokens } from "../config";
 import { canonicalHasher, createHostServices } from "../host-services";
+import { resolveAgentConfiguration, type AgentConfiguration } from "./agent-configuration";
+import { agentRunModuleIds, startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import {
   filterPlan,
   loadAssembly,
@@ -46,6 +48,7 @@ import {
   parseTransportConfig,
   plannedModuleForCapability,
   allModuleDefinitions,
+  serverAgentModuleDefinitions,
   serverModuleDefinitions,
   toGameContent,
   type ServerRuntime,
@@ -63,6 +66,7 @@ export interface ActiveRunState {
   readonly runSpec: RunSpec;
   readonly manifest: RunManifest;
   readonly manifestHash: string;
+  readonly agents: AgentConfiguration | null;
 }
 
 /** 恢复或重开后的活动 run 与启动计划。 */
@@ -89,6 +93,7 @@ export interface HostCore {
   readonly storage: StoragePort;
   readonly storageStarted: StartedInstances;
   readonly startedModules: StartedInstances;
+  readonly initialAgentModules: AgentRunModules | null;
   readonly runtime: ServerRuntime;
   readonly content: ContentPack;
   readonly gameContent: GameContent;
@@ -125,7 +130,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   const signal = new AbortController().signal;
   const definitions: readonly ModuleDefinition[] = options.moduleDefinitions ?? serverModuleDefinitions;
   const packId = options.packId ?? defaultPackId;
-  const configDir = resolve(process.cwd(), "config");
+  const configDir = resolve(options.configRoot ?? "config");
   const loadContext: ConfigLoadContext = { configDir, env: process.env };
   const content = loadContentPack(options.contentRoot ?? resolve(process.cwd(), "content"), packId);
   const gameContent = toGameContent(content);
@@ -146,9 +151,10 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   };
 
   // 装配预检必须先于存储启动：缺失依赖、重复绑定、错误 realm 与非法配置都在打开数据库前失败。
-  const requestedResolved = await resolveServerAssembly(requestedAssembly, definitions);
+  const requestedResolved = await resolveServerAssembly(requestedAssembly, definitions, { content });
   const requestedStartup = await resolveServerAssembly(requestedAssembly, definitions, {
     configOverrides: deploymentOverrides,
+    content,
   });
   const storageModuleId = plannedModuleForCapability(requestedStartup.plan, "platform.storage").moduleId;
   const storageStarted = await startInstances(filterPlan(requestedStartup.plan, (moduleId) => moduleId === storageModuleId), {
@@ -175,11 +181,15 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       ...(options.modelLayoutRef === undefined ? {} : { modelLayoutRef: options.modelLayoutRef }),
     });
     validateRunSpec(loaded.value, content, roster);
+    const agents = await resolveAgentConfiguration({
+      assembly: requestedResolved, roster: roster.value, runSpec: loaded.value, loadContext, definitions,
+    });
     const sealed = await buildRunManifest({
       runSpec: loaded.value,
       content: { packId, contentVersion },
       roster: roster.value,
       resolved: requestedResolved,
+      ...(agents === null ? {} : { agentProfiles: agents.manifest }),
     });
     const worldId = host.ids("wld");
     const branchId = host.ids("br");
@@ -194,6 +204,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
         runSpec: loaded.value,
         manifest: sealed.manifest,
         manifestHash: sealed.manifestHash,
+        agents,
       },
       commit: (clock) => {
         storage.transact((tx) => {
@@ -276,27 +287,29 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     if (worldVersion !== contentVersion) {
       throw contentVersionMismatch(worldVersion, contentVersion, "在线世界");
     }
-    const assembly = loadAssembly(frozenSpec.moduleAssemblyRef);
+    const storedHash = typeof run["manifest_hash"] === "string" ? run["manifest_hash"] : "";
+    if (storedHash.length === 0) throw new Error("在线 run 缺少 manifest_hash，拒绝按当前入参重建");
+    if (await host.hash(manifestValue as Json) !== storedHash) {
+      throw new Error("冻结 manifest 内容与 manifest_hash 不一致：运行记录被修改");
+    }
+    const currentAssembly = loadAssembly(frozenSpec.moduleAssemblyRef);
+    const compatible = await resolveFrozenAssembly(currentAssembly, definitions, facts);
+    const { assembly } = compatible;
     const roster = loadRoster(frozenSpec.rosterRef, loadContext);
     validateRoster(roster.value, content);
     validateRunSpec(frozenSpec, content, roster);
-    const resolved = await resolveServerAssembly(assembly, definitions);
-    const startup = await resolveServerAssembly(assembly, definitions, { configOverrides: deploymentOverrides });
+    const resolved = await resolveServerAssembly(assembly, compatible.definitions, { content });
+    const startup = await resolveServerAssembly(assembly, compatible.definitions, { configOverrides: deploymentOverrides, content });
+    const agents = await resolveAgentConfiguration({
+      assembly: resolved, roster: roster.value, runSpec: frozenSpec, loadContext, definitions: compatible.definitions,
+    });
     const rebuilt = await buildRunManifest({
       runSpec: frozenSpec,
       content: { packId, contentVersion },
       roster: roster.value,
       resolved,
+      ...(agents === null ? {} : { agentProfiles: agents.manifest }),
     });
-    const storedHash = typeof run["manifest_hash"] === "string" ? run["manifest_hash"] : "";
-    if (storedHash.length === 0) {
-      throw new Error("在线 run 缺少 manifest_hash，拒绝按当前入参重建");
-    }
-    // 先校验保存的 manifest 自身摘要，防止冻结配置或名册被改动后仅靠重建摘要仍通过。
-    const storedManifestDigest = await host.hash(manifestValue as Json);
-    if (storedManifestDigest !== storedHash) {
-      throw new Error("冻结 manifest 内容与 manifest_hash 不一致：运行记录被修改");
-    }
     if (rebuilt.manifestHash !== storedHash) {
       throw new Error("冻结 manifest 无法复算：装配、名册或内容版本与 run 记录不一致");
     }
@@ -309,6 +322,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
         runSpec: frozenSpec,
         manifest: rebuilt.manifest,
         manifestHash: storedHash,
+        agents,
       },
       startup,
     };
@@ -317,6 +331,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   // 启动失败路径都以异常结束，因此正常走到这里时五种状态必然已赋值；activeStarted 保留可空用于失败清理。
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 StartedInstances 判为 any。
   let activeStarted: StartedInstances | null = null;
+  let initialAgentModules: AgentRunModules | null = null;
   let serverRuntime: ServerRuntime;
   let sessionAssemblies: SessionAssemblies;
   let active: ActiveRunState;
@@ -340,7 +355,9 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     activeStartup = startup;
     active = chosen;
     // 在线装配确定后再启动其余模块；存储实例作为部署级 provider 复用，不重复创建。
-    activeStarted = await startInstances(filterPlan(startup.plan, (moduleId) => moduleId !== storageModuleId), {
+    const agentModuleIds = chosen.agents === null ? new Set<string>() : agentRunModuleIds(startup.plan);
+    activeStarted = await startInstances(filterPlan(startup.plan, (moduleId) =>
+      moduleId !== storageModuleId && !agentModuleIds.has(moduleId)), {
       host,
       scope: { worldId: chosen.worldId, branchId: chosen.branchId },
       signal,
@@ -360,7 +377,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     const catalogHash = await computeCatalogHash(moduleRegistry.snapshot(), canonicalHasher);
     const adminAssemblies = [];
     for (const assembly of loadAssemblies()) {
-      const server = await resolveServerAssembly(assembly, serverModuleDefinitions);
+      const server = await resolveServerAssembly(assembly, serverModuleDefinitions, { content });
       const browser = await resolveSessionAssemblies(assembly, allModuleDefinitions);
       adminAssemblies.push({
         source: "repo" as const,
@@ -377,6 +394,12 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       definitions: allModuleDefinitions,
       assemblies: adminAssemblies,
     });
+    if (chosen.agents !== null) {
+      initialAgentModules = await startAgentRunModules({
+        plan: startup.plan, configuration: chosen.agents, host, scope: { worldId: chosen.worldId, branchId: chosen.branchId },
+        running: [...storageStarted.instances, ...activeStarted.instances],
+      });
+    }
     if (pendingFirstRun !== null) {
       // 世界、分支、run、别名与初始时钟行在同一事务提交，时钟配置来自 provider。
       pendingFirstRun.commit(serverRuntime.clock);
@@ -399,6 +422,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
             await activeStarted?.dispose();
           },
         },
+        { label: "run Agent modules", dispose: async () => { await initialAgentModules?.started.dispose(); } },
       ]);
     } catch (cleanupError) {
       host.logger.error("启动失败后的清理未全部完成", {
@@ -418,6 +442,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     storage,
     storageStarted,
     startedModules: activeStarted,
+    initialAgentModules,
     runtime: serverRuntime,
     content,
     gameContent,
@@ -427,5 +452,25 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     active,
     activeStartup,
     sessionAssembly: sessionAssemblies,
+  };
+}
+
+async function resolveFrozenAssembly(
+  current: AssemblyDescriptor,
+  definitions: readonly ModuleDefinition[],
+  facts: ReturnType<typeof readFrozenManifest>,
+): Promise<{ readonly assembly: AssemblyDescriptor; readonly definitions: readonly ModuleDefinition[] }> {
+  if (facts.hasAgentSlots) return { assembly: current, definitions };
+  const agentModuleIds = new Set(serverAgentModuleDefinitions.map(({ id }) => id));
+  const worldOnlyDefinitions = definitions.filter(({ id }) => !agentModuleIds.has(id));
+  const registry = createModuleRegistry();
+  for (const definition of worldOnlyDefinitions) registry.register(definition);
+  if (await computeCatalogHash(registry.snapshot(), canonicalHasher) !== facts.catalogHash) {
+    return { assembly: current, definitions };
+  }
+  const bindings = current.realms.server.bindings.filter(({ moduleId }) => !agentModuleIds.has(moduleId));
+  return {
+    assembly: { ...current, realms: { ...current.realms, server: { bindings } } },
+    definitions: worldOnlyDefinitions,
   };
 }

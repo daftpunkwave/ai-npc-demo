@@ -1,0 +1,13 @@
+schemaVersion: 1
+profileId: agent-strategic-default
+kind: agent
+parent: scene-watergate
+slots:
+  context:
+    module: agent.context.ordered-blocks
+    config:
+      segmentOrder: [world, task, memory, history, input]
+      historyTurns: 6
+      lendUnusedBudget: false
+      decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 900, task: 600, memory: 900, history: 600 } }
+      speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }

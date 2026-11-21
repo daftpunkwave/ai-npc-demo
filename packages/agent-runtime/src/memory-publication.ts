@@ -10,6 +10,7 @@ import type {
   MaintenanceTask,
   MemoryChangePlan,
   MemoryScope,
+  StorageTransaction,
 } from "@ai-npc/contracts";
 import type {
   MemoryAgentIdentity,
@@ -30,6 +31,7 @@ export interface MemoryRecordUseRequest {
   readonly noteworthy: Parameters<MemoryPort["recordUse"]>[0]["noteworthy"];
   readonly inputObservations: readonly AgentObservation[];
   readonly worldTick: number;
+  readonly guard?: (tx: StorageTransaction) => void;
 }
 
 export interface MemoryPublicationDependencies {
@@ -79,6 +81,7 @@ export async function publishUse(
       plan,
       dependencies,
       enqueueActor,
+      { guard: input.guard },
     );
     if (outcome.committed) return outcome.revision;
     baseRevision = outcome.revision;
@@ -105,10 +108,7 @@ export async function publishMaintenance(
       plan,
       dependencies,
       enqueueActor,
-      {
-        maintenanceId: claim.maintenanceId,
-        leaseEpoch: claim.leaseEpoch,
-      },
+      { maintenance: { maintenanceId: claim.maintenanceId, leaseEpoch: claim.leaseEpoch } },
     );
     if (outcome.committed) return;
     if (rerun === 1) throw new Error("memory maintenance remained conflicted after regeneration");
@@ -133,7 +133,10 @@ async function bindAndCommitPlan(
   plan: MemoryChangePlan,
   dependencies: MemoryPublicationDependencies,
   enqueueActor: MemoryPublicationDependencies["enqueueActor"],
-  maintenance?: MaintenanceFence,
+  options: {
+    readonly maintenance?: MaintenanceFence;
+    readonly guard?: ((tx: StorageTransaction) => void) | undefined;
+  },
 ): Promise<{ readonly committed: boolean; readonly revision: number }> {
   const { store, host, moduleId } = dependencies;
   let candidate = plan;
@@ -158,7 +161,8 @@ async function bindAndCommitPlan(
         revision: store.commitPlan(agentId, moduleId, candidate, {
           planHash,
           worldSeqThrough: store.scannedWorldSeq(),
-          ...(maintenance === undefined ? {} : { maintenance }),
+          ...(options.maintenance === undefined ? {} : { maintenance: options.maintenance }),
+          ...(options.guard === undefined ? {} : { guard: options.guard }),
         }),
       };
     });

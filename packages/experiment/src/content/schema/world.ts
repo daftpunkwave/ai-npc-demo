@@ -3,7 +3,7 @@
  * 依赖公共契约的领域值与 schema 共用辅助；只描述字段形状，不做跨文件引用检查。
  * 禁止在此读取文件或放宽未知键。
  */
-import { principalIdSchema, roadStatusSchema } from "@ai-npc/contracts";
+import { principalIdSchema, roadStatusSchema, taskTypeSchema } from "@ai-npc/contracts";
 import { z } from "zod";
 import {
   contentIdSchema,
@@ -102,6 +102,7 @@ export const contentFactionsSchema = z
               .object({
                 role: textSchema,
                 focus: textSchema,
+                skills: z.array(taskTypeSchema).optional(),
                 secret: textSchema.optional(),
                 ...personaFieldsSchema,
               })

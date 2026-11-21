@@ -1,0 +1,7 @@
+schemaVersion: 1
+profileId: scene-watergate
+kind: scene
+parent: platform-baseline
+scheduling:
+  module: agent.scheduling.fair
+  config: { maxConcurrentTurns: 4, mergeLimit: 5, cooldownTicks: 1, agingPerTick: 5, agingCap: 40, patrolHour: 8 }

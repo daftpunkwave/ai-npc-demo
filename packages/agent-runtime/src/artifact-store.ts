@@ -11,7 +11,7 @@ import {
   type StorageRow,
 } from "@ai-npc/contracts";
 
-export type AgentArtifactKind = "tool-raw" | "tool-view" | "speech";
+export type AgentArtifactKind = "tool-raw" | "tool-view" | "speech" | "decision";
 
 export interface AgentArtifactRecord {
   readonly artifactId: string;
@@ -122,7 +122,7 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
     const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
     if (row === null) return null;
     const kind = requireString(row, "kind");
-    if (kind !== "tool-raw" && kind !== "tool-view" && kind !== "speech") {
+    if (kind !== "tool-raw" && kind !== "tool-view" && kind !== "speech" && kind !== "decision") {
       throw new Error(`artifact ${artifactId} has unsupported kind ${kind}`);
     }
     const bodyText = decodeBody(row);

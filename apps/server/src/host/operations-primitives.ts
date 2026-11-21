@@ -21,7 +21,7 @@ import { loadRoster, runSpecSchema, validateRoster, validateRunSpec } from "@ai-
 import type { ClockState } from "@ai-npc/module-sdk";
 import { loadAssembly } from "./assembly";
 import { clockView } from "./clock-view";
-import type { LiveRunState } from "./live-state";
+import { switchLiveBranch, type LiveRunState } from "./live-state";
 import type { ServerRuntime } from "./module-catalog";
 import type { RunManifest } from "./manifest";
 import { readFrozenManifest } from "./manifest";
@@ -46,6 +46,7 @@ export interface OperationsPrimitivesInput {
   readonly control: (mode: "pause" | "start", expectedRunVersion: number) => ClockView;
   /** 补完当前 tick 的到期 job 与消费者；由组合根绑定 authority 与存储。 */
   readonly catchUpCurrentTick: () => void;
+  readonly activateRestoredRoster?: (tx: StorageTransaction, branchId: string) => void;
 }
 
 /** 运营基础操作集合；幂等包装与驱动组装在相邻模块完成。 */
@@ -59,6 +60,7 @@ export interface OperationsPrimitives {
   resetInTransaction(tx: StorageTransaction, createdBy: string): { readonly branchId: string; readonly clock: ClockView };
   resetOnline(): { readonly branchId: string; readonly clock: ClockView };
   validateRestoreSource(inspection: ReturnType<ServerRuntime["save"]["inspectRestore"]>): void;
+  activateRestoredRoster(tx: StorageTransaction, branchId: string): void;
   restoreOnlineRun(input: {
     readonly snapshotId: string;
     readonly createdBy: string;
@@ -70,6 +72,8 @@ export interface OperationsPrimitives {
 export function createOperationsPrimitives(input: OperationsPrimitivesInput): OperationsPrimitives {
   const { host, storage, runtime, active, runSpec, frozenManifest, frozenManifestHash, activeAssembly } = input;
   const save = runtime.save;
+  const activateRestoredRoster = (tx: StorageTransaction, branchId: string): void =>
+    input.activateRestoredRoster?.(tx, branchId);
 
   const operationKeyFor = (
     kind: OperationKind,
@@ -191,7 +195,7 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
     }
     prepareSnapshot();
     const result = storage.transact((tx) => resetInTransaction(tx, "operator-1"));
-    active.branchId = result.branchId;
+    switchLiveBranch(active, result.branchId);
     return result;
   };
 
@@ -281,20 +285,23 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
   }): ReturnType<ServerRuntime["save"]["restoreSnapshot"]> => {
     const inspection = save.inspectRestore(restoreInput.snapshotId);
     validateRestoreSource(inspection);
-    const restored = save.restoreSnapshot({
-      snapshotId: restoreInput.snapshotId,
-      createdBy: restoreInput.createdBy,
-      ...(restoreInput.runId === undefined ? {} : { runId: restoreInput.runId }),
-      expected: {
-        sourceRunId: inspection.sourceRun.runId,
-        canonicalRunSpec: canonicalJson(inspection.sourceRun.runSpec),
-        manifestHash: inspection.sourceRun.manifestHash,
-        worldSeq: inspection.worldSeq,
-        worldTick: inspection.worldTick,
-      },
+    const restored = storage.transact((tx) => {
+      const restored = save.restoreSnapshotInTransaction(tx, {
+        snapshotId: restoreInput.snapshotId,
+        createdBy: restoreInput.createdBy,
+        ...(restoreInput.runId === undefined ? {} : { runId: restoreInput.runId }),
+        expected: {
+          sourceRunId: inspection.sourceRun.runId,
+          canonicalRunSpec: canonicalJson(inspection.sourceRun.runSpec),
+          manifestHash: inspection.sourceRun.manifestHash,
+          worldSeq: inspection.worldSeq,
+          worldTick: inspection.worldTick,
+        },
+      });
+      activateRestoredRoster(tx, restored.branchId);
+      return restored;
     });
-    active.branchId = restored.branchId;
-    active.worldId = restored.worldId;
+    switchLiveBranch(active, restored.branchId, restored.worldId);
     return restored;
   };
 
@@ -305,6 +312,7 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
     resetInTransaction,
     resetOnline,
     validateRestoreSource,
+    activateRestoredRoster,
     restoreOnlineRun,
   };
 }

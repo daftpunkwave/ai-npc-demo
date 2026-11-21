@@ -329,6 +329,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@ai-npc/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@ai-npc/authority':
         specifier: workspace:*
         version: link:../../packages/authority
@@ -341,6 +344,36 @@ importers:
       '@ai-npc/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@ai-npc/mod-agent-compression-none':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/compression/none
+      '@ai-npc/mod-agent-compression-window':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/compression/window
+      '@ai-npc/mod-agent-context-ordered-blocks':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/context/ordered-blocks
+      '@ai-npc/mod-agent-decision-deterministic':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/decision/deterministic
+      '@ai-npc/mod-agent-memory-ledger':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/memory/ledger
+      '@ai-npc/mod-agent-memory-none':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/memory/none
+      '@ai-npc/mod-agent-perception-local':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/perception/local
+      '@ai-npc/mod-agent-scheduling-fair':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/scheduling/fair
+      '@ai-npc/mod-agent-tool-view-structured':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/tool-view/structured
+      '@ai-npc/mod-agent-tools-game-tools':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/tools/game-tools
       '@ai-npc/mod-client-camera-standard':
         specifier: workspace:*
         version: link:../../modules/client/camera/standard
@@ -723,6 +756,15 @@ importers:
         specifier: ^4
         version: 4.6.7
 
+  modules/server/agent/decision/deterministic:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+
   modules/server/agent/memory/ledger:
     dependencies:
       '@ai-npc/contracts':
@@ -1004,6 +1046,9 @@ importers:
       '@ai-npc/experiment':
         specifier: workspace:*
         version: link:../experiment
+      '@ai-npc/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@ai-npc/module-sdk':
         specifier: workspace:*
         version: link:../module-sdk

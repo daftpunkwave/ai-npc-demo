@@ -12,8 +12,9 @@ import type {
   StoragePort,
 } from "@ai-npc/contracts";
 import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
+import type { PerceptionPort } from "@ai-npc/module-sdk";
+import type { AgentModuleHandle } from "./agent-module-handle";
 import { renderObservation } from "./observation-renderer";
-import type { PerceptionModuleHandle } from "./perception-host";
 import {
   arrayValue,
   asRecord,
@@ -61,7 +62,7 @@ function eligible(
 export class PerceptionEventConsumer {
   constructor(
     private readonly input: EventConsumerInput,
-    private readonly perception: ReadonlyMap<string, PerceptionModuleHandle>,
+    private readonly perception: ReadonlyMap<string, AgentModuleHandle<PerceptionPort>>,
   ) {}
 
   async consume(worldTick: number): Promise<void> {
@@ -91,6 +92,10 @@ export class PerceptionEventConsumer {
       const perception = this.perception.get(agent.agentId);
       if (perception === undefined) continue;
       const world = this.input.readWorld(agent.agentId);
+      if (!eligible(event, agent.agentId, world.factionId, world.nodeId)) {
+        plans.push({ agentId: agent.agentId, observations: [], triggers: [], scannedThroughSeq: event.worldSeq });
+        continue;
+      }
       const rendered = renderObservation({
         content: this.input.content,
         event: {
@@ -121,7 +126,7 @@ export class PerceptionEventConsumer {
         observer: {
           nodeId: world.nodeId,
           factionId: world.factionId,
-          eligible: eligible(event, agent.agentId, world.factionId, world.nodeId),
+          eligible: true,
           selfNodeIds: world.nodeId === null ? [] : [world.nodeId],
         },
         rendered,
@@ -132,6 +137,7 @@ export class PerceptionEventConsumer {
         observations: result.observations.map((observation) => ({
           ...observation,
           observationId: this.input.host.ids("obs") as AgentObservation["observationId"],
+          releasePolicyId: rendered.releasePolicyId,
         })),
         triggers: result.triggers,
         scannedThroughSeq: result.scannedThroughSeq,

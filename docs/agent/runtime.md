@@ -1,6 +1,6 @@
 # Agent Runtime：事件到行为的宿主管线
 
-> 状态：部分实现。`packages/agent-runtime` 已支持感知消费、延迟发布、trigger、公平调度、记忆摄入与整理；主装配接入、turn 主循环、工具网关与模型路径尚未完成。实现顺序见 [build-plan.md — 构建计划](../delivery/build-plan.md#5-agent-管线)。
+> 标准与测试装配运行确定性 turn。宿主冻结输入与记忆 revision，通过工具网关执行动作并提交已批准的模板对白。已冻结的 profile、阶段 span、决定与对白 artifact 可用于复核。
 
 ## 1. 运行边界
 

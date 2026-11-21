@@ -8,6 +8,8 @@ import type { AssemblyDescriptor, ModuleDefinition } from "@ai-npc/contracts";
 export interface HostOptions {
   readonly dataDir: string;
   readonly contentRoot?: string;
+  /** 嵌入场景的 profile、工具集、名册和 RunSpec 配置根目录。 */
+  readonly configRoot?: string;
   readonly packId?: string;
   readonly assemblyRef?: string;
   /** 已解析装配对象；仅供嵌入式宿主与测试注入，设置后再指定 assemblyRef 会失败。 */

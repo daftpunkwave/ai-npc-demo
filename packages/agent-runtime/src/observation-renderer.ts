@@ -4,7 +4,7 @@
  * 禁止读取未发布卡片、他人秘密或把 summary 的明细字段重新补回。
  */
 import type { ContentPack, ContentLocale } from "@ai-npc/experiment";
-import type { Json } from "@ai-npc/contracts";
+import { probeAskedPayloadSchema, type Json } from "@ai-npc/contracts";
 import type { PerceptionRequest } from "@ai-npc/module-sdk";
 
 type JsonObject = Readonly<Record<string, Json>>;
@@ -94,21 +94,24 @@ function renderTemplate(template: string, values: Readonly<Record<string, string
 }
 
 function releasePolicy(event: PerceptionRequest["event"]): string {
-  const principalIds = event.audience
-    .filter((audience): audience is JsonObject => typeof audience === "object" && audience !== null && !Array.isArray(audience))
+  if (event.type === "InformationShared") {
+    return `holders:${string(object(event.payload)["evidenceId"])}`;
+  }
+  if (event.type === "ProbeAsked") {
+    const probe = probeAskedPayloadSchema.parse(event.payload);
+    return `parties:${[...new Set([probe.askedBy, probe.agentId])].sort().join(",")}`;
+  }
+  const audience = event.audience.map(object);
+  if (audience.some((entry) => entry["kind"] === "public")) return "public";
+  const principalIds = audience
     .filter((audience) => audience["kind"] === "principals")
     .flatMap((audience) => Array.isArray(audience["ids"]) ? audience["ids"] : [])
     .filter((id): id is string => typeof id === "string")
     .sort();
   if (principalIds.length > 0) return `parties:${principalIds.join(",")}`;
-  const faction = event.audience
-    .map((audience) => object(audience))
-    .find((audience) => audience["kind"] === "faction");
+  const faction = audience.find((entry) => entry["kind"] === "faction");
   if (faction !== undefined) return `faction:${string(faction["factionId"])}`;
-  if (event.type === "InformationShared") {
-    return `holders:${string(object(event.payload)["evidenceId"])}`;
-  }
-  return "public";
+  return audience.some((entry) => entry["kind"] === "node") ? "public" : "private";
 }
 
 function deliveryTick(payload: JsonObject, agentId: string, eventTick: number): number {
@@ -125,6 +128,7 @@ function refs(payload: JsonObject): Readonly<Record<string, string>> {
   for (const [key, field] of [
     ["agreementId", "agreementId"],
     ["taskId", "taskId"],
+    ["invitationId", "invitationId"],
     ["evidenceId", "evidenceId"],
     ["conversationId", "conversationId"],
     ["dialogueId", "dialogueId"],

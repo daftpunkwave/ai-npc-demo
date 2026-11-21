@@ -23,9 +23,11 @@ import type {
   ToolBinding,
   ToolDefinition,
   ToolExecutionResult,
+  TaskType,
   WakeupProposal,
 } from "@ai-npc/contracts";
 import type { MemoryScope } from "@ai-npc/contracts";
+import type { DelegationView } from "./game-ports";
 import type { ScopedModelPort } from "./ports";
 
 /** 感知策略对单个已提交事件、单个主体给出的结果。 */
@@ -251,7 +253,7 @@ export interface SchedulingPort {
   }[];
 }
 
-/** 决策运行时提供的完整 turn 依赖；模型或确定性实现共享同一工具网关。 */
+/** 决策只使用当前 turn 已授权、冻结的材料与宿主提供的工具执行入口。 */
 export interface AgentDecisionInput {
   readonly session: MemoryScope;
   readonly runId: string;
@@ -302,6 +304,34 @@ export interface AgentDecisionInput {
   readonly deadlineMs: number;
 }
 
+export interface DeterministicDecisionInput extends Pick<AgentDecisionInput,
+  "session" | "runId" | "turnId" | "attemptId" | "frontier" | "profileHash" | "agentTurnIndex" |
+  "triggers" | "observations" | "memory" | "executeTool" | "deadlineMs"
+> {
+  readonly runSeed: string;
+  readonly self: {
+    readonly injured: boolean;
+    readonly skills: readonly string[];
+    readonly delegations: readonly DelegationView[];
+  };
+  readonly taskInvitations: readonly {
+    readonly taskId: string;
+    readonly dispatcherId: string;
+    readonly highRiskRoute: boolean;
+  }[];
+  readonly prospective: readonly {
+    readonly memoryId: string;
+    readonly counterpartId: string;
+    readonly obligorId: string;
+    readonly dueTick: number;
+    readonly subjectRef: string | null;
+  }[];
+  readonly lexicons: {
+    readonly taskKeywords: readonly { readonly taskType: TaskType | "generic"; readonly word: string }[];
+    readonly questionMarkers: readonly string[];
+  };
+}
+
 export interface AgentDecisionResult {
   readonly status: "ok" | "invalid-decision" | "model-failed" | "budget-exhausted" | "over-budget";
   readonly decision: DecisionSubmission | null;
@@ -318,8 +348,8 @@ export interface AgentSpeechInput extends AgentDecisionInput {
   readonly receiptsText: string;
 }
 
-export interface AgentDecisionPort {
-  decide(input: AgentDecisionInput): Promise<AgentDecisionResult>;
+export interface AgentDecisionPort<Input = AgentDecisionInput> {
+  decide(input: Input): Promise<AgentDecisionResult>;
   speak?(input: AgentSpeechInput): Promise<{
     readonly text: string;
     readonly citedRefs: readonly string[];

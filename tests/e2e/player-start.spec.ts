@@ -1,11 +1,11 @@
 /**
- * 验证玩家从登录令牌进入公社开局、自动继续时钟、选择角色并提交第一句对白。
+ * 验证玩家从公社开局发言、收到已提交的确定性回复，并从会话读取失败恢复。
  * 依赖固定测试装配、无画面渲染器与玩家 DOM 列表；不请求真实模型。
- * 禁止把画布像素或模型逐字输出作为稳定断言。
+ * 只断言内容包的固定模板和真实会话读取，不使用画布像素或真实模型。
  */
 import { expect, test } from "@playwright/test";
 
-test("玩家可以开局、选择岑雁并提交对白", async ({ page }) => {
+test("玩家开局后可收到岑雁的模板回复，并重试读取会话", async ({ page }) => {
   await page.goto("http://127.0.0.1:5173/#token=e2e-player");
   const start = page.getByTestId("faction-start-human-neutral");
   await expect(start).toBeVisible();
@@ -14,12 +14,14 @@ test("玩家可以开局、选择岑雁并提交对白", async ({ page }) => {
   await expect(page.getByTestId("scene-renderer-null")).toBeVisible();
   await expect(page.getByTestId("list-character-human-independent")).toBeVisible();
   await page.getByTestId("list-character-human-independent").click();
-  await page.getByTestId("dialogue-input").fill("岑雁，请确认隘口今天的通行情况。");
+  const greeting = "你好，岑雁。";
+  const dialogue = page.getByTestId("dialogue-line");
+  await page.getByTestId("dialogue-input").fill(greeting);
   await page.getByTestId("dialogue-send").click();
 
-  await expect(page.getByTestId("dialogue-line").last()).toContainText(
-    "岑雁，请确认隘口今天的通行情况。",
-  );
+  await expect(dialogue.filter({ hasText: greeting })).toHaveCount(1);
+  await expect(dialogue.filter({ hasText: "我知道了。" })).toHaveCount(1);
+  await expect(dialogue.filter({ hasText: "我知道了。" }).locator("span")).toHaveText("岑雁");
 
   await page.route("**/api/v1/conversations/human-independent**", (route) => route.abort("failed"));
   await page.getByTestId("dialogue-input").fill("读取失败时不要补造第二条对白。");
@@ -27,15 +29,11 @@ test("玩家可以开局、选择岑雁并提交对白", async ({ page }) => {
 
   await expect(page.getByText(/对白读取失败/)).toBeVisible();
   await expect(page.getByRole("button", { name: "重试读取" })).toBeVisible();
-  await expect(page.getByTestId("dialogue-line")).toHaveCount(1);
+  await expect(dialogue).toHaveCount(2);
   await expect(page.getByText("读取失败时不要补造第二条对白")).toHaveCount(0);
 
   await page.unroute("**/api/v1/conversations/human-independent**");
   await page.getByRole("button", { name: "重试读取" }).click();
-  await expect(page.getByTestId("dialogue-line")).toHaveCount(1);
-  await expect(page.getByTestId("dialogue-line").last()).toContainText(
-    "读取失败时不要补造第二条对白。",
-  );
-  await expect(page.getByText("读取失败时不要补造第二条对白")).toBeVisible();
-  await expect(page.getByText("岑雁，请确认隘口今天的通行情况。")).toHaveCount(0);
+  await expect(dialogue.filter({ hasText: "读取失败时不要补造第二条对白。" })).toHaveCount(1);
+  await expect(dialogue.filter({ hasText: greeting })).toHaveCount(0);
 });

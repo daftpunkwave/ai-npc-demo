@@ -20,6 +20,16 @@ import type {
   ModuleBinder,
 } from "@ai-npc/module-sdk";
 import { resolveGameModuleBindings } from "./game-port-binder";
+import { compressionNoneModuleDefinition } from "@ai-npc/mod-agent-compression-none/definition";
+import { compressionWindowModuleDefinition } from "@ai-npc/mod-agent-compression-window/definition";
+import { orderedBlocksContextDefinition } from "@ai-npc/mod-agent-context-ordered-blocks/definition";
+import { deterministicDecisionModuleDefinition } from "@ai-npc/mod-agent-decision-deterministic/definition";
+import { memoryLedgerModuleDefinition } from "@ai-npc/mod-agent-memory-ledger/definition";
+import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none/definition";
+import { perceptionModuleDefinition } from "@ai-npc/mod-agent-perception-local/definition";
+import { schedulingModuleDefinition } from "@ai-npc/mod-agent-scheduling-fair/definition";
+import { structuredToolViewModuleDefinition } from "@ai-npc/mod-agent-tool-view-structured/definition";
+import { gameToolsModuleDefinition } from "@ai-npc/mod-agent-tools-game-tools/definition";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { clockConfigSchema, clockModuleDefinition, type ClockConfig } from "@ai-npc/mod-game-clock-controlled";
 import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
@@ -107,6 +117,19 @@ export function createSaveService(storage: StoragePort, host: HostServices): Sql
 }
 
 /** 全部 server 模块定义；moduleId 唯一性由注册表与 check-catalog 校验。 */
+export const serverAgentModuleDefinitions = [
+  compressionNoneModuleDefinition,
+  compressionWindowModuleDefinition,
+  orderedBlocksContextDefinition,
+  deterministicDecisionModuleDefinition,
+  memoryLedgerModuleDefinition,
+  memoryNoneModuleDefinition,
+  perceptionModuleDefinition,
+  schedulingModuleDefinition,
+  structuredToolViewModuleDefinition,
+  gameToolsModuleDefinition,
+] as const;
+
 export const serverModuleDefinitions = [
   storageModuleDefinition,
   clockModuleDefinition,
@@ -125,6 +148,7 @@ export const serverModuleDefinitions = [
   observabilityModuleDefinition,
   moduleAdminModuleDefinition,
   transportModuleDefinition,
+  ...serverAgentModuleDefinitions,
 ] as const;
 
 /** 浏览器两端目录只含描述符；服务端不加载其 React/Pixi 实现。 */
@@ -159,6 +183,11 @@ function requiredCapability(capability: string, instanceScope: InstanceScope): C
     instanceScope,
   };
 }
+
+export const serverAgentRequiredCapabilities = [
+  requiredCapability("agent.scheduling", "run"),
+  requiredCapability("agent.tools", "run"),
+] as const;
 
 /**
  * 服务端宿主固定必需能力：全部游戏能力、部署级存储/密钥/权限、运营与传输。

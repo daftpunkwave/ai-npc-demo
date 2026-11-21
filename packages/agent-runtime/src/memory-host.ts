@@ -22,7 +22,7 @@ import type {
 } from "@ai-npc/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { MemoryMaintenanceQueue } from "./memory-maintenance-queue";
-import { MemoryModuleHandle } from "./memory-module-handle";
+import { AgentModuleHandle } from "./agent-module-handle";
 import {
   publishMaintenance,
   publishUse,
@@ -41,12 +41,13 @@ export interface MemoryHostOptions {
   readonly branchId: string;
   readonly runId: string;
   readonly signal: AbortSignal;
+  readonly ports?: Readonly<Record<string, unknown>>;
   readonly maintenanceLeaseMs?: number;
   readonly maintenanceConcurrency?: number;
 }
 
 export class MemoryHost {
-  private readonly modules = new Map<string, MemoryModuleHandle>();
+  private readonly modules = new Map<string, AgentModuleHandle<MemoryPort>>();
   private readonly actorTails = new Map<string, Promise<void>>();
   private readonly store: MemoryStore;
   private readonly maintenance: MemoryMaintenanceQueue;
@@ -81,7 +82,7 @@ export class MemoryHost {
         if (definition === undefined) {
           throw new Error(`memory module ${selection.module} is not registered`);
         }
-        const handle = await MemoryModuleHandle.create({
+        const handle = await AgentModuleHandle.create<MemoryPort>({
           agentId: agent.agentId,
           moduleId: selection.module,
           config: selection.config,
@@ -90,6 +91,7 @@ export class MemoryHost {
           branchId: this.options.branchId,
           host: this.options.host,
           signal: this.options.signal,
+          ...(this.options.ports === undefined ? {} : { ports: this.options.ports }),
         });
         this.modules.set(agent.agentId, handle);
         await this.store.initializeAgent(agent.agentId, selection.module);
@@ -161,6 +163,12 @@ export class MemoryHost {
       query.revision,
     );
     return this.module(agentId).port.retrieve(query, view);
+  }
+
+  prospectiveRecords(agentId: string, revision: number, memoryIds: ReadonlySet<string>): readonly RevisionView["records"][number][] {
+    if (memoryIds.size === 0) return [];
+    return this.view(agentId, revision).records.filter((record) =>
+      record.kind === "prospective" && record.status === "active" && memoryIds.has(record.memoryId));
   }
 
   recordUse(agentId: string, input: MemoryRecordUseRequest): Promise<number> {
@@ -332,7 +340,7 @@ export class MemoryHost {
     return identity;
   }
 
-  private module(agentId: string): MemoryModuleHandle {
+  private module(agentId: string): AgentModuleHandle<MemoryPort> {
     const handle = this.modules.get(agentId);
     if (handle === undefined) throw new Error(`agent ${agentId} memory module is not started`);
     return handle;

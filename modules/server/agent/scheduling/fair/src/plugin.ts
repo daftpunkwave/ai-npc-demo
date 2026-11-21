@@ -13,14 +13,6 @@ import { schedulingConfigSchema, type SchedulingConfig } from "./definition";
 
 const unrestrictedKinds = new Set(["player-dialogue", "debug", "probe"]);
 
-function sortTriggers(left: AgentTrigger, right: AgentTrigger): number {
-  return (
-    right.priority - left.priority ||
-    left.createdTick - right.createdTick ||
-    left.triggerId.localeCompare(right.triggerId)
-  );
-}
-
 export function planSchedule(input: SchedulingInput, config: SchedulingConfig): ReturnType<SchedulingPort["plan"]> {
   const agents = new Map(input.agents.map((agent) => [agent.agentId, agent]));
   const triggersByAgent = new Map<string, AgentTrigger[]>();
@@ -51,7 +43,7 @@ export function planSchedule(input: SchedulingInput, config: SchedulingConfig): 
     }
     const usable = agentTriggers
       .filter((trigger) => !input.paused || trigger.kind === "debug" || trigger.kind === "probe")
-      .sort(sortTriggers);
+      .sort((left, right) => left.createdTick - right.createdTick);
     if (usable.length === 0) {
       continue;
     }
@@ -59,17 +51,13 @@ export function planSchedule(input: SchedulingInput, config: SchedulingConfig): 
     const cooldownTicks = lastTurn === undefined ? Number.POSITIVE_INFINITY : input.worldTick - lastTurn;
     const inCooldown = lastTurn !== undefined && cooldownTicks < config.cooldownTicks;
     const eligible = usable.filter((trigger) => !inCooldown || unrestrictedKinds.has(trigger.kind));
-    if (eligible.length === 0) {
-      continue;
-    }
+    const first = eligible[0];
+    if (first === undefined) continue;
     const merged = eligible.slice(0, config.mergeLimit);
-    const highest = merged[0];
-    if (highest === undefined) {
-      continue;
-    }
-    const waited = Math.max(0, input.worldTick - highest.createdTick);
-    const score = highest.priority + Math.min(config.agingCap, waited * config.agingPerTick);
-    candidates.push({ agentId, score, firstTick: highest.createdTick, triggers: merged });
+    const priority = Math.max(...eligible.map((trigger) => trigger.priority));
+    const waited = Math.max(0, input.worldTick - first.createdTick);
+    const score = priority + Math.min(config.agingCap, waited * config.agingPerTick);
+    candidates.push({ agentId, score, firstTick: first.createdTick, triggers: merged });
   }
 
   return candidates

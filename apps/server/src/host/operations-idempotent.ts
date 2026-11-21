@@ -6,7 +6,7 @@
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { DomainError, canonicalJson, type ClockView, type StoragePort } from "@ai-npc/contracts";
 import { clockView } from "./clock-view";
-import type { LiveRunState } from "./live-state";
+import { switchLiveBranch, type LiveRunState } from "./live-state";
 import type {
   IdempotentOperationsDriver,
   OperationRequest,
@@ -133,6 +133,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
             worldTick: inspection.worldTick,
           },
         });
+        primitives.activateRestoredRoster(tx, restored.branchId);
         const outcome = {
           branchId: restored.branchId,
           clock: clockView(runtime.clock.readInTransaction(tx, restored.branchId)),
@@ -141,9 +142,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
         return { outcome, applied: true as const, worldId: restored.worldId };
       });
       if (committed.applied) {
-        active.branchId = committed.outcome.branchId;
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 旧快照可能缺少 worldId 字段，保留兜底。
-        active.worldId = committed.worldId ?? active.worldId;
+        switchLiveBranch(active, committed.outcome.branchId, committed.worldId);
       }
       return { ...committed.outcome, applied: committed.applied };
     } catch (error) {
@@ -186,7 +185,7 @@ export function createIdempotentOperations(input: IdempotentOperationsInput): Id
         return { outcome, applied: true as const };
       });
       if (committed.applied) {
-        active.branchId = committed.outcome.branchId;
+        switchLiveBranch(active, committed.outcome.branchId);
       }
       return { ...committed.outcome, applied: committed.applied };
     } catch (error) {

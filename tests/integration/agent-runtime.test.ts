@@ -189,7 +189,7 @@ async function fixture(): Promise<{
 }
 
 describe("Agent runtime 持久状态", () => {
-  it("延迟观察与 trigger 在到期 tick 同一事务发布", async () => {
+  it("延迟观察与 trigger 在到期 tick 同时发布。非受众事件只推进扫描水位", async () => {
     const value = await fixture();
     const scheduling: SchedulingPort = { plan: () => [] };
     const runtime = new AgentRuntime({
@@ -217,7 +217,8 @@ describe("Agent runtime 持久状态", () => {
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
     value.storage.transact((tx) => {
-      tx.branch("br-000000000001").table("domain_events").put({
+      const events = tx.branch("br-000000000001").table("domain_events");
+      const message = {
         world_seq: 1,
         event_id: "evt-000000000001",
         world_tick: 0,
@@ -238,9 +239,25 @@ describe("Agent runtime 持久状态", () => {
           speechArtifactRef: null,
         },
         committed_at: "2026-01-01T00:00:00.000Z",
+      };
+      events.put(message);
+      events.put({
+        ...message,
+        world_seq: 2,
+        event_id: "evt-000000000002",
+        audience_json: [{ kind: "principals", ids: ["player-1", "human-earth-alliance"] }],
+        payload_json: {
+          ...message.payload_json,
+          messageId: "msg-000000000002",
+          to: ["human-earth-alliance"],
+          deliveries: [{ principalId: "human-earth-alliance", deliverAtTick: 2 }],
+        },
       });
     });
     await runtime.pump();
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("perception_state").get({ agent_id: "human-independent" }),
+    )).toMatchObject({ scanned_through_seq: 2 });
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("triggers").list())).toHaveLength(0);
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("observations").list())).toHaveLength(0);
     value.storage.transact((tx) => {

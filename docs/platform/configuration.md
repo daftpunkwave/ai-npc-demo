@@ -241,7 +241,7 @@ slots:
   context:
     module: agent.context.ordered-blocks
     config:
-      segmentOrder: [protocol, identity, world, task, memory, history, input]
+      segmentOrder: [world, task, memory, history, input]
       historyTurns: 8
       lendUnusedBudget: false
       decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 } }
@@ -281,7 +281,7 @@ slots:
   context:
     module: agent.context.ordered-blocks
     config:
-      segmentOrder: [protocol, identity, world, task, memory, history, input]
+      segmentOrder: [world, task, memory, history, input]
       historyTurns: 6
       lendUnusedBudget: false
       decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 900, task: 600, memory: 900, history: 600 } }

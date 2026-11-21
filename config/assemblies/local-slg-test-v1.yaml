@@ -15,6 +15,8 @@ realms:
       - { capability: game.comms, moduleId: game.comms.standard, configRef: null }
       - { capability: game.scenario, moduleId: game.scenario.watergate, configRef: null }
       - { capability: game.save, moduleId: game.save.sqlite, configRef: null }
+      - { capability: agent.scheduling, moduleId: agent.scheduling.fair, configRef: null }
+      - { capability: agent.tools, moduleId: agent.tools.game-tools, configRef: null }
       - { capability: platform.storage, moduleId: platform.storage.sqlite, configRef: storage }
       - { capability: platform.access-policy, moduleId: platform.access-policy.roster, configRef: null }
       - { capability: platform.secrets, moduleId: platform.secrets.env, configRef: null }
@@ -22,6 +24,13 @@ realms:
       - { capability: platform.observability, moduleId: platform.observability.sqlite, configRef: null }
       - { capability: platform.module-admin, moduleId: platform.module-admin.standard, configRef: null }
       - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
+    agentSlots:
+      perception: [agent.perception.local]
+      memory: [agent.memory.none, agent.memory.ledger]
+      context: [agent.context.ordered-blocks]
+      compression: [agent.compression.none, agent.compression.window]
+      toolView: [agent.tool-view.structured]
+      decision: [agent.decision.deterministic]
   client:
     bindings:
       - { capability: client.world-view, moduleId: client.world-view.standard, configRef: null }

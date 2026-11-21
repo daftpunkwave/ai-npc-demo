@@ -4,7 +4,7 @@
 
 > 完整游戏设计、Demo 切片范围与工程文档的权威链见 [docs/README.md — 文档导航](docs/README.md#1-三层结构与全局入口)。
 
-> 当前 Demo 可在 `127.0.0.1:5173` 完成公社开局、查看授权投影、选择角色并提交对白；PixiJS 灰盒提供节点、道路与角色视图，设置和时钟操作走服务端接口。`127.0.0.1:3000/console/` 已提供运行总览、模块装配、世界时间线与 Agent 状态摘要，并保留玩家与控制台权限隔离。序章仍使用 `standard-15`、只开放公社开局、20 秒/tick，t168 评估后暂停。Agent 感知、公平调度与 M0/M1 记忆组件已落地，完整认知管线、t144 程序案、六资源交接和席位契约仍待交付。参见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](docs/IMPLEMENTATION-STATUS.md)、[build-plan.md — 构建进度](docs/delivery/build-plan.md#1-步骤总览)。
+> 玩家可以在 `127.0.0.1:5173` 完成公社开局、查看授权投影并与岑雁等角色交谈。标准与测试装配运行确定性 Agent 决策，已提交的安全模板回复会显示在会话里。`127.0.0.1:3000/console/` 提供运行总览、模块装配、世界时间线和 Agent 状态。序章使用 `standard-15`，默认每 20 秒推进一个 tick，在 t168 评估后暂停。当前实现范围见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](docs/IMPLEMENTATION-STATUS.md)。
 
 ## 一眼看懂
 
