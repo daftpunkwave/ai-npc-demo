@@ -5,6 +5,7 @@
  */
 import {
   canonicalJson,
+  resolveContextTokenLimits,
   type ContextArtifact,
   type ContextBuildRequest,
   type Json,
@@ -48,11 +49,7 @@ export class AgentContextPipeline {
         ready: built.status === "ready",
       };
     }
-    const effectiveMaxTokens = Math.max(
-      1,
-      Math.min(input.budget.maxInputTokens, input.modelWindowTokens - input.budget.safetyTokens),
-    );
-    const targetTokens = Math.max(1, effectiveMaxTokens - input.budget.toolLoopReserveTokens);
+    const { effectiveMaxTokens, targetTokens } = resolveContextTokenLimits(input);
     const compressed = this.options.compression.compress({
       artifact: built,
       effectiveMaxTokens,

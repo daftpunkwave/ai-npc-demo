@@ -79,7 +79,7 @@ memory.none 下动态核心块、全历史编年史和关系解释不会由 cont
 
 ## 5. 预算与选择算法
 
-有效输入上限取 `min(profile.maxInputTokens, modelWindow - reservedOutputTokens - safetyTokens)`。工具 schema、格式约束、历史、数据块和协议包装全部占用这一上限；辅助调用另有预算，但仍归同一 turn/run 总账。
+有效输入上限取 `min(maxInputTokens, modelWindow - reservedOutputTokens - safetyTokens)`。工具 schema、格式约束、历史、数据块和协议包装全部占用这一上限；辅助调用另有预算，但仍归同一 turn/run 总账。
 
 1. 先计算必需协议、身份最小块、当前请求和不可拆工具组。
 2. 必需内容超限即返回 over-budget，不能截断鉴权协议或当前问题伪装成功。
@@ -179,7 +179,7 @@ export function estimateTokens(text: string): number {
 
 ### 11.3 预算与裁剪
 
-参数来自 context 槽配置的 `decision`/`speech` 子块（默认值见 [配置](../platform/configuration.md) 第 10.2 节），`reservedOutputTokens` 来自 profile 的 `budgets.reserveOutputTokens`（经 ContextBuildRequest 的 budgets 传入）：
+参数来自 context 槽配置的 `decision`/`speech` 子块（默认值见 [配置](../platform/configuration.md) 第 10.2 节），`reservedOutputTokens` 来自 profile 的 `budgets.reserveOutputTokens`（经 `ContextBuildRequest.budget.reservedOutputTokens` 传入）：
 
 | 参数 | decision 默认 | speech 默认 |
 |---|---|---|

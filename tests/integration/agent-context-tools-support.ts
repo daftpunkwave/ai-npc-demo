@@ -223,6 +223,7 @@ export function baseContextRequest(): ContextBuildRequest {
     modelWindowTokens: 8000,
     budget: {
       maxInputTokens: 8000,
+      reservedOutputTokens: 1500,
       safetyTokens: 300,
       toolLoopReserveTokens: 1600,
       segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800, input: 400 },

@@ -5,6 +5,7 @@
  */
 import {
   canonicalJson,
+  resolveContextTokenLimits,
   type ContextArtifact,
   type ContextBuildRequest,
   type Json,
@@ -281,11 +282,7 @@ export class OrderedBlocksContextBuilder implements AgentContextPort {
     const system = [protocol.text, identity?.text ?? ""].filter((value) => value.length > 0).join("\n\n");
     const userSegments = built.drafts.map((segment) => segment.text);
     const tokenEstimate = estimateContextTokens(system, userSegments);
-    const effectiveMax = Math.max(
-      1,
-      Math.min(request.budget.maxInputTokens, request.modelWindowTokens - request.budget.safetyTokens),
-    );
-    const targetTokens = Math.max(1, effectiveMax - request.budget.toolLoopReserveTokens);
+    const { targetTokens } = resolveContextTokenLimits(request);
     const status = request.memoryBundle.status === "not-ready"
       ? "not-ready"
       : !built.fits || tokenEstimate > targetTokens
