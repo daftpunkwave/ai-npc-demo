@@ -146,8 +146,10 @@ describe("Dialogue flow", () => {
     expect(result.artifact.text).not.toContain("北侧");
     expect(result.preparation.request.user).not.toContain("北侧");
     expect(envelopes).toHaveLength(1);
-    expect(envelopes[0]?.type).toBe("speech.commit");
-    expect((envelopes[0]?.payload as { readonly approvedSpeechArtifactRef: string }).approvedSpeechArtifactRef)
+    const sent = envelopes[0];
+    if (sent === undefined) throw new Error("speech.commit envelope is missing");
+    expect(sent.type).toBe("speech.commit");
+    expect((sent.payload as { readonly approvedSpeechArtifactRef: string }).approvedSpeechArtifactRef)
       .toBe(result.artifact.artifactId);
     expect(setup.approvals.read(result.artifact.artifactId)?.approved).toBe(true);
     const validation = result.artifact.validation as unknown as {
