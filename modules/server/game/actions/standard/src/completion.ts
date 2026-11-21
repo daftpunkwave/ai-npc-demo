@@ -14,6 +14,13 @@ import {
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
+import {
+  escortSupporterAgentId,
+  externalGuideAgentId,
+  externalRepairSupporterAgentId,
+  hasFactionSupporter,
+  repairSupporterAgentId,
+} from "./faction-bonus";
 import type { TaskState } from "./state";
 
 type CompletionContext = HandlerContext<GameModulePorts, unknown>;
@@ -112,6 +119,7 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
   const content = requireGameContent(context.content);
   const ports = context.modules;
   const completedAt = task.nominalCompletionTick + task.riskOutcome.delayTicks;
+  const ownerFactionId = content.teams.get(task.teamId)?.ownerFactionId ?? null;
   const workNodeId = task.workNodeId ?? ports["game.world"].team(task.teamId)?.nodeId;
   if (workNodeId === undefined || workNodeId === null) {
     return { ok: false, reasonCode: "invalid-params", safeMessage: "任务缺少工作节点" };
@@ -151,10 +159,11 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     // 材料已在完成 job 开头结算（失败会回滚整个 job），这里只应用完成效果。
     const teamStar = task.teamId === "team-star";
     let delta = teamStar ? 40 : 25;
-    if (task.participants.includes("npc-taoan")) {
+    if (hasFactionSupporter(content, ownerFactionId, task.participants, repairSupporterAgentId)) {
       delta += 10;
     }
-    if (task.participants.includes("species-extraterrestrial") && !teamStar) {
+    // 洛的 +15 是独立于本派工务岗位的设计加成，只排除 team-star 任务。
+    if (task.participants.includes(externalRepairSupporterAgentId) && !teamStar) {
       delta += 15;
     }
     ports["game.world"].changeMeter("relay.stability", delta, "task");
@@ -163,7 +172,12 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
   } else {
     const params = task.params as { readonly roadId: string };
     if (content.migrationRoads.includes(params.roadId)) {
-      const bonus = task.participants.includes("npc-luchen") || task.participants.includes("species-fauna") ? 4 : 0;
+      // 迁徙道路护送只认本派治安/向导支持者；追风按设计对任何队伍同效。
+      const bonus =
+        hasFactionSupporter(content, ownerFactionId, task.participants, escortSupporterAgentId) ||
+        task.participants.includes(externalGuideAgentId)
+          ? 4
+          : 0;
       ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
     }
   }
