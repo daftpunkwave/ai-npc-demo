@@ -27,6 +27,7 @@ export * from "./context-budget";
 export * from "./schema-profile";
 export * from "./versions";
 export * from "./api";
+export * from "./api-content";
 export * from "./api-stream";
 export * from "./api-console";
 export * from "./api-operations";

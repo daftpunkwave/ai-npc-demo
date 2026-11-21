@@ -1136,14 +1136,14 @@ describe("服务端 API", () => {
     });
     expect(notHeld.statusCode).toBe(403);
 
-    // 默认名册只授权 operator；响应字段保持现有契约。
+    // 默认名册只授权 operator；未注入控制台端口时返回 503 not-ready，不再伪造 ready 摘要。
     const allowed = await app.inject({
       method: "GET",
       url: "/api/v1/console/health",
       headers: { ...consoleHeaders, "x-active-role": "operator" },
     });
-    expect(allowed.statusCode).toBe(200);
-    expect(allowed.json()).toMatchObject({ status: "ready", modules: [], queues: { turnsQueued: 0, jobsDue: 0 } });
+    expect(allowed.statusCode).toBe(503);
+    expect(errorResponseSchema.parse(allowed.json()).error.code).toBe("not-ready");
 
     // 换装配配置后，同一入口按新名册拒绝 operator、放行 researcher。
     const customApp = await appFor(value, { accessPolicyConfig: { consoleRoles: ["researcher"] } });
@@ -1160,7 +1160,8 @@ describe("服务端 API", () => {
       url: "/api/v1/console/health",
       headers: { authorization: `Bearer ${researcherSession}`, "x-active-role": "researcher" },
     });
-    expect(allowedResearcher.statusCode).toBe(200);
+    // 权限已放行，但测试传输层没有控制台端口，兜底路径返回 503。
+    expect(allowedResearcher.statusCode).toBe(503);
   });
 
   it("装配中的 playerCommands 改变命令裁决", async () => {
@@ -1320,6 +1321,14 @@ describe("服务端 API", () => {
     const app = await appFor(value);
     const session = await login(app, "player-token");
     const auth = { authorization: `Bearer ${session}` };
+    // 时钟只能在开局后继续；先以 t0 开局，再验证暂停/继续版本推进。
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: auth,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
+    });
+    expect(started.statusCode).toBe(200);
     const before = clockView(value);
     const paused = await app.inject({ method: "POST", url: "/api/v1/campaign/pause", headers: auth, payload: { operationId: "op-000000000001", expectedRunVersion: before.runVersion } });
     expect(paused.statusCode).toBe(200);
@@ -2105,7 +2114,8 @@ describe("服务端 API", () => {
       url: "/api/v1/console/health",
       headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" },
     });
-    expect(allowed.statusCode).toBe(200);
+    // 该测试应用没有注入控制台端口，授权通过后按 503 not-ready 拒绝。
+    expect(allowed.statusCode).toBe(503);
     const preflight = await app.inject({
       method: "OPTIONS",
       url: "/api/v1/commands",

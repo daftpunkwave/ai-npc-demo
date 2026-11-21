@@ -16,6 +16,8 @@ export interface StreamClientOptions {
   readonly channel: StreamChannel;
   readonly fromStreamSeq: number | null;
   readonly onMessage: (message: ServerStreamMessage) => void;
+  /** 连接建立并完成订阅后回调；调用方用它重置重连退避。 */
+  readonly onOpen?: () => void;
   readonly onClose?: (event: CloseEvent) => void;
   readonly onError?: (error: unknown) => void;
 }
@@ -39,6 +41,7 @@ export class StreamClient {
       this.pingTimer = setInterval(() => {
         this.send({ type: "ping" });
       }, 20_000);
+      options.onOpen?.();
     });
     this.socket.addEventListener("message", (event) => {
       try {

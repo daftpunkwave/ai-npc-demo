@@ -1,11 +1,11 @@
 /**
  * 以可点击 DOM 列表呈现玩家当前可见的人物、地点、任务、协议与笔记。
- * 依赖授权投影和选择端口；人物点击只打开会话，不产生世界命令。
+ * 依赖授权投影、客户端内容视图与选择端口；人物点击只打开会话，不产生世界命令。
  * 禁止用侧栏列表补造投影中不存在的地点、参数或协议。
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
+import type { ClientContentView, ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
 import type { ProjectionState } from "@ai-npc/client-protocol";
 
 type Tab = "characters" | "places" | "tasks" | "agreements" | "notebook";
@@ -23,6 +23,7 @@ interface SelectionLike {
 
 interface WorldViewLike {
   getCampaign(): unknown;
+  getContent(): ClientContentView | null;
 }
 
 const tabs: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -165,18 +166,24 @@ function CharactersView(): ReactNode {
   const selection = usePortSubscription<Selection | null>("client.input");
   const [tab, setTab] = useState<Tab>("characters");
   const projection = state?.projection;
+  const content = worldView.getContent();
   const activeCount = useMemo(
     () => projection?.characters.filter((character) => !character.injured).length ?? 0,
     [projection],
   );
-  if (projection === undefined || projection.campaign === null || worldView.getCampaign() === null) {
+  if (
+    content === null ||
+    projection === undefined ||
+    projection.campaign === null ||
+    worldView.getCampaign() === null
+  ) {
     return null;
   }
   return (
     <aside className="sidebar-panel">
       <header className="sidebar-head">
         <div>
-          <span className="eyebrow">灰港现场</span>
+          <span className="eyebrow">{content.ui.siteLabel}</span>
           <strong>可行动信息</strong>
         </div>
         <span className="sidebar-count">{activeCount} 人可接触</span>

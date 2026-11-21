@@ -16,8 +16,15 @@ const requiredUiKeys = [
   "waitingReply",
   "reconnecting",
   "serverUnavailable",
+  "sessionExpired",
   "incompleteAssembly",
   "moduleNotLoaded",
+  "chapterKicker",
+  "startBriefing",
+  "hudKicker",
+  "siteLabel",
+  "sceneLabel",
+  "consoleTitle",
 ] as const;
 
 /** 校验节点与设施名称、必需界面文字及模板版本。 */

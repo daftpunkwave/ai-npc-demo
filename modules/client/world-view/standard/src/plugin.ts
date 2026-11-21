@@ -1,10 +1,11 @@
 /**
- * 维护唯一一份玩家授权投影，负责会话初始化、REST 重取、WS 续传、开局与时钟控制。
+ * 维护唯一一份玩家授权投影与静态内容视图，负责内容读取、会话初始化、REST 重取、WS 续传、开局与时钟控制。
  * 依赖注入的 API、命令、会话端口和 client-protocol reducer；不读取私密 Agent 状态。
  * 禁止在游标缺口后继续拼接增量，或在命令被拒时伪造世界变化。
  */
 import {
   DomainError,
+  type ClientContentView,
   type Json,
   type CampaignResponse,
   type PlayerProjection,
@@ -20,11 +21,31 @@ import {
   type ApiClient,
   type ProjectionState,
 } from "@ai-npc/client-protocol";
+import {
+  isSessionInvalidCloseCode,
+  isSessionInvalidError,
+  reconnectDelayMs,
+} from "./connection-policy";
+
+/** 玩家流连接状态：供界面显示重连与重新登录提示。 */
+export interface WorldViewConnectionState {
+  readonly kind: "connecting" | "connected" | "reconnecting" | "session-expired";
+  /** 连续失败次数；成功连接后归零。 */
+  readonly attempt: number;
+  /** 下一次重连等待毫秒数；非重连状态为 null。 */
+  readonly retryInMs: number | null;
+  /** 最近一次连接错误；成功连接后为 null。 */
+  readonly error: string | null;
+}
 
 export interface WorldViewPort {
   subscribe(listener: (state: ProjectionState | null) => void): () => void;
   getSnapshot(): ProjectionState | null;
+  subscribeConnection(listener: (state: WorldViewConnectionState) => void): () => void;
+  getConnectionState(): WorldViewConnectionState;
   getCampaign(): CampaignResponse | null;
+  /** 静态内容视图；bootstrap 成功后必有值，失败时 bootstrap 直接拒绝。 */
+  getContent(): ClientContentView | null;
   bootstrap(): Promise<void>;
   refresh(): Promise<void>;
   startCampaign(factionId: string): Promise<void>;
@@ -51,26 +72,39 @@ class WorldViewController implements WorldViewPort {
   private readonly command: CommandClient;
   private readonly session: SessionDescriptor;
   private readonly newOperationId: () => string;
+  private readonly random: () => number;
   private readonly store = new ProjectionStore();
   private readonly listeners = new Set<(state: ProjectionState | null) => void>();
+  private readonly connectionListeners = new Set<(state: WorldViewConnectionState) => void>();
   private readonly unsubscribeStore: () => void;
   private campaign: CampaignResponse | null = null;
+  private content: ClientContentView | null = null;
   private stream: StreamClient | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 连续重连次数；收到服务端首帧后才归零，避免 open 后立即断开导致固定 1s 重试。 */
+  private reconnectAttempt = 0;
   private disposed = false;
   private lastError: string | null = null;
   private lastRefreshError: string | null = null;
+  private connection: WorldViewConnectionState = {
+    kind: "connecting",
+    attempt: 0,
+    retryInMs: null,
+    error: null,
+  };
 
   constructor(input: {
     readonly api: ApiClient;
     readonly command: CommandClient;
     readonly session: SessionDescriptor;
     readonly newOperationId: () => string;
+    readonly random: () => number;
   }) {
     this.api = input.api;
     this.command = input.command;
     this.session = input.session;
     this.newOperationId = input.newOperationId;
+    this.random = input.random;
     this.unsubscribeStore = this.store.subscribe((state) => {
       for (const listener of [...this.listeners]) {
         listener(state);
@@ -87,8 +121,23 @@ class WorldViewController implements WorldViewPort {
 
   getSnapshot = (): ProjectionState | null => this.store.getSnapshot();
 
+  subscribeConnection = (
+    listener: (state: WorldViewConnectionState) => void,
+  ): (() => void) => {
+    this.connectionListeners.add(listener);
+    return () => {
+      this.connectionListeners.delete(listener);
+    };
+  };
+
+  getConnectionState = (): WorldViewConnectionState => this.connection;
+
   getCampaign(): CampaignResponse | null {
     return this.campaign;
+  }
+
+  getContent(): ClientContentView | null {
+    return this.content;
   }
 
   get error(): string | null {
@@ -100,6 +149,8 @@ class WorldViewController implements WorldViewPort {
   }
 
   async bootstrap(): Promise<void> {
+    // 内容静态且必须先就绪：读取失败直接让 bootstrap 失败，由宿主显示错误页，不退回模块源码文案。
+    this.content = await this.api.content();
     await this.refreshCampaign();
     if (this.campaign?.campaign != null) {
       await this.refresh();
@@ -184,8 +235,10 @@ class WorldViewController implements WorldViewPort {
 
   dispose(): void {
     this.disposed = true;
+    this.reconnectAttempt = 0;
     this.unsubscribeStore();
     this.listeners.clear();
+    this.connectionListeners.clear();
     this.closeStream();
     this.clearReconnect();
   }
@@ -215,49 +268,145 @@ class WorldViewController implements WorldViewPort {
   }
 
   private async connectStream(): Promise<void> {
+    this.clearReconnect();
     this.closeStream();
-    const ticket = await this.api.streamTicket();
+    if (this.disposed || this.connection.kind === "session-expired") {
+      return;
+    }
+    let ticket: { readonly ticket: string };
+    try {
+      ticket = await this.api.streamTicket();
+    } catch (error) {
+      if (this.disposed) {
+        return;
+      }
+      this.lastError = errorMessage(error);
+      if (isSessionInvalidError(error)) {
+        this.expireSession();
+        return;
+      }
+      this.scheduleReconnect(this.lastError);
+      return;
+    }
+    if (this.disposed) {
+      return;
+    }
     const state = this.store.getSnapshot();
-    this.stream = new StreamClient({
-      url: this.api.webSocketUrl(ticket.ticket),
-      channel: "player",
-      fromStreamSeq: state?.streamSeq ?? null,
-      onMessage: (message) => {
-        if (message.type === "snapshot" && message.channel === "player") {
-          this.store.applySnapshot(message, this.session.worldId, this.session.branchId);
-        } else if (message.type === "delta") {
-          const result = this.store.applyDelta(message);
-          if (result.needsSnapshot) {
-            void this.refresh().catch((error: unknown) => {
-              this.lastError = errorMessage(error);
-            });
+    let stream!: StreamClient;
+    try {
+      stream = new StreamClient({
+        url: this.api.webSocketUrl(ticket.ticket),
+        channel: "player",
+        fromStreamSeq: state?.streamSeq ?? null,
+        onOpen: () => {
+          if (this.stream !== stream) {
+            return;
           }
-        } else if (message.type === "append") {
-          this.store.applyAppend(message);
-        }
-      },
-      onClose: () => {
-        if (!this.disposed) {
-          this.scheduleReconnect();
-        }
-      },
-      onError: (error) => {
-        this.lastError = errorMessage(error);
-      },
-    });
+          this.lastError = null;
+          // 建连成功先保留退避计数；收到服务端首帧才视为恢复稳定。
+          this.setConnection({
+            kind: "connected",
+            attempt: this.reconnectAttempt,
+            retryInMs: null,
+            error: null,
+          });
+        },
+        onMessage: (message) => {
+          this.confirmStreamUsable();
+          if (message.type === "snapshot" && message.channel === "player") {
+            this.store.applySnapshot(message, this.session.worldId, this.session.branchId);
+          } else if (message.type === "delta") {
+            const result = this.store.applyDelta(message);
+            if (result.needsSnapshot) {
+              void this.refresh().catch((error: unknown) => {
+                this.lastError = errorMessage(error);
+              });
+            }
+          } else if (message.type === "append") {
+            this.store.applyAppend(message);
+          }
+        },
+        onClose: (event) => {
+          // 主动关闭或已被新连接替换时，不得按断线处理。
+          if (this.stream !== stream) {
+            return;
+          }
+          this.stream = null;
+          if (this.disposed) {
+            return;
+          }
+          if (isSessionInvalidCloseCode(event.code)) {
+            this.expireSession();
+            return;
+          }
+          this.scheduleReconnect(`流连接已关闭（${event.code}）`);
+        },
+        onError: (error) => {
+          this.lastError = errorMessage(error);
+        },
+      });
+    } catch (error) {
+      // WebSocket URL 或构造失败也必须按退避重试，不能留下未处理的 rejection。
+      if (this.disposed) {
+        return;
+      }
+      this.lastError = errorMessage(error);
+      if (isSessionInvalidError(error)) {
+        this.expireSession();
+        return;
+      }
+      this.scheduleReconnect(this.lastError);
+      return;
+    }
+    this.stream = stream;
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(reason: string): void {
     this.clearReconnect();
+    if (this.disposed || this.connection.kind === "session-expired") {
+      return;
+    }
+    this.reconnectAttempt += 1;
+    const attempt = this.reconnectAttempt;
+    const retryInMs = reconnectDelayMs(attempt, this.random);
+    this.lastError = reason;
+    this.setConnection({ kind: "reconnecting", attempt, retryInMs, error: reason });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       void this.connectStream().catch((error: unknown) => {
-        this.lastError = errorMessage(error);
-        if (!this.disposed) {
-          this.scheduleReconnect();
+        if (this.disposed || this.connection.kind === "session-expired") {
+          return;
         }
+        this.lastError = errorMessage(error);
+        this.scheduleReconnect(this.lastError);
       });
-    }, 1_500);
+    }, retryInMs);
+  }
+
+  /** 收到服务端首帧后确认连接可用，才把连续失败计数归零。 */
+  private confirmStreamUsable(): void {
+    if (this.reconnectAttempt === 0 && this.connection.kind === "connected") {
+      return;
+    }
+    this.reconnectAttempt = 0;
+    this.lastError = null;
+    this.setConnection({ kind: "connected", attempt: 0, retryInMs: null, error: null });
+  }
+
+  /** 会话失效后停止一切重连并清除本地令牌，界面据此提示重新登录。 */
+  private expireSession(): void {
+    this.clearReconnect();
+    this.closeStream();
+    this.reconnectAttempt = 0;
+    this.api.clearSession();
+    this.setConnection({ kind: "session-expired", attempt: 0, retryInMs: null, error: null });
+  }
+
+  private setConnection(next: WorldViewConnectionState): void {
+    this.connection = next;
+    for (const listener of [...this.connectionListeners]) {
+      listener(next);
+    }
   }
 
   private clearReconnect(): void {
@@ -268,8 +417,10 @@ class WorldViewController implements WorldViewPort {
   }
 
   private closeStream(): void {
-    this.stream?.close();
+    // 先摘除引用再关闭，旧连接的异步 close 事件不会触发重连。
+    const stream = this.stream;
     this.stream = null;
+    stream?.close();
   }
 
   private requireSnapshot(): ProjectionState {
@@ -298,6 +449,7 @@ export async function createWorldViewModule(input: ModuleCreateInput): Promise<M
     command: command as CommandClient,
     session: session as SessionDescriptor,
     newOperationId: () => input.host.ids("op"),
+    random: input.host.rng("client.world-view.reconnect"),
   });
   return {
     moduleId: input.moduleId,

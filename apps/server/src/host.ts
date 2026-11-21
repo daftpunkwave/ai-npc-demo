@@ -1,6 +1,6 @@
 /**
  * 打开服务端宿主：依次完成核心启动（内容/装配/存储/在线 run/模块）、权威网关装配、
- * 只读端口、运营编排、生命周期与传输应用，并返回可监听、可关闭的运行实例。
+ * 只读端口、客户端内容视图、运营编排、生命周期与传输应用，并返回可监听、可关闭的运行实例。
  * 依赖 host 子模块与 authority；不启动浏览器端，也不直接引用模块实现。
  * 禁止绕过解析计划引用模块实现、按当前入参重建已冻结的在线 run，或重复实现时钟状态与路由。
  */
@@ -8,11 +8,12 @@ import { Authority } from "@ai-npc/authority";
 import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@ai-npc/agent-runtime";
 import { DomainError, type StoragePort } from "@ai-npc/contracts";
 import { catchUpWorldTick } from "./tick";
+import { createClientContent } from "./host/client-content";
 import { createHostCore } from "./host/core";
 import { disposeInReverse } from "./host/dispose";
 import { createLifecycle } from "./host/lifecycle";
 import type { LiveRunState } from "./host/live-state";
-import { clockConfigOf, type ServerApp, type TransportPort } from "./host/module-catalog";
+import { clockConfigOf, worldChapterLengthOf, type ServerApp, type TransportPort } from "./host/module-catalog";
 import type { HostOptions } from "./host/options";
 import { OperationJournal } from "./host/operation-journal";
 import { OnlineAgentHost } from "./host/online-agents";
@@ -45,6 +46,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     branchId: core.active.branchId, worldId: core.active.worldId,
     onBranchChanged: () => agents?.requestSwitch(),
   };
+  const clockConfig = clockConfigOf(core.activeStartup.plan);
   const journal = new OperationJournal(core.storage, () => core.host.nowIso(), (message, error) => {
     core.host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
   });
@@ -105,7 +107,9 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     runtime: core.runtime,
     authority,
     active,
-    autoPauseAfterDisconnectMs: clockConfigOf(core.activeStartup.plan).autoPauseAfterDisconnectMs,
+    autoPauseAfterDisconnectMs: clockConfig.autoPauseAfterDisconnectMs,
+    // 投影里的 campaign 是当前分支唯一权威来源；未开局时禁止继续时钟。
+    campaignStarted: () => reads.projection().campaign !== null,
     disposeResources,
     agentHealth: () => agents?.healthy ?? true,
   });
@@ -146,6 +150,11 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     },
   });
 
+  const content = createClientContent(core.content, {
+    secondsPerTick: clockConfig.secondsPerTick,
+    evaluationTick: worldChapterLengthOf(core.activeStartup.plan),
+  });
+
   const transportApp = await createTransportApp({
     host: core.host,
     options,
@@ -157,6 +166,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     operations,
     lifecycle,
     gameContent: core.gameContent,
+    content,
     sessionAssembly: core.sessionAssembly,
     disposeOnFailure: () => disposeResources(null),
   });

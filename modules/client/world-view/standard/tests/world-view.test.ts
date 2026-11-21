@@ -72,6 +72,26 @@ const projection = playerProjectionSchema.parse({
   notifications: [],
 });
 
+const content = {
+  chapterTitle: "水闸之前",
+  clock: { secondsPerTick: 20, evaluationTick: 168, motionTick: 144 },
+  ui: {
+    noReply: "（对方暂未回应）",
+    waitingReply: "等待回应",
+    reconnecting: "重连中",
+    serverUnavailable: "服务端不可连接",
+    sessionExpired: "会话已失效，请重新登录。",
+    incompleteAssembly: "组合不完整",
+    moduleNotLoaded: "模块未装载",
+    chapterKicker: "序章 / 第一周",
+    startBriefing: "开场白",
+    hudKicker: "灰港 / 序章",
+    siteLabel: "灰港现场",
+    sceneLabel: "灰港近城",
+    consoleTitle: "灰港控制台",
+  },
+};
+
 function moduleInput(api: ApiClient, command: object): ModuleCreateInput {
   return {
     moduleId: "client.world-view.standard",
@@ -94,6 +114,7 @@ describe("WorldViewController 命令受理", () => {
     const command = { send };
     let refreshes = 0;
     const api = {
+      content: async () => content,
       worldView: async () => {
         refreshes += 1;
         if (refreshes === 1) {
@@ -114,5 +135,35 @@ describe("WorldViewController 命令受理", () => {
     });
     await port.refresh();
     expect(port.refreshError()).toBeNull();
+  });
+});
+
+describe("WorldViewController 静态内容", () => {
+  it("bootstrap 读取内容并暴露给渲染模块", async () => {
+    const contentMock = vi.fn(async () => content);
+    const api = {
+      content: contentMock,
+      campaign: async () => ({ campaign: null, starts: [] }),
+    } as unknown as ApiClient;
+    const instance = await createWorldViewModule(moduleInput(api, { send: vi.fn() }));
+    const port = instance.port as WorldViewPort;
+
+    expect(port.getContent()).toBeNull();
+    await port.bootstrap();
+    expect(contentMock).toHaveBeenCalledOnce();
+    expect(port.getContent()).toEqual(content);
+  });
+
+  it("内容读取失败时 bootstrap 拒绝且不保留空内容", async () => {
+    const api = {
+      content: async () => {
+        throw new Error("content unavailable");
+      },
+    } as unknown as ApiClient;
+    const instance = await createWorldViewModule(moduleInput(api, { send: vi.fn() }));
+    const port = instance.port as WorldViewPort;
+
+    await expect(port.bootstrap()).rejects.toThrow("content unavailable");
+    expect(port.getContent()).toBeNull();
   });
 });

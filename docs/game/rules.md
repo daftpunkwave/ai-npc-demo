@@ -20,7 +20,7 @@
 | stepping | 从 paused 发起，推进 N tick（1–24），并等本步触发的规则任务与 Agent turn 全部结算后回到 paused |
 | 离线 | live run 中，玩家的全部 WebSocket 连接断开超过 60 秒且时钟为 running 时自动暂停；不补算离线时间 |
 
-时钟从 paused 变为 running 只有两种方式：玩家或运营调用“继续”接口，或在 live run 中开局后由客户端自动调用一次“继续”（见 [客户端](../architecture/client-and-rendering.md) 第 8.5 节）。
+时钟从 paused 变为 running 只有两种方式：玩家或运营调用“继续”接口，或在 live run 中开局后由客户端自动调用一次“继续”（见 [客户端](../architecture/client-and-rendering.md) 第 8.5 节）。campaign 尚未开始时“继续”请求以 `not-ready` 拒绝，避免时钟在开局前推进到非零 tick。
 
 推进到 tick T 时的固定处理顺序（每一项各自一个事务，按顺序提交）：
 

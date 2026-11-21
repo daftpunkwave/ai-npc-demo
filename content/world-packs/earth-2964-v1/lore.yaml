@@ -8,6 +8,7 @@ summary: >-
 chapter:
   id: watergate-v1
   title: 水闸之前
+  motionTick: 144
   publicPressure: >-
     灰港中继供能不稳，迁徙季临近，果园面临失水，泊星者提出以修复换取交换。
 timeUnit: 1 tick = 1 游戏小时；1 天 = 24 tick

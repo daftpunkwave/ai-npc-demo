@@ -18,6 +18,7 @@ import {
 } from "@ai-npc/contracts";
 import { OperationJournal, operationRequestHash, startHost, type RunningHost } from "@ai-npc/app-server";
 import type { OperationKey } from "@ai-npc/app-server";
+import { gameCommandEnvelope } from "./game-support";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
@@ -101,6 +102,14 @@ describe("运营操作幂等", () => {
     const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
+    // 时钟只能在开局后继续；先以 t0 开局，后续暂停/继续才有意义。
+    const started = await post(
+      host,
+      session,
+      "/api/v1/commands",
+      gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000301"),
+    );
+    expect(started.statusCode).toBe(200);
 
     // 两个快照用于恢复与其后的同键不同内容冲突。
     const firstSnapshot = await post(host, session, "/api/v1/campaign/snapshots", {
@@ -517,6 +526,13 @@ describe("运营失败记录的重试语义", () => {
     const session = await loginSession(host, "player-token");
     const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
     const operationId = "op-000000000074";
+    const started = await post(
+      host,
+      session,
+      "/api/v1/commands",
+      gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000302"),
+    );
+    expect(started.statusCode).toBe(200);
 
     // 首次尝试按旧版本记录可重试失败；随后时钟由另一个操作推进到 running（runVersion 1）。
     journal.recordFailure(

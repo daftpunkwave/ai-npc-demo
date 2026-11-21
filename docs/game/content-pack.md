@@ -49,6 +49,7 @@ summary: >-
 chapter:
   id: watergate-v1
   title: 水闸之前
+  motionTick: 144
   publicPressure: >-
     灰港中继供能不稳，迁徙季临近，果园面临失水，泊星者提出以修复换取交换。
 timeUnit: 1 tick = 1 游戏小时；1 天 = 24 tick
@@ -780,7 +781,7 @@ checkpoints:
 | | `termTemplates.<kind>` | 协议条款的中文渲染，每种条款一条 | [感知](../agent/perception.md) 第 11.4 节 |
 | `locale/zh-CN.yaml` | `reasonCodes.<code>` | 每个原因码的玩家提示 | [领域模型](../architecture/domain-model.md) 第 9 节，各写一句 |
 | | `taskTypes`、`meters`、`meterLevels`、`policyKeys`、`policyValues`、`resources`、`resourceLevels`、`nodes`、`facilities`、`playerName` | 名称、玩家称呼与等级文字 | 下方 YAML |
-| | `ui.*` | 客户端与控制台界面文字，至少包括 `ui.noReply`“（对方暂未回应）”、`ui.waitingReply`“等待回应”、`ui.reconnecting`“重连中”、`ui.serverUnavailable`“服务端不可连接”、`ui.incompleteAssembly`“组合不完整”、`ui.moduleNotLoaded`“模块未装载” | [客户端](../architecture/client-and-rendering.md) |
+| | `ui.*` | 客户端与控制台界面文字，至少包括 `ui.noReply`“（对方暂未回应）”、`ui.waitingReply`“等待回应”、`ui.reconnecting`“重连中”、`ui.serverUnavailable`“服务端不可连接”、`ui.sessionExpired`“会话已失效，请重新登录。”、`ui.incompleteAssembly`“组合不完整”、`ui.moduleNotLoaded`“模块未装载”、`ui.chapterKicker`“序章 / 第一周”、`ui.startBriefing` 开场白、`ui.hudKicker`“灰港 / 序章”、`ui.siteLabel`“灰港现场”、`ui.sceneLabel`“灰港近城”、`ui.consoleTitle`“灰港控制台” | [客户端](../architecture/client-and-rendering.md) |
 | | `lexicons.*` | 规则与评估用的关键词表，见下 | 照抄下方 YAML |
 
 ```yaml

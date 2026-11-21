@@ -176,7 +176,7 @@ COMMIT
 
 | type | issuer | payload | 处理模块 | 成功时的事件 | 常见拒绝原因码 |
 |---|---|---|---|---|---|
-| `campaign.start` | player、system | `{ factionId }` | world（另有 comms、scenario 和宿主钩子） | `CampaignStarted`、`DelegationCreated`、`MessageSent`、`KnowledgeGranted`，并安排伤员期限与剧情卡 job | `campaign-exists`、`unknown-faction`、`budget-exhausted` |
+| `campaign.start` | player、system | `{ factionId }` | world（另有 comms、scenario 和宿主钩子） | `CampaignStarted`、`DelegationCreated`、`MessageSent`、`KnowledgeGranted`，并安排伤员期限与剧情卡 job | `campaign-exists`、`unknown-faction`、`world-tick-not-zero`、`budget-exhausted` |
 | `dialogue.say` | player | `{ targetAgentId, text }`（1–300 字） | comms | `DialogueSubmitted` | `paused`、`relay-down`、`unknown-target`、`invalid-params` |
 | `speech.commit` | agent、system | `{ channel: "dialogue"\|"message"\|"broadcast", conversationId: string\|null, audience: string[], approvedSpeechArtifactRef, intentKind, replyToId: string\|null }` | comms | `DialogueSubmitted` 或 `MessageSent` | `speech-not-approved`、`relay-down`、`paused`、`no-authority`（无广播权） |
 | `seat.say` | operator | `{ to: string[], text }`（1–200 字，真人席位直接写的话） | comms | `MessageSent`（channel `seat`，没有 speech artifact） | `paused`、`relay-down`、`no-authority` |
@@ -349,7 +349,7 @@ receipt 与 `TaskFailed` 的 `reasonCode` 只能取下表的值；同一个码�
 | 通信 | `relay-down`、`speech-not-approved`、`evidence-not-held`、`secret-not-shareable` |
 | 协议 | `invalid-terms`、`obligor-not-party`、`deadline-out-of-range`、`not-a-party`、`unknown-party`、`counter-limit-reached`、`agreement-not-open`、`already-responded` |
 | 任务 | `team-busy`、`capability-missing`、`route-unavailable`、`route-closed`、`insufficient-resource`、`draw-limit-exceeded`、`over-capacity`、`participant-unavailable`、`team-not-at-origin`、`task-not-cancellable`、`not-invited`、`invitation-closed` |
-| 政策与剧情 | `no-change`、`unknown-policy`、`card-not-draft`、`card-not-triggered`、`card-not-found`、`card-already-triggered`、`invalid-effect`、`campaign-exists`、`unknown-faction` |
+| 政策与剧情 | `no-change`、`unknown-policy`、`card-not-draft`、`card-not-triggered`、`card-not-found`、`card-already-triggered`、`invalid-effect`、`campaign-exists`、`unknown-faction`、`world-tick-not-zero` |
 | Agent 拒绝理由（`task.respond`、对白意图用） | `danger`、`duty`、`past-breach`、`low-trust`、`lack-resources`、`policy`、`need-guarantee`、`injured`、`busy`、`none` |
 
 ## 10. 内容 schema 要点

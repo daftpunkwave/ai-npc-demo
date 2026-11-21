@@ -37,6 +37,7 @@ export const contentLoreSchema = z
       .object({
         id: textSchema,
         title: textSchema,
+        motionTick: z.number().int().positive(),
         publicPressure: textSchema,
       })
       .strict(),
