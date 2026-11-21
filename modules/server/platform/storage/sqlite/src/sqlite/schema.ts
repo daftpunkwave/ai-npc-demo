@@ -17,6 +17,7 @@ export const BRANCH_TABLES = [
   "command_receipts",
   "speech_commits",
   "jobs",
+  "rule_failures",
   "consumer_offsets",
   "consumer_inbox",
   "conversation_lines",

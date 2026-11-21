@@ -513,6 +513,34 @@ describe("服务端宿主", () => {
       queues: { turnsQueued: 0, turnsRunning: 0, maintenanceQueued: 0, modelQueue: 0 },
     });
     expect(allowed.json<{ readonly modules: readonly unknown[] }>().modules.length).toBeGreaterThan(0);
+    // 死信与重试记录出现在健康摘要，便于运营在浏览器端定位失败位置。
+    host.storage.transact((tx) => {
+      tx.branch(host.branchId).table("rule_failures").put({
+        phase: "job",
+        subject_id: "job-poison",
+        detail: "",
+        attempts: 3,
+        reason_code: "plugin-failed",
+        last_error: "注入的失败消息",
+        status: "failed",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      });
+    });
+    const withFailure = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(withFailure.statusCode).toBe(200);
+    expect(withFailure.json()).toMatchObject({
+      recentFailures: [
+        {
+          code: "plugin-failed",
+          safeMessage: expect.stringContaining("job job-poison"),
+          occurredAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
     const moduleCatalog = await host.app.inject({
       method: "GET",
       url: "/api/v1/console/modules?realm=client",

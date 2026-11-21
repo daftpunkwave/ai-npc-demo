@@ -5,7 +5,13 @@
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { DomainError, canonicalJson, type Json, type StoragePort } from "@ai-npc/contracts";
-import type { Authority } from "@ai-npc/authority";
+import {
+  clearRuleFailure,
+  readRuleFailure,
+  workerFailureIdentity,
+  writeRuleFailure,
+  type Authority,
+} from "@ai-npc/authority";
 import type { ClockState } from "@ai-npc/module-sdk";
 import type { HostServices } from "@ai-npc/contracts";
 import { advanceWorldTick, catchUpWorldTick } from "../tick";
@@ -75,6 +81,57 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     }
   };
 
+  /**
+   * 持久化 worker 失败的位置、tick 与消息；健康摘要据此在重启后仍能解释 degraded 原因。
+   * 记录自身失败只写日志，不覆盖已经发生的推进错误。
+   */
+  const recordWorkerFailure = (error: unknown): void => {
+    const message = error instanceof Error ? error.message : String(error);
+    let worldTick: number | null = null;
+    try {
+      storage.transact((tx) => {
+        const previous = readRuleFailure(tx, active.branchId, workerFailureIdentity);
+        writeRuleFailure(tx, active.branchId, workerFailureIdentity, {
+          attempts: (previous?.attempts ?? 0) + 1,
+          error,
+          deadLettered: true,
+          nowIso: host.nowIso(),
+        });
+      });
+      worldTick = clockState().worldTick;
+    } catch (recordError) {
+      host.logger.error("worker 失败状态持久化失败", {
+        message: recordError instanceof Error ? recordError.message : String(recordError),
+      });
+    }
+    recordLifecycleEvent("WorkerFailed", "system:tick-worker", { message, worldTick });
+  };
+
+  /** 清理已恢复的 worker 失败记录；清理失败时保留记录，健康状态继续报告 degraded。 */
+  const clearWorkerFailure = (): void => {
+    try {
+      storage.transact((tx) => clearRuleFailure(tx, active.branchId, workerFailureIdentity));
+    } catch (error) {
+      host.logger.error("worker 恢复状态清理失败", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  /** 读取持久化的 worker 失败记录；存储不可用时按 degraded 处理，不伪造 ready。 */
+  const hasPersistedWorkerFailure = (): boolean => {
+    try {
+      return storage.transact(
+        (tx) => readRuleFailure(tx, active.branchId, workerFailureIdentity)?.status === "failed",
+      );
+    } catch (error) {
+      host.logger.error("读取 worker 失败状态失败", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+  };
+
   /** 暂停/继续：版本冲突与非法参数分别映射为领域错误，继续时按断线状态重新计时。 */
   const control = (mode: "pause" | "start", expectedRunVersion: number) => {
     const result = mode === "pause"
@@ -88,6 +145,27 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     // 没有玩家连接时恢复时钟，同样要进入断线自动暂停计时。
     if (mode === "start" && playerConnections === 0) {
       scheduleAutoPause();
+    }
+    // 运营恢复必须显式复位失败的 worker；仍失败时拒绝恢复并保留原因，而不是继续静默停摆。
+    if (mode === "start" && workerFailed) {
+      workerFailed = false;
+      try {
+        catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
+      } catch (error) {
+        workerFailed = true;
+        recordWorkerFailure(error);
+        app?.notifyWorldChanged();
+        throw new DomainError("not-ready", "worker 恢复失败，当前 tick 仍有未处理的失败项", {
+          cause: error,
+          details: { branchId: active.branchId },
+        });
+      }
+      clearWorkerFailure();
+      recordLifecycleEvent("WorkerRecovered", "system:tick-worker", {
+        worldTick: result.clock.worldTick,
+      });
+      schedule();
+      app?.notifyWorldChanged();
     }
     return clockView(result.clock);
   };
@@ -163,7 +241,7 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     workerTimer.unref();
   };
 
-  /** 单次推进：保持 busy 标记避免重入，失败后停止后续推进。 */
+  /** 单次推进：保持 busy 标记避免重入，失败后停止后续推进并持久化原因。 */
   function runWorker(): void {
     if (workerBusy) {
       return;
@@ -179,10 +257,12 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
           branchId: active.branchId,
           targetTick: clock.worldTick + 1,
         });
+        clearWorkerFailure();
         app?.notifyWorldChanged();
       }
     } catch (error) {
       workerFailed = true;
+      recordWorkerFailure(error);
       host.logger.error("host worker 失败，已停止推进", { message: error instanceof Error ? error.message : String(error) });
     } finally {
       workerBusy = false;
@@ -199,13 +279,15 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     clockState,
     control,
     handlePlayerConnections,
-    healthStatus: () => (workerFailed ? "degraded" : "ready"),
+    healthStatus: () => (workerFailed || hasPersistedWorkerFailure() ? "degraded" : "ready"),
     start(): void {
       try {
         // 重启或恢复后先补完当前 tick，再开始按间隔推进。
         catchUpWorldTick({ storage, clock: runtime.clock, authority, branchId: active.branchId });
+        clearWorkerFailure();
       } catch (error) {
         workerFailed = true;
+        recordWorkerFailure(error);
         host.logger.error("host 启动补完当前 tick 失败，已停止推进", {
           message: error instanceof Error ? error.message : String(error),
           branchId: active.branchId,

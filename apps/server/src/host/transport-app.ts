@@ -7,7 +7,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Authority } from "@ai-npc/authority";
-import type { AuthContext, HostServices, ResolvedModuleSet, StartOption } from "@ai-npc/contracts";
+import { listRuleFailures, type RuleFailureRecord } from "@ai-npc/authority";
+import type { AuthContext, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
 import type { GameContent } from "@ai-npc/module-sdk";
 import { clockView } from "./clock-view";
 import type { HostLifecycle } from "./lifecycle";
@@ -34,6 +35,31 @@ export interface TransportAppInput {
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
   readonly disposeOnFailure: () => Promise<void>;
+}
+
+/** 健康摘要中的失败描述：只说明位置与状态，不携带处理器内部消息。 */
+function failureSafeMessage(record: RuleFailureRecord): string {
+  const state = record.status === "failed" ? "已停止重试" : "等待重试";
+  switch (record.phase) {
+    case "job":
+      return `job ${record.subjectId} 连续失败，${state}`;
+    case "event":
+      return `事件消费者 ${record.subjectId} 处理事件 ${record.detail} 失败，${state}`;
+    case "clock-step":
+      return `时钟步骤 ${record.subjectId} 在 tick ${record.detail} 失败，${state}`;
+    case "worker":
+      return `tick worker 失败，${state}`;
+  }
+}
+
+/** 汇总最近失败；健康摘要只读存储，不触发重试或推进。 */
+function recentFailures(storage: StoragePort, branchId: string) {
+  return listRuleFailures(storage, branchId, 10).map((record) => ({
+    code: record.reasonCode,
+    safeMessage: failureSafeMessage(record),
+    occurredAt: record.updatedAt,
+    traceId: null,
+  }));
 }
 
 /** 开局选项：只列出内容中启用的开局，派系名、首个委托与接触角色都取自内容包索引。 */
@@ -160,7 +186,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             },
             laggingAgents: 0,
             budgets: [],
-            recentFailures: [],
+            recentFailures: recentFailures(runtime.storage, active.branchId),
           };
         },
         modules: (realm) => runtime.moduleAdmin.modules(realm),
