@@ -1,5 +1,5 @@
 /**
- * 验证通信模块的开局消息、送达延迟、证据分享、已批准对白提交，以及角色移动后的频道与剧情卡广播的投递冻结。
+ * 验证通信模块的开局消息、位置口径与送达延迟、证据分享、已批准对白提交，以及角色移动后的频道与剧情卡广播的投递冻结。
  * 依赖真实 SQLite、世界/通信/剧情模块、内容包与 authority；不启动网络。
  * 禁止直接调用投影或跳过中继状态。
  */
@@ -134,13 +134,13 @@ describe("通信", () => {
 
     const remote = value.authority.commands.execute(
       playerAuth(value),
-      gameCommandEnvelope("dialogue.say", { targetAgentId: "human-independent", text: "隘口情况如何？" }, value.host.ids("cmd")),
+      gameCommandEnvelope("dialogue.say", { targetAgentId: "species-fauna", text: "隘口情况如何？" }, value.host.ids("cmd")),
     );
     expect(remote.commandStatus).toBe("accepted");
     const remotePayload = payloadOf(readGameEvents(value), "DialogueSubmitted");
     expect(remotePayload).toMatchObject({ channel: "relay" });
     const remoteDeliveries = remotePayload["deliveries"] as unknown as readonly { readonly principalId: string; readonly deliverAtTick: number }[];
-    expect(remoteDeliveries.find((item) => item.principalId === "human-independent")?.deliverAtTick).toBe(0);
+    expect(remoteDeliveries.find((item) => item.principalId === "species-fauna")?.deliverAtTick).toBe(0);
   });
 
   it("中继降级时异地对话延迟 2 tick，中断时拒绝", async () => {
@@ -149,18 +149,83 @@ describe("通信", () => {
     setRelay(value, 25);
     const degraded = value.authority.commands.execute(
       playerAuth(value),
-      gameCommandEnvelope("dialogue.say", { targetAgentId: "human-independent", text: "听得到吗？" }, value.host.ids("cmd")),
+      gameCommandEnvelope("dialogue.say", { targetAgentId: "species-fauna", text: "听得到吗？" }, value.host.ids("cmd")),
     );
     expect(degraded.commandStatus).toBe("accepted");
     const deliveries = payloadOf(readGameEvents(value), "DialogueSubmitted")["deliveries"] as unknown as readonly {
       readonly principalId: string;
       readonly deliverAtTick: number;
     }[];
-    expect(deliveries.find((item) => item.principalId === "human-independent")?.deliverAtTick).toBe(2);
+    expect(deliveries.find((item) => item.principalId === "species-fauna")?.deliverAtTick).toBe(2);
     setRelay(value, 0);
     const down = value.authority.commands.execute(
       playerAuth(value),
-      gameCommandEnvelope("dialogue.say", { targetAgentId: "human-independent", text: "还在吗？" }, value.host.ids("cmd")),
+      gameCommandEnvelope("dialogue.say", { targetAgentId: "species-fauna", text: "还在吗？" }, value.host.ids("cmd")),
+    );
+    expect(down.commandStatus).toBe("rejected");
+    expect(down.reasonCode).toBe("relay-down");
+  });
+
+  it("玩家与开局 AI 党魁同在灰港时当面交谈，中继降级也不延迟", async () => {
+    const speech: ApprovedSpeech = {
+      text: "我的人在隘口等你的人。",
+      agentId: "human-independent",
+      turnId: "turn-000000000003",
+      branchId: "br-000000000000",
+      audience: ["species-fauna"],
+      channel: "dialogue",
+      approved: true,
+    };
+    const reader: ApprovedSpeechReader = {
+      read: (ref) => (ref === "art-000000000003" ? speech : null),
+    };
+    const value = await harness({ approvedSpeech: reader });
+    expect(start(value).commandStatus).toBe("accepted");
+    const say = (text: string) =>
+      value.authority.commands.execute(
+        playerAuth(value),
+        gameCommandEnvelope("dialogue.say", { targetAgentId: "human-independent", text }, value.host.ids("cmd")),
+      );
+
+    expect(say("岑雁，隘口的名额还在吗？").commandStatus).toBe("accepted");
+    const faceToFace = payloadOf(readGameEvents(value), "DialogueSubmitted");
+    expect(faceToFace).toMatchObject({ channel: "face-to-face" });
+    expect(deliveryTick(deliveriesOf(faceToFace), "human-independent")).toBe(0);
+    expect(deliveryTick(deliveriesOf(faceToFace), "player-1")).toBe(0);
+
+    // 中继降级只影响异地通信；无角色记录的 AI 党魁按派系驻地与玩家同在灰港，仍当面送达。
+    setRelay(value, 25);
+    expect(say("中继降级了，你听得到吗？").commandStatus).toBe("accepted");
+    const degradedSameNode = payloadOf(readGameEvents(value), "DialogueSubmitted");
+    expect(degradedSameNode).toMatchObject({ channel: "face-to-face" });
+    expect(deliveryTick(deliveriesOf(degradedSameNode), "human-independent")).toBe(0);
+
+    // AI 党魁作为说话者向异地主体发言时仍按中继降级延迟 2 tick。
+    const commit = value.authority.commands.execute(
+      strategicAuth(value, "human-independent"),
+      gameCommandEnvelope(
+        "speech.commit",
+        {
+          channel: "dialogue",
+          conversationId: null,
+          audience: ["species-fauna"],
+          approvedSpeechArtifactRef: "art-000000000003",
+          intentKind: "answer",
+          replyToId: null,
+        },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(commit.commandStatus).toBe("accepted");
+    const relayed = payloadOf(readGameEvents(value), "DialogueSubmitted");
+    expect(relayed).toMatchObject({ channel: "relay", speakerId: "human-independent" });
+    expect(deliveryTick(deliveriesOf(relayed), "species-fauna")).toBe(2);
+    expect(deliveryTick(deliveriesOf(relayed), "human-independent")).toBe(0);
+
+    setRelay(value, 0);
+    const down = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("dialogue.say", { targetAgentId: "species-fauna", text: "喂？" }, value.host.ids("cmd")),
     );
     expect(down.commandStatus).toBe("rejected");
     expect(down.reasonCode).toBe("relay-down");
@@ -185,15 +250,18 @@ describe("通信", () => {
     setRelay(value, 25);
     const accepted = value.authority.commands.execute(
       playerAuth(value),
-      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["human-independent"] }, value.host.ids("cmd")),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["species-fauna"] }, value.host.ids("cmd")),
     );
     expect(accepted.commandStatus).toBe("accepted");
-    const before = readGameEvents(value).filter((event) => event.type === "KnowledgeGranted");
-    expect(before.some((event) => (event.payload as { readonly principalId?: string }).principalId === "human-independent")).toBe(false);
+    const shareGrants = () =>
+      readGameEvents(value).filter((event) => {
+        const payload = event.payload as { readonly principalId?: string; readonly via?: string };
+        return event.type === "KnowledgeGranted" && payload.principalId === "species-fauna" && payload.via === "share";
+      });
+    expect(shareGrants()).toHaveLength(0);
     setGameClock(value, { worldTick: 3, mode: "running" });
     value.authority.jobs.runDue(value.branchId, 3);
-    const after = readGameEvents(value).filter((event) => event.type === "KnowledgeGranted");
-    expect(after.some((event) => (event.payload as { readonly principalId?: string }).principalId === "human-independent")).toBe(true);
+    expect(shareGrants()).toHaveLength(1);
   });
 
   it("已批准对白以消息提交，受众不匹配时拒绝", async () => {
@@ -308,19 +376,19 @@ describe("通信", () => {
     const say = (text: string) =>
       value.authority.commands.execute(
         playerAuth(value),
-        gameCommandEnvelope("dialogue.say", { targetAgentId: "human-independent", text }, value.host.ids("cmd")),
+        gameCommandEnvelope("dialogue.say", { targetAgentId: "species-fauna", text }, value.host.ids("cmd")),
       );
 
     expect(say("隘口的名额还在吗？").commandStatus).toBe("accepted");
     const normal = payloadOf(readGameEvents(value), "DialogueSubmitted");
     expect(normal).toMatchObject({ channel: "relay" });
-    expect(deliveryTick(deliveriesOf(normal), "human-independent")).toBe(3);
+    expect(deliveryTick(deliveriesOf(normal), "species-fauna")).toBe(3);
     expect(deliveryTick(deliveriesOf(normal), "player-1")).toBe(3);
 
     setRelay(value, 25);
     expect(say("中继降级了，收到回话").commandStatus).toBe("accepted");
     const degraded = payloadOf(readGameEvents(value), "DialogueSubmitted");
-    expect(deliveryTick(deliveriesOf(degraded), "human-independent")).toBe(5);
+    expect(deliveryTick(deliveriesOf(degraded), "species-fauna")).toBe(5);
 
     setRelay(value, 0);
     const dialogueCount = () => readGameEvents(value).filter((event) => event.type === "DialogueSubmitted").length;
@@ -337,7 +405,7 @@ describe("通信", () => {
       agentId: "npc-wenyuan",
       turnId: "turn-000000000002",
       branchId: "br-000000000000",
-      audience: ["player-1", "human-independent"],
+      audience: ["player-1", "species-fauna"],
       channel: "message",
       approved: true,
     };
@@ -356,7 +424,7 @@ describe("通信", () => {
         {
           channel: "message",
           conversationId: null,
-          audience: ["player-1", "human-independent"],
+          audience: ["player-1", "species-fauna"],
           approvedSpeechArtifactRef: "art-000000000002",
           intentKind: "answer",
           replyToId: null,
@@ -372,7 +440,7 @@ describe("通信", () => {
       playerAuth(value),
       gameCommandEnvelope(
         "information.share",
-        { evidenceId: "ev-water-ledger", audience: ["npc-wenyuan", "human-independent"] },
+        { evidenceId: "ev-water-ledger", audience: ["npc-wenyuan", "species-fauna"] },
         value.host.ids("cmd"),
       ),
     );
@@ -403,20 +471,28 @@ describe("通信", () => {
     const normalDeliveries = deliveriesOf(normal.payload);
     expect(normal.audience).toEqual([{ kind: "public" }]);
     // 17 名主体 + 署名的剧情卡来源 npc-suhui；署名来源没有位置，按异地投递。
+    // 人类 AI 党魁按内容包派系驻地与玩家同在灰港，外域 Agent 按世界状态在各自领地。
     expect(normalDeliveries).toHaveLength(18);
     expect(deliveryTick(normalDeliveries, "npc-wenyuan")).toBe(6);
     expect(deliveryTick(normalDeliveries, "npc-suhui")).toBe(7);
-    expect(deliveryTick(normalDeliveries, "human-independent")).toBe(7);
-    expect(deliveryTick(normalDeliveries, "human-neutral")).toBe(7);
+    expect(deliveryTick(normalDeliveries, "human-independent")).toBe(6);
+    expect(deliveryTick(normalDeliveries, "human-neutral")).toBe(6);
+    expect(deliveryTick(normalDeliveries, "species-fauna")).toBe(7);
 
     const degraded = await broadcastWithRelay(25);
     const degradedDeliveries = deliveriesOf(degraded.payload);
     expect(deliveryTick(degradedDeliveries, "npc-wenyuan")).toBe(6);
     expect(deliveryTick(degradedDeliveries, "npc-suhui")).toBe(9);
     expect(deliveryTick(degradedDeliveries, "species-fauna")).toBe(9);
+    expect(deliveryTick(degradedDeliveries, "human-independent")).toBe(6);
 
     const down = await broadcastWithRelay(0);
     expect(deliveriesOf(down.payload)).toEqual([
+      { principalId: "human-alien-accord", deliverAtTick: 6 },
+      { principalId: "human-earth-alliance", deliverAtTick: 6 },
+      { principalId: "human-independent", deliverAtTick: 6 },
+      { principalId: "human-neutral", deliverAtTick: 6 },
+      { principalId: "human-pacifist", deliverAtTick: 6 },
       { principalId: "npc-ahe", deliverAtTick: 6 },
       { principalId: "npc-luchen", deliverAtTick: 6 },
       { principalId: "npc-muzhi", deliverAtTick: 6 },
@@ -431,6 +507,11 @@ describe("通信", () => {
       {
         kind: "principals",
         ids: [
+          "human-alien-accord",
+          "human-earth-alliance",
+          "human-independent",
+          "human-neutral",
+          "human-pacifist",
           "npc-ahe",
           "npc-luchen",
           "npc-muzhi",
@@ -453,13 +534,13 @@ describe("通信", () => {
       playerAuth(value),
       gameCommandEnvelope(
         "information.share",
-        { evidenceId: "ev-water-ledger", audience: ["human-independent"] },
+        { evidenceId: "ev-water-ledger", audience: ["species-fauna"] },
         value.host.ids("cmd"),
       ),
     );
     expect(share.commandStatus).toBe("accepted");
     const frozen = deliveriesOf(payloadOf(readGameEvents(value), "InformationShared"));
-    expect(deliveryTick(frozen, "human-independent")).toBe(3);
+    expect(deliveryTick(frozen, "species-fauna")).toBe(3);
     expect(knowledgeJobs(value)).toHaveLength(1);
     expect(knowledgeJobs(value)[0]?.dueTick).toBe(3);
 
@@ -467,7 +548,7 @@ describe("通信", () => {
     const shareGrants = () =>
       readGameEvents(value).filter((event) => {
         const payload = event.payload as { readonly principalId?: string; readonly via?: string };
-        return event.type === "KnowledgeGranted" && payload.principalId === "human-independent" && payload.via === "share";
+        return event.type === "KnowledgeGranted" && payload.principalId === "species-fauna" && payload.via === "share";
       });
     setGameClock(value, { worldTick: 2, mode: "running" });
     value.authority.jobs.runDue(value.branchId, 2);
@@ -501,8 +582,22 @@ describe("通信", () => {
     // 玩家由内容包声明在灰港，替换端口返回的温原也在灰港：同节点立即送达。
     expect(port.sameNode("player-1", "npc-wenyuan")).toBe(true);
     expect(port.deliverAt("dialogue", "player-1", "npc-wenyuan")).toBe(10);
-    // 岑雁不在替换端口返回的位置里，按异地降级延迟 2 tick。
-    expect(port.deliverAt("dialogue", "player-1", "human-independent")).toBe(12);
+    // 岑雁没有角色记录，按内容包派系驻地（灰港）与玩家同节点，不按异地延迟。
+    expect(port.sameNode("player-1", "human-independent")).toBe(true);
+    expect(port.deliverAt("dialogue", "player-1", "human-independent")).toBe(10);
+    // 追风有角色记录，但替换端口没有返回位置；退回内容包领地（隘口），按异地降级延迟 2 tick。
+    expect(port.sameNode("player-1", "species-fauna")).toBe(false);
+    expect(port.deliverAt("dialogue", "player-1", "species-fauna")).toBe(12);
+
+    // AI 党魁一旦有世界状态记录（例如未来允许其移动），世界状态优先于内容包的静态驻地。
+    const movedLeader = { ...talker, agentId: "human-independent", factionId: "human-independent", nodeId: "pass" };
+    const movedPort = createCommsPort(() => createMemoryTx(10), value.gameContent, value.host.ids, {
+      ...world,
+      character: (agentId) =>
+        agentId === movedLeader.agentId ? movedLeader : agentId === talker.agentId ? talker : null,
+    });
+    expect(movedPort.sameNode("player-1", "human-independent")).toBe(false);
+    expect(movedPort.deliverAt("dialogue", "player-1", "human-independent")).toBe(12);
 
     // 指标由替换端口提供：缺失即按中继中断处理，不读取任何世界聚合。
     const down = createCommsPort(() => createMemoryTx(10), value.gameContent, value.host.ids, {
@@ -510,7 +605,7 @@ describe("通信", () => {
       meters: () => null,
     });
     expect(down.relayState()).toBe("down");
-    expect(down.deliverAt("message", "player-1", "human-independent")).toBe("relay-down");
+    expect(down.deliverAt("message", "player-1", "species-fauna")).toBe("relay-down");
   });
 
   it("开局前缺少世界指标时中继按中断处理", async () => {
@@ -522,7 +617,7 @@ describe("通信", () => {
       { meters: () => null, character: () => null },
     );
     expect(port.relayState()).toBe("down");
-    expect(port.deliverAt("dialogue", "player-1", "human-independent")).toBe("relay-down");
+    expect(port.deliverAt("dialogue", "player-1", "species-fauna")).toBe("relay-down");
     expect(port.sameNode("player-1", "npc-wenyuan")).toBe(false);
 
     const say = value.authority.commands.execute(

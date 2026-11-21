@@ -495,6 +495,7 @@ export interface GameWorldPort {
 /**
  * 通信模块读取世界事实的最小只读视图：指标与角色位置。
  * 组合根注入已绑定的世界端口；通信模块不再按世界模块 ID 直接读取聚合。
+ * 世界状态只记录有角色记录的主体位置；人类 AI 党魁的位置由内容包派系驻地补足。
  */
 export type CommsWorldFacts = Pick<GameWorldPort, "meters" | "character">;
 
@@ -634,7 +635,7 @@ export interface CommsKnowledgeView {
 
 export interface GameCommsPort {
   relayState(): "normal" | "degraded" | "down";
-  /** 两个主体此刻是否在同一节点；无位置主体（战略 Agent、未知主体）与任何人都不同节点。 */
+  /** 两个主体此刻是否在同一节点；既无角色记录也不属于内容包派系的未知主体与任何人都不同节点。 */
   sameNode(fromId: string, toId: string): boolean;
   deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down";
   holds(principalId: string, itemId: string): boolean;

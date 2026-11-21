@@ -20,7 +20,7 @@ import {
   type TeamView,
   type TermKind,
 } from "@ai-npc/contracts";
-import { addAmounts } from "@ai-npc/module-sdk";
+import { addAmounts, factionStandingNode } from "@ai-npc/module-sdk";
 import type {
   AgreementView as AgreementPortView,
   GameActionsPort,
@@ -209,10 +209,8 @@ function characterViews(input: {
       if (presentation.playerSeat !== undefined) {
         continue;
       }
-      const nodeId =
-        faction.factionHomeNodeId ??
-        faction.outpostNodeId ??
-        faction.territoryNodeId;
+      // 无角色记录的人类 AI 党魁用内容包派系驻地补位，与通信的位置口径共用同一纯函数。
+      const nodeId = factionStandingNode(faction);
       if (nodeId === undefined) {
         continue;
       }

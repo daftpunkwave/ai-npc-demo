@@ -7,6 +7,7 @@
 import type { MessageIntentKind, ReasonCode } from "@ai-npc/contracts";
 import { DomainError } from "@ai-npc/contracts";
 import {
+  factionStandingNode,
   principalsAudience,
   type CommsDialogueLineView,
   type CommsKnowledgeView,
@@ -49,8 +50,11 @@ class StandardCommsPort implements GameCommsPort {
   }
 
   /**
-   * 同一份事务内位置：角色经世界只读端口取当前节点，玩家取内容包声明的节点。
-   * 战略 Agent 不在图上，未知主体也不在世界状态里，两者都没有位置（与任何人都不同节点）。
+   * 同一份事务内的位置，按“世界状态优先，无角色记录者取内容包驻地”判定：
+   * 有角色记录的 Agent（8 名公社支持者与 3 名外域 Agent）取世界状态当前节点，随任务移动更新；
+   * 玩家取内容包声明的玩家节点；无角色记录的人类 AI 党魁以派系 ID 行动，取内容包派系驻地链。
+   * 本切片 AI 党魁不参加任务、没有移动路径；将来若允许其移动，必须把位置写入世界状态，
+   * 否则这里的派系驻地会与地图位置不一致。未知主体没有位置。
    */
   private principalNode(principalId: string): string | null {
     const character = this.world.character(principalId);
@@ -60,7 +64,8 @@ class StandardCommsPort implements GameCommsPort {
     if (principalId === this.content.playerPrincipalId) {
       return this.content.playerNodeId;
     }
-    return null;
+    const faction = this.content.factions.get(principalId);
+    return faction === undefined ? null : factionStandingNode(faction) ?? null;
   }
 
   /** 两个主体此刻是否在同一节点；任一方没有位置时都不算同节点。 */

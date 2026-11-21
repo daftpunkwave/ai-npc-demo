@@ -87,7 +87,7 @@
 | 角色 Character | 所在节点、`injuredUntilTick`、当前任务 | 受伤期间不能参与任务，但可以交谈；位置只随参与的任务改变 |
 | 群体 Group | `grp-injured-migrants`：位于 pass，6 名伤员，`deadlineTick = 48`，状态 waiting/rescued/worsened | tick 48 时，若既未救出也没有进行中的救援任务，状态变为 worsened：提交 `GroupWorsened`，`migration.safety −10`；之后仍可救援 |
 
-**位置口径：** 玩家驻在 `grayharbor`，四名 AI 党魁和八名公社支持者也从灰港开局。外域 Agent 从各自驻地开始：追风在隘口、青枝在果园、洛在锚区。Agent 参与任务移动后，统一使用世界状态中的当前位置判定同节点。
+**位置口径：** 位置按“世界状态优先，无角色记录者取内容包驻地”判定。玩家驻在 `grayharbor`。有角色记录的 Agent 取世界状态中的当前位置，参加任务移动后随之更新：八名公社支持者从灰港开局，外域 Agent 从各自领地开局（追风在隘口、青枝在果园、洛在锚区）。无角色记录的派系主体取内容包派系驻地链（`factionHomeNodeId`，缺省依次退回 `outpostNodeId`、`territoryNodeId`）；本序章五个人类派系的驻地都是灰港，因此四名 AI 党魁以派系 ID 行动时也在灰港。AI 党魁不参加任务、没有移动路径；若后续允许其移动，必须把位置写入世界状态，不能只改内容包。通信的同节点判定与事件的节点受众都使用这一口径。
 
 ## 6. 任务结算
 

@@ -4,7 +4,7 @@
  * 禁止在这里读写世界状态、生成事件或替代各模块自己的业务校验。
  */
 import type { AudienceSpec, AuthContext, ResourceAmounts, ResourceDelta, ResourceId } from "@ai-npc/contracts";
-import type { GameContent } from "./game-ports";
+import type { GameContent, GameFaction } from "./game-ports";
 
 /** 三种资源的固定顺序，供遍历与稳定投影使用。 */
 export const resourceIds: readonly ResourceId[] = ["supply", "energy", "medical"];
@@ -107,4 +107,15 @@ export function requireGameContent(content: unknown): GameContent {
     throw new TypeError("内容索引缺少游戏模块所需的固定索引");
   }
   return candidate as GameContent;
+}
+
+/**
+ * 内容包声明的派系驻地节点：人类派系优先党部，其次前哨；外域派系只有领地。
+ * 只供没有世界状态角色记录的主体（如人类 AI 党魁）作为位置口径；有角色记录的主体必须先取世界状态，
+ * 这样任务移动后的最新位置不会被内容包的静态驻地覆盖。
+ */
+export function factionStandingNode(
+  faction: Pick<GameFaction, "factionHomeNodeId" | "outpostNodeId" | "territoryNodeId">,
+): string | undefined {
+  return faction.factionHomeNodeId ?? faction.outpostNodeId ?? faction.territoryNodeId;
 }

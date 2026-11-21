@@ -293,7 +293,7 @@ type AudienceSpec =
 宿主在事件提交后计算每个主体是否“有资格获知”（硬 ACL），结果交给感知模块决定何时、以何种细度形成观察（见 [感知](../agent/perception.md) 第 11 节）。规则：
 
 1. `public`：所有主体都有资格。例外：通信事件还必须在 `deliveries` 中有该主体；公开广播中继中断时只冻结与发布者同节点的接收者（[规则](../game/rules.md) 第 9 节）。
-2. `node`：事件提交时位于该节点的主体有资格。玩家位于 `grayharbor`，AI 党魁、支持者及外域 Agent 按世界状态中的当前位置判定。序章开局位置见 [rules.md — 队伍、角色与群体](../game/rules.md#5-队伍角色与群体)。
+2. `node`：事件提交时位于该节点的主体有资格。玩家位于 `grayharbor`；有角色记录的 Agent 按世界状态中的当前位置判定，无角色记录的派系主体按内容包派系驻地判定。位置口径与序章开局位置见 [rules.md — 队伍、角色与群体](../game/rules.md#5-队伍角色与群体)。
 3. `principals` 与 `faction`：名单内主体有资格。
 4. `system`：任何 gameplay 主体都没有资格。
 5. 送达时间：通信事件按本主体的 `deliveries[].deliverAtTick` 送达，不取全体最大值；无该主体条目则不送达。其余事件在提交的 tick 送达。
