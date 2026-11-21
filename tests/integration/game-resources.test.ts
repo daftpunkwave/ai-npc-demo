@@ -59,6 +59,38 @@ describe("轻资源", () => {
     expect(resources.adjust({ stockpileId: "sp-commons", delta: { supply: -50 }, reason: "test" })).toMatchObject({ ok: false, reasonCode: "insufficient-resource" });
   });
 
+  it("非 clamp 调整按可用量整笔校验，越界时拒绝且不改库存", () => {
+    const resources = port();
+    expect(resources.consume({
+      stockpileId: "sp-commons",
+      delta: { supply: 55, energy: 0, medical: 0 },
+      reason: "fixture",
+      taskId: null,
+      byId: "player-1",
+      fromReservation: false,
+    })).toMatchObject({ ok: true });
+    expect(resources.available("sp-commons", "supply")).toBe(5);
+
+    // 库存 5、reserved 0、申请 -100：整笔失败，不能静默扣到 0。
+    expect(resources.adjust({ stockpileId: "sp-commons", delta: { supply: -100 }, reason: "test" })).toMatchObject({
+      ok: false,
+      reasonCode: "insufficient-resource",
+    });
+    expect(resources.stockpile("sp-commons")).toMatchObject({ amount: { supply: 5 }, reserved: { supply: 0 } });
+
+    // 多资源中能源不足：供给不得被部分扣减。
+    expect(
+      resources.adjust({ stockpileId: "sp-commons", delta: { supply: -1, energy: -13 }, reason: "test" }),
+    ).toMatchObject({ ok: false, reasonCode: "insufficient-resource" });
+    expect(resources.stockpile("sp-commons")).toMatchObject({ amount: { supply: 5, energy: 12 } });
+
+    // 可用量以内的调整照常精确扣减。
+    expect(resources.adjust({ stockpileId: "sp-commons", delta: { supply: -5 }, reason: "test" })).toMatchObject({
+      ok: true,
+    });
+    expect(resources.stockpile("sp-commons")).toMatchObject({ amount: { supply: 0 } });
+  });
+
   it("按基线计算展示等级", () => {
     const resources = port();
     expect(resources.level("sp-commons")).toEqual({
