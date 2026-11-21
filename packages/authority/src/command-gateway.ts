@@ -262,6 +262,20 @@ export class CommandGateway {
             throw new CommandRejected(hookOutcome.reasonCode, hookOutcome.safeMessage);
           }
         }
+        for (const hook of this.registry.hostAfterCommandsFor(type)) {
+          // 宿主钩子直接使用未提交的存储事务，维护 agent_activations 等宿主专用表。
+          const hookOutcome = hook.hook({
+            tx,
+            auth,
+            payload,
+            envelope,
+            worldTick: clock.worldTick,
+          });
+          assertSynchronous(hookOutcome, `命令 ${type} 宿主后续钩子`);
+          if (hookOutcome.kind === "rejected") {
+            throw new CommandRejected(hookOutcome.reasonCode, hookOutcome.safeMessage);
+          }
+        }
         if (speechArtifactRef !== null) {
           if (collector.eventIds.length === 0) {
             throw new CommandRejected("speech-not-approved", "已批准对白没有产生提交事件");

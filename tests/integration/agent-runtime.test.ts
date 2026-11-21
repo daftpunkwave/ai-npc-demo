@@ -361,4 +361,66 @@ describe("Agent runtime 持久状态", () => {
       tx.branch("br-000000000001").table("memory_watermarks").list(),
     )).toHaveLength(0);
   });
+
+  it("CampaignStarted 重放不再因历史配额超限中断感知消费", async () => {
+    const value = await fixture();
+    value.storage.transact((tx) => {
+      const activations = tx.branch("br-000000000001").table("agent_activations");
+      for (let index = 0; index < 15; index += 1) {
+        activations.put({
+          agent_id: `agent-extra-${index}`,
+          status: "active",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        });
+      }
+      tx.branch("br-000000000001").table("domain_events").put({
+        world_seq: 1,
+        event_id: "evt-000000000002",
+        world_tick: 0,
+        type: "CampaignStarted",
+        schema_version: 1,
+        principal_id: "player-1",
+        causation_ids_json: [],
+        correlation_id: "corr-000000000002",
+        audience_json: [{ kind: "public" }],
+        payload_json: {
+          campaignId: "cmp-000000000001",
+          factionId: "human-neutral",
+          playerId: "player-1",
+        },
+        committed_at: "2026-01-01T00:00:00.000Z",
+      });
+    });
+    const runtime = new AgentRuntime({
+      storage: value.storage,
+      host: value.host,
+      content: loadContentPack("content", "earth-2964-v1"),
+      roster: value.roster,
+      profiles: new Map([["human-independent", value.profile]]),
+      moduleDefinitions: new Map([
+        [value.definition.id, value.definition],
+        [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+      ]),
+      scheduling: { plan: () => [] },
+      maxConcurrentTurns: 1,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      runId: "run-000000000001",
+      readWorld: () => ({
+        nodeId: "grayharbor",
+        factionId: "human-independent",
+        worldViewText: "",
+        affairsText: "",
+      }),
+    });
+    await expect(runtime.start()).resolves.toBeUndefined();
+    resources.push({ dispose: () => runtime.dispose() });
+    // 感知消费只推进游标，不补做名册激活，因此既有激活行保持不变。
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("agent_activations").count({ status: "active" }),
+    )).toBe(16);
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("consumer_offsets").get({ consumer_id: "agent.perception.local" }),
+    )).toMatchObject({ last_world_seq: 1 });
+  });
 });

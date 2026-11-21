@@ -17,15 +17,18 @@ import type {
   ClockStepRegistration,
   CommandHandler,
   ContributorScope,
+  HostAfterCommandHook,
   JobHandler,
   RegisteredAfterCommand,
   RegisteredCommand,
+  RegisteredHostAfterCommand,
   RegisteredJob,
   RuleContributor,
   StoredAfterCommandHook,
   StoredClockStep,
   StoredCommandHandler,
   StoredEventConsumer,
+  StoredHostAfterCommandHook,
   StoredJobHandler,
 } from "./types";
 
@@ -101,7 +104,7 @@ export class RuleRegistry {
   private readonly aggregateOwners = new Map<string, string>();
   private readonly commands = new Map<CommandType, RegisteredCommand>();
   private readonly moduleAfterCommands = new Map<CommandType, RegisteredAfterCommand[]>();
-  private readonly hostAfterCommands = new Map<CommandType, RegisteredAfterCommand[]>();
+  private readonly hostAfterCommands = new Map<CommandType, RegisteredHostAfterCommand[]>();
   private readonly jobs = new Map<string, RegisteredJob>();
   private readonly clockSteps: StoredClockStep[] = [];
   private readonly consumers: StoredEventConsumer[] = [];
@@ -286,13 +289,9 @@ export class RuleRegistry {
 
   /**
    * 追加宿主后续钩子；宿主钩子总在游戏模块钩子之后执行。
-   * 宿主不拥有 aggregate_state，因此只获得空写作用域，专用表由宿主自己的服务写入。
+   * 宿主不拥有 Aggregate，钩子直接获得与命令相同的存储事务，用于原子维护宿主专用表。
    */
-  hostAfterCommand<TModules = unknown, TContent = unknown>(
-    ownerId: string,
-    type: CommandType,
-    hook: AfterCommandHook<TModules, TContent>,
-  ): void {
+  hostAfterCommand(ownerId: string, type: CommandType, hook: HostAfterCommandHook): void {
     requireNonEmpty(ownerId, "ownerId", ownerId);
     const parsedType = parseCommandType(type, ownerId, "hostAfterCommand");
     const owner: ContributorScope = {
@@ -300,7 +299,7 @@ export class RuleRegistry {
       ownsAggregates: new Set<string>(),
       order: Number.MAX_SAFE_INTEGER,
     };
-    this.appendAfterCommand(this.hostAfterCommands, parsedType, owner, wrapAfterCommand(hook));
+    this.appendHostAfterCommand(parsedType, owner, hook);
   }
 
   command(type: string): RegisteredCommand | undefined {
@@ -311,11 +310,14 @@ export class RuleRegistry {
     return this.jobs.get(kind);
   }
 
-  /** 返回按“游戏模块注册顺序，宿主最后”排列的后续钩子。 */
+  /** 返回按“游戏模块注册顺序”排列的命令后续钩子。 */
   afterCommandsFor(type: string): readonly RegisteredAfterCommand[] {
-    const moduleHooks = this.moduleAfterCommands.get(type as CommandType) ?? [];
-    const hostHooks = this.hostAfterCommands.get(type as CommandType) ?? [];
-    return [...moduleHooks, ...hostHooks];
+    return this.moduleAfterCommands.get(type as CommandType) ?? [];
+  }
+
+  /** 返回该命令的宿主后续钩子；宿主钩子总在模块钩子之后执行。 */
+  hostAfterCommandsFor(type: string): readonly RegisteredHostAfterCommand[] {
+    return this.hostAfterCommands.get(type as CommandType) ?? [];
   }
 
   clockStepList(): readonly StoredClockStep[] {
@@ -364,6 +366,19 @@ export class RuleRegistry {
     const list = target.get(type);
     if (list === undefined) {
       target.set(type, [{ type, owner, hook }]);
+      return;
+    }
+    list.push({ type, owner, hook });
+  }
+
+  private appendHostAfterCommand(
+    type: CommandType,
+    owner: ContributorScope,
+    hook: StoredHostAfterCommandHook,
+  ): void {
+    const list = this.hostAfterCommands.get(type);
+    if (list === undefined) {
+      this.hostAfterCommands.set(type, [{ type, owner, hook }]);
       return;
     }
     list.push({ type, owner, hook });

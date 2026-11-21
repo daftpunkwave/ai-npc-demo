@@ -7,10 +7,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { activateAgentRoster } from "@ai-npc/agent-runtime";
+import { activateAgentRoster, activateAgentRosterInTransaction } from "@ai-npc/agent-runtime";
 import type { StoragePort } from "@ai-npc/contracts";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import { createFakeHost } from "./authority-support";
+import { createFakeHost, expectDomainCode } from "./authority-support";
 
 const active: { readonly storage: StoragePort; readonly dispose: () => Promise<void> }[] = [];
 
@@ -75,15 +75,29 @@ describe("Agent 激活配额", () => {
       agentIds: second,
       nowIso: "2026-01-01T00:00:01.000Z",
     }).totalActive).toBe(15);
-    expect(() => activateAgentRoster({
+    const overQuota = storage.transact((tx) => activateAgentRosterInTransaction({
+      tx,
+      branchId: "br-000000000002",
+      agentIds: [...second, "agent-b-extra"],
+      nowIso: "2026-01-01T00:00:02.000Z",
+    }));
+    expect(overQuota).toEqual({
+      kind: "rejected",
+      reasonCode: "budget-exhausted",
+      requested: 16,
+      limit: 15,
+    });
+    expectDomainCode(() => activateAgentRoster({
       storage,
       branchId: "br-000000000002",
       agentIds: [...second, "agent-b-extra"],
       nowIso: "2026-01-01T00:00:02.000Z",
-    })).toThrow(/超过部署配额/);
+    }), "budget-exhausted");
     expect(storage.transact((tx) => ({
       branches: tx.all("SELECT branch_id, status FROM branches ORDER BY branch_id"),
       count: tx.all("SELECT COUNT(*) AS count FROM agent_activations a JOIN branches b ON a.branch_id = b.branch_id WHERE a.status = 'active' AND b.status IN ('active', 'paused')")[0]?.["count"],
+      extraActivation: tx.branch("br-000000000002").table("agent_activations").get({ agent_id: "agent-b-extra" }),
+      extraLease: tx.branch("br-000000000002").table("controller_leases").get({ agent_id: "agent-b-extra" }),
     }))).toEqual({
       branches: [
         { branch_id: "br-000000000001", status: "active" },
@@ -91,6 +105,8 @@ describe("Agent 激活配额", () => {
         { branch_id: "br-000000000003", status: "frozen" },
       ],
       count: 15,
+      extraActivation: null,
+      extraLease: null,
     });
     storage.transact((tx) => {
       const branches = tx.rows("branches");

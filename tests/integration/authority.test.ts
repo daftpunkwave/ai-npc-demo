@@ -316,7 +316,13 @@ describe("authority command gateway", () => {
         order.push("module");
         return { kind: "accepted" };
       });
-      harness.authority.hostAfterCommand("host.test", "task.cancel", () => {
+      harness.authority.hostAfterCommand("host.test", "task.cancel", ({ tx, auth }) => {
+        // 宿主钩子直接写入自己的表，与命令结果共享同一事务。
+        tx.branch(auth.branchId).table("agent_activations").put({
+          agent_id: "npc-wenyuan",
+          status: "active",
+          updated_at: harness.host.nowIso(),
+        });
         order.push("host");
         return { kind: "accepted" };
       });
@@ -326,6 +332,29 @@ describe("authority command gateway", () => {
       );
       expect(receipt.commandStatus).toBe("accepted");
       expect(order).toEqual(["module", "host"]);
+      expect(countBranchRows(harness, "agent_activations")).toBe(1);
+    });
+  });
+
+  it("rolls back command writes when a host after-command hook rejects", async () => {
+    await withHarness(async (harness) => {
+      harness.authority.hostAfterCommand("host.test", "task.cancel", ({ tx, auth }) => {
+        tx.branch(auth.branchId).table("agent_activations").put({
+          agent_id: "npc-wenyuan",
+          status: "active",
+          updated_at: harness.host.nowIso(),
+        });
+        return { kind: "rejected", reasonCode: "budget-exhausted", safeMessage: "配额不足" };
+      });
+      const receipt = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000001", "cmd-000000000017"),
+      );
+      expect(receipt.commandStatus).toBe("rejected");
+      expect(receipt.reasonCode).toBe("budget-exhausted");
+      expect(readAggregate(harness, "counter", "counter")).toBeNull();
+      expect(countBranchRows(harness, "agent_activations")).toBe(0);
+      expect(countBranchRows(harness, "domain_events")).toBe(0);
     });
   });
 
