@@ -34,6 +34,8 @@ reasonCodes:
   no-change: 新设置与当前值相同。
   unknown-policy: 未知的政策项。
   card-not-draft: 剧情卡不是草稿状态。
+  card-not-triggered: 剧情卡尚未触发，不能补偿。
+  card-not-found: 剧情卡不存在。
   card-already-triggered: 剧情卡已经触发过。
   invalid-effect: 剧情卡效果不合法。
   campaign-exists: 战役已经开始。

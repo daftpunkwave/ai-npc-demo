@@ -154,7 +154,7 @@
 proposed --其余当事人都 accept--> active --全部条款履约--> fulfilled
 proposed --任一当事人 reject--> rejected
 proposed --任一当事人 counter--> superseded（同时生成 version+1 的新提案，提出者为还价方）
-proposed --到 expiresAtTick 仍未生效--> expired（默认在提出后 24 tick）
+proposed --到 expiresAtTick 仍未生效--> expired（默认在提出后 24 tick；显式 expiresInTicks 允许 1–168，超过 168 返回 deadline-out-of-range，不静默钳制）
 active   --任一条款违约--> breached（其余条款继续追踪，只记录，不改变状态）
 ```
 

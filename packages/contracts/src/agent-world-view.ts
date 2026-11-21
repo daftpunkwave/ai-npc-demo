@@ -10,7 +10,7 @@ import {
   agreementViewSchema,
   invitationViewSchema,
   mapNodeViewSchema,
-  meterDisplayLevelSchema,
+  resourceLevelSchema,
   teamStatusSchema,
 } from "./projection";
 /** 带观察水位的已知数值。 */
@@ -95,9 +95,9 @@ export const agentKnownRoadStatusSchema = z
 export const agentKnownStockpileSchema = z
   .object({
     stockpileId: contentIdSchemas.sp,
-    supplyLevel: meterDisplayLevelSchema,
-    energyLevel: meterDisplayLevelSchema,
-    medicalLevel: meterDisplayLevelSchema,
+    supplyLevel: resourceLevelSchema,
+    energyLevel: resourceLevelSchema,
+    medicalLevel: resourceLevelSchema,
     asOfTick: z.number().int().nonnegative(),
   })
   .strict();

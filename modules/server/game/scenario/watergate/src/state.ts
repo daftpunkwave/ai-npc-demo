@@ -3,7 +3,7 @@
  * 依赖 zod 与公共契约的剧情卡效果 schema；只做状态校验与读取。
  * 禁止在这里执行卡片效果、计算触发 tick 或裁决命令。
  */
-import { cardEffectSchema, overrideEffectSchema } from "@ai-npc/contracts";
+import { cardEffectSchema, overrideEffectSchema, scenarioCardStatusSchema } from "@ai-npc/contracts";
 import type { WorldTx } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
@@ -13,7 +13,7 @@ export const scenarioCardStateSchema = z
   .object({
     cardId: z.string().min(1),
     version: z.number().int().positive(),
-    status: z.enum(["draft", "published", "triggered", "withdrawn"]),
+    status: scenarioCardStatusSchema,
     triggerAtTick: z.number().int().nonnegative(),
     effects: cardEffectListSchema,
     note: z.string(),

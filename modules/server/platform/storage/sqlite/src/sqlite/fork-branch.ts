@@ -86,6 +86,8 @@ function fixCopiedBranchRows(database: DatabaseSync, dstBranchId: string): void 
       `UPDATE ${q("agent_activations")} SET ${q("status")} = 'dormant' WHERE ${q(BRANCH_COLUMN)} = ?`,
     )
     .run(dstBranchId);
+  // trigger 的“已消费”判定独立于 turn 终态：cancelled 的 turn 会释放其 trigger 供重新调度，
+  // 只有 completed/failed/budget-exhausted 视为已消费并在下方删除。
   database
     .prepare(
       `UPDATE ${q("triggers")} SET ${q("consumed_by_turn_id")} = NULL

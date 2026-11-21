@@ -17,6 +17,7 @@ import {
   gameEventTypes,
   playerAuth,
   proposeAgreement,
+  proposeAgreementCommand,
   proposeAndAccept,
   readGameAggregate,
   readGameEventAudience,
@@ -148,6 +149,31 @@ describe("协议", () => {
     const accepted = respondAgreement(value, strategicAuth(value, "human-neutral"), agreementId, "accept");
     expect(accepted.commandStatus).toBe("rejected");
     expect(accepted.reasonCode).toBe("deadline-out-of-range");
+  });
+
+  it("过期默认 24 tick，显式超过 168 被拒绝", async () => {
+    const value = await harness();
+    const agreementId = proposeAgreement(
+      value,
+      playerAuth(value),
+      ["player-1", "human-neutral"],
+      [deliveryTerm(30)],
+    );
+    expectAgreement(value, agreementId, { status: "proposed" });
+    expect(
+      (readGameAggregate(value, "agreement", agreementId) as { readonly expiresAtTick: number })
+        .expiresAtTick,
+    ).toBe(24);
+
+    const beyond = proposeAgreementCommand(
+      value,
+      playerAuth(value),
+      ["player-1", "human-neutral"],
+      [deliveryTerm(30)],
+      { expiresInTicks: 169 },
+    );
+    expect(beyond.commandStatus).toBe("rejected");
+    expect(beyond.reasonCode).toBe("deadline-out-of-range");
   });
 
   it("运输完成触发条款履约与协议完成", async () => {

@@ -89,9 +89,9 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 3.1 玩家命令权限
 
-**已实现**：`POST /api/v1/commands` 接受 `campaign.start`、`dialogue.say`、`information.share`、`agreement.propose`、`agreement.respond`、`task.dispatch` 和 `task.cancel`。玩家提交 `policy.set` 会返回 403。
+**已实现**：`POST /api/v1/commands` 接受 `campaign.start`、`dialogue.say`、`information.share`、`agreement.propose`、`agreement.respond`、`task.dispatch`、`task.cancel` 和 `policy.set`。`policy.set` 只允许当前 campaign 的公社党魁玩家设置 `watergate.allocation`，授权按已开局 campaign 的玩家与派系裁决。
 
-**序章目标**：同一接口接受公社党魁玩家设置 `watergate.allocation` 的 `policy.set`，并承载玩家广播及程序案交互。服务端使用认证和已开局的席位记录裁决权限。广播及程序案命令的具体请求格式待定。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
+**序章目标**：同一接口承载玩家广播及程序案交互。服务端使用认证和已开局的席位记录裁决权限。广播及程序案命令的具体请求格式待定。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
 
 ## 4. WebSocket：`GET /api/v1/streams?ticket=<ticket>`
 
@@ -170,7 +170,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /scenarios/cards?branchId=` | operator | — | 内置卡与草稿卡，以及在该分支中的状态（scheduled/triggered/withdrawn） |
+| `GET /scenarios/cards?branchId=` | operator | — | 内置卡与草稿卡，以及在该分支中的状态（draft/published/triggered/withdrawn） |
 | `POST /scenarios/drafts` | operator | `{ card }`（与 [内容包](../game/content-pack.md) 第 9 节同结构） | `{ cardId, version }`；schema、引用、效果白名单校验失败返回 400 |
 | `POST /scenarios/drafts/{cardId}/preview` | operator | `{ version, atTick }` | `{ events: EventPreview[] }`：在沙盒分支中试算，不影响在线世界 |
 | `POST /scenarios/drafts/{cardId}/publish` | operator | `{ version, triggerAtTick, operationId }` | `CommandReceipt`（命令 `scenario.publish`） |

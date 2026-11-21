@@ -253,7 +253,7 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["run 申请批准响应", runRequestApproveResponseSchema, { runId: "run-k3j9x0a1b2c3" }, { runId: "run-1" }],
   ["run 申请拒绝响应", runRequestRejectResponseSchema, { ok: true }, { ok: false }],
   ["剧情卡内容", scenarioCardContentSchema, scenarioCard, { ...scenarioCard, effects: [] }],
-  ["剧情卡视图", scenarioCardViewSchema, { cardId: "card-relay-alarm", version: 1, source: "builtin", triggerAtTick: 2, effects: [broadcastEffect], status: "scheduled", triggeredAtTick: null }, { cardId: "card-relay-alarm", version: 1, source: "builtin", triggerAtTick: 2, effects: [broadcastEffect], status: "published", triggeredAtTick: null }],
+  ["剧情卡视图", scenarioCardViewSchema, { cardId: "card-relay-alarm", version: 1, source: "builtin", triggerAtTick: 2, effects: [broadcastEffect], status: "published", triggeredAtTick: null }, { cardId: "card-relay-alarm", version: 1, source: "builtin", triggerAtTick: 2, effects: [broadcastEffect], status: "scheduled", triggeredAtTick: null }],
   ["剧情卡列表", scenarioCardsResponseSchema, { cards: [] }, { cards: [{}] }],
   ["剧情卡草稿请求", scenarioDraftRequestSchema, { card: scenarioCard }, { card: { ...scenarioCard, cardId: "relay" } }],
   ["剧情卡草稿响应", scenarioDraftResponseSchema, { cardId: "card-relay-alarm", version: 2 }, { cardId: "card-relay-alarm", version: 0 }],

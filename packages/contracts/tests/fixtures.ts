@@ -300,9 +300,9 @@ export function agentWorldViewFixture(): AgentWorldView {
       stockpiles: [
         {
           stockpileId: "sp-rubble",
-          supplyLevel: "stable",
-          energyLevel: "stable",
-          medicalLevel: "stable",
+          supplyLevel: "adequate",
+          energyLevel: "adequate",
+          medicalLevel: "adequate",
           asOfTick: 0,
         },
       ],

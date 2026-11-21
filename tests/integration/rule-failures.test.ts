@@ -4,6 +4,7 @@
  * 禁止用内存夹具替代事务回滚，也禁止跳过失败记录直接断言队列继续推进。
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { MAX_RULE_ATTEMPTS, listRuleFailures } from "@ai-npc/authority";
 import {
   createAuthorityHarness,
@@ -211,6 +212,7 @@ describe("事件消费者失败隔离", () => {
     harness.authority.registerModule({
       moduleId: "test.rule-failure-consumer",
       ownsAggregates: [],
+      events: [{ type: "TestRuleEvent", payloadSchema: z.unknown() }],
       consumers: [
         {
           consumerId: "test.consumer",
@@ -262,6 +264,7 @@ describe("事件消费者失败隔离", () => {
     harness.authority.registerModule({
       moduleId: "test.rule-failure-consumer-recovery",
       ownsAggregates: [],
+      events: [{ type: "TestRuleEvent", payloadSchema: z.unknown() }],
       consumers: [
         {
           consumerId: "test.recovering-consumer",

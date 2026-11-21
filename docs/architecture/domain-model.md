@@ -78,7 +78,7 @@ interface AuthContext {            // always built by the host, never taken from
 | `knowledge-grant` | grantId | `game.comms.standard` | principalId、itemId（证据或秘密）、via、grantedAtTick |
 | `message` | messageId | `game.comms.standard` | fromId、to、channel（message/broadcast/seat/opening/reported）、text、intentKind、deliveries、committedAtTick、conversationId |
 | `share` | shareId | `game.comms.standard` | fromId、evidenceId、audience、sharedAtTick |
-| `scenario-card` | cardId | `game.scenario.*` | version、status（scheduled/triggered/withdrawn）、triggerAtTick、triggeredAtTick |
+| `scenario-card` | cardId | `game.scenario.*` | version、status（draft/published/triggered/withdrawn）、triggerAtTick |
 
 以下状态不在 `aggregate_state` 中，而是有专用表：时钟（`clock` 表，归 `game.clock.controlled`）；Agent 激活、控制权、trigger、观察、记忆（归宿主 `agent-runtime` 与对应 Agent 模块，见 [存储](storage.md) 第 2 节）。静态内容（节点、道路属性、人格、证据正文）由内容加载器读入内存只读索引。
 
@@ -171,33 +171,34 @@ COMMIT
 
 ## 5. 命令目录
 
-`issuer` 列：P=玩家，A=Agent（经工具或宿主），S=真人席位，O=运营（控制台），H=宿主内部（不暴露为工具），R=实验运行器。
+`issuer` 列使用契约主体类型：`player` 为玩家；`agent` 为 Agent（含真人席位代发，按该 Agent 权限裁决）；`operator` 为运营控制台；`researcher` 为研究角色；`system` 为宿主内部与实验运行器。`seat.say` 由运营直接代发席位消息；`probe.ask` 只在 sandbox 分支由 `system` 发行。
 
 | type | issuer | payload | 处理模块 | 成功时的事件 | 常见拒绝原因码 |
 |---|---|---|---|---|---|
-| `campaign.start` | P R | `{ factionId }` | world（另有 comms、scenario 和宿主钩子） | `CampaignStarted`、`DelegationCreated`、`MessageSent`、`KnowledgeGranted`，并安排伤员期限与剧情卡 job | `campaign-exists`、`unknown-faction`；名册激活接入后可返回 `budget-exhausted` |
-| `dialogue.say` | P | `{ targetAgentId, text }`（1–300 字） | comms | `DialogueSubmitted` | `paused`、`relay-down`、`unknown-target`、`invalid-params` |
-| `speech.commit` | H | `{ channel: "dialogue"\|"message"\|"broadcast", conversationId: string\|null, audience: string[], approvedSpeechArtifactRef, intentKind, replyToId: string\|null }` | comms | `DialogueSubmitted` 或 `MessageSent` | `speech-not-approved`、`relay-down`、`paused`、`no-authority`（无广播权） |
-| `seat.say` | S | `{ to: string[], text }`（1–200 字，真人席位直接写的话） | comms | `MessageSent`（channel `seat`，没有 speech artifact） | `paused`、`relay-down`、`no-authority` |
-| `information.share` | P A S | `{ evidenceId, audience: string[] }` | comms | `InformationShared`、`KnowledgeGranted`×n | `evidence-not-held`、`secret-not-shareable`、`relay-down`、`paused` |
-| `agreement.propose` | P A S | `{ parties: string[], terms: Term[], expiresInTicks?: number }` | agreements | `AgreementProposed` | `invalid-terms`、`obligor-not-party`、`no-authority`、`deadline-out-of-range` |
-| `agreement.respond` | P A S | `{ agreementId, response: "accept"\|"reject"\|"counter", counterTerms?: Term[] }` | agreements | `AgreementResponded`，以及视情况 `AgreementActivated`（+生效效果事件）、`AgreementRejected`、`AgreementSuperseded`+`AgreementProposed` | `not-a-party`、`agreement-not-open`、`already-responded` |
-| `task.dispatch` | P A S | `{ taskType, teamId, invitees?: string[], params, departAfterTicks?: number }` | actions（调用 world、map、resources 的 ops） | `TaskDispatched`、`ResourcesReserved`、`TaskInvitationIssued`×n | 按 [规则](../game/rules.md) 第 6 节的校验顺序 |
-| `task.respond` | A | `{ taskId, response: "accept"\|"decline", reasonCode?: ReasonCode }` | actions | `TaskInvitationAnswered` | `not-invited`、`invitation-closed` |
-| `task.cancel` | P A S | `{ taskId }` | actions | `TaskCancelled`、`ResourcesReleased`（如有） | `task-not-cancellable`、`no-authority` |
-| `policy.set` | A、S、P（玩家权限为序章目标，仅水闸） | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
-| `scenario.draft` | O | `{ cardId, version, triggerAtTick, effects: CardEffect[], note }` | scenario | 无事件；写入 `status` 为 `draft` 的 `scenario-card` | `version-conflict`（同一卡片已登记）、`invalid-effect`（效果引用内容不存在）、`deadline-out-of-range`（不在发布窗口内） |
-| `scenario.publish` | O | `{ cardId, version, triggerAtTick }` | scenario | `ScenarioCardPublished`，并安排 `scenario.card` job | `card-not-draft`、`version-conflict`、`deadline-out-of-range` |
-| `scenario.withdraw` | O | `{ cardId }` | scenario | `ScenarioCardWithdrawn` | `card-already-triggered` |
-| `scenario.compensate` | O | `{ cardId, effects: CardEffect[], note }` | scenario | `ScenarioCompensationApplied` + 效果事件 | `invalid-effect` |
-| `scenario.override` | O（researcher 亦可） | `{ effects: OverrideEffect[], note }` | scenario | `ScenarioOverrideApplied` + 效果事件；run 标记 `contaminated` | `invalid-effect` |
-| `probe.ask` | R | `{ probeId, agentId, askedBy, question }`（只允许在 `sandbox` 分支） | comms | `ProbeAsked` | `invalid-params` |
+| `campaign.start` | player、system | `{ factionId }` | world（另有 comms、scenario 和宿主钩子） | `CampaignStarted`、`DelegationCreated`、`MessageSent`、`KnowledgeGranted`，并安排伤员期限与剧情卡 job | `campaign-exists`、`unknown-faction`；名册激活接入后可返回 `budget-exhausted` |
+| `dialogue.say` | player | `{ targetAgentId, text }`（1–300 字） | comms | `DialogueSubmitted` | `paused`、`relay-down`、`unknown-target`、`invalid-params` |
+| `speech.commit` | agent、system | `{ channel: "dialogue"\|"message"\|"broadcast", conversationId: string\|null, audience: string[], approvedSpeechArtifactRef, intentKind, replyToId: string\|null }` | comms | `DialogueSubmitted` 或 `MessageSent` | `speech-not-approved`、`relay-down`、`paused`、`no-authority`（无广播权） |
+| `seat.say` | operator | `{ to: string[], text }`（1–200 字，真人席位直接写的话） | comms | `MessageSent`（channel `seat`，没有 speech artifact） | `paused`、`relay-down`、`no-authority` |
+| `information.share` | player、agent、operator | `{ evidenceId, audience: string[] }` | comms | `InformationShared`、`KnowledgeGranted`×n | `evidence-not-held`、`secret-not-shareable`、`relay-down`、`paused` |
+| `agreement.propose` | player、agent、operator | `{ parties: string[], terms: Term[], expiresInTicks?: number }`（默认 24，范围 1–168） | agreements | `AgreementProposed` | `invalid-terms`、`obligor-not-party`、`no-authority`、`deadline-out-of-range` |
+| `agreement.respond` | player、agent、operator | `{ agreementId, response: "accept"\|"reject"\|"counter", counterTerms?: Term[] }` | agreements | `AgreementResponded`，以及视情况 `AgreementActivated`（+生效效果事件）、`AgreementRejected`、`AgreementSuperseded`+`AgreementProposed` | `not-a-party`、`agreement-not-open`、`already-responded` |
+| `task.dispatch` | player、agent、operator | `{ taskType, teamId, invitees?: string[], params, departAfterTicks?: number }` | actions（调用 world、map、resources 的 ops） | `TaskDispatched`、`ResourcesReserved`、`TaskInvitationIssued`×n | 按 [规则](../game/rules.md) 第 6 节的校验顺序 |
+| `task.respond` | agent | `{ taskId, response: "accept"\|"decline", reasonCode?: ReasonCode }` | actions | `TaskInvitationAnswered` | `not-invited`、`invitation-closed` |
+| `task.cancel` | player、agent、operator | `{ taskId }` | actions | `TaskCancelled`、`ResourcesReleased`（如有） | `task-not-cancellable`、`no-authority` |
+| `policy.set` | player、agent、operator | `{ key, value }` | world（水闸）/ map（道路） | `PolicyChanged`，可能引起 `AgreementBreached` | `no-authority`、`no-change`、`unknown-policy` |
+| `scenario.draft` | operator | `{ cardId, version, triggerAtTick, effects: CardEffect[], note }` | scenario | 无事件；写入 `status` 为 `draft` 的 `scenario-card` | `version-conflict`（同一卡片已登记）、`invalid-effect`（效果引用内容不存在）、`deadline-out-of-range`（不在发布窗口内） |
+| `scenario.publish` | operator | `{ cardId, version, triggerAtTick }` | scenario | `ScenarioCardPublished`，并安排 `scenario.card` job | `card-not-draft`、`version-conflict`、`deadline-out-of-range` |
+| `scenario.withdraw` | operator | `{ cardId }` | scenario | `ScenarioCardWithdrawn` | `card-already-triggered` |
+| `scenario.compensate` | operator | `{ cardId, effects: CardEffect[], note }` | scenario | `ScenarioCompensationApplied` + 效果事件 | `card-not-found`、`card-not-triggered`、`invalid-effect` |
+| `scenario.override` | operator、researcher | `{ effects: OverrideEffect[], note }` | scenario | `ScenarioOverrideApplied` + 效果事件；run 标记 `contaminated` | `invalid-effect` |
+| `probe.ask` | system | `{ probeId, agentId, askedBy, question }`（只允许在 `sandbox` 分支） | comms | `ProbeAsked` | `invalid-params` |
 
 `Term` 即 [规则](../game/rules.md) 第 7 节的八种条款，统一为 `{ kind, obligorId, ...params }` 的判别联合。`CardEffect` 见 [内容包](../game/content-pack.md) 第 9 节；`OverrideEffect` 在 `CardEffect` 之外额外允许 `meter-set { meter, value }` 与 `road-status-set { roadId, status }`，只供调试，使用即污染。
 
+`policy.set` 已对玩家开放：只有当前 campaign 的公社党魁可以设置 `watergate.allocation`，授权使用服务端认证与开局记录，`PolicyChanged.byId` 记为实际操作的 `player-1`。水闸协议的义务人沿用同一权限规则。
+
 序章待交付的命令与权限：
 
-- `policy.set` 增加发起者 P。只有当前 campaign 的公社党魁玩家可以设置 `watergate.allocation`。授权使用服务端认证与开局记录，`PolicyChanged.byId` 记为实际操作的 `player-1`。水闸协议的义务人沿用同一权限规则。参见 [rules.md — 政策](../game/rules.md#8-政策)。
 - 公社党魁通过玩家命令提交公开广播正文。comms 按公开广播规则计算并冻结送达，提交 `MessageSent`；玩家入口与 Agent 的 `speech.commit` 批准流程独立。
 - t144 程序案需要提案与投票命令以及席位归属校验。提案和投票依 [rules.md — t144 程序案](../game/rules.md#101-t144-程序案) 裁决，经命令网关与事务提交。
 
@@ -331,7 +332,7 @@ decision 上下文中的“当前局势”段来自该 Agent 的最后已知视�
 |---|---|
 | 自身 | 位置（角色）、是否受伤、当前任务、持有的委托及余额、待回复的邀请；自己是当事人且处于 proposed/active 的协议及条款状态，以及最近 12 tick 内状态发生变化的协议（更早结束的协议只能来自记忆，避免给无记忆组提供历史旁路） |
 | 静态地图 | 节点与道路属性（人人都知道的地理） |
-| 最后已知状态 | 指标、水闸分配、道路状态、库存等级：取自该 Agent 观察到的最近一次 `MetersChanged`/`DayPassed`/`PolicyChanged`/广播，每项带 `asOfTick` |
+| 最后已知状态 | 指标、水闸分配、道路状态、库存资源等级（`scarce`/`adequate`/`surplus`）：取自该 Agent 观察到的最近一次 `MetersChanged`/`DayPassed`/`PolicyChanged`/广播，每项带 `asOfTick` |
 | 本派系 | 战略 Agent 与本派系角色：本派系库存点的精确数量、本派系队伍状态（经 faction 受众获知的最新值） |
 | 已知证据与秘密 | 持有知识授权的证据（标题与正文）与秘密（正文，标注“不可外传”） |
 
@@ -347,7 +348,7 @@ receipt 与 `TaskFailed` 的 `reasonCode` 只能取下表的值；同一个码�
 | 通信 | `relay-down`、`speech-not-approved`、`evidence-not-held`、`secret-not-shareable` |
 | 协议 | `invalid-terms`、`obligor-not-party`、`deadline-out-of-range`、`not-a-party`、`agreement-not-open`、`already-responded` |
 | 任务 | `team-busy`、`capability-missing`、`route-unavailable`、`route-closed`、`insufficient-resource`、`draw-limit-exceeded`、`over-capacity`、`participant-unavailable`、`team-not-at-origin`、`task-not-cancellable`、`not-invited`、`invitation-closed` |
-| 政策与剧情 | `no-change`、`unknown-policy`、`card-not-draft`、`card-already-triggered`、`invalid-effect`、`campaign-exists`、`unknown-faction` |
+| 政策与剧情 | `no-change`、`unknown-policy`、`card-not-draft`、`card-not-triggered`、`card-not-found`、`card-already-triggered`、`invalid-effect`、`campaign-exists`、`unknown-faction` |
 | Agent 拒绝理由（`task.respond`、对白意图用） | `danger`、`duty`、`past-breach`、`low-trust`、`lack-resources`、`policy`、`need-guarantee`、`injured`、`busy`、`none` |
 
 ## 10. 内容 schema 要点

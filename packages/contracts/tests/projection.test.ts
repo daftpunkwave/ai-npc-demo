@@ -246,9 +246,9 @@ const agentWorldView = {
     stockpiles: [
       {
         stockpileId: "sp-rubble",
-        supplyLevel: "stable",
-        energyLevel: "stable",
-        medicalLevel: "stable",
+        supplyLevel: "adequate",
+        energyLevel: "adequate",
+        medicalLevel: "adequate",
         asOfTick: 0,
       },
     ],
@@ -324,6 +324,16 @@ describe("AgentWorldView", () => {
       },
     });
     expectInvalid(agentWorldViewSchema, { ...agentWorldView, extra: true });
+  });
+
+  it("库存等级使用资源等级而不是指标展示等级", () => {
+    expectInvalid(agentWorldViewSchema, {
+      ...agentWorldView,
+      lastKnown: {
+        ...agentWorldView.lastKnown,
+        stockpiles: [{ ...agentWorldView.lastKnown.stockpiles[0], supplyLevel: "critical" }],
+      },
+    });
   });
 });
 
