@@ -64,7 +64,7 @@
 
 ### 3.6 时钟操作原子性
 
-暂停与继续当前在时钟状态提交后单独写入 `operationId` 结果，进程在两次提交之间退出时重试可能出现版本冲突。需要补齐原子性并验证崩溃后的同键重试。参见 [operations.md — 时钟与运行状态](platform/operations.md#2-时钟与运行状态)。
+暂停与继续当前在时钟状态提交后单独写入 `operationId` 结果，两次提交之间进程退出时不留下可重放的成功结果；原请求按旧版本重试会得到 `version-conflict`，需要改用当前版本和新的 operationId。可重试失败与不可重试失败的幂等重试规则见 [operations.md — 时钟与运行状态](platform/operations.md#2-时钟与运行状态)。
 
 ### 3.7 冻结装配能力升级
 

@@ -58,6 +58,10 @@ export { disposeInReverse, startHost } from "./host";
 export type { DisposalStep, HostOptions, RunningHost } from "./host";
 export { startServer } from "./startup";
 export type { StartServerOptions, StartupHost } from "./startup";
+export { createShutdownHandler, shutdownServer } from "./shutdown";
+export type { ShutdownInput } from "./shutdown";
+export { OperationJournal, operationRequestHash } from "./host/operation-journal";
+export type { OperationKey, OperationKind, OperationOutcome } from "./host/operation-journal";
 export { createTransportApp } from "./host/transport-app";
 export type { TransportAppInput } from "./host/transport-app";
 export {

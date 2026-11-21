@@ -1,7 +1,8 @@
 /**
  * 运营基础操作：暂停排空、快照、重开与恢复的事务内实现，以及恢复来源的兼容性裁决。
  * 依赖存档服务、时钟 provider、在线入口、内容与冻结 manifest；不写幂等记录、不做请求级去重。
- * 禁止在未暂停时快照、跳过来源校验、在失败时留下孤立快照或半切换别名。
+ * 禁止在未暂停时快照、跳过来源校验、在失败时留下孤立快照或半切换别名，
+ * 或用普通异常表示可预期的来源不兼容。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import {
@@ -196,47 +197,72 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
 
   /**
    * 恢复 dry-run 的内容与模块兼容性裁决：内容包版本、RunSpec、装配、名册与冻结 manifest
-   * 必须仍与当前宿主一致；任何不兼容都在写入前失败，不产生快照副本或别名变更。
+   * 必须仍与当前宿主一致；任何不兼容都在写入前以稳定领域错误失败，不产生快照副本或别名变更。
    */
   const validateRestoreSource = (inspection: ReturnType<ServerRuntime["save"]["inspectRestore"]>): void => {
     const parsed = runSpecSchema.safeParse(inspection.sourceRun.runSpec);
     if (!parsed.success) {
-      throw new Error(`快照源 run 的 RunSpec 无法解析：${parsed.error.issues.map((issue) => issue.message).join("；")}`);
+      throw new DomainError("invalid-state", "快照源 run 的 RunSpec 无法解析，拒绝恢复", {
+        details: { snapshotId: inspection.snapshotId, sourceRunId: inspection.sourceRun.runId },
+      });
     }
     const sourceSpec = parsed.data;
     const facts = readFrozenManifest(inspection.sourceRun.manifest);
     if (facts.packId !== input.packId) {
-      throw new Error(`内容包不一致：快照源 run 冻结「${facts.packId}」，当前内容包「${input.packId}」；拒绝恢复`);
+      throw new DomainError("invalid-state", `内容包不一致：快照源 run 冻结「${facts.packId}」，当前内容包「${input.packId}」；拒绝恢复`, {
+        details: { sourcePackId: facts.packId, currentPackId: input.packId },
+      });
     }
     if (facts.contentVersion !== input.contentVersion) {
-      throw new Error(
-        `内容包 contentVersion 不一致：快照源 run 冻结「${facts.contentVersion}」，当前内容包「${input.contentVersion}」；拒绝启动`,
+      throw new DomainError(
+        "invalid-state",
+        `内容包 contentVersion 不一致：快照源 run 冻结「${facts.contentVersion}」，当前内容包「${input.contentVersion}」；拒绝恢复`,
+        { details: { sourceContentVersion: facts.contentVersion, currentContentVersion: input.contentVersion } },
       );
     }
     if (facts.seed !== sourceSpec.seed) {
-      throw new Error("快照源 run 的 seed 与 RunSpec 不一致；拒绝恢复");
+      throw new DomainError("invalid-state", "快照源 run 的 seed 与 RunSpec 不一致，拒绝恢复", {
+        details: { sourceRunId: inspection.sourceRun.runId },
+      });
     }
     if (facts.moduleAssemblyRef !== sourceSpec.moduleAssemblyRef) {
-      throw new Error("快照源 run 的装配引用与 RunSpec 不一致；拒绝恢复");
+      throw new DomainError("invalid-state", "快照源 run 的装配引用与 RunSpec 不一致，拒绝恢复", {
+        details: {
+          sourceAssemblyRef: facts.moduleAssemblyRef,
+          runSpecAssemblyRef: sourceSpec.moduleAssemblyRef,
+        },
+      });
     }
     if (facts.rosterRef !== sourceSpec.rosterRef) {
-      throw new Error("快照源 run 的名册引用与 RunSpec 不一致；拒绝恢复");
+      throw new DomainError("invalid-state", "快照源 run 的名册引用与 RunSpec 不一致，拒绝恢复", {
+        details: { sourceRosterRef: facts.rosterRef, runSpecRosterRef: sourceSpec.rosterRef },
+      });
     }
     if (sourceSpec.worldPackRef !== input.packId) {
-      throw new Error(
+      throw new DomainError(
+        "invalid-state",
         `快照源 RunSpec 的 worldPackRef「${sourceSpec.worldPackRef}」与当前内容包「${input.packId}」不一致；拒绝恢复`,
+        { details: { sourceWorldPackRef: sourceSpec.worldPackRef, currentPackId: input.packId } },
       );
     }
     if (inspection.sourceRun.manifestHash !== frozenManifestHash) {
-      throw new Error("快照源 run 的冻结 manifest 与当前在线 run 不一致（模块、名册或内容版本不同）；拒绝恢复");
+      throw new DomainError(
+        "invalid-state",
+        "快照源 run 的冻结 manifest 与当前在线 run 不一致（模块、名册或内容版本不同）；拒绝恢复",
+        { details: { snapshotId: inspection.snapshotId, sourceRunId: inspection.sourceRun.runId } },
+      );
     }
     if (canonicalJson(sourceSpec as unknown as Json) !== canonicalJson(runSpec as unknown as Json)) {
-      throw new Error("快照源 run 的 RunSpec 与当前在线 run 不一致；拒绝恢复");
+      throw new DomainError("invalid-state", "快照源 run 的 RunSpec 与当前在线 run 不一致，拒绝恢复", {
+        details: { sourceRunId: inspection.sourceRun.runId },
+      });
     }
     const assembly = loadAssembly(sourceSpec.moduleAssemblyRef);
     if (assembly.assemblyId !== activeAssembly.assemblyId) {
-      throw new Error(
+      throw new DomainError(
+        "invalid-state",
         `快照源 run 的装配「${assembly.assemblyId}」与当前在线装配「${activeAssembly.assemblyId}」不一致；拒绝恢复`,
+        { details: { sourceAssemblyId: assembly.assemblyId, activeAssemblyId: activeAssembly.assemblyId } },
       );
     }
     const roster = loadRoster(sourceSpec.rosterRef, input.loadContext);
