@@ -867,6 +867,19 @@ describe("服务端宿主", () => {
       branch_id: restoredBody.branchId,
     });
 
+    // 恢复切换在线分支后，同一请求上下文继续按“当前”在线分支创建快照，不沿用启动时的旧分支。
+    const postRestore = await host.app.inject({
+      method: "POST",
+      url: `/api/v1/console/campaign/snapshots?branchId=${restoredBody.branchId}`,
+      headers: operatorHeaders,
+      payload: { operationId: "op-000000000611", label: "restore 后快照" },
+    });
+    expect(postRestore.statusCode).toBe(200);
+    const postRestoreBody = postRestore.json<{ readonly snapshotId: string }>();
+    expect(
+      host.storage.transact((tx) => tx.rows("snapshots").get({ snapshot_id: postRestoreBody.snapshotId })),
+    ).toMatchObject({ source_branch_id: restoredBody.branchId, label: "restore 后快照" });
+
     const researcherRestore = await host.app.inject({
       method: "POST",
       url: "/api/v1/console/campaign/restore",

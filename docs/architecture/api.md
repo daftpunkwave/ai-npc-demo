@@ -164,7 +164,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `POST /campaign/step` | operator | `{ operationId, expectedRunVersion, ticks }`（1–24） | `ClockView`（mode 为 stepping，结束后回到 paused） |
 | `POST /campaign/snapshots`（已实现） | operator | `{ operationId, label }` | `{ snapshotId, worldTick }` |
 | `GET /campaign/snapshots`（已实现） | operator、researcher | — | `{ snapshots: SnapshotView[] }` |
-| `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId }` | `{ branchId, clock }`；创建后继在线分支，旧分支保留 |
+| `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId }` | `{ branchId, clock }`；创建后继在线分支，旧分支保留。`dryRun` 只读预检尚未实现，恢复前由服务端执行内部一致性校验 |
 | `GET /run-requests` | operator | — | 玩家的 run 申请列表 |
 | `POST /run-requests/{requestId}/approve` / `reject` | operator | `{ note }` | approve 返回 `{ runId }` |
 
