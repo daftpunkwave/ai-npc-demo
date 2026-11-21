@@ -13,3 +13,48 @@ export { MemoryHost } from "./memory-host";
 export type { MemoryHostOptions } from "./memory-host";
 export type { MemoryRecordUseRequest } from "./memory-publication";
 export { memoryIdentityForAgent } from "./memory-identity";
+
+export { StoredAgentArtifactStore } from "./artifact-store";
+export type { AgentArtifactKind, AgentArtifactRecord, AgentArtifactStore, PutAgentArtifactInput } from "./artifact-store";
+export { ToolGateway } from "./tool-gateway";
+export type {
+  MessageExecutionInput,
+  MessageExecutionResult,
+  QueryExecutionInput,
+  ToolCallExecutionInput,
+  ToolCallOutcome,
+  ToolCatalogPort,
+  ToolGatewayOptions,
+  ToolGatewayTurn,
+} from "./tool-gateway";
+export { allowedDynamicValues, dynamicFieldName, narrowToolsForTurn } from "./tool-narrowing";
+export type { NarrowedToolOmission, ToolNarrowingValues, ToolRequestProjection } from "./tool-narrowing";
+export { assertToolCallResultPairing, pairedToolMessages } from "./tool-pairing";
+export type { PairedToolOutcome } from "./tool-pairing";
+export { isDisclosable, filterDisclosableFacts } from "./disclosure";
+export type { DisclosureContext, SpeechFact } from "./disclosure";
+export { validateSpeechOutput, validationAsJson } from "./speech-guards";
+export type {
+  SpeechCheck,
+  SpeechGenerationOutput,
+  SpeechGuardInput,
+  SpeechReceiptState,
+  SpeechSecret,
+  SpeechValidation,
+} from "./speech-guards";
+export { renderSafeSpeech } from "./speech-template";
+export type { SafeSpeechInput } from "./speech-template";
+export { buildSpeechCommitEnvelope, DialogueFlow, SpeechApprovalIndex } from "./dialogue-flow";
+export type {
+  DialogueFlowOptions,
+  SpeechApprovalInput,
+  SpeechApprovalResult,
+  SpeechCommitResult,
+  SpeechGenerationRequest,
+  SpeechGenerator,
+  SpeechHistoryLine,
+  SpeechPreparation,
+} from "./dialogue-flow";
+export { estimateSystemAndUserTokens, estimateTokens } from "./token-estimate";
+export { AgentContextPipeline } from "./context-pipeline";
+export type { ContextPipelineOptions, PreparedContext } from "./context-pipeline";
