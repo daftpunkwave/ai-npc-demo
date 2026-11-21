@@ -1,0 +1,265 @@
+/**
+ * 核心职责：验证 speech 请求隔离、四项校验、安全模板、秘密泄漏与进行中任务状态拦截。
+ * 交互契约：使用真实内容包、持久化 artifact 和注入的 speech.commit executor。
+ * 约束与禁忌：不得把 decision 隐藏文本注入 speech，也不得把失败校验的正文提交发布。
+ */
+import { afterEach, describe, expect, it } from "vitest";
+import type {
+  CommandEnvelope,
+  CommandReceipt,
+  DialogueIntent,
+  Json,
+} from "@ai-npc/contracts";
+import {
+  DialogueFlow,
+  SpeechApprovalIndex,
+  StoredAgentArtifactStore,
+  renderSafeSpeech,
+  type SpeechApprovalInput,
+  type ToolGatewayTurn,
+} from "@ai-npc/agent-runtime";
+import {
+  createAgentContextToolsHarness,
+  testAgentId,
+  testBranchId,
+  testRunId,
+  testTurnId,
+  testWorldId,
+  testAuth,
+  type AgentContextToolsHarness,
+} from "./agent-context-tools-support";
+
+const harnesses: AgentContextToolsHarness[] = [];
+
+afterEach(async () => {
+  for (const harness of harnesses.splice(0)) await harness.dispose();
+});
+
+function intent(kind: DialogueIntent["kind"], factRefs: readonly string[] = []): DialogueIntent {
+  return {
+    kind,
+    audience: ["player-1"],
+    tone: "neutral",
+    reasonCode: kind === "refuse" ? "danger" : "none",
+    subjectRef: factRefs[0] ?? null,
+    factRefs: [...factRefs],
+  };
+}
+
+function speechInput(options: {
+  readonly intent: DialogueIntent;
+  readonly leaks?: readonly string[];
+  readonly taskStatus?: "pending" | "running" | "completed";
+  readonly factSummary?: string;
+}): SpeechApprovalInput {
+  const facts = options.factSummary === undefined ? [] : [{
+    ref: "ev-000000000001",
+    releasePolicyId: "parties:human-independent,player-1",
+    summaryZh: options.factSummary,
+  }];
+  return {
+    session: { worldId: testWorldId, branchId: testBranchId, agentId: testAgentId },
+    runId: testRunId,
+    turnId: testTurnId,
+    agentId: testAgentId,
+    auth: testAuth(),
+    intent: options.intent,
+    facts,
+    history: [],
+    receipts: options.taskStatus === undefined ? [] : [{
+      receiptId: "rcp-000000000001",
+      commandStatus: "accepted",
+      taskStatus: options.taskStatus,
+      detail: "task accepted",
+    }],
+    secrets: options.leaks === undefined ? [] : [{ secretId: "sec-000000000001", leakTerms: options.leaks }],
+    principalFactions: new Map([
+      ["human-independent", "human-independent"],
+      ["player-1", "human-commune"],
+    ]),
+    heldEvidenceIds: new Map(),
+    heldSecretIds: new Map([
+      ["human-independent", new Set(["sec-000000000001"])],
+      ["player-1", new Set<string>()],
+    ]),
+    principalNames: new Map([
+      ["human-independent", "岑雁"],
+      ["player-1", "党魁"],
+    ]),
+    speechStyle: "克制、直接",
+    maxChars: 80,
+    subjectLine: "补给安排",
+    channel: "dialogue",
+    conversationId: "conv-000000000001",
+    replyToId: null,
+  };
+}
+
+function receipt(host: AgentContextToolsHarness["host"], envelope: CommandEnvelope): CommandReceipt {
+  return {
+    receiptId: host.ids("rcp"),
+    commandId: envelope.commandId,
+    commandStatus: "accepted",
+    reasonCode: null,
+    safeMessage: null,
+    acceptedEventIds: [],
+    operationId: null,
+    resultingVersions: {},
+    result: null,
+    worldTick: 20,
+  };
+}
+
+function flow(harness: AgentContextToolsHarness, envelopes: CommandEnvelope[]) {
+  const artifacts = new StoredAgentArtifactStore(harness.storage, harness.host);
+  const approvals = new SpeechApprovalIndex();
+  const dialogue = new DialogueFlow({
+    host: harness.host,
+    artifacts,
+    approvals,
+    content: harness.content,
+    executeCommand: (_auth, envelope) => {
+      envelopes.push(envelope);
+      return receipt(harness.host, envelope);
+    },
+  });
+  return { dialogue, artifacts, approvals };
+}
+
+describe("Dialogue flow", () => {
+  it("speech 请求不携带秘密，leakTerms 命中时回退安全模板并提交批准 artifact", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const envelopes: CommandEnvelope[] = [];
+    const setup = flow(harness, envelopes);
+    let attempts = 0;
+    const result = await setup.dialogue.commit(speechInput({
+      intent: intent("answer"),
+      leaks: ["北侧", "撤离"],
+    }), () => {
+      attempts += 1;
+      return { utterance: "根庭会从北侧撤离。", citedRefs: [] };
+    });
+    expect(attempts).toBe(2);
+    expect(result.artifact.fallback).toBe(true);
+    expect(result.artifact.text).not.toContain("北侧");
+    expect(result.preparation.request.user).not.toContain("北侧");
+    expect(envelopes).toHaveLength(1);
+    expect(envelopes[0]?.type).toBe("speech.commit");
+    expect((envelopes[0]?.payload as { readonly approvedSpeechArtifactRef: string }).approvedSpeechArtifactRef)
+      .toBe(result.artifact.artifactId);
+    expect(setup.approvals.read(result.artifact.artifactId)?.approved).toBe(true);
+    const validation = result.artifact.validation as unknown as {
+      readonly finalValidation: { readonly checks: readonly { readonly name: string }[] };
+    };
+    expect(validation.finalValidation.checks.map((check) => check.name)).toEqual([
+      "schema",
+      "cited-refs",
+      "leak-terms",
+      "status-claims",
+    ]);
+  });
+
+  it("进行中的任务拦截“已经送到”类完成声明", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const setup = flow(harness, []);
+    const result = await setup.dialogue.commit(speechInput({
+      intent: intent("answer"),
+      taskStatus: "pending",
+    }), () => ({ utterance: "补给已经送到。", citedRefs: [] }));
+    expect(result.artifact.fallback).toBe(true);
+    expect(result.artifact.text).not.toContain("已经送到");
+    const validation = result.artifact.validation as unknown as {
+      readonly attempts: readonly { readonly failedChecks: readonly string[] }[];
+    };
+    expect(validation.attempts.every((attempt) => attempt.failedChecks.includes("status-claims"))).toBe(true);
+  });
+
+  it("每个 intent 都能由安全模板生成非空且无占位符的对白", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const kinds: readonly Exclude<DialogueIntent["kind"], "none">[] = [
+      "acknowledge", "answer", "agree", "refuse", "counter-offer", "request", "inform",
+      "warn", "thank", "apologize", "decline-to-disclose", "report-result", "remind",
+    ];
+    const fact = {
+      ref: "ev-000000000001",
+      releasePolicyId: "parties:human-independent,player-1",
+      summaryZh: "路线暂时不开放",
+    };
+    for (const kind of kinds) {
+      const text = renderSafeSpeech({
+        intent: intent(kind, [fact.ref]),
+        facts: [fact],
+        receipts: [{
+          receiptId: "rcp-000000000001",
+          commandStatus: "accepted",
+          taskStatus: "pending",
+          detail: "task accepted",
+        }],
+        subject: "补给安排",
+        maxChars: 80,
+        prompts: harness.content.prompts,
+      });
+      expect(text.length, kind).toBeGreaterThan(0);
+      expect(text, kind).not.toMatch(/\{[^}]+\}/u);
+      expect(Array.from(text).length, kind).toBeLessThanOrEqual(80);
+    }
+  });
+
+  it("message 工具通过固定 commandId 进入 speech.commit", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const envelopes: CommandEnvelope[] = [];
+    const setup = flow(harness, envelopes);
+    const speech: SpeechApprovalInput = {
+      ...speechInput({ intent: intent("inform") }),
+      channel: "message",
+    };
+    const turn: ToolGatewayTurn = {
+      session: speech.session,
+      runId: speech.runId,
+      turnId: speech.turnId,
+      attemptId: "att-000000000001",
+      agentId: speech.agentId,
+      round: 1,
+      phase: "decision",
+      audience: speech.intent.audience,
+      auth: speech.auth,
+      narrowing: {},
+    };
+    const result = await setup.dialogue.executeMessage({
+      arguments: { to: ["player-1"], intent: speech.intent },
+      turn,
+      operationId: "op-000000000001",
+      commandId: "cmd-000000000001",
+      providerCallId: "provider-call-message",
+      speech,
+      generator: () => ({ utterance: "我明白了。", citedRefs: [] }),
+    });
+    expect(result.receipt.commandStatus).toBe("accepted");
+    expect(envelopes).toHaveLength(1);
+    expect(envelopes[0]).toMatchObject({
+      commandId: "cmd-000000000001",
+      type: "speech.commit",
+      payload: { channel: "message", audience: ["player-1"] },
+    });
+  });
+  it("公开受众不能披露 private fact", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const setup = flow(harness, []);
+    const input: SpeechApprovalInput = {
+      ...speechInput({ intent: intent("answer", ["ev-000000000001"]), factSummary: "只有我知道的秘密" }),
+      facts: [{
+        ref: "ev-000000000001",
+        releasePolicyId: "private:sec-000000000001",
+        summaryZh: "只有我知道的秘密",
+      }],
+    };
+    const result = await setup.dialogue.approve(input, () => ({ utterance: "这件事我不清楚。", citedRefs: [] }));
+    expect(result.preparation.visibleFacts).toHaveLength(0);
+    expect(result.preparation.omittedFactRefs).toEqual(["ev-000000000001"]);
+  });
+});
