@@ -5,6 +5,11 @@
     "type":  "module",
     "dependencies":  {
                          "@ai-npc/agent-runtime":  "workspace:*",
+                         "@ai-npc/mod-agent-compression-none":  "workspace:*",
+                         "@ai-npc/mod-agent-compression-window":  "workspace:*",
+                         "@ai-npc/mod-agent-context-ordered-blocks":  "workspace:*",
+                         "@ai-npc/mod-agent-tool-view-structured":  "workspace:*",
+                         "@ai-npc/mod-agent-tools-game-tools":  "workspace:*",
                          "@ai-npc/authority":  "workspace:*",
                          "@ai-npc/app-server":  "workspace:*",
                          "@ai-npc/client-protocol":  "workspace:*",
