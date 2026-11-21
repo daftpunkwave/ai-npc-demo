@@ -1,7 +1,7 @@
 /**
  * 运营操作的幂等执行：暂停/继续、快照、恢复与重开按 operationId 复用首次结果，冲突或失败记录同键。
  * 依赖运营幂等日志、基础操作、存档 InTransaction 方法与时钟 provider；不重算业务结果。
- * 禁止在业务写入之外单独提交结果（时钟控制除外），或让失败记录被后续重试覆盖。
+ * 禁止在业务写入之外单独提交结果（时钟控制除外），或让不可重试失败与已提交成功结果被后续重试覆盖。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { DomainError, canonicalJson, type ClockView, type StoragePort } from "@ai-npc/contracts";

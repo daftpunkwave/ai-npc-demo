@@ -13,6 +13,7 @@ import {
   loadDeploymentConfig,
   parseDeploymentConfig,
   resolveCredentials,
+  shutdownServer,
   startServer,
   startupLogLines,
 } from "@ai-npc/app-server";
@@ -470,5 +471,35 @@ describe("登录地址输出", () => {
     expect(playerOnly).toContain("[ai-npc] player  login: http://127.0.0.1:5173/#token=new-player");
     expect(playerOnly.join("\n")).not.toContain("persisted-console");
     expect(playerOnly.join("\n")).not.toContain("/console/#token=");
+  });
+});
+
+describe("关闭编排", () => {
+  it("关闭成功时退出码为 0 且不记录错误", async () => {
+    const exitCodes: number[] = [];
+    const errorLines: string[] = [];
+    await shutdownServer({
+      close: async () => {},
+      logError: (line) => { errorLines.push(line); },
+      setExitCode: (code) => { exitCodes.push(code); },
+    });
+    expect(exitCodes).toEqual([0]);
+    expect(errorLines).toEqual([]);
+  });
+
+  it("关闭失败时记录原因并设置非零退出码", async () => {
+    const exitCodes: number[] = [];
+    const errorLines: string[] = [];
+    await shutdownServer({
+      close: async () => {
+        throw new Error("注入的关闭失败");
+      },
+      logError: (line) => { errorLines.push(line); },
+      setExitCode: (code) => { exitCodes.push(code); },
+    });
+    expect(exitCodes).toEqual([1]);
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toContain("关闭失败");
+    expect(errorLines[0]).toContain("注入的关闭失败");
   });
 });

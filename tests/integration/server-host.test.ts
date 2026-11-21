@@ -1263,7 +1263,12 @@ describe("服务端宿主", () => {
       headers,
       payload: { operationId: "op-000000000107", snapshotId },
     });
-    expect(restored.statusCode).toBe(500);
+    // 可预期的来源不兼容返回稳定领域错误码，而不是通用 500；别名、分支、run 与快照保持原状。
+    expect(restored.statusCode).toBe(409);
+    const restoredBody = errorResponseSchema.parse(restored.json());
+    expect(restoredBody.error.code).toBe("invalid-state");
+    expect(restoredBody.error.code).not.toBe("plugin-failed");
+    expect(restoredBody.error.safeMessage).toContain("contentVersion");
     const after = host.storage.transact((tx) => ({
       branches: tx.rows("branches").list().map((row) => String(row["branch_id"])).sort(),
       runs: tx.rows("runs").list().map((row) => String(row["run_id"])).sort(),
