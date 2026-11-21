@@ -7,7 +7,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { DomainError, type ScopedBranchStorage, type StoragePort, type StorageTable, type StorageTransaction } from "@ai-npc/contracts";
-import { expectDomainError, openStorageHarness } from "./support";
+import { SqliteStorage } from "../src/sqlite/storage";
+import {
+  createFakeHost,
+  createTempDataDir,
+  expectDomainError,
+  openStorageHarness,
+  removeTempDataDir,
+} from "./support";
 
 const BRANCH_ID = "brn-tx";
 
@@ -312,8 +319,10 @@ describe("同步事务", () => {
     });
     try {
       const originalError = new Error("处理器失败");
+      let failedTransaction: StorageTransaction | null = null;
       const first = captureError(() =>
-        harness.port.transact(() => {
+        harness.port.transact((tx) => {
+          failedTransaction = tx;
           throw originalError;
         }),
       );
@@ -334,9 +343,70 @@ describe("同步事务", () => {
       expect(cause?.rollbackError).toBeInstanceOf(Error);
       expect((cause?.rollbackError as Error).message).toBe("注入的 ROLLBACK 失败");
       expect((cause?.originalError as Error).message).toBe("处理器失败");
+
+      // 分支复制与整库备份同样先经过 requireDatabase，不能继续使用失效连接。
+      const transaction = failedTransaction as StorageTransaction | null;
+      expect(transaction).not.toBeNull();
+      const forkFailure = captureError(() =>
+        harness.port.forkBranch(transaction as StorageTransaction, {
+          srcBranchId: BRANCH_ID,
+          dstBranchId: "brn-tx-fork",
+          kind: "experiment",
+          runId: "run-tx-fork",
+        }),
+      );
+      expect(forkFailure).toBeInstanceOf(DomainError);
+      expect((forkFailure as DomainError).code).toBe("invalid-state");
+      expect((forkFailure as DomainError).safeMessage).toContain("不可用");
+      const backupFailure = captureError(() => harness.port.backup());
+      expect(backupFailure).toBeInstanceOf(DomainError);
+      expect((backupFailure as DomainError).code).toBe("invalid-state");
+      expect((backupFailure as DomainError).safeMessage).toContain("不可用");
     } finally {
       execSpy.mockRestore();
       await harness.dispose();
+    }
+  });
+
+  it("回滚失败后成功关闭连接会清除不可用状态并允许重新打开", async () => {
+    const dataDir = createTempDataDir();
+    const storage = new SqliteStorage({ dataDir, inlineArtifactMaxBytes: 65536 }, createFakeHost());
+    let execSpy: ReturnType<typeof vi.spyOn> | null = null;
+    try {
+      await storage.open();
+      const internal = storage as unknown as { readonly database: DatabaseSync | null };
+      const database = internal.database;
+      if (database === null) {
+        throw new Error("存储适配器尚未打开");
+      }
+      const originalExec = database.exec.bind(database);
+      execSpy = vi.spyOn(database, "exec").mockImplementation((sql: string) => {
+        if (sql.trim().toUpperCase() === "ROLLBACK") {
+          throw new Error("注入的 ROLLBACK 失败");
+        }
+        originalExec(sql);
+      });
+      const failure = captureError(() =>
+        storage.transact(() => {
+          throw new Error("处理器失败");
+        }),
+      );
+      expect(failure).toBeInstanceOf(DomainError);
+      expect(storage.isOpen).toBe(false);
+
+      execSpy.mockRestore();
+      execSpy = null;
+      storage.close();
+      expect(storage.isOpen).toBe(false);
+
+      // 关闭成功清除不可用标记，重新打开后可以继续读写。
+      await storage.open();
+      expect(storage.isOpen).toBe(true);
+      expect(storage.transact((tx) => tx.get("SELECT 1 AS value")?.["value"])).toBe(1);
+    } finally {
+      execSpy?.mockRestore();
+      storage.close();
+      removeTempDataDir(dataDir);
     }
   });
 

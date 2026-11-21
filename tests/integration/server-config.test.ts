@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createShutdownHandler,
   credentialsFileName,
   loadDeploymentConfig,
   parseDeploymentConfig,
@@ -501,5 +502,43 @@ describe("关闭编排", () => {
     expect(errorLines).toHaveLength(1);
     expect(errorLines[0]).toContain("关闭失败");
     expect(errorLines[0]).toContain("注入的关闭失败");
+  });
+
+  it("连续关闭信号只执行一次关闭，失败退出码不被后续调用覆盖", async () => {
+    let closeCalls = 0;
+    const exitCodes: number[] = [];
+    const errorLines: string[] = [];
+    const shutdown = createShutdownHandler({
+      close: async () => {
+        closeCalls += 1;
+        throw new Error("注入的关闭失败");
+      },
+      logError: (line) => { errorLines.push(line); },
+      setExitCode: (code) => { exitCodes.push(code); },
+    });
+    const first = shutdown();
+    const second = shutdown();
+    // SIGINT 与 SIGTERM 共享同一个关闭任务，第二次调用不会重新关闭。
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(closeCalls).toBe(1);
+    expect(exitCodes).toEqual([1]);
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toContain("注入的关闭失败");
+  });
+
+  it("连续关闭信号在成功路径只保留退出码 0", async () => {
+    let closeCalls = 0;
+    const exitCodes: number[] = [];
+    const shutdown = createShutdownHandler({
+      close: async () => {
+        closeCalls += 1;
+      },
+      logError: () => {},
+      setExitCode: (code) => { exitCodes.push(code); },
+    });
+    await Promise.all([shutdown(), shutdown()]);
+    expect(closeCalls).toBe(1);
+    expect(exitCodes).toEqual([0]);
   });
 });
