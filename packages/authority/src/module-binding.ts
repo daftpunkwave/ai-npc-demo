@@ -13,6 +13,11 @@ import { TransactionWorldTx, type TxCollector } from "./world-tx";
 export interface ModuleBindingInput {
   readonly binder: ModuleBinder | undefined;
   readonly fallback: unknown;
+  /**
+   * 当前处理器的所有者模块；绑定器据此只返回该模块自身与 requires 声明的端口。
+   * 为 null 时返回宿主自己的全部端口视图。
+   */
+  readonly moduleId: string | null;
   readonly registry: RuleRegistry;
   readonly storageTx: StorageTransaction;
   readonly worldId: string;
@@ -90,5 +95,5 @@ export function bindModulePorts(input: ModuleBindingInput): unknown {
     host: input.host,
     collector: input.collector,
   });
-  return input.binder(txFor);
+  return input.binder(txFor, input.moduleId);
 }

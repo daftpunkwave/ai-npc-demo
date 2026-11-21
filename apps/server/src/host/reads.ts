@@ -55,8 +55,9 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
       host,
     });
 
+  /** 宿主只读视图需要全部已装配的游戏端口；moduleId 传 null 表示宿主自身。 */
   const portsIn = (storageTx: StorageTransaction): GameModulePorts =>
-    binder(readTxFor(storageTx)) as GameModulePorts;
+    binder(readTxFor(storageTx), null) as GameModulePorts;
 
   const receipts: CommandReceiptReadPort = {
     read: (principalId, branchId, commandId) =>

@@ -25,6 +25,7 @@ import {
   clientRequiredCapabilities,
   serverRequiredCapabilities,
 } from "./module-catalog";
+import { checkModuleCapabilityUsage } from "./module-capability-usage";
 
 /** 一条装配预检失败：文件、稳定代码与可直接定位的原因。 */
 export interface CatalogViolation {
@@ -276,6 +277,10 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
         };
   const violations: CatalogViolation[] = [];
   const definitionsById = checkDefinitions(definitions, violations);
+  // 自定义目录测试无法提供真实模块源码；只有仓库真实目录才做源码访问与 requires 的静态对账。
+  if (options.definitions === undefined) {
+    violations.push(...checkModuleCapabilityUsage({ root, definitions }));
+  }
   const directory = join(root, "config/assemblies");
   let fileNames: string[];
   try {
