@@ -24,21 +24,27 @@ export const assemblySourceSchema = z.enum(["repo", "draft"]);
 
 export type AssemblySource = z.infer<typeof assemblySourceSchema>;
 
-/** 控制台健康摘要中的模块状态。 */
+/** 健康摘要的整体状态；与 `/api/v1/health` 使用同一取值来源。 */
+export const consoleHealthStatusSchema = z.enum(["ready", "degraded"]);
+
+export type ConsoleHealthStatus = z.infer<typeof consoleHealthStatusSchema>;
+
+/** 控制台健康摘要中的模块状态；取值来自装配与启动结果。 */
 export const consoleModuleStatusSchema = z
   .object({
     moduleId: moduleIdSchema,
     version: z.string().min(1),
-    status: z.string().min(1),
+    status: consoleHealthStatusSchema,
   })
   .strict();
 
+/** 队列摘要；尚无数据来源的字段留空，不用 0 冒充。 */
 export const consoleQueueSummarySchema = z
   .object({
     turnsQueued: z.number().int().nonnegative(),
-    turnsRunning: z.number().int().nonnegative(),
-    maintenanceQueued: z.number().int().nonnegative(),
-    modelQueue: z.number().int().nonnegative(),
+    turnsRunning: z.number().int().nonnegative().optional(),
+    maintenanceQueued: z.number().int().nonnegative().optional(),
+    modelQueue: z.number().int().nonnegative().optional(),
   })
   .strict();
 
@@ -65,6 +71,7 @@ export const consoleFailureSummarySchema = z
 /** 控制台运行总览；与 console.health 频道推送的内容同构。 */
 export const consoleHealthResponseSchema = z
   .object({
+    status: consoleHealthStatusSchema,
     ports: z
       .object({
         client: z.number().int().positive(),
@@ -76,7 +83,7 @@ export const consoleHealthResponseSchema = z
     modules: z.array(consoleModuleStatusSchema),
     clock: clockViewSchema,
     queues: consoleQueueSummarySchema,
-    laggingAgents: z.number().int().nonnegative(),
+    laggingAgents: z.number().int().nonnegative().optional(),
     budgets: z.array(consoleBudgetSummarySchema),
     recentFailures: z.array(consoleFailureSummarySchema),
   })

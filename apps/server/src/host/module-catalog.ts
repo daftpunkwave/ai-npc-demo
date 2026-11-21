@@ -34,7 +34,7 @@ import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { clockConfigSchema, clockModuleDefinition, type ClockConfig } from "@ai-npc/mod-game-clock-controlled";
 import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
 import { resourcesModuleDefinition } from "@ai-npc/mod-game-resources-light";
-import { worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
+import { worldConfigSchema, worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
 import { commsModuleDefinition } from "@ai-npc/mod-game-comms-standard";
 import { actionsModuleDefinition } from "@ai-npc/mod-game-actions-standard";
 import { agreementsModuleDefinition } from "@ai-npc/mod-game-agreements-standard";
@@ -267,6 +267,15 @@ export function clockConfigOf(plan: ResolvedRealmPlan): Required<ClockConfig> {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 旧装配可能省略该字段，保留 60s 兜底。
     autoPauseAfterDisconnectMs: config.autoPauseAfterDisconnectMs ?? 60_000,
   };
+}
+
+/**
+ * 读取在线装配中世界模块的章节长度配置；默认值已由描述符 schema 填充。
+ * 章节评估 tick 由世界模块的结算规则使用，客户端只读内容视图据此展示。
+ */
+export function worldChapterLengthOf(plan: ResolvedRealmPlan): number {
+  return worldConfigSchema.parse(plannedModuleForCapability(plan, "game.world").config)
+    .chapterLengthTicks;
 }
 
 function runningInstanceFor(

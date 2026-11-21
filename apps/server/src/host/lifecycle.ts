@@ -28,6 +28,8 @@ export interface LifecycleInput {
   /** 时钟 provider 的有效配置：全部玩家断线后自动暂停的阈值。 */
   readonly autoPauseAfterDisconnectMs: number;
   readonly agentHealth?: () => boolean;
+  /** 当前在线分支是否已开始 campaign；未开局时不能继续时钟，避免非零 tick 开局。 */
+  readonly campaignStarted: () => boolean;
   /** 关闭时释放存储、模块与传输；传输实例在 attachApp 后可用。 */
   readonly disposeResources: (app: ServerApp | null) => Promise<void>; // eslint-disable-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
 }
@@ -48,7 +50,7 @@ export interface HostLifecycle {
  * 失败后停止推进并让健康状态变为 degraded。
  */
 export function createLifecycle(input: LifecycleInput): HostLifecycle {
-  const { host, storage, runtime, authority, active, autoPauseAfterDisconnectMs } = input;
+  const { host, storage, runtime, authority, active, autoPauseAfterDisconnectMs, campaignStarted } = input;
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
   let app: ServerApp | null = null;
   let playerConnections = 0;
@@ -286,6 +288,12 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
    * 恢复必须先补完当前 tick 且清理持久失败记录，成功后才提交时钟启动，失败时时钟不变。
    */
   const control = (mode: "pause" | "start", expectedRunVersion: number) => {
+    // 未开局就推进时钟会让 campaign.start 永久落在非零 tick；必须在入口拒绝。
+    if (mode === "start" && !campaignStarted()) {
+      throw new DomainError("not-ready", "campaign 尚未开始，不能继续时钟", {
+        details: { branchId: active.branchId },
+      });
+    }
     // 终局停止点已登记：先补完当前 tick 并清理 worker 失败状态，再确认时钟保持暂停并拒绝恢复。
     if (mode === "start" && authority.clock.pendingStop(active.branchId)) {
       recoverWorker(expectedRunVersion);

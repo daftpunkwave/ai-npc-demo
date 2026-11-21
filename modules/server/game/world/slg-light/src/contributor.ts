@@ -49,6 +49,10 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
   if (context.tx.get<unknown>("campaign", campaignAggregateId) !== null) {
     return { kind: "rejected", reasonCode: "campaign-exists", safeMessage: "当前分支已经存在 campaign" };
   }
+  // 日结、章节评估与剧情卡都以 t0 为绝对时间锚；非零开局会让三者互相错位。
+  if (context.tx.worldTick !== 0) {
+    return { kind: "rejected", reasonCode: "world-tick-not-zero", safeMessage: "只能在 t0 开局" };
+  }
   const campaignId = context.ids("cmp");
   const campaign: CampaignState = {
     campaignId,

@@ -1,12 +1,18 @@
 /**
- * 读取控制台健康摘要并呈现端口、装配、时钟、队列、模块与失败计数。
- * 依赖注入的 console API、当前角色与 React；不伪造 Agent 或预算数据。
+ * 读取控制台健康摘要与客户端内容视图，呈现端口、装配、时钟、队列、模块与失败计数。
+ * 依赖注入的 console API、当前角色与 React；页面标题取自内容视图，不伪造 Agent 或预算数据。
  * 禁止在服务失败时保留过期页面并声称运行正常。
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ConsoleHealthResponse, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type {
+  ClientContentView,
+  ConsoleHealthResponse,
+  ModuleCreateInput,
+  ModuleInstance,
+} from "@ai-npc/contracts";
 import type { ApiClient } from "@ai-npc/client-protocol";
+import { healthSummary } from "./health-summary";
 
 export interface ConsoleHostPort {
   readonly api: ApiClient;
@@ -15,8 +21,44 @@ export interface ConsoleHostPort {
 
 function HealthPage(): ReactNode {
   const host = usePort<ConsoleHostPort>("host.console");
+  const [content, setContent] = useState<ClientContentView | null>(null);
   const [health, setHealth] = useState<ConsoleHealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [contentError, setContentError] = useState<string | null>(null);
+
+  // 内容静态：与健康轮询分开读取；失败时按固定间隔重试，且不阻塞健康数据。
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setInterval> | null = null;
+    const load = (): void => {
+      void host.api
+        .content()
+        .then((value) => {
+          if (cancelled) {
+            return;
+          }
+          setContent(value);
+          setContentError(null);
+          if (retryTimer !== null) {
+            clearInterval(retryTimer);
+            retryTimer = null;
+          }
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) {
+            setContentError(cause instanceof Error ? cause.message : String(cause));
+          }
+        });
+    };
+    load();
+    retryTimer = setInterval(load, 3_000);
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        clearInterval(retryTimer);
+      }
+    };
+  }, [host.api]);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,15 +91,19 @@ function HealthPage(): ReactNode {
   if (health === null) {
     return <div className="console-loading">读取运行状态…</div>;
   }
+  const summary = healthSummary(health);
   return (
     <section className="console-page" data-testid="console-page-health">
       <header className="console-page-head">
         <div>
           <span className="console-eyebrow">运行总览</span>
-          <h1>灰港控制台</h1>
+          <h1>{content?.ui.consoleTitle ?? ""}</h1>
           <p>只显示已装配模块、授权队列与当前在线分支。</p>
+          {contentError === null ? null : <p className="console-error" role="status">{contentError}</p>}
         </div>
-        <span className="health-chip">ready</span>
+        <span className={summary.statusClass} data-testid="console-health-status">
+          {summary.statusLabel}
+        </span>
       </header>
       <div className="console-stat-grid">
         <article>
@@ -77,8 +123,8 @@ function HealthPage(): ReactNode {
         </article>
         <article>
           <span>待处理</span>
-          <strong>{health.queues.turnsQueued + health.queues.maintenanceQueued}</strong>
-          <small>turns {health.queues.turnsQueued} / maintenance {health.queues.maintenanceQueued}</small>
+          <strong>{summary.queuedText}</strong>
+          <small>{summary.queueDetail}</small>
         </article>
       </div>
       <div className="console-two-column">
@@ -104,7 +150,7 @@ function HealthPage(): ReactNode {
           </header>
           <dl className="console-kv">
             <div><dt>装配摘要</dt><dd>{health.assemblyHash.slice(0, 18)}…</dd></div>
-            <div><dt>水位落后</dt><dd>{health.laggingAgents}</dd></div>
+            <div><dt>水位落后</dt><dd>{summary.laggingText}</dd></div>
             <div><dt>预算条目</dt><dd>{health.budgets.length}</dd></div>
             <div><dt>最近失败</dt><dd>{health.recentFailures.length}</dd></div>
           </dl>

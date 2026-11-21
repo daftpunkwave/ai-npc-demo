@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Authority } from "@ai-npc/authority";
 import { listRuleFailures, type RuleFailureRecord } from "@ai-npc/authority";
-import type { AuthContext, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
+import type { AuthContext, ClientContentView, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
 import type { GameContent } from "@ai-npc/module-sdk";
 import { clockView } from "./clock-view";
 import type { HostLifecycle } from "./lifecycle";
@@ -30,6 +30,8 @@ export interface TransportAppInput {
   readonly operations: ReturnType<OperationsFactory["create"]>;
   readonly lifecycle: HostLifecycle;
   readonly gameContent: GameContent;
+  /** 客户端只读内容视图：章节名、时钟刻度与界面文字。 */
+  readonly content: ClientContentView;
   readonly sessionAssembly: SessionAssemblies;
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
@@ -148,6 +150,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       assembly: input.assembly,
       sessionAssembly: input.sessionAssembly,
       starts: () => startOptions(gameContent),
+      content: () => input.content,
       conversation: {
         worldTick: () => reads.conversation.worldTick(),
         conversationsOf: (principalId) => reads.conversation.conversationsOf(principalId),
@@ -157,12 +160,14 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       },
       console: {
         health: () => {
+          const status = lifecycle.healthStatus();
           const queueCounts = runtime.storage.transact((tx) => ({
             turnsQueued: tx.rows("turn_runs").count({
               branch_id: active.branchId,
               status: "queued",
             }),
           }));
+          // createApp 只在全部模块启动成功后创建；能出现在装配集里即表示已就绪。
           const modules = [
             ...input.assembly.modules,
             ...input.sessionAssembly.client.modules,
@@ -170,21 +175,17 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
           ].map((module) => ({
             moduleId: module.moduleId,
             version: module.version,
-            status: "ready",
+            status: "ready" as const,
           }));
           return {
+            status,
             ports: { client: options.clientPort ?? 5173, server: options.transportPort ?? 3000 },
             realms: ["server", "client", "console"] as const,
             assemblyHash: input.assembly.assemblyHash,
             modules,
             clock: clockView(lifecycle.clockState()),
-            queues: {
-              turnsQueued: queueCounts.turnsQueued,
-              turnsRunning: 0,
-              maintenanceQueued: 0,
-              modelQueue: 0,
-            },
-            laggingAgents: 0,
+            // turnsRunning、maintenanceQueued、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
+            queues: { turnsQueued: queueCounts.turnsQueued },
             budgets: [],
             recentFailures: recentFailures(runtime.storage, active.branchId),
           };

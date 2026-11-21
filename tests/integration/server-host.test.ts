@@ -13,6 +13,8 @@ import type { AssemblyDescriptor, AuthContext, Json, ModuleDefinition, StorageCe
 import {
   campaignResponseSchema,
   capabilityIdSchema,
+  clientContentViewSchema,
+  consoleHealthResponseSchema,
   conversationResponseSchema,
   errorResponseSchema,
   sessionAssemblyResponseSchema,
@@ -347,6 +349,43 @@ describe("服务端宿主", () => {
     expect((snapshots.json() as { readonly snapshots: unknown[] }).snapshots).toHaveLength(1);
   });
 
+  it("未开局时拒绝继续时钟；非零 tick 开局仍被拒且不写入 campaign", { timeout: 20_000 }, async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+    });
+    hosts.push(host);
+    const session = await loginSession(host, "player-token");
+    const headers = { authorization: `Bearer ${session}` };
+    // 未开局时继续时钟会让 campaign.start 永远落在非零 tick，入口必须拒绝。
+    const resumed = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/campaign/resume",
+      headers,
+      payload: { operationId: "op-000000000010", expectedRunVersion: Number(clockRow(host)["run_version"]) },
+    });
+    expect(resumed.statusCode).toBe(503);
+    expect(errorResponseSchema.parse(resumed.json()).error.code).toBe("not-ready");
+    expect(clockRow(host)).toMatchObject({ world_tick: 0, mode: "paused" });
+
+    // 防御纵深：即使异常恢复把时钟拨到非零，campaign.start 也必须拒绝。
+    setBranchClock(host, host.branchId, 5);
+    const started = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000202"),
+    });
+    expect(started.statusCode).toBe(200);
+    expect(started.json()).toMatchObject({ commandStatus: "rejected", reasonCode: "world-tick-not-zero" });
+    expect(
+      host.storage.transact((tx) =>
+        tx.branch(host.branchId).table("aggregate_state").get({ aggregate_type: "campaign", aggregate_id: "campaign" }),
+      ),
+    ).toBeNull();
+  });
+
   it("实际宿主提供开局读取、会话与装配握手", async () => {
     const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);
@@ -381,6 +420,18 @@ describe("服务端宿主", () => {
     const sessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers });
     expect(sessionView.json()).toMatchObject({ clientAssembly: { realm: "client" } });
 
+    // 客户端内容来自内容包与解析后的时钟配置；未认证不可读。
+    expect((await host.app.inject({ method: "GET", url: "/api/v1/content" })).statusCode).toBe(401);
+    const contentResponse = await host.app.inject({ method: "GET", url: "/api/v1/content", headers });
+    expect(contentResponse.statusCode).toBe(200);
+    const clientContent = clientContentViewSchema.parse(contentResponse.json());
+    expect(clientContent.chapterTitle).toBe("水闸之前");
+    expect(clientContent.clock).toEqual({ secondsPerTick: 20, evaluationTick: 168, motionTick: 144 });
+    expect(clientContent.ui.reconnecting).toBe("重连中");
+    expect(clientContent.ui.sessionExpired).toBe("会话已失效，请重新登录。");
+    expect(clientContent.ui.chapterKicker).toBe("序章 / 第一周");
+    expect(clientContent.ui.consoleTitle).toBe("灰港控制台");
+
     const consoleSession = await loginSession(host, "console-token");
     const consoleAssembly = await host.app.inject({
       method: "GET",
@@ -389,6 +440,15 @@ describe("服务端宿主", () => {
     });
     expect(consoleAssembly.statusCode).toBe(200);
     expect(sessionAssemblyResponseSchema.parse(consoleAssembly.json())).toMatchObject({ realm: "console" });
+
+    // 内容只含公开章节与界面文字，运营会话同样可读，不需要 X-Active-Role。
+    const consoleContent = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/content",
+      headers: { authorization: `Bearer ${consoleSession}` },
+    });
+    expect(consoleContent.statusCode).toBe(200);
+    expect(clientContentViewSchema.parse(consoleContent.json()).chapterTitle).toBe("水闸之前");
 
     const started = await host.app.inject({
       method: "POST",
@@ -536,9 +596,10 @@ describe("服务端宿主", () => {
     });
     expect(allowed.statusCode).toBe(200);
     expect(allowed.json()).toMatchObject({
+      status: "ready",
       ports: { client: 5173, server: port },
       realms: ["server", "client", "console"],
-      queues: { turnsQueued: 0, turnsRunning: 0, maintenanceQueued: 0, modelQueue: 0 },
+      queues: { turnsQueued: 0 },
     });
     expect(allowed.json<{ readonly modules: readonly unknown[] }>().modules.length).toBeGreaterThan(0);
     // 死信与重试记录出现在健康摘要，便于运营在浏览器端定位各类失败位置。
@@ -942,6 +1003,49 @@ describe("服务端宿主", () => {
     expect(host.storage.transact((tx) => tx.branch(host.branchId).table("domain_events").list())).toEqual([]);
     expect(host.storage.transact((tx) => tx.branch(host.branchId).table("aggregate_state").list())).toEqual([]);
     expect(host.storage.transact((tx) => tx.branch(host.branchId).table("clock").get({}))).toEqual(clockBefore);
+  });
+
+  it("worker 失败持久化后控制台与系统健康同时降级", async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+    });
+    hosts.push(host);
+    const consoleSession = await loginSession(host, "console-token");
+    const headers = { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" };
+
+    const readySystem = await host.app.inject({ method: "GET", url: "/api/v1/health" });
+    expect(readySystem.json()).toMatchObject({ status: "ready" });
+    const readyConsole = await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers });
+    expect(readyConsole.statusCode).toBe(200);
+    expect(readyConsole.json()).toMatchObject({ status: "ready" });
+
+    // 模拟 tick worker 连续失败已写入持久化记录：两个健康入口必须给出同一结论。
+    host.storage.transact((tx) => {
+      tx.branch(host.branchId).table("rule_failures").put({
+        phase: "worker",
+        subject_id: "tick-worker",
+        detail: "",
+        attempts: 3,
+        reason_code: "plugin-failed",
+        last_error: "注入的 worker 失败",
+        status: "failed",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      });
+    });
+    const degradedSystem = await host.app.inject({ method: "GET", url: "/api/v1/health" });
+    expect(degradedSystem.json()).toMatchObject({ status: "degraded" });
+    const degradedConsole = await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers });
+    expect(degradedConsole.statusCode).toBe(200);
+    const body = consoleHealthResponseSchema.parse(degradedConsole.json());
+    expect(body.status).toBe("degraded");
+    expect(body.status).toBe((degradedSystem.json() as { readonly status: string }).status);
+    // 没有数据来源的队列与水位字段省略，不用 0 冒充。
+    expect(body.queues.turnsRunning).toBeUndefined();
+    expect(body.queues.maintenanceQueued).toBeUndefined();
+    expect(body.laggingAgents).toBeUndefined();
+    expect(body.modules.every((module) => module.status === "ready")).toBe(true);
   });
 
   it("装配中的 access-policy 配置决定玩家命令与控制台角色裁决", async () => {
@@ -1529,6 +1633,14 @@ describe("服务端宿主", () => {
     const first = connectStream(`ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(await ticketFor(host, session))}`);
     expect(await first.next()).toMatchObject({ type: "hello" });
     const headers = { authorization: `Bearer ${session}` };
+    // 自动暂停策略只对已开局的运行生效：先在 t0 开局再恢复时钟。
+    const started = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000905"),
+    });
+    expect(started.statusCode).toBe(200);
     const resumed = await host.app.inject({
       method: "POST",
       url: "/api/v1/campaign/resume",
@@ -1598,11 +1710,19 @@ describe("服务端宿主", () => {
     });
     await host.listen();
     const session = await loginSession(host, "player-token");
-    // 恢复时钟并确保 worker 定时器已安排；关闭后必须清除。
+    const headers = { authorization: `Bearer ${session}` };
+    // 恢复时钟前先开局；恢复后确保 worker 定时器已安排，关闭时必须清除。
+    const started = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000903"),
+    });
+    expect(started.statusCode).toBe(200);
     const resumed = await host.app.inject({
       method: "POST",
       url: "/api/v1/campaign/resume",
-      headers: { authorization: `Bearer ${session}` },
+      headers,
       payload: { operationId: "op-000000000902", expectedRunVersion: Number(clockRow(host)["run_version"]) },
     });
     expect(resumed.statusCode).toBe(200);
@@ -1718,6 +1838,14 @@ describe("服务端宿主", () => {
 
     const session = await loginSession(host, "player-token");
     const headers = { authorization: `Bearer ${session}` };
+    // 内容通道使用解析计划里的时钟秒数与世界模块的章节长度，不退回源码默认值。
+    const contentResponse = await host.app.inject({ method: "GET", url: "/api/v1/content", headers });
+    expect(contentResponse.statusCode).toBe(200);
+    const clientContent = clientContentViewSchema.parse(contentResponse.json());
+    expect(clientContent.clock).toEqual({ secondsPerTick: 7, evaluationTick: 168, motionTick: 144 });
+    expect(clientContent.ui.hudKicker).toBe("灰港 / 序章");
+    expect(clientContent.ui.siteLabel).toBe("灰港现场");
+    expect(clientContent.ui.sceneLabel).toBe("灰港近城");
     const started = await host.app.inject({
       method: "POST",
       url: "/api/v1/commands",
