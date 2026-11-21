@@ -8,7 +8,11 @@ import { DomainError, type Json } from "@ai-npc/contracts";
 import { Authority, createScopedWorldTxFactory, createSystemAuth } from "@ai-npc/authority";
 import { gameModuleIds, type GameModulePorts, type GameResourcesPort, type ModuleBinder } from "@ai-npc/module-sdk";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
-import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
+import {
+  createAgreementsContributor,
+  createAgreementsPort,
+  resolvePrincipalFaction,
+} from "@ai-npc/mod-game-agreements-standard";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
@@ -83,6 +87,7 @@ function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: b
       "game.agreements": createAgreementsPort(
         () => txFor(gameModuleIds.agreements),
         { actions, comms, world, map },
+        (principalId) => resolvePrincipalFaction(principalId, value.gameContent.factions, world.campaign()),
       ),
       "game.scenario": createScenarioPort(txFor),
     } satisfies GameModulePorts;

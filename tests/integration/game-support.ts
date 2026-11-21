@@ -33,7 +33,11 @@ import { createClockPort } from "@ai-npc/mod-game-clock-controlled";
 import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
 import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
-import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
+import {
+  createAgreementsContributor,
+  createAgreementsPort,
+  resolvePrincipalFaction,
+} from "@ai-npc/mod-game-agreements-standard";
 import { createScenarioContributor, createScenarioPort } from "@ai-npc/mod-game-scenario-watergate";
 import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
@@ -116,7 +120,11 @@ function bindGamePorts(
     "game.world": world,
     "game.comms": comms,
     "game.actions": actions,
-    "game.agreements": createAgreementsPort(() => txFor(gameModuleIds.agreements), { actions, comms, world, map }),
+    "game.agreements": createAgreementsPort(
+      () => txFor(gameModuleIds.agreements),
+      { actions, comms, world, map },
+      (principalId) => resolvePrincipalFaction(principalId, gameContent.factions, world.campaign()),
+    ),
     "game.scenario": createScenarioPort(txFor),
   };
 }
