@@ -202,17 +202,14 @@ function validateUsePlan(
       }
       continue;
     }
-    const data = typeof insert.content.data === "object" &&
-      insert.content.data !== null &&
-      !Array.isArray(insert.content.data)
-      ? insert.content.data
-      : {};
     if (
       insert.sourceObservationIds.length === 0 ||
-      !insert.sourceObservationIds.every((observationId) => inputObservations.has(observationId)) ||
-      data["noteworthyTurnId"] !== input.turnId
+      !insert.sourceObservationIds.every((observationId) => inputObservations.has(observationId))
     ) {
       throw new Error("memory use inserted a record that was not derived from this turn");
+    }
+    if (insert.sourceTurnId !== input.turnId) {
+      throw new Error("memory use inserted a record whose source turn does not match this turn");
     }
   }
 }

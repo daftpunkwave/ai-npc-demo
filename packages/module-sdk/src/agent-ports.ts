@@ -145,6 +145,7 @@ export interface MemoryIngestInput {
 export interface MemoryRecordUseInput {
   readonly scope: MemoryScope;
   readonly baseRevision: number;
+  /** 本 turn 的 ID；新建插入行必须以 `sourceTurnId` 回填该值，供宿主校验来源。 */
   readonly turnId: string;
   readonly citedMemoryIds: readonly string[];
   readonly noteworthy: readonly {

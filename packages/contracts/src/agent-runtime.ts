@@ -193,6 +193,8 @@ export const memoryChangePlanSchema = z
           lastReinforcedTick: z.number().int().nonnegative(),
           tags: z.array(z.string().min(1)),
           sourceObservationIds: z.array(idSchemas.obs),
+          // recordUse 新建记录时必填，声明产生该记录的 turn；其他变更计划省略。
+          sourceTurnId: z.string().min(1).optional(),
           content: z
             .object({
               summaryZh: z.string(),

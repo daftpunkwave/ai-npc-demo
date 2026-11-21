@@ -413,6 +413,213 @@ describe("Agent memory host", () => {
   });
 });
 
+describe("Memory use publication", () => {
+  it("accepts a replacement memory that declares the source turn without a private data key", async () => {
+    const harness = await createMemoryHarness(sourceTurnMemory({ sourceTurnId: "turn-000000000001" }));
+    const host = await startedHost(harness);
+    try {
+      const observation = insertObservation(harness, {
+        sequence: 1,
+        tick: 0,
+        eventType: "CreateA",
+        summary: "A0",
+      });
+      await host.ingestAll(0);
+      await expect(host.recordUse(memoryAgentId, {
+        baseRevision: 1,
+        turnId: "turn-000000000001",
+        retrievedMemoryIds: [],
+        citedMemoryIds: [],
+        noteworthy: [],
+        inputObservations: [observation],
+        worldTick: 1,
+      })).resolves.toBe(2);
+      expect(host.watermark(memoryAgentId).revision).toBe(2);
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
+
+  it("rejects a use plan whose record declares another source turn", async () => {
+    const harness = await createMemoryHarness(sourceTurnMemory({ sourceTurnId: "turn-000000000002" }));
+    const host = await startedHost(harness);
+    try {
+      const observation = insertObservation(harness, {
+        sequence: 1,
+        tick: 0,
+        eventType: "CreateA",
+        summary: "A0",
+      });
+      await host.ingestAll(0);
+      await expect(host.recordUse(memoryAgentId, {
+        baseRevision: 1,
+        turnId: "turn-000000000001",
+        retrievedMemoryIds: [],
+        citedMemoryIds: [],
+        noteworthy: [],
+        inputObservations: [observation],
+        worldTick: 1,
+      })).rejects.toThrow("source turn does not match");
+      expect(host.watermark(memoryAgentId).revision).toBe(1);
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
+
+  it("rejects a use plan that omits the source turn", async () => {
+    const harness = await createMemoryHarness(sourceTurnMemory());
+    const host = await startedHost(harness);
+    try {
+      const observation = insertObservation(harness, {
+        sequence: 1,
+        tick: 0,
+        eventType: "CreateA",
+        summary: "A0",
+      });
+      await host.ingestAll(0);
+      await expect(host.recordUse(memoryAgentId, {
+        baseRevision: 1,
+        turnId: "turn-000000000001",
+        retrievedMemoryIds: [],
+        citedMemoryIds: [],
+        noteworthy: [],
+        inputObservations: [observation],
+        worldTick: 1,
+      })).rejects.toThrow("source turn does not match");
+      expect(host.watermark(memoryAgentId).revision).toBe(1);
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
+
+  it("rejects a use plan that cites an observation outside this turn's inputs", async () => {
+    const harness = await createMemoryHarness(sourceTurnMemory({
+      sourceTurnId: "turn-000000000001",
+      sourceObservationIds: ["obs-000000000002"],
+    }));
+    const host = await startedHost(harness);
+    try {
+      const first = insertObservation(harness, {
+        sequence: 1,
+        tick: 0,
+        eventType: "CreateA",
+        summary: "A0",
+      });
+      insertObservation(harness, {
+        sequence: 2,
+        tick: 1,
+        eventType: "CreateB",
+        summary: "B0",
+      });
+      await host.ingestAll(1);
+      await expect(host.recordUse(memoryAgentId, {
+        baseRevision: 1,
+        turnId: "turn-000000000001",
+        retrievedMemoryIds: [],
+        citedMemoryIds: [],
+        noteworthy: [],
+        inputObservations: [first],
+        worldTick: 2,
+      })).rejects.toThrow("not derived from this turn");
+      expect(host.watermark(memoryAgentId).revision).toBe(1);
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
+});
+
+function sourceTurnMemory(options: {
+  readonly sourceTurnId?: string;
+  readonly sourceObservationIds?: readonly string[];
+} = {}): ModuleDefinition {
+  const base = memoryRecord();
+  const port: MemoryPort = {
+    prepareIngest(input) {
+      return {
+        baseRevision: input.baseRevision,
+        observationSeqThrough: input.observations.reduce(
+          (highest, observation) => Math.max(highest, observation.observationSeq),
+          0,
+        ),
+        inserts: [],
+        retires: [],
+        derivedThroughSeq: null,
+        derivedThroughTick: null,
+        changeKind: "ingest",
+      };
+    },
+    retrieve(query) {
+      return {
+        status: "empty-by-design",
+        revision: query.revision,
+        coreBlock: null,
+        relationSummary: [],
+        items: [],
+        candidates: 0,
+        dropped: [],
+      };
+    },
+    planMaintenance() {
+      return null;
+    },
+    async runMaintenance() {
+      throw new Error("source-turn memory does not run maintenance");
+    },
+    recordUse(input) {
+      const sourceObservationIds = (options.sourceObservationIds ??
+        input.inputObservations.map((observation) => observation.observationId)) as
+        MemoryChangePlan["inserts"][number]["sourceObservationIds"];
+      return {
+        baseRevision: input.baseRevision,
+        observationSeqThrough: input.inputObservations.reduce(
+          (highest, observation) => Math.max(highest, observation.observationSeq),
+          0,
+        ),
+        inserts: [{
+          ...base,
+          memoryId: "mem-000000000020" as MemoryChangePlan["inserts"][number]["memoryId"],
+          validFromTick: input.worldTick,
+          lastReinforcedTick: input.worldTick,
+          sourceObservationIds,
+          ...(options.sourceTurnId === undefined ? {} : { sourceTurnId: options.sourceTurnId }),
+          content: {
+            summaryZh: "替代记忆实现写入的记录",
+            counterpartIds: ["player-1"],
+            data: { marker: "alternative" },
+          },
+        }],
+        retires: [],
+        derivedThroughSeq: null,
+        derivedThroughTick: null,
+        changeKind: "use",
+      };
+    },
+    proposeWakeups() {
+      return [];
+    },
+  };
+  return defineModule({
+    id: "agent.memory.source-turn",
+    realm: "server",
+    kind: "service",
+    version: "1.0.0",
+    apiVersion: "1",
+    instanceScope: "agent",
+    provides: [{
+      capability: capabilityIdSchema.parse("agent.memory"),
+      cardinality: "exactly-one",
+      instanceScope: "agent",
+    }],
+    requires: [],
+    requiresRemote: [],
+    configSchema: emptyModuleConfigSchema,
+    defaults: {},
+    stateSchemaVersion: 1,
+    migrationPaths: [],
+    create: async (input) => createStatelessModule(input, port),
+  });
+}
+
 function triggers(harness: MemoryHarness): readonly StorageRow[] {
   return harness.storage.transact((tx) =>
     tx.branch(memoryBranchId).table("triggers").list(),

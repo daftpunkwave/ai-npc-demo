@@ -343,6 +343,7 @@ export class LedgerMemoryPort implements MemoryPort {
     const salience = entry.kind === "request" ? 0.3 : 0.5;
     const data: Record<string, import("@ai-npc/contracts").Json> = {
       dueTick: entry.dueTick,
+      // 持久化后供本模块跨 turn 去重；宿主的来源校验只读插入行的 sourceTurnId。
       noteworthyTurnId: input.turnId,
       noteworthySummary: entry.summary,
     };
@@ -366,6 +367,7 @@ export class LedgerMemoryPort implements MemoryPort {
       lastReinforcedTick: input.worldTick,
       tags: isPromise ? ["agreement", "prospective"] : ["dialogue"],
       sourceObservationIds: [...new Set(sources.map((source) => source.observationId))].sort(compareStrings),
+      sourceTurnId: input.turnId,
       content: {
         summaryZh: entry.summary,
         counterpartIds: [...new Set([entry.aboutId, ...sources.flatMap((source) =>
