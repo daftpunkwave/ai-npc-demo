@@ -656,6 +656,7 @@ describe("structured ledger", () => {
           departTick: 20,
         },
         summary: "收到护送邀请",
+        epistemic: "reported",
       }),
       releasePolicyId: "private:sec-invitation",
     };
@@ -699,6 +700,7 @@ describe("structured ledger", () => {
           dueTick: 20,
         }),
       }),
+      epistemic: "reported-claim",
     });
     expect(promise?.sourceObservationIds).toEqual([
       "obs-000000000031",

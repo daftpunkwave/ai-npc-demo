@@ -73,6 +73,10 @@ export function buildProspective(
           event.observation.releasePolicyId,
           deadline.releasePolicyId,
         ]);
+        row.epistemic = mergeEpistemic(
+          observationEpistemic(event.observation),
+          deadline.epistemic,
+        );
         row.sourceObservationIds = [...new Set([
           ...row.sourceObservationIds,
           ...deadline.sourceObservationIds,
@@ -156,6 +160,7 @@ interface TaskDeadline {
   readonly dueTick: number;
   readonly releasePolicyId: string;
   readonly sourceObservationIds: readonly string[];
+  readonly epistemic: LedgerRow["epistemic"];
 }
 
 function findTaskDeadline(
@@ -182,6 +187,7 @@ function findTaskDeadline(
         dueTick: direct,
         releasePolicyId: event.observation.releasePolicyId,
         sourceObservationIds: [event.observation.observationId],
+        epistemic: observationEpistemic(event.observation),
       };
     }
   }
@@ -196,10 +202,26 @@ function findTaskDeadline(
         dueTick: direct,
         releasePolicyId: record.releasePolicyId,
         sourceObservationIds: record.sourceObservationIds,
+        epistemic: record.epistemic,
       };
     }
   }
   return null;
+}
+
+function observationEpistemic(observation: AgentObservation): LedgerRow["epistemic"] {
+  if (observation.epistemic === "witnessed") return "verified-event";
+  if (observation.epistemic === "reported") return "reported-claim";
+  return "inference";
+}
+
+function mergeEpistemic(
+  left: LedgerRow["epistemic"],
+  right: LedgerRow["epistemic"],
+): LedgerRow["epistemic"] {
+  if (left === "verified-event" && right === "verified-event") return "verified-event";
+  if (left === "inference" || right === "inference") return "inference";
+  return "reported-claim";
 }
 
 function storedFact(record: MemoryRecordView, key: string): unknown {
