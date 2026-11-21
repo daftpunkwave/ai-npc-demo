@@ -189,7 +189,7 @@ export function estimateTokens(text: string): number {
 | `toolLoopReserveTokens`（给工具循环留的空间） | 1600 | — |
 | `segmentBudgets` | world 800、task 500、memory 1000、history 800 | facts 800、history 400 |
 
-有效上限 `L = min(maxInputTokens, 模型窗口 − reservedOutputTokens − safetyTokens)`；decision 首轮请求的目标上限为 `L − toolLoopReserveTokens`，speech 的目标上限为 `L`。组装顺序：
+有效上限 `L = min(maxInputTokens, 模型窗口 − reservedOutputTokens − safetyTokens)`；decision 首轮请求的目标上限为 `L − toolLoopReserveTokens`，speech 的目标上限为 `L`。若模型窗口不足以容纳 `reservedOutputTokens` 与 `safetyTokens`，`L` 为 0，表示没有可用输入预算，构建直接返回 `over-budget`，不把下限钳制成正数。组装顺序：
 
 1. 按段配额生成各段（每段内部超出配额时，按该段的裁剪规则先删到配额以内）。
 2. 估算整个请求（[11.2 节](#112-token-估算)）。若 profile 的压缩模块不是 `none`，且估算值超过 `triggerRatio × 目标上限`，先调用压缩槽（[压缩与工具视图](compression-and-tool-view.md) 第 12 节）。

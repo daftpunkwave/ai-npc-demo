@@ -282,10 +282,10 @@ export class OrderedBlocksContextBuilder implements AgentContextPort {
     const system = [protocol.text, identity?.text ?? ""].filter((value) => value.length > 0).join("\n\n");
     const userSegments = built.drafts.map((segment) => segment.text);
     const tokenEstimate = estimateContextTokens(system, userSegments);
-    const { targetTokens } = resolveContextTokenLimits(request);
+    const { effectiveMaxTokens, targetTokens } = resolveContextTokenLimits(request);
     const status = request.memoryBundle.status === "not-ready"
       ? "not-ready"
-      : !built.fits || tokenEstimate > targetTokens
+      : effectiveMaxTokens === 0 || !built.fits || tokenEstimate > targetTokens
         ? "over-budget"
         : "ready";
     const failureReason = status === "ready"

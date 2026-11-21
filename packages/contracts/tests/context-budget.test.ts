@@ -40,11 +40,27 @@ describe("上下文 token 上限", () => {
     });
   });
 
-  it("窗口小于输出预留与安全余量之和时保持正数下限", () => {
+  it("窗口小于输出预留与安全余量之和时返回不可满足的 0", () => {
     expect(resolveContextTokenLimits(request({ modelWindowTokens: 1700 }))).toEqual({
-      effectiveMaxTokens: 1,
-      targetTokens: 1,
+      effectiveMaxTokens: 0,
+      targetTokens: 0,
     });
+  });
+
+  it("工具循环预留耗尽目标预算时返回 0", () => {
+    const limits = resolveContextTokenLimits({
+      modelWindowTokens: 10000,
+      budget: {
+        maxInputTokens: 8000,
+        reservedOutputTokens: 0,
+        safetyTokens: 0,
+        toolLoopReserveTokens: 9000,
+        segmentBudgets: {},
+        historyTurns: 0,
+        lendUnusedBudget: false,
+      },
+    });
+    expect(limits).toEqual({ effectiveMaxTokens: 8000, targetTokens: 0 });
   });
 
   it("工具循环预留只降低目标上限", () => {

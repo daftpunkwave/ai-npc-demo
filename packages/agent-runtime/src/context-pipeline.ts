@@ -50,6 +50,21 @@ export class AgentContextPipeline {
       };
     }
     const { effectiveMaxTokens, targetTokens } = resolveContextTokenLimits(input);
+    if (effectiveMaxTokens === 0) {
+      return {
+        artifact: built,
+        compressionStatus: "cannot-fit",
+        lossReport: {
+          policy: "skipped",
+          reason: "window-exhausted",
+          effectiveMaxTokens,
+          targetTokens,
+          status: built.status,
+          failureReason: built.failureReason,
+        },
+        ready: false,
+      };
+    }
     const compressed = this.options.compression.compress({
       artifact: built,
       effectiveMaxTokens,

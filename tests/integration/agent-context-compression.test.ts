@@ -103,6 +103,34 @@ describe("Ordered context and window compression", () => {
     expect(built.failureReason).toBe("request-over-budget");
   });
 
+  it("窗口不足以容纳输出预留与安全余量时显式失败", async () => {
+    const harness = await createAgentContextToolsHarness("agent.compression.window");
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.modelWindowTokens = 1700;
+    request.budget.maxInputTokens = 8000;
+    request.budget.reservedOutputTokens = 1500;
+    request.budget.safetyTokens = 300;
+
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("over-budget");
+    expect(built.failureReason).toBe("request-over-budget");
+
+    const pipeline = new AgentContextPipeline({
+      context: harness.context,
+      compression: harness.compression,
+      host: harness.host,
+    });
+    const prepared = await pipeline.prepareFirstRequest(request);
+    expect(prepared.ready).toBe(false);
+    expect(prepared.compressionStatus).toBe("cannot-fit");
+    expect(prepared.lossReport).toMatchObject({
+      reason: "window-exhausted",
+      effectiveMaxTokens: 0,
+      targetTokens: 0,
+    });
+  });
+
   it("工具循环预留从首轮目标上限中扣除", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
