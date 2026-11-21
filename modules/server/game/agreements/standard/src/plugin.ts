@@ -7,6 +7,7 @@ import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import {
   createStatelessModule,
   type AgreementQueryPorts,
+  type CampaignView,
   type GameContent,
   type GameIdFactory,
   type GameModulePorts,
@@ -37,6 +38,23 @@ function queryPortsOf(context: GamePortBindContext): {
   return { queries: { actions, comms, world, map }, world };
 }
 
+/**
+ * 构造绑定到单个事务的主体派系映射。campaign 在同一事务内是固定快照，
+ * 读取一次即可供统计中的多次归属判断复用，避免按主体重复查询。
+ */
+function factionOfPrincipalOf(
+  content: GameContent,
+  world: GameWorldPort,
+): (principalId: string) => string | null {
+  let campaign: CampaignView | null | undefined;
+  return (principalId) => {
+    if (campaign === undefined) {
+      campaign = world.campaign();
+    }
+    return resolvePrincipalFaction(principalId, content.factions, campaign);
+  };
+}
+
 /** 协议模块实例的公开端口同时暴露事务绑定器与规则贡献。 */
 export function createAgreementsModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   return createStatelessModule(input, {
@@ -45,7 +63,7 @@ export function createAgreementsModule(input: ModuleCreateInput): Promise<Module
       return createAgreementsPort(
         () => txFor(input.moduleId),
         queries,
-        (principalId) => resolvePrincipalFaction(principalId, content.factions, world.campaign()),
+        factionOfPrincipalOf(content, world),
       );
     },
     contributor: createAgreementsContributor(),
