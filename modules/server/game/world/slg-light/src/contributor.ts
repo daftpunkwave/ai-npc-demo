@@ -17,7 +17,7 @@ import {
   type HandlerContext,
   type HandlerResult,
 } from "@ai-npc/module-sdk";
-import { runChapterEvaluation, runDailySettlement } from "./settlement";
+import { runDailySettlement } from "./settlement";
 import { campaignAggregateId, metersAggregateId } from "./port";
 import {
   campaignStateSchema,
@@ -206,12 +206,7 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
 }
 
 /** 世界模块的规则贡献；handler 使用 context.modules 中已绑定到当前事务的端口。 */
-export interface WorldContributorOptions {
-  readonly chapterLengthTicks?: number;
-}
-
-export function createWorldContributor(options: WorldContributorOptions = {}): GameRuleContributor<GameModulePorts, unknown> {
-  const chapterLengthTicks = options.chapterLengthTicks ?? 168;
+export function createWorldContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.world,
     ownsAggregates: [
@@ -303,11 +298,6 @@ export function createWorldContributor(options: WorldContributorOptions = {}): G
         handler: (context, tick) => {
           runDailySettlement(context as WorldContext, tick);
         },
-      },
-      {
-        stepId: "world.chapter-evaluation",
-        when: (tick) => tick > 0,
-        handler: (context) => runChapterEvaluation(context as WorldContext, chapterLengthTicks),
       },
     ],
   };

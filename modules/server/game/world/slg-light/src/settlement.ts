@@ -6,7 +6,7 @@
  * 禁止重复结算同一 tick、在事务内调用模型或把未达标的指标算作均衡。
  */
 import { DomainError, type Json, type MeterChange, type MeterChangeCause, type NumericMeterId, type ResourceId } from "@ai-npc/contracts";
-import type { GameModulePorts, HandlerContext } from "@ai-npc/module-sdk";
+import type { GameModulePorts, HandlerContext, AgreementCounts, WorldTx } from "@ai-npc/module-sdk";
 import { requireGameContent, type MetersView } from "@ai-npc/module-sdk";
 import { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
 import {
@@ -203,24 +203,29 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
   );
 }
 
-/** 在章节评估事务内执行一次；未到章节长度或已评估的 campaign 直接返回。 */
-export function runChapterEvaluation(context: WorldContext, chapterLengthTicks = 168): { readonly stopClock: true } | undefined {
-  const record = readWorldState(context.tx, "campaign", "campaign", campaignStateSchema);
+/**
+ * 在章节评估事务内执行一次；未到章节长度或已评估的 campaign 直接返回。
+ * 协议计数由调用方（协议模块的章节终点时钟步骤）作为入参传入，世界模块不反向依赖协议模块。
+ */
+export function runChapterEvaluation(
+  tx: WorldTx,
+  counts: AgreementCounts,
+  chapterLengthTicks = 168,
+): { readonly stopClock: true } | undefined {
+  const record = readWorldState(tx, "campaign", "campaign", campaignStateSchema);
   if (record === null || record.state.status === "evaluated") {
     return undefined;
   }
-  const tick = context.tx.worldTick;
+  const tick = tx.worldTick;
   const elapsed = tick - record.state.startTick;
   if (elapsed < chapterLengthTicks) {
     return undefined;
   }
-  const meterRecord = readWorldState(context.tx, "meters", "meters", metersStateSchema);
+  const meterRecord = readWorldState(tx, "meters", "meters", metersStateSchema);
   if (meterRecord === null) {
     return undefined;
   }
   const meters = metersView(meterRecord.state);
-  // 协议计数由协议模块按已提交事实同步给出，不再读取异步事件的累计副本。
-  const counts = context.modules["game.agreements"].countsAsOf(tick);
   const unmet: NumericMeterId[] = [];
   if (meters["relay.stability"] < 40) {
     unmet.push("relay.stability");
@@ -232,7 +237,7 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
     unmet.push("migration.safety");
   }
   const outcome = unmet.length === 0 ? "equilibrium" : "strained";
-  context.tx.emit(
+  tx.emit(
     "ChapterStageEvaluated",
     {
       outcome,
@@ -244,6 +249,6 @@ export function runChapterEvaluation(context: WorldContext, chapterLengthTicks =
     [{ kind: "public" }],
   );
   const campaign: CampaignState = { ...record.state, status: "evaluated", outcome };
-  context.tx.put("campaign", "campaign", campaign);
+  tx.put("campaign", "campaign", campaign);
   return { stopClock: true };
 }

@@ -100,7 +100,7 @@ interface WorldTx {                        // one per transaction, scoped to the
 interface HandlerContext {
   readonly auth: AuthContext;
   readonly tx: WorldTx;                    // writes are limited to the aggregate types this module owns
-  readonly modules: GameModulePorts;       // other game modules' queries and ops, bound to the same transaction
+  readonly modules: GameModulePorts;       // this module's own capabilities plus ports declared in its requires
   readonly approvedSpeech: { read(ref: string): ApprovedSpeech | null }; // host-injected, synchronous, read-only, transaction-scoped
   readonly content: ContentIndex;          // read-only content pack
   readonly rng: (...parts: string[]) => () => number; // rngFor(runSeed, ...parts), rules §11
@@ -215,7 +215,7 @@ COMMIT
 | `group.deadline` | `campaign.start` | 伤员恶化规则 | `GroupWorsened`、`MetersChanged` |
 | `scenario.card` | scenario 的 `campaign.start` 后续钩子，或 `scenario.publish` | 触发卡片效果 | `ScenarioCardTriggered` + 卡片效果事件 |
 
-时钟步骤（不是 job，见 [规则](../game/rules.md) 第 1 节）：`T % 24 == 0` 时的每日结算（`DayPassed`、`MetersChanged`、阈值事件、`ResourcesConsumed`），`T == 168` 时的章节评估（`ChapterStageEvaluated`）。
+时钟步骤（不是 job，见 [规则](../game/rules.md) 第 1 节）：`T % 24 == 0` 时的每日结算（`DayPassed`、`MetersChanged`、阈值事件、`ResourcesConsumed`），`T == 168` 时的章节评估（`ChapterStageEvaluated`）。章节评估的阈值与 campaign 状态由 `game.world` 实现，由 `game.agreements` 在章节终点时钟步骤里调用 `game.world` 的评估操作并把截至当前 tick 的协议计数作为入参；世界模块因此不需要反向依赖协议模块。
 
 `speech.commit` 的正文只从宿主注入的 `approvedSpeech.read(approvedSpeechArtifactRef)` 取得；此端口只读已持久化且通过安全校验的 speech 结果，不做文件/网络 I/O。comms 校验 approved、agentId/turnId/branchId 与认证上下文一致，channel 与去重排序后的 audience 完全匹配，任何不符均 `speech-not-approved`。authority 在同一提交事务以 `(branchId, approvedSpeechArtifactRef)` 唯一消费绑定最终事件，禁止不同 commandId 重放；相同 commandId 只返回已有 receipt。拒绝事务不消费批准结果。probe speech 直接写 probe_results，不能走此命令。
 

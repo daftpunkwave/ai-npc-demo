@@ -12,6 +12,7 @@ import {
   principalsAudience,
   subtractAmounts,
   totalAmount,
+  type AgreementCounts,
   type CampaignView,
   type CharacterView,
   type DelegationView,
@@ -26,6 +27,7 @@ import {
   type TeamView,
 } from "@ai-npc/module-sdk";
 import { clampMeter, thresholdEvents } from "./meters";
+import { runChapterEvaluation } from "./settlement";
 import {
   campaignStateSchema,
   characterStateSchema,
@@ -121,16 +123,29 @@ function setMeter(view: MetersView, meter: NumericMeterId, value: number): Meter
   }
 }
 
+/** 构造世界端口时生效的规则参数。 */
+export interface WorldPortOptions {
+  /** 章节长度；到达该长度后的评估由协议模块触发。 */
+  readonly chapterLengthTicks: number;
+}
+
 /** 世界端口实现；每个处理器调用构造一次，绑定同一 storage transaction。 */
 class SlgWorldPort implements GameWorldPort {
   private readonly txFor: ScopedWorldTxFactory;
   private readonly content: GameContent;
   private readonly ids: GameIdFactory;
+  private readonly chapterLengthTicks: number;
 
-  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: GameIdFactory) {
+  constructor(
+    txFor: ScopedWorldTxFactory,
+    content: GameContent,
+    ids: GameIdFactory,
+    options: WorldPortOptions,
+  ) {
     this.txFor = txFor;
     this.content = content;
     this.ids = ids;
+    this.chapterLengthTicks = options.chapterLengthTicks;
   }
 
   private tx() {
@@ -509,6 +524,10 @@ class SlgWorldPort implements GameWorldPort {
     return { ok: true };
   }
 
+  evaluateChapter(counts: AgreementCounts): { readonly stopClock: true } | undefined {
+    return runChapterEvaluation(this.tx(), counts, this.chapterLengthTicks);
+  }
+
   discoverEvidence(input: {
     readonly evidenceId: string;
     readonly discoveredBy: string;
@@ -545,13 +564,14 @@ class SlgWorldPort implements GameWorldPort {
   }
 }
 
-/** 构造绑定到当前事务的世界端口。 */
+/** 构造绑定到当前事务的世界端口；章节长度来自模块配置，缺省 168。 */
 export function createWorldPort(
   txFor: ScopedWorldTxFactory,
   content: GameContent,
   ids: GameIdFactory,
+  options: WorldPortOptions = { chapterLengthTicks: 168 },
 ): GameWorldPort {
-  return new SlgWorldPort(txFor, content, ids);
+  return new SlgWorldPort(txFor, content, ids, options);
 }
 
 /** 判断资源量是否超过队伍容量，供行动模块与规则测试复用。 */

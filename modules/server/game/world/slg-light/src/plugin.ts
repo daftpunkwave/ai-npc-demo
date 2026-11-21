@@ -9,11 +9,15 @@ import { createWorldContributor } from "./contributor";
 import { worldConfigSchema } from "./definition";
 import { createWorldPort } from "./port";
 
-/** 世界实现没有后台任务，公开端口同时暴露事务绑定器与规则贡献。 */
+/** 世界实现没有后台任务，公开端口暴露事务绑定器与规则贡献；章节长度进入端口，由协议模块触发章节评估。 */
 export function createWorldModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = worldConfigSchema.parse(input.config);
   return createStatelessModule(input, {
-    bind: createWorldPort,
-    contributor: createWorldContributor({ chapterLengthTicks: config.chapterLengthTicks }),
+    bind: (
+      txFor: Parameters<typeof createWorldPort>[0],
+      content: Parameters<typeof createWorldPort>[1],
+      ids: Parameters<typeof createWorldPort>[2],
+    ) => createWorldPort(txFor, content, ids, { chapterLengthTicks: config.chapterLengthTicks }),
+    contributor: createWorldContributor(),
   });
 }

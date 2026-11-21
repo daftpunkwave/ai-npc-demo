@@ -16,11 +16,10 @@ import type {
   GameClockPort,
   GameContent,
   GameModulePorts,
-  GamePortBindContext,
   GameRuleContributor,
   ModuleBinder,
-  ScopedWorldTxFactory,
 } from "@ai-npc/module-sdk";
+import { resolveGameModuleBindings } from "./game-port-binder";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { clockConfigSchema, clockModuleDefinition, type ClockConfig } from "@ai-npc/mod-game-clock-controlled";
 import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
@@ -72,6 +71,10 @@ import { moduleAdminPageModuleDefinition } from "@ai-npc/mod-console-module-admi
 import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
 
 export { toGameContent } from "./content-adapter";
+export {
+  resolveGameModuleBindings,
+  type GameModulePublicPort,
+} from "./game-port-binder";
 
 /** 解析并校验传输配置；宿主只在这里接触传输模块的配置 schema。 */
 export function parseTransportConfig(config: unknown): TransportConfig {
@@ -192,31 +195,6 @@ export const clientRequiredCapabilities: readonly CapabilityRef[] = [
   requiredCapability("client.faction-start", "session"),
 ];
 
-/**
- * 游戏能力的绑定顺序；被依赖的能力先绑定，后续模块只能经已绑定的 typed port 读取事实。
- * 顺序与领域模型声明的依赖一致：map/resources → world → comms → actions → agreements → scenario。
- */
-const gameCapabilities = [
-  "game.map",
-  "game.resources",
-  "game.world",
-  "game.comms",
-  "game.actions",
-  "game.agreements",
-  "game.scenario",
-] as const;
-
-/** 模块实例公开端口的最小结构：事务绑定器与可选的规则贡献。 */
-interface GameModulePublicPort {
-  readonly bind: (
-    txFor: ScopedWorldTxFactory,
-    content: GameContent,
-    ids: (prefix: string) => string,
-    context: GamePortBindContext,
-  ) => unknown;
-  readonly contributor?: GameRuleContributor<GameModulePorts, unknown>;
-}
-
 /** 运营模块公开端口：按宿主驱动创建一次运营编排服务。 */
 export interface OperationsFactory {
   create(driver: OperationsDriver): OperationsService;
@@ -289,7 +267,8 @@ function portFor<T>(
 
 /**
  * 从已启动实例的公开端口构造宿主运行期端口：
- * 游戏端口由各模块自己的绑定器按事务绑定，规则贡献只取实例公开端口声明的部分。
+ * 游戏端口由各模块自己的绑定器按事务绑定，规则贡献只取实例公开端口声明的部分；
+ * 端口绑定顺序与每个处理器可见的能力范围由装配计划推导，不在此维护第二份手写顺序。
  */
 export function createServerRuntime(input: {
   readonly plan: ResolvedRealmPlan;
@@ -298,51 +277,7 @@ export function createServerRuntime(input: {
   readonly host: HostServices;
 }): ServerRuntime {
   const { plan, instances, content, host } = input;
-  const binders = new Map<string, GameModulePublicPort["bind"]>();
-  const contributors: GameRuleContributor<GameModulePorts, unknown>[] = [];
-  for (const planned of plan.modules) {
-    const running = instances.find((instance) => instance.moduleId === planned.moduleId);
-    if (running === undefined) {
-      throw new Error(`模块 ${planned.moduleId} 没有启动实例`);
-    }
-    const providedGameCapabilities = planned.definition.provides.filter((provided) =>
-      gameCapabilities.includes(provided.capability as (typeof gameCapabilities)[number]),
-    );
-    if (providedGameCapabilities.length === 0) {
-      continue;
-    }
-    const port = running.port as Partial<GameModulePublicPort> | undefined;
-    if (port === undefined || typeof port.bind !== "function") {
-      throw new Error(`模块 ${planned.moduleId} 没有暴露事务端口绑定器`);
-    }
-    for (const provided of providedGameCapabilities) {
-      binders.set(provided.capability, port.bind);
-    }
-    if (port.contributor === undefined) {
-      throw new Error(`游戏模块 ${planned.moduleId} 没有通过公开端口暴露规则贡献`);
-    }
-    if (port.contributor.moduleId !== planned.moduleId) {
-      throw new Error(
-        `游戏模块 ${planned.moduleId} 暴露的规则贡献属于 ${port.contributor.moduleId}`,
-      );
-    }
-    contributors.push(port.contributor);
-  }
-
-  const binder: ModuleBinder = (txFor) => {
-    const ports: Record<string, unknown> = {};
-    for (const capability of gameCapabilities) {
-      const bind = binders.get(capability);
-      if (bind === undefined) {
-        throw new Error(`装配缺少游戏能力 ${capability} 的端口绑定器`);
-      }
-      // 每个模块只拿到自己按能力声明的 typed port；读取他人事实必须经已绑定的端口。
-      const context: GamePortBindContext = { ports: ports as Readonly<Partial<GameModulePorts>> };
-      // eslint-disable-next-line security/detect-object-injection -- capability 来自上方受限的游戏能力常量数组。
-      ports[capability] = bind(txFor, content, (prefix) => host.ids(prefix), context);
-    }
-    return ports as unknown as GameModulePorts;
-  };
+  const { binder, contributors } = resolveGameModuleBindings({ plan, instances, content, host });
 
   const savePort = portFor<{ readonly save?: SqliteSaveService }>(plan, instances, "game.save");
   if (savePort.save === undefined) {

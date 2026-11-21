@@ -474,6 +474,13 @@ export interface GameWorldPort {
     allocation: WatergateAllocation,
     byId: string,
   ): { readonly ok: true } | { readonly ok: false; readonly reasonCode: ReasonCode };
+  /**
+   * 在章节终点评估：按协议模块提供的截至当前 tick 的计数，写入 campaign 的 evaluated 状态并提交
+   * `ChapterStageEvaluated`。未到章节长度或已成为 evaluated 时返回 undefined；评估成功后返回
+   * `{ stopClock: true }` 供时钟步骤请求暂停。
+   * 计数由协议模块作为入参传入，使章节评估不必让世界反向依赖协议模块。
+   */
+  evaluateChapter(counts: AgreementCounts): { readonly stopClock: true } | undefined;
   discoverEvidence(input: {
     readonly evidenceId: string;
     readonly discoveredBy: string;
@@ -694,8 +701,29 @@ export interface GameModulePorts {
 }
 
 /**
+ * 游戏端口能力到占位值的登记表；`Record<keyof GameModulePorts, true>` 保证与端口类型逐一对应，
+ * 新增游戏端口却忘记登记时会编译失败。
+ */
+const gamePortCapabilityRegistry = {
+  "game.map": true,
+  "game.resources": true,
+  "game.world": true,
+  "game.actions": true,
+  "game.agreements": true,
+  "game.scenario": true,
+  "game.comms": true,
+} as const satisfies Record<keyof GameModulePorts, true>;
+
+/** 组合根按能力绑定的游戏端口全集；绑定器用它在运行时筛选每个处理器可见的端口。 */
+export const gamePortCapabilities = Object.keys(gamePortCapabilityRegistry) as readonly GamePortCapability[];
+
+/** 已绑定的游戏能力名。 */
+export type GamePortCapability = keyof typeof gamePortCapabilityRegistry;
+
+/**
  * 组合根绑定模块端口时提供的已绑定端口快照。
- * 绑定器按依赖顺序构造端口，只能经能力取用已声明的类型端口，不得借此读取对方聚合。
+ * 只包含该模块 provides 与 requires 声明的游戏能力，访问未声明的能力会立即失败；
+ * 绑定器按依赖顺序构造端口，模块不得借端口快照读取对方聚合。
  */
 export interface GamePortBindContext {
   readonly ports: Readonly<Partial<GameModulePorts>>;

@@ -7,7 +7,7 @@ import { gameModuleIds, type GameModulePorts, type GameRuleContributor } from "@
 import { onInformationShared, onPolicyChanged, onTaskCompleted } from "./agreement-consumers";
 import { propose, respond } from "./agreement-commands";
 import { breach, expire } from "./agreement-jobs";
-import type { AgreementContext } from "./agreement-shared";
+import { asPorts, type AgreementContext } from "./agreement-shared";
 
 /** 协议模块的规则贡献。 */
 export function createAgreementsContributor(): GameRuleContributor<GameModulePorts, unknown> {
@@ -17,6 +17,17 @@ export function createAgreementsContributor(): GameRuleContributor<GameModulePor
     commands: [
       { type: "agreement.propose", handler: (context, payload) => propose(context as AgreementContext, payload) },
       { type: "agreement.respond", handler: (context, payload) => respond(context as AgreementContext, payload) },
+    ],
+    clockSteps: [
+      {
+        // 章节终点由协议模块触发：它持有协议计数，而世界模块不应反向依赖协议模块。
+        stepId: "agreements.chapter-evaluation",
+        when: (tick) => tick > 0,
+        handler: (context, tick) => {
+          const ports = asPorts(context);
+          return ports["game.world"].evaluateChapter(ports["game.agreements"].countsAsOf(tick));
+        },
+      },
     ],
     jobs: [
       {
