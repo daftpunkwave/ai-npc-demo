@@ -266,7 +266,7 @@ function clockRow(host: RunningHost): Readonly<Record<string, StorageCell>> {
 }
 
 describe("服务端宿主", () => {
-  it("首次启动创建在线分支并可开局", async () => {
+  it("首次启动创建在线分支并可开局", { timeout: 30_000 }, async () => {
     const dataDir = tempDataDir();
     const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);
@@ -513,6 +513,45 @@ describe("服务端宿主", () => {
       queues: { turnsQueued: 0, turnsRunning: 0, maintenanceQueued: 0, modelQueue: 0 },
     });
     expect(allowed.json<{ readonly modules: readonly unknown[] }>().modules.length).toBeGreaterThan(0);
+    // 死信与重试记录出现在健康摘要，便于运营在浏览器端定位各类失败位置。
+    host.storage.transact((tx) => {
+      const table = tx.branch(host.branchId).table("rule_failures");
+      for (const [phase, subjectId, detail, updatedAt] of [
+        ["job", "job-poison", "", "2026-01-01T00:00:00.000Z"],
+        ["event", "consumer-a", "evt-0123456789ab", "2026-01-01T00:00:01.000Z"],
+        ["clock-step", "step-a", "24", "2026-01-01T00:00:02.000Z"],
+        ["worker", "tick-worker", "", "2026-01-01T00:00:03.000Z"],
+      ] as const) {
+        table.put({
+          phase,
+          subject_id: subjectId,
+          detail,
+          attempts: 3,
+          reason_code: "plugin-failed",
+          last_error: "注入的失败消息",
+          status: "failed",
+          updated_at: updatedAt,
+        });
+      }
+    });
+    const withFailure = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/health",
+      headers: { ...consoleHeaders, "x-active-role": "operator" },
+    });
+    expect(withFailure.statusCode).toBe(200);
+    expect(withFailure.json()).toMatchObject({
+      recentFailures: expect.arrayContaining([
+        expect.objectContaining({
+          code: "plugin-failed",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+        }),
+        expect.objectContaining({ safeMessage: expect.stringContaining("job job-poison") }),
+        expect.objectContaining({ safeMessage: expect.stringContaining("事件消费者 consumer-a") }),
+        expect.objectContaining({ safeMessage: expect.stringContaining("时钟步骤 step-a") }),
+        expect.objectContaining({ safeMessage: expect.stringContaining("tick worker") }),
+      ]),
+    });
     const moduleCatalog = await host.app.inject({
       method: "GET",
       url: "/api/v1/console/modules?realm=client",

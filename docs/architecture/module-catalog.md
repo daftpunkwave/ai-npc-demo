@@ -29,6 +29,8 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 模块版本（`version`）、契约版本（`apiVersion`）、状态版本（`stateSchemaVersion`）分别管理，不能用一个版本号代替。
 
+模块描述符的 `requires` 同时约束三处：实例创建时注入的端口、规则处理器拿到的端口视图、`pnpm check:catalog` 对源码实际访问能力的对账。处理器访问未声明的能力会立即失败，不会到特定 tick 才暴露缺失端口。
+
 ## 3. 宿主固定能力不属于本目录
 
 下列机制是“主机框架”，由宿主实现且不可被模块绕过；它们的 provider 可以换成模块（如授权策略、存储、观测、预算），但调用位置、顺序与不变量不可选：
@@ -55,7 +57,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `game.clock.controlled` | service | run | `game.clock` | `worldTick`、运行/暂停/单步状态 | 实时映射与受控 tick 是同模块的运行模式，不是两套时钟 |
 | `game.resources.light` | service | run | `game.resources` | 库存点数量与预留 | 只返回变更计划，不自行扣减 |
 | `game.actions.standard` | service | run | `game.actions` | 任务与邀请 | 运输、护送、救援、修复、侦察的结算 |
-| `game.agreements.standard` | service | run | `game.agreements` | 协议、条款状态 | 正式协议真值与主观承诺分开 |
+| `game.agreements.standard` | service | run | `game.agreements` | 协议、条款状态 | 正式协议真值与主观承诺分开；章节终点调用世界模块的章节评估并传入截至当前 tick 的协议计数 |
 | `game.comms.standard` | service | run | `game.comms` | 会话、消息投递、知识授权 | 对话、消息、广播、证据分享与 `speech.commit` |
 | `game.scenario.watergate` | service | run | `game.scenario` | 剧情卡状态 | 序章卡片按内容包的 `atTick` 触发；草稿不可感知，发布后走标准命令 |
 | `game.scenario.watergate-escalating` | service | run | `game.scenario` | 同上 | 模块替换演示用的第二实现：同一份卡片，节奏加快并带额外压力（[内容包](../game/content-pack.md) 第 9 节） |

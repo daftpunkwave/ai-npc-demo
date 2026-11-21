@@ -17,6 +17,22 @@ export type { ConsumerRunOptions, ConsumerRunResult, EventConsumerRunnerOptions 
 export { JobRunner } from "./job-runner";
 export type { JobRunnerOptions } from "./job-runner";
 export { RuleRegistry } from "./rule-registry";
+export {
+  MAX_RULE_ATTEMPTS,
+  RuleExecutionError,
+  clearRuleFailure,
+  listRuleFailures,
+  readRuleFailure,
+  recordRuleAttempt,
+  writeRuleFailure,
+  workerFailureIdentity,
+} from "./rule-failures";
+export type {
+  RuleFailureIdentity,
+  RuleFailurePhase,
+  RuleFailureRecord,
+  RuleFailureWrite,
+} from "./rule-failures";
 export { createSystemAuth, systemPrincipalId } from "./system-auth";
 export { TransactionWorldTx } from "./world-tx";
 export type { WorldTxOptions } from "./world-tx";

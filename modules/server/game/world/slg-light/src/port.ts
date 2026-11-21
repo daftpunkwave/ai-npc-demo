@@ -4,7 +4,7 @@
  * 禁止写入地图或库存聚合，也禁止在失败操作中留下部分状态变化。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { MeterChange, MeterChangeCause, NumericMeterId, ReasonCode, ResourceAmounts, WatergateAllocation } from "@ai-npc/contracts";
+import { DomainError, type MeterChange, type MeterChangeCause, type NumericMeterId, type ReasonCode, type ResourceAmounts, type WatergateAllocation } from "@ai-npc/contracts";
 import {
   addAmounts,
   factionAudience,
@@ -12,6 +12,7 @@ import {
   principalsAudience,
   subtractAmounts,
   totalAmount,
+  type AgreementCounts,
   type CampaignView,
   type CharacterView,
   type DelegationView,
@@ -26,6 +27,7 @@ import {
   type TeamView,
 } from "@ai-npc/module-sdk";
 import { clampMeter, thresholdEvents } from "./meters";
+import { runChapterEvaluation } from "./settlement";
 import {
   campaignStateSchema,
   characterStateSchema,
@@ -121,16 +123,39 @@ function setMeter(view: MetersView, meter: NumericMeterId, value: number): Meter
   }
 }
 
+/** 构造世界端口时生效的规则参数。 */
+export interface WorldPortOptions {
+  /** 章节长度；到达该长度后的评估由协议模块触发。 */
+  readonly chapterLengthTicks: number;
+  /** 当前调用方是否被允许触发章节评估：协议 provider 的章节终点时钟步骤或宿主。 */
+  readonly allowChapterEvaluation: boolean;
+}
+
+/** 直接构造世界端口时的规则参数：章节长度 168，并允许调用方触发评估（测试与宿主直接构造）。 */
+const defaultWorldPortOptions: WorldPortOptions = {
+  chapterLengthTicks: 168,
+  allowChapterEvaluation: true,
+};
+
 /** 世界端口实现；每个处理器调用构造一次，绑定同一 storage transaction。 */
 class SlgWorldPort implements GameWorldPort {
   private readonly txFor: ScopedWorldTxFactory;
   private readonly content: GameContent;
   private readonly ids: GameIdFactory;
+  private readonly chapterLengthTicks: number;
+  private readonly allowChapterEvaluation: boolean;
 
-  constructor(txFor: ScopedWorldTxFactory, content: GameContent, ids: GameIdFactory) {
+  constructor(
+    txFor: ScopedWorldTxFactory,
+    content: GameContent,
+    ids: GameIdFactory,
+    options: WorldPortOptions,
+  ) {
     this.txFor = txFor;
     this.content = content;
     this.ids = ids;
+    this.chapterLengthTicks = options.chapterLengthTicks;
+    this.allowChapterEvaluation = options.allowChapterEvaluation;
   }
 
   private tx() {
@@ -509,6 +534,16 @@ class SlgWorldPort implements GameWorldPort {
     return { ok: true };
   }
 
+  evaluateChapter(counts: () => AgreementCounts): { readonly stopClock: true } | undefined {
+    if (!this.allowChapterEvaluation) {
+      throw new DomainError(
+        "forbidden",
+        "章节评估只能由协议模块的章节终点时钟步骤或宿主触发",
+      );
+    }
+    return runChapterEvaluation(this.tx(), counts, this.chapterLengthTicks);
+  }
+
   discoverEvidence(input: {
     readonly evidenceId: string;
     readonly discoveredBy: string;
@@ -545,13 +580,14 @@ class SlgWorldPort implements GameWorldPort {
   }
 }
 
-/** 构造绑定到当前事务的世界端口。 */
+/** 构造绑定到当前事务的世界端口；章节长度与评估触发权限来自模块配置与调用方身份。 */
 export function createWorldPort(
   txFor: ScopedWorldTxFactory,
   content: GameContent,
   ids: GameIdFactory,
+  options: WorldPortOptions = defaultWorldPortOptions,
 ): GameWorldPort {
-  return new SlgWorldPort(txFor, content, ids);
+  return new SlgWorldPort(txFor, content, ids, options);
 }
 
 /** 判断资源量是否超过队伍容量，供行动模块与规则测试复用。 */

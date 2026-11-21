@@ -1,7 +1,8 @@
 /**
  * 逐消费者推进 worldSeq offset，并在同一事务内调用处理器、写 inbox 与更新 offset。
  * 依赖 domain_events、consumer_offsets/inbox 表、事件信封契约与系统认证。
- * 禁止在事件处理后单独提交 offset、跳过 inbox 去重或在 handler 失败后继续推进。
+ * 禁止在事件处理后单独提交 offset、跳过 inbox 去重或在 handler 失败后继续推进；
+ * 处理器失败时回滚事务并累计尝试，达到上限后写入 inbox、推进 offset 并记录死信。
  */
 import {
   DomainError,
@@ -16,6 +17,7 @@ import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";
 import type { RuleRegistry } from "./rule-registry";
+import { RuleExecutionError, clearRuleFailure, recordRuleAttempt } from "./rule-failures";
 import { requireStorageNumber } from "./storage-values";
 import { createSystemAuth, systemPrincipalId } from "./system-auth";
 import type { RuleRuntime, StoredEventConsumer } from "./types";
@@ -123,7 +125,20 @@ export class EventConsumerRunner {
     let scanned = 0;
     for (const consumer of this.registry.consumerList()) {
       while (scanned < maxEvents) {
-        const outcome = this.storage.transact((tx) => this.processNext(tx, branchId, consumer));
+        let outcome: number | null;
+        try {
+          outcome = this.storage.transact((tx) => this.processNext(tx, branchId, consumer));
+        } catch (error) {
+          if (!(error instanceof RuleExecutionError)) {
+            throw error;
+          }
+          // 处理器失败时事务已回滚；记录尝试次数，达到上限后跳过该事件，避免毒丸阻塞后续事件。
+          if (!this.recordFailure(branchId, error)) {
+            throw error.cause ?? error;
+          }
+          scanned += 1;
+          continue;
+        }
         if (outcome === null) {
           break;
         }
@@ -135,6 +150,44 @@ export class EventConsumerRunner {
       }
     }
     return { processed, scanned };
+  }
+
+  /**
+   * 记录一次事件处理器失败；达到上限时把该事件写入 inbox 并推进 offset，
+   * 让消费者越过毒丸继续处理后续事件。返回 true 表示已死信。
+   */
+  private recordFailure(branchId: string, error: RuleExecutionError): boolean {
+    if (error.worldSeq === null) {
+      throw new DomainError("invalid-state", `事件失败 ${error.subjectId} 缺少 worldSeq`);
+    }
+    const identity = {
+      phase: "event" as const,
+      subjectId: error.subjectId,
+      detail: error.detail,
+    };
+    return this.storage.transact((tx) => {
+      const deadLettered = recordRuleAttempt(
+        tx,
+        branchId,
+        identity,
+        error.cause,
+        this.host.nowIso(),
+      );
+      if (!deadLettered) {
+        return false;
+      }
+      const branchStorage = tx.branch(branchId);
+      branchStorage.table("consumer_inbox").put({
+        consumer_id: error.subjectId,
+        event_id: error.detail,
+        processed_at: this.host.nowIso(),
+      });
+      branchStorage.table("consumer_offsets").put({
+        consumer_id: error.subjectId,
+        last_world_seq: error.worldSeq,
+      });
+      return true;
+    });
   }
 
   private processNext(
@@ -192,6 +245,7 @@ export class EventConsumerRunner {
       modules: bindModulePorts({
         binder: this.moduleBinder,
         fallback: this.modules,
+        moduleId: consumer.owner.moduleId,
         registry: this.registry,
         storageTx: tx,
         worldId: branch.worldId,
@@ -206,14 +260,29 @@ export class EventConsumerRunner {
       host: this.host,
       runSeed: this.runSeed,
     });
-    const outcome = consumer.handler(context, event);
-    assertSynchronous(outcome, `事件消费者 ${consumer.consumerId}`);
+    try {
+      const outcome = consumer.handler(context, event);
+      assertSynchronous(outcome, `事件消费者 ${consumer.consumerId}`);
+    } catch (error) {
+      throw new RuleExecutionError(
+        "event",
+        consumer.consumerId,
+        event.eventId,
+        error,
+        event.worldSeq,
+      );
+    }
     inbox.put({
       consumer_id: consumer.consumerId,
       event_id: event.eventId,
       processed_at: this.host.nowIso(),
     });
     offsets.put({ consumer_id: consumer.consumerId, last_world_seq: event.worldSeq });
+    clearRuleFailure(tx, branchId, {
+      phase: "event",
+      subjectId: consumer.consumerId,
+      detail: event.eventId,
+    });
     return 1;
   }
 

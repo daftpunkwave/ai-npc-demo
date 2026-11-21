@@ -219,8 +219,7 @@ export class CommandGateway {
     const handlerContext = createHandlerContext({
       auth,
       tx: handlerTx,
-      modules: this.bindModules(tx, auth, envelope, clock, collector),
-      content: this.content,
+      modules: this.bindModules(tx, auth, envelope, registration.owner.moduleId, clock, collector),      content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
       runSeed: this.runSeed,
@@ -250,7 +249,7 @@ export class CommandGateway {
           const hookContext = createHandlerContext({
             auth,
             tx: hookTx,
-            modules: this.bindModules(tx, auth, envelope, clock, collector),
+            modules: this.bindModules(tx, auth, envelope, this.moduleScopeOf(hook.owner), clock, collector),
             content: this.content,
             approvedSpeech: this.approvedSpeech,
             host: this.host,
@@ -311,17 +310,24 @@ export class CommandGateway {
     return writeReceipt(this.host, branchStorage, input, payloadHash);
   }
 
-  /** 按处理器的 owner 作用域绑定模块端口；每个处理器与后续钩子都得到独立事务视图。 */
+  /** 已注册模块使用自身端口视图；宿主附加的后续钩子不属于模块，改用宿主完整视图。 */
+  private moduleScopeOf(owner: ContributorScope): string | null {
+    return this.registry.contributor(owner.moduleId) === undefined ? null : owner.moduleId;
+  }
+
+  /** 按处理器的 owner 作用域与能力声明绑定模块端口；每个处理器与后续钩子都得到独立事务视图。 */
   private bindModules(
     tx: StorageTransaction,
     auth: AuthContext,
     envelope: CommandEnvelope,
+    ownerModuleId: string | null,
     clock: ClockRecord,
     collector: TxCollector,
   ): ReturnType<typeof bindModulePorts> {
     return bindModulePorts({
       binder: this.moduleBinder,
       fallback: this.modules,
+      moduleId: ownerModuleId,
       registry: this.registry,
       storageTx: tx,
       worldId: auth.worldId,
