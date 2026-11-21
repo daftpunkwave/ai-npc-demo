@@ -5,8 +5,13 @@
  */
 export const packageName = "@ai-npc/agent-runtime";
 
-export { activateAgentRoster, activateAgentRosterInTransaction } from "./activation";
-export type { ActivationResult } from "./activation";
+export { agentDeploymentQuota, activateAgentRoster, activateAgentRosterInTransaction } from "./activation";
+export type { ActivationResult, ActivateAgentRosterInput, RosterActivationInput, RosterActivationOutcome } from "./activation";
+export { createCampaignStartActivationHook } from "./campaign-activation";
+export type {
+  CampaignStartActivationContext,
+  CampaignStartActivationOptions,
+} from "./campaign-activation";
 export { AgentRuntime } from "./runtime";
 export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";
 export { MemoryHost } from "./memory-host";

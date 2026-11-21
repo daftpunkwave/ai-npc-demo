@@ -11,7 +11,7 @@ import { EventConsumerRunner } from "./consumer-runner";
 import { emptyApprovedSpeechReader } from "./handler-context";
 import { JobRunner } from "./job-runner";
 import { RuleRegistry } from "./rule-registry";
-import type { AfterCommandHook, RuleContributor, RuleRuntime } from "./types";
+import type { AfterCommandHook, HostAfterCommandHook, RuleContributor, RuleRuntime } from "./types";
 
 /** 组装 authority 所需的宿主依赖；modules/content 由具体装配提供。 */
 export interface AuthorityOptions {
@@ -71,12 +71,8 @@ export class Authority {
     this.registry.afterCommand(moduleId, type, hook);
   }
 
-  /** 追加宿主后续钩子，执行顺序总在游戏模块之后。 */
-  hostAfterCommand<TModules = unknown, TContent = unknown>(
-    ownerId: string,
-    type: CommandType,
-    hook: AfterCommandHook<TModules, TContent>,
-  ): void {
+  /** 追加宿主后续钩子，执行顺序总在游戏模块之后；钩子与命令共享同一存储事务。 */
+  hostAfterCommand(ownerId: string, type: CommandType, hook: HostAfterCommandHook): void {
     this.registry.hostAfterCommand(ownerId, type, hook);
   }
 }

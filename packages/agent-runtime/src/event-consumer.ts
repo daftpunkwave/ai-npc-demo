@@ -12,7 +12,6 @@ import type {
   StoragePort,
 } from "@ai-npc/contracts";
 import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
-import { activateAgentRosterInTransaction } from "./activation";
 import { renderObservation } from "./observation-renderer";
 import type { PerceptionModuleHandle } from "./perception-host";
 import {
@@ -183,14 +182,6 @@ export class PerceptionEventConsumer {
             pending: [...pending, ...delayedEntries],
             lastKnown: asRecord(previous["lastKnown"]),
           },
-        });
-      }
-      if (event.type === "CampaignStarted") {
-        activateAgentRosterInTransaction({
-          tx,
-          branchId: this.input.branchId,
-          agentIds: this.input.roster.agents.map((agent) => agent.agentId),
-          nowIso: this.input.host.nowIso(),
         });
       }
       inbox.put({ consumer_id: consumerId, event_id: event.eventId, processed_at: this.input.host.nowIso() });

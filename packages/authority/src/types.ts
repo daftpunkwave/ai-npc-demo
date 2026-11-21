@@ -14,6 +14,7 @@ import type {
   Json,
   PrincipalKind,
   StoragePort,
+  StorageTransaction,
 } from "@ai-npc/contracts";
 import type { ApprovedSpeechReader, HandlerContext, HandlerResult, ModuleBinder } from "@ai-npc/module-sdk";
 
@@ -30,6 +31,21 @@ export type AfterCommandHook<TModules = unknown, TContent = unknown> = (
   payload: Json,
   envelope: CommandEnvelope,
 ) => HandlerResult;
+
+/**
+ * 宿主后续钩子的入参：命令尚未提交，原始存储事务仍可读写宿主专用表。
+ * 宿主不拥有 Aggregate，因此不通过 WorldTx 写入，而是直接在同一事务维护自己的表。
+ */
+export interface HostAfterCommandInput {
+  readonly tx: StorageTransaction;
+  readonly auth: AuthContext;
+  readonly payload: Json;
+  readonly envelope: CommandEnvelope;
+  readonly worldTick: number;
+}
+
+/** 宿主后续钩子：与命令同一事务，返回 rejected 时整个命令回滚。 */
+export type HostAfterCommandHook = (input: HostAfterCommandInput) => HandlerResult;
 
 /** job 到期时传给处理器的持久化信息；payload 是创建 job 时登记的 JSON。 */
 export interface DueJob {
@@ -110,6 +126,9 @@ export type StoredAfterCommandHook = (
   envelope: CommandEnvelope,
 ) => HandlerResult;
 
+/** registry 内部保存的宿主后续钩子；入参已由网关补齐。 */
+export type StoredHostAfterCommandHook = (input: HostAfterCommandInput) => HandlerResult;
+
 /** registry 内部保存的同步 job 处理器。 */
 export type StoredJobHandler = (context: HandlerContext<unknown, unknown>, job: DueJob) => unknown;
 
@@ -141,6 +160,13 @@ export interface RegisteredAfterCommand {
   readonly type: CommandType;
   readonly owner: ContributorScope;
   readonly hook: StoredAfterCommandHook;
+}
+
+/** registry 内部保存的宿主后续钩子注册。 */
+export interface RegisteredHostAfterCommand {
+  readonly type: CommandType;
+  readonly owner: ContributorScope;
+  readonly hook: StoredHostAfterCommandHook;
 }
 
 /** registry 内部保存的 job 注册。 */
