@@ -1,11 +1,11 @@
 /**
- * 解析部署配置与登录凭据：加载项目根 .env、校验双端固定拓扑、生成并持久化启动令牌。
+ * 解析部署配置与登录凭据：加载项目根 .env、校验双端固定拓扑、生成并原子持久化启动令牌。
  * 依赖 Node 进程环境、文件系统与 crypto；不启动宿主、不监听端口。
- * 禁止读取旧式 PORT/HOST/DATA_DIR，禁止接受非回环主机或约定之外的端口。
+ * 禁止读取旧式 PORT/HOST/DATA_DIR，禁止接受非回环主机或约定之外的端口，禁止用非原子写入覆盖凭据文件。
  */
 /* eslint-disable security/detect-object-injection, security/detect-non-literal-fs-filename -- 只按约定的环境变量名与数据目录内固定文件名读取，路径已由配置解析与目录检查限制。 */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型与回调参数名用于表达调用契约。 */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -231,15 +231,30 @@ function sameStoredTokens(
   return generatedTokenRoles.every((role) => left[role] === right[role]);
 }
 
-function persistCredentials(
-  filePath: string,
-  tokens: Partial<Record<TokenRole, string>>,
-  existing: Partial<Record<TokenRole, string>>,
-): void {
-  if (sameStoredTokens(tokens, existing)) {
-    return;
+/** 凭据写入暂存句柄：暂存文件已落盘，由调用方决定原子发布或丢弃。 */
+export interface StagedCredentialsFile {
+  /** 把暂存文件原子改名为正式凭据文件；失败时清理暂存文件并抛出。 */
+  publish(): void;
+  /** 丢弃暂存文件；返回清理失败原因，没有需要清理的文件时返回 null。 */
+  discard(): string | null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 删除暂存文件；文件已不存在视为已清理，其余失败返回原因供调用方记录。 */
+function removeStagingFile(stagingPath: string): string | null {
+  try {
+    unlinkSync(stagingPath);
+    return null;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "ENOENT" ? null : errorMessage(error);
   }
-  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+}
+
+function credentialsFileContents(tokens: Partial<Record<TokenRole, string>>): string {
   const record: Record<string, string | number> = { version: credentialsFileVersion };
   for (const role of generatedTokenRoles) {
     const credential = tokens[role];
@@ -247,16 +262,67 @@ function persistCredentials(
       record[`${role}Token`] = credential;
     }
   }
-  writeFileSync(filePath, `${JSON.stringify(record, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  try {
-    chmodSync(filePath, 0o600);
-  } catch {
-    // Windows 对 POSIX 权限位支持有限，收紧失败时保留文件系统默认 ACL。
-  }
+  return `${JSON.stringify(record, null, 2)}\n`;
 }
 
 /**
- * 解析实际生效的令牌：配置值优先，其次凭据文件，最后由本次启动生成并写入。
+ * 把令牌写入数据目录内的暂存文件并刷新到磁盘，暂不在正式名称下可见。
+ * 暂存文件以排他模式创建并显式请求 0600；Windows 只支持受限的权限位语义，目录权限同样只对新目录生效。
+ */
+function stageCredentials(
+  filePath: string,
+  tokens: Partial<Record<TokenRole, string>>,
+  existing: Partial<Record<TokenRole, string>>,
+): StagedCredentialsFile | null {
+  if (sameStoredTokens(tokens, existing)) {
+    return null;
+  }
+  const directory = dirname(filePath);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const stagingPath = `${filePath}.${randomBytes(6).toString("hex")}.staging`;
+  let handle: number | undefined;
+  try {
+    handle = openSync(stagingPath, "wx", 0o600);
+    writeFileSync(handle, credentialsFileContents(tokens), "utf8");
+    fsyncSync(handle);
+    closeSync(handle);
+    handle = undefined;
+  } catch (error) {
+    const cleanupErrors: string[] = [];
+    // 只在已成功创建暂存文件时清理，避免把同名但非本次创建的残留文件当作自己的暂存文件删除。
+    if (handle !== undefined) {
+      try {
+        closeSync(handle);
+      } catch (closeError) {
+        cleanupErrors.push(`关闭暂存文件失败：${errorMessage(closeError)}`);
+      }
+      const unlinkError = removeStagingFile(stagingPath);
+      if (unlinkError !== null) {
+        cleanupErrors.push(`删除暂存文件失败：${unlinkError}`);
+      }
+    }
+    const cleanupSuffix = cleanupErrors.length === 0 ? "" : `；${cleanupErrors.join("；")}`;
+    throw new Error(`写入凭据文件失败：${filePath}（${errorMessage(error)}）${cleanupSuffix}`, { cause: error });
+  }
+  let published = false;
+  return {
+    publish: () => {
+      try {
+        renameSync(stagingPath, filePath);
+        published = true;
+      } catch (error) {
+        const unlinkError = removeStagingFile(stagingPath);
+        const cleanupSuffix = unlinkError === null ? "" : `；删除暂存文件失败：${unlinkError}`;
+        throw new Error(`发布凭据文件失败：${filePath}（${errorMessage(error)}）${cleanupSuffix}`, { cause: error });
+      }
+    },
+    // 发布后暂存文件已不存在；重复丢弃不再报错，避免失败路径二次掩盖原始错误。
+    discard: () => (published ? null : removeStagingFile(stagingPath)),
+  };
+}
+
+/**
+ * 解析实际生效的令牌：配置值优先，其次凭据文件，最后由本次启动生成（默认立即原子写入）。
  * 只有本次生成的角色进入 generated，供调用方决定是否打印带令牌的登录地址。
  */
 export function resolveCredentials(
@@ -318,10 +384,14 @@ export function resolveCredentials(
 }
 
 /**
- * 把本次解析出的生成令牌写入凭据文件；调用方在成功输出登录地址之后再调用，
- * 避免启动失败时令牌已落盘却从未展示。
+ * 暂存本次解析出的生成令牌：写入同目录暂存文件并刷新到磁盘，但不发布正式名称。
+ * 启动编排在监听成功并输出登录地址之后才调用 publish，监听失败时调用 discard，
+ * 从而同时满足“写入失败不监听”和“令牌已落盘却从未展示”。
  */
-export function persistResolvedCredentials(config: DeploymentConfig, credentials: ResolvedCredentials): void {
+export function stageResolvedCredentials(
+  config: DeploymentConfig,
+  credentials: ResolvedCredentials,
+): StagedCredentialsFile | null {
   const stored = readStoredCredentials(credentials.filePath);
   const persistable: Partial<Record<TokenRole, string>> = {};
   for (const role of generatedTokenRoles) {
@@ -329,7 +399,12 @@ export function persistResolvedCredentials(config: DeploymentConfig, credentials
       persistable[role] = credentials.tokens[role];
     }
   }
-  persistCredentials(credentials.filePath, persistable, stored);
+  return stageCredentials(credentials.filePath, persistable, stored);
+}
+
+/** 立即原子写入本次解析出的生成令牌；需要先监听再发布时改用 stageResolvedCredentials。 */
+export function persistResolvedCredentials(config: DeploymentConfig, credentials: ResolvedCredentials): void {
+  stageResolvedCredentials(config, credentials)?.publish();
 }
 
 /** 玩家地址走客户端端口，控制台地址走服务端端口；两者都不指向错误端口。 */

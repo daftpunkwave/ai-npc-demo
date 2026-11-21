@@ -627,7 +627,7 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 | 从快照恢复在线世界 | `forkBranch(snap, new, 'online')` → 预检 → 在同一事务中：先将旧在线分支设为 archived、其激活状态置为 dormant，再按名册预留配额并把新分支名册内 Agent 置为 active，最后切换 `world_aliases('online')`（配额不足则整个事务回滚，旧分支与别名保持不变） |
 | 创建实验 run | 冷启动：新建空分支（时钟 paused、tick 0），由运行器以 `player-1` 身份提交 `campaign.start`；从快照：`forkBranch(snap, exp, 'experiment', runId)`，再按名册激活。每个 run 一个分支 |
 | 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入 |
-| 灾备备份 | `VACUUM INTO 'data/backups/ai-npc-<UTC时间>.db'`，得到整库一致副本；不复制正在写入的数据库文件 |
+| 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `<UTC时间>.<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `ai-npc-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
 
 ## 4. 常用查询
 
@@ -655,6 +655,7 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 - 写入事务中途抛错，状态、事件、job 与 receipt 都不落库。
 - 分支级表清单与迁移一致；`forkBranch` 之后，新分支的事件、状态、观察、记忆与源分支在 fork 点逐行相等，时钟为 paused，控制 epoch 已递增。
 - 按 revision 重建记忆：在 revision 5 和 revision 9 各查询一次，结果与当时记录的 `plan_hash` 链一致。
+- 备份先写入 `0700` 暂存目录并执行完整性校验，通过后以硬链接独占发布为最终 `.db`；`VACUUM INTO` 失败或校验失败时不残留可被当作有效备份的文件。- 成功发布后只保留最近 20 份备份，旧备份按文件名时间戳删除。
 - `VACUUM INTO` 生成的备份可以被重新打开，`PRAGMA integrity_check` 返回 `ok`。
 
 对白消费：authority 在 `speech.commit` 的 command savepoint 内检查并插入 `speech_commits`，与事件、receipt 一起提交；已有同分支 artifact 消费记录时返回 `speech-not-approved`。相同 commandId 先按 receipt 幂等返回。handler 或 afterCommand 拒绝时回滚消费记录；复制分支时保留记录，防止历史对白重复发布。只读 `approvedSpeech.read` 从持久化批准结果的内存索引同步读取；若 artifact 在文件中，宿主须在开启事务前装载并校验，事务内不做文件 I/O。
