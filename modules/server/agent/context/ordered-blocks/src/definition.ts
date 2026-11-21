@@ -11,12 +11,22 @@ import { z } from "zod";
 const segmentKind = z.enum(["world", "task", "memory", "history", "input"]);
 const defaultOrder = ["world", "task", "memory", "history", "input"] as const;
 
+const tokenBudget = z.object({
+  maxInputTokens: z.number().int().positive(),
+  safetyTokens: z.number().int().nonnegative(),
+  segmentBudgets: z.partialRecord(segmentKind.or(z.literal("facts")), z.number().int().nonnegative()),
+}).strict();
+
 export const orderedBlocksContextConfigSchema = z
   .object({
     segmentOrder: z.array(segmentKind)
       .refine((values) => new Set(values).size === values.length, "segmentOrder cannot contain duplicates")
       .refine((values) => values.length === defaultOrder.length, "segmentOrder must list every user segment")
       .default([...defaultOrder]),
+    historyTurns: z.number().int().nonnegative().optional(),
+    lendUnusedBudget: z.boolean().optional(),
+    decision: tokenBudget.extend({ toolLoopReserveTokens: z.number().int().nonnegative() }).optional(),
+    speech: tokenBudget.optional(),
   })
   .strict();
 

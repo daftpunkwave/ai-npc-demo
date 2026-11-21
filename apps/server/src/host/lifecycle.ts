@@ -27,6 +27,7 @@ export interface LifecycleInput {
   readonly active: LiveRunState;
   /** 时钟 provider 的有效配置：全部玩家断线后自动暂停的阈值。 */
   readonly autoPauseAfterDisconnectMs: number;
+  readonly agentHealth?: () => boolean;
   /** 关闭时释放存储、模块与传输；传输实例在 attachApp 后可用。 */
   readonly disposeResources: (app: ServerApp | null) => Promise<void>; // eslint-disable-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
 }
@@ -330,7 +331,7 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
     clockState,
     control,
     handlePlayerConnections,
-    healthStatus: () => (workerFailed || hasPersistedWorkerFailure() ? "degraded" : "ready"),
+    healthStatus: () => (workerFailed || hasPersistedWorkerFailure() || input.agentHealth?.() === false ? "degraded" : "ready"),
     start(): void {
       try {
         // 重启或恢复后先补完当前 tick，再开始按间隔推进。

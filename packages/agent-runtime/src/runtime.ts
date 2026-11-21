@@ -4,13 +4,14 @@
  * 禁止在事务内等待模型、执行世界命令或复制第二套 turn loop。
  */
 import type { HostServices, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
-import type { SchedulingPort } from "@ai-npc/module-sdk";
+import type { PerceptionPort, SchedulingPort } from "@ai-npc/module-sdk";
 import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";
-import { PerceptionModuleHandle } from "./perception-host";
+import { AgentModuleHandle } from "./agent-module-handle";
 import { TurnScheduler } from "./turn-scheduler";
+import { TurnWorker, type TurnExecutionOptions } from "./turn-worker";
 
 export interface AgentWorldRead {
   readonly nodeId: string | null;
@@ -28,27 +29,30 @@ export interface AgentRuntimeOptions {
   readonly moduleDefinitions: ReadonlyMap<string, ModuleDefinition>;
   readonly scheduling: SchedulingPort;
   readonly maxConcurrentTurns: number;
+  readonly patrolHour?: number;
   readonly worldId: string;
   readonly branchId: string;
   readonly runId: string;
   readonly readWorld: (agentId: string) => AgentWorldRead;
   readonly onStateChange?: () => void;
+  readonly turnExecution?: TurnExecutionOptions;
 }
 
 /**
- * 单进程感知与调度宿主。感知实例按 Agent 隔离；
- * turn 创建后留给后续运行时阶段消费，本阶段不执行模型或工具。
+ * 单进程感知、记忆和调度宿主。turn 执行与后台摄入并行运行。
  */
 export class AgentRuntime {
-  private readonly perception = new Map<string, PerceptionModuleHandle>();
-  private readonly signal = new AbortController().signal;
+  private readonly perception = new Map<string, AgentModuleHandle<PerceptionPort>>();
+  private readonly abort = new AbortController();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private cycle: Promise<void> | null = null;
+  private draining: Promise<void> | null = null;
   private running = false;
   private stopped = false;
   private consumer: PerceptionEventConsumer | null = null;
   private memory: MemoryHost | null = null;
   private scheduler: TurnScheduler | null = null;
+  private turns: TurnWorker | null = null;
 
   constructor(private readonly options: AgentRuntimeOptions) {}
 
@@ -63,15 +67,14 @@ export class AgentRuntime {
         if (definition === undefined) {
           throw new Error(`感知模块 ${selection.module} 未登记`);
         }
-        this.perception.set(agent.agentId, await PerceptionModuleHandle.create({
+        this.perception.set(agent.agentId, await AgentModuleHandle.create<PerceptionPort>({
+          ...this.options,
           agentId: agent.agentId,
           moduleId: selection.module,
           config: selection.config,
           definition,
-          worldId: this.options.worldId,
-          branchId: this.options.branchId,
-          host: this.options.host,
-          signal: this.signal,
+          signal: this.abort.signal,
+          ...(this.options.turnExecution === undefined ? {} : { ports: this.options.turnExecution.ports }),
         }));
       }
       const memorySelections = this.options.roster.agents.map((agent) =>
@@ -95,9 +98,15 @@ export class AgentRuntime {
           worldId: this.options.worldId,
           branchId: this.options.branchId,
           runId: this.options.runId,
-          signal: this.signal,
+          signal: this.abort.signal,
+          ...(this.options.turnExecution === undefined ? {} : { ports: this.options.turnExecution.ports }),
         });
         await this.memory.start();
+      }
+      if (this.options.turnExecution !== undefined) {
+        if (this.memory === null) throw new Error("Running turns requires a memory provider for every Agent");
+        this.turns = new TurnWorker(this.options, this.options.turnExecution, this.memory, this.abort.signal);
+        await this.turns.start();
       }
       this.consumer = new PerceptionEventConsumer({
         storage: this.options.storage,
@@ -117,6 +126,7 @@ export class AgentRuntime {
         scheduling: this.options.scheduling,
         maxConcurrentTurns: this.options.maxConcurrentTurns,
         branchId: this.options.branchId,
+        ...(this.options.patrolHour === undefined ? {} : { patrolHour: this.options.patrolHour }),
       });
       this.scheduler.recoverInterrupted();
       this.running = true;
@@ -133,14 +143,23 @@ export class AgentRuntime {
     await this.runTrackedCycle();
   }
 
-  async drain(): Promise<void> {
+  fenceTurns(reason: string): void {
+    this.scheduler?.cancelActive(reason);
+  }
+
+  drain(): Promise<void> {
+    if (this.draining !== null) return this.draining;
     this.stopped = true;
     this.running = false;
+    this.abort.abort();
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    await this.cycle;
+    this.draining = Promise.resolve(this.cycle).then(() => {
+      if (this.turns !== null) this.scheduler?.cancelActive("runtime-stopped");
+    });
+    return this.draining;
   }
 
   async dispose(): Promise<void> {
@@ -149,6 +168,14 @@ export class AgentRuntime {
       await this.drain();
     } catch (error) {
       firstError = error;
+    }
+    if (this.turns !== null) {
+      try {
+        await this.turns.dispose();
+      } catch (error) {
+        firstError ??= error;
+      }
+      this.turns = null;
     }
     for (const handle of [...this.perception.values()].reverse()) {
       try {
@@ -194,6 +221,11 @@ export class AgentRuntime {
 
   private async runCycle(): Promise<void> {
     if (this.stopped || this.consumer === null || this.scheduler === null) return;
+    const active = this.options.storage.transact((tx) => {
+      const branch = tx.rows("branches").get({ branch_id: this.options.branchId });
+      return branch?.["status"] === "active" || branch?.["status"] === "paused";
+    });
+    if (!active) return;
     const tick = this.clockTick();
     await this.consumer.consume(tick);
     this.consumer.flush(tick);
@@ -202,13 +234,19 @@ export class AgentRuntime {
     await this.memory?.runDueMaintenance(tick);
     if (this.stopped) return;
     this.scheduler.recoverExpired();
-    this.scheduler.schedule({
+    const scheduled = this.scheduler.schedule({
       tick,
       paused: this.clockMode() === "paused",
       runId: this.options.runId,
     });
-    this.options.onStateChange?.();
+    if (this.turns !== null) {
+      for (const { turnId, agentId } of this.scheduler.queuedTurns(this.options.runId)) {
+        this.turns.dispatch(turnId, agentId);
+      }
+    }
+    if (scheduled.length > 0) this.options.onStateChange?.();
   }
+
 
   private clockTick(): number {
     return this.options.storage.transact((tx) => {

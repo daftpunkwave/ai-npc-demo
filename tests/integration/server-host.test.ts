@@ -300,6 +300,19 @@ describe("服务端宿主", () => {
       payload: command,
     });
     expect(started.statusCode).toBe(200);
+    const consoleSession = await loginSession(host, "console-token");
+    const agents = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents?branchId=${host.branchId}`,
+      headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "researcher" },
+    });
+    expect(agents.statusCode).toBe(200);
+    expect(agents.json()).toMatchObject({
+      agents: expect.arrayContaining([
+        expect.objectContaining({ agentId: "human-independent", kind: "strategic", active: true }),
+        expect.objectContaining({ agentId: "npc-wenzhao", kind: "character", active: true }),
+      ]),
+    });
     const view = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: { authorization: `Bearer ${session}` } });
     expect(view.statusCode).toBe(200);
     expect(view.json()).toMatchObject({ projection: { campaign: { factionId: "human-neutral" }, clock: { worldTick: 0 } } });
@@ -991,11 +1004,15 @@ describe("服务端宿主", () => {
         readonly selection: { readonly moduleAssemblyRef: string; readonly rosterRef: string };
         readonly content: { readonly packId: string; readonly contentVersion: string };
         readonly agentSlots: StorageCell;
+        readonly agentProfiles: StorageCell;
       };
       expect(manifest.seed).toBe(spec.seed);
       expect(manifest.selection).toMatchObject({ moduleAssemblyRef: "local-slg-standard-v1", rosterRef: "standard-15" });
       expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.2.0" });
-      expect(manifest.agentSlots).toBeNull();
+      expect(manifest.agentSlots).toMatchObject({ decision: ["agent.decision.deterministic"] });
+      expect(manifest.agentProfiles).toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentId: "human-independent", profileHash: expect.stringMatching(/^[0-9a-f]{64}$/) }),
+      ]));
       expect(run["manifest_hash"]).toMatch(/^[0-9a-f]{64}$/);
       runId = String(run["run_id"]);
       manifestHash = run["manifest_hash"];
@@ -1041,6 +1058,36 @@ describe("服务端宿主", () => {
     }).serverAssembly.modules;
     expect(modules.some((module) => module.moduleId === "game.scenario.watergate")).toBe(true);
     expect(modules.some((module) => module.moduleId === "game.scenario.watergate-escalating")).toBe(false);
+  });
+
+  it("按原冻结摘要重启未启用 Agent 的旧在线分支", async () => {
+    const dataDir = tempDataDir();
+    const current = loadAssembly("local-slg-standard-v1");
+    const legacy: AssemblyDescriptor = {
+      ...current,
+      realms: {
+        ...current.realms,
+        server: { bindings: current.realms.server.bindings.filter(({ capability }) => !capability.startsWith("agent.")) },
+      },
+    };
+    const options = { dataDir, playerToken: "player-token", consoleToken: "console-token" };
+    const first = await startHost({
+      ...options,
+      assembly: legacy,
+      moduleDefinitions: serverModuleDefinitions.filter(({ id }) => !id.startsWith("agent.")),
+    });
+    let manifest: StorageCell | undefined;
+    try {
+      manifest = liveRun(first)["manifest_hash"];
+      expect(liveRun(first)["manifest_json"]).toMatchObject({ agentSlots: null });
+    } finally {
+      await first.close();
+    }
+    const restarted = await startHost(options);
+    hosts.push(restarted);
+    expect(restarted.branchId).toBe(first.branchId);
+    expect(liveRun(restarted)["manifest_hash"]).toBe(manifest);
+    expect(restarted.storage.transact((tx) => tx.branch(restarted.branchId).table("memory_watermarks").list())).toHaveLength(0);
   });
 
   it("首次启动选择升级装配时 RunSpec 与 manifest 记录实际引用", async () => {

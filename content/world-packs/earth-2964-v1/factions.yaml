@@ -10,6 +10,7 @@ factions:
     persona:
       role: 砾火同盟党魁
       focus: 防御、主权、合作担保
+      skills: [escort]
       values: [自主, 先担保后合作, 安全优先]
       speechStyle: 正式、强硬，用“同盟”自称
       bottomLines: [不在没有担保时开放守备设施]

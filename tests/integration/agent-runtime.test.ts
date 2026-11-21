@@ -13,11 +13,13 @@ import {
   emptyModuleConfigSchema,
   type ModuleDefinition,
   type StoragePort,
+  type StorageRow,
 } from "@ai-npc/contracts";
 import {
   createStatelessModule,
   defineModule,
   type PerceptionPort,
+  type PerceptionRequest,
   type SchedulingPort,
 } from "@ai-npc/module-sdk";
 import { loadContentPack, type ResolvedAgentProfile, type Roster } from "@ai-npc/experiment";
@@ -31,7 +33,7 @@ afterEach(async () => {
   for (const resource of resources.splice(0)) await resource.dispose();
 });
 
-function perceptionDefinition(): ModuleDefinition {
+function perceptionDefinition(requests: PerceptionRequest[]): ModuleDefinition {
   return defineModule({
     id: "agent.perception.test",
     realm: "server",
@@ -50,8 +52,8 @@ function perceptionDefinition(): ModuleDefinition {
     defaults: {},
     stateSchemaVersion: null,
     migrationPaths: [],
-    create: async (input) => createStatelessModule(input, {
-      perceive: () => ({
+    create: async (input) => {
+      const project: PerceptionPort["perceive"] = () => ({
         observations: [{
           observationId: "obs-000000000001",
           scope: {
@@ -79,8 +81,14 @@ function perceptionDefinition(): ModuleDefinition {
           dedupeKey: "message:human-independent:evt-000000000001",
         }],
         scannedThroughSeq: 1,
-      }),
-    } satisfies PerceptionPort),
+      });
+      return createStatelessModule(input, {
+        perceive: (request) => {
+          requests.push(request);
+          return project(request);
+        },
+      } satisfies PerceptionPort);
+    },
   });
 }
 
@@ -90,6 +98,7 @@ async function fixture(): Promise<{
   readonly roster: Roster;
   readonly profile: ResolvedAgentProfile;
   readonly definition: ModuleDefinition;
+  readonly requests: readonly PerceptionRequest[];
 }> {
   const dataDir = mkdtempSync(join(tmpdir(), "agent-runtime-test-"));
   const host = createFakeHost();
@@ -185,11 +194,12 @@ async function fixture(): Promise<{
       decision: { module: "agent.decision.deterministic", config: {} },
     },
   };
-  return { storage, host, roster, profile, definition: perceptionDefinition() };
+  const requests: PerceptionRequest[] = [];
+  return { storage, host, roster, profile, definition: perceptionDefinition(requests), requests };
 }
 
 describe("Agent runtime 持久状态", () => {
-  it("延迟观察与 trigger 在到期 tick 同一事务发布", async () => {
+  it("延迟观察与 trigger 在到期 tick 同时发布。非受众事件只推进扫描水位", async () => {
     const value = await fixture();
     const scheduling: SchedulingPort = { plan: () => [] };
     const runtime = new AgentRuntime({
@@ -217,7 +227,8 @@ describe("Agent runtime 持久状态", () => {
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
     value.storage.transact((tx) => {
-      tx.branch("br-000000000001").table("domain_events").put({
+      const events = tx.branch("br-000000000001").table("domain_events");
+      const message = {
         world_seq: 1,
         event_id: "evt-000000000001",
         world_tick: 0,
@@ -238,9 +249,25 @@ describe("Agent runtime 持久状态", () => {
           speechArtifactRef: null,
         },
         committed_at: "2026-01-01T00:00:00.000Z",
+      };
+      events.put(message);
+      events.put({
+        ...message,
+        world_seq: 2,
+        event_id: "evt-000000000002",
+        audience_json: [{ kind: "principals", ids: ["player-1", "human-earth-alliance"] }],
+        payload_json: {
+          ...message.payload_json,
+          messageId: "msg-000000000002",
+          to: ["human-earth-alliance"],
+          deliveries: [{ principalId: "human-earth-alliance", deliverAtTick: 2 }],
+        },
       });
     });
     await runtime.pump();
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("perception_state").get({ agent_id: "human-independent" }),
+    )).toMatchObject({ scanned_through_seq: 2 });
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("triggers").list())).toHaveLength(0);
     expect(value.storage.transact((tx) => tx.branch("br-000000000001").table("observations").list())).toHaveLength(0);
     value.storage.transact((tx) => {
@@ -261,6 +288,27 @@ describe("Agent runtime 持久状态", () => {
     expect(value.storage.transact((tx) =>
       tx.branch("br-000000000001").table("memory_records").count({ agent_id: "human-independent" }),
     )).toBe(0);
+    value.storage.transact((tx) => {
+      const events = tx.branch("br-000000000001").table("domain_events");
+      const stockpile: StorageRow = {
+        world_seq: 3, event_id: "evt-000000000003", world_tick: 2, schema_version: 1, type: "StockpileAdjusted",
+        principal_id: "human-earth-alliance", causation_ids_json: [], correlation_id: "corr-000000000003",
+        payload_json: { stockpileId: "sp-alliance", delta: { supply: 10 }, reason: "private adjustment" },
+        audience_json: [{ kind: "faction", factionId: "human-earth-alliance" }, { kind: "node", nodeId: "grayharbor" }],
+        committed_at: "2026-01-01T00:00:00.000Z",
+      };
+      events.put(stockpile);
+      events.put({
+        ...stockpile, world_seq: 4, event_id: "evt-000000000004",
+        audience_json: [{ kind: "faction", factionId: "human-earth-alliance" }, { kind: "node", nodeId: "watergate" }],
+      });
+    });
+    await runtime.pump();
+    expect(value.requests.map(({ event }) => event.eventId)).toEqual(["evt-000000000001", "evt-000000000003"]);
+    const local = value.requests[1];
+    expect(local?.event.payload).toEqual({ nodeId: "grayharbor" });
+    expect(local?.rendered).toMatchObject({ full: { refs: {}, facts: {} }, releasePolicyId: "public" });
+    expect(local?.rendered.full.summaryZh).not.toContain("private adjustment");
   });
 
   it("启动时取消遗留非终态 turn 并释放 trigger", async () => {

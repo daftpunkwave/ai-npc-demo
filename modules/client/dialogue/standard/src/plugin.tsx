@@ -65,6 +65,9 @@ function DialogueView(): ReactNode {
   const conversationRequest = useRef(0);
   const character = selectedCharacter(state?.projection, selection);
   const agentId = character?.agentId ?? null;
+  const peerDialogueIds = state?.projection.conversations
+    .filter((line) => line.speakerId === agentId)
+    .map((line) => line.dialogueId).sort().join(",") ?? "";
 
   const loadConversation = useCallback(
     async (cancelled: () => boolean = () => false): Promise<void> => {
@@ -102,16 +105,14 @@ function DialogueView(): ReactNode {
     setNotice(null);
     setConversationError(null);
     setRefreshError(null);
-    if (agentId === null) {
-      return;
-    }
+    return () => { conversationRequest.current += 1; };
+  }, [agentId]);
+
+  useEffect(() => {
     let cancelled = false;
     void loadConversation(() => cancelled);
-    return () => {
-      cancelled = true;
-      conversationRequest.current += 1;
-    };
-  }, [agentId, loadConversation]);
+    return () => { cancelled = true; };
+  }, [loadConversation, peerDialogueIds]);
 
   const retryRefresh = async (): Promise<void> => {
     setRefreshing(true);

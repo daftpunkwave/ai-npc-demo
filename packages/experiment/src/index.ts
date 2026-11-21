@@ -51,6 +51,7 @@ export type {
 } from "./config/load-config";
 export { configRefSchema, rosterSchema, runSpecSchema } from "./config/schema";
 export type { Roster, RunSpec } from "./config/schema";
+export { loadAgentToolset, type AgentToolset } from "./config/toolset";
 export {
   applyProfilePatch,
   loadAgentProfile,

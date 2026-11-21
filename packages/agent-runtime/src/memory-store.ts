@@ -41,6 +41,7 @@ interface CurrentRecord {
 interface CommitOptions {
   readonly planHash: string;
   readonly worldSeqThrough: number;
+  readonly guard?: (tx: StorageTransaction) => void;
   readonly maintenance?: {
     readonly maintenanceId: string;
     readonly leaseEpoch: number;
@@ -216,6 +217,7 @@ export class MemoryStore {
     options: CommitOptions,
   ): number {
     return this.storage.transact((tx) => {
+      options.guard?.(tx);
       const watermark = this.requireWatermark(tx, agentId, moduleId);
       if (watermark.revision !== plan.baseRevision) {
         throw new Error(`memory CAS mismatch for ${agentId}: expected ${plan.baseRevision}, current ${watermark.revision}`);

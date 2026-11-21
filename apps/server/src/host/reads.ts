@@ -25,7 +25,7 @@ export interface ReadPortsInput {
 /** 宿主对外提供的只读能力；传输层只经这些端口读取事实。 */
 export interface HostReadPorts {
   /** 在调用方只读事务内绑定全部游戏端口；读取他人事实只能经各模块的 typed port。 */
-  portsIn(storageTx: StorageTransaction): GameModulePorts;
+  portsIn(storageTx: StorageTransaction, scope?: Pick<LiveRunState, "branchId" | "worldId">): GameModulePorts;
   /** 命令回执只读查询；按会话主体、分支与命令 ID 定位。 */
   readonly receipts: CommandReceiptReadPort;
   /** 当前玩家投影；由游戏端口与时钟在同一只读事务内组装。 */
@@ -43,21 +43,21 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
    * 只读访问的模块事务工厂：与 authority 共用同一条作用域规则，
    * 按模块注册时声明的 ownsAggregates 授予作用域；未注册模块直接失败。
    */
-  const readTxFor = (storageTx: StorageTransaction) =>
+  const readTxFor = (storageTx: StorageTransaction, scope: Pick<LiveRunState, "branchId" | "worldId">) =>
     createScopedWorldTxFactory({
       registry: authority.registry,
       storageTx,
-      worldId: active.worldId,
-      branchId: active.branchId,
-      worldTick: runtime.clock.readInTransaction(storageTx, active.branchId).worldTick,
+      worldId: scope.worldId,
+      branchId: scope.branchId,
+      worldTick: runtime.clock.readInTransaction(storageTx, scope.branchId).worldTick,
       principalId: systemPrincipalId,
       correlationId: (moduleId) => `host:${moduleId}:read`,
       host,
     });
 
   /** 宿主只读视图需要全部已装配的游戏端口；moduleId 传 null 表示宿主自身。 */
-  const portsIn = (storageTx: StorageTransaction): GameModulePorts =>
-    binder(readTxFor(storageTx), null) as GameModulePorts;
+  const portsIn: HostReadPorts["portsIn"] = (storageTx, scope = active) =>
+    binder(readTxFor(storageTx, scope), null) as GameModulePorts;
 
   const receipts: CommandReceiptReadPort = {
     read: (principalId, branchId, commandId) =>
@@ -128,7 +128,8 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
           return { ...line, worldSeq };
         });
       }),
-    speakerName: (principalId: string) => gameContent.characters.get(principalId)?.name ?? principalId,
+    speakerName: (principalId: string) =>
+      gameContent.characters.get(principalId)?.name ?? gameContent.factions.get(principalId)?.leaderName ?? principalId,
   };
 
   return { portsIn, receipts, projection, conversation };

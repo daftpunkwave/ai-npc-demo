@@ -1,0 +1,30 @@
+schemaVersion: 1
+profileId: platform-baseline
+kind: platform
+parent: null
+budgets:
+  maxModelCallsPerTurn: 6
+  maxDecisionRounds: 4
+  maxToolCallsPerTurn: 8
+  maxToolCallsPerRound: 3
+  maxTurnMs: 90000
+  maxReplans: 1
+  maxTokensPerAgentPerDay: 60000
+  reserveOutputTokens: { decision: 1500, speech: 400, memory-maintenance: 800 }
+readiness: { requireDurable: true, requireDerived: true, waitTimeoutMs: 120000, onlineDegradeAfterMs: 10000 }
+speech: { maxChars: 80 }
+failurePolicy: strict
+slots:
+  perception: { module: agent.perception.local, config: { visibleGraphDepth: 0, extraDelayTicks: { broadcast: 0, directed: 0, briefing: 0 }, maxObservationsPerBatch: 12, retainUncertainCues: true } }
+  memory: { module: agent.memory.ledger, config: {} }
+  context:
+    module: agent.context.ordered-blocks
+    config:
+      segmentOrder: [world, task, memory, history, input]
+      historyTurns: 8
+      lendUnusedBudget: false
+      decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 } }
+      speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }
+  compression: { module: agent.compression.window, config: { triggerRatio: 0.8, preserveRecentGroups: 4, targetTokenRatio: 0.6 } }
+  toolView: { module: agent.tool-view.structured, config: { maxListItems: 5, maxTextChars: 120, includeEvidenceRefs: true } }
+  decision: { module: agent.decision.deterministic, config: {} }

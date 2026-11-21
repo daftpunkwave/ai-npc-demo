@@ -19,6 +19,7 @@ import {
   type ModuleRef,
   type ResolvedModuleSet,
 } from "@ai-npc/contracts";
+import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
 import {
   computeAssemblyHash,
   computeCatalogHash,
@@ -29,7 +30,7 @@ import {
   type ResolvedRealmPlan,
 } from "@ai-npc/kernel";
 import { canonicalHasher } from "../host-services";
-import { clientRequiredCapabilities, serverRequiredCapabilities } from "./module-catalog";
+import { clientRequiredCapabilities, serverAgentRequiredCapabilities, serverRequiredCapabilities } from "./module-catalog";
 
 /** 装配目录固定为项目根下的 config/assemblies；测试可传入不同根目录。 */
 function assemblyDirectory(root: string = process.cwd()): string {
@@ -104,6 +105,29 @@ export function loadAssembly(ref: string, root: string = process.cwd()): Assembl
 export interface ResolveServerAssemblyOptions {
   readonly hash?: CanonicalHasher;
   readonly configOverrides?: Readonly<Record<string, Json>>;
+  readonly content?: ContentPack;
+}
+
+/** 服务端启动与目录检查使用同一组内容注入和条件能力要求。 */
+export function serverAssemblyInputs(
+  assembly: AssemblyDescriptor,
+  required: readonly CapabilityRef[],
+  options: ResolveServerAssemblyOptions = {},
+  root = process.cwd(),
+): { readonly requiredCapabilities: readonly CapabilityRef[]; readonly configOverrides: Readonly<Record<string, Json>> } {
+  const server = assembly.realms.server;
+  const toolBinding = server.bindings.find((binding) => binding.capability === "agent.tools");
+  const configOverrides = { ...options.configOverrides };
+  if (toolBinding?.moduleId === "agent.tools.game-tools") {
+    const content = options.content ?? loadContentPack(resolve(root, "content"), "earth-2964-v1");
+    configOverrides[toolBinding.moduleId] = { toolDescriptions: content.prompts.toolDescriptions };
+  }
+  return {
+    requiredCapabilities: Object.keys(server.agentSlots ?? {}).length > 0
+      ? [...required, ...serverAgentRequiredCapabilities]
+      : required,
+    configOverrides,
+  };
 }
 
 /** 一个 server 装配的解析结果：会话握手用的模块集、实例计划与两类规范化摘要。 */
@@ -178,8 +202,7 @@ export async function resolveServerAssembly(
     assembly,
     realm: "server",
     catalog,
-    requiredCapabilities: serverRequiredCapabilities,
-    ...(normalized.configOverrides === undefined ? {} : { configOverrides: normalized.configOverrides }),
+    ...serverAssemblyInputs(assembly, serverRequiredCapabilities, normalized),
   });
   const modules = await moduleRefs(plan, hash);
   const assemblyHash = await computeAssemblyHash({ assembly, realm: "server", plan, hash });

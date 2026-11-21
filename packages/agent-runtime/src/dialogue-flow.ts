@@ -58,6 +58,7 @@ export interface SpeechApprovalInput {
   readonly channel: "dialogue" | "message" | "broadcast";
   readonly conversationId: string | null;
   readonly replyToId: string | null;
+  readonly publication?: "turn-reply";
 }
 
 export interface SpeechGenerationRequest {
@@ -102,7 +103,7 @@ export interface DialogueFlowOptions {
   readonly executeCommand?: (auth: AuthContext, envelope: CommandEnvelope) => CommandReceipt | Promise<CommandReceipt>;
 }
 
-function messageIntentFromArguments(value: Json): DialogueIntent | null {
+export function messageIntentFromArguments(value: Json): DialogueIntent | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as { readonly [key: string]: Json };
   const to = record["to"];
@@ -161,6 +162,10 @@ export class SpeechApprovalIndex implements ApprovedSpeechReader {
 
   read(ref: string): ApprovedSpeech | null {
     return this.values.get(ref) ?? null;
+  }
+
+  remove(ref: string): void {
+    this.values.delete(ref);
   }
 }
 
@@ -243,11 +248,16 @@ export class DialogueFlow {
     });
   }
 
-  async approve(input: SpeechApprovalInput, generator?: SpeechGenerator, commandId = this.options.host.ids("cmd")): Promise<SpeechApprovalResult> {
+  async approve(
+    input: SpeechApprovalInput,
+    generator?: SpeechGenerator,
+    commandId = this.options.host.ids("cmd"),
+    templateOnly = false,
+  ): Promise<SpeechApprovalResult> {
     const preparation = this.prepare(input);
     const attempts: Json[] = [];
     let selected: SpeechGenerationOutput | null = null;
-    let fallbackReason: string | null = generator === undefined ? "model-unavailable" : null;
+    let fallbackReason: string | null = generator === undefined && !templateOnly ? "model-unavailable" : null;
     if (generator !== undefined) {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
@@ -289,7 +299,7 @@ export class DialogueFlow {
         prompts: this.options.content.prompts,
       });
       citedRefs = [];
-      fallback = true;
+      fallback = !templateOnly;
       finalValidation = this.validate(input, preparation, { utterance: text, citedRefs });
       if (!finalValidation.ok) {
         throw new Error("safe speech template failed its guard checks");
@@ -312,7 +322,8 @@ export class DialogueFlow {
       citedRefs,
       fallback,
       validation: {
-        source: fallback ? "safe-template" : "model",
+        source: selected === null ? "safe-template" : "model",
+        ...(input.publication === undefined ? {} : { publication: input.publication }),
         attempts,
         fallbackReason,
         finalValidation: finalValidation as unknown as Json,

@@ -5,6 +5,7 @@
  */
 import {
   canonicalJson,
+  commandReceiptSchema,
   type AuthContext,
   type CommandEnvelope,
   type CommandReceipt,
@@ -269,13 +270,14 @@ export class ToolGateway {
     if (this.options.executeMessage === undefined) {
       return this.settleError(input, binding, argsHash, "execution-failed", "Message dialogue executor is not configured.", current, operationId);
     }
-    const message = await this.options.executeMessage({
-      arguments: dropNullFields(args),
-      turn: input,
-      operationId,
-      commandId,
-      providerCallId: input.providerCallId,
-    });
+    const prior = this.options.storage.transact((tx) => tx.branch(input.session.branchId)
+      .table("command_receipts").get({ principal_id: input.agentId, command_id: commandId }));
+    const message = prior === null
+      ? await this.options.executeMessage({ arguments: args, turn: input, operationId, commandId, providerCallId: input.providerCallId })
+      : (() => {
+          const receipt = commandReceiptSchema.parse(prior["receipt_json"]);
+          return { receipt, output: receipt.result ?? {} };
+        })();
     const result = resultWithoutRef({
       executionStatus: "ok",
       commandStatus: message.receipt.commandStatus,

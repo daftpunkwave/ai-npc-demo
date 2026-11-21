@@ -52,6 +52,7 @@ export interface RunManifest {
   };
   /** 装配未声明 Agent 槽位时为 null，表示未解析 profile、toolset 与模型布局。 */
   readonly agentSlots: Readonly<Record<string, readonly string[]>> | null;
+  readonly agentProfiles?: Json;
 }
 
 export interface BuildRunManifestInput {
@@ -59,6 +60,7 @@ export interface BuildRunManifestInput {
   readonly content: { readonly packId: string; readonly contentVersion: string };
   readonly roster: Roster;
   readonly resolved: ResolvedServerAssembly;
+  readonly agentProfiles?: Json;
   readonly hash?: CanonicalHasher;
 }
 
@@ -109,6 +111,7 @@ export async function buildRunManifest(input: BuildRunManifestInput): Promise<Bu
       agents: input.roster.agents,
     },
     agentSlots: slotEntries.length === 0 ? null : Object.fromEntries(slotEntries),
+    ...(input.agentProfiles === undefined ? {} : { agentProfiles: input.agentProfiles }),
   };
   return {
     manifest,
@@ -123,6 +126,8 @@ export interface FrozenManifestFacts {
   readonly rosterRef: string;
   readonly packId: string;
   readonly contentVersion: string;
+  readonly hasAgentSlots: boolean;
+  readonly catalogHash: string;
 }
 
 function manifestObject(value: Json, label: string): Readonly<Record<string, Json>> {
@@ -145,11 +150,14 @@ export function readFrozenManifest(value: Json): FrozenManifestFacts {
   const manifest = manifestObject(value, "根节点");
   const selection = manifestObject(manifest["selection"] ?? null, "selection");
   const content = manifestObject(manifest["content"] ?? null, "content");
+  const assembly = manifestObject(manifest["assembly"] ?? null, "assembly");
   return {
     seed: manifestString(manifest["seed"], "seed"),
     moduleAssemblyRef: manifestString(selection["moduleAssemblyRef"], "selection.moduleAssemblyRef"),
     rosterRef: manifestString(selection["rosterRef"], "selection.rosterRef"),
     packId: manifestString(content["packId"], "content.packId"),
     contentVersion: manifestString(content["contentVersion"], "content.contentVersion"),
+    hasAgentSlots: manifest["agentSlots"] !== null && manifest["agentSlots"] !== undefined,
+    catalogHash: manifestString(assembly["catalogHash"], "assembly.catalogHash"),
   };
 }

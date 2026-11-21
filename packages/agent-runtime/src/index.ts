@@ -14,6 +14,8 @@ export type {
 } from "./campaign-activation";
 export { AgentRuntime } from "./runtime";
 export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";
+export type { TurnExecutionOptions } from "./turn-worker";
+export type { ReadTurnWorld, TurnWorldRead } from "./turn-input";
 export { MemoryHost } from "./memory-host";
 export type { MemoryHostOptions } from "./memory-host";
 export type { MemoryRecordUseRequest } from "./memory-publication";

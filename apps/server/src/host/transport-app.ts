@@ -12,7 +12,7 @@ import type { AuthContext, HostServices, ResolvedModuleSet, StartOption, Storage
 import type { GameContent } from "@ai-npc/module-sdk";
 import { clockView } from "./clock-view";
 import type { HostLifecycle } from "./lifecycle";
-import type { LiveRunState } from "./live-state";
+import { switchLiveBranch, type LiveRunState } from "./live-state";
 import type { OperationsFactory, ServerApp, ServerIdentity, ServerRuntime } from "./module-catalog";
 import type { HostOptions } from "./options";
 import type { HostReadPorts } from "./reads";
@@ -219,9 +219,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
           }),
       },
       reset: (operationId, principalId) => operations.reset({ operationId, principalId }),
-      onBranchChanged: (nextBranchId) => {
-        active.branchId = nextBranchId;
-      },
+      onBranchChanged: (nextBranchId) => switchLiveBranch(active, nextBranchId),
       // 传输层只上报玩家连接数；暂停策略与审计留在宿主。
       onPlayerConnectionsChanged: (connected) => {
         lifecycle.handlePlayerConnections(connected);

@@ -178,7 +178,7 @@ perception:
 | 10 | `node` 受众，自己当时在该节点 | `on-site` | witnessed | 1.0 | summary | — |
 | 11 | `faction` 受众（派系简报） | `briefing` | witnessed | 1.0 | full | briefing |
 
-`detail: summary` 时删除 `params`、`cargo`、预留、受邀者等细节，只保留“谁、在哪、做了哪类事”。任务的风险抽样结果在任何情况下都不进入观察。`visibleGraphDepth = 1` 时，相邻节点的角色也能以 `summary` 细度观察到 `TaskDeparted`、`TaskCompleted`、`WorldFactRecorded`；首版默认 0。
+`detail: summary` 时，宿主在调用感知模块前只提供事件类型、主体和节点。任务参数、货物、预留和受邀者等明细只提供给获准读取详情的主体。任务的风险抽样结果在任何情况下都不进入观察。`visibleGraphDepth = 1` 时，相邻节点的角色也能以 `summary` 细度观察到 `TaskDeparted`、`TaskCompleted`、`WorldFactRecorded`；首版默认 0。
 
 ### 11.3 获知时间与传播权限
 

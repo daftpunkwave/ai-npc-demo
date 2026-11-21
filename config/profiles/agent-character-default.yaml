@@ -1,0 +1,5 @@
+schemaVersion: 1
+profileId: agent-character-default
+kind: agent
+parent: scene-watergate
+slots: {}

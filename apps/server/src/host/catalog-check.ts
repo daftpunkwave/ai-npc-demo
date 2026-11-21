@@ -26,6 +26,7 @@ import {
   serverRequiredCapabilities,
 } from "./module-catalog";
 import { checkModuleCapabilityUsage } from "./module-capability-usage";
+import { serverAssemblyInputs } from "./assembly";
 
 /** 一条装配预检失败：文件、稳定代码与可直接定位的原因。 */
 export interface CatalogViolation {
@@ -219,6 +220,7 @@ function checkTopology(
 
 /** 校验一个已通过 schema 的装配：三个 realm 各自解析，失败原因带文件与 realm。 */
 function checkAssembly(
+  root: string,
   file: string,
   assembly: AssemblyDescriptor,
   definitions: readonly ModuleDefinition[],
@@ -243,7 +245,8 @@ function checkAssembly(
         assembly,
         realm,
         catalog: snapshot,
-        requiredCapabilities: requiredCapabilities[realm],
+        ...(realm === "server" ? serverAssemblyInputs(assembly, requiredCapabilities.server, {}, root)
+          : { requiredCapabilities: requiredCapabilities[realm] }),
       });
       checkTopology(file, plan, violations);
     } catch (error) {
@@ -344,6 +347,7 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
     seenAssemblyIds.set(assembly.assemblyId, fileName);
     assemblies.push(assembly.assemblyId);
     checkAssembly(
+      root,
       fileName,
       assembly,
       [...definitionsById.values()],

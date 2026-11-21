@@ -1,6 +1,6 @@
 # Agent Runtime：事件到行为的宿主管线
 
-> 状态：部分实现。`packages/agent-runtime` 已支持感知消费、延迟发布、trigger、公平调度、记忆摄入与整理；主装配接入、turn 主循环、工具网关与模型路径尚未完成。实现顺序见 [build-plan.md — 构建计划](../delivery/build-plan.md#5-agent-管线)。
+> 标准与测试装配运行确定性 turn。宿主冻结输入与记忆 revision，通过工具网关执行动作并提交已批准的模板对白。已冻结的 profile、阶段 span、决定与对白 artifact 可用于复核。
 
 ## 1. 运行边界
 
@@ -243,7 +243,7 @@ scheduling:
 
 1. 候选 = 有未消费 trigger、没有进行中 turn、处于 agent 控制、名册中已激活的 Agent；时钟 paused 时只处理 `debug` 与 `probe`。
 2. 候选得分 = 未消费 trigger 中的最高优先级 + min(`agingCap`, 等待 tick 数 × `agingPerTick`)；同分按最早 trigger 的 `created_tick`，再按 agentId 排序。冷却期内只有不受冷却限制的 trigger 能参与。
-3. 按得分依次创建 turn（`agent_turn_index` = 该 Agent 在本分支已有的 turn 数 + 1），直到运行中的 turn 数达到 `maxConcurrentTurns`。创建 turn 时，把该 Agent 最多 `mergeLimit` 条未消费 trigger 按创建顺序并入（写 `consumed_by_turn_id`），其余留给下一轮。
+3. 按得分依次创建 turn（`agent_turn_index` = 该 Agent 在本分支已有的 turn 数 + 1），直到运行中的 turn 数达到 `maxConcurrentTurns`。每条玩家发言创建独立会话，宿主每轮只纳入最早的一个玩家会话触发。创建 turn 时，把该 Agent 最多 `mergeLimit` 条符合条件的 trigger 按创建顺序并入（写 `consumed_by_turn_id`），其余留给下一轮。
 4. 每个 Agent 同一时刻最多一个活动 turn；turn 运行中新到的 trigger 只排队，不改变已冻结的输入。
 5. turn 以 `cancelled` 结束（暂停、静默、接管、租约过期导致）时，它并入的 trigger 被释放（`consumed_by_turn_id` 置空），之后重新调度；以 `completed`、`failed`、`budget-exhausted` 结束时 trigger 视为已消费。
 
