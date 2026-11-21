@@ -144,8 +144,12 @@ export class AgentRuntime {
   }
 
   async dispose(): Promise<void> {
-    await this.drain();
     let firstError: unknown;
+    try {
+      await this.drain();
+    } catch (error) {
+      firstError = error;
+    }
     for (const handle of [...this.perception.values()].reverse()) {
       try {
         await handle.dispose();
