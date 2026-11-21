@@ -151,6 +151,23 @@ describe("Ordered context and window compression", () => {
     expect(built.failureReason).toBe("request-over-budget");
   });
 
+  it("speech 不扣除工具循环预留", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const request = baseContextRequest();
+    request.phase = "speech";
+    request.modelWindowTokens = 10000;
+    request.budget.maxInputTokens = 8000;
+    request.budget.reservedOutputTokens = 1500;
+    request.budget.safetyTokens = 300;
+    request.budget.toolLoopReserveTokens = 1600;
+    request.budget.segmentBudgets.history = 7500;
+    request.historyText = "旧".repeat(7000);
+
+    const built = await harness.context.build(request);
+    expect(built.status).toBe("ready");
+  });
+
   it("压缩管线与构建器使用同一有效输入上限", async () => {
     const harness = await createAgentContextToolsHarness("agent.compression.window");
     harnesses.push(harness);

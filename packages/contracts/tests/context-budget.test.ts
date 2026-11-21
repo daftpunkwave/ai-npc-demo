@@ -7,10 +7,11 @@ import { describe, expect, it } from "vitest";
 import type { ContextBuildRequest } from "../src/index";
 import { resolveContextTokenLimits } from "../src/index";
 
-type BudgetRequest = Pick<ContextBuildRequest, "budget" | "modelWindowTokens">;
+type BudgetRequest = Pick<ContextBuildRequest, "phase" | "budget" | "modelWindowTokens">;
 
 function request(overrides: Partial<BudgetRequest> = {}): BudgetRequest {
   return {
+    phase: "decision",
     modelWindowTokens: 10000,
     budget: {
       maxInputTokens: 8000,
@@ -49,6 +50,7 @@ describe("上下文 token 上限", () => {
 
   it("工具循环预留耗尽目标预算时返回 0", () => {
     const limits = resolveContextTokenLimits({
+      phase: "decision",
       modelWindowTokens: 10000,
       budget: {
         maxInputTokens: 8000,
@@ -65,6 +67,7 @@ describe("上下文 token 上限", () => {
 
   it("工具循环预留只降低目标上限", () => {
     const limits = resolveContextTokenLimits({
+      phase: "decision",
       modelWindowTokens: 10000,
       budget: {
         maxInputTokens: 8000,
@@ -77,5 +80,12 @@ describe("上下文 token 上限", () => {
       },
     });
     expect(limits).toEqual({ effectiveMaxTokens: 8000, targetTokens: 5500 });
+  });
+
+  it("speech 不扣除工具循环预留", () => {
+    expect(resolveContextTokenLimits(request({ phase: "speech" }))).toEqual({
+      effectiveMaxTokens: 8000,
+      targetTokens: 8000,
+    });
   });
 });
