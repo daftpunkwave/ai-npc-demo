@@ -300,6 +300,19 @@ describe("服务端宿主", () => {
       payload: command,
     });
     expect(started.statusCode).toBe(200);
+    const consoleSession = await loginSession(host, "console-token");
+    const agents = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents?branchId=${host.branchId}`,
+      headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "researcher" },
+    });
+    expect(agents.statusCode).toBe(200);
+    expect(agents.json()).toMatchObject({
+      agents: expect.arrayContaining([
+        expect.objectContaining({ agentId: "human-independent", kind: "strategic", active: true }),
+        expect.objectContaining({ agentId: "npc-wenzhao", kind: "character", active: true }),
+      ]),
+    });
     const view = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: { authorization: `Bearer ${session}` } });
     expect(view.statusCode).toBe(200);
     expect(view.json()).toMatchObject({ projection: { campaign: { factionId: "human-neutral" }, clock: { worldTick: 0 } } });

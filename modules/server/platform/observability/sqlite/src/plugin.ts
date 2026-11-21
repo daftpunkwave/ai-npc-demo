@@ -196,11 +196,15 @@ export class ObservabilityPort {
   agents(branchId: string): AgentsResponse {
     const rows = this.storage.transact((tx) =>
       tx.all(
-        `SELECT a.agent_id, a.status, l.controller_kind,
+        `SELECT a.agent_id, a.status, l.controller_kind, json_extract(roster.value, '$.kind') AS agent_kind,
                 (SELECT t.status FROM turn_runs t
                   WHERE t.branch_id = a.branch_id AND t.agent_id = a.agent_id
                   ORDER BY t.agent_turn_index DESC LIMIT 1) AS turn_status
            FROM agent_activations a
+           JOIN branches b ON b.branch_id = a.branch_id
+           JOIN runs r ON r.run_id = b.run_id
+           JOIN json_each(r.manifest_json, '$.roster.agents') roster
+             ON json_extract(roster.value, '$.agentId') = a.agent_id
            LEFT JOIN controller_leases l
              ON l.branch_id = a.branch_id AND l.agent_id = a.agent_id
           WHERE a.branch_id = ?
@@ -211,7 +215,7 @@ export class ObservabilityPort {
     return {
       agents: rows.map((row) => ({
         agentId: String(row["agent_id"]) as AgentsResponse["agents"][number]["agentId"],
-        kind: String(row["agent_id"]).startsWith("npc-") ? "character" : "strategic",
+        kind: row["agent_kind"] === "character" ? "character" : "strategic",
         active: row["status"] === "active",
         controllerKind: row["controller_kind"] === "human" ? "human" : "agent",
         location: null,
