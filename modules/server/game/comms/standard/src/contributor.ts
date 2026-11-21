@@ -1,13 +1,14 @@
 /**
  * 注册通信命令与 campaign.start 后续钩子，实现对话、发言、证据分享与开局消息。
- * 依赖通信/世界端口、内容索引、已批准对白读取器与 authority 事务上下文。
- * 禁止在这里直接写世界状态、绕过已批准对白或把秘密当作可分享证据。
+ * 依赖通信/世界端口、内容索引、已批准对白读取器与 authority 事务上下文，以及 module-sdk 的共享批准判定。
+ * 禁止在这里直接写世界状态、绕过已批准对白或把秘密当作可分享证据；批准结果须经共享判定校验后才能消费。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { Json, MessageIntentKind } from "@ai-npc/contracts";
+import type { Json, SpeechCommitPayload } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
+  isApprovedSpeechUsable,
   requireGameContent,
   type GameContent,
   type GameModulePorts,
@@ -15,33 +16,12 @@ import {
   type HandlerContext,
   type HandlerResult,
 } from "@ai-npc/module-sdk";
-import type { ApprovedSpeech } from "@ai-npc/module-sdk";
 import type { MessageState } from "./state";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
   return context.modules as GameModulePorts;
-}
-
-function normalized(values: readonly string[]): string[] {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
-}
-
-function speechAllowed(
-  speech: ApprovedSpeech | null,
-  context: CommsContext,
-  audience: readonly string[],
-  channel: "dialogue" | "message" | "broadcast",
-): speech is ApprovedSpeech {
-  return (
-    speech !== null &&
-    speech.approved &&
-    speech.branchId === context.auth.branchId &&
-    speech.agentId === effectivePrincipalId(context.auth) &&
-    speech.channel === channel &&
-    normalized(speech.audience).join("\u0000") === normalized(audience).join("\u0000")
-  );
 }
 
 function allDeliverable(
@@ -118,17 +98,12 @@ function dialogueSay(context: CommsContext, payload: Json): HandlerResult {
 }
 
 function speechCommit(context: CommsContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly channel: "dialogue" | "message" | "broadcast";
-    readonly conversationId: string | null;
-    readonly audience: readonly string[];
-    readonly approvedSpeechArtifactRef: string;
-    readonly intentKind: string;
-    readonly replyToId: string | null;
-  };
+  const input = payload as SpeechCommitPayload;
   const speech = context.approvedSpeech.read(input.approvedSpeechArtifactRef);
-  if (!speechAllowed(speech, context, input.audience, input.channel)) {
-    return { kind: "rejected", reasonCode: "speech-not-approved", safeMessage: "对白未批准或受众不匹配" };
+  // 网关已在进入处理器前完成一次校验；处理器对同一事务内重新读取的结果复验，
+  // 避免只读索引在两次读取之间变化时提交未经本次校验的正文。
+  if (!isApprovedSpeechUsable(speech, context.auth, input)) {
+    return { kind: "rejected", reasonCode: "speech-not-approved", safeMessage: "对白未批准或主体/受众不匹配" };
   }
   const content = requireGameContent(context.content);
   if (input.channel === "broadcast") {
@@ -165,7 +140,7 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
     to: input.audience,
     text: speech.text,
     channel: input.channel === "broadcast" ? "broadcast" : "message",
-    intentKind: input.intentKind as MessageIntentKind,
+    intentKind: input.intentKind,
     speechArtifactRef: input.approvedSpeechArtifactRef,
     ...(input.channel === "broadcast" ? { audience: input.audience } : {}),
   });

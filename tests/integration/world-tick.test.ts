@@ -30,10 +30,28 @@ const hosts: RunningHost[] = [];
 const dirs: string[] = [];
 
 afterEach(async () => {
-  await disposeTrackedGameHarnesses(active);
-  await Promise.all(hosts.splice(0).map(async (host) => host.close()));
+  // 先释放 harness 数据库句柄，再等待全部宿主关闭，最后删除目录；单步失败不跳过其余清理。
+  const failures: unknown[] = [];
+  try {
+    await disposeTrackedGameHarnesses(active);
+  } catch (error) {
+    failures.push(error);
+  }
+  const closed = await Promise.allSettled(hosts.splice(0).map((host) => host.close()));
+  for (const result of closed) {
+    if (result.status === "rejected") {
+      failures.push(result.reason);
+    }
+  }
   for (const dir of dirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `世界 tick 测试清理未全部完成：${failures.length} 处失败`);
   }
 });
 

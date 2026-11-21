@@ -5,7 +5,8 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts } from "@ai-npc/module-sdk";
-import type { Json } from "@ai-npc/contracts";
+import type { AuthContext, Json } from "@ai-npc/contracts";
+import { createSystemAuth } from "@ai-npc/authority";
 import { createCommsPort } from "@ai-npc/mod-game-comms-standard";
 import {
   createGameHarness,
@@ -47,6 +48,21 @@ function setRelay(value: GameHarness, relay: number): void {
     const state = row["state_json"] as Record<string, Json>;
     state["relay.stability"] = relay;
     table.put({ ...row, state_json: state, version: Number(row["version"]) + 1 });
+  });
+}
+
+/** 登记真人席位控制器租约，供被代发 Agent 的 speech.commit 通过 fencing。 */
+function seedHumanSeat(value: GameHarness, agentId: string, controllerEpoch: number): void {
+  value.storage.transact((tx) => {
+    tx.branch(value.branchId)
+      .table("controller_leases")
+      .put({
+        agent_id: agentId,
+        controller_kind: "human",
+        controller_principal_id: "operator-1",
+        controller_epoch: controllerEpoch,
+        lease_expires_at: null,
+      });
   });
 }
 
@@ -312,6 +328,137 @@ describe("通信", () => {
     );
     expect(invalid.commandStatus).toBe("rejected");
     expect(invalid.reasonCode).toBe("speech-not-approved");
+  });
+
+  it("system 与真人席位复用同一批准判定：匹配时提交，未批准或主体不符时拒绝", async () => {
+    const speech: ApprovedSpeech = {
+      text: "系统代发的回话。",
+      agentId: "npc-wenyuan",
+      turnId: "turn-000000000002",
+      branchId: "br-000000000000",
+      audience: ["player-1"],
+      channel: "message",
+      approved: true,
+    };
+    const reader: ApprovedSpeechReader = {
+      read: (ref) => {
+        switch (ref) {
+          case "art-000000000003":
+          case "art-000000000005":
+            return speech;
+          case "art-000000000004":
+            return { ...speech, approved: false };
+          case "art-000000000006":
+            return { ...speech, agentId: "npc-yinuo" };
+          default:
+            return null;
+        }
+      },
+    };
+    const value = await harness({ approvedSpeech: reader });
+    expect(start(value).commandStatus).toBe("accepted");
+    const commit = (auth: AuthContext, artifactRef: string) =>
+      value.authority.commands.execute(
+        auth,
+        gameCommandEnvelope(
+          "speech.commit",
+          {
+            channel: "message",
+            conversationId: null,
+            audience: ["player-1"],
+            approvedSpeechArtifactRef: artifactRef,
+            intentKind: "answer",
+            replyToId: null,
+          },
+          value.host.ids("cmd"),
+        ),
+      );
+    const sentWith = (artifactRef: string) =>
+      readGameEvents(value).filter(
+        (event) =>
+          event.type === "MessageSent" &&
+          (event.payload as { readonly speechArtifactRef?: string }).speechArtifactRef === artifactRef,
+      );
+
+    // system 由宿主代发：artifact 属于 npc-wenyuan，system 认证不比对 agentId。
+    expect(commit(createSystemAuth(value.worldId, value.branchId), "art-000000000003").commandStatus).toBe("accepted");
+    expect(sentWith("art-000000000003")).toHaveLength(1);
+    expect(sentWith("art-000000000003")[0]?.payload).toMatchObject({
+      fromId: "npc-wenyuan",
+      text: "系统代发的回话。",
+      channel: "message",
+    });
+    const unapproved = commit(createSystemAuth(value.worldId, value.branchId), "art-000000000004");
+    expect(unapproved.commandStatus).toBe("rejected");
+    expect(unapproved.reasonCode).toBe("speech-not-approved");
+
+    // 真人席位代发按被代发 Agent 比对：匹配时提交，artifact 属于其他 Agent 时拒绝。
+    seedHumanSeat(value, "npc-wenyuan", 1);
+    const seat: AuthContext = {
+      ...strategicAuth(value, "npc-wenyuan"),
+      principalId: "operator-1",
+      kind: "operator",
+      roles: ["operator"],
+      actingAsAgentId: "npc-wenyuan",
+      controllerEpoch: 1,
+    };
+    expect(commit(seat, "art-000000000005").commandStatus).toBe("accepted");
+    expect(sentWith("art-000000000005")).toHaveLength(1);
+    const wrongAgent = commit(seat, "art-000000000006");
+    expect(wrongAgent.commandStatus).toBe("rejected");
+    expect(wrongAgent.reasonCode).toBe("speech-not-approved");
+    expect(sentWith("art-000000000004")).toHaveLength(0);
+    expect(sentWith("art-000000000006")).toHaveLength(0);
+  });
+
+  it("网关校验后处理器重新读取到不同批准结果时仍拒绝", async () => {
+    const speech: ApprovedSpeech = {
+      text: "不应被提交的回话。",
+      agentId: "npc-wenyuan",
+      turnId: "turn-000000000003",
+      branchId: "br-000000000000",
+      audience: ["player-1"],
+      channel: "message",
+      approved: true,
+    };
+    let reads = 0;
+    const reader: ApprovedSpeechReader = {
+      read: (ref) => {
+        if (ref !== "art-000000000007") {
+          return null;
+        }
+        reads += 1;
+        // 第一次读取发生在网关批准校验，第二次发生在处理器内；模拟索引在两次读取间变化。
+        return reads === 1 ? speech : { ...speech, approved: false };
+      },
+    };
+    const value = await harness({ approvedSpeech: reader });
+    expect(start(value).commandStatus).toBe("accepted");
+    const receipt = value.authority.commands.execute(
+      strategicAuth(value, "npc-wenyuan"),
+      gameCommandEnvelope(
+        "speech.commit",
+        {
+          channel: "message",
+          conversationId: null,
+          audience: ["player-1"],
+          approvedSpeechArtifactRef: "art-000000000007",
+          intentKind: "answer",
+          replyToId: null,
+        },
+        value.host.ids("cmd"),
+      ),
+    );
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("speech-not-approved");
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(
+      readGameEvents(value).filter(
+        (event) =>
+          event.type === "MessageSent" &&
+          (event.payload as { readonly speechArtifactRef?: string }).speechArtifactRef === "art-000000000007",
+      ),
+    ).toHaveLength(0);
   });
 
   it("角色随任务移动后，同一对话从当面变为中继并按中继状态延迟", async () => {
