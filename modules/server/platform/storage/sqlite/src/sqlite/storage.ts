@@ -19,7 +19,7 @@ import {
   type StorageTransaction,
 } from "@ai-npc/contracts";
 import type { StorageConfig } from "../definition";
-import { backupDatabase } from "./backup";
+import { backupDatabase, type PublishedBackup } from "./backup";
 import { closeDatabase, openDatabase } from "./connection";
 import { forkBranchDatabase } from "./fork-branch";
 import { applyMigrations } from "./migrations";
@@ -212,6 +212,14 @@ export class SqliteStorage implements StoragePort {
         },
       });
     }
-    return backupDatabase(database, this.config.dataDir, this.host.nowIso(), parsed.data);
+    const result: PublishedBackup = backupDatabase(database, this.config.dataDir, this.host, parsed.data);
+    // 记录完整性校验与实际权限位，作为备份可恢复性的运行证据；Windows 的权限位不完全对应 POSIX 语义。
+    this.host.logger.info("SQLite 备份已生成", {
+      path: result.path,
+      byteSize: result.byteSize,
+      integrityCheck: result.integrityCheck,
+      mode: result.mode,
+    });
+    return result;
   }
 }

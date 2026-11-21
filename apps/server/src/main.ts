@@ -1,39 +1,12 @@
 /**
- * 服务端进程入口：加载部署配置与登录令牌、启动宿主、监听回环服务端口并打印登录地址。
- * 依赖部署配置解析与宿主启动；不启动客户端，也不直接读写存储。
- * 禁止监听非回环地址、更换约定端口、吞掉监听失败或重复打印已配置令牌。
+ * 服务端进程入口：加载部署配置并交给启动编排，随后注册关闭信号处理。
+ * 依赖部署配置解析与启动编排；不启动客户端，也不直接读写存储或凭据文件。
+ * 禁止监听非回环地址、更换约定端口、吞掉启动失败或重复打印已配置令牌。
  */
-import { loadDeploymentConfig, persistResolvedCredentials, resolveCredentials, startupLogLines } from "./config";
-import { startHost } from "./host";
+import { loadDeploymentConfig } from "./config";
+import { startServer } from "./startup";
 
-const config = loadDeploymentConfig();
-// 先解析令牌但不落盘：监听成功并打印登录地址后再持久化，避免启动失败时令牌已保存却从未展示。
-const credentials = resolveCredentials(config, { persist: false });
-const running = await startHost({
-  dataDir: config.dataDir,
-  assemblyRef: config.assemblyRef,
-  rosterRef: config.rosterRef,
-  modelLayoutRef: config.modelLayoutRef,
-  playerToken: credentials.tokens.player,
-  consoleToken: credentials.tokens.console,
-  ...(credentials.tokens.operator === undefined ? {} : { operatorToken: credentials.tokens.operator }),
-  ...(credentials.tokens.researcher === undefined ? {} : { researcherToken: credentials.tokens.researcher }),
-  ...(credentials.tokens.evaluator === undefined ? {} : { evaluatorToken: credentials.tokens.evaluator }),
-  transportHost: config.serverHost,
-  transportPort: config.serverPort,
-  clientPort: config.clientPort,
-});
-try {
-  await running.listen();
-} catch (error) {
-  await running.close();
-  throw new Error(`监听 ${running.transport.host}:${running.transport.port} 失败: ${error instanceof Error ? error.message : String(error)}`);
-}
-
-for (const line of startupLogLines({ config, tokens: credentials.tokens, generated: credentials.generated })) {
-  console.info(line);
-}
-persistResolvedCredentials(config, credentials);
+const running = await startServer({ config: loadDeploymentConfig() });
 
 const shutdown = async (): Promise<void> => {
   await running.close();
