@@ -1,0 +1,15 @@
+schemaVersion: 1
+toolsetId: character-broadcaster
+tools:
+  - { toolId: world.inspect,        version: "1", permissionProfile: self-known,                 budgetProfile: query,   viewConstraints: { maxListItems: 5, maxTokens: 300 } }
+  - { toolId: route.inspect,        version: "1", permissionProfile: self-known,                 budgetProfile: query,   viewConstraints: { maxListItems: 5, maxTokens: 250 } }
+  - { toolId: task.inspect,         version: "1", permissionProfile: self-known,                 budgetProfile: query,   viewConstraints: { maxListItems: 5, maxTokens: 300 } }
+  - { toolId: conversation.inspect, version: "1", permissionProfile: self-known,                 budgetProfile: query,   viewConstraints: { maxListItems: 8, maxTokens: 400 } }
+  - { toolId: operation.inspect,    version: "1", permissionProfile: self-known,                 budgetProfile: query,   viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: message.send,         version: "1", permissionProfile: message-principals-or-public, budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: information.share,    version: "1", permissionProfile: share-held,                 budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: agreement.propose,    version: "1", permissionProfile: agreement-personal,         budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: agreement.respond,    version: "1", permissionProfile: agreement-personal,         budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: asset.dispatch,       version: "1", permissionProfile: dispatch-delegated,         budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: task.respond,         version: "1", permissionProfile: invited-only,               budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
+  - { toolId: task.cancel,          version: "1", permissionProfile: cancel-own,                 budgetProfile: command, viewConstraints: { maxListItems: 1, maxTokens: 150 } }
