@@ -8,6 +8,7 @@
 - 拥有聚合：`agreement`。
 - 依赖：`game.world`、`game.map`、`game.actions`、`game.comms`。
 - 命令：`agreement.propose`、`agreement.respond`；job：过期、条款违约检查。
+- 时钟步骤：章节终点调用 `game.world` 的章节评估操作，并传入 `countsAsOf(tick)` 的履约/违约计数。
 - 订阅：`TaskCompleted`、`InformationShared`、`PolicyChanged`。
 
 ## 规则
