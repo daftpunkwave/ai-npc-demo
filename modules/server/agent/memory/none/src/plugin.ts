@@ -1,8 +1,7 @@
 /**
- * 实现只推进水位、不保存长期记录的无记忆策略。
- * Implements the stateless memory.none policy.
- * Depends only on MemoryPort and the module lifecycle helper.
- * Must not store long-term records, create maintenance, or infer hidden history.
+ * 实现只推进水位、不保存长期记录的 memory.none 策略。
+ * 只依赖 MemoryPort 与模块生命周期辅助。
+ * 禁止保存长期记录、创建整理任务或推断隐藏历史。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import { createStatelessModule, type MemoryPort } from "@ai-npc/module-sdk";

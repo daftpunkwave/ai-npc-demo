@@ -25,7 +25,7 @@ PRAGMA busy_timeout = 5000;
 
 本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 的已发布内容指纹，0005 为 `turn_runs` 增加逻辑创建 tick `created_tick`。0002 与 0003 的完整语句见 §2.1。
 
-`agent_activations` 保存单个身份的激活状态。激活事务按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 统计跨分支的活动身份，并在同一事务内拒绝超额激活。已接入的流程见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
+`agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
 ```sql
 -- ===== deployment scope =====

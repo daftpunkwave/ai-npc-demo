@@ -1,8 +1,7 @@
 /**
  * 封装不可变记忆 revision、水位与追加式行版本发布。
- * Encapsulates immutable memory revisions, watermarks, and append-only row publication.
- * Depends on the storage port and public memory, observation, and scope contracts.
- * Must not call modules, models, or expose cross-agent reads.
+ * 依赖 storage port 与公开的 memory、observation、scope 契约。
+ * 禁止调用模块与模型，或暴露跨 agent 读取。
  */
 import { maintenanceTaskSchema } from "@ai-npc/contracts";
 import {

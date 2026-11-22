@@ -1,8 +1,7 @@
 /**
  * 执行结构化账本的每日衰减、合并、晋升与关系沉淀。
- * Applies daily ledger decay, consolidation, promotion, and relation sedimentation.
- * Depends on a frozen revision view and deterministic memory-plan contracts.
- * Must not run model calls or publish state outside the host actor transaction.
+ * 依赖冻结 revision 视图与确定性记忆计划契约。
+ * 禁止调用模型，或在宿主 actor 事务外发布状态。
  */
 import type { IdPrefix, MaintenanceTask, MemoryChangePlan } from "@ai-npc/contracts";
 import type {

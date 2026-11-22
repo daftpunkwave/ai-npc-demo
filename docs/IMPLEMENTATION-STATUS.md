@@ -9,7 +9,7 @@
 
 | 项 | 规格 | 当前实现 | 状态 |
 |---|---|---|---|
-| 工程与服务端基础 | workspace、公共契约、kernel、存储、authority 与服务端宿主 | SQLite 分支复制与备份、命令网关、事件消费者和装配预检已实现 | **已实现** |
+| 工程与服务端基础 | workspace、公共契约、kernel、存储、authority 与服务端宿主 | 已有 SQLite 分支复制与备份、命令网关、事件消费者、装配预检，以及在线 RunSpec 与 manifest 冻结 | **已实现** |
 | 玩家身份与开局 | 公社党魁，占 `seat.commune` | 以 `player-1` 登录；`campaign.start` 与 `/campaign` 只开放 `human-neutral`，其余四席 `enabled: false` | **已对齐** |
 | 玩家权力 | 直接改水闸、以党魁身份签水闸条款、公开广播 | `policy.set` 与 `water-allocation` 条款已按 campaign 的玩家与派系裁决；公开广播命令待定稿 | **部分实现** |
 | 席位契约 | 命令、事件、投影、存档可追溯席位与实际动作者 | 以 principal、派系和分支关联数据，公共契约及持久层未记录 `seatId` | **待补契约** |

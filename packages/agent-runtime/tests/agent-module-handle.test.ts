@@ -1,7 +1,7 @@
 /**
  * 验证记忆模块启动失败时释放已创建的实例。
- * Verifies that a failed memory module start releases the created instance.
- * Must not start storage, timers, or network resources.
+ * 依赖内存中的模块定义、空配置 schema 与测试内联的确定性宿主服务。
+ * 禁止启动存储、计时器或网络资源。
  */
 import { describe, expect, it } from "vitest";
 import {

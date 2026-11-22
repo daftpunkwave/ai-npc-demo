@@ -1,7 +1,7 @@
 /**
  * 验证记忆行编解码保留任意 JSON 内容并单独恢复强化时间。
- * Verifies memory row codecs preserve arbitrary JSON data and reinforcement metadata.
- * Must not read a database or invoke a memory module.
+ * 依赖 encodeMemoryRow 与 parseRecord 的纯函数行为及内联 JSON 夹具。
+ * 禁止读取数据库或调用记忆模块。
  */
 import { describe, expect, it } from "vitest";
 import type { Json, MemoryChangePlan } from "@ai-npc/contracts";

@@ -1,8 +1,7 @@
 /**
  * 提供结构化记忆行的确定性解析、评分与关系汇总辅助。
- * Provides deterministic parsing and scoring helpers for structured memory rows.
- * Depends on public observation, memory-plan, and revision-view types.
- * Must not read storage or mutate any record.
+ * 依赖公开的 observation、memory-plan 与 revision-view 类型。
+ * 禁止读取存储或改写任何记录。
  */
 import type {
   AgentObservation,

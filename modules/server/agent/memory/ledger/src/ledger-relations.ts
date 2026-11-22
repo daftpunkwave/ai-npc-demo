@@ -1,7 +1,7 @@
 /**
  * 将协议、任务、援助与传闻观察转换为带来源的关系修正行。
- * Builds relation modifiers and row versions from authorized observations.
- * Must not infer facts beyond the frozen observation or global contract tables.
+ * 只从已授权观察构建关系修正与行版本。
+ * 禁止在冻结观察与全局契约表之外推断事实。
  */
 import type { IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
 import type {

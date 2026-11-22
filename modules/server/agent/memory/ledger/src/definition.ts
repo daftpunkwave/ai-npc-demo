@@ -1,8 +1,7 @@
 /**
  * 声明结构化记忆账本的槽位能力、严格配置与 agent 作用域。
- * Declares the structured-ledger memory module and its strict configuration.
- * Depends on shared contracts and descriptor validation only.
- * Must not execute storage, model calls, or active plugin loading here.
+ * 只依赖共享契约与描述符校验。
+ * 禁止在此执行存储、模型调用或插件加载。
  */
 import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";

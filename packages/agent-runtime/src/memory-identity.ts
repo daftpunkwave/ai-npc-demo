@@ -1,8 +1,7 @@
 /**
  * 从已校验内容中提取记忆策略所需的最小身份上下文。
- * Derives the minimal memory identity context from validated content.
- * Depends on the content package's indexed personas and locale lexicons.
- * Must not expose secrets, prompts, or mutable content objects to memory modules.
+ * 依赖内容包索引的人物与 locale 词条。
+ * 禁止向记忆模块暴露密钥、prompt 或可变内容对象。
  */
 import type { MemoryAgentIdentity } from "@ai-npc/module-sdk";
 import type { ContentPack } from "@ai-npc/experiment";

@@ -1,7 +1,7 @@
 /**
  * 处理已验证引用强化、轮次内自报记录与分层容量淘汰。
- * Builds usage rows and bounded capacities from a frozen revision view.
- * Must not strengthen a record merely because it was retrieved.
+ * 从冻结 revision 视图构建使用行与有界容量。
+ * 禁止仅因记录被检索到就强化它。
  */
 import type { MemoryChangePlan } from "@ai-npc/contracts";
 import type {

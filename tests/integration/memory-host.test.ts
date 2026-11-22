@@ -1,8 +1,7 @@
 /**
  * 验证记忆摄入、不可变 revision、整理租约、CAS rebase 与唤醒。
- * Verifies memory ingestion, immutable revisions, maintenance leases, CAS rebases, and wake-ups.
- * Depends on real SQLite storage and deterministic memory modules.
- * Must not bypass the memory host or mutate revision rows directly.
+ * 依赖真实 SQLite 存储与确定性记忆模块。
+ * 禁止绕过记忆宿主，或直接改写 revision 行。
  */
 import { describe, expect, it } from "vitest";
 import {
