@@ -4,7 +4,8 @@
  * 禁止在这里直接写世界状态、绕过已批准对白或把秘密当作可分享证据；批准结果须经共享判定校验后才能消费。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { Json, SpeechCommitPayload } from "@ai-npc/contracts";
+import type { Json } from "@ai-npc/contracts";
+import { commandPayloadOf } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
@@ -74,7 +75,7 @@ function initializeOpening(context: CommsContext): void {
 }
 
 function dialogueSay(context: CommsContext, payload: Json): HandlerResult {
-  const input = payload as { readonly targetAgentId: string; readonly text: string };
+  const input = commandPayloadOf("dialogue.say", payload);
   const content = requireGameContent(context.content);
   if (!content.characters.has(input.targetAgentId) && !content.factions.has(input.targetAgentId)) {
     return { kind: "rejected", reasonCode: "unknown-target", safeMessage: "目标主体不存在" };
@@ -98,7 +99,7 @@ function dialogueSay(context: CommsContext, payload: Json): HandlerResult {
 }
 
 function speechCommit(context: CommsContext, payload: Json): HandlerResult {
-  const input = payload as SpeechCommitPayload;
+  const input = commandPayloadOf("speech.commit", payload);
   const speech = context.approvedSpeech.read(input.approvedSpeechArtifactRef);
   // 网关已在进入处理器前完成一次校验；处理器对同一事务内重新读取的结果复验，
   // 避免只读索引在两次读取之间变化时提交未经本次校验的正文。
@@ -148,7 +149,7 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
 }
 
 function seatSay(context: CommsContext, payload: Json): HandlerResult {
-  const input = payload as unknown as { readonly to: readonly string[]; readonly text: string };
+  const input = commandPayloadOf("seat.say", payload);
   const fromId = effectivePrincipalId(context.auth);
   if (!allDeliverable(context, "message", fromId, input.to)) {
     return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法发送消息" };
@@ -164,7 +165,7 @@ function seatSay(context: CommsContext, payload: Json): HandlerResult {
 }
 
 function informationShare(context: CommsContext, payload: Json): HandlerResult {
-  const input = payload as unknown as { readonly evidenceId: string; readonly audience: readonly string[] };
+  const input = commandPayloadOf("information.share", payload);
   const content = requireGameContent(context.content);
   if (!content.evidence.has(input.evidenceId)) {
     return { kind: "rejected", reasonCode: "evidence-not-held", safeMessage: "证据不存在" };

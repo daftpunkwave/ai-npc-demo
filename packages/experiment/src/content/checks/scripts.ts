@@ -5,6 +5,7 @@
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
 import type { CommandRequest } from "@ai-npc/contracts";
+import { roadIdFromPolicyKey } from "@ai-npc/contracts";
 import type { ContentIndex } from "../content-index";
 import type { ContentScript, ContentScriptStep } from "../schema/index";
 import { fail } from "./common";
@@ -132,11 +133,13 @@ function checkCommandReferences(
       }
       if (command.payload.taskType === "scout") requireNode(command.payload.params.nodeId, "params.nodeId");
       break;
-    case "policy.set":
-      if (command.payload.key.startsWith("road.status:")) {
-        requireRoad(command.payload.key.slice("road.status:".length), "key");
+    case "policy.set": {
+      const roadId = roadIdFromPolicyKey(command.payload.key);
+      if (roadId !== null) {
+        requireRoad(roadId, "key");
       }
       break;
+    }
     case "scenario.compensate":
       command.payload.effects.forEach((effect, effectIndex) => {
         if (effect.kind === "broadcast" && !index.principalIds.has(effect.speakerId)) {

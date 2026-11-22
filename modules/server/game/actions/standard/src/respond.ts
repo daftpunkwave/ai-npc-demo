@@ -3,18 +3,15 @@
  * 依赖任务邀请聚合、任务状态读取、主体解析与事务上下文；不改变队伍或资源。
  * 禁止替他人应答、接受已关闭的邀请或重复写入同一邀请。
  */
-import type { Json, ReasonCode } from "@ai-npc/contracts";
+import type { Json } from "@ai-npc/contracts";
+import { commandPayloadOf } from "@ai-npc/contracts";
 import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@ai-npc/module-sdk";
 import { readTaskState, type InvitationState } from "./state";
 import type { ActionContext } from "./task-shared";
 
 /** 应答邀请：只有被邀请主体能回复，且任务与邀请都必须仍为待定。 */
 export function respond(context: ActionContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly taskId: string;
-    readonly response: "accept" | "decline";
-    readonly reasonCode?: ReasonCode;
-  };
+  const input = commandPayloadOf("task.respond", payload);
   const principalId = effectivePrincipalId(context.auth);
   const invitations = context.tx.list<InvitationState>("task-invitation");
   const invitation = invitations.find(
