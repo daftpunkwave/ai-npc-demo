@@ -357,6 +357,18 @@ describe("模型决策终态归因", () => {
     };
   }
 
+  /** 每轮都返回一个非 decision_submit 的工具调用，模拟模型持续调用工具而不提交决定。 */
+  function toolLoopCall(): DecideInput["call"] {
+    return async (input) => ({
+      response: modelResponseSchema.parse({
+        ...response, finishReason: "tool_calls", toolCalls: [
+          { id: `call-${input.round}`, name: "world_inspect", arguments: { nodeId: null }, argumentsRaw: "{}", parseError: null },
+        ],
+      }),
+      attempts: [],
+    });
+  }
+
   async function decideHarness() {
     const harness = await poolHarness(vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response));
     const run = harness.pool.bindRun({ routes: [route, { ...route, purpose: "speech" as const }], limits });
@@ -411,15 +423,30 @@ describe("模型决策终态归因", () => {
   it("轮次耗尽仍无有效提交时归入 budget-exhausted 并标注 round-limit", async () => {
     const { decide, dispose } = await decideHarness();
     try {
-      const result = await decide(decideInput(async (input) => ({
-        response: modelResponseSchema.parse({
-          ...response, finishReason: "tool_calls", toolCalls: [
-            { id: `call-${input.round}`, name: "world_inspect", arguments: { nodeId: null }, argumentsRaw: "{}", parseError: null },
-          ],
-        }),
-        attempts: [],
-      })));
+      const result = await decide(decideInput(toolLoopCall()));
       expect(result).toMatchObject({ status: "budget-exhausted", reason: "round-limit", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("调用次数用完仍无提交时归入 over-budget 并标注 call-budget", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(toolLoopCall(), { maxCallsPerTurn: 0 }));
+      expect(result).toMatchObject({ status: "over-budget", reason: "call-budget", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("工具视图放不下输入窗口时归入 over-budget 并标注 context-window", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(toolLoopCall(), {
+        inputLimit: 10, toolViewLimits: new Map([["world_inspect", 10]]),
+      }));
+      expect(result).toMatchObject({ status: "over-budget", reason: "context-window", decision: null });
     } finally {
       await dispose();
     }

@@ -279,8 +279,8 @@ describe("确定性模型装配与角色对白", () => {
     // 取消会释放触发消费状态，改为按 turnId 等待终态。
     const terminal = await vi.waitFor(() => {
       const row = host.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: turnId }));
-      expect(row?.["ended_at"]).toEqual(expect.any(String));
-      return row!;
+      if (row === null || typeof row["ended_at"] !== "string") throw new Error("Turn has not ended yet");
+      return row;
     }, { timeout: 8_000, interval: 20 });
     expect(terminal).toMatchObject({ status: "cancelled", terminal_reason: "stale-controller" });
     await vi.waitFor(() => expect(attempts(host, turnId)).toEqual(expect.arrayContaining([
@@ -304,6 +304,17 @@ describe("确定性模型装配与角色对白", () => {
     const host = await modelHost({ configRoot: fixtureConfig([inspect(1), inspect(2), inspect(3), inspect(4)]) });
     const turn = await turnFor(host, startConversation(host, "请持续调查。"));
     expect(turn).toMatchObject({ status: "budget-exhausted", terminal_reason: "round-limit" });
+    expect(replies(host)).toHaveLength(0);
+  });
+
+  it("不可重试的传输失败以 model-failed 类别结束并回退到失败类别", async () => {
+    const host = await modelHost({ configRoot: fixtureConfig([{
+      id: "protocol-failure", match: { purpose: "decision", agentId: target },
+      response: { error: { kind: "protocol", retryAfterMs: null } },
+    }]) });
+    const turn = await turnFor(host, startConversation(host, "请回应。"));
+    expect(turn).toMatchObject({ status: "failed", terminal_reason: "model-failed" });
+    expect(attempts(host, String(turn["turn_id"]))).toEqual([expect.objectContaining({ status: "failed" })]);
     expect(replies(host)).toHaveLength(0);
   });
 

@@ -44,6 +44,7 @@ const modelDecision: ModelDecisionPort = {
     let corrected = false;
     let usedTools = 0;
     let awaitingBudgetStop = false;
+    let budgetStopReason: "call-budget" | "context-window" = "call-budget";
     for (let round = 1; round <= input.maxRounds; round += 1) {
       let response;
       try {
@@ -63,7 +64,7 @@ const modelDecision: ModelDecisionPort = {
       for (const { id } of toolCalls) seen.add(id);
       messages.push({ role: "assistant", content: text, toolCalls, providerReplay });
       if (toolCalls.length === 0) {
-        if (awaitingBudgetStop) return fail("over-budget", "call-budget");
+        if (awaitingBudgetStop) return fail("over-budget", budgetStopReason);
         if (corrected || round === input.maxRounds) return fail("invalid-decision");
         corrected = true;
         messages.push({ role: "user", content: input.nudgeSubmit });
@@ -78,8 +79,11 @@ const modelDecision: ModelDecisionPort = {
         system: input.system, messages, tools: input.tools, output: { kind: "text" },
       });
       const viewBudget = callsToRun.reduce((total, { name }) => total + (input.toolViewLimits.get(name) ?? 0) + 4, 0);
-      const budgetBlocked = awaitingBudgetStop ||
-        (pendingTools.length > 0 && (available === 0 || inputAfterAssistant + viewBudget > input.inputLimit));
+      // 调用次数用完归 call-budget，工具视图放不下输入窗口归 context-window，两者共用同一轮内停止行为。
+      const callBudgetBlocked = awaitingBudgetStop || (pendingTools.length > 0 && available === 0);
+      const windowBlocked = !callBudgetBlocked && pendingTools.length > 0 &&
+        inputAfterAssistant + viewBudget > input.inputLimit;
+      const budgetBlocked = callBudgetBlocked || windowBlocked;
       let usedThisRound = 0;
       for (const call of toolCalls) {
         if (call.name === submit) continue;
@@ -114,9 +118,10 @@ const modelDecision: ModelDecisionPort = {
         if (corrected || round === input.maxRounds) return fail("invalid-decision");
         corrected = true;
       }
-      if (awaitingBudgetStop) return fail("over-budget", "call-budget");
+      if (awaitingBudgetStop) return fail("over-budget", budgetStopReason);
       if (budgetBlocked) {
-        if (round === input.maxRounds) return fail("over-budget", "call-budget");
+        budgetStopReason = callBudgetBlocked ? "call-budget" : "context-window";
+        if (round === input.maxRounds) return fail("over-budget", budgetStopReason);
         awaitingBudgetStop = true;
       }
     }
