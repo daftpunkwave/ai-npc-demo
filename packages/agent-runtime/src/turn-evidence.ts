@@ -37,7 +37,7 @@ export interface StageSelection {
 }
 
 export class TurnEvidence {
-  private readonly traceId: string;
+  readonly traceId: string;
 
   constructor(
     private readonly storage: StoragePort,

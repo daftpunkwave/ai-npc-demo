@@ -91,9 +91,10 @@ describe("装配驱动的模块选择与启动", () => {
       const assembly = loadAssembly(ref);
       const resolved = await resolveServerAssembly(assembly, serverModuleDefinitions);
       expect(resolved.plan.assemblyId).toBe(ref);
-      expect(resolved.plan.modules).toHaveLength(ref === "local-slg-escalating-v1" ? 16 : 18);
+      expect(resolved.plan.modules).toHaveLength(ref === "local-slg-escalating-v1" ? 16 : ref === "local-slg-test-v1" ? 21 : 18);
       if (ref !== "local-slg-escalating-v1") {
-        expect(resolved.plan.agentSlots.decision).toEqual(["agent.decision.deterministic"]);
+        expect(resolved.plan.agentSlots.decision).toEqual(ref === "local-slg-test-v1"
+          ? ["agent.decision.deterministic", "agent.decision.model"] : ["agent.decision.deterministic"]);
         expect(resolved.modules.capabilities.map(({ capability }) => capability))
           .toEqual(expect.arrayContaining(["agent.scheduling", "agent.tools"]));
       }
@@ -102,15 +103,18 @@ describe("装配驱动的模块选择与启动", () => {
     }
   });
 
-  it("测试装配与标准装配只在装配 ID 不同", async () => {
+  it("只在测试装配引入模型池及确定性传输", async () => {
     const standard = loadAssembly("local-slg-standard-v1");
     const test = loadAssembly("local-slg-test-v1");
     const standardPlan = (await resolveServerAssembly(standard, serverModuleDefinitions)).plan;
     const testPlan = (await resolveServerAssembly(test, serverModuleDefinitions)).plan;
     expect(test.assemblyId).toBe("local-slg-test-v1");
-    expect(testPlan.modules.map((module) => module.moduleId)).toEqual(
-      standardPlan.modules.map((module) => module.moduleId),
-    );
+    const standardIds = new Set(standardPlan.modules.map(({ moduleId }) => moduleId));
+    const testIds = new Set(testPlan.modules.map(({ moduleId }) => moduleId));
+    expect([...standardIds].every((id) => testIds.has(id))).toBe(true);
+    expect([...testIds].filter((id) => !standardIds.has(id)).sort()).toEqual([
+      "agent.model-pool.shared", "platform.budget.standard", "platform.model-transport.deterministic",
+    ]);
   });
 
   it("按解析计划实例化模块并按依赖顺序注入公开端口与规则贡献", async () => {

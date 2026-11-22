@@ -1,6 +1,6 @@
 # 全职能模块目录与默认装配
 
-> 状态：部分实现。`server` 首批模块、玩家客户端、控制台前三个页面、三 realm 默认装配与目录预检已实现。Agent 认知、模型池和剩余控制台页面仍为目标。本文维护首版的模块 ID、能力、实例作用域与默认装配规格。参见 [modules.md — 模块边界](modules.md)、[plugins.md — 插件机制](plugins.md)、[composition.md — 装配冻结](composition.md)。
+> 状态：部分实现。`server` 首批模块、玩家客户端、控制台前三个页面、三 realm 装配与目录预检已实现。Agent 感知、M0/M1 记忆和确定性策略已启用，测试装配接入模型池与本地夹具。本文维护模块 ID、能力、实例作用域与默认装配规格。参见 [modules.md — 模块边界](modules.md)、[plugins.md — 插件机制](plugins.md)、[composition.md — 装配冻结](composition.md)。
 
 ## 1. 目录、装配、profile 不是一回事
 

@@ -144,7 +144,7 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 | `manifest` | experiment | 去密钥的冻结 manifest |
 | `export` | audit | 导出包 |
 
-大于 64 KB 的正文写到 `data/artifacts/<artifactId>`，表中只存路径与 hash。
+当前上下文、模型请求和响应沿用 SQLite 内联 artifact。大于 64 KB 的正文单独存储仍属目标，表记录预留路径与 hash。
 
 ### 8.3 脱敏副本
 

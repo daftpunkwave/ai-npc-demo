@@ -38,7 +38,7 @@ function temporaryDirectory(): string {
 function hostWithAgents(overrides: Partial<HostOptions> = {}): Promise<RunningHost> {
   const host = startHost({
     dataDir: temporaryDirectory(), playerToken: "turn-player", consoleToken: "turn-console",
-    assemblyRef: "local-slg-test-v1", rosterRef: "core-3", ...overrides,
+    assemblyRef: "local-slg-standard-v1", rosterRef: "core-3", ...overrides,
   });
   hosts.push(host);
   return host;
@@ -142,7 +142,7 @@ function memoryConfig(memory: "none" | "ledger"): Pick<HostOptions, "configRoot"
   writeFileSync(join(root, "memory-comparison.yaml"), `
 schemaVersion: 1
 id: memory-comparison
-moduleAssemblyRef: local-slg-test-v1
+moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
 rosterRef: core-3
@@ -150,7 +150,7 @@ modelLayoutRef: unused-model-layout
 player: { principalId: player-1, factionId: null }
 mode: live
 initialState: { kind: cold-start }
-variant: { id: memory-comparison, profilePatchRefs: [comparison-strategy], agentIds: null }
+variant: { id: memory-comparison, profilePatchRefs: [comparison-strategy, decision-deterministic], agentIds: null }
 script: null
 clock: { kind: realtime }
 budget: { maxTokens: null, maxCost: null }

@@ -118,8 +118,20 @@ export function resolveConfigReference(
   });
 }
 
-/** env:NAME 形式的引用；NAME 必须是合法的环境变量名。 */
-const envReferencePattern = /^env:([A-Za-z_][A-Za-z0-9_]*)$/;
+const envNameStarts = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_");
+const envNameCharacters = new Set([...envNameStarts, ..."0123456789"]);
+
+/** 读取 env:NAME 引用，按 ASCII 标识符规则逐字符验证。 */
+export function envReferenceName(value: string): string | null {
+  if (!value.startsWith("env:")) return null;
+  const name = value.slice(4);
+  const first = name[0];
+  if (first === undefined || !envNameStarts.has(first)) return null;
+  for (const character of name.slice(1)) {
+    if (!envNameCharacters.has(character)) return null;
+  }
+  return name;
+}
 
 /** 深度替换 env: 引用；缺失或空值都按预检失败处理。 */
 function resolveEnvValue(
@@ -129,11 +141,10 @@ function resolveEnvValue(
   env: ReadonlyMap<string, string>,
 ): unknown {
   if (typeof value === "string") {
-    const match = envReferencePattern.exec(value);
-    if (match === null) {
+    const name = envReferenceName(value);
+    if (name === null) {
       return value;
     }
-    const [, name = ""] = match;
     const resolved = env.get(name);
     if (resolved === undefined || resolved === "") {
       throw new LoadingError({

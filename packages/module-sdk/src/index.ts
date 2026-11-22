@@ -32,5 +32,8 @@ export type {
 } from "./ports";
 export * from "./game-ports";
 export * from "./game-utils";
+export * from "./game-route";
 export * from "./contributor";
 export * from "./agent-ports";
+export * from "./model-ports";
+export * from "./artifact-store";

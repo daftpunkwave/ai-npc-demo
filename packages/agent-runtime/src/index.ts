@@ -21,8 +21,8 @@ export type { MemoryHostOptions } from "./memory-host";
 export type { MemoryRecordUseRequest } from "./memory-publication";
 export { memoryIdentityForAgent } from "./memory-identity";
 
-export { StoredAgentArtifactStore } from "./artifact-store";
-export type { AgentArtifactKind, AgentArtifactRecord, AgentArtifactStore, PutAgentArtifactInput } from "./artifact-store";
+export { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
+export type { AgentArtifactKind, AgentArtifactRecord, AgentArtifactStore, PutAgentArtifactInput } from "@ai-npc/module-sdk";
 export { ToolGateway } from "./tool-gateway";
 export type {
   MessageExecutionInput,
@@ -62,6 +62,7 @@ export type {
   SpeechHistoryLine,
   SpeechPreparation,
 } from "./dialogue-flow";
-export { estimateSystemAndUserTokens, estimateTokens } from "./token-estimate";
+export { estimateSystemAndUserTokens, estimateTokens } from "@ai-npc/contracts";
+export { decisionSystem, decisionSubmitTool, modelContextBudget } from "./model-turn-materials";
 export { AgentContextPipeline } from "./context-pipeline";
 export type { ContextPipelineOptions, PreparedContext } from "./context-pipeline";

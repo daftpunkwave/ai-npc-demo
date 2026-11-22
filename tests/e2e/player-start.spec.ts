@@ -1,11 +1,11 @@
 /**
  * 验证玩家从公社开局发言、收到已提交的确定性回复，并从会话读取失败恢复。
  * 依赖固定测试装配、无画面渲染器与玩家 DOM 列表；不请求真实模型。
- * 只断言内容包的固定模板和真实会话读取，不使用画布像素或真实模型。
+ * 断言夹具生成并正式提交的对白及真实会话读取，不使用画布像素。
  */
 import { expect, test } from "@playwright/test";
 
-test("玩家开局后可收到岑雁的模板回复，并重试读取会话", async ({ page }) => {
+test("玩家开局后可收到岑雁的模型夹具回复，并重试读取会话", async ({ page }) => {
   await page.goto("http://127.0.0.1:5173/#token=e2e-player");
   const start = page.getByTestId("faction-start-human-neutral");
   await expect(start).toBeVisible();
@@ -14,7 +14,7 @@ test("玩家开局后可收到岑雁的模板回复，并重试读取会话", as
   await expect(page.getByTestId("scene-renderer-null")).toBeVisible();
   await expect(page.getByTestId("list-character-human-independent")).toBeVisible();
   await page.getByTestId("list-character-human-independent").click();
-  const greeting = "你好，岑雁。";
+  const greeting = "岑雁，可以帮我护送一趟吗？";
   const dialogue = page.getByTestId("dialogue-line");
   await page.getByTestId("dialogue-input").fill(greeting);
   await page.getByTestId("dialogue-send").click();

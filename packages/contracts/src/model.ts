@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { jsonValueSchema, type Json, type JsonSchema } from "./json";
 import { idSchemas, principalIdSchema } from "./ids";
+import type { ModelFixture } from "./model-fixtures";
 
 /** 模型调用用途；新增类别必须先扩展契约与预检。 */
 export const modelPurposeSchema = z.enum([
@@ -94,6 +95,7 @@ export const modelRequestContextSchema = z
     workRef: z.string().min(1),
     round: z.number().int().positive(),
     triggerPrincipalIds: z.array(principalIdSchema),
+    contextArtifactId: idSchemas.art.optional(),
   })
   .strict();
 
@@ -212,6 +214,13 @@ export const modelEmbeddingResponseSchema = z
 
 export type ModelEmbeddingResponse = z.infer<typeof modelEmbeddingResponseSchema>;
 
+/** 单次传输的连接参数。由模型池注入，不进入规范化请求档案。 */
+export interface ModelConnectionInput {
+  readonly endpoint: string | null;
+  readonly fixtures: readonly ModelFixture[];
+  readonly signal: AbortSignal;
+}
+
 /**
  * 模型传输端口：每次调用只尝试一次，失败抛 ModelTransportError。
  * 端口是纯类型，不携带具体供应商的请求/响应结构。
@@ -219,7 +228,7 @@ export type ModelEmbeddingResponse = z.infer<typeof modelEmbeddingResponseSchema
 export interface ModelTransportPort {
   readonly adapterId: string;
   capabilities(modelConfig: Json): ModelCapabilities;
-  complete(request: ModelRequest, credential: string | null): Promise<ModelResponse>;
+  complete(request: ModelRequest, credential: string | null, connection: ModelConnectionInput): Promise<ModelResponse>;
   embed?(
     input: { externalModel: string; texts: readonly string[]; timeoutMs: number },
     credential: string | null,

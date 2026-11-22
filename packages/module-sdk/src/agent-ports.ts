@@ -5,7 +5,6 @@
  */
 /* eslint-disable no-unused-vars -- 接口方法参数名用于表达调用契约。 */
 import type {
-  AgentModelCallResult,
   AgentObservation,
   AgentStageEffective,
   AgentTrigger,
@@ -17,9 +16,7 @@ import type {
   MemoryBundle,
   MemoryChangePlan,
   AgentMemoryQuery,
-  ModelRequest,
   NormalizedMessage,
-  NormalizedTool,
   ToolBinding,
   ToolDefinition,
   ToolExecutionResult,
@@ -357,57 +354,4 @@ export interface AgentDecisionPort<Input = AgentDecisionInput> {
     readonly fallback: boolean;
     readonly validation: Json;
   }>;
-}
-
-/** 模型池端口；宿主只看到规范化请求与响应。 */
-export interface AgentModelPoolPort {
-  configure(input: {
-    readonly runId: string;
-    readonly routes: readonly {
-      readonly agentId: string;
-      readonly purpose: import("@ai-npc/contracts").Purpose;
-      readonly modelId: string;
-      readonly externalModel: string;
-      readonly connectionId: string;
-      readonly adapterId: string;
-      readonly credentialRef: string | null;
-      readonly endpoint: string;
-      readonly parameters: Json;
-      readonly capabilities: import("@ai-npc/contracts").ModelCapabilities;
-      readonly maxConcurrent: number;
-      readonly maxOutputTokens: number;
-    }[];
-  }): void;
-  call(input: {
-    readonly scope: MemoryScope;
-    readonly purpose: import("@ai-npc/contracts").Purpose;
-    readonly workRef: string;
-    readonly system: string;
-    readonly messages: readonly NormalizedMessage[];
-    readonly tools: readonly NormalizedTool[];
-    readonly output: ModelRequest["output"];
-    readonly reserveOutputTokens: number;
-    readonly deadlineMs: number;
-    readonly fence: () => boolean;
-  }): Promise<AgentModelCallResult>;
-}
-
-export interface AgentBudgetPort {
-  reserve(input: {
-    readonly runId: string;
-    readonly agentId: string | null;
-    readonly workRef: string;
-    readonly purpose: import("@ai-npc/contracts").Purpose;
-    readonly modelId: string;
-    readonly reservedInput: number;
-    readonly reservedOutput: number;
-  }): { readonly entryId: string };
-  settle(input: {
-    readonly entryId: string;
-    readonly actualInput: number | null;
-    readonly actualOutput: number | null;
-    readonly usageUnknown: boolean;
-    readonly costEstimate: number | null;
-    readonly currency: string | null;
-  }): void;
 }

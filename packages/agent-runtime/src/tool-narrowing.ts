@@ -13,6 +13,7 @@ import {
 import type { AgentToolsPort } from "@ai-npc/module-sdk";
 
 export interface ToolNarrowingValues {
+  readonly messagePrincipalIds?: ReadonlySet<string>;
   readonly teamIds?: readonly string[];
   readonly policyKeys?: readonly string[];
   readonly evidenceIds?: readonly string[];

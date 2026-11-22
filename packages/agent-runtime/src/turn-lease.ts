@@ -35,18 +35,33 @@ export interface ClaimedTurn {
 
 export function cancelTurn(tx: StorageTransaction, row: StorageRow, reason: string, endedAt: string): void {
   if (row["started_at"] !== null) {
-    const committed = tx.all(
+    const branchId = stringValue(row, "branch_id");
+    const agentId = stringValue(row, "agent_id");
+    const runId = stringValue(row, "run_id");
+    const turnId = stringValue(row, "turn_id");
+    const reply = tx.get(
       `SELECT 1 FROM speech_commits AS s
         JOIN artifacts AS a ON a.artifact_id = s.approved_speech_artifact_ref
         WHERE s.branch_id = ? AND s.principal_id = ? AND a.run_id = ? AND a.kind = 'speech'
           AND json_extract(CAST(a.body AS TEXT), '$.turnId') = ?
           AND json_extract(CAST(a.body AS TEXT), '$.validation.publication') = 'turn-reply'
         LIMIT 1`,
-      [stringValue(row, "branch_id"), stringValue(row, "agent_id"), stringValue(row, "run_id"), stringValue(row, "turn_id")],
+      [branchId, agentId, runId, turnId],
     );
-    if (committed.length > 0) {
-      // 已提交的回复不可撤回，保留对应触发的消费状态，避免重启重复回话。
-      tx.rows("turn_runs").put({ ...row, status: "failed", terminal_reason: "interrupted-after-speech", ended_at: endedAt, lease_expires_at: null });
+    const acceptedTool = reply === null ? tx.get(
+      `SELECT 1 FROM tool_calls AS t
+       JOIN command_receipts AS c ON c.branch_id = ? AND c.principal_id = t.agent_id AND c.command_id = t.command_id
+       WHERE t.run_id = ? AND t.turn_id = ? AND t.agent_id = ?
+         AND json_extract(c.receipt_json, '$.commandStatus') = 'accepted'
+       LIMIT 1`,
+      [branchId, runId, turnId, agentId],
+    ) : null;
+    if (reply !== null || acceptedTool !== null) {
+      // 已提交的动作和回复留在世界中，保留触发的消费位置以避免再次下令。
+      tx.rows("turn_runs").put({
+        ...row, status: "failed", terminal_reason: reply === null ? "interrupted-after-command" : "interrupted-after-speech",
+        ended_at: endedAt, lease_expires_at: null,
+      });
       return;
     }
   }

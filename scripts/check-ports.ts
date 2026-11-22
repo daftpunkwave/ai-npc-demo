@@ -146,6 +146,7 @@ function childEnvironment(): NodeJS.ProcessEnv {
     NPC_CLIENT_PORT: "5173",
     NPC_DATA_DIR: dataDir,
     NPC_ASSEMBLY: "local-slg-test-v1",
+    NPC_MODEL_LAYOUT: "deterministic-model-layout-v1",
     NPC_ROSTER: "core-3",
     NPC_PLAYER_TOKEN: "ports-player",
     NPC_CONSOLE_TOKEN: "ports-console",

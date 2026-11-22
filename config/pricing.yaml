@@ -1,0 +1,5 @@
+schemaVersion: 1
+pricingVersion: "2026-11"
+currency: USD
+models:
+  npc-fixture: { inputPerMTok: 0, outputPerMTok: 0 }

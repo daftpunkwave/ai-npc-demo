@@ -585,6 +585,8 @@ DROP INDEX jobs_due;
 CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHERE status = 'scheduled';
 ```
 
+模型预算迁移在 `budget_ledger` 中增加 `world_day`，让角色的每日额度与尝试归属关联。迁移为运行、角色与日期、工作引用建立账本索引，并按工作或状态索引尝试记录。已有记录保留原键。
+
 ## 3. 分支复制 `forkBranch`
 
 快照、恢复、实验分支和开环沙盒都用同一个操作：把源分支的全部分支级数据拷贝到一个新的 `branch_id`。数据规模很小（序章数千行），整表拷贝足够快，也最不容易出错。

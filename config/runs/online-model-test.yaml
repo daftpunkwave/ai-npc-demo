@@ -1,0 +1,15 @@
+schemaVersion: 1
+id: online-model-test
+moduleAssemblyRef: local-slg-test-v1
+worldPackRef: earth-2964-v1
+scenarioRef: watergate-v1
+rosterRef: core-3
+modelLayoutRef: deterministic-model-layout-v1
+player: { principalId: player-1, factionId: null }
+mode: live
+initialState: { kind: cold-start }
+variant: null
+script: null
+clock: { kind: realtime }
+budget: { maxTokens: null, maxCost: null }
+failurePolicy: strict

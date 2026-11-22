@@ -4,20 +4,24 @@
  * 约束与禁忌：不得复用 decision 会话、把秘密注入请求、绕过 authority 或提交未经批准的正文。
  */
 import {
+  cleanJsonSchemaForModel,
+  DomainError,
   dialogueIntentSchema,
   speechArtifactSchema,
+  speechOutputSchema,
+  speechOutputWireSchema,
   type AuthContext,
   type CommandEnvelope,
   type CommandReceipt,
   type DialogueIntent,
   type Json,
   type MemoryScope,
+  type ModelOutput,
   type SpeechArtifact,
 } from "@ai-npc/contracts";
-import type { ApprovedSpeech, ApprovedSpeechReader } from "@ai-npc/module-sdk";
+import type { AgentArtifactStore, ApprovedSpeech, ApprovedSpeechReader } from "@ai-npc/module-sdk";
 import type { MessageExecutionInput, MessageExecutionResult } from "./tool-gateway";
 import type { ContentPack } from "@ai-npc/experiment";
-import type { AgentArtifactStore } from "./artifact-store";
 import {
   filterDisclosableFacts,
   type SpeechFact,
@@ -47,6 +51,7 @@ export interface SpeechApprovalInput {
   readonly facts: readonly SpeechFact[];
   readonly history: readonly SpeechHistoryLine[];
   readonly receipts: readonly SpeechReceiptState[];
+  readonly rejectedToolCommand?: boolean;
   readonly secrets: readonly SpeechSecret[];
   readonly principalFactions: ReadonlyMap<string, string>;
   readonly heldEvidenceIds: ReadonlyMap<string, ReadonlySet<string>>;
@@ -64,7 +69,7 @@ export interface SpeechApprovalInput {
 export interface SpeechGenerationRequest {
   readonly system: string;
   readonly user: string;
-  readonly output: Json;
+  readonly output: ModelOutput;
 }
 
 export interface SpeechPreparation {
@@ -79,7 +84,9 @@ export interface SpeechPreparation {
 export type SpeechGenerator = (
   request: SpeechGenerationRequest,
   attempt: number,
-) => SpeechGenerationOutput | Promise<SpeechGenerationOutput>;
+) => unknown | Promise<unknown>;
+
+const speechWireSchema = cleanJsonSchemaForModel(speechOutputWireSchema);
 
 export interface SpeechApprovalResult {
   readonly artifact: SpeechArtifact;
@@ -215,17 +222,9 @@ export class DialogueFlow {
         user: requestUser,
         output: {
           kind: "json",
-          schemaName: "speech-output",
-          schema: {
-            type: "object",
-            properties: {
-              utterance: { type: "string" },
-              citedRefs: { type: "array", items: { type: "string" } },
-            },
-            required: ["utterance", "citedRefs"],
-            additionalProperties: false,
-          },
-        } satisfies Json,
+          schemaName: "speech",
+          schema: speechWireSchema,
+        },
       },
       visibleFacts: filtered.visible,
       omittedFactRefs: filtered.omitted.map((fact) => fact.ref),
@@ -243,6 +242,7 @@ export class DialogueFlow {
       allowedRefs: preparation.allowedRefs,
       restrictedSecrets: preparation.restrictedSecrets,
       receipts: input.receipts,
+      rejectedToolCommand: input.rejectedToolCommand === true,
       completionClaims: lexicons.completionClaims,
       progressClaims: lexicons.progressClaims,
     });
@@ -269,18 +269,20 @@ export class DialogueFlow {
             failedChecks: validation.checks.filter((check) => !check.passed).map((check) => check.name),
           });
           if (validation.ok) {
-            selected = candidate;
+            selected = speechOutputSchema.parse(candidate);
             fallbackReason = null;
             break;
           }
           fallbackReason = "validation-failed";
         } catch (error) {
+          if (error instanceof DomainError && error.code === "cancelled") throw error;
           attempts.push({
             attempt,
             status: "failed",
             error: error instanceof Error ? error.message : String(error),
           });
-          fallbackReason = "generation-failed";
+          fallbackReason = error instanceof DomainError && error.code === "budget-exhausted" ? "budget-exhausted" : "generation-failed";
+          if (fallbackReason === "budget-exhausted") break;
         }
       }
     }

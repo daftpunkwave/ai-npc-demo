@@ -11,7 +11,7 @@ import {
 import type { ContentPack, ResolvedAgentProfile } from "@ai-npc/experiment";
 import type { DeterministicDecisionInput, MemoryRecordView } from "@ai-npc/module-sdk";
 import type { SpeechApprovalInput } from "./dialogue-flow";
-import type { SpeechFact } from "./disclosure";
+import { isDisclosable, type SpeechFact } from "./disclosure";
 import { asRecord } from "./runtime-records";
 import type { FrozenTurnInput } from "./turn-input";
 import type { ClaimedTurn } from "./turn-lease";
@@ -91,12 +91,13 @@ export function checkedDecision(
   memory: MemoryBundle,
   prospective: DeterministicDecisionInput["prospective"],
   receipts: readonly ToolExecutionResult[],
+  allowedAudience?: ReadonlySet<string>,
 ): DecisionSubmission | null {
   const parsed = decisionSubmissionSchema.safeParse(value);
   if (!parsed.success) return null;
   const decision = parsed.data;
   const intent = decision.dialogueIntent;
-  const allowed = participants(frozen, prospective);
+  const allowed = allowedAudience ?? participants(frozen, prospective);
   if (intent.kind !== "none" && (intent.audience.length === 0 ||
     intent.audience.some((id) => !allowed.has(id)))) return null;
   const memoryIds = new Set<string>(memory.items.map((item) => item.memoryId));
@@ -104,6 +105,9 @@ export function checkedDecision(
   const knownSubjects = new Set(frozen.observations.flatMap((item) =>
     Object.values(asRecord(asRecord(item.content)["refs"])).filter((ref): ref is string => typeof ref === "string")));
   for (const promise of prospective) if (promise.subjectRef !== null) knownSubjects.add(promise.subjectRef);
+  for (const ref of frozen.world.knowledge.get(frozen.scope.agentId) ?? []) {
+    if (ref.startsWith("ev-")) knownSubjects.add(ref);
+  }
   const resultRefs = new Set(receipts.flatMap((result) => [result.resultRef, result.receiptId]));
   if (intent.subjectRef !== null && !knownSubjects.has(intent.subjectRef)) return null;
   if (intent.factRefs.some((id) => !memoryIds.has(id) && !observationIds.has(id) && !knownSubjects.has(id) && !resultRefs.has(id))) return null;
@@ -141,6 +145,10 @@ export function speechInput(input: {
     }
   }
   const { agentId } = frozen.scope;
+  for (const id of frozen.world.knowledge.get(agentId) ?? []) {
+    const item = content.index.evidence.get(id);
+    if (item !== undefined) facts.set(id, { ref: id, releasePolicyId: `holders:${id}`, summaryZh: item.content });
+  }
   const character = content.index.characters.get(agentId);
   const faction = content.index.factions.get(agentId);
   const latestDialogue = frozen.triggerObservations.findLast((observation) => {
@@ -154,11 +162,20 @@ export function speechInput(input: {
     ...[...content.index.characters].map(([id, character]) => [id, character.name] as const),
     [content.index.playerPrincipalId, content.locale.playerName],
   ]);
+  const history = input.channel !== undefined || !dialogue.success ? [] : frozen.observations.flatMap((observation) => {
+    const payload = dialogueSubmittedPayloadSchema.safeParse(asRecord(observation.content)["facts"]);
+    if (!payload.success || payload.data.conversationId !== dialogue.data.conversationId ||
+      !isDisclosable(observation.releasePolicyId, {
+        audience: intent.audience, principalFactions: frozen.world.principalFactions, heldEvidenceIds: frozen.world.knowledge,
+      }) || !intent.audience.every((id) => id === payload.data.speakerId ||
+        payload.data.deliveries.some(({ principalId, deliverAtTick }) => principalId === id && deliverAtTick <= frozen.frontier.worldTick))) return [];
+    return [{ dialogueId: payload.data.dialogueId, speakerName: names.get(payload.data.speakerId) ?? payload.data.speakerId, text: payload.data.text }];
+  }).slice(-6);
   return {
     session: frozen.scope, runId: turn.runId, turnId: turn.auth.turnId, agentId, auth: turn.auth,
     intent,
     facts: [...facts.values()],
-    history: [],
+    history,
     receipts: [],
     secrets: [...content.index.secrets.values()].map((secret) => ({ secretId: secret.secretId, leakTerms: secret.leakTerms })),
     principalFactions: frozen.world.principalFactions,

@@ -451,6 +451,14 @@ export const decisionSubmissionSchema = z
   .strict();
 
 export type DecisionSubmission = z.infer<typeof decisionSubmissionSchema>;
+export const decisionSubmitWireSchema = jsonValueSchema.parse(z.toJSONSchema(decisionSubmissionSchema));
+
+export const speechOutputSchema = z.object({
+  utterance: z.string().min(1).max(160),
+  citedRefs: z.array(z.string()).max(6),
+}).strict();
+
+export const speechOutputWireSchema = jsonValueSchema.parse(z.toJSONSchema(speechOutputSchema));
 
 export const speechArtifactSchema = z
   .object({
@@ -475,5 +483,8 @@ export interface AgentModelCallResult {
     readonly attemptId: string;
     readonly status: "succeeded" | "failed" | "superseded" | "cancelled";
     readonly error: Json | null;
+    readonly modelId?: string;
+    readonly servedModel?: string | null;
+    readonly substituted?: boolean;
   }[];
 }

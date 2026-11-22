@@ -11,7 +11,9 @@ import {
   type StorageRow,
 } from "@ai-npc/contracts";
 
-export type AgentArtifactKind = "tool-raw" | "tool-view" | "speech" | "decision";
+const artifactKinds = ["tool-raw", "tool-view", "speech", "decision", "context", "model-request", "model-response"] as const;
+
+export type AgentArtifactKind = typeof artifactKinds[number];
 
 export interface AgentArtifactRecord {
   readonly artifactId: string;
@@ -122,7 +124,7 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
     const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
     if (row === null) return null;
     const kind = requireString(row, "kind");
-    if (kind !== "tool-raw" && kind !== "tool-view" && kind !== "speech" && kind !== "decision") {
+    if (!(artifactKinds as readonly string[]).includes(kind)) {
       throw new Error(`artifact ${artifactId} has unsupported kind ${kind}`);
     }
     const bodyText = decodeBody(row);
@@ -134,7 +136,7 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
     return {
       artifactId,
       runId: row["run_id"] === null ? null : requireString(row, "run_id"),
-      kind,
+      kind: kind as AgentArtifactKind,
       contentHash: requireString(row, "content_hash"),
       byteSize: declaredSize,
       createdAt: requireString(row, "created_at"),

@@ -98,7 +98,7 @@ function partiesPolicy(principalIds: readonly string[]): string {
   return `parties:${sorted.join(",")}`;
 }
 
-function releasePolicy(event: PerceptionRequest["event"]): string {
+export function observationReleasePolicy(event: Pick<PerceptionRequest["event"], "type" | "audience" | "payload">): string {
   if (event.type === "InformationShared") {
     return `holders:${string(object(event.payload)["evidenceId"])}`;
   }
@@ -194,7 +194,7 @@ export function renderObservation(input: {
       facts: {},
       claim: null,
     },
-    releasePolicyId: input.full ? releasePolicy(input.event) : "public",
+    releasePolicyId: input.full ? observationReleasePolicy(input.event) : "public",
     knownAtTick: deliveryTick(payload, input.agentId, input.event.worldTick),
   };
 }
