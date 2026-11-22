@@ -164,6 +164,11 @@ describe("SVG 结构安全", () => {
     ["vbscript 协议", '<a href="vbscript:msgbox(1)"><text>x</text></a>', "不允许的引用"],
     ["file 协议", '<image href="file:///etc/passwd"/>', "不允许的引用"],
     ["协议相对引用", '<image href="//example.com/x.png"/>', "不允许的引用"],
+    // 控制字符与反斜杠会让原始值不匹配协议前缀，却在浏览器里折叠成可执行协议或
+    // 协议相对地址；协议判定之前必须拒绝这两类字符。
+    ["制表符拆分的协议", '<a href="java&#9;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
+    ["换行拆分的协议", '<a href="java&#10;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
+    ["反斜杠网络路径", '<image href="\\\\example.com/x.png"/>', "控制字符、字符引用或反斜杠"],
   ])("拒绝包含%s的资产", (_label, injection, expectedMessage) => {
     const root = createFixture();
     const svgPath = join(root, "assets/world/grayharbor-relay.svg");

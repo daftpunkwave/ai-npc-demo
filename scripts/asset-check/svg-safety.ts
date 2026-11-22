@@ -36,6 +36,13 @@ function assertSafe(node: unknown, path: string): void {
       if (typeof value !== "string") {
         throw new Error(`资产引用不是字符串 ${key}: ${path}`);
       }
+      // 控制字符与反斜杠会改变浏览器的 URL 解析：形如 "java\tscript:" 或 "\evil.com/x"
+      // 的原始值不匹配协议前缀，却会在解析时折叠成 javascript: 或协议相对地址。
+      // 解析器不解码 XML 实体，因此 "java&#9;script:" 会原样保留；浏览器渲染时才解码，
+      // 所以字符引用同样必须拒绝，否则白名单会被绕过。
+      if (/[\u0000-\u001f\u007f\\]/u.test(value) || /&#(?:x0*[0-9a-f]+|0*\d+);/iu.test(value)) {
+        throw new Error(`资产引用包含控制字符、字符引用或反斜杠 ${key}: ${path}`);
+      }
       const href = value.trim().toLowerCase();
       // 只允许文档内片段引用与不带协议的相对路径：白名单式判断才能同时排除
       // javascript:/vbscript:/file: 等可执行或本地协议，以及协议相对 //host。
