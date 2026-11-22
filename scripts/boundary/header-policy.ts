@@ -25,26 +25,48 @@ function commentBody(comment: string): string {
 
 function directiveExplanation(body: string): string | null {
   if (
-    /^(?:<reference\b|nosemgrep(?:\s*:\s*[\w.-]+)?$|@vitest-environment\b|prettier-ignore\b|c8 ignore\b|istanbul ignore\b|v8 ignore\b|sourceMappingURL=)/.test(
-      body,
-    )
+    body.startsWith("<reference") ||
+    body === "nosemgrep" ||
+    body.startsWith("nosemgrep:") ||
+    body.startsWith("@vitest-environment") ||
+    body.startsWith("prettier-ignore") ||
+    body.startsWith("c8 ignore") ||
+    body.startsWith("istanbul ignore") ||
+    body.startsWith("v8 ignore") ||
+    body.startsWith("sourceMappingURL=")
   ) {
     return null;
   }
-  if (/^@ts-(?:expect-error|ignore|nocheck)\b/.test(body)) {
-    const withoutDirective = body.replace(/^@ts-[\w-]+\b/, "").trim();
+  const typescriptDirective = ["@ts-expect-error", "@ts-ignore", "@ts-nocheck"].find(
+    (directive) => body === directive || body.startsWith(`${directive} `),
+  );
+  if (typescriptDirective !== undefined) {
+    const withoutDirective = body.slice(typescriptDirective.length).trim();
     return withoutDirective === "" ? null : withoutDirective;
   }
-  if (/\beslint-(?:disable|enable)(?:-next-line|-line)?\b/.test(body)) {
+  if (body.startsWith("eslint-disable") || body.startsWith("eslint-enable")) {
     const separator = body.indexOf("--");
     return separator === -1 ? null : body.slice(separator + 2).trim();
   }
   return body;
 }
 
+function containsAsciiWord(text: string): boolean {
+  let letters = 0;
+  for (const character of text) {
+    if ((character >= "A" && character <= "Z") || (character >= "a" && character <= "z")) {
+      letters += 1;
+      if (letters >= 2) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function commentNeedsChinese(comment: string): boolean {
   const explanation = directiveExplanation(commentBody(comment));
-  return explanation !== null && /[A-Za-z]{2}/.test(explanation);
+  return explanation !== null && containsAsciiWord(explanation);
 }
 
 export function isFrozenMigration(filePath: string): boolean {

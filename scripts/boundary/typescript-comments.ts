@@ -3,6 +3,7 @@
  * 交互契约：输入完整源码文本，输出按出现顺序排列的注释原文与起始下标。
  * 约束与禁忌：不执行被检查代码、不构建语义树，也不把字符串、正则或模板正文当成注释。
  */
+/* eslint-disable security/detect-object-injection -- 索引只来自源码字符位置或固定栈末尾，不来自外部对象键。 */
 import type { CommentSpan } from "./types";
 
 type Mode = "code" | "line" | "block" | "single" | "double" | "template" | "regex";
@@ -61,84 +62,101 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
   let mode: Mode = "code";
   let start = 0;
   let expectExpression = true;
+  let index = 0;
 
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index] ?? "";
-    const next = source[index + 1];
+  while (index < source.length) {
+    const character = source.charAt(index);
+    const next = source.charAt(index + 1);
 
     if (mode === "line") {
       if (character === "\n") {
         spans.push({ text: source.slice(start, index), start });
         mode = "code";
       }
+      index += 1;
       continue;
     }
     if (mode === "block") {
       if (character === "*" && next === "/") {
         spans.push({ text: source.slice(start, index + 2), start });
         mode = "code";
+        index += 2;
+      } else {
         index += 1;
       }
       continue;
     }
     if (mode === "single" || mode === "double") {
       if (character === "\\") {
-        index += 1;
+        index += 2;
       } else if ((mode === "single" && character === "'") || (mode === "double" && character === '"')) {
         mode = "code";
         expectExpression = false;
+        index += 1;
+      } else {
+        index += 1;
       }
       continue;
     }
     if (mode === "regex") {
       if (character === "\\") {
-        index += 1;
+        index += 2;
       } else if (character === "/") {
         mode = "code";
         expectExpression = false;
+        index += 1;
+      } else {
+        index += 1;
       }
       continue;
     }
     if (mode === "template") {
       if (character === "\\") {
-        index += 1;
+        index += 2;
       } else if (character === "`") {
         mode = "code";
         expectExpression = false;
+        index += 1;
       } else if (character === "$" && next === "{") {
         templateExpressionDepths.push(0);
         mode = "code";
         expectExpression = true;
+        index += 2;
+      } else {
         index += 1;
       }
       continue;
     }
 
     if (isWhitespace(character)) {
+      index += 1;
       continue;
     }
     if (character === "/" && next === "/") {
       start = index;
       mode = "line";
-      index += 1;
+      index += 2;
       continue;
     }
     if (character === "/" && next === "*") {
       start = index;
       mode = "block";
-      index += 1;
+      index += 2;
       continue;
     }
     if (character === "'") {
       mode = "single";
+      index += 1;
       continue;
     }
     if (character === '"') {
       mode = "double";
+      index += 1;
       continue;
     }
     if (character === "`") {
       mode = "template";
+      index += 1;
       continue;
     }
     if (character === "/") {
@@ -148,6 +166,7 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
       } else {
         expectExpression = true;
       }
+      index += 1;
       continue;
     }
     if (character === "}" && templateExpressionDepths.length > 0) {
@@ -160,6 +179,7 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
         templateExpressionDepths[depthIndex] = depth - 1;
         expectExpression = false;
       }
+      index += 1;
       continue;
     }
     if (character === "{") {
@@ -168,35 +188,37 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
         templateExpressionDepths[depthIndex] = (templateExpressionDepths[depthIndex] ?? 0) + 1;
       }
       expectExpression = true;
+      index += 1;
       continue;
     }
     if (isDigit(character)) {
       expectExpression = false;
+      index += 1;
       continue;
     }
     if (isIdentifierStart(character)) {
       let end = index + 1;
-      while (isIdentifierPart(source[end] ?? "")) {
+      while (isIdentifierPart(source.charAt(end))) {
         end += 1;
       }
       const word = source.slice(index, end);
       expectExpression = EXPRESSION_START_KEYWORDS.has(word);
-      index = end - 1;
+      index = end;
       continue;
     }
     if ((character === "+" || character === "-") && next === character) {
-      const wasExpectingExpression: boolean = expectExpression;
-      index += 1;
-      expectExpression = wasExpectingExpression;
+      index += 2;
       continue;
     }
     if (isExpressionSuffix(character)) {
       expectExpression = false;
+      index += 1;
       continue;
     }
     if (isExpressionPrefixOperator(character)) {
       expectExpression = true;
     }
+    index += 1;
   }
 
   if (mode === "line" || mode === "block") {
