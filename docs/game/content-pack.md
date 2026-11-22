@@ -15,6 +15,7 @@
 | `factions.yaml` | 8 个派系及其党魁人格（4 名 AI 党魁 + 3 外域 + 公社席位） | [派系与党魁](#4-派系与党魁factionsyaml) |
 | `characters.yaml` | 8 名公社支持者 + 3 名外域 Agent 的人格与初始状态（4 名 AI 党魁在 `factions.yaml`） | [角色](#5-角色charactersyaml) |
 | `world-init.yaml` | 库存点、队伍、群体、初始委托、初始指标 | [世界初态](#6-世界初态world-inityaml) |
+| `rules.yaml` | 章节规则参数：任务随队岗位与数值、修复工作节点、日结目标、公社席 | [世界初态](#6-世界初态world-inityaml) |
 | `evidence.yaml` | 证据条目与秘密 | [证据与秘密](#7-证据与秘密evidenceyaml) |
 | `starts.yaml` | 五席开局，序章只启用公社席 | [五席开局](#8-五席开局startsyaml本切片只启用公社) |
 | `scenarios/watergate-v1.yaml` | 序章九张剧情卡 | [序章剧情卡](#9-序章剧情卡scenarioswatergate-v1yaml) |
@@ -27,7 +28,7 @@ schemaVersion: 1
 packId: earth-2964-v1
 contentVersion: "0.2.0"
 defaultScenario: watergate-v1
-files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
+files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, rules.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]
 scripts: [scripts/s-promise.yaml, scripts/s-rumor.yaml, scripts/s-secret.yaml]
 ```
@@ -451,6 +452,34 @@ dutyDelegations:
 player: { principalId: player-1, nodeId: grayharbor }
 ```
 
+### 章节规则参数（rules.yaml）
+
+任务随队岗位与数值、修复工作节点、仅能源修复队伍、日结目标库存与公社席在这里声明；规则层只消费这些描述符，不写具体内容 ID。调整名册、道路或数值只需改本文件并提高内容版本。岗位主体、豁免队伍、工作节点、库存点、迁徙道路与公社席持有者由加载器交叉校验。
+
+```yaml
+schemaVersion: 1
+tasks:
+  capacitySupporter: { agentId: npc-wenyuan, capacityBonus: 5 }        # 运输运力 +5 的本派物资支持者
+  repairSupporter: { agentId: npc-taoan, stabilityBonus: 10 }          # 修复稳定度 +10 的本派工务支持者
+  rescueSupporter: { agentId: npc-muzhi, durationDiscountTicks: 2 }    # 救援总用时 −2 的本派医政支持者
+  scoutSupporter: { agentId: npc-qilu, travelDiscountPerRoad: 1 }      # 侦察逐路 −1 的本派情报支持者
+  escortSupporter: { agentId: npc-luchen, safetyBonus: 4 }             # 迁徙道路护送 +4 的本派治安支持者
+  universalGuide: { agentId: species-fauna, travelDiscountPerRoad: 1 } # 追风：护送/侦察向导对任何队伍同效
+  universalRepairer:
+    { agentId: species-extraterrestrial, stabilityBonus: 15, excludedTeamIds: [team-star] } # 洛：非豁免队伍修复额外 +15
+  repairWorkNodeId: grayharbor               # 修复任务的工作节点；库存点必须在该节点或队伍出发节点
+  energyOnlyRepairTeamIds: [team-star]       # 只需能源的修复队伍；豁免洛的加成与供给库存点要求
+  repairBaseStability: { standard: 25, energyOnly: 40 }
+settlement:
+  dailySupplyStockpileId: sp-commons
+  dailySupplyAmount: 6
+  orchardMedicalStockpileId: sp-flora
+  orchardMedicalAmount: 5
+  migrationRoadId: r-gh-ps                   # 迁徙安全按这条道路的通行状态与通行许可判定
+  migrationPassageFactionId: species-fauna
+watergateSeatId: seat.commune                # 持有该席位的派系主体控制水闸分配并拥有公开广播权
+```
+
 ## 7. 证据与秘密（evidence.yaml）
 
 证据是可以分享的知识条目；秘密是只属于持有者的知识，`releasePolicy: private` 表示持有者不能主动转述原文，用于泄密探针。`heldBy` 中的主体在开局即获得知识授权；有 `nodeId` 且 `discoverable: true` 的证据通过侦察获得。
@@ -563,13 +592,16 @@ starts:
 
 ## 9. 序章剧情卡（scenarios/watergate-v1.yaml）
 
-剧情卡只能使用下列效果：`broadcast`（以某角色或来源的名义公开广播）、`message`（定向消息）、`rumor`（以 `reported` 渠道下发的公开声称）、`world-fact`（只读叙事事实事件，带受众）、`stockpile-adjust`（库存增减，原因写进事件；`clampToAvailable: true` 时负向增量只扣可用量）、`wake-agents`（提交 `AgentsSummoned` 事件，受众为列出的 Agent，感知后生成 `scenario` 类 trigger）。广播与消息以 `MessageSent` 提交（`channel` 为 broadcast 或 message，`intentKind = scenario`，按 [规则](rules.md) 第 9 节计算送达，剧情卡广播视为在 grayharbor 发布）。剧情卡不能修改指标或道路状态，也不能宣告胜负。
+剧情卡只能使用下列效果：`broadcast`（以某角色或来源的名义公开广播）、`message`（定向消息）、`rumor`（以 `reported` 渠道下发的公开声称）、`world-fact`（只读叙事事实事件，带受众）、`stockpile-adjust`（库存增减，原因写进事件；`clampToAvailable: true` 时负向增量只扣可用量）、`wake-agents`（提交 `AgentsSummoned` 事件，受众为列出的 Agent，感知后生成 `scenario` 类 trigger）。广播与消息以 `MessageSent` 提交（`channel` 为 broadcast 或 message，`intentKind = scenario`，按 [规则](rules.md) 第 9 节计算送达，剧情卡广播视为在 `broadcastOriginNodeId` 声明的节点发布）。剧情卡不能修改指标或道路状态，也不能宣告胜负。
 
 定向消息的 `to` 使用实际收件人 ID。谷寻给公社党魁的来信投递给 `player-1`。仓储受潮卡的 `delta.supply` 表示损失上限，实际扣减与结算顺序见 [rules.md — 资源与库存](rules.md#3-资源与库存)；该卡声明 `clampToAvailable: true`，负向增量按可用量结算，广播不写具体数量，实际损失以 `StockpileAdjusted` 记录为准。
 
 ```yaml
 schemaVersion: 1
 scenarioId: watergate-v1
+broadcastOriginNodeId: grayharbor
+pressureCardId: card-relay-alarm
+signatureOnlyPrincipalIds: [npc-shenli, npc-suhui, npc-guxun]
 cards:
   - cardId: card-relay-alarm
     version: 1
@@ -624,9 +656,9 @@ cards:
       - { kind: wake-agents, agentIds: [human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial], reason: council }
 ```
 
-每张卡最多触发一次，幂等键为 `<scenarioId>:<cardId>@<version>`。剧情广播的 `speakerId` 与定向消息的 `from` 可使用未上场成员的固定署名引用，按 [canon.md — 角色与建筑](../design/world/canon.md#134-角色与建筑) 校验并解析显示名。沈砾、苏回、谷寻分别使用 `npc-shenli`、`npc-suhui`、`npc-guxun`。署名只表示事件来源。Agent 须经授权感知流程获得观察，才能将这条事件写入记忆。
+每张卡最多触发一次，幂等键为 `<scenarioId>:<cardId>@<version>`。剧情文件的元数据：`broadcastOriginNodeId` 声明剧情广播的发布节点；`pressureCardId` 声明触发后启用每日剧情压力的卡片；`signatureOnlyPrincipalIds` 声明只作事件署名、不实例化角色的具名人物，署名不得与已定义身份重名，由加载器交叉校验。沈砾、苏回、谷寻分别使用 `npc-shenli`、`npc-suhui`、`npc-guxun`。署名只表示事件来源。Agent 须经授权感知流程获得观察，才能将这条事件写入记忆。
 
-`game.scenario.watergate-escalating`（模块替换演示用）读取同一份卡片，但节奏规则不同：所有 `atTick` 乘以 0.75 后向下取整；它还订阅 `TaskCompleted` 记录是否完成过修复，并订阅 `DayPassed`：`card-relay-alarm` 已触发、且到这次 `DayPassed` 为止还没有完成任何修复时，通过 world 的 `changeMeter` 再让 `relay.stability −2`（cause `scenario-pressure`）。这是剧情模块本身的节奏策略，不是卡片效果，因此不违反“剧情卡不能修改指标”。
+`game.scenario.watergate-escalating`（模块替换演示用）读取同一份卡片，但节奏规则不同：所有 `atTick` 乘以 0.75 后向下取整；它还订阅 `TaskCompleted` 记录是否完成过修复，并订阅 `DayPassed`：`pressureCardId` 声明的压力卡已触发、且到这次 `DayPassed` 为止还没有完成任何修复时，通过 world 的 `changeMeter` 再让 `relay.stability −2`（cause `scenario-pressure`）。这是剧情模块本身的节奏策略，不是卡片效果，因此不违反“剧情卡不能修改指标”。
 
 ## 10. 名册
 
@@ -780,6 +812,7 @@ checkpoints:
 | | `observationChange`、`causeNames`、`effectTemplates` | 指标原因与任务结果的公开渲染词典 | 下方 YAML，绑定见感知第 11.4 节 |
 | | `termTemplates.<kind>` | 协议条款的中文渲染，每种条款一条 | [感知](../agent/perception.md) 第 11.4 节 |
 | `locale/zh-CN.yaml` | `reasonCodes.<code>` | 每个原因码的玩家提示 | [领域模型](../architecture/domain-model.md) 第 9 节，各写一句 |
+| | `notifications.invite`、`notifications.deadline`、`notifications.failedTask`、`notifications.crisis` | 投影派生提醒的文案；`deadline` 中的 `{window}` 由投影以到期窗口 tick 数替换 | 下方 YAML，文案随投影提醒派生规则 |
 | | `taskTypes`、`meters`、`meterLevels`、`policyKeys`、`policyValues`、`resources`、`resourceLevels`、`nodes`、`facilities`、`playerName` | 名称、玩家称呼与等级文字 | 下方 YAML |
 | | `ui.*` | 客户端与控制台界面文字，至少包括 `ui.noReply`“（对方暂未回应）”、`ui.waitingReply`“等待回应”、`ui.reconnecting`“重连中”、`ui.serverUnavailable`“服务端不可连接”、`ui.sessionExpired`“会话已失效，请重新登录。”、`ui.incompleteAssembly`“组合不完整”、`ui.moduleNotLoaded`“模块未装载”、`ui.chapterKicker`“序章 / 第一周”、`ui.startBriefing` 开场白、`ui.hudKicker`“灰港 / 序章”、`ui.siteLabel`“灰港现场”、`ui.sceneLabel`“灰港近城”、`ui.consoleTitle`“灰港控制台” | [客户端](../architecture/client-and-rendering.md) |
 | | `lexicons.*` | 规则与评估用的关键词表，见下 | 照抄下方 YAML |
