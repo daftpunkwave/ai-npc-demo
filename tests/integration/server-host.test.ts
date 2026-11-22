@@ -3,7 +3,7 @@
  * 依赖临时数据目录、content 包与冻结的 RunSpec/manifest；不监听固定端口。
  * 禁止用假存储替代首次启动路径，也禁止用当前入参覆盖已冻结的在线 run。
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -31,9 +31,20 @@ import {
   type RunningHost,
 } from "@ai-npc/app-server";
 import { gameCommandEnvelope } from "./game-support";
+import { standardModelTestKey, stubStandardModelHttp } from "./standard-model-support";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
+let restoreStandardModelHttp: (() => void) | undefined;
+
+beforeEach(() => {
+  restoreStandardModelHttp = stubStandardModelHttp();
+});
+
+afterEach(() => {
+  restoreStandardModelHttp?.();
+  restoreStandardModelHttp = undefined;
+});
 
 afterEach(async () => {
   // 先等待全部宿主关闭（单个失败不跳过其余），再删除全部已登记目录，最后汇总抛出：
@@ -1113,7 +1124,11 @@ describe("服务端宿主", () => {
       expect(manifest.seed).toBe(spec.seed);
       expect(manifest.selection).toMatchObject({ moduleAssemblyRef: "local-slg-standard-v1", rosterRef: "standard-15" });
       expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.2.0" });
-      expect(manifest.agentSlots).toMatchObject({ decision: ["agent.decision.deterministic"] });
+      expect(manifest.agentSlots).toMatchObject({ decision: ["agent.decision.deterministic", "agent.decision.model"] });
+      expect(manifest).toMatchObject({ models: { layoutId: "shared-model-layout-v1", routes: expect.arrayContaining([
+        expect.objectContaining({ agentId: "human-independent", purpose: "decision", adapterId: "platform.model-transport.openai-compatible" }),
+      ]) } });
+      expect(JSON.stringify(manifest)).not.toContain(standardModelTestKey);
       expect(manifest.agentProfiles).toEqual(expect.arrayContaining([
         expect.objectContaining({ agentId: "human-independent", profileHash: expect.stringMatching(/^[0-9a-f]{64}$/) }),
       ]));
@@ -1171,7 +1186,9 @@ describe("服务端宿主", () => {
       ...current,
       realms: {
         ...current.realms,
-        server: { bindings: current.realms.server.bindings.filter(({ capability }) => !capability.startsWith("agent.")) },
+      server: { bindings: current.realms.server.bindings.filter(({ capability }) => !capability.startsWith("agent.") &&
+        capability !== "platform.budget" && capability !== "platform.model-transport")
+        .map((binding) => binding.capability === "platform.secrets" ? { ...binding, configRef: null } : binding) },
       },
     };
     const options = { dataDir, playerToken: "player-token", consoleToken: "console-token" };

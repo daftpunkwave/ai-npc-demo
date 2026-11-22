@@ -64,7 +64,11 @@ export interface RunModelPort {
 }
 
 export interface AgentModelPoolPort {
-  bindRun(input: { readonly routes: readonly ModelRoute[]; readonly limits: ModelRunLimits }): RunModelPort;
+  bindRun(input: {
+    readonly routes: readonly ModelRoute[];
+    readonly limits: ModelRunLimits;
+    readonly jsonOutputSuffix?: string;
+  }): RunModelPort;
 }
 
 export type AgentDecisionModelRoutes = Readonly<Record<"decision" | "speech", ReturnType<RunModelPort["route"]>>>;

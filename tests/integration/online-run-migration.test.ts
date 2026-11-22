@@ -5,7 +5,7 @@
  * 依赖真实存储、内容包与宿主启动链路；篡改 manifest 只用于模拟旧能力闭包形态。
  * 禁止让迁移修改源 run 行或源 manifest，也禁止让不可迁移错误派生新分支。
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,9 +19,20 @@ import {
   type RunningHost,
 } from "@ai-npc/app-server";
 import { gameCommandEnvelope } from "./game-support";
+import { stubStandardModelHttp } from "./standard-model-support";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
+let restoreStandardModelHttp: (() => void) | undefined;
+
+beforeEach(() => {
+  restoreStandardModelHttp = stubStandardModelHttp();
+});
+
+afterEach(() => {
+  restoreStandardModelHttp?.();
+  restoreStandardModelHttp = undefined;
+});
 
 afterEach(async () => {
   // 先关闭全部宿主再删除目录：SQLite 句柄未释放时 Windows 上删除会抛 EBUSY。
