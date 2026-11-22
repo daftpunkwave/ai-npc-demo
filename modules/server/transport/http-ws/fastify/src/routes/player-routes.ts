@@ -84,9 +84,10 @@ export function registerPlayerRoutes(context: RouteContext): void {
     if (!requirePlayer(context, session, reply)) {
       return;
     }
-    // 开局前 projection.campaign 为 null，只返回可选开局；不因缺少 campaign 返回 404。
+    // 开局前 campaign 为 null，只返回可选开局；不因缺少 campaign 返回 404。
+    // 优先走轻量战役读取端口，未接线时回退完整投影。
     return campaignResponseSchema.parse({
-      campaign: options.projection().campaign,
+      campaign: options.campaign !== undefined ? options.campaign() : options.projection().campaign,
       starts: [...(options.starts?.() ?? [])],
     });
   });

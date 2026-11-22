@@ -30,6 +30,7 @@
                          "@ai-npc/mod-agent-memory-ledger":  "workspace:*",
                          "@ai-npc/mod-agent-memory-none":  "workspace:*",
                          "@ai-npc/mod-platform-storage-sqlite":  "workspace:*",
+                         "@ai-npc/mod-platform-observability-sqlite":  "workspace:*",
                          "@ai-npc/module-sdk":  "workspace:*",
                          "@ai-npc/observability":  "workspace:*",
                          "@ai-npc/scripts":  "workspace:*",

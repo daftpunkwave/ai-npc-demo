@@ -21,6 +21,7 @@ import { Authority, TransactionWorldTx } from "@ai-npc/authority";
 import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
 import {
   gameModuleIds,
+  type AggregateListOptions,
   type GameClockPort,
   type GameContent,
   type GameModulePorts,
@@ -40,7 +41,15 @@ import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
-/** 内存 WorldTx：供不依赖 authority 的模块端口测试使用。 */
+/** 按 SQLite BINARY 的字典序比较聚合 ID；测试 ID 均为 ASCII，码点序与字节序一致。 */
+function compareAggregateId(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+/** 内存 WorldTx：供不依赖 authority 的模块端口测试使用；list 与真实实现一致按 ID 排序并下推条件。 */
 export function createMemoryTx(worldTick = 0): WorldTx {
   const cells = new Map<string, Map<string, Json>>();
   let seq = 0;
@@ -50,10 +59,24 @@ export function createMemoryTx(worldTick = 0): WorldTx {
       const state = cells.get(aggregateType)?.get(aggregateId);
       return state === undefined ? null : { version: 1, state: state as TState };
     },
-    list<TState>(aggregateType: string) {
-      return [...(cells.get(aggregateType) ?? new Map<string, Json>()).entries()].map(
+    list<TState>(aggregateType: string, options?: AggregateListOptions) {
+      let entries = [...(cells.get(aggregateType) ?? new Map<string, Json>()).entries()].map(
         ([id, state]) => ({ id, version: 1, state: state as TState }),
       );
+      if (options?.idPrefix !== undefined) {
+        entries = entries.filter((entry) => entry.id.startsWith(options.idPrefix as string));
+      }
+      if (options?.idBefore !== undefined) {
+        entries = entries.filter((entry) => compareAggregateId(entry.id, options.idBefore as string) < 0);
+      }
+      entries.sort((left, right) =>
+        options?.descending === true
+          ? compareAggregateId(right.id, left.id)
+          : compareAggregateId(left.id, right.id),
+      );
+      const offset = options?.offset ?? 0;
+      const bounded = entries.slice(offset);
+      return options?.limit === undefined ? bounded : bounded.slice(0, options.limit);
     },
     put(aggregateType: string, aggregateId: string, state: Json) {
       const bucket = cells.get(aggregateType) ?? new Map<string, Json>();
@@ -465,9 +488,12 @@ const projectionAggregateTypes = [
   "task",
   "task-invitation",
   "conversation",
+  "conversation-line",
+  "conversation-membership",
   "knowledge-grant",
   "share",
   "message",
+  "message-delivery",
   "agreement",
   "scenario-card",
   "scenario-run",

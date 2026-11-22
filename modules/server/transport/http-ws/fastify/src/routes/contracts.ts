@@ -11,6 +11,7 @@ import type {
   ConsoleHealthResponse,
   ModulesResponse,
   AuthContext,
+  CampaignView,
   ClockView,
   ClientContentView,
   CommandEnvelope,
@@ -221,6 +222,8 @@ export interface ServerAppOptions {
   /** 控制台首批只读页面；未接线时保留最小健康回退。 */
   readonly console?: ConsoleReadPort;
   readonly projection: () => PlayerProjection;
+  /** 战役视图的轻量读取端口；未接线时战役接口回退到完整投影。 */
+  readonly campaign?: () => CampaignView | null;
   readonly clock: () => ClockView;
   readonly pause: ClockControlHook;
   readonly resume: ClockControlHook;

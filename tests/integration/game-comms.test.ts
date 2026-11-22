@@ -4,7 +4,7 @@
  * 禁止直接调用投影或跳过中继状态。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts } from "@ai-npc/module-sdk";
+import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts, GameCommsPort } from "@ai-npc/module-sdk";
 import type { AuthContext, Json } from "@ai-npc/contracts";
 import { createSystemAuth } from "@ai-npc/authority";
 import { createCommsPort } from "@ai-npc/mod-game-comms-standard";
@@ -17,6 +17,7 @@ import {
   readGameEvents,
   setGameClock,
   strategicAuth,
+  withGamePorts,
   type GameHarness,
 } from "./game-support";
 const active: GameHarness[] = [];
@@ -776,5 +777,244 @@ describe("通信", () => {
     expect(say.commandStatus).toBe("rejected");
     expect(say.reasonCode).toBe("relay-down");
     expect(readGameEvents(value).filter((event) => event.type === "DialogueSubmitted")).toHaveLength(0);
+  });
+
+  it("会话聚合只存参与者与序号，对白按行聚合存放并可按会话读取", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    for (const text of ["第一句", "第二句", "第三句"]) {
+      expect(
+        value.authority.commands.execute(
+          playerAuth(value),
+          gameCommandEnvelope("dialogue.say", { targetAgentId: "npc-wenyuan", text }, value.host.ids("cmd")),
+        ).commandStatus,
+      ).toBe("accepted");
+    }
+    const conversationIds = withGamePorts(value, (ports) => ports["game.comms"].conversationsOf("player-1"));
+    expect(conversationIds).toHaveLength(3);
+    const firstConversationId = conversationIds[0] as string;
+
+    // 会话聚合不再嵌入对白正文；对白按补零序号成为可前缀索引的行聚合。
+    const conversation = readGameAggregate(value, "conversation", firstConversationId) as Record<string, unknown>;
+    expect(conversation).toMatchObject({ participants: ["player-1", "npc-wenyuan"], lastSeq: 1 });
+    expect(conversation["lines"]).toBeUndefined();
+    const lineIds = value.storage.transact((tx) =>
+      tx.branch(value.branchId)
+        .table("aggregate_state")
+        .list({ aggregate_type: "conversation-line" })
+        .map((row) => String(row["aggregate_id"])),
+    );
+    expect(lineIds).toEqual(conversationIds.map((id) => `${id}:0000000000`));
+    const membershipIds = value.storage.transact((tx) =>
+      tx.branch(value.branchId)
+        .table("aggregate_state")
+        .list({ aggregate_type: "conversation-membership" })
+        .map((row) => String(row["aggregate_id"])),
+    );
+    expect(membershipIds).toEqual([
+      ...conversationIds.map((id) => `npc-wenyuan:${id}`),
+      ...conversationIds.map((id) => `player-1:${id}`),
+    ]);
+
+    withGamePorts(value, (ports) => {
+      const lines = ports["game.comms"].conversationMessages(firstConversationId, 50);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ seq: 0, speakerId: "player-1", text: "第一句", channel: "face-to-face" });
+      expect(ports["game.comms"].conversationMessages("conv-missing", 50)).toEqual([]);
+    });
+  });
+
+  it("收件箱按送达顺序取最近窗口，未送达消息不返回", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const fauna = {
+      agentId: "species-fauna",
+      factionId: "species-fauna",
+      nodeId: "pass",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 25,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : agentId === fauna.agentId ? fauna : null),
+    };
+    const base = createMemoryTx(10);
+    let tick = 10;
+    const port = createCommsPort(() => ({ ...base, worldTick: tick }), value.gameContent, value.host.ids, world);
+    const post = (fromId: string, text: string) =>
+      port.postMessage({ fromId, to: ["player-1"], text, channel: "message", intentKind: "scripted" });
+
+    // 追风在隘口：降级中继下该消息送达 tick 为 13，当刻尚未送达。
+    port.postMessage({ fromId: "species-fauna", to: ["player-1"], text: "异地未送达", channel: "message", intentKind: "scripted" });
+    post("npc-wenyuan", "甲");
+    tick = 11;
+    post("npc-wenyuan", "乙");
+    tick = 12;
+    post("npc-wenyuan", "丙");
+    tick = 13;
+    post("npc-wenyuan", "丁");
+    tick = 14;
+    post("npc-wenyuan", "戊");
+
+    // 送达 tick 10：只有甲已送达，异地消息不进入收件箱。
+    tick = 10;
+    const atTen = port.messagesFor("player-1", 50);
+    expect(atTen.map((message) => message.text)).toEqual(["甲"]);
+    expect(atTen[0]).toMatchObject({ deliverAtTick: 10, committedAtTick: 10 });
+
+    // 送达 tick 13：异地消息送达，窗口按 (送达 tick, 提交 tick, 消息 ID) 升序。
+    tick = 13;
+    expect(port.messagesFor("player-1", 50).map((message) => message.text)).toEqual([
+      "甲",
+      "乙",
+      "丙",
+      "异地未送达",
+      "丁",
+    ]);
+
+    // 最近 3 条 = 戊(14)、丁(13)、异地(13)：同送达 tick 按提交 tick 决先后。
+    tick = 14;
+    expect(port.messagesFor("player-1", 3).map((message) => message.text)).toEqual(["异地未送达", "丁", "戊"]);
+
+    // 同一 (送达 tick, 提交 tick) 组内按消息 ID 决先后：投递索引的二进制序与端口原实现的
+    // localeCompare 序一致（运行 ID 为小写 base32，两种比较器同序）。
+    post("npc-wenyuan", "己");
+    post("npc-wenyuan", "庚");
+    post("npc-wenyuan", "辛");
+    const messages = port.messagesFor("player-1", 50);
+    expect(messages.map((message) => message.messageId)).toEqual(
+      [...messages]
+        .sort(
+          (left, right) =>
+            left.deliverAtTick - right.deliverAtTick ||
+            left.committedAtTick - right.committedAtTick ||
+            left.messageId.localeCompare(right.messageId),
+        )
+        .map((message) => message.messageId),
+    );
+  });
+
+  it("收件箱上界在世界 tick 边界不溢出排序键", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 80,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : null),
+    };
+    const base = createMemoryTx(0);
+    let tick = 9999999999;
+    const port = createCommsPort(() => ({ ...base, worldTick: tick }), value.gameContent, value.host.ids, world);
+    port.postMessage({ fromId: "npc-wenyuan", to: ["player-1"], text: "边界", channel: "message", intentKind: "scripted" });
+    // 送达 tick 恰为排序键宽度的最大值：上界构造不得因 tick 加一溢出而失败。
+    expect(port.messagesFor("player-1", 10).map((message) => message.text)).toEqual(["边界"]);
+  });
+
+  it("知识授权按聚合主键去重，holds 与 knowledgeOf 按主体前缀读取", async () => {
+    const value = await harness();
+    const base = createMemoryTx(7);
+    const port = createCommsPort(() => base, value.gameContent, value.host.ids, {
+      meters: () => null,
+      character: () => null,
+    });
+
+    // 同一 (主体, 条目, 途径) 的授权是 O(1) 主键去重：重复授予返回同一 grantId。
+    const first = port.grantKnowledge({ principalId: "player-1", itemId: "ev-1", via: "start" });
+    const duplicate = port.grantKnowledge({ principalId: "player-1", itemId: "ev-1", via: "start" });
+    expect(duplicate.grantId).toBe(first.grantId);
+
+    // 不同途径是不同授权。
+    const otherVia = port.grantKnowledge({ principalId: "player-1", itemId: "ev-1", via: "discovery" });
+    expect(otherVia.grantId).not.toBe(first.grantId);
+
+    // holds 只认当前主体的持有事实。
+    expect(port.holds("player-1", "ev-1")).toBe(true);
+    expect(port.holds("player-2", "ev-1")).toBe(false);
+    expect(port.holds("player-1", "ev-missing")).toBe(false);
+
+    // 其他主体的授权不进入 player-1 的前缀查询；knowledgeOf 按 (授予 tick, 条目) 排序。
+    port.grantKnowledge({ principalId: "npc-wenyuan", itemId: "ev-1", via: "start" });
+    port.grantKnowledge({ principalId: "player-1", itemId: "ev-0", via: "share", grantedAtTick: 3 });
+    expect(port.knowledgeOf("player-1").map((knowledge) => `${knowledge.itemId}:${knowledge.via}`)).toEqual([
+      "ev-0:share",
+      "ev-1:discovery",
+      "ev-1:start",
+    ]);
+    expect(port.knowledgeOf("npc-wenyuan").map((knowledge) => knowledge.itemId)).toEqual(["ev-1"]);
+  });
+
+  it("索引键组件在写入期拒绝冒号与非可打印 ASCII", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 80,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : null),
+    };
+    // 每个断言用独立事务：键校验失败时该次调用的其他键写入不参与后续断言。
+    const reject = (run: (port: GameCommsPort) => unknown): void => {
+      const port = createCommsPort(() => createMemoryTx(3), value.gameContent, value.host.ids, world);
+      expect(() => run(port)).toThrow(/索引键/);
+    };
+
+    // 授权键（主体:条目:途径）的组件违规在写入时失败，而不是留下无法按前缀查询的键。
+    reject((port) => port.grantKnowledge({ principalId: "player:1", itemId: "ev-1", via: "start" }));
+    reject((port) => port.grantKnowledge({ principalId: "玩家", itemId: "ev-1", via: "start" }));
+    reject((port) => port.grantKnowledge({ principalId: "player-1", itemId: "ev:1", via: "start" }));
+
+    // 会话成员键同样拒绝：对白追加先写键组件，中继正常时才会到达该校验。
+    reject((port) =>
+      port.postDialogue({
+        speakerId: "player:1",
+        audience: ["npc-wenyuan"],
+        text: "你好",
+        channel: "dialogue",
+        channelKind: "face-to-face",
+        conversationId: null,
+        replyToId: null,
+      }),
+    );
+    reject((port) =>
+      port.postDialogue({
+        speakerId: "player-1",
+        audience: ["npc:wenyuan"],
+        text: "你好",
+        channel: "dialogue",
+        channelKind: "face-to-face",
+        conversationId: null,
+        replyToId: null,
+      }),
+    );
   });
 });
