@@ -3,6 +3,7 @@
  * 交互契约：依赖宿主生成 operationId、控制台会话与 React；不自行计算世界版本。
  * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
@@ -18,6 +19,10 @@ interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
   operationId(): string;
+}
+
+interface ConsolePagePort extends BrowserViewPort {
+  readonly title: string;
 }
 
 function actionError(cause: unknown): string {
@@ -119,8 +124,9 @@ function FactionOpsPage(): ReactNode {
                 min={1}
                 max={24}
                 value={ticks}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  setTicks(Math.max(1, Math.min(24, Number((event.target as unknown as { value: string }).value) || 1)))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setTicks(Math.max(1, Math.min(24, Number((event.target as unknown as { value: string }).value) || 1)));
+                }}
               />
             </label>
             <button type="button" disabled={busy || clock?.mode === "running"} onClick={() => void step()}>单步推进</button>
@@ -137,8 +143,9 @@ function FactionOpsPage(): ReactNode {
             <input
               aria-label="快照标签"
               value={label}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                setLabel((event.target as unknown as { value: string }).value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                setLabel((event.target as unknown as { value: string }).value);
+              }}
             />
             <button type="button" className="console-primary" disabled={busy || label.trim().length === 0} onClick={() => void snapshot()}>
               创建
@@ -164,15 +171,15 @@ function FactionOpsPage(): ReactNode {
 }
 
 export function createFactionOpsPageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
-  const port = {
+  const port: ConsolePagePort = {
     title: "势力运营",
     renderContribution: (): ReactNode => <FactionOpsPage />,
-  } satisfies BrowserViewPort & { readonly title: string };
+  };
   return Promise.resolve({
     moduleId: input.moduleId,
-    start: async () => undefined,
-    drain: async () => undefined,
-    dispose: async () => undefined,
+    start: () => Promise.resolve(),
+    drain: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
     port,
   });
 }

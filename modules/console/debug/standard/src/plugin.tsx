@@ -3,6 +3,7 @@
  * 交互契约：依赖 console API、宿主生成的 operationId 与 React；所有写入由服务端守卫。
  * 约束与禁忌：禁止在浏览器重建请求、直接调用模型或把 hash 校验成功说成重新执行。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
@@ -17,6 +18,10 @@ import type { ApiClient } from "@ai-npc/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   operationId(): string;
+}
+
+interface ConsolePagePort extends BrowserViewPort {
+  readonly title: string;
 }
 
 function DebugPage(): ReactNode {
@@ -116,8 +121,24 @@ function DebugPage(): ReactNode {
         <section className="console-panel">
           <header><h2>调试唤醒</h2><span>污染当前 run</span></header>
           <div className="debug-wake-form">
-            <label><span>Agent</span><input value={agentId} onChange={(event: ChangeEvent<HTMLInputElement>) => setAgentId((event.target as unknown as { value: string }).value)} /></label>
-            <label><span>原因</span><input value={reason} onChange={(event: ChangeEvent<HTMLInputElement>) => setReason((event.target as unknown as { value: string }).value)} /></label>
+            <label>
+              <span>Agent</span>
+              <input
+                value={agentId}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setAgentId((event.target as unknown as { value: string }).value);
+                }}
+              />
+            </label>
+            <label>
+              <span>原因</span>
+              <input
+                value={reason}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setReason((event.target as unknown as { value: string }).value);
+                }}
+              />
+            </label>
             <button type="button" className="console-primary" disabled={agentId.trim().length === 0 || reason.trim().length === 0} onClick={() => void wake()}>
               注入 debug trigger
             </button>
@@ -129,15 +150,15 @@ function DebugPage(): ReactNode {
 }
 
 export function createDebugPageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
-  const port = {
+  const port: ConsolePagePort = {
     title: "调试",
     renderContribution: (): ReactNode => <DebugPage />,
-  } satisfies BrowserViewPort & { readonly title: string };
+  };
   return Promise.resolve({
     moduleId: input.moduleId,
-    start: async () => undefined,
-    drain: async () => undefined,
-    dispose: async () => undefined,
+    start: () => Promise.resolve(),
+    drain: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
     port,
   });
 }

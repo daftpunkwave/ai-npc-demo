@@ -3,6 +3,7 @@
  * 交互契约：依赖 console API、当前角色与 React；不发起供应商连通性请求。
  * 约束与禁忌：禁止显示凭据正文，禁止在研究员角色下调用操作员校验入口。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
@@ -20,6 +21,10 @@ interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
   readonly activeRole: ConsoleActiveRole;
+}
+
+interface ConsolePagePort extends BrowserViewPort {
+  readonly title: string;
 }
 
 function draftFromView(layout: ModelLayoutView): unknown {
@@ -158,8 +163,9 @@ function ModelMountsPage(): ReactNode {
           <textarea
             aria-label="模型布局草稿"
             value={draft}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              setDraft((event.target as unknown as { value: string }).value)}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+              setDraft((event.target as unknown as { value: string }).value);
+            }}
           />
           <div className="console-action-row">
             <button type="button" className="console-primary" onClick={() => void validate()}>校验布局</button>
@@ -179,15 +185,15 @@ function ModelMountsPage(): ReactNode {
 }
 
 export function createModelMountsPageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
-  const port = {
+  const port: ConsolePagePort = {
     title: "模型挂载",
     renderContribution: (): ReactNode => <ModelMountsPage />,
-  } satisfies BrowserViewPort & { readonly title: string };
+  };
   return Promise.resolve({
     moduleId: input.moduleId,
-    start: async () => undefined,
-    drain: async () => undefined,
-    dispose: async () => undefined,
+    start: () => Promise.resolve(),
+    drain: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
     port,
   });
 }

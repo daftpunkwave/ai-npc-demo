@@ -3,6 +3,7 @@
  * 交互契约：依赖宿主作用域事务、已装配模块端口与当前在线入口；不执行世界命令或模型调用。
  * 约束与禁忌：禁止越权读取玩家投影之外的秘密；原始证据查询必须由观测 provider 记录审计。
  */
+/* eslint-disable no-unused-vars -- 接口方法参数名仅表达调用契约，运行时由实现使用位置参数。 */
 import { createHash } from "node:crypto";
 import {
   DomainError,
@@ -263,15 +264,15 @@ export function createConsoleResearchPort(input: {
     return { ...raw, body: canonicalJson(redact(parsed)) };
   };
 
-  const replayTurn = async (turnId: string): Promise<TurnReplayResponse> => {
+  const replayTurn = (turnId: string): Promise<TurnReplayResponse> => {
     const attempts = runtime.storage.transact((tx) =>
       tx.rows("model_attempts").list({ work_ref: turnId })
         .filter((row) => typeof row["request_artifact_id"] === "string"));
     if (attempts.length === 0) {
-      return {
+      return Promise.resolve({
         requestHashMatch: false,
         differences: [{ path: "attempts", expected: "至少一次归档模型请求", actual: [] }],
-      };
+      });
     }
     const differences: TurnReplayResponse["differences"][number][] = [];
     for (const attempt of attempts) {
@@ -300,7 +301,7 @@ export function createConsoleResearchPort(input: {
         differences.push({ path: artifactId, expected: expectedHash, actual: actualHash });
       }
     }
-    return { requestHashMatch: differences.length === 0, differences };
+    return Promise.resolve({ requestHashMatch: differences.length === 0, differences });
   };
 
   return {

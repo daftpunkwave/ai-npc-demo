@@ -18,6 +18,8 @@ import {
 
 /** 读取非负整数列；存储层返回不合法时拒绝继续，而不是静默归零。 */
 export function numberColumn(row: StorageRow, key: string): number {
+  // key 只由本文件转换为固定字段名，不接受请求输入。
+  // eslint-disable-next-line security/detect-object-injection
   const value = row[key];
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new DomainError("invalid-state", `观测字段 ${key} 不是非负安全整数`);
@@ -27,6 +29,8 @@ export function numberColumn(row: StorageRow, key: string): number {
 
 /** 读取非空文本列。 */
 export function stringColumn(row: StorageRow, key: string): string {
+  // key 只由本文件转换为固定字段名，不接受请求输入。
+  // eslint-disable-next-line security/detect-object-injection
   const value = row[key];
   if (typeof value !== "string" || value.length === 0) {
     throw new DomainError("invalid-state", `观测字段 ${key} 不是非空文本`);
@@ -36,6 +40,8 @@ export function stringColumn(row: StorageRow, key: string): string {
 
 /** 读取可空文本列。 */
 export function nullableStringColumn(row: StorageRow, key: string): string | null {
+  // key 只由本文件转换为固定字段名，不接受请求输入。
+  // eslint-disable-next-line security/detect-object-injection
   const value = row[key];
   if (value === null) return null;
   if (typeof value !== "string") throw new DomainError("invalid-state", `观测字段 ${key} 不是文本或 null`);

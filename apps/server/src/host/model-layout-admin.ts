@@ -4,6 +4,7 @@
  * 约束与禁忌：不得返回凭据正文、自动补挂载或接受未声明的供应商环境变量。
  */
 /* eslint-disable security/detect-non-literal-fs-filename -- 只读取 config/model-layouts 下由 readdir 得到并以 .yaml 结尾的普通文件。 */
+/* eslint-disable no-unused-vars -- 构造器参数属性会在类方法中通过 this 使用，Codacy 未能解析 TypeScript 参数属性。 */
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
