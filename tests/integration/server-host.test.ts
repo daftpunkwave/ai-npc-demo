@@ -9,7 +9,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssemblyDescriptor, AuthContext, Json, ModuleDefinition, StorageCell } from "@ai-npc/contracts";
+import { canonicalJson, type AssemblyDescriptor, type AuthContext, type Json, type ModuleDefinition, type StorageCell } from "@ai-npc/contracts";
 import {
   campaignResponseSchema,
   capabilityIdSchema,
@@ -1681,6 +1681,9 @@ describe("服务端宿主", () => {
       reason: "players-disconnected",
       afterMs: 600,
     });
+    // 宿主审计经统一契约写入：payload 为键按字典序的规范 JSON，可区分旧手写序列化。
+    const storedPayload = String(audit[0]?.["payload_json"]);
+    expect(storedPayload).toBe(canonicalJson(JSON.parse(storedPayload)));
   }, 30_000);
 
   it("逆序释放时单步抛错仍继续其余步骤并汇总错误", async () => {
