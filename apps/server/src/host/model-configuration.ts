@@ -66,6 +66,11 @@ export async function resolveModelConfiguration(input: {
       (connection.adapterId === openAICompatibleAdapter && connection.endpoint === undefined)) {
       fail(`模型连接 ${connectionId} 使用了不适用的端点、密钥或夹具`);
     }
+    // 真实传输里只有 OpenAI 兼容适配器允许无凭据（仅回环端点，由适配器在运行期校验）；
+    // 其余真实适配器缺少 credentialRef 时必须在预检失败，否则要到首次调用才报错。
+    if (!fixture && connection.adapterId !== openAICompatibleAdapter && connection.credentialRef === null) {
+      fail(`模型连接 ${connectionId} 缺少必需的密钥引用`);
+    }
     const fixtureRows = connection.fixtureFiles.length === 0 ? [] : loadModelFixtures(connection.fixtureFiles, loadContext);
     const resolved = {
       connectionId, adapterId: connection.adapterId,
