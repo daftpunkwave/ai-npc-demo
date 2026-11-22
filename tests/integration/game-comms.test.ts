@@ -4,7 +4,7 @@
  * 禁止直接调用投影或跳过中继状态。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts } from "@ai-npc/module-sdk";
+import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts, GameCommsPort } from "@ai-npc/module-sdk";
 import type { AuthContext, Json } from "@ai-npc/contracts";
 import { createSystemAuth } from "@ai-npc/authority";
 import { createCommsPort } from "@ai-npc/mod-game-comms-standard";
@@ -962,5 +962,59 @@ describe("通信", () => {
       "ev-1:start",
     ]);
     expect(port.knowledgeOf("npc-wenyuan").map((knowledge) => knowledge.itemId)).toEqual(["ev-1"]);
+  });
+
+  it("索引键组件在写入期拒绝冒号与非可打印 ASCII", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 80,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : null),
+    };
+    // 每个断言用独立事务：键校验失败时该次调用的其他键写入不参与后续断言。
+    const reject = (run: (port: GameCommsPort) => unknown): void => {
+      const port = createCommsPort(() => createMemoryTx(3), value.gameContent, value.host.ids, world);
+      expect(() => run(port)).toThrow(/索引键/);
+    };
+
+    // 授权键（主体:条目:途径）的组件违规在写入时失败，而不是留下无法按前缀查询的键。
+    reject((port) => port.grantKnowledge({ principalId: "player:1", itemId: "ev-1", via: "start" }));
+    reject((port) => port.grantKnowledge({ principalId: "玩家", itemId: "ev-1", via: "start" }));
+    reject((port) => port.grantKnowledge({ principalId: "player-1", itemId: "ev:1", via: "start" }));
+
+    // 会话成员键同样拒绝：对白追加先写键组件，中继正常时才会到达该校验。
+    reject((port) =>
+      port.postDialogue({
+        speakerId: "player:1",
+        audience: ["npc-wenyuan"],
+        text: "你好",
+        channel: "dialogue",
+        channelKind: "face-to-face",
+        conversationId: null,
+        replyToId: null,
+      }),
+    );
+    reject((port) =>
+      port.postDialogue({
+        speakerId: "player-1",
+        audience: ["npc:wenyuan"],
+        text: "你好",
+        channel: "dialogue",
+        channelKind: "face-to-face",
+        conversationId: null,
+        replyToId: null,
+      }),
+    );
   });
 });
