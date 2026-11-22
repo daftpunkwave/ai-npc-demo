@@ -305,6 +305,36 @@ describe("在线 run 能力闭包升级迁移", () => {
     expect(readRunRows(dataDir)).toHaveLength(2);
   });
 
+  it("保留绑定的模块配置变化属于配置漂移，拒绝迁移", async () => {
+    const dataDir = tempDataDir();
+    const first = await startCampaign(dataDir);
+    await first.close();
+    const legacy = await freezeLegacyManifest(dataDir);
+    // 篡改旧 manifest 中保留模块的配置摘要并重算自洽哈希：这不是能力闭包升级，而是配置漂移。
+    const manifest = JSON.parse(legacy.manifestJson) as { assembly?: { modules?: readonly Record<string, unknown>[] } };
+    const driftModules = (manifest.assembly?.modules ?? []).map((module, index) =>
+      index === 0 ? { ...module, configHash: "tampered-config-hash" } : module,
+    );
+    const tampered = await overwriteManifestField(dataDir, legacy, "assembly", {
+      ...manifest.assembly,
+      modules: driftModules,
+    });
+
+    await expect(
+      startHost({
+        dataDir,
+        playerToken: "player-token",
+        consoleToken: "console-token",
+        migrateOnlineRun: true,
+      }),
+    ).rejects.toThrow(/超出能力闭包范围/);
+
+    const rows = readRunRows(dataDir);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ manifest_json: tampered.manifestJson, manifest_hash: tampered.manifestHash });
+    expect(readSingleBranchStatus(dataDir, tampered.branchId)).not.toBe("archived");
+  });
+
   it("名册或 Agent 配置差异超出能力闭包范围时拒绝迁移", async () => {
     const dataDir = tempDataDir();
     const first = await startCampaign(dataDir);

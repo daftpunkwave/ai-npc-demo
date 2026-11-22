@@ -58,8 +58,9 @@ function canonicalFieldEquals(frozen: unknown, rebuilt: unknown): boolean {
 }
 
 /**
- * 校验冻结 manifest 与重建 manifest 的差异只落在装配能力闭包上（assembly 字段）：
- * seed、RunSpec 选择、内容版本、名册、Agent 槽位、profile 与模型配置任一变化都超出升级范围，
+ * 校验冻结 manifest 与重建 manifest 的差异只落在装配能力闭包上：
+ * seed、RunSpec 选择、内容版本、名册、Agent 槽位、profile 与模型配置任一变化都超出升级范围；
+ * assembly 内部只允许绑定集的新增与移除，保留绑定的模块版本或配置摘要变化属于配置漂移，
  * 此时迁移会把改动后的配置应用到历史世界，必须拒绝而不是迁移。
  */
 export function assertMigrationScopeIsCapabilityClosure(frozenManifestValue: Json, rebuilt: RunManifest): void {
@@ -73,6 +74,26 @@ export function assertMigrationScopeIsCapabilityClosure(frozenManifestValue: Jso
       mismatches.push(field);
     }
   }
+  const frozenAssembly = frozen["assembly"];
+  const frozenModules = moduleEntries(
+    typeof frozenAssembly === "object" && frozenAssembly !== null
+      ? (frozenAssembly as Readonly<Record<string, unknown>>)["modules"]
+      : undefined,
+  );
+  const frozenById = new Map(frozenModules.map((module) => [module.moduleId, module]));
+  for (const module of rebuilt.assembly.modules) {
+    const frozenModule = frozenById.get(module.moduleId);
+    if (frozenModule === undefined) {
+      continue;
+    }
+    if (
+      frozenModule.configHash !== module.configHash ||
+      frozenModule.version !== module.version ||
+      frozenModule.apiVersion !== module.apiVersion
+    ) {
+      mismatches.push(`assembly.modules.${module.moduleId}`);
+    }
+  }
   if (mismatches.length > 0) {
     throw new DomainError(
       "validation",
@@ -80,6 +101,34 @@ export function assertMigrationScopeIsCapabilityClosure(frozenManifestValue: Jso
       { details: { fields: mismatches.join(",") } },
     );
   }
+}
+
+interface FrozenModuleEntry {
+  readonly moduleId: string;
+  readonly version: unknown;
+  readonly apiVersion: unknown;
+  readonly configHash: unknown;
+}
+
+function moduleEntries(value: unknown): readonly FrozenModuleEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) {
+      return [];
+    }
+    const record = entry as Readonly<Record<string, unknown>>;
+    if (typeof record["moduleId"] !== "string") {
+      return [];
+    }
+    return [{
+      moduleId: record["moduleId"],
+      version: record["version"],
+      apiVersion: record["apiVersion"],
+      configHash: record["configHash"],
+    }];
+  });
 }
 
 /** 迁移事务内的并发防御：online 别名必须仍指向读取时的源分支，漂移即拒绝，避免双迁移互相覆盖。 */
