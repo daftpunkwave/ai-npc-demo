@@ -5,6 +5,7 @@
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
 import type {
+  ContentCharacters,
   ContentFactions,
   ContentNode,
   ContentRoad,
@@ -21,16 +22,19 @@ const rulesSource = "rules.yaml";
 export function checkRules(
   rules: ContentRules,
   factionsFile: ContentFactions,
+  charactersFile: ContentCharacters,
   nodes: ReadonlyMap<string, ContentNode>,
   roads: ReadonlyMap<string, ContentRoad>,
   stockpiles: ReadonlyMap<string, ContentStockpile>,
   teams: ReadonlyMap<string, ContentTeam>,
-  agentIds: ReadonlySet<string>,
 ): void {
   const tasks = rules.tasks;
-  const requireAgent = (agentId: string, path: string): void => {
-    if (!agentIds.has(agentId)) {
-      fail(rulesSource, path, `岗位主体「${agentId}」不是内容包定义的角色或派系`);
+  // 岗位主体必须是已定义的角色：运行时的随队加成按角色档案的派系归属判定，
+  // 只有派系身份（AI 党魁）没有角色档案，配为岗位会通过校验却永远不触发加成。
+  const characterIds = new Set(charactersFile.characters.map((character) => character.agentId));
+  const requireCharacter = (agentId: string, path: string): void => {
+    if (!characterIds.has(agentId)) {
+      fail(rulesSource, path, `岗位主体「${agentId}」不是内容包定义的角色`);
     }
   };
   const requireTeam = (teamId: string, path: string): void => {
@@ -38,13 +42,13 @@ export function checkRules(
       fail(rulesSource, path, `引用的队伍「${teamId}」不存在`);
     }
   };
-  requireAgent(tasks.capacitySupporter.agentId, "tasks.capacitySupporter.agentId");
-  requireAgent(tasks.repairSupporter.agentId, "tasks.repairSupporter.agentId");
-  requireAgent(tasks.rescueSupporter.agentId, "tasks.rescueSupporter.agentId");
-  requireAgent(tasks.scoutSupporter.agentId, "tasks.scoutSupporter.agentId");
-  requireAgent(tasks.escortSupporter.agentId, "tasks.escortSupporter.agentId");
-  requireAgent(tasks.universalGuide.agentId, "tasks.universalGuide.agentId");
-  requireAgent(tasks.universalRepairer.agentId, "tasks.universalRepairer.agentId");
+  requireCharacter(tasks.capacitySupporter.agentId, "tasks.capacitySupporter.agentId");
+  requireCharacter(tasks.repairSupporter.agentId, "tasks.repairSupporter.agentId");
+  requireCharacter(tasks.rescueSupporter.agentId, "tasks.rescueSupporter.agentId");
+  requireCharacter(tasks.scoutSupporter.agentId, "tasks.scoutSupporter.agentId");
+  requireCharacter(tasks.escortSupporter.agentId, "tasks.escortSupporter.agentId");
+  requireCharacter(tasks.universalGuide.agentId, "tasks.universalGuide.agentId");
+  requireCharacter(tasks.universalRepairer.agentId, "tasks.universalRepairer.agentId");
   tasks.universalRepairer.excludedTeamIds.forEach((teamId, index) => {
     requireTeam(teamId, `tasks.universalRepairer.excludedTeamIds.${index}`);
   });

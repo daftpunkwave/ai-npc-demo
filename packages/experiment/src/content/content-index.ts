@@ -226,7 +226,7 @@ export function buildContentIndex(parts: ContentParts): ContentIndex {
   checkMap(parts.map, nodes, factions);
   checkFactionsAndCharacters(parts.factions, parts.characters, nodes, factions, principalIds);
   checkWorldInit(parts.worldInit, nodes, factions, teams, stockpiles, principalIds);
-  checkRules(parts.rules, parts.factions, nodes, roads, stockpiles, teams, agentIds);
+  checkRules(parts.rules, parts.factions, parts.characters, nodes, roads, stockpiles, teams);
   checkEvidence(parts.evidence, nodes, principalIds);
   checkStarts(parts.starts, factions, teams, stockpiles, evidence, principalIds);
 
