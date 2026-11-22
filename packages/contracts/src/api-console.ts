@@ -290,6 +290,8 @@ export const modelLayoutsResponseSchema = z
   })
   .strict();
 
+export type ModelLayoutsResponse = z.infer<typeof modelLayoutsResponseSchema>;
+
 export const modelLayoutRoutesResponseSchema = z
   .object({
     routes: z.array(
@@ -306,6 +308,8 @@ export const modelLayoutRoutesResponseSchema = z
     ),
   })
   .strict();
+
+export type ModelLayoutRoutesResponse = z.infer<typeof modelLayoutRoutesResponseSchema>;
 
 export const modelLayoutValidateRequestSchema = z
   .object({
@@ -326,6 +330,8 @@ export const modelLayoutValidateResponseSchema = z
     errors: z.array(modelLayoutValidationErrorSchema),
   })
   .strict();
+
+export type ModelLayoutValidateResponse = z.infer<typeof modelLayoutValidateResponseSchema>;
 
 export const modelLayoutDraftRequestSchema = z
   .object({

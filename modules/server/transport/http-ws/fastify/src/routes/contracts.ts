@@ -5,11 +5,23 @@
  */
 /* eslint-disable no-unused-vars -- 本文件是传输层类型契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import type {
+  AgentInspectorResponse,
   AgentsResponse,
+  ArtifactResponse,
   AssemblyDetailResponse,
   AssemblySource,
+  BranchCompareResponse,
   ConsoleHealthResponse,
+  DebugQueuesResponse,
+  DebugWakeResponse,
+  MemoryDiffResponse,
+  MemoryResponse,
+  ModelLayoutRoutesResponse,
+  ModelLayoutValidateResponse,
+  ModelLayoutView,
+  ModelLayoutsResponse,
   ModulesResponse,
+  ObservationsResponse,
   AuthContext,
   CampaignView,
   ClockView,
@@ -23,6 +35,10 @@ import type {
   StartOption,
   TimelineQuery,
   TimelineResponse,
+  TraceResponse,
+  TurnDetail,
+  TurnReplayResponse,
+  TurnsResponse,
 } from "@ai-npc/contracts";
 import type { StreamSession, StreamStats } from "../stream-hub";
 
@@ -185,6 +201,44 @@ export interface ConsoleReadPort {
   assembly(assemblyId: string): AssemblyDetailResponse;
   timeline(query: TimelineQuery): TimelineResponse;
   agents(branchId: string): AgentsResponse;
+  /** 模型布局只读与静态校验；未提供时对应路由返回 not-ready。 */
+  modelLayouts?: () => ModelLayoutsResponse;
+  modelLayout?: (layoutId: string) => ModelLayoutView;
+  modelRoutes?: (layoutId: string) => ModelLayoutRoutesResponse;
+  validateModelLayout?: (layout: unknown) => ModelLayoutValidateResponse;
+  /** 研究检查器与证据查询；原始 artifact 的审计由观测 provider 负责。 */
+  inspector?: (agentId: string, branchId: string) => AgentInspectorResponse;
+  memory?: (agentId: string, branchId: string, revision: number) => MemoryResponse;
+  memoryDiff?: (
+    agentId: string,
+    branchId: string,
+    from: number,
+    to: number,
+  ) => MemoryDiffResponse;
+  observations?: (
+    agentId: string,
+    branchId: string,
+    fromSeq: number,
+    limit: number,
+  ) => ObservationsResponse;
+  turns?: (query: {
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly status?: string;
+    readonly limit?: number;
+  }) => TurnsResponse;
+  turn?: (turnId: string) => TurnDetail;
+  artifact?: (artifactId: string, view: "redacted" | "raw") => ArtifactResponse;
+  trace?: (traceId: string) => TraceResponse;
+  branchCompare?: (left: string, right: string, atSeq: number) => BranchCompareResponse;
+  debugQueues?: (branchId: string) => DebugQueuesResponse;
+  replayTurn?: (turnId: string) => Promise<TurnReplayResponse>;
+  debugWake?: (
+    agentId: string,
+    reason: string,
+    operationId: string,
+    branchId: string,
+  ) => DebugWakeResponse;
 }
 
 /** HTTP 适配器写入观测存储的最小跨度视图。 */

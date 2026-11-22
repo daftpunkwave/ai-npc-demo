@@ -86,3 +86,5 @@ export const debugWakeResponseSchema = z
     ok: z.literal(true),
   })
   .strict();
+
+export type DebugWakeResponse = z.infer<typeof debugWakeResponseSchema>;

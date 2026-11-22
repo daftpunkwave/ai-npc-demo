@@ -22,6 +22,12 @@ interface ConsoleReady {
   readonly initialRole: ConsoleActiveRole;
 }
 
+function operationId(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return `op-${Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("")}`;
+}
+
 function chooseRole(session: SessionDescriptor): ConsoleActiveRole {
   if (session.roles.includes("operator")) {
     return "operator";
@@ -58,6 +64,7 @@ export function ConsoleBootstrap(): ReactNode {
       const hostPort = {
         api,
         session,
+        operationId,
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
         },

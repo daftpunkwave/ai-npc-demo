@@ -1,0 +1,143 @@
+/**
+ * 核心职责：展示调试队列、审计重放结果与调试唤醒入口。
+ * 交互契约：依赖 console API、宿主生成的 operationId 与 React；所有写入由服务端守卫。
+ * 约束与禁忌：禁止在浏览器重建请求、直接调用模型或把 hash 校验成功说成重新执行。
+ */
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
+import type {
+  DebugQueuesResponse,
+  ModuleCreateInput,
+  ModuleInstance,
+  TurnReplayResponse,
+  TurnSummary,
+} from "@ai-npc/contracts";
+import type { ApiClient } from "@ai-npc/client-protocol";
+
+interface ConsoleHostPort {
+  readonly api: ApiClient;
+  operationId(): string;
+}
+
+function DebugPage(): ReactNode {
+  const host = usePort<ConsoleHostPort>("host.console");
+  const [queues, setQueues] = useState<DebugQueuesResponse | null>(null);
+  const [turns, setTurns] = useState<readonly TurnSummary[]>([]);
+  const [selectedTurn, setSelectedTurn] = useState<string | null>(null);
+  const [replay, setReplay] = useState<TurnReplayResponse | null>(null);
+  const [agentId, setAgentId] = useState("human-independent");
+  const [reason, setReason] = useState("人工检查");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([host.api.consoleDebugQueues(), host.api.consoleTurns({ limit: 30 })])
+      .then(([nextQueues, nextTurns]) => {
+        if (cancelled) return;
+        setQueues(nextQueues);
+        setTurns(nextTurns.turns);
+        setSelectedTurn((current) => current ?? nextTurns.turns[0]?.turnId ?? null);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => { cancelled = true; };
+  }, [host.api]);
+
+  const replayTurn = async (): Promise<void> => {
+    if (selectedTurn === null) return;
+    try {
+      setReplay(await host.api.consoleReplayTurn(selectedTurn));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const wake = async (): Promise<void> => {
+    try {
+      await host.api.consoleWakeAgent(agentId, reason, host.operationId());
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  return (
+    <section className="console-page" data-testid="console-page-debug">
+      <header className="console-page-head">
+        <div>
+          <span className="console-eyebrow">调试</span>
+          <h1>队列、重放与唤醒</h1>
+        </div>
+        <span className="branch-chip">{turns.length} 个 turn</span>
+      </header>
+      {error === null ? null : <div className="console-error" role="alert">{error}</div>}
+      <div className="console-stat-grid">
+        <article><span>调度队列</span><strong>{queues?.scheduler.queued ?? "-"}</strong></article>
+        <article><span>模型运行中</span><strong>{queues?.modelPool.running ?? "-"}</strong></article>
+        <article><span>维护队列</span><strong>{queues?.maintenance.queued ?? "-"}</strong></article>
+        <article><span>最老活动</span><small>{queues?.modelPool.oldestAt ?? queues?.maintenance.oldestAt ?? "—"}</small></article>
+      </div>
+      <div className="console-two-column">
+        <section className="console-panel">
+          <header><h2>审计重放</h2><span>{selectedTurn ?? "未选择"}</span></header>
+          <div className="debug-turn-list">
+            {turns.map((turn) => (
+              <button
+                type="button"
+                key={turn.turnId}
+                className={turn.turnId === selectedTurn ? "is-selected" : ""}
+                onClick={() => {
+                  setSelectedTurn(turn.turnId);
+                  setReplay(null);
+                }}
+              >
+                <span>{turn.agentId}</span>
+                <strong>{turn.status}</strong>
+                <small>{turn.terminalReason ?? turn.turnId}</small>
+              </button>
+            ))}
+          </div>
+          <div className="console-action-row">
+            <button type="button" className="console-primary" disabled={selectedTurn === null} onClick={() => void replayTurn()}>
+              校验归档 hash
+            </button>
+            {replay === null ? null : (
+              <span className={replay.requestHashMatch ? "console-ok" : "console-error-text"}>
+                {replay.requestHashMatch ? "hash 一致" : `${replay.differences.length} 个差异`}
+              </span>
+            )}
+          </div>
+          {replay?.differences.map((difference) => (
+            <p className="console-error" key={difference.path}>{difference.path}</p>
+          ))}
+        </section>
+        <section className="console-panel">
+          <header><h2>调试唤醒</h2><span>污染当前 run</span></header>
+          <div className="debug-wake-form">
+            <label><span>Agent</span><input value={agentId} onChange={(event: ChangeEvent<HTMLInputElement>) => setAgentId((event.target as unknown as { value: string }).value)} /></label>
+            <label><span>原因</span><input value={reason} onChange={(event: ChangeEvent<HTMLInputElement>) => setReason((event.target as unknown as { value: string }).value)} /></label>
+            <button type="button" className="console-primary" disabled={agentId.trim().length === 0 || reason.trim().length === 0} onClick={() => void wake()}>
+              注入 debug trigger
+            </button>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+export function createDebugPageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
+  const port = {
+    title: "调试",
+    renderContribution: (): ReactNode => <DebugPage />,
+  } satisfies BrowserViewPort & { readonly title: string };
+  return Promise.resolve({
+    moduleId: input.moduleId,
+    start: async () => undefined,
+    drain: async () => undefined,
+    dispose: async () => undefined,
+    port,
+  });
+}

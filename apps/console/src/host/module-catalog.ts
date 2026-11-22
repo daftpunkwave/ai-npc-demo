@@ -5,10 +5,16 @@
  */
 import { healthPageModuleDefinition } from "@ai-npc/mod-console-health-standard/definition";
 import { moduleAdminPageModuleDefinition } from "@ai-npc/mod-console-module-admin-standard/definition";
+import { modelMountsPageModuleDefinition } from "@ai-npc/mod-console-model-mounts-standard/definition";
+import { factionOpsPageModuleDefinition } from "@ai-npc/mod-console-faction-ops-standard/definition";
+import { debugPageModuleDefinition } from "@ai-npc/mod-console-debug-standard/definition";
 import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
 
 export const consoleModuleDefinitions = [
   healthPageModuleDefinition,
   moduleAdminPageModuleDefinition,
+  modelMountsPageModuleDefinition,
+  factionOpsPageModuleDefinition,
   observabilityPageModuleDefinition,
+  debugPageModuleDefinition,
 ] as const;

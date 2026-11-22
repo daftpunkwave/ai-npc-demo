@@ -36,7 +36,9 @@ export function ConsoleShell(input: {
       role === "operator" || role === "researcher" || role === "evaluator",
   );
   const [role, setRole] = useState<ConsoleActiveRole>(input.initialRole);
-  const pages = input.runtime.contributions.filter((item) => item.slot === "console.page");
+  const pages = input.runtime.contributions
+    .filter((item) => item.slot === "console.page")
+    .toSorted((left, right) => (left.order ?? 0) - (right.order ?? 0));
   const firstAllowed = pages.find((page) => page.allowedRoles?.includes(role));
   const [active, setActive] = useState<string | null>(firstAllowed?.extensionId ?? null);
   const selected = useMemo(
@@ -71,7 +73,13 @@ export function ConsoleShell(input: {
                 ? "运行总览"
                 : page.extensionId.includes("module-admin")
                   ? "模块装配"
-                  : "可观测");
+                  : page.extensionId.includes("model-mounts")
+                    ? "模型挂载"
+                    : page.extensionId.includes("faction-ops")
+                      ? "势力运营"
+                      : page.extensionId.includes("debug")
+                        ? "调试"
+                        : "可观测");
             return (
               <button
                 type="button"

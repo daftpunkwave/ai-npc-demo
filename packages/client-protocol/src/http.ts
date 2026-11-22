@@ -5,13 +5,28 @@
  */
 import {
   DomainError,
+  agentInspectorResponseSchema,
+  artifactResponseSchema,
+  branchCompareResponseSchema,
+  campaignStepRequestSchema,
   campaignResponseSchema,
   clientContentViewSchema,
   clockResponseSchema,
   commandReceiptSchema,
   conversationResponseSchema,
+  debugQueuesResponseSchema,
+  debugWakeRequestSchema,
+  debugWakeResponseSchema,
   errorResponseSchema,
   loginResponseSchema,
+  memoryDiffResponseSchema,
+  memoryResponseSchema,
+  modelLayoutRoutesResponseSchema,
+  modelLayoutValidateRequestSchema,
+  modelLayoutValidateResponseSchema,
+  modelLayoutViewSchema,
+  modelLayoutsResponseSchema,
+  observationsResponseSchema,
   presetsResponseSchema,
   resolvedModuleSetSchema,
   sessionDescriptorSchema,
@@ -19,6 +34,10 @@ import {
   snapshotListResponseSchema,
   snapshotRestoreResponseSchema,
   streamTicketResponseSchema,
+  traceResponseSchema,
+  turnDetailSchema,
+  turnReplayResponseSchema,
+  turnsResponseSchema,
   worldViewResponseSchema,
   type ClockControlRequest,
   type CommandEnvelope,
@@ -296,6 +315,202 @@ export class ApiClient {
       agentsResponseSchema,
       `/api/v1/console/agents${queryString({ branchId })}`,
       { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleModelLayouts() {
+    return this.request(modelLayoutsResponseSchema, "/api/v1/console/model-layouts", {
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleModelLayout(layoutId: string) {
+    return this.request(
+      modelLayoutViewSchema,
+      `/api/v1/console/model-layouts/${encodeURIComponent(layoutId)}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleModelRoutes(layoutId: string) {
+    return this.request(
+      modelLayoutRoutesResponseSchema,
+      `/api/v1/console/model-layouts/${encodeURIComponent(layoutId)}/routes`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  validateModelLayout(layout: unknown) {
+    return this.request(
+      modelLayoutValidateResponseSchema,
+      "/api/v1/console/model-layouts/validate",
+      {
+        method: "POST",
+        body: modelLayoutValidateRequestSchema.parse({ layout }),
+        activeRole: this.requireActiveRole(),
+      },
+    );
+  }
+
+  consoleInspector(agentId: string, branchId: string) {
+    return this.request(
+      agentInspectorResponseSchema,
+      `/api/v1/console/agents/${encodeURIComponent(agentId)}/inspector${queryString({ branchId })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleMemory(agentId: string, branchId: string, revision: number) {
+    return this.request(
+      memoryResponseSchema,
+      `/api/v1/console/agents/${encodeURIComponent(agentId)}/memory${queryString({ branchId, revision })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleMemoryDiff(agentId: string, branchId: string, from: number, to: number) {
+    return this.request(
+      memoryDiffResponseSchema,
+      `/api/v1/console/agents/${encodeURIComponent(agentId)}/memory/diff${queryString({ branchId, from, to })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleObservations(agentId: string, branchId: string, fromSeq = 0, limit = 100) {
+    return this.request(
+      observationsResponseSchema,
+      `/api/v1/console/agents/${encodeURIComponent(agentId)}/observations${queryString({
+        branchId,
+        fromSeq,
+        limit,
+      })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleTurns(input: {
+    readonly runId?: string;
+    readonly agentId?: string;
+    readonly status?: string;
+    readonly limit?: number;
+  } = {}) {
+    return this.request(
+      turnsResponseSchema,
+      `/api/v1/console/turns${queryString({
+        runId: input.runId,
+        agentId: input.agentId,
+        status: input.status,
+        limit: input.limit,
+      })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleTurn(turnId: string) {
+    return this.request(
+      turnDetailSchema,
+      `/api/v1/console/turns/${encodeURIComponent(turnId)}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleArtifact(artifactId: string, view: "redacted" | "raw") {
+    return this.request(
+      artifactResponseSchema,
+      `/api/v1/console/artifacts/${encodeURIComponent(artifactId)}${queryString({ view })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleTrace(traceId: string) {
+    return this.request(
+      traceResponseSchema,
+      `/api/v1/console/traces/${encodeURIComponent(traceId)}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleBranchCompare(left: string, right: string, atSeq: number) {
+    return this.request(
+      branchCompareResponseSchema,
+      `/api/v1/console/branches/compare${queryString({ left, right, atSeq })}`,
+      { activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleDebugQueues() {
+    return this.request(debugQueuesResponseSchema, "/api/v1/console/debug/queues", {
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleReplayTurn(turnId: string) {
+    return this.request(
+      turnReplayResponseSchema,
+      `/api/v1/console/debug/turns/${encodeURIComponent(turnId)}/replay`,
+      { method: "POST", body: {}, activeRole: this.requireActiveRole() },
+    );
+  }
+
+  consoleWakeAgent(agentId: string, reason: string, operationId: string) {
+    return this.request(
+      debugWakeResponseSchema,
+      `/api/v1/console/debug/agents/${encodeURIComponent(agentId)}/wake`,
+      {
+        method: "POST",
+        body: debugWakeRequestSchema.parse({ reason, operationId }),
+        activeRole: this.requireActiveRole(),
+      },
+    );
+  }
+
+  consolePauseCampaign(request: ClockControlRequest) {
+    return this.request(clockResponseSchema, "/api/v1/console/campaign/pause", {
+      method: "POST",
+      body: request,
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleResumeCampaign(request: ClockControlRequest) {
+    return this.request(clockResponseSchema, "/api/v1/console/campaign/resume", {
+      method: "POST",
+      body: request,
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleStepCampaign(request: z.input<typeof campaignStepRequestSchema>) {
+    return this.request(clockResponseSchema, "/api/v1/console/campaign/step", {
+      method: "POST",
+      body: campaignStepRequestSchema.parse(request),
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleSnapshots() {
+    return this.request(snapshotListResponseSchema, "/api/v1/console/campaign/snapshots", {
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleCreateSnapshot(request: SnapshotCreateRequest) {
+    return this.request(snapshotCreateResponseSchema, "/api/v1/console/campaign/snapshots", {
+      method: "POST",
+      body: request,
+      activeRole: this.requireActiveRole(),
+    });
+  }
+
+  consoleRestoreSnapshot(input: { readonly operationId: string; readonly snapshotId: string }) {
+    return this.request(
+      snapshotRestoreResponseSchema,
+      "/api/v1/console/campaign/restore",
+      {
+        method: "POST",
+        body: input,
+        activeRole: this.requireActiveRole(),
+      },
     );
   }
 

@@ -1,0 +1,7 @@
+schemaVersion: 1
+profileId: memory-m1-structured-ledger
+kind: variant
+parent: null
+patch:
+  slots:
+    memory: { module: agent.memory.ledger, config: {} }

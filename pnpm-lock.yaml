@@ -284,9 +284,18 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@ai-npc/mod-console-debug-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/debug/standard
+      '@ai-npc/mod-console-faction-ops-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/faction-ops/standard
       '@ai-npc/mod-console-health-standard':
         specifier: workspace:*
         version: link:../../modules/console/health/standard
+      '@ai-npc/mod-console-model-mounts-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/model-mounts/standard
       '@ai-npc/mod-console-module-admin-standard':
         specifier: workspace:*
         version: link:../../modules/console/module-admin/standard
@@ -402,9 +411,18 @@ importers:
       '@ai-npc/mod-client-world-view-standard':
         specifier: workspace:*
         version: link:../../modules/client/world-view/standard
+      '@ai-npc/mod-console-debug-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/debug/standard
+      '@ai-npc/mod-console-faction-ops-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/faction-ops/standard
       '@ai-npc/mod-console-health-standard':
         specifier: workspace:*
         version: link:../../modules/console/health/standard
+      '@ai-npc/mod-console-model-mounts-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/model-mounts/standard
       '@ai-npc/mod-console-module-admin-standard':
         specifier: workspace:*
         version: link:../../modules/console/module-admin/standard
@@ -634,7 +652,52 @@ importers:
         specifier: workspace:*
         version: link:../../../../packages/contracts
 
+  modules/console/debug/standard:
+    dependencies:
+      '@ai-npc/client-protocol':
+        specifier: workspace:*
+        version: link:../../../../packages/client-protocol
+      '@ai-npc/client-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/client-sdk
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../packages/contracts
+      react:
+        specifier: ^19
+        version: 19.3.1
+
+  modules/console/faction-ops/standard:
+    dependencies:
+      '@ai-npc/client-protocol':
+        specifier: workspace:*
+        version: link:../../../../packages/client-protocol
+      '@ai-npc/client-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/client-sdk
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../packages/contracts
+      react:
+        specifier: ^19
+        version: 19.3.1
+
   modules/console/health/standard:
+    dependencies:
+      '@ai-npc/client-protocol':
+        specifier: workspace:*
+        version: link:../../../../packages/client-protocol
+      '@ai-npc/client-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/client-sdk
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../packages/contracts
+      react:
+        specifier: ^19
+        version: 19.3.1
+
+  modules/console/model-mounts/standard:
     dependencies:
       '@ai-npc/client-protocol':
         specifier: workspace:*
