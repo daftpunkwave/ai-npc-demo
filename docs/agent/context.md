@@ -162,7 +162,7 @@ speech 的输入重新取“北侧目前不开放”等已授权状态，不带�
 首版用确定性估算，不调用供应商的计数接口：
 
 ```ts
-// CJK and full-width characters count as one token each; other characters as one token per four
+// CJK 与全角字符各计 1 token；其他字符每 4 个计 1 token。
 export function estimateTokens(text: string): number {
   let cjk = 0;
   let other = 0;
@@ -172,7 +172,7 @@ export function estimateTokens(text: string): number {
   }
   return cjk + Math.ceil(other / 4);
 }
-// request estimate = estimateTokens(system) + Σ (estimateTokens(message text) + 4) + Σ estimateTokens(JSON.stringify(tool schema))
+// 请求估算 = estimateTokens(system) + Σ (estimateTokens(message text) + 4) + Σ estimateTokens(JSON.stringify(tool schema))
 ```
 
 估算值记为 `tokenizer: "estimate-v1"`，与供应商实报的 usage 分开记录。
@@ -205,7 +205,7 @@ export function estimateTokens(text: string): number {
 ```ts
 interface ContextArtifact {
   artifactId: string;
-  parentArtifactId: string | null;   // previous round in the same tool loop
+  parentArtifactId: string | null;   // 同一工具循环中的上一轮
   scope: MemoryScope;
   turnId: string;
   phase: "decision" | "speech";
@@ -217,7 +217,7 @@ interface ContextArtifact {
               text: string; tokenEstimate: number; protected: boolean }[];
   omissions: { sourceRef: string; reason: "budget" | "not-disclosable" | "not-in-frontier" | "invalid-source" }[];
   tokenEstimate: number;
-  hash: string;                       // sha256 of canonical JSON without artifactId
+  hash: string;                       // 不含 artifactId 的规范 JSON 的 SHA-256
 }
 ```
 

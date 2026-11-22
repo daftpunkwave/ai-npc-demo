@@ -15,6 +15,8 @@ export class AttemptEvidence {
     private readonly storage: StoragePort,
     private readonly host: HostServices,
     private readonly observability: ModelObservabilityPort,
+    /** 模块定义声明的版本；span 元数据与实际模块定义保持同一来源。 */
+    private readonly moduleVersion: string,
   ) {
     this.artifacts = new StoredAgentArtifactStore(storage, host);
   }
@@ -108,7 +110,7 @@ export class AttemptEvidence {
     this.observability.recordSpan({
       spanId: this.host.ids("spn"), traceId: scope.traceId, parentSpanId: null, runId: scope.runId,
       branchId: scope.branchId, agentId: scope.agentId, turnId: scope.workRef.startsWith("turn-") ? scope.workRef : null,
-      moduleId: "agent.model-pool.shared", moduleVersion: "1.0.0",
+      moduleId: "agent.model-pool.shared", moduleVersion: this.moduleVersion,
       name: "model.attempt", status: status === "succeeded" ? "ok" : status === "failed" ? "error" : "skipped",
       startMs: input.startedAt, endMs: input.respondedAt,
       attrs: {

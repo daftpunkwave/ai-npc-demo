@@ -137,10 +137,12 @@ export class ToolGateway {
     if (toolId === "message.send" && typeof args === "object" && args !== null && !Array.isArray(args)) {
       const recipients = args["to"];
       if (Array.isArray(recipients)) {
+        // 定向消息的授权上下文是派发前置条件：缺失时无法证明收件人在授权受众内，一律拒绝。
+        // 公开广播按独立的绑定权限判断，不依赖该集合。
         const allowed = input.narrowing.messagePrincipalIds;
         const unauthorized = recipients.includes("public")
           ? recipients.length !== 1 || binding.permissionProfile !== "message-principals-or-public"
-          : allowed !== undefined && recipients.some((value) => typeof value !== "string" || !allowed.has(value));
+          : allowed === undefined || recipients.some((value) => typeof value !== "string" || !allowed.has(value));
         if (unauthorized) {
           return this.settleError(input, binding, argsHash, "no-authority", "Recipient is outside the authorized message audience.");
         }

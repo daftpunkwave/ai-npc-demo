@@ -1,6 +1,7 @@
 /**
- * 声明公平调度模块的 run 级能力和配置。
- * 依赖模块契约与 module-sdk；不在此实现调度算法。
+ * 核心职责：声明公平调度模块的 run 级能力和配置。
+ * 交互契约：只导出 definition 描述符与配置 schema，依赖 contracts 与 module-sdk。
+ * 约束与禁忌：不在此实现调度算法、加载实例或持有状态。
  */
 import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";

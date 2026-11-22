@@ -1159,6 +1159,9 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../packages/module-sdk
       fast-xml-parser:
         specifier: ^5.12.1
         version: 5.12.1
@@ -1246,6 +1249,9 @@ importers:
       '@ai-npc/mod-platform-model-transport-anthropic':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/anthropic
+      '@ai-npc/mod-platform-model-transport-deterministic':
+        specifier: workspace:*
+        version: link:../modules/server/platform/model-transport/deterministic
       '@ai-npc/mod-platform-model-transport-openai-compatible':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/openai-compatible

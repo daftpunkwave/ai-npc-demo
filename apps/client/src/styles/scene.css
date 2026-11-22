@@ -1,4 +1,8 @@
-/* 渲染场景画布、空渲染器提示与 HUD 的信息层级。 */
+/*
+ * 核心职责：渲染场景画布、空渲染器提示与 HUD 的信息层级。
+ * 交互契约：依赖宿主提供的场景与 HUD 类名，不拥有场景数据。
+ * 约束与禁忌：不创建画布、不读取世界状态或执行渲染循环。
+ */
 .hud {
   display: grid;
   grid-template-columns: minmax(150px, 0.8fr) minmax(170px, 0.8fr) minmax(260px, 1.4fr) minmax(190px, 1fr) auto;

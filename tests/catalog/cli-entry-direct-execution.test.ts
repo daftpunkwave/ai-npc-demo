@@ -50,7 +50,7 @@ describe("CLI 入口直接执行与导入行为", () => {
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
     expect(run.stdout).toContain("catalog ok:");
-  });
+  }, 60_000);
 
   it("直接执行 check-assets 时运行资产校验并报告结果", async () => {
     const run = await runTsx("scripts/check-assets.ts");

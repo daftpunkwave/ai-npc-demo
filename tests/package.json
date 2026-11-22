@@ -36,6 +36,7 @@
                          "@ai-npc/scripts":  "workspace:*",
                          "@ai-npc/mod-platform-access-policy-roster":  "workspace:*",
                          "@ai-npc/mod-platform-model-transport-anthropic":  "workspace:*",
+                         "@ai-npc/mod-platform-model-transport-deterministic":  "workspace:*",
                          "@ai-npc/mod-platform-model-transport-openai-compatible":  "workspace:*",
                          "@ai-npc/mod-platform-secrets-env":  "workspace:*",
                          "@ai-npc/mod-platform-operations-standard":  "workspace:*",

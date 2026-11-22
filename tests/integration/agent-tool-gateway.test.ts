@@ -332,6 +332,26 @@ describe("Tool view and gateway", () => {
     expect(calls).toBe(2);
     expect(envelopes[0]?.commandId).toBe(envelopes[1]?.commandId);
   });
+  it("定向消息缺少授权上下文时拒绝派发，不执行消息提交", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let sent = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: () => { throw new Error("Message transport must use the speech executor"); },
+      executeMessage: () => { sent += 1; throw new Error("Unauthorized message must not be dispatched"); },
+    });
+    const args = { to: ["player-1"], intent: { kind: "acknowledge", tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] } };
+    const call = { ...turn([]), wireName: "message_send", arguments: args, argumentsRaw: JSON.stringify(args) };
+    const outcome = await gateway.executeCall({ ...call, providerCallId: "message-missing-audience" });
+    expect(outcome.result).toMatchObject({ executionStatus: "error", commandStatus: null, reasonCode: "no-authority" });
+    expect(sent).toBe(0);
+  });
   it("定向消息回执已提交时复用原 operation，避免重复发送", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
@@ -360,6 +380,7 @@ describe("Tool view and gateway", () => {
     const args = { to: ["player-1"], intent: { kind: "acknowledge", tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] } };
     const call = {
       ...turn([]), wireName: "message_send", arguments: args, argumentsRaw: JSON.stringify(args), operationId: "op-000000000003",
+      narrowing: { teamIds: [], messagePrincipalIds: new Set(["player-1"]) },
     };
     const missed = await gateway.executeCall({ ...call, providerCallId: "message-unknown" });
     expect(missed.result.executionStatus).toBe("unknown");

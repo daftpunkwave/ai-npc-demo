@@ -51,6 +51,8 @@ function speechInput(options: {
   readonly leaks?: readonly string[];
   readonly taskStatus?: "pending" | "running" | "completed" | "failed" | "cancelled";
   readonly factSummary?: string;
+  readonly rejectedCommand?: boolean;
+  readonly rejectedToolCommand?: boolean;
 }): SpeechApprovalInput {
   const facts = options.factSummary === undefined ? [] : [{
     ref: "ev-000000000001",
@@ -66,12 +68,15 @@ function speechInput(options: {
     intent: options.intent,
     facts,
     history: [],
-    receipts: options.taskStatus === undefined ? [] : [{
-      receiptId: "rcp-000000000001",
-      commandStatus: "accepted",
-      taskStatus: options.taskStatus,
-      detail: "task accepted",
-    }],
+    ...(options.rejectedToolCommand === undefined ? {} : { rejectedToolCommand: options.rejectedToolCommand }),
+    receipts: options.rejectedCommand === true
+      ? [{ receiptId: "rcp-000000000002", commandStatus: "rejected", taskStatus: null, detail: "请求被拒绝" }]
+      : options.taskStatus === undefined ? [] : [{
+        receiptId: "rcp-000000000001",
+        commandStatus: "accepted",
+        taskStatus: options.taskStatus,
+        detail: "task accepted",
+      }],
     secrets: options.leaks === undefined ? [] : [{ secretId: "sec-000000000001", leakTerms: options.leaks }],
     principalFactions: new Map([
       ["human-independent", "human-independent"],
@@ -161,6 +166,40 @@ describe("Dialogue flow", () => {
       "leak-terms",
       "status-claims",
     ]);
+  });
+
+  it("权威拒绝回执未进入可披露事实时，对白守卫仍拦截把动作说成成功的声明", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const setup = flow(harness, []);
+    // 拒绝回执本身不出现在 receipts 里，只能靠 rejectedToolCommand 布尔证据触发状态守卫。
+    const result = await setup.dialogue.approve(speechInput({
+      intent: intent("answer"),
+      rejectedToolCommand: true,
+    }), () => ({ utterance: "护送已经安排，请放心。", citedRefs: [] }));
+    expect(result.artifact.fallback).toBe(true);
+    expect(result.artifact.text).not.toContain("已经安排");
+    const validation = result.artifact.validation as unknown as {
+      readonly attempts: readonly { readonly failedChecks: readonly string[] }[];
+    };
+    expect(validation.attempts.every((attempt) => attempt.failedChecks.includes("status-claims"))).toBe(true);
+  });
+
+  it("拒绝回执进入可披露事实时模型完成声明被拦截并回退安全模板", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const setup = flow(harness, []);
+    const result = await setup.dialogue.approve(speechInput({
+      intent: intent("answer"),
+      rejectedCommand: true,
+      factSummary: "护送请求已登记",
+    }), () => ({ utterance: "任务已经完成，请放心。", citedRefs: [] }));
+    expect(result.artifact.fallback).toBe(true);
+    expect(result.artifact.text).not.toContain("已经完成");
+    const validation = result.artifact.validation as unknown as {
+      readonly attempts: readonly { readonly failedChecks: readonly string[] }[];
+    };
+    expect(validation.attempts.every((attempt) => attempt.failedChecks.includes("status-claims"))).toBe(true);
   });
 
   it("进行中的任务拦截“已经送到”类完成声明", async () => {

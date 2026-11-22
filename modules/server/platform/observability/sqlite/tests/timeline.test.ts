@@ -1,6 +1,7 @@
 /**
- * 校验时间线筛选在数据库查询中完成，并正确表达排序与真实 limit。
- * 依赖记录 SQL 参数的存储桩；不打开 SQLite 或读取生产数据。
+ * 核心职责：校验时间线筛选在数据库查询中完成，并正确表达排序与真实 limit。
+ * 交互契约：依赖记录 SQL 参数的存储桩，断言查询契约而非实现细节。
+ * 约束与禁忌：不打开 SQLite 或读取生产数据。
  */
 import { describe, expect, it } from "vitest";
 import type { StoragePort, StorageTransaction, StorageValue } from "@ai-npc/contracts";

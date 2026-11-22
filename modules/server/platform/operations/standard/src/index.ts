@@ -1,6 +1,7 @@
 /**
- * 汇总运营编排模块的公开入口：定义、配置 schema、服务与驱动类型。
- * 不打开存储、不启动 worker。
+ * 核心职责：汇总运营编排模块的公开入口。
+ * 交互契约：只导出定义、配置 schema、服务与驱动类型。
+ * 约束与禁忌：不打开存储、不启动 worker。
  */
 export const packageName = "@ai-npc/mod-platform-operations-standard";
 
