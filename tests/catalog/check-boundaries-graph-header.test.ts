@@ -222,6 +222,34 @@ describe("规则 7：手写源码文件头", () => {
     expect(violations).toEqual([]);
   });
 
+  it("正则字符类中的斜杠不会结束正则扫描", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-regex-character-class.ts.txt");
+    expect(violations).toEqual([]);
+  });
+
+  it("控制语句条件后的正则不会被误判为注释", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-control-condition-regex.ts.txt");
+    expect(violations).toEqual([]);
+  });
+
+  it("普通 of 标识符后的除法不会吞掉尾随注释", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-of-division.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("JSX 文本中的引号不会吞掉后续注释", () => {
+    const violations = checkHeader("scripts/sample.tsx", "comment-jsx-text-quotes.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("JSX 表达式容器中的注释会参与中文检查", () => {
+    const violations = checkHeader("scripts/sample.tsx", "comment-jsx-expression.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
   it("已发布迁移保留原注释与内容校验和", () => {
     const violations = checkSourceFile({
       path: "modules/server/platform/storage/sqlite/migrations/0001_init.sql",

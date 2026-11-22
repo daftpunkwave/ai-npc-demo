@@ -6,7 +6,7 @@
 /* eslint-disable security/detect-object-injection -- 索引只来自源码字符位置或固定栈末尾，不来自外部对象键。 */
 import type { CommentSpan } from "./types";
 
-type Mode = "code" | "line" | "block" | "single" | "double" | "template" | "regex";
+type Mode = "code" | "line" | "block" | "single" | "double" | "template" | "regex" | "jsxText";
 
 const EXPRESSION_START_KEYWORDS = new Set([
   "await",
@@ -18,16 +18,24 @@ const EXPRESSION_START_KEYWORDS = new Set([
   "in",
   "instanceof",
   "new",
-  "of",
   "return",
   "throw",
   "typeof",
   "void",
   "yield",
 ]);
+const CONTROL_HEADER_KEYWORDS = new Set(["catch", "for", "if", "switch", "while", "with"]);
 
 function isWhitespace(character: string): boolean {
   return character !== "" && character.trim() === "";
+}
+
+function previousNonWhitespace(source: string, index: number): string {
+  let previous = index - 1;
+  while (previous >= 0 && isWhitespace(source.charAt(previous))) {
+    previous -= 1;
+  }
+  return source.charAt(previous);
 }
 
 function isDigit(character: string): boolean {
@@ -56,13 +64,20 @@ function isExpressionSuffix(character: string): boolean {
 }
 
 /** 只把能开启表达式的 `/` 视为正则，避免后缀自增后的除法吞掉尾随注释。 */
-export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
+export function collectTypeScriptCommentSpans(source: string, jsx = false): CommentSpan[] {
   const spans: CommentSpan[] = [];
   const templateExpressionDepths: number[] = [];
+  const jsxExpressionDepths: number[] = [];
+  const parenthesisContexts: (string | null)[] = [];
   let mode: Mode = "code";
   let start = 0;
   let expectExpression = true;
   let index = 0;
+  let inRegexCharacterClass = false;
+  let pendingControlKeyword: string | null = null;
+  let jsxTextDepth = 0;
+  let jsxTag: "opening" | "closing" | null = null;
+  let jsxTagBraceDepth = 0;
 
   while (index < source.length) {
     const character = source.charAt(index);
@@ -101,7 +116,13 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
     if (mode === "regex") {
       if (character === "\\") {
         index += 2;
-      } else if (character === "/") {
+      } else if (character === "[") {
+        inRegexCharacterClass = true;
+        index += 1;
+      } else if (character === "]") {
+        inRegexCharacterClass = false;
+        index += 1;
+      } else if (character === "/" && !inRegexCharacterClass) {
         mode = "code";
         expectExpression = false;
         index += 1;
@@ -127,6 +148,20 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
       }
       continue;
     }
+    if (mode === "jsxText") {
+      if (character === "<") {
+        mode = "code";
+        expectExpression = true;
+        continue;
+      }
+      if (character === "{") {
+        jsxExpressionDepths.push(0);
+        mode = "code";
+        expectExpression = true;
+      }
+      index += 1;
+      continue;
+    }
 
     if (isWhitespace(character)) {
       index += 1;
@@ -144,6 +179,46 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
       index += 2;
       continue;
     }
+    if (jsx && jsxTag === null && character === "<" && expectExpression) {
+      if (next === "/") {
+        jsxTag = "closing";
+        index += 2;
+        continue;
+      }
+      if (next === ">" || isIdentifierStart(next)) {
+        jsxTag = "opening";
+        index += 1;
+        continue;
+      }
+    }
+    if (jsxTag !== null && character === "{") {
+      jsxTagBraceDepth += 1;
+      expectExpression = true;
+      index += 1;
+      continue;
+    }
+    if (jsxTag !== null && character === "}" && jsxTagBraceDepth > 0) {
+      jsxTagBraceDepth -= 1;
+      expectExpression = false;
+      index += 1;
+      continue;
+    }
+    if (jsxTag !== null && character === ">" && jsxTagBraceDepth === 0) {
+      const selfClosing = previousNonWhitespace(source, index) === "/";
+      if (jsxTag === "closing") {
+        jsxTextDepth = Math.max(0, jsxTextDepth - 1);
+      } else if (!selfClosing) {
+        jsxTextDepth += 1;
+      }
+      jsxTag = null;
+      mode = jsxTextDepth > 0 ? "jsxText" : "code";
+      expectExpression = false;
+      index += 1;
+      continue;
+    }
+    if (character !== "(" && !isIdentifierStart(character)) {
+      pendingControlKeyword = null;
+    }
     if (character === "'") {
       mode = "single";
       index += 1;
@@ -160,6 +235,11 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
       continue;
     }
     if (character === "/") {
+      if (jsxTag !== null && jsxTagBraceDepth === 0) {
+        expectExpression = true;
+        index += 1;
+        continue;
+      }
       const previous = source[index - 1] ?? "";
       if (expectExpression && previous !== "<") {
         mode = "regex";
@@ -182,12 +262,43 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
       index += 1;
       continue;
     }
+    if (character === "}" && jsxExpressionDepths.length > 0) {
+      const depthIndex = jsxExpressionDepths.length - 1;
+      const depth = jsxExpressionDepths[depthIndex] ?? 0;
+      if (depth === 0) {
+        jsxExpressionDepths.pop();
+        mode = "jsxText";
+      } else {
+        jsxExpressionDepths[depthIndex] = depth - 1;
+        expectExpression = false;
+      }
+      index += 1;
+      continue;
+    }
     if (character === "{") {
       if (templateExpressionDepths.length > 0) {
         const depthIndex = templateExpressionDepths.length - 1;
         templateExpressionDepths[depthIndex] = (templateExpressionDepths[depthIndex] ?? 0) + 1;
       }
+      if (jsxExpressionDepths.length > 0) {
+        const depthIndex = jsxExpressionDepths.length - 1;
+        jsxExpressionDepths[depthIndex] = (jsxExpressionDepths[depthIndex] ?? 0) + 1;
+      }
       expectExpression = true;
+      index += 1;
+      continue;
+    }
+    if (character === "(") {
+      parenthesisContexts.push(pendingControlKeyword);
+      pendingControlKeyword = null;
+      expectExpression = true;
+      index += 1;
+      continue;
+    }
+    if (character === ")") {
+      const controlHeader = parenthesisContexts.pop() ?? null;
+      pendingControlKeyword = null;
+      expectExpression = controlHeader !== null;
       index += 1;
       continue;
     }
@@ -202,7 +313,12 @@ export function collectTypeScriptCommentSpans(source: string): CommentSpan[] {
         end += 1;
       }
       const word = source.slice(index, end);
-      expectExpression = EXPRESSION_START_KEYWORDS.has(word);
+      if (word === "of" && parenthesisContexts.at(-1) === "for") {
+        expectExpression = true;
+      } else {
+        expectExpression = EXPRESSION_START_KEYWORDS.has(word);
+      }
+      pendingControlKeyword = CONTROL_HEADER_KEYWORDS.has(word) ? word : null;
       index = end;
       continue;
     }

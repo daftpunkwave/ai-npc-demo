@@ -142,9 +142,10 @@ assemblyId: local-slg-standard-v1
 configs:                         # named config blocks referenced by bindings
   clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
-  # 此处不配置 host、端口、允许的 Origin 与数据目录：
-  # 服务端宿主从环境变量读取，并在启动时合并到
+  # 此处不配置 host、端口与数据目录；服务端宿主从环境变量读取，并在启动时合并到
   # transport.http-ws.fastify 与 platform.storage.sqlite 的配置中。
+  # allowedOrigins 通过宿主选项设置，未指定时使用两个本机地址：
+  # http://127.0.0.1:5173 与 http://127.0.0.1:3000。
 realms:
   server:
     bindings:

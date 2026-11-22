@@ -254,9 +254,9 @@ function collectDelimitedCommentSpans(source: string, language: HeaderLanguage):
   return spans;
 }
 
-function collectCommentSpans(source: string, language: HeaderLanguage): CommentSpan[] {
+function collectCommentSpans(source: string, language: HeaderLanguage, filePath: string): CommentSpan[] {
   if (language === "typescript") {
-    return collectTypeScriptCommentSpans(source);
+    return collectTypeScriptCommentSpans(source, /\.(?:jsx|tsx)$/i.test(filePath));
   }
   if (language === "sql" || language === "shell" || language === "python") {
     return collectLineCommentSpans(source, language === "sql" ? "--" : "#");
@@ -334,7 +334,7 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
     }
   }
 
-  const spans = collectCommentSpans(source, language);
+  const spans = collectCommentSpans(source, language, filePath);
   const checkedSpans: readonly CommentSpan[] =
     language === "python" && header.status === "ok"
       ? [...spans, { text: header.text, start: header.contentStart }]

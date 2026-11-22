@@ -228,7 +228,7 @@ export default defineConfig({
 
 TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 PEP 257 模块 docstring（位于可选 shebang/编码声明之后），shell 用 `#`，SQL 用 `--`，CSS 用块注释，HTML 用原生注释；有 shebang 时保留首行，header 紧随其后。JSON、锁文件、二进制、第三方代码与生成产物不插入注释；数据配置不伪装成源码。Markdown 用标题与范围说明，不强塞代码式 header。函数仅在非直观约束或原因需要解释时注释，不机械重复签名。
 
-`pnpm check:boundaries` 已检查 header 的存在性、原生格式、三项完整性、说明性注释的中文内容，以及开发文档或阶段引用。已发布 SQLite 迁移受 `schema_migrations` 校验和保护，不得为补写注释而修改原文；这些历史文件保留发布时文本，新增迁移仍须遵循本节。职责与依赖描述的准确性由人工复核。
+`pnpm check:boundaries` 已检查 header 的存在性、原生格式、说明性注释的中文内容，以及开发文档或阶段引用。使用规范类别标签的 header 还必须同时包含职责、交互契约与约束禁忌三类标签；未带类别标签的旧 header 只通过至少三条不同说明做结构检查，语义完整性仍由人工复核。已发布 SQLite 迁移受 `schema_migrations` 校验和保护，不得为补写注释而修改原文；这些历史文件保留发布时文本，新增迁移仍须遵循本节。
 
 ## 8. 测试放置
 
