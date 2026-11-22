@@ -34,7 +34,15 @@ const commsDefinition: ModuleDefinition = {
   configSchema: commsConfigSchema,
   defaults: {},
   stateSchemaVersion: 1,
-  ownsAggregates: ["conversation", "knowledge-grant", "share", "message"],
+  ownsAggregates: [
+    "conversation",
+    "conversation-line",
+    "conversation-membership",
+    "knowledge-grant",
+    "share",
+    "message",
+    "message-delivery",
+  ],
   migrationPaths: [],
   create: async (input) => {
     const { createCommsModule } = await import("./plugin");
