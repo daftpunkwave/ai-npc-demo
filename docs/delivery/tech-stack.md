@@ -241,4 +241,4 @@ TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 P
 
 `vitest.config.ts` 放在根目录，`include` 为 `["packages/*/tests/**/*.test.ts", "modules/**/tests/**/*.test.ts", "tests/{contract,integration,catalog,scenarios}/**/*.test.ts"]`。需要真实模型的测试不进入 `pnpm test`，单独放在 `tests/live/`，只在设置了相应 API key 时手动运行。
 
-`playwright.config.ts` 的 `webServer` 固定使用测试环境：`NPC_ASSEMBLY=local-slg-test-v1`、`NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3`、`NPC_DATA_DIR=./data-e2e`、`NPC_PLAYER_TOKEN=e2e-player`、`NPC_CONSOLE_TOKEN=e2e-console`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，不做启动前清理），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。
+`playwright.config.ts` 的 `webServer` 固定使用测试环境：`NPC_ASSEMBLY=local-slg-test-v1`、`NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3`、`NPC_DATA_DIR=./data-e2e/run-<pid>`、`NPC_PLAYER_TOKEN=e2e-player`、`NPC_CONSOLE_TOKEN=e2e-console`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，Playwright 在 webServer 启动前清空该目录，保证全新世界），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。
