@@ -1159,6 +1159,9 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../packages/module-sdk
       fast-xml-parser:
         specifier: ^5.12.1
         version: 5.12.1
