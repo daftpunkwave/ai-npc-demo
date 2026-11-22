@@ -181,6 +181,18 @@ describe("规则 7：手写源码文件头", () => {
     expectRule(violations, 7);
   });
 
+  it("规范类别标签缺少任一类时报告文件头不完整", () => {
+    const violations = checkHeader("scripts/sample.ts", "header-missing-category.ts.txt");
+    expectCode(violations, "header-incomplete");
+    expectRule(violations, 7);
+  });
+
+  it("重复文件头说明不能通过完整性检查", () => {
+    const violations = checkHeader("scripts/sample.ts", "header-duplicate-lines.ts.txt");
+    expectCode(violations, "header-incomplete");
+    expectRule(violations, 7);
+  });
+
   it("说明性注释需要中文说明", () => {
     const violations = checkHeader("scripts/sample.ts", "comment-no-chinese.ts.txt");
     expectCode(violations, "comment-missing-chinese");
@@ -191,6 +203,23 @@ describe("规则 7：手写源码文件头", () => {
     const violations = checkHeader("scripts/sample.tsx", "comment-after-jsx.ts.txt");
     expectCode(violations, "comment-missing-chinese");
     expectRule(violations, 7);
+  });
+
+  it("后缀自增后的除法不会吞掉尾随注释", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-division-postfix.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("模板插值中的注释会参与中文检查", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-template-interpolation.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("正则字面量不会被误判为注释", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-regex-literal.ts.txt");
+    expect(violations).toEqual([]);
   });
 
   it("已发布迁移保留原注释与内容校验和", () => {
