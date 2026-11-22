@@ -28,6 +28,7 @@ import type {
   GameCommsPort,
   GameContent,
   GameMapPort,
+  GameNotificationTexts,
   GameResourcesPort,
   GameWorldPort,
   TaskView,
@@ -40,16 +41,8 @@ const inboxItemLimit = 50;
 /** 协议到期提醒窗口：玩家协议 24 tick 内到期。 */
 const agreementDeadlineWindowTicks = 24;
 
-/**
- * 投影派生的提醒文案。内容包目前没有提醒类 locale 键，先在投影内固定；
- * 后续接入内容包时只替换文案来源，派生规则不变。
- */
-const notificationTexts = {
-  invite: "收到新的协议提案",
-  deadline: `协议条款将在 ${agreementDeadlineWindowTicks} tick 内到期`,
-  failedTask: "委托的任务已失败",
-  crisis: "局势指标处于危急",
-} as const;
+/** 提醒文案中的到期窗口占位符；由投影以 tick 数替换。 */
+const deadlineWindowPlaceholder = "{window}";
 
 /** 投影输入：world/map 必填，其余游戏端口可选。 */
 export interface PlayerProjectionInput {
@@ -502,14 +495,15 @@ function notificationViews(input: {
   readonly owns: readonly PlayerTaskView[];
   readonly meters: PlayerMetersView | null;
   readonly inbox: readonly InboxItemView[];
+  readonly texts: GameNotificationTexts;
   readonly playerPrincipalId: string;
   readonly tick: number;
 }): PlayerNotificationView[] {
-  const { agreements, owns, meters, inbox, playerPrincipalId, tick } = input;
+  const { agreements, owns, meters, inbox, texts, playerPrincipalId, tick } = input;
   const items: PlayerNotificationView[] = [];
   for (const agreement of agreements) {
     if (agreement.status === "proposed" && agreement.proposerId !== playerPrincipalId) {
-      items.push({ kind: "invite", text: notificationTexts.invite, worldTick: tick });
+      items.push({ kind: "invite", text: texts.invite, worldTick: tick });
       continue;
     }
     if (agreement.status !== "active") {
@@ -523,18 +517,19 @@ function notificationViews(input: {
       return deadline !== null && deadline > tick && deadline <= tick + agreementDeadlineWindowTicks;
     });
     if (nearDeadline) {
-      items.push({ kind: "deadline", text: notificationTexts.deadline, worldTick: tick });
+      const deadlineText = texts.deadline.replace(deadlineWindowPlaceholder, String(agreementDeadlineWindowTicks));
+      items.push({ kind: "deadline", text: deadlineText, worldTick: tick });
     }
   }
   for (const task of owns) {
     if (task.taskStatus === "failed") {
-      items.push({ kind: "urgent", text: notificationTexts.failedTask, worldTick: tick });
+      items.push({ kind: "urgent", text: texts.failedTask, worldTick: tick });
     }
   }
   if (meters !== null) {
     const readings = [meters.relayStability, meters.orchardWater, meters.migrationSafety];
     if (readings.some((reading) => reading.level === "critical")) {
-      items.push({ kind: "urgent", text: notificationTexts.crisis, worldTick: tick });
+      items.push({ kind: "urgent", text: texts.crisis, worldTick: tick });
     }
   }
   for (const item of inbox) {
@@ -594,7 +589,8 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
           campaignId: campaign.campaignId,
           factionId: campaign.factionId,
           factionName: content.factions.get(campaign.factionId)?.name ?? campaign.factionId,
-          commission: content.starts.get(campaign.factionId)?.commission ?? "第 7 日",
+          // 开局 schema 必填 commission 且 campaign.start 要求开局存在；兜底只防历史分支数据缺开局。
+          commission: content.starts.get(campaign.factionId)?.commission ?? campaign.factionId,
           status: campaign.status,
           outcome: campaign.outcome,
           startTick: campaign.startTick,
@@ -623,6 +619,7 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
       owns: tasks.filter((task) => task.kind === "own"),
       meters: meterView,
       inbox,
+      texts: content.notificationTexts,
       playerPrincipalId,
       tick,
     }),
