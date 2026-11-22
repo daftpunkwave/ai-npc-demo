@@ -21,7 +21,7 @@
 | `del` | 委托 | `pg` | 通行许可 |
 | `kg` | 知识授权 | `obs` | 观察 |
 | `mem` | 记忆记录 | `turn` | Agent turn |
-| `att` | 模型 attempt | `llm` | 逻辑模型调用 |
+| `att` | 模型 attempt 与 turn 工具执行关联 | `llm` | 逻辑模型调用 |
 | `tc` | 工具调用 | `art` | artifact |
 | `trc` | trace | `spn` | span |
 | `snap` | 快照 | `ses` | 会话令牌 |
