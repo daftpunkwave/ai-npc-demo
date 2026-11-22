@@ -62,7 +62,10 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const path = parsePath(agentParamsSchema, request.params);
     const parsedQuery = agentInspectorQuerySchema.safeParse(request.query);
     if (!parsedQuery.success || path === null) return sendHttpError(reply, "validation", "Agent 检查器查询参数不合法");
-    return agentInspectorResponseSchema.parse(options.console.inspector(path.agentId, parsedQuery.data.branchId));
+    return agentInspectorResponseSchema.parse(options.console.inspector({
+      agentId: path.agentId,
+      branchId: parsedQuery.data.branchId,
+    }));
   });
 
   app.get("/api/v1/console/agents/:agentId/memory", (request, reply) => {
@@ -75,7 +78,11 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     if (path === null || revision === null || revision < 0 || branchId === undefined) {
       return sendHttpError(reply, "validation", "记忆查询参数不合法");
     }
-    return memoryResponseSchema.parse(options.console.memory(path.agentId, branchId, revision));
+    return memoryResponseSchema.parse(options.console.memory({
+      agentId: path.agentId,
+      branchId,
+      revision,
+    }));
   });
 
   app.get("/api/v1/console/agents/:agentId/memory/diff", (request, reply) => {
@@ -87,12 +94,12 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const branchId = queryText(request.query, "branchId");
     const parsed = memoryDiffQuerySchema.safeParse({ branchId, from, to });
     if (path === null || !parsed.success) return sendHttpError(reply, "validation", "记忆差异查询参数不合法");
-    return memoryDiffResponseSchema.parse(options.console.memoryDiff(
-      path.agentId,
-      parsed.data.branchId,
-      parsed.data.from,
-      parsed.data.to,
-    ));
+    return memoryDiffResponseSchema.parse(options.console.memoryDiff({
+      agentId: path.agentId,
+      branchId: parsed.data.branchId,
+      fromRevision: parsed.data.from,
+      toRevision: parsed.data.to,
+    }));
   });
 
   app.get("/api/v1/console/agents/:agentId/observations", (request, reply) => {
@@ -105,12 +112,12 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const branchId = queryText(raw, "branchId");
     const parsed = observationsQuerySchema.safeParse({ branchId, fromSeq, limit });
     if (path === null || !parsed.success) return sendHttpError(reply, "validation", "观察查询参数不合法");
-    return observationsResponseSchema.parse(options.console.observations(
-      path.agentId,
-      parsed.data.branchId,
-      parsed.data.fromSeq,
-      parsed.data.limit,
-    ));
+    return observationsResponseSchema.parse(options.console.observations({
+      agentId: path.agentId,
+      branchId: parsed.data.branchId,
+      fromSeq: parsed.data.fromSeq,
+      limit: parsed.data.limit,
+    }));
   });
 
   app.get("/api/v1/console/turns", (request, reply) => {
@@ -142,7 +149,7 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     if (options.console?.turn === undefined) return sendHttpError(reply, "not-ready", "turn 详情尚未就绪");
     const path = parsePath(turnParamsSchema, request.params);
     if (path === null) return sendHttpError(reply, "validation", "turnId 不合法");
-    return turnDetailSchema.parse(options.console.turn(path.turnId));
+    return turnDetailSchema.parse(options.console.turn({ turnId: path.turnId }));
   });
 
   app.get("/api/v1/console/artifacts/:artifactId", (request, reply) => {
@@ -152,11 +159,11 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const path = parsePath(artifactParamsSchema, request.params);
     const parsedQuery = artifactQuerySchema.safeParse({ view: queryText(request.query, "view") });
     if (path === null || !parsedQuery.success) return sendHttpError(reply, "validation", "artifact 查询参数不合法");
-    return artifactResponseSchema.parse(options.console.artifact(
-      path.artifactId,
-      parsedQuery.data.view,
-      session.auth.principalId,
-    ));
+    return artifactResponseSchema.parse(options.console.artifact({
+      artifactId: path.artifactId,
+      view: parsedQuery.data.view,
+      principalId: session.auth.principalId,
+    }));
   });
 
   app.get("/api/v1/console/traces/:traceId", (request, reply) => {
@@ -164,7 +171,7 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     if (options.console?.trace === undefined) return sendHttpError(reply, "not-ready", "trace 查询尚未就绪");
     const path = parsePath(traceParamsSchema, request.params);
     if (path === null) return sendHttpError(reply, "validation", "traceId 不合法");
-    return traceResponseSchema.parse(options.console.trace(path.traceId));
+    return traceResponseSchema.parse(options.console.trace({ traceId: path.traceId }));
   });
 
   app.get("/api/v1/console/branches/compare", (request, reply) => {
@@ -175,13 +182,17 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const atSeq = queryInteger(request.query, "atSeq", -1);
     const parsed = branchCompareQuerySchema.safeParse({ left, right, atSeq });
     if (!parsed.success) return sendHttpError(reply, "validation", "分支比较参数不合法");
-    return branchCompareResponseSchema.parse(options.console.branchCompare(parsed.data.left, parsed.data.right, parsed.data.atSeq));
+    return branchCompareResponseSchema.parse(options.console.branchCompare({
+      leftBranchId: parsed.data.left,
+      rightBranchId: parsed.data.right,
+      atSeq: parsed.data.atSeq,
+    }));
   });
 
   app.get("/api/v1/console/debug/queues", (request, reply) => {
     if (requireResearchSession(context, request, reply) === null) return;
     if (options.console?.debugQueues === undefined) return sendHttpError(reply, "not-ready", "调试队列尚未就绪");
-    return debugQueuesResponseSchema.parse(options.console.debugQueues(branch.branchId));
+    return debugQueuesResponseSchema.parse(options.console.debugQueues({ branchId: branch.branchId }));
   });
 
   app.post("/api/v1/console/debug/turns/:turnId/replay", async (request, reply) => {
@@ -189,7 +200,7 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     if (options.console?.replayTurn === undefined) return sendHttpError(reply, "not-ready", "turn 重放尚未就绪");
     const path = parsePath(turnParamsSchema, request.params);
     if (path === null) return sendHttpError(reply, "validation", "turnId 不合法");
-    return turnReplayResponseSchema.parse(await options.console.replayTurn(path.turnId));
+    return turnReplayResponseSchema.parse(await options.console.replayTurn({ turnId: path.turnId }));
   });
 
   app.post("/api/v1/console/debug/agents/:agentId/wake", (request, reply) => {
@@ -198,11 +209,11 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const path = parsePath(agentParamsSchema, request.params);
     const body = debugWakeRequestSchema.safeParse(request.body);
     if (path === null || !body.success) return sendHttpError(reply, "validation", "调试唤醒请求结构不合法");
-    return debugWakeResponseSchema.parse(options.console.debugWake(
-      path.agentId,
-      body.data.reason,
-      body.data.operationId,
-      branch.branchId,
-    ));
+    return debugWakeResponseSchema.parse(options.console.debugWake({
+      agentId: path.agentId,
+      reason: body.data.reason,
+      operationId: body.data.operationId,
+      branchId: branch.branchId,
+    }));
   });
 }

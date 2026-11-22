@@ -93,20 +93,27 @@ function personaOf(content: GameContent, agentId: string): Json {
 }
 
 export interface ConsoleResearchPort {
-  readonly inspector: (agentId: string, branchId: string) => AgentInspectorResponse;
-  readonly memory: (agentId: string, branchId: string, revision: number) => ReturnType<ServerRuntime["observability"]["memory"]>;
-  readonly memoryDiff: (
-    agentId: string,
-    branchId: string,
-    from: number,
-    to: number,
-  ) => ReturnType<ServerRuntime["observability"]["memoryDiff"]>;
-  readonly observations: (
-    agentId: string,
-    branchId: string,
-    fromSeq: number,
-    limit: number,
-  ) => ReturnType<ServerRuntime["observability"]["observations"]>;
+  readonly inspector: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+  }) => AgentInspectorResponse;
+  readonly memory: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly revision: number;
+  }) => ReturnType<ServerRuntime["observability"]["memory"]>;
+  readonly memoryDiff: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly fromRevision: number;
+    readonly toRevision: number;
+  }) => ReturnType<ServerRuntime["observability"]["memoryDiff"]>;
+  readonly observations: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly fromSeq: number;
+    readonly limit: number;
+  }) => ReturnType<ServerRuntime["observability"]["observations"]>;
   readonly turns: (query: {
     readonly runId?: string;
     readonly branchId?: string;
@@ -114,22 +121,34 @@ export interface ConsoleResearchPort {
     readonly status?: string;
     readonly limit?: number;
   }) => ReturnType<ServerRuntime["observability"]["turns"]>;
-  readonly turn: (turnId: string) => ReturnType<ServerRuntime["observability"]["turn"]>;
-  readonly artifact: (artifactId: string, view: "redacted" | "raw", principalId: string) => ArtifactResponse;
-  readonly trace: (traceId: string) => ReturnType<ServerRuntime["observability"]["trace"]>;
-  readonly branchCompare: (
-    left: string,
-    right: string,
-    atSeq: number,
-  ) => ReturnType<ServerRuntime["observability"]["branchCompare"]>;
-  readonly debugQueues: (branchId: string) => ReturnType<ServerRuntime["observability"]["debugQueues"]>;
-  readonly replayTurn: (turnId: string) => Promise<TurnReplayResponse>;
-  readonly debugWake: (
-    agentId: string,
-    reason: string,
-    operationId: string,
-    branchId: string,
-  ) => ReturnType<ServerRuntime["observability"]["debugWake"]>;
+  readonly turn: (input: {
+    readonly turnId: string;
+  }) => ReturnType<ServerRuntime["observability"]["turn"]>;
+  readonly artifact: (input: {
+    readonly artifactId: string;
+    readonly view: "redacted" | "raw";
+    readonly principalId: string;
+  }) => ArtifactResponse;
+  readonly trace: (input: {
+    readonly traceId: string;
+  }) => ReturnType<ServerRuntime["observability"]["trace"]>;
+  readonly branchCompare: (input: {
+    readonly leftBranchId: string;
+    readonly rightBranchId: string;
+    readonly atSeq: number;
+  }) => ReturnType<ServerRuntime["observability"]["branchCompare"]>;
+  readonly debugQueues: (input: {
+    readonly branchId: string;
+  }) => ReturnType<ServerRuntime["observability"]["debugQueues"]>;
+  readonly replayTurn: (input: {
+    readonly turnId: string;
+  }) => Promise<TurnReplayResponse>;
+  readonly debugWake: (input: {
+    readonly agentId: string;
+    readonly reason: string;
+    readonly operationId: string;
+    readonly branchId: string;
+  }) => ReturnType<ServerRuntime["observability"]["debugWake"]>;
 }
 
 export function createConsoleResearchPort(input: {
@@ -157,7 +176,11 @@ export function createConsoleResearchPort(input: {
     assertBranchScope(branchId);
   };
 
-  const inspector = (agentId: string, branchId: string): AgentInspectorResponse => {
+  const inspector = (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+  }): AgentInspectorResponse => {
+    const { agentId, branchId } = input;
     assertBranchScope(branchId);
     const worldId = worldIdOf(runtime.storage, branchId);
     const scope = { branchId, worldId };
@@ -282,7 +305,12 @@ export function createConsoleResearchPort(input: {
     });
   };
 
-  const artifact = (artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse => {
+  const artifact = (input: {
+    readonly artifactId: string;
+    readonly view: "redacted" | "raw";
+    readonly principalId: string;
+  }): ArtifactResponse => {
+    const { artifactId, view, principalId } = input;
     assertArtifactScope(artifactId);
     const raw = runtime.observability.artifact(artifactId, view, principalId);
     if (view === "raw") return raw;
@@ -295,7 +323,8 @@ export function createConsoleResearchPort(input: {
     return { ...raw, body: canonicalJson(redact(parsed)) };
   };
 
-  const replayTurn = (turnId: string): Promise<TurnReplayResponse> => {
+  const replayTurn = (input: { readonly turnId: string }): Promise<TurnReplayResponse> => {
+    const { turnId } = input;
     const attempts = runtime.storage.transact((tx) =>
       tx.rows("model_attempts").list({ work_ref: turnId }));
     if (attempts.length === 0) {
@@ -351,15 +380,15 @@ export function createConsoleResearchPort(input: {
 
   return {
     inspector,
-    memory: (agentId, branchId, revision) => {
+    memory: ({ agentId, branchId, revision }) => {
       assertBranchScope(branchId);
       return runtime.observability.memory(branchId, agentId, revision);
     },
-    memoryDiff: (agentId, branchId, from, to) => {
+    memoryDiff: ({ agentId, branchId, fromRevision, toRevision }) => {
       assertBranchScope(branchId);
-      return runtime.observability.memoryDiff(branchId, agentId, from, to);
+      return runtime.observability.memoryDiff(branchId, agentId, fromRevision, toRevision);
     },
-    observations: (agentId, branchId, fromSeq, limit) => {
+    observations: ({ agentId, branchId, fromSeq, limit }) => {
       assertBranchScope(branchId);
       return runtime.observability.observations(branchId, agentId, fromSeq, limit);
     },
@@ -380,7 +409,7 @@ export function createConsoleResearchPort(input: {
       const response = runtime.observability.turns({ ...query, limit: 200 });
       return { turns: response.turns.filter((turn) => visibleBranches.has(turn.branchId)).slice(0, query.limit ?? 50) };
     },
-    turn: (turnId) => {
+    turn: ({ turnId }) => {
       const branch = runtime.storage.transact((tx) =>
         tx.rows("turn_runs").get({ turn_id: turnId })?.["branch_id"]);
       if (typeof branch !== "string") throw new DomainError("not-found", `turn ${turnId} 不存在`);
@@ -388,24 +417,24 @@ export function createConsoleResearchPort(input: {
       return runtime.observability.turn(turnId);
     },
     artifact,
-    trace: (traceId) => {
+    trace: ({ traceId }) => {
       const branch = runtime.storage.transact((tx) =>
         tx.all("SELECT branch_id FROM trace_spans WHERE trace_id = ? AND branch_id IS NOT NULL LIMIT 1", [traceId])[0]?.["branch_id"]);
       if (typeof branch !== "string") throw new DomainError("not-found", `trace ${traceId} 不存在`);
       assertBranchScope(branch);
       return runtime.observability.trace(traceId);
     },
-    branchCompare: (left, right, atSeq) => {
-      assertBranchScope(left);
-      assertBranchScope(right);
-      return runtime.observability.branchCompare(left, right, atSeq);
+    branchCompare: ({ leftBranchId, rightBranchId, atSeq }) => {
+      assertBranchScope(leftBranchId);
+      assertBranchScope(rightBranchId);
+      return runtime.observability.branchCompare(leftBranchId, rightBranchId, atSeq);
     },
-    debugQueues: (branchId) => {
+    debugQueues: ({ branchId }) => {
       assertBranchScope(branchId);
       return runtime.observability.debugQueues(branchId);
     },
     replayTurn,
-    debugWake: (agentId, reason, operationId, branchId) => {
+    debugWake: ({ agentId, reason, operationId, branchId }) => {
       assertBranchScope(branchId);
       return runtime.observability.debugWake(branchId, agentId, reason, operationId);
     },

@@ -208,20 +208,27 @@ export interface ConsoleReadPort {
   modelRoutes?: (layoutId: string) => ModelLayoutRoutesResponse;
   validateModelLayout?: (layout: unknown) => ModelLayoutValidateResponse;
   /** 研究检查器与证据查询；原始 artifact 的审计由观测 provider 负责。 */
-  inspector?: (agentId: string, branchId: string) => AgentInspectorResponse;
-  memory?: (agentId: string, branchId: string, revision: number) => MemoryResponse;
-  memoryDiff?: (
-    agentId: string,
-    branchId: string,
-    from: number,
-    to: number,
-  ) => MemoryDiffResponse;
-  observations?: (
-    agentId: string,
-    branchId: string,
-    fromSeq: number,
-    limit: number,
-  ) => ObservationsResponse;
+  inspector?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+  }) => AgentInspectorResponse;
+  memory?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly revision: number;
+  }) => MemoryResponse;
+  memoryDiff?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly fromRevision: number;
+    readonly toRevision: number;
+  }) => MemoryDiffResponse;
+  observations?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly fromSeq: number;
+    readonly limit: number;
+  }) => ObservationsResponse;
   turns?: (query: {
     readonly runId?: string;
     readonly branchId?: string;
@@ -229,18 +236,34 @@ export interface ConsoleReadPort {
     readonly status?: string;
     readonly limit?: number;
   }) => TurnsResponse;
-  turn?: (turnId: string) => TurnDetail;
-  artifact?: (artifactId: string, view: "redacted" | "raw", principalId: string) => ArtifactResponse;
-  trace?: (traceId: string) => TraceResponse;
-  branchCompare?: (left: string, right: string, atSeq: number) => BranchCompareResponse;
-  debugQueues?: (branchId: string) => DebugQueuesResponse;
-  replayTurn?: (turnId: string) => Promise<TurnReplayResponse>;
-  debugWake?: (
-    agentId: string,
-    reason: string,
-    operationId: string,
-    branchId: string,
-  ) => DebugWakeResponse;
+  turn?: (input: {
+    readonly turnId: string;
+  }) => TurnDetail;
+  artifact?: (input: {
+    readonly artifactId: string;
+    readonly view: "redacted" | "raw";
+    readonly principalId: string;
+  }) => ArtifactResponse;
+  trace?: (input: {
+    readonly traceId: string;
+  }) => TraceResponse;
+  branchCompare?: (input: {
+    readonly leftBranchId: string;
+    readonly rightBranchId: string;
+    readonly atSeq: number;
+  }) => BranchCompareResponse;
+  debugQueues?: (input: {
+    readonly branchId: string;
+  }) => DebugQueuesResponse;
+  replayTurn?: (input: {
+    readonly turnId: string;
+  }) => Promise<TurnReplayResponse>;
+  debugWake?: (input: {
+    readonly agentId: string;
+    readonly reason: string;
+    readonly operationId: string;
+    readonly branchId: string;
+  }) => DebugWakeResponse;
 }
 
 /** HTTP 适配器写入观测存储的最小跨度视图。 */
