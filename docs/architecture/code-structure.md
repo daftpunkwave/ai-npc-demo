@@ -1,6 +1,6 @@
 # 目标代码目录与扩展工作流
 
-> 状态：部分实现。`apps/server`、`apps/client`、`apps/console`、服务端/客户端/控制台首批模块和共享包已按此结构交付。Agent 认知、模型传输与剩余控制台职能仍为目标。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)。
+> 状态：部分实现。`apps/server`、`apps/client`、`apps/console`、服务端/客户端/控制台首批模块和共享包已按此结构交付。Agent 认知 provider 已实现；真实模型传输与剩余控制台职能仍为目标。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)。
 
 ## 1. 目录树
 

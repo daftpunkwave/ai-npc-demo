@@ -1,6 +1,6 @@
 # 积木组合与配置生效
 
-> 状态：部分实现。`server` 已实现装配解析、模块配置校验与在线 RunSpec、manifest 的冻结。浏览器装配握手可返回空模块集，`client`、`console` 的浏览器端装配，以及 Agent 策略、模型与工具的运行期绑定为目标。本文规定组合语义。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[configuration.md — 配置格式](../platform/configuration.md#10-完整配置文件首版)。
+> 状态：部分实现。`server` 已实现装配解析、模块配置校验与在线 RunSpec、manifest 的冻结。浏览器装配握手可返回空模块集；`client` 与 `console` 的浏览器端装配及 Agent 策略、模型与工具的运行期绑定已实现，真实模型传输仍为目标。本文规定组合语义。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[configuration.md — 配置格式](../platform/configuration.md#10-完整配置文件首版)。
 
 ## 1. 五类对象分开
 
