@@ -1,6 +1,6 @@
 /**
- * 定义通信模块拥有的会话、通信日志、知识授权与证据分享聚合状态。
- * 依赖 zod 与 module-sdk 的 WorldTx；只做状态校验与读取。
+ * 定义通信模块拥有的会话、通信日志、知识授权与证据分享聚合状态，以及按主体/会话/序号编码的索引键。
+ * 依赖 zod 与 module-sdk 的 WorldTx；只做状态校验、读取与索引键构造。
  * 禁止在这里计算送达、生成事件或写入投影。
  */
 import { DomainError, messageIntentKindSchema } from "@ai-npc/contracts";
@@ -31,13 +31,23 @@ export const conversationLineStateSchema = z
   })
   .strict();
 
-/** 会话聚合：参与者、下一条对白序号与已固化的对白；旧行没有 lines 字段时按空会话补齐。 */
+/** 会话聚合：参与者与下一条对白序号；对白正文按 seq 存放在 conversation-line 行聚合中。 */
 export const conversationStateSchema = z
   .object({
     conversationId: z.string().min(1),
     participants: z.array(z.string().min(1)).min(1),
     lastSeq: z.number().int().nonnegative(),
-    lines: z.array(conversationLineStateSchema).default([]),
+  })
+  .strict();
+
+/** 会话成员索引行：状态为空对象，聚合 ID（主体 → 会话）本身携带全部信息。 */
+export const conversationMembershipStateSchema = z.object({}).strict();
+
+/** 消息投递索引行：记录消息 ID 与送达 tick，正文经消息聚合按主键读取。 */
+export const messageDeliveryStateSchema = z
+  .object({
+    messageId: z.string().min(1),
+    deliverAtTick: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -79,9 +89,105 @@ export const shareStateSchema = z
 
 export type ConversationLineState = z.infer<typeof conversationLineStateSchema>;
 export type ConversationState = z.infer<typeof conversationStateSchema>;
+export type ConversationMembershipState = z.infer<typeof conversationMembershipStateSchema>;
+export type MessageDeliveryState = z.infer<typeof messageDeliveryStateSchema>;
 export type MessageState = z.infer<typeof messageStateSchema>;
 export type KnowledgeGrantState = z.infer<typeof knowledgeGrantStateSchema>;
 export type ShareState = z.infer<typeof shareStateSchema>;
+
+/**
+ * 聚合 ID 键的定长数字段宽度：tick 与 seq 补零后字典序与数值序一致，
+ * 前缀范围查询才能按送达时间、提交时间或序号排序取最近的行。
+ */
+const SORT_KEY_WIDTH = 10;
+
+/** 键组件禁止包含冒号：冒号是索引键的分隔符，混入组件会让前缀查询匹配到错误主体。 */
+function assertKeyComponent(value: string, label: string): void {
+  if (value.length === 0 || value.includes(":")) {
+    throw new DomainError("validation", `通信索引键的 ${label} 不能为空或包含冒号`, {
+      details: { label, value },
+    });
+  }
+}
+
+/** 非负整数补零成定长字符串，使字典序与数值序一致；超出宽度直接报错。 */
+function sortKey(value: number, label: string): string {
+  const text = String(value);
+  if (text.length > SORT_KEY_WIDTH) {
+    throw new DomainError("validation", `通信索引键的 ${label} 超出排序键宽度`, {
+      details: { label, value },
+    });
+  }
+  return text.padStart(SORT_KEY_WIDTH, "0");
+}
+
+/** 会话对白行的聚合 ID：`conversationId:seq`，按会话前缀取最近 limit 条。 */
+export function conversationLineKey(conversationId: string, seq: number): string {
+  assertKeyComponent(conversationId, "conversationId");
+  return `${conversationId}:${sortKey(seq, "seq")}`;
+}
+
+/** 会话对白行的查询前缀。 */
+export function conversationLinePrefix(conversationId: string): string {
+  assertKeyComponent(conversationId, "conversationId");
+  return `${conversationId}:`;
+}
+
+/** 会话成员索引的聚合 ID：`principalId:conversationId`，按主体前缀枚举会话。 */
+export function conversationMembershipKey(principalId: string, conversationId: string): string {
+  assertKeyComponent(principalId, "principalId");
+  assertKeyComponent(conversationId, "conversationId");
+  return `${principalId}:${conversationId}`;
+}
+
+/** 会话成员索引的查询前缀。 */
+export function conversationMembershipPrefix(principalId: string): string {
+  assertKeyComponent(principalId, "principalId");
+  return `${principalId}:`;
+}
+
+/**
+ * 消息投递索引的聚合 ID：`principalId:deliverAtTick:committedAtTick:messageId`。
+ * 字典序与收件箱的 (送达 tick, 提交 tick, 消息 ID) 排序一致，可按主体取最近 limit 条已送达消息。
+ */
+export function messageDeliveryKey(
+  principalId: string,
+  deliverAtTick: number,
+  committedAtTick: number,
+  messageId: string,
+): string {
+  assertKeyComponent(principalId, "principalId");
+  assertKeyComponent(messageId, "messageId");
+  return `${principalId}:${sortKey(deliverAtTick, "deliverAtTick")}:${sortKey(committedAtTick, "committedAtTick")}:${messageId}`;
+}
+
+/** 消息投递索引的查询前缀。 */
+export function messageDeliveryPrefix(principalId: string): string {
+  assertKeyComponent(principalId, "principalId");
+  return `${principalId}:`;
+}
+
+/**
+ * 已送达消息的排他上界：送达 tick 大于当前 tick 的消息行都以该界开头或在其后，
+ * 收件箱查询用 `idPrefix 主体前缀 : idBefore 此界` 只取已送达行。
+ */
+export function messageDeliveryBefore(principalId: string, tick: number): string {
+  assertKeyComponent(principalId, "principalId");
+  return `${principalId}:${sortKey(tick + 1, "tick")}`;
+}
+
+/** 知识授权的聚合 ID：`principalId:itemId:via`，去重读取是 O(1) 主键查询。 */
+export function knowledgeGrantKey(principalId: string, itemId: string, via: string): string {
+  assertKeyComponent(principalId, "principalId");
+  assertKeyComponent(itemId, "itemId");
+  return `${principalId}:${itemId}:${via}`;
+}
+
+/** 知识授权的查询前缀；带 itemId 时只取该条目的授权。 */
+export function knowledgeGrantPrefix(principalId: string, itemId?: string): string {
+  assertKeyComponent(principalId, "principalId");
+  return itemId === undefined ? `${principalId}:` : `${principalId}:${itemId}:`;
+}
 
 /** 读取并校验通信聚合；缺失返回 null，损坏直接报错。 */
 export function readCommsState<T>(
@@ -94,7 +200,17 @@ export function readCommsState<T>(
   if (record === null) {
     return null;
   }
-  const parsed = schema.safeParse(record.state);
+  return parseCommsState(aggregateType, aggregateId, record.state, schema);
+}
+
+/** 校验列表查询读出的通信聚合状态；损坏直接报错。 */
+export function parseCommsState<T>(
+  aggregateType: string,
+  aggregateId: string,
+  state: unknown,
+  schema: z.ZodType<T>,
+): T {
+  const parsed = schema.safeParse(state);
   if (!parsed.success) {
     throw new DomainError("invalid-state", `通信聚合 ${aggregateType}:${aggregateId} 不合法`, {
       details: { aggregateType, aggregateId },

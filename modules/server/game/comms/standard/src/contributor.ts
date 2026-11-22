@@ -16,7 +16,7 @@ import {
   type HandlerContext,
   type HandlerResult,
 } from "@ai-npc/module-sdk";
-import type { MessageState } from "./state";
+import { messageDeliveryKey, type MessageState } from "./state";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -231,13 +231,29 @@ function recordRumor(context: CommsContext, payload: Json): void {
     conversationId: null,
   };
   context.tx.put("message", input.rumorId, state);
+  // 传闻按提交 tick 立即送达全部主体：每个主体一行投递索引，收件箱查询据此按主体取最近行。
+  for (const delivery of state.deliveries) {
+    context.tx.put(
+      "message-delivery",
+      messageDeliveryKey(delivery.principalId, delivery.deliverAtTick, state.committedAtTick, input.rumorId),
+      { messageId: input.rumorId, deliverAtTick: delivery.deliverAtTick },
+    );
+  }
 }
 
 /** 通信模块的规则贡献。 */
 export function createCommsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.comms,
-    ownsAggregates: ["conversation", "knowledge-grant", "share", "message"],
+    ownsAggregates: [
+      "conversation",
+      "conversation-line",
+      "conversation-membership",
+      "knowledge-grant",
+      "share",
+      "message",
+      "message-delivery",
+    ],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
       { type: "speech.commit", handler: (context, payload) => speechCommit(context as CommsContext, payload) },

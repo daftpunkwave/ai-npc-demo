@@ -20,11 +20,28 @@ import {
   type ShareQuery,
 } from "@ai-npc/module-sdk";
 import {
+  conversationMembershipStateSchema,
   conversationStateSchema,
+  conversationLineStateSchema,
+  knowledgeGrantStateSchema,
+  messageDeliveryStateSchema,
+  messageStateSchema,
+  conversationLineKey,
+  conversationLinePrefix,
+  conversationMembershipKey,
+  conversationMembershipPrefix,
+  knowledgeGrantKey,
+  knowledgeGrantPrefix,
+  messageDeliveryBefore,
+  messageDeliveryKey,
+  messageDeliveryPrefix,
+  parseCommsState,
   readCommsState,
   type ConversationLineState,
+  type ConversationMembershipState,
   type ConversationState,
   type KnowledgeGrantState,
+  type MessageDeliveryState,
   type MessageState,
   type ShareState,
 } from "./state";
@@ -163,7 +180,11 @@ class StandardCommsPort implements GameCommsPort {
     return output;
   }
 
-  /** 追加一条已固化的对白；序号从 0 开始，lastSeq 记录下一条对白的序号。 */
+  /**
+   * 追加一条已固化的对白；序号从 0 开始，lastSeq 记录下一条对白的序号。
+   * 对白正文按 seq 写入 conversation-line 行聚合，会话聚合只保留参与者与 lastSeq，
+   * 新参与者补写会话成员索引行；每次追加只产生常数次小聚合写入，不重写历史对白。
+   */
   private appendConversationLine(
     conversationId: string,
     participants: readonly string[],
@@ -173,26 +194,38 @@ class StandardCommsPort implements GameCommsPort {
   ): ConversationState {
     const existing = readCommsState(this.tx(), "conversation", conversationId, conversationStateSchema);
     const seq = existing === null ? 0 : existing.lastSeq;
+    const knownParticipants = new Set(existing?.participants ?? []);
+    const mergedParticipants = [...new Set([...knownParticipants, ...participants])];
+    for (const principalId of mergedParticipants) {
+      if (knownParticipants.has(principalId)) {
+        continue;
+      }
+      this.tx().put("conversation-membership", conversationMembershipKey(principalId, conversationId), {});
+    }
     const next: ConversationState = {
       conversationId,
-      participants: [...new Set([...(existing?.participants ?? []), ...participants])],
+      participants: mergedParticipants,
       lastSeq: seq + 1,
-      lines: [...(existing?.lines ?? []), { ...line, seq, deliveries: [...line.deliveries] }],
     };
     this.tx().put("conversation", conversationId, next);
+    this.tx().put("conversation-line", conversationLineKey(conversationId, seq), {
+      ...line,
+      seq,
+      deliveries: [...line.deliveries],
+    });
     return next;
   }
 
   holds(principalId: string, itemId: string): boolean {
     return this.tx()
-      .list<KnowledgeGrantState>("knowledge-grant")
-      .some((entry) => entry.state.principalId === principalId && entry.state.itemId === itemId);
+      .list<KnowledgeGrantState>("knowledge-grant", { idPrefix: knowledgeGrantPrefix(principalId, itemId), limit: 1 })
+      .length > 0;
   }
 
   /**
    * 已送达给该主体的通信日志；未到送达 tick 或不在投递名单里的记录照常保留在聚合中但不返回。
-   * 保留窗口按送达 tick 取最近 limit 条：提交早但送达晚的消息在送达当刻仍落在窗口内，
-   * 不会被之后提交、更早送达的消息挤出收件箱。
+   * 投递索引按 (送达 tick, 提交 tick, 消息 ID) 排序，正向下推查询只取最近 limit 条已送达行，
+   * 消息正文按消息聚合主键逐条读取；两个查询的内存都线性于返回条数。
    */
   messagesFor(principalId: string, limit: number): readonly CommsMessageView[] {
     const limitValue = Math.max(0, Math.trunc(limit));
@@ -200,14 +233,22 @@ class StandardCommsPort implements GameCommsPort {
       return [];
     }
     const tick = this.tx().worldTick;
-    const delivered: CommsMessageView[] = [];
-    for (const entry of this.tx().list<MessageState>("message")) {
-      const state = entry.state;
-      const delivery = state.deliveries.find((candidate) => candidate.principalId === principalId);
-      if (delivery === undefined || delivery.deliverAtTick > tick) {
-        continue;
+    // 行聚合 ID 按排序键编码：降序取最近 limit 条已送达行，反转为收件箱的正序。
+    const deliveries = this.tx().list<MessageDeliveryState>("message-delivery", {
+      idPrefix: messageDeliveryPrefix(principalId),
+      idBefore: messageDeliveryBefore(principalId, tick),
+      descending: true,
+      limit: limitValue,
+    });
+    const views: CommsMessageView[] = [];
+    for (const delivery of deliveries) {
+      const state = readCommsState(this.tx(), "message", delivery.state.messageId, messageStateSchema);
+      if (state === null) {
+        throw new DomainError("invalid-state", "投递索引指向的消息聚合缺失", {
+          details: { messageId: delivery.state.messageId },
+        });
       }
-      delivered.push({
+      views.push({
         messageId: state.messageId,
         fromId: state.fromId,
         to: state.to,
@@ -215,26 +256,18 @@ class StandardCommsPort implements GameCommsPort {
         text: state.text,
         intentKind: state.intentKind,
         committedAtTick: state.committedAtTick,
-        deliverAtTick: delivery.deliverAtTick,
+        deliverAtTick: delivery.state.deliverAtTick,
         conversationId: state.conversationId,
       });
     }
-    return delivered
-      .sort(
-        (left, right) =>
-          left.deliverAtTick - right.deliverAtTick ||
-          left.committedAtTick - right.committedAtTick ||
-          left.messageId.localeCompare(right.messageId),
-      )
-      .slice(-limitValue);
+    return views.reverse();
   }
 
   conversationsOf(principalId: string): readonly string[] {
+    const prefix = conversationMembershipPrefix(principalId);
     return this.tx()
-      .list<ConversationState>("conversation")
-      .map((entry) => entry.state)
-      .filter((state) => state.participants.includes(principalId))
-      .map((state) => state.conversationId)
+      .list<ConversationMembershipState>("conversation-membership", { idPrefix: prefix })
+      .map((entry) => entry.id.slice(prefix.length))
       .sort((left, right) => left.localeCompare(right));
   }
 
@@ -243,29 +276,32 @@ class StandardCommsPort implements GameCommsPort {
     if (limitValue === 0) {
       return [];
     }
-    const state = readCommsState(this.tx(), "conversation", conversationId, conversationStateSchema);
-    if (state === null) {
-      return [];
-    }
-    return [...state.lines]
-      .sort((left, right) => left.seq - right.seq)
-      .slice(-limitValue)
-      .map((line) => ({
-        seq: line.seq,
-        dialogueId: line.dialogueId,
-        speakerId: line.speakerId,
-        text: line.text,
-        channel: line.channel,
-        worldTick: line.worldTick,
-        deliveries: line.deliveries,
-      }));
+    // 行聚合 ID 以补零序号结尾，降序取最近 limit 条后反转为正序。
+    const rows = this.tx().list<ConversationLineState>("conversation-line", {
+      idPrefix: conversationLinePrefix(conversationId),
+      descending: true,
+      limit: limitValue,
+    });
+    return rows
+      .map((entry) => {
+        const line = parseCommsState("conversation-line", entry.id, entry.state, conversationLineStateSchema);
+        return {
+          seq: line.seq,
+          dialogueId: line.dialogueId,
+          speakerId: line.speakerId,
+          text: line.text,
+          channel: line.channel,
+          worldTick: line.worldTick,
+          deliveries: line.deliveries,
+        };
+      })
+      .reverse();
   }
 
   knowledgeOf(principalId: string): readonly CommsKnowledgeView[] {
     return this.tx()
-      .list<KnowledgeGrantState>("knowledge-grant")
-      .map((entry) => entry.state)
-      .filter((state) => state.principalId === principalId)
+      .list<KnowledgeGrantState>("knowledge-grant", { idPrefix: knowledgeGrantPrefix(principalId) })
+      .map((entry) => parseCommsState("knowledge-grant", entry.id, entry.state, knowledgeGrantStateSchema))
       .sort(
         (left, right) =>
           left.grantedAtTick - right.grantedAtTick || left.itemId.localeCompare(right.itemId),
@@ -301,16 +337,11 @@ class StandardCommsPort implements GameCommsPort {
     readonly via: "start" | "share" | "discovery" | "setup";
     readonly grantedAtTick?: number;
   }): { readonly grantId: string } {
-    const existing = this.tx()
-      .list<KnowledgeGrantState>("knowledge-grant")
-      .find(
-        (entry) =>
-          entry.state.principalId === input.principalId &&
-          entry.state.itemId === input.itemId &&
-          entry.state.via === input.via,
-      );
-    if (existing !== undefined) {
-      return { grantId: existing.state.grantId };
+    // 聚合 ID 编码 (主体, 条目, 途径)，同一授权的去重判定是 O(1) 主键查询。
+    const aggregateId = knowledgeGrantKey(input.principalId, input.itemId, input.via);
+    const existing = readCommsState(this.tx(), "knowledge-grant", aggregateId, knowledgeGrantStateSchema);
+    if (existing !== null) {
+      return { grantId: existing.grantId };
     }
     const grantId = this.ids("kg");
     const state: KnowledgeGrantState = {
@@ -320,7 +351,7 @@ class StandardCommsPort implements GameCommsPort {
       via: input.via,
       grantedAtTick: input.grantedAtTick ?? this.tx().worldTick,
     };
-    this.tx().put("knowledge-grant", grantId, state);
+    this.tx().put("knowledge-grant", aggregateId, state);
     this.tx().emit(
       "KnowledgeGranted",
       { grantId, principalId: input.principalId, itemId: input.itemId, via: input.via },
@@ -388,6 +419,13 @@ class StandardCommsPort implements GameCommsPort {
       conversationId: null,
     };
     this.tx().put("message", messageId, message);
+    // 每个投递对象一行投递索引：收件箱按主体前缀取最近已送达消息，不再反序列化全部消息。
+    for (const delivery of deliveries) {
+      this.tx().put("message-delivery", messageDeliveryKey(delivery.principalId, delivery.deliverAtTick, message.committedAtTick, messageId), {
+        messageId,
+        deliverAtTick: delivery.deliverAtTick,
+      });
+    }
     return { eventId, messageId, deliveries };
   }
 

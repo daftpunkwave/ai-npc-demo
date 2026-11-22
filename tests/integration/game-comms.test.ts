@@ -17,6 +17,7 @@ import {
   readGameEvents,
   setGameClock,
   strategicAuth,
+  withGamePorts,
   type GameHarness,
 } from "./game-support";
 const active: GameHarness[] = [];
@@ -776,5 +777,114 @@ describe("通信", () => {
     expect(say.commandStatus).toBe("rejected");
     expect(say.reasonCode).toBe("relay-down");
     expect(readGameEvents(value).filter((event) => event.type === "DialogueSubmitted")).toHaveLength(0);
+  });
+
+  it("会话聚合只存参与者与序号，对白按行聚合存放并可按会话读取", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    for (const text of ["第一句", "第二句", "第三句"]) {
+      expect(
+        value.authority.commands.execute(
+          playerAuth(value),
+          gameCommandEnvelope("dialogue.say", { targetAgentId: "npc-wenyuan", text }, value.host.ids("cmd")),
+        ).commandStatus,
+      ).toBe("accepted");
+    }
+    const conversationIds = withGamePorts(value, (ports) => ports["game.comms"].conversationsOf("player-1"));
+    expect(conversationIds).toHaveLength(3);
+    const firstConversationId = conversationIds[0] as string;
+
+    // 会话聚合不再嵌入对白正文；对白按补零序号成为可前缀索引的行聚合。
+    const conversation = readGameAggregate(value, "conversation", firstConversationId) as Record<string, unknown>;
+    expect(conversation).toMatchObject({ participants: ["player-1", "npc-wenyuan"], lastSeq: 1 });
+    expect(conversation["lines"]).toBeUndefined();
+    const lineIds = value.storage.transact((tx) =>
+      tx.branch(value.branchId)
+        .table("aggregate_state")
+        .list({ aggregate_type: "conversation-line" })
+        .map((row) => String(row["aggregate_id"])),
+    );
+    expect(lineIds).toEqual(conversationIds.map((id) => `${id}:0000000000`));
+    const membershipIds = value.storage.transact((tx) =>
+      tx.branch(value.branchId)
+        .table("aggregate_state")
+        .list({ aggregate_type: "conversation-membership" })
+        .map((row) => String(row["aggregate_id"])),
+    );
+    expect(membershipIds).toEqual([
+      ...conversationIds.map((id) => `npc-wenyuan:${id}`),
+      ...conversationIds.map((id) => `player-1:${id}`),
+    ]);
+
+    withGamePorts(value, (ports) => {
+      const lines = ports["game.comms"].conversationMessages(firstConversationId, 50);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ seq: 0, speakerId: "player-1", text: "第一句", channel: "face-to-face" });
+      expect(ports["game.comms"].conversationMessages("conv-missing", 50)).toEqual([]);
+    });
+  });
+
+  it("收件箱按送达顺序取最近窗口，未送达消息不返回", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const fauna = {
+      agentId: "species-fauna",
+      factionId: "species-fauna",
+      nodeId: "pass",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 25,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : agentId === fauna.agentId ? fauna : null),
+    };
+    const base = createMemoryTx(10);
+    let tick = 10;
+    const port = createCommsPort(() => ({ ...base, worldTick: tick }), value.gameContent, value.host.ids, world);
+    const post = (fromId: string, text: string) =>
+      port.postMessage({ fromId, to: ["player-1"], text, channel: "message", intentKind: "scripted" });
+
+    // 追风在隘口：降级中继下该消息送达 tick 为 13，当刻尚未送达。
+    port.postMessage({ fromId: "species-fauna", to: ["player-1"], text: "异地未送达", channel: "message", intentKind: "scripted" });
+    post("npc-wenyuan", "甲");
+    tick = 11;
+    post("npc-wenyuan", "乙");
+    tick = 12;
+    post("npc-wenyuan", "丙");
+    tick = 13;
+    post("npc-wenyuan", "丁");
+    tick = 14;
+    post("npc-wenyuan", "戊");
+
+    // 送达 tick 10：只有甲已送达，异地消息不进入收件箱。
+    tick = 10;
+    const atTen = port.messagesFor("player-1", 50);
+    expect(atTen.map((message) => message.text)).toEqual(["甲"]);
+    expect(atTen[0]).toMatchObject({ deliverAtTick: 10, committedAtTick: 10 });
+
+    // 送达 tick 13：异地消息送达，窗口按 (送达 tick, 提交 tick, 消息 ID) 升序。
+    tick = 13;
+    expect(port.messagesFor("player-1", 50).map((message) => message.text)).toEqual([
+      "甲",
+      "乙",
+      "丙",
+      "异地未送达",
+      "丁",
+    ]);
+
+    // 最近 3 条 = 戊(14)、丁(13)、异地(13)：同送达 tick 按提交 tick 决先后。
+    tick = 14;
+    expect(port.messagesFor("player-1", 3).map((message) => message.text)).toEqual(["异地未送达", "丁", "戊"]);
   });
 });
