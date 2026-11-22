@@ -101,10 +101,19 @@ export type ShareState = z.infer<typeof shareStateSchema>;
  */
 const SORT_KEY_WIDTH = 10;
 
-/** 键组件禁止包含冒号：冒号是索引键的分隔符，混入组件会让前缀查询匹配到错误主体。 */
+/**
+ * 索引键的字符集契约：组件必须为非空、可打印 ASCII 且不含冒号（键的分隔符）。
+ * 运行 ID 与内容 ID 的契约正则已保证小写 ASCII；主体 ID 的契约只约束非空，
+ * 由这里的写入期校验兜底——不满足字符集的主体在写入时显式失败，
+ * 与查询前缀的同一约束保持对称，不存在写入成功却无法查询的键。
+ * 排序字段（tick、seq）与排序尾段（消息、对白、条目 ID）取自小写 base32 或内容 ID，
+ * 字典序与此前端口实现使用的 localeCompare 排序一致。
+ */
+const KEY_COMPONENT_PATTERN = /^[\x20-\x7E]*$/;
+
 function assertKeyComponent(value: string, label: string): void {
-  if (value.length === 0 || value.includes(":")) {
-    throw new DomainError("validation", `通信索引键的 ${label} 不能为空或包含冒号`, {
+  if (value.length === 0 || value.includes(":") || !KEY_COMPONENT_PATTERN.test(value)) {
+    throw new DomainError("validation", `通信索引键的 ${label} 必须为非空可打印 ASCII 且不含冒号`, {
       details: { label, value },
     });
   }
@@ -168,12 +177,14 @@ export function messageDeliveryPrefix(principalId: string): string {
 }
 
 /**
- * 已送达消息的排他上界：送达 tick 大于当前 tick 的消息行都以该界开头或在其后，
- * 收件箱查询用 `idPrefix 主体前缀 : idBefore 此界` 只取已送达行。
+ * 已送达消息的排他上界：当前 tick 的定长排序键加 `~`（可打印 ASCII 的最大字符）。
+ * 已送达行（送达 tick ≤ 当前 tick）在该键后跟 `:` 分隔符，必小于此界；
+ * 未送达行的送达段定长键更大，必不小于此界。不构造 tick + 1，
+ * 避免边界 tick 的排序键加一溢出定长宽度。
  */
 export function messageDeliveryBefore(principalId: string, tick: number): string {
   assertKeyComponent(principalId, "principalId");
-  return `${principalId}:${sortKey(tick + 1, "tick")}`;
+  return `${principalId}:${sortKey(tick, "tick")}~`;
 }
 
 /** 知识授权的聚合 ID：`principalId:itemId:via`，去重读取是 O(1) 主键查询。 */

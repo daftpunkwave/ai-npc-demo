@@ -886,5 +886,81 @@ describe("通信", () => {
     // 最近 3 条 = 戊(14)、丁(13)、异地(13)：同送达 tick 按提交 tick 决先后。
     tick = 14;
     expect(port.messagesFor("player-1", 3).map((message) => message.text)).toEqual(["异地未送达", "丁", "戊"]);
+
+    // 同一 (送达 tick, 提交 tick) 组内按消息 ID 决先后：投递索引的二进制序与端口原实现的
+    // localeCompare 序一致（运行 ID 为小写 base32，两种比较器同序）。
+    post("npc-wenyuan", "己");
+    post("npc-wenyuan", "庚");
+    post("npc-wenyuan", "辛");
+    const messages = port.messagesFor("player-1", 50);
+    expect(messages.map((message) => message.messageId)).toEqual(
+      [...messages]
+        .sort(
+          (left, right) =>
+            left.deliverAtTick - right.deliverAtTick ||
+            left.committedAtTick - right.committedAtTick ||
+            left.messageId.localeCompare(right.messageId),
+        )
+        .map((message) => message.messageId),
+    );
+  });
+
+  it("收件箱上界在世界 tick 边界不溢出排序键", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 80,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : null),
+    };
+    const base = createMemoryTx(0);
+    let tick = 9999999999;
+    const port = createCommsPort(() => ({ ...base, worldTick: tick }), value.gameContent, value.host.ids, world);
+    port.postMessage({ fromId: "npc-wenyuan", to: ["player-1"], text: "边界", channel: "message", intentKind: "scripted" });
+    // 送达 tick 恰为排序键宽度的最大值：上界构造不得因 tick 加一溢出而失败。
+    expect(port.messagesFor("player-1", 10).map((message) => message.text)).toEqual(["边界"]);
+  });
+
+  it("知识授权按聚合主键去重，holds 与 knowledgeOf 按主体前缀读取", async () => {
+    const value = await harness();
+    const base = createMemoryTx(7);
+    const port = createCommsPort(() => base, value.gameContent, value.host.ids, {
+      meters: () => null,
+      character: () => null,
+    });
+
+    // 同一 (主体, 条目, 途径) 的授权是 O(1) 主键去重：重复授予返回同一 grantId。
+    const first = port.grantKnowledge({ principalId: "player-1", itemId: "ev-1", via: "start" });
+    const duplicate = port.grantKnowledge({ principalId: "player-1", itemId: "ev-1", via: "start" });
+    expect(duplicate.grantId).toBe(first.grantId);
+
+    // 不同途径是不同授权。
+    const otherVia = port.grantKnowledge({ principalId: "player-1", itemId: "ev-1", via: "discovery" });
+    expect(otherVia.grantId).not.toBe(first.grantId);
+
+    // holds 只认当前主体的持有事实。
+    expect(port.holds("player-1", "ev-1")).toBe(true);
+    expect(port.holds("player-2", "ev-1")).toBe(false);
+    expect(port.holds("player-1", "ev-missing")).toBe(false);
+
+    // 其他主体的授权不进入 player-1 的前缀查询；knowledgeOf 按 (授予 tick, 条目) 排序。
+    port.grantKnowledge({ principalId: "npc-wenyuan", itemId: "ev-1", via: "start" });
+    port.grantKnowledge({ principalId: "player-1", itemId: "ev-0", via: "share", grantedAtTick: 3 });
+    expect(port.knowledgeOf("player-1").map((knowledge) => `${knowledge.itemId}:${knowledge.via}`)).toEqual([
+      "ev-0:share",
+      "ev-1:discovery",
+      "ev-1:start",
+    ]);
+    expect(port.knowledgeOf("npc-wenyuan").map((knowledge) => knowledge.itemId)).toEqual(["ev-1"]);
   });
 });

@@ -242,10 +242,11 @@ class StandardCommsPort implements GameCommsPort {
     });
     const views: CommsMessageView[] = [];
     for (const delivery of deliveries) {
-      const state = readCommsState(this.tx(), "message", delivery.state.messageId, messageStateSchema);
+      const index = parseCommsState("message-delivery", delivery.id, delivery.state, messageDeliveryStateSchema);
+      const state = readCommsState(this.tx(), "message", index.messageId, messageStateSchema);
       if (state === null) {
         throw new DomainError("invalid-state", "投递索引指向的消息聚合缺失", {
-          details: { messageId: delivery.state.messageId },
+          details: { messageId: index.messageId },
         });
       }
       views.push({
@@ -256,7 +257,7 @@ class StandardCommsPort implements GameCommsPort {
         text: state.text,
         intentKind: state.intentKind,
         committedAtTick: state.committedAtTick,
-        deliverAtTick: delivery.state.deliverAtTick,
+        deliverAtTick: index.deliverAtTick,
         conversationId: state.conversationId,
       });
     }
@@ -267,7 +268,10 @@ class StandardCommsPort implements GameCommsPort {
     const prefix = conversationMembershipPrefix(principalId);
     return this.tx()
       .list<ConversationMembershipState>("conversation-membership", { idPrefix: prefix })
-      .map((entry) => entry.id.slice(prefix.length))
+      .map((entry) => {
+        parseCommsState("conversation-membership", entry.id, entry.state, conversationMembershipStateSchema);
+        return entry.id.slice(prefix.length);
+      })
       .sort((left, right) => left.localeCompare(right));
   }
 
