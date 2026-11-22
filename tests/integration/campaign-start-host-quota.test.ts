@@ -15,8 +15,16 @@ import { stubStandardModelHttp } from "./standard-model-support";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
+let restoreStandardModelHttp: (() => void) | undefined;
 
-beforeEach(stubStandardModelHttp);
+beforeEach(() => {
+  restoreStandardModelHttp = stubStandardModelHttp();
+});
+
+afterEach(() => {
+  restoreStandardModelHttp?.();
+  restoreStandardModelHttp = undefined;
+});
 
 afterEach(async () => {
   // 先等待全部宿主关闭再删除数据目录：SQLite 句柄未释放时 Windows 删除会抛 EBUSY。

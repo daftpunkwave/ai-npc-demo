@@ -35,8 +35,16 @@ import { standardModelTestKey, stubStandardModelHttp } from "./standard-model-su
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
+let restoreStandardModelHttp: (() => void) | undefined;
 
-beforeEach(stubStandardModelHttp);
+beforeEach(() => {
+  restoreStandardModelHttp = stubStandardModelHttp();
+});
+
+afterEach(() => {
+  restoreStandardModelHttp?.();
+  restoreStandardModelHttp = undefined;
+});
 
 afterEach(async () => {
   // 先等待全部宿主关闭（单个失败不跳过其余），再删除全部已登记目录，最后汇总抛出：
