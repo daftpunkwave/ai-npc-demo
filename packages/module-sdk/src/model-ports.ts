@@ -82,7 +82,8 @@ export type AgentRequiredModelPurpose = (typeof agentRequiredModelPurposes)[numb
 
 /**
  * Agent 实例创建时在模型池能力键下注入的路由视图：按必需用途给出该 Agent 本 run 已解析的路由，
- * 路由条目复用 RunModelPort 的查询返回类型；与装配层面向宿主的 AgentModelPoolPort 分离。
+ * 键为模型用途而非策略端口，决策与对白端口各自按用途消费；
+ * 路由条目复用 RunModelPort 的查询返回类型，与装配层面向宿主的 AgentModelPoolPort 分离。
  */
 export type AgentDecisionModelRoutes = Readonly<Record<AgentRequiredModelPurpose, ReturnType<RunModelPort["route"]>>>;
 
@@ -189,7 +190,10 @@ export interface ModelDecisionPort {
   }): Promise<Json>;
 }
 
-/** 模型尝试与 turn 阶段共用的观测输入。 */
+/**
+ * 模型尝试经观测端口写入的 span 输入，标识字段允许为空以覆盖非 Agent 场景；
+ * 与 turn 阶段的 TurnSpan 是结构对齐的独立声明，二者最终都映射到同一 trace_spans 写入边界。
+ */
 export interface RunSpan {
   readonly spanId: string;
   readonly traceId: string;
