@@ -118,6 +118,8 @@ export class ModelAdmission {
     });
   }
 
+  // 准入成功时先把主体移出组内等待集合，其余请求仍在队列时再重新加入，使其排到该组轮转末尾，
+  // 避免同一主体的并发请求连续占据份额名额；拒绝路径不改变位置，仅清理已无剩余请求的主体。
   private remove(item: Waiting, admitted: boolean): void {
     this.queue.delete(item);
     const agents = this.waitingAgents.get(item.group);
