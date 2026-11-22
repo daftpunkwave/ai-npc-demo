@@ -1,5 +1,5 @@
 /**
- * 验证宿主 worker 失败后的持久化、健康状态、运营恢复路径与受控单步入口。
+ * 验证宿主 worker 失败后的持久化、健康状态、运营恢复路径、受控单步入口与运营审计失败策略。
  * 依赖真实 SQLite 权威执行器、确定性宿主与内存时钟；每个用例使用独立数据目录。
  * 禁止用真实定时器等待推进，也禁止把内存 workerFailed 当成跨重启状态。
  */
@@ -8,6 +8,7 @@ import { createLifecycle, type ServerRuntime } from "@ai-npc/app-server";
 import { listRuleFailures } from "@ai-npc/authority";
 import type { ClockState, GameClockPort } from "@ai-npc/module-sdk";
 import { createAuthorityHarness, createFakeHost, type AuthorityHarness } from "./authority-support";
+import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
 const harnesses: AuthorityHarness[] = [];
 
@@ -431,6 +432,47 @@ describe("宿主 worker 恢复", () => {
       expect(stopClock.state()).toMatchObject({ mode: "paused", runVersion: 2 });
     } finally {
       await withStop.close();
+    }
+  });
+});
+
+describe("宿主运营审计", () => {
+  it("审计写入失败只记日志，不覆盖自动暂停的业务结果", async () => {
+    vi.useFakeTimers();
+    const harness = await createAuthorityHarness();
+    harnesses.push(harness);
+    const fakeClock = createFakeClock({
+      worldTick: 0,
+      mode: "running",
+      secondsPerTick: 1,
+      runVersion: 1,
+      stepTargetTick: null,
+    });
+    const host = createFakeHost();
+    const lifecycle = createLifecycle({
+      host,
+      storage: storageFailingOnLifecycleAudit(harness.storage, "注入审计写入失败"),
+      runtime: { clock: fakeClock.port } as unknown as ServerRuntime,
+      authority: harness.authority,
+      active: { branchId: harness.branchId, worldId: harness.worldId },
+      autoPauseAfterDisconnectMs: 60_000,
+      campaignStarted: () => true,
+      disposeResources: async () => {},
+    });
+    try {
+      lifecycle.handlePlayerConnections(1);
+      lifecycle.handlePlayerConnections(0);
+      vi.advanceTimersByTime(60_000);
+      // 审计失败被吞掉：时钟照常暂停，健康状态不被审计故障牵连，失败原因可从日志定位。
+      expect(fakeClock.state()).toMatchObject({ mode: "paused", runVersion: 2 });
+      expect(lifecycle.healthStatus()).toBe("ready");
+      expect(host.logs).toContainEqual(
+        expect.objectContaining({ level: "error", message: "生命周期审计写入失败" }),
+      );
+      expect(harness.storage.transact((tx) => tx.all("SELECT seq FROM lifecycle_events"))).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+      await lifecycle.close();
     }
   });
 });
