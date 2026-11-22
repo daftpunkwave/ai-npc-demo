@@ -24,6 +24,15 @@ const shares: readonly Group[] = [
   "maintenance", "interactive", "interactive", "interactive", "evaluation",
 ];
 const windowMs = 60_000;
+/** 等待队列容量：超过后新调用直接按背压拒绝，避免无界排队。 */
+const queueCapacity = 200;
+/** 剩余期限不足一次请求超时的一半时不再准入，给发送与响应留出退避余量。 */
+const deadlineSafetyRatio = 0.5;
+
+/** 判断此刻距工作期限是否仍够一次带余量的请求；准入筛选、发送前检查与重试判断共用同一判据。 */
+export function hasRequestHeadroom(scope: ModelWorkScope, requestTimeoutMs: number, now: number): boolean {
+  return scope.deadlineMs - now >= requestTimeoutMs * deadlineSafetyRatio;
+}
 
 export function currentWork(scope: ModelWorkScope): boolean {
   return !scope.signal.aborted && scope.fence();
@@ -49,7 +58,7 @@ export class ModelAdmission {
   constructor(private readonly host: HostServices) {}
 
   acquire(request: Request): Promise<(sent: boolean) => void> {
-    if (this.queue.size >= 200 || request.tokens > request.route.tokensPerMinute) return Promise.reject(backpressure());
+    if (this.queue.size >= queueCapacity || request.tokens > request.route.tokensPerMinute) return Promise.reject(backpressure());
     return new Promise((resolve, reject) => {
       const signal = request.scope.signal;
       const onAbort = () => this.pump();
@@ -141,7 +150,7 @@ export class ModelAdmission {
   }
 
   private fits({ scope, route, tokens }: Request, now: number): boolean {
-    if (scope.deadlineMs - now < route.requestTimeoutMs / 2 ||
+    if (!hasRequestHeadroom(scope, route.requestTimeoutMs, now) ||
       (this.active.get(route.modelId) ?? 0) >= route.maxConcurrent) return false;
     const debits = this.accounts.get(route.rateLimitKey);
     return debits === undefined || (debits.size < route.requestsPerMinute &&

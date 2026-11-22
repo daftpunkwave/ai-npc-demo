@@ -158,6 +158,12 @@ export interface AgentBudgetPort {
 
 export type DecisionValidation = { readonly decision: DecisionSubmission } | { readonly reasons: readonly string[] };
 
+/**
+ * 模型决策的结果状态：ok 表示产出可提交决策，其余四个值区分失败原因。
+ * 模型决策端口与其宿主消费方共用此联合，避免两处声明漂移。
+ */
+export type AgentDecisionStatus = "ok" | "invalid-decision" | "model-failed" | "budget-exhausted" | "over-budget";
+
 export interface ModelDecisionPort {
   decide(input: {
     readonly system: string;
@@ -175,7 +181,7 @@ export interface ModelDecisionPort {
     readonly executeTool: (call: NormalizedToolCall, round: number) => Promise<{ readonly modelText: string; readonly isError: boolean }>;
     readonly validate: (candidate: Json) => DecisionValidation;
   }): Promise<{
-    readonly status: "ok" | "invalid-decision" | "model-failed" | "budget-exhausted" | "over-budget";
+    readonly status: AgentDecisionStatus;
     readonly decision: DecisionSubmission | null;
     readonly messages: readonly NormalizedMessage[];
   }>;
