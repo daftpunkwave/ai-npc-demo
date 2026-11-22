@@ -297,7 +297,10 @@ export class TurnWorker {
         if (result.status !== "ok") {
           // terminal_reason 优先取细分原因（round-limit、call-budget、context-window、deadline-backpressure 等），
           // 与租约到期的 turn-deadline 分别记录；无细分时回退到失败类别本身。
-          throw new TurnStopped(result.status === "budget-exhausted" ? "budget-exhausted" : "failed", result.reason ?? result.status);
+          // over-budget 表示决策循环已进入预算停止收尾，终态原因直接取该状态，
+          // 避免被轮内细分原因（call-budget/context-window）覆盖成另一类停止。
+          const reason = result.status === "over-budget" ? "over-budget" : (result.reason ?? result.status);
+          throw new TurnStopped(result.status === "budget-exhausted" ? "budget-exhausted" : "failed", reason);
         }
         const value = model !== null ? result.decision :
           checkedDecision(result.decision, frozen, memory, prospective, toolCalls.map(({ result }) => result));
