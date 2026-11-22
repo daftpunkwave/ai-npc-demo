@@ -73,10 +73,60 @@ describe("确定性模型传输", () => {
       system: "决策请求处理",
       context: { workRef: "model-test", agentId: "human-independent", evaluatorId: null, round: 2, triggerPrincipalIds: principalIds },
     });
-    await expect(port.complete(request, null, connection([scoped]))).rejects.toMatchObject({ kind: "protocol" });
-    await expect(port.complete({ ...request, context: { ...request.context, round: 1 } }, null, connection([scoped]))).rejects.toMatchObject({ kind: "protocol" });
     const matched = await port.complete({ ...request, messages: [{ role: "user", content: "请护送物资" }] }, null, connection([scoped]));
     expect(matched.wire.responseBody).toMatchObject({ fixtureId: "scoped" });
+    // 只改 round，其余条件（agentId、主体数、inputIncludes）仍满足，单独验证 round 匹配。
+    await expect(port.complete(
+      { ...request, messages: [{ role: "user", content: "请护送物资" }], context: { ...request.context, round: 1 } },
+      null, connection([scoped]),
+    )).rejects.toMatchObject({ kind: "protocol" });
+  });
+
+  it("schemaName 是可选条件：声明的必须精确相等，未声明则不约束", async () => {
+    const port = await portWith();
+    const jsonOutput: ModelRequest["output"] = { kind: "json", schemaName: "speech", schema: { type: "object" } };
+    const request = modelRequest({ purpose: "speech", output: jsonOutput, tools: [] });
+    // 未声明 schemaName 时只按 purpose 匹配，因此仍会命中 JSON 请求。
+    const withoutSchema = fixture("no-schema", { purpose: "speech" },
+      { finishReason: "stop", json: { utterance: "未声明 schemaName 的夹具" } });
+    const unconstrained = await port.complete(request, null, connection([withoutSchema]));
+    expect(unconstrained.json).toEqual({ utterance: "未声明 schemaName 的夹具" });
+    // 声明的值与请求完全相等才命中。
+    const exact = fixture("exact-schema", { purpose: "speech", schemaName: "speech" },
+      { finishReason: "stop", json: { utterance: "匹配 schemaName 的夹具" } });
+    expect((await port.complete(request, null, connection([exact]))).json)
+      .toEqual({ utterance: "匹配 schemaName 的夹具" });
+    // 声明了不同的 schemaName 则不命中，默认响应接管。
+    const other = fixture("other-schema", { purpose: "speech", schemaName: "reflection" },
+      { finishReason: "stop", json: { reflections: [] } });
+    expect((await port.complete(request, null, connection([other]))).json)
+      .toEqual({ utterance: "我知道了。", citedRefs: [] });
+    // 非 JSON 请求不会被任何声明 schemaName 的夹具命中。
+    const textRequest = modelRequest({ purpose: "speech", output: { kind: "text" }, tools: [] });
+    await expect(port.complete(textRequest, null, connection([exact]))).rejects.toMatchObject({ kind: "protocol" });
+  });
+
+  it("去重后 2–4 个主体的默认 decision 受众恰为去重后的全集", async () => {
+    const port = await portWith();
+    for (const uniqueCount of [2, 3, 4]) {
+      const unique = principalIds.slice(0, uniqueCount);
+      // 每个主体重复两次，验证受众按去重后的集合给出，且不因重复而误判为超出上限。
+      const duplicated = [...unique, ...unique];
+      const result = await port.complete(
+        modelRequest({ context: {
+          workRef: "model-test", agentId: "human-independent", evaluatorId: null, round: 1,
+          triggerPrincipalIds: duplicated,
+        } }),
+        null, connection([]),
+      );
+      expect(result.finishReason, `去重后 ${uniqueCount} 个主体`).toBe("tool_calls");
+      expect(result.toolCalls[0]?.arguments).toMatchObject({
+        dialogueIntent: { audience: unique },
+      });
+      const audience = (result.toolCalls[0]?.arguments as { dialogueIntent: { audience: string[] } }).dialogueIntent.audience;
+      expect(audience, `去重后 ${uniqueCount} 个主体`).toHaveLength(uniqueCount);
+      expect(new Set(audience).size).toBe(uniqueCount);
+    }
   });
 
   it("默认 decision 响应对 1–4 个去重主体返回一次 decision_submit，受众为主体全集", async () => {

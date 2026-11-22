@@ -72,7 +72,9 @@ function startConversation(host: RunningHost, text: string): string {
   const message = host.authority.commands.execute(auth, gameCommandEnvelope("dialogue.say",
     { targetAgentId: target, text }, "cmd-000000000002"));
   expect(message).toMatchObject({ commandStatus: "accepted", acceptedEventIds: [expect.any(String)] });
-  return message.acceptedEventIds[0]!;
+  const eventId = message.acceptedEventIds[0];
+  if (eventId === undefined) throw new Error("dialogue.say 未产生已接受事件");
+  return eventId;
 }
 
 function turnFor(host: RunningHost, eventId: string): Promise<StorageRow> {
@@ -84,7 +86,8 @@ function turnFor(host: RunningHost, eventId: string): Promise<StorageRow> {
     });
     expect(turn).not.toBeNull();
     expect(turn?.["ended_at"]).toEqual(expect.any(String));
-    return turn!;
+    if (turn === null || turn === undefined) throw new Error("turn 尚未创建");
+    return turn;
   }, { timeout: 15_000, interval: 20 });
 }
 
