@@ -208,9 +208,16 @@ export function migrateOnlineRun(input: MigrateOnlineRunInput): MigratedOnlineRu
   const runId = input.host.ids("run");
   const branchId = input.host.ids("br");
   const nowIso = input.host.nowIso();
-  const sourceBranchStatus = sourceBranchStatusOf(input.online.branch);
+  // 源分支状态必须在迁移事务内读取：启动早期快照之后分支可能被暂停，
+  // 用快照里的旧状态做补偿会把并发发生的 paused 改回 active。
+  let sourceBranchStatus: "active" | "paused" | null = null;
   input.storage.transact((tx) => {
     assertAliasStillOnSourceBranch(tx, input.online);
+    const currentSource = tx.rows("branches").get({ branch_id: input.online.branchId });
+    if (currentSource === null) {
+      throw new DomainError("invalid-state", `迁移源分支 ${input.online.branchId} 在事务内不存在`);
+    }
+    sourceBranchStatus = sourceBranchStatusOf(currentSource);
     input.storage.forkBranch(tx, {
       srcBranchId: input.online.branchId,
       dstBranchId: branchId,
@@ -223,6 +230,9 @@ export function migrateOnlineRun(input: MigrateOnlineRunInput): MigratedOnlineRu
     restoreForkedActivations(tx, input.online.branchId, branchId);
     tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: nowIso });
   });
+  if (sourceBranchStatus === null) {
+    throw new DomainError("invalid-state", "迁移事务未记录源分支状态");
+  }
   return { runId, branchId, sourceBranchStatus };
 }
 
