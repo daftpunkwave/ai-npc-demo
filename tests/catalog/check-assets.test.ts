@@ -156,8 +156,19 @@ describe("SVG 结构安全", () => {
   it.each([
     ["script 元素", "<script>alert(1)</script>", "script"],
     ["事件处理器", '<circle onload="alert(1)"/>', "事件处理器"],
-    ["远端引用", '<image href="https://example.com/x.png"/>', "远端引用"],
+    ["远端引用", '<image href="https://example.com/x.png"/>', "不允许的引用"],
     ["CSS url()", '<rect style="fill:url(https://example.com/x.png)"/>', "CSS"],
+    // 只排除已知危险协议会漏掉 javascript:/vbscript:/file: 与协议相对引用；
+    // 这里固定白名单语义：除文档内片段外，任何带协议或 // 开头的引用都拒绝。
+    ["javascript 协议", '<a xlink:href="javascript:alert(1)"><text>x</text></a>', "不允许的引用"],
+    ["vbscript 协议", '<a href="vbscript:msgbox(1)"><text>x</text></a>', "不允许的引用"],
+    ["file 协议", '<image href="file:///etc/passwd"/>', "不允许的引用"],
+    ["协议相对引用", '<image href="//example.com/x.png"/>', "不允许的引用"],
+    // 控制字符与反斜杠会让原始值不匹配协议前缀，却在浏览器里折叠成可执行协议或
+    // 协议相对地址；协议判定之前必须拒绝这两类字符。
+    ["制表符拆分的协议", '<a href="java&#9;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
+    ["换行拆分的协议", '<a href="java&#10;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
+    ["反斜杠网络路径", '<image href="\\\\example.com/x.png"/>', "控制字符、字符引用或反斜杠"],
   ])("拒绝包含%s的资产", (_label, injection, expectedMessage) => {
     const root = createFixture();
     const svgPath = join(root, "assets/world/grayharbor-relay.svg");
@@ -168,6 +179,15 @@ describe("SVG 结构安全", () => {
     expect(unsafe).toBeDefined();
     expect(unsafe?.message).toContain(expectedMessage);
     expect(unsafe?.message).toContain("assets/world/grayharbor-relay.svg");
+  });
+
+  it("允许文档内片段引用", () => {
+    const root = createFixture();
+    const svgPath = join(root, "assets/world/grayharbor-relay.svg");
+    const source = readFileSync(svgPath, "utf8");
+    writeFileSync(svgPath, source.replace("</svg>", '<use href="#marker"/></svg>'), "utf8");
+    const report = checkAssets({ root });
+    expect(report.violations.map((violation) => violation.code)).not.toContain("asset-unsafe");
   });
 });
 

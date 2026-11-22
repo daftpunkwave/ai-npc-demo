@@ -931,6 +931,31 @@ describe("通信", () => {
     expect(port.messagesFor("player-1", 10).map((message) => message.text)).toEqual(["边界"]);
   });
 
+  it("负的世界 tick 在构造索引键时被拒绝，不写出顺序错乱的键", async () => {
+    const value = await harness();
+    const wenyuan = {
+      agentId: "npc-wenyuan",
+      factionId: "human-neutral",
+      nodeId: "grayharbor",
+      injuredUntilTick: null,
+      currentTaskId: null,
+    };
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 80,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: (agentId) => (agentId === wenyuan.agentId ? wenyuan : null),
+    };
+    // 负 tick 补零后符号位落在末尾（如 00000000-3），字典序与数值序不再一致，必须拒绝。
+    const negative = createCommsPort(() => ({ ...createMemoryTx(0), worldTick: -3 }), value.gameContent, value.host.ids, world);
+    expect(() => negative.postMessage({
+      fromId: "npc-wenyuan", to: ["player-1"], text: "负数", channel: "message", intentKind: "scripted",
+    })).toThrow(/非负安全整数/);
+  });
+
   it("知识授权按聚合主键去重，holds 与 knowledgeOf 按主体前缀读取", async () => {
     const value = await harness();
     const base = createMemoryTx(7);

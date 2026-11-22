@@ -35,6 +35,8 @@ function displayName(content: ContentPack, id: string): string {
  * decision 与 speech 预算块都是模型决策装配的必需项：缺失或非对象（含 null）
  * 会让窗口上限经 Number(undefined) 变成 NaN，使启动预检与运行期预算比较全部
  * 失真，因此统一按缺失配置拒绝；块内字段的有效性由模块配置 schema 保证。
+ * historyTurns 在 ordered-blocks schema 中是可选项：缺失时按 0 条处理，不用
+ * Number(undefined) 得到的 NaN 参与切片（Array.prototype.slice(-NaN) 会返回全部元素）。
  */
 export function modelContextBudget(
   profile: ResolvedAgentProfile,
@@ -47,6 +49,7 @@ export function modelContextBudget(
       `Agent profile「${profile.profileId}」的上下文配置缺少 ${purpose} 预算块，无法启用模型决策`);
   }
   const budget = asRecord(block);
+  const historyTurns = settings["historyTurns"];
   return {
     maxInputTokens: Number(budget["maxInputTokens"]),
     reservedOutputTokens: profile.budgets.reserveOutputTokens[purpose],
@@ -55,7 +58,7 @@ export function modelContextBudget(
     segmentBudgets: Object.fromEntries(Object.entries(asRecord(budget["segmentBudgets"])).filter(
       (entry): entry is [string, number] => typeof entry[1] === "number",
     )),
-    historyTurns: Number(settings["historyTurns"]),
+    historyTurns: typeof historyTurns === "number" ? historyTurns : 0,
     lendUnusedBudget: settings["lendUnusedBudget"] === true,
   };
 }

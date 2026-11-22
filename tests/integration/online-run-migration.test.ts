@@ -84,6 +84,16 @@ function readSingleBranchStatus(dataDir: string, branchId: string): string {
   }
 }
 
+/** 直接改写分支状态，用于构造 paused 源分支等无法经公开入口到达的迁移前形态。 */
+function writeBranchStatus(dataDir: string, branchId: string, status: "active" | "paused"): void {
+  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  try {
+    database.prepare("UPDATE branches SET status = ? WHERE branch_id = ?").run(status, branchId);
+  } finally {
+    database.close();
+  }
+}
+
 function readAliasBranchId(dataDir: string): string {
   const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
   try {
@@ -453,7 +463,7 @@ describe("在线 run 能力闭包升级迁移", () => {
 
     // 模拟宿主启动失败时的补偿（宿主尚未关闭）：别名与源分支状态回到迁移前，
     // 迁移产生的新分支与新 run 留存为孤儿记录。
-    restoreOnlineAliasToSourceBranch(migrated.storage, "2026-01-01T00:00:00.000Z", sourceBranchId);
+    restoreOnlineAliasToSourceBranch(migrated.storage, "2026-01-01T00:00:00.000Z", sourceBranchId, "active");
     await migrated.close();
 
     expect(readAliasBranchId(dataDir)).toBe(sourceBranchId);
@@ -461,6 +471,33 @@ describe("在线 run 能力闭包升级迁移", () => {
     const rows = readRunRows(dataDir);
     expect(rows).toHaveLength(2);
     const sourceRow = rows.find((row) => row["branch_id"] === sourceBranchId);
+    expect(sourceRow?.["mode"]).toBe("live");
+  });
+
+  it("源分支原状态为 paused 时，迁移补偿原样恢复 paused 而不是改写为 active", async () => {
+    const dataDir = tempDataDir();
+    const first = await startCampaign(dataDir);
+    const sourceBranchId = first.branchId;
+    await first.close();
+    writeBranchStatus(dataDir, sourceBranchId, "paused");
+    await freezeLegacyManifest(dataDir);
+
+    // 迁移事务读到源分支原状态，随结果返回给启动编排做失败补偿。
+    const migrated = await startHost({
+      dataDir,
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      migrateOnlineRun: true,
+    });
+    hosts.push(migrated);
+
+    restoreOnlineAliasToSourceBranch(migrated.storage, "2026-01-01T00:00:00.000Z", sourceBranchId, "paused");
+    await migrated.close();
+
+    expect(readAliasBranchId(dataDir)).toBe(sourceBranchId);
+    expect(readSingleBranchStatus(dataDir, sourceBranchId)).toBe("paused");
+    // 迁移前 derive 的源 run 行仍然是 live，补偿不改 run 状态。
+    const sourceRow = readRunRows(dataDir).find((row) => row["branch_id"] === sourceBranchId);
     expect(sourceRow?.["mode"]).toBe("live");
   });
 
