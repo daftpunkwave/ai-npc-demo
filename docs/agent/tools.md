@@ -102,6 +102,8 @@ decision 只能提发送意图、受约束模板参数与可披露 sourceRefs；
 | task/operation.inspect | 自己及受委托任务 | 自己及受委托任务 | 自己参与或可观察任务 |
 | conversation.inspect | 当前参与的会话 | 当前参与的会话 | 当前参与的会话 |
 | message.send | 可联系主体，仍校验受众 | 可联系主体，仍校验受众 | 可联系主体，禁止冒充派系 |
+
+定向消息的授权受众集合是派发前置条件：集合缺失时网关按 `no-authority` 拒绝，不因无法校验而放行。公开广播按绑定的广播权限单独判断。
 | information.share | 自己持有且可披露的证据 | 自己持有且可披露的证据 | 自己持有且可披露的证据 |
 | agreement.propose/respond | 本派授权条款 | 本种族授权条款 | 个人承诺；组织条款需委托 |
 | asset.dispatch | 本派可用资产 | 本种族可用资产 | 无默认权；按角色职责委托 |
