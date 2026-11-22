@@ -21,7 +21,6 @@ import { campaignAggregateId, metersAggregateId } from "./port-aggregates";
 import {
   campaignStateSchema,
   characterStateSchema,
-  delegationStateSchema,
   groupStateSchema,
   metersStateSchema,
   readWorldState,

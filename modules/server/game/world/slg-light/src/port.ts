@@ -43,6 +43,8 @@ export function createWorldPort(
   options: WorldPortOptions = defaultWorldPortOptions,
 ): GameWorldPort {
   const { findDelegations, ...queries } = createWorldQueries({ txFor, content });
+  // 章节长度与评估权限在构造时取值；调用方此后修改 options 对象不影响端口行为。
+  const { chapterLengthTicks, allowChapterEvaluation } = options;
   const tx = () => txFor(gameModuleIds.world);
   return {
     ...queries,
@@ -51,13 +53,13 @@ export function createWorldPort(
     ...createWorldMeterOps({ txFor }),
 
     evaluateChapter(counts: () => AgreementCounts): { readonly stopClock: true } | undefined {
-      if (!options.allowChapterEvaluation) {
+      if (!allowChapterEvaluation) {
         throw new DomainError(
           "forbidden",
           "章节评估只能由协议模块的章节终点时钟步骤或宿主触发",
         );
       }
-      return runChapterEvaluation(tx(), counts, options.chapterLengthTicks);
+      return runChapterEvaluation(tx(), counts, chapterLengthTicks);
     },
 
     discoverEvidence(input: {

@@ -6,14 +6,12 @@
 /* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection -- 路径已限制在 assets/ 与内容包目录内并做过 realpath 越界检查；kind 取值受规则表约束。 */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ContentPack } from "./content-pack";
 import { loadContentPack } from "./content-pack";
 import { verifyLocalFile } from "./asset-path";
 import { readDimension, validateSvg } from "./svg-safety";
 import { isRecord, parseJson, readText } from "./parsing";
 import type { AssetCheckOptions, AssetCheckReport, AssetViolation } from "./report-types";
 
-const ASSETS_DIRECTORY = "assets";
 const MANIFEST_PATH = "assets/manifest.json";
 
 /** 现有清单用 kind 区分地点卡与徽记，assetId 前缀与之一一对应，并各自指向地图节点或派系。 */
