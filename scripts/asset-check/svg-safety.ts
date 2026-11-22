@@ -32,9 +32,12 @@ function assertSafe(node: unknown, path: string): void {
       throw new Error(`资产包含事件处理器 ${key}: ${path}`);
     }
     if (key === "@href" || key.endsWith(":href")) {
-      const href = String(value).toLowerCase();
-      if (href.startsWith("//") || href.startsWith("http:") || href.startsWith("https:") || href.startsWith("data:")) {
-        throw new Error(`资产包含远端引用 ${href}: ${path}`);
+      const href = String(value).trim().toLowerCase();
+      // 只允许文档内片段引用与不带协议的相对路径：白名单式判断才能同时排除
+      // javascript:/vbscript:/file: 等可执行或本地协议，以及协议相对 //host。
+      const safe = href.startsWith("#") || (!href.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/u.test(href));
+      if (!safe) {
+        throw new Error(`资产包含不允许的引用 ${href}: ${path}`);
       }
     }
     if (key === "@style" && /url\s*\(/i.test(String(value))) {
