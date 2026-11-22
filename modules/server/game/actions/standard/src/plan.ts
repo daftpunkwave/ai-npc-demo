@@ -291,8 +291,9 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
   }
   const authorities = new Map<string, DrawAuthority>();
   for (const stockpile of resolved.stockpiles) {
+    // 会话角色枚举不含 system，系统认证上下文的 roles 恒为空；动用权一律以 drawAuthority 结果为准。
     const authority = ports["game.world"].drawAuthority(dispatcher, stockpile.stockpileId);
-    if (authority.kind === "none" && !context.auth.roles.includes("system")) {
+    if (authority.kind === "none") {
       return fail("no-authority", "没有该库存点的动用权");
     }
     authorities.set(stockpile.stockpileId, authority);
