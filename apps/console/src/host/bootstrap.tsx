@@ -65,6 +65,7 @@ export function ConsoleBootstrap(): ReactNode {
         api,
         session,
         operationId,
+        reload: () => window.location.reload(),
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
         },

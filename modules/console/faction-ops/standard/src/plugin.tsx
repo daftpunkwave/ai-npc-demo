@@ -19,6 +19,7 @@ interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
   operationId(): string;
+  reload(): void;
 }
 
 interface ConsolePagePort extends BrowserViewPort {
@@ -95,7 +96,7 @@ function FactionOpsPage(): ReactNode {
 
   const restore = (snapshotId: string): Promise<void> => run(async () => {
     await host.api.consoleRestoreSnapshot({ operationId: host.operationId(), snapshotId });
-    setMessage("在线分支已恢复");
+    host.reload();
   });
 
   return (

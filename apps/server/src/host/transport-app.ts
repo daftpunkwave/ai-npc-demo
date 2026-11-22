@@ -148,8 +148,10 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
     const research = createConsoleResearchPort({
       runtime,
       reads,
+      worldId: active.worldId,
       content: gameContent,
     });
+    const modelLayouts = input.modelLayouts;
     return await runtime.transport.createApp({
       authority,
       accessPolicy: runtime.accessPolicy,
@@ -208,11 +210,11 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             branchId: query.branchId ?? active.branchId,
           }),
         agents: (branchId) => runtime.observability.agents(branchId),
-        ...(input.modelLayouts === undefined ? {} : {
-          modelLayouts: () => input.modelLayouts!.list(),
-          modelLayout: (layoutId: string) => input.modelLayouts!.layout(layoutId),
-          modelRoutes: (layoutId: string) => input.modelLayouts!.routes(layoutId),
-          validateModelLayout: (layout: unknown) => input.modelLayouts!.validate(layout),
+        ...(modelLayouts === undefined ? {} : {
+          modelLayouts: () => modelLayouts.list(),
+          modelLayout: (layoutId: string) => modelLayouts.layout(layoutId),
+          modelRoutes: (layoutId: string) => modelLayouts.routes(layoutId),
+          validateModelLayout: (layout: unknown) => modelLayouts.validate(layout),
         }),
         inspector: research.inspector,
         memory: research.memory,

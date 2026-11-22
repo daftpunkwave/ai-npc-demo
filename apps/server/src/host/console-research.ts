@@ -103,7 +103,7 @@ export interface ConsoleResearchPort {
     readonly limit?: number;
   }) => ReturnType<ServerRuntime["observability"]["turns"]>;
   readonly turn: (turnId: string) => ReturnType<ServerRuntime["observability"]["turn"]>;
-  readonly artifact: (artifactId: string, view: "redacted" | "raw") => ArtifactResponse;
+  readonly artifact: (artifactId: string, view: "redacted" | "raw", principalId: string) => ArtifactResponse;
   readonly trace: (traceId: string) => ReturnType<ServerRuntime["observability"]["trace"]>;
   readonly branchCompare: (
     left: string,
@@ -123,12 +123,30 @@ export interface ConsoleResearchPort {
 export function createConsoleResearchPort(input: {
   readonly runtime: ServerRuntime;
   readonly reads: HostReadPorts;
+  readonly worldId: string;
   readonly content: GameContent;
 }): ConsoleResearchPort {
-  const { runtime, reads, content } = input;
+  const { runtime, reads, worldId, content } = input;
   const redact = secretRedactor(content);
+  const assertBranchScope = (branchId: string): void => {
+    if (worldIdOf(runtime.storage, branchId) !== worldId) {
+      throw new DomainError("forbidden", `分支 ${branchId} 不属于当前世界`);
+    }
+  };
+  const assertArtifactScope = (artifactId: string): void => {
+    const runId = runtime.storage.transact((tx) =>
+      tx.rows("artifacts").get({ artifact_id: artifactId })?.["run_id"]);
+    if (runId === undefined) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
+    if (runId === null) return;
+    if (typeof runId !== "string") throw new DomainError("invalid-state", `artifact ${artifactId} 的 run_id 不合法`);
+    const branchId = runtime.storage.transact((tx) =>
+      tx.rows("runs").get({ run_id: runId })?.["branch_id"]);
+    if (typeof branchId !== "string") throw new DomainError("forbidden", `artifact ${artifactId} 缺少可访问 run`);
+    assertBranchScope(branchId);
+  };
 
   const inspector = (agentId: string, branchId: string): AgentInspectorResponse => {
+    assertBranchScope(branchId);
     const worldId = worldIdOf(runtime.storage, branchId);
     const scope = { branchId, worldId };
     const snapshot = runtime.storage.transact((tx) => {
@@ -252,8 +270,9 @@ export function createConsoleResearchPort(input: {
     });
   };
 
-  const artifact = (artifactId: string, view: "redacted" | "raw"): ArtifactResponse => {
-    const raw = runtime.observability.artifact(artifactId, view);
+  const artifact = (artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse => {
+    assertArtifactScope(artifactId);
+    const raw = runtime.observability.artifact(artifactId, view, principalId);
     if (view === "raw") return raw;
     let parsed: Json;
     try {
@@ -266,8 +285,7 @@ export function createConsoleResearchPort(input: {
 
   const replayTurn = (turnId: string): Promise<TurnReplayResponse> => {
     const attempts = runtime.storage.transact((tx) =>
-      tx.rows("model_attempts").list({ work_ref: turnId })
-        .filter((row) => typeof row["request_artifact_id"] === "string"));
+      tx.rows("model_attempts").list({ work_ref: turnId }));
     if (attempts.length === 0) {
       return Promise.resolve({
         requestHashMatch: false,
@@ -276,7 +294,15 @@ export function createConsoleResearchPort(input: {
     }
     const differences: TurnReplayResponse["differences"][number][] = [];
     for (const attempt of attempts) {
-      const artifactId = String(attempt["request_artifact_id"]);
+      if (typeof attempt["request_artifact_id"] !== "string") {
+        differences.push({
+          path: String(attempt["attempt_id"]),
+          expected: "request_artifact_id",
+          actual: null,
+        });
+        continue;
+      }
+      const artifactId = attempt["request_artifact_id"];
       const row = runtime.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
       if (row === null) {
         differences.push({ path: artifactId, expected: "artifact", actual: null });
@@ -306,19 +332,59 @@ export function createConsoleResearchPort(input: {
 
   return {
     inspector,
-    memory: (agentId, branchId, revision) => runtime.observability.memory(branchId, agentId, revision),
-    memoryDiff: (agentId, branchId, from, to) =>
-      runtime.observability.memoryDiff(branchId, agentId, from, to),
-    observations: (agentId, branchId, fromSeq, limit) =>
-      runtime.observability.observations(branchId, agentId, fromSeq, limit),
-    turns: (query) => runtime.observability.turns(query),
-    turn: (turnId) => runtime.observability.turn(turnId),
+    memory: (agentId, branchId, revision) => {
+      assertBranchScope(branchId);
+      return runtime.observability.memory(branchId, agentId, revision);
+    },
+    memoryDiff: (agentId, branchId, from, to) => {
+      assertBranchScope(branchId);
+      return runtime.observability.memoryDiff(branchId, agentId, from, to);
+    },
+    observations: (agentId, branchId, fromSeq, limit) => {
+      assertBranchScope(branchId);
+      return runtime.observability.observations(branchId, agentId, fromSeq, limit);
+    },
+    turns: (query) => {
+      const runId = query.runId;
+      if (runId !== undefined) {
+        const runWorld = runtime.storage.transact((tx) =>
+          tx.rows("runs").get({ run_id: runId })?.["world_id"]);
+        if (runWorld !== worldId) throw new DomainError("forbidden", "run 不属于当前世界");
+      }
+      const visibleBranches = runtime.storage.transact((tx) => new Set(
+        tx.rows("branches").list({ world_id: worldId }).map((row) => String(row["branch_id"])),
+      ));
+      const response = runtime.observability.turns({ ...query, limit: 200 });
+      return { turns: response.turns.filter((turn) => visibleBranches.has(turn.branchId)).slice(0, query.limit ?? 50) };
+    },
+    turn: (turnId) => {
+      const branch = runtime.storage.transact((tx) =>
+        tx.rows("turn_runs").get({ turn_id: turnId })?.["branch_id"]);
+      if (typeof branch !== "string") throw new DomainError("not-found", `turn ${turnId} 不存在`);
+      assertBranchScope(branch);
+      return runtime.observability.turn(turnId);
+    },
     artifact,
-    trace: (traceId) => runtime.observability.trace(traceId),
-    branchCompare: (left, right, atSeq) => runtime.observability.branchCompare(left, right, atSeq),
-    debugQueues: (branchId) => runtime.observability.debugQueues(branchId),
+    trace: (traceId) => {
+      const branch = runtime.storage.transact((tx) =>
+        tx.all("SELECT branch_id FROM trace_spans WHERE trace_id = ? AND branch_id IS NOT NULL LIMIT 1", [traceId])[0]?.["branch_id"]);
+      if (typeof branch !== "string") throw new DomainError("not-found", `trace ${traceId} 不存在`);
+      assertBranchScope(branch);
+      return runtime.observability.trace(traceId);
+    },
+    branchCompare: (left, right, atSeq) => {
+      assertBranchScope(left);
+      assertBranchScope(right);
+      return runtime.observability.branchCompare(left, right, atSeq);
+    },
+    debugQueues: (branchId) => {
+      assertBranchScope(branchId);
+      return runtime.observability.debugQueues(branchId);
+    },
     replayTurn,
-    debugWake: (agentId, reason, operationId, branchId) =>
-      runtime.observability.debugWake(branchId, agentId, reason, operationId),
+    debugWake: (agentId, reason, operationId, branchId) => {
+      assertBranchScope(branchId);
+      return runtime.observability.debugWake(branchId, agentId, reason, operationId);
+    },
   };
 }

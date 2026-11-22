@@ -272,8 +272,8 @@ export class ObservabilityPort {
     return this.research().turn(turnId);
   }
 
-  artifact(artifactId: string, view: "redacted" | "raw"): ArtifactResponse {
-    return this.research().artifact(artifactId, view);
+  artifact(artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse {
+    return this.research().artifact(artifactId, view, principalId);
   }
 
   trace(traceId: string): TraceResponse {

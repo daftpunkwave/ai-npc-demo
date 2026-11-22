@@ -7,9 +7,6 @@
 import {
   DomainError,
   inputFrontierSchema,
-  memoryDiffResponseSchema,
-  memoryResponseSchema,
-  observationsResponseSchema,
   traceResponseSchema,
   turnDetailSchema,
   turnStageViewSchema,
@@ -26,6 +23,7 @@ import {
   type ObservationsResponse,
   type StoragePort,
   type StorageRow,
+  type StorageTransaction,
   type TraceResponse,
   type TraceSpan,
   type TurnDetail,
@@ -34,8 +32,6 @@ import {
 } from "@ai-npc/contracts";
 import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
 import {
-  decodeMemoryRecord,
-  decodeObservation,
   jsonColumn,
   numberColumn,
   stringColumn,
@@ -43,6 +39,7 @@ import {
   detailFromSummary,
 } from "./research-codec";
 import { compareBranchEvents, readDebugQueues, wakeDebugAgent } from "./debug-research";
+import { readMemory, readMemoryDiff, readObservations } from "./memory-research";
 
 type TurnFilters = {
   readonly runId?: string;
@@ -135,14 +132,32 @@ function summaryOf(storage: StoragePort, row: StorageRow): TurnSummary {
   }));
 }
 
-function readWorldId(storage: StoragePort, branchId: string): string {
-  const worldId = storage.transact((tx) => tx.rows("branches").get({ branch_id: branchId })?.["world_id"]);
-  if (typeof worldId !== "string") throw new DomainError("not-found", `分支 ${branchId} 不存在`);
-  return worldId;
-}
-
 function decodeTurns(storage: StoragePort, rows: readonly StorageRow[]): readonly TurnSummary[] {
   return rows.map((row) => summaryOf(storage, row));
+}
+
+function receiptStatus(
+  tx: StorageTransaction,
+  branchId: string,
+  agentId: string,
+  commandId: string | null,
+): TurnDetail["toolCalls"][number]["commandStatus"] {
+  if (commandId === null) return null;
+  const value = tx.get(
+    `SELECT receipt_json FROM command_receipts
+      WHERE branch_id = ? AND principal_id = ? AND command_id = ?`,
+    [branchId, agentId, commandId],
+  )?.["receipt_json"];
+  if (typeof value !== "string") return null;
+  try {
+    const receipt = jsonColumn(JSON.parse(value));
+    if (Array.isArray(receipt) || receipt === null || typeof receipt !== "object") return null;
+    return receipt["commandStatus"] === "accepted" || receipt["commandStatus"] === "rejected"
+      ? receipt["commandStatus"]
+      : null;
+  } catch {
+    throw new DomainError("invalid-state", `command receipt ${commandId} 不是合法 JSON`);
+  }
 }
 
 export class ResearchQueries {
@@ -152,50 +167,15 @@ export class ResearchQueries {
   ) {}
 
   memory(branchId: string, agentId: string, revision: number): MemoryResponse {
-    const worldId = readWorldId(this.storage, branchId);
-    const rows = this.storage.transact((tx) => tx.branch(branchId).table("memory_records")
-      .list({ agent_id: agentId }, { orderBy: [{ column: "memory_id" }, { column: "row_version" }] })
-      .filter((row) =>
-        Number(row["created_revision"]) <= revision &&
-        (row["retired_revision"] === null || Number(row["retired_revision"]) > revision)));
-    return memoryResponseSchema.parse({
-      revision,
-      records: rows.map((row) => decodeMemoryRecord(row, { worldId, branchId, agentId, revision })),
-    });
+    return readMemory(this.storage, branchId, agentId, revision);
   }
 
   memoryDiff(branchId: string, agentId: string, from: number, to: number): MemoryDiffResponse {
-    const before = new Map(this.memory(branchId, agentId, from).records.map((record) => [record.memoryId, record]));
-    const after = new Map(this.memory(branchId, agentId, to).records.map((record) => [record.memoryId, record]));
-    const added = [...after.keys()].filter((memoryId) => !before.has(memoryId));
-    const retired = [...before.keys()].filter((memoryId) => !after.has(memoryId));
-    const changed = [...after.keys()].filter((memoryId) =>
-      before.has(memoryId) &&
-      JSON.stringify(before.get(memoryId)?.content) !== JSON.stringify(after.get(memoryId)?.content));
-    const entry = (memoryId: string) => {
-      const record = after.get(memoryId) ?? before.get(memoryId);
-      return {
-        memoryId: memoryId as MemoryDiffResponse["added"][number]["memoryId"],
-        sourceObservationIds: record?.sourceObservationIds ?? [],
-      };
-    };
-    return memoryDiffResponseSchema.parse({
-      added: added.map(entry),
-      retired: retired.map(entry),
-      changed: changed.map(entry),
-    });
+    return readMemoryDiff(this.storage, branchId, agentId, from, to);
   }
 
   observations(branchId: string, agentId: string, fromSeq: number, limit: number): ObservationsResponse {
-    const worldId = readWorldId(this.storage, branchId);
-    const bounded = Math.max(1, Math.min(limit, 200));
-    const rows = this.storage.transact((tx) => tx.branch(branchId).table("observations")
-      .list({ agent_id: agentId }, { orderBy: [{ column: "observation_seq" }] })
-      .filter((row) => Number(row["observation_seq"]) > fromSeq)
-      .slice(0, bounded));
-    return observationsResponseSchema.parse({
-      observations: rows.map((row) => decodeObservation(row, { worldId, branchId, agentId })),
-    });
+    return readObservations(this.storage, branchId, agentId, fromSeq, limit);
   }
 
   turns(query: TurnFilters): TurnsResponse {
@@ -234,20 +214,25 @@ export class ResearchQueries {
       usage: jsonColumn(attempt["usage_json"]),
       error: attempt["error_json"] === null ? null : jsonColumn(attempt["error_json"]),
     }));
-    const toolCalls = this.storage.transact((tx) => tx.rows("tool_calls")
-      .list({ turn_id: turnId }, { orderBy: [{ column: "created_at" }, { column: "tool_call_id" }] }))
-      .map((call) => ({
-      toolCallId: String(call["tool_call_id"]),
-      toolId: String(call["tool_id"]),
-      executionStatus: call["execution_status"] as TurnDetail["toolCalls"][number]["executionStatus"],
-      commandStatus: (call["command_id"] === null
-        ? null
-        : call["execution_status"] === "ok" ? "accepted" : "rejected") as
-        TurnDetail["toolCalls"][number]["commandStatus"],
-      rawArtifactId: call["raw_artifact_id"] === null ? null : String(call["raw_artifact_id"]),
-      viewArtifactId: call["view_artifact_id"] === null ? null : String(call["view_artifact_id"]),
-      operationId: call["operation_id"] === null ? null : String(call["operation_id"]),
-    }));
+    const toolCalls = this.storage.transact((tx) => {
+      const turn = tx.rows("turn_runs").get({ turn_id: turnId });
+      const branchId = turn === null ? "" : String(turn["branch_id"]);
+      const agentId = turn === null ? "" : String(turn["agent_id"]);
+      return tx.rows("tool_calls")
+        .list({ turn_id: turnId }, { orderBy: [{ column: "created_at" }, { column: "tool_call_id" }] })
+        .map((call) => {
+          const commandId = call["command_id"] === null ? null : String(call["command_id"]);
+          return {
+            toolCallId: String(call["tool_call_id"]),
+            toolId: String(call["tool_id"]),
+            executionStatus: call["execution_status"] as TurnDetail["toolCalls"][number]["executionStatus"],
+            commandStatus: receiptStatus(tx, branchId, agentId, commandId),
+            rawArtifactId: call["raw_artifact_id"] === null ? null : String(call["raw_artifact_id"]),
+            viewArtifactId: call["view_artifact_id"] === null ? null : String(call["view_artifact_id"]),
+            operationId: call["operation_id"] === null ? null : String(call["operation_id"]),
+          };
+        });
+    });
     const frontier = row["input_frontier_json"] === null
       ? null : inputFrontierSchema.parse(row["input_frontier_json"]);
     const trace = this.storage.transact((tx) => tx.all(
@@ -311,7 +296,7 @@ export class ResearchQueries {
     }
   }
 
-  artifact(artifactId: string, view: "redacted" | "raw"): ArtifactResponse {
+  artifact(artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse {
     const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
     if (row === null) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
     const body = parseArtifactBody(row);
@@ -320,8 +305,8 @@ export class ResearchQueries {
         runId: row["run_id"] === null ? null : String(row["run_id"]),
         branchId: null,
         type: "ArtifactViewed",
-        subjectId: null,
-        payload: { artifactId, view },
+        subjectId: principalId,
+        payload: { artifactId, view, principalId },
         createdAt: this.host.nowIso(),
       }));
     }

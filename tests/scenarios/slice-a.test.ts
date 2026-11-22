@@ -147,7 +147,14 @@ describe("slice A research path", () => {
       headers,
     });
     expect(observationsResponse.statusCode).toBe(200);
-    expect(observationsResponseSchema.parse(observationsResponse.json()).observations.length).toBeGreaterThan(0);
+    const observations = observationsResponseSchema.parse(observationsResponse.json()).observations;
+    expect(observations.length).toBeGreaterThan(0);
+    const nextObservation = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/observations?branchId=${host.branchId}&fromSeq=${observations[0]!.observationSeq}&limit=1`,
+      headers,
+    });
+    expect(observationsResponseSchema.parse(nextObservation.json()).observations).toHaveLength(1);
 
     const memoryResponse = await host.app.inject({
       method: "GET",
@@ -173,7 +180,9 @@ describe("slice A research path", () => {
     });
     expect(rawArtifact.statusCode).toBe(200);
     expect(host.storage.transact((tx) =>
-      tx.all("SELECT type FROM lifecycle_events WHERE type = 'ArtifactViewed'"))).toHaveLength(1);
+      tx.all("SELECT type, subject_id, payload_json FROM lifecycle_events WHERE type = 'ArtifactViewed'"))).toEqual([
+      expect.objectContaining({ type: "ArtifactViewed", subject_id: "console-admin" }),
+    ]);
 
     const replayResponse = await host.app.inject({
       method: "POST",
@@ -183,6 +192,39 @@ describe("slice A research path", () => {
     });
     expect(replayResponse.statusCode).toBe(200);
     expect(replayResponse.json()).toMatchObject({ requestHashMatch: true });
+    host.storage.transact((tx) => {
+      const attempts = tx.rows("model_attempts").list({ work_ref: turnId });
+      const first = attempts[0];
+      if (first === undefined) throw new Error("expected model attempt");
+      tx.rows("model_attempts").put({ ...first, request_artifact_id: null });
+    });
+    const incompleteReplay = await host.app.inject({
+      method: "POST",
+      url: `/api/v1/console/debug/turns/${turnId}/replay`,
+      headers,
+      payload: {},
+    });
+    expect(incompleteReplay.json()).toMatchObject({ requestHashMatch: false });
+
+    const missingTrace = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/traces/trc-000000000099",
+      headers,
+    });
+    expect(missingTrace.statusCode).toBe(404);
+    const missingArtifact = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/artifacts/art-000000000099?view=redacted",
+      headers,
+    });
+    expect(missingArtifact.statusCode).toBe(404);
+    const branchCompare = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/branches/compare?left=${host.branchId}&right=${host.branchId}&atSeq=0`,
+      headers,
+    });
+    expect(branchCompare.statusCode).toBe(200);
+    expect(branchCompare.json()).toMatchObject({ differences: [] });
 
     const wakeResponse = await host.app.inject({
       method: "POST",
@@ -195,6 +237,14 @@ describe("slice A research path", () => {
       contaminated: tx.rows("runs").list({ branch_id: host.branchId })[0]?.["contaminated"],
       trigger: tx.branch(host.branchId).table("triggers").list({ kind: "debug" })[0]?.["source_ref"],
     }))).toMatchObject({ contaminated: 1, trigger: "op-000000000009" });
+    const conflictingWake = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/debug/agents/human-independent/wake",
+      headers,
+      payload: { reason: "不同原因", operationId: "op-000000000009" },
+    });
+    expect(conflictingWake.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(conflictingWake.json()).error.code).toBe("idempotency-conflict");
 
     const timelineResponse = await host.app.inject({
       method: "GET",

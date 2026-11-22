@@ -228,7 +228,7 @@ export interface ConsoleReadPort {
     readonly limit?: number;
   }) => TurnsResponse;
   turn?: (turnId: string) => TurnDetail;
-  artifact?: (artifactId: string, view: "redacted" | "raw") => ArtifactResponse;
+  artifact?: (artifactId: string, view: "redacted" | "raw", principalId: string) => ArtifactResponse;
   trace?: (traceId: string) => TraceResponse;
   branchCompare?: (left: string, right: string, atSeq: number) => BranchCompareResponse;
   debugQueues?: (branchId: string) => DebugQueuesResponse;

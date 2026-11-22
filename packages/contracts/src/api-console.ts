@@ -265,6 +265,7 @@ export type ModelLayoutDraft = z.infer<typeof modelLayoutDraftSchema>;
 export const modelConnectionViewSchema = z
   .object({
     adapterId: moduleIdSchema,
+    endpointRef: z.string().min(1).nullable(),
     endpointHost: z.string().min(1).nullable(),
     credentialRef: z.string().min(1).nullable(),
     rateLimitKey: z.string().min(1).nullable(),

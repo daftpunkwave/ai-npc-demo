@@ -149,7 +149,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
 | `GET /model-layouts`（已实现） | operator、researcher | — | `{ layouts: { layoutId, source }[] }` |
-| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 只显示 `adapterId`、`endpoint` 主机名与 `credentialRef` 名称） |
+| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 显示 `adapterId`、可安全校验的 `endpointRef`、endpoint 主机名与 `credentialRef` 名称） |
 | `GET /model-layouts/{layoutId}/routes`（已实现） | operator、researcher | — | `{ routes: { agentId, purpose, modelId, connectionId, adapterId, externalModel }[] }`：按角色看的已解析路由 |
 | `POST /model-layouts/validate`（已实现） | operator | `{ layout }` | `{ ok, errors }`：只做静态预检，不发网络请求 |
 | `POST /model-layouts/drafts` | operator | `{ layout }` | `{ layoutId, version }`：保存为草稿，只对新 run 生效 |

@@ -55,6 +55,7 @@ function viewOf(layout: ModelLayout): ModelLayoutView {
       connectionId,
       {
         adapterId: connection.adapterId,
+        endpointRef: connection.endpoint ?? null,
         endpointHost: hostOf(connection.endpoint),
         credentialRef: credentialName(connection.credentialRef),
         rateLimitKey: connection.rateLimitKey ?? null,

@@ -214,10 +214,10 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   [
     "模型连接视图",
     modelConnectionViewSchema,
-    { adapterId: "platform.model-transport.openai-compatible", endpointHost: "api.deepseek.com", credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" },
-    { adapterId: "openai", endpointHost: null, credentialRef: null, rateLimitKey: null },
+    { adapterId: "platform.model-transport.openai-compatible", endpointRef: "env:NPC_OPENAI_COMPAT_BASE_URL", endpointHost: "api.deepseek.com", credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" },
+    { adapterId: "openai", endpointRef: null, endpointHost: null, credentialRef: null, rateLimitKey: null },
   ],
-  ["模型布局视图", modelLayoutViewSchema, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "platform.model-transport.openai-compatible", endpointHost: "api.deepseek.com", credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" } } }, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "bad" } } }],
+  ["模型布局视图", modelLayoutViewSchema, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "platform.model-transport.openai-compatible", endpointRef: "env:NPC_OPENAI_COMPAT_BASE_URL", endpointHost: "api.deepseek.com", credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" } } }, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "bad" } } }],
   ["模型布局列表", modelLayoutsResponseSchema, { layouts: [{ layoutId: "shared-model-layout-v1", source: "repo" }] }, { layouts: [{ layoutId: "x", source: "cache" }] }],
   ["模型路由", modelLayoutRoutesResponseSchema, { routes: [{ agentId: "npc-cenyan", purpose: "decision", modelId: "npc-chat", connectionId: "openai-compat", adapterId: "platform.model-transport.openai-compatible", externalModel: "deepseek-chat" }] }, { routes: [{ agentId: "npc-cenyan", purpose: "chat", modelId: "npc-chat", connectionId: "openai-compat", adapterId: "platform.model-transport.openai-compatible", externalModel: "deepseek-chat" }] }],
   ["布局校验请求", modelLayoutValidateRequestSchema, { layout: modelLayoutDraft }, { layout: { ...modelLayoutDraft, layoutId: "" } }],

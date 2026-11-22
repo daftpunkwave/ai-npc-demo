@@ -139,4 +139,42 @@ describe("控制台研究接口", () => {
     expect(queues.statusCode).toBe(200);
     expect(debugQueuesResponseSchema.parse(queues.json()).scheduler.queued).toBeGreaterThanOrEqual(0);
   });
+
+  it("拒绝跨世界分支的检查器和分支比较", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    const createdAt = new Date().toISOString();
+    host.storage.transact((tx) => {
+      tx.rows("worlds").put({
+        world_id: "wld-otherworld",
+        pack_id: "earth-2964-v1",
+        content_version: "0.2.0",
+        created_at: createdAt,
+      });
+      tx.rows("branches").put({
+        branch_id: "br-otherworld",
+        world_id: "wld-otherworld",
+        kind: "online",
+        status: "paused",
+        parent_branch_id: null,
+        forked_at_world_seq: null,
+        run_id: null,
+        profile_hash: null,
+        created_at: createdAt,
+      });
+    });
+    const inspector = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/agents/human-independent/inspector?branchId=br-otherworld",
+      headers,
+    });
+    expect(inspector.statusCode).toBe(403);
+    const compare = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/branches/compare?left=${host.branchId}&right=br-otherworld&atSeq=0`,
+      headers,
+    });
+    expect(compare.statusCode).toBe(403);
+  });
 });

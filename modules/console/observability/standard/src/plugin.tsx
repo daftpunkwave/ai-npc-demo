@@ -163,8 +163,12 @@ function ObservabilityPage(): ReactNode {
     ]).then(([nextInspector, nextTurns]) => {
       if (cancelled) return;
       setInspector(nextInspector);
-      setTurns(nextTurns.turns.filter((turn) => turn.branchId === host.session.branchId));
-      setSelectedTurn((current) => current ?? nextTurns.turns[0]?.turnId ?? null);
+      const branchTurns = nextTurns.turns.filter((turn) => turn.branchId === host.session.branchId);
+      setTurns(branchTurns);
+      setSelectedTurn((current) =>
+        current !== null && branchTurns.some((turn) => turn.turnId === current)
+          ? current
+          : branchTurns[0]?.turnId ?? null);
       setDetailError(null);
     }).catch((cause: unknown) => {
       if (!cancelled) setDetailError(String(cause));

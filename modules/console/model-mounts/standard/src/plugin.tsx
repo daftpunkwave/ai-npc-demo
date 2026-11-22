@@ -35,7 +35,7 @@ function draftFromView(layout: ModelLayoutView): unknown {
       id,
       {
         adapterId: connection.adapterId,
-        ...(connection.endpointHost === null ? {} : { endpoint: `https://${connection.endpointHost}` }),
+        ...(connection.endpointRef === null ? {} : { endpoint: connection.endpointRef }),
         ...(connection.credentialRef === null ? {} : { credentialRef: connection.credentialRef }),
         ...(connection.rateLimitKey === null ? {} : { rateLimitKey: connection.rateLimitKey }),
       },
@@ -141,7 +141,7 @@ function ModelMountsPage(): ReactNode {
                   <article key={id}>
                     <strong>{id}</strong>
                     <small>{connection.adapterId}</small>
-                    <span>{connection.endpointHost ?? "环境变量端点"}</span>
+                    <span>{connection.endpointHost ?? connection.endpointRef ?? "环境变量端点"}</span>
                     <code>{connection.credentialRef ?? "无凭据引用"}</code>
                   </article>
                 ))}
