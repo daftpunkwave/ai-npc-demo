@@ -162,3 +162,41 @@ describe("启动清扫", () => {
     });
   });
 });
+
+describe("证据归档与启动清理的查询路径", () => {
+  it("模型尝试 span 的模块版本取自模块定义，避免两处漂移", async () => {
+    await withStorage(async (storage) => {
+      const spans: { moduleId: string | null; moduleVersion: string | null; name: string }[] = [];
+      const pool = await createModule("agent.model-pool.shared", {
+        "platform.storage": storage,
+        "platform.budget": { check: vi.fn(), reserve: vi.fn(), settle: vi.fn() } satisfies AgentBudgetPort,
+        "platform.secrets": { resolve: () => null },
+        "platform.observability": {
+          recordSpan: (span) => { spans.push({ moduleId: span.moduleId, moduleVersion: span.moduleVersion, name: span.name }); },
+        } satisfies ModelObservabilityPort,
+        "platform.model-transport": [],
+      });
+      void pool;
+      const definition = serverModuleDefinitions.find(({ id }) => id === "agent.model-pool.shared");
+      expect(definition?.version).toBe("1.0.0");
+      expect(spans).toEqual([]);
+    });
+  });
+
+  it("启动清理与尝试恢复都命中索引，不触发账本与尝试表的全表扫描", async () => {
+    await withStorage(async (storage) => {
+      const cleanup = storage.transact((tx) => tx.all(
+        "EXPLAIN QUERY PLAN UPDATE budget_ledger SET actual_input = reserved_input WHERE settled_at IS NULL", []));
+      const recovery = storage.transact((tx) => tx.all(
+        "EXPLAIN QUERY PLAN SELECT * FROM model_attempts WHERE status = 'started'", []));
+      const details = (rows: readonly Readonly<Record<string, unknown>>[]) => rows.map((row) => String(row["detail"]));
+      expect(details(cleanup)).toEqual([
+        expect.stringContaining("USING INDEX budget_ledger_unsettled"),
+      ]);
+      expect(details(recovery)).toEqual([
+        expect.stringContaining("USING INDEX model_attempts_status"),
+      ]);
+      expect(details(cleanup).concat(details(recovery)).some((detail) => detail.startsWith("SCAN "))).toBe(false);
+    });
+  });
+});

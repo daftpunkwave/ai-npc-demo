@@ -74,6 +74,21 @@
 
 原文与脱敏副本分开，脱敏不能覆盖原文或冒充精确重放输入。原文不可用时，明确相应重放模式不可用。实验档案按 run 独立归档；删除、保留期限与授权撤销由档案策略管理，不由 memory TTL 管理。
 
+### 3.3 归档规模与启动清理
+
+请求档案与响应档案各自独立落盘，同一次尝试共两个 artifact。多轮决策的后续请求随轮次增长：历史消息与工具结果都会重新出现在 `messages` 里，因此同一轮对话内的请求档案字节随轮次单调递增，不能按首个请求的体量估算总量。
+
+`pnpm measure:model-evidence` 用真实存储、预算、观测与共享模型池经确定性传输产出三轮尝试，输出每轮请求/响应字节、相邻轮次增量、按 artifact 类型汇总的落盘字节、span 属性字节，以及启动清理与尝试恢复的 `EXPLAIN QUERY PLAN`。该命令只在临时目录写入。
+
+宿主启动时的两处恢复都要走索引，不能随运行历史增长退化为全表扫描：
+
+| 查询 | 判据 |
+|---|---|
+| 关闭崩溃遗留的预算预留（`settled_at IS NULL`） | 命中 `budget_ledger_unsettled`；这是仅覆盖未结算行的部分索引，体积随崩溃窗口而非历史规模增长 |
+| 标记进程中断的模型尝试（`status = 'started'`） | 命中 `model_attempts_status` |
+
+尝试 span 的 `moduleId` 与 `moduleVersion` 取自模块定义，与 `agent.model-pool.shared` 声明同源；版本变更只改定义一处。
+
 ## 4. 服务端控制台的观测页
 
 观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。

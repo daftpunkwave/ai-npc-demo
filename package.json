@@ -21,7 +21,8 @@
         "test:e2e": "playwright test",
         "check:ports": "tsx scripts/check-ports.ts",
         "check": "pnpm typecheck && pnpm test && pnpm check:boundaries && pnpm check:catalog && pnpm check:assets && pnpm check:docs",
-        "check:assets": "tsx scripts/check-assets.ts"
+        "check:assets": "tsx scripts/check-assets.ts",
+        "measure:model-evidence": "tsx scripts/measure-model-evidence.ts"
     },
     "devDependencies": {
         "@ai-npc/app-server": "workspace:*",
