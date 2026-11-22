@@ -93,4 +93,4 @@
 4. **序章文档只定义切片内的规则。** 切片外系统的入口与接口以 [00-scope-and-invariants.md — 序章切片范围](00-scope-and-invariants.md#1-切片范围) 为准。
 5. **文档链接使用“原始文件名 — 中文名称”。** 未存在的目标文件、代码示例与无可访问地址的来源不伪造链接。
 6. **变更后运行 `pnpm check:docs`。** 它检查根 `README.md`、`AGENTS.md`、服务端 README 和 `docs/**/*.md` 的相对链接、标题锚点与 Markdown 表格列数。
-7. **交付进度集中维护。** 已交付范围与迁移缺口记录在 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。计划与导航引用该页。实施顺序和完成判据见 [build-plan.md — 构建计划](delivery/build-plan.md)。
+7. **交付进度集中维护。** 已交付范围与迁移缺口记录在 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。计划、导航与主题规格引用该页。接口条目可就地标注可用性。实施顺序和完成判据见 [build-plan.md — 构建计划](delivery/build-plan.md)。

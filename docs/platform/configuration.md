@@ -204,7 +204,7 @@ realms:
       - { capability: console.audit,           moduleId: console.audit.standard,           configRef: null }
 ```
 
-上面是最终形态；S09–S22 期间两份主装配按 [构建计划](../delivery/build-plan.md) 第 0.2 节逐步追加绑定。其他装配都是这份文件的完整副本，只改下列内容；`pnpm check:catalog` 会断言每个副本与标准装配的差异恰好就是这些行：
+下表给出其他目标装配相对首版标准装配的差异。模块替换验收要求目录检查核对相应装配只改表中的绑定。
 
 | 文件 | 与标准装配的差异 |
 |---|---|

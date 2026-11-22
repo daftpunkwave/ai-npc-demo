@@ -41,11 +41,11 @@ it("序章规格的上场身份和显示名对应正式运行名册", () => {
   validateRoster(roster, content);
   const expected = roster.agents.map(({ agentId, kind }) => {
     const characterName = content.index.characters.get(agentId)?.name;
-    const leaderName = content.index.factions.get(agentId)?.leaderName;
-    if (kind === "strategic" && characterName !== undefined) {
-      expect(characterName, `${agentId} 的角色名须与派系领袖名一致`).toBe(leaderName);
+    const faction = content.index.factions.get(agentId);
+    if (faction?.kind === "species") {
+      expect(characterName, `${agentId} 须在角色表中提供与派系领袖一致的显示名`).toBe(faction.leaderName);
     }
-    return [agentId, kind === "character" ? characterName : leaderName];
+    return [agentId, kind === "character" ? characterName : faction?.leaderName];
   });
 
   expect(documented).toHaveLength(expected.length);
