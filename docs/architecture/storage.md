@@ -220,19 +220,6 @@ CREATE TABLE consumer_inbox (
   PRIMARY KEY (branch_id, consumer_id, event_id)
 );
 
-CREATE TABLE conversation_lines (       -- read projection maintained by game.comms
-  branch_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
-  seq INTEGER NOT NULL,
-  dialogue_id TEXT NOT NULL,
-  speaker_id TEXT NOT NULL,
-  audience_json TEXT NOT NULL,
-  text TEXT NOT NULL,
-  world_tick INTEGER NOT NULL,
-  event_id TEXT NOT NULL,
-  PRIMARY KEY (branch_id, conversation_id, seq)
-);
-
 CREATE TABLE agent_activations (
   branch_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
@@ -595,7 +582,7 @@ CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHER
 // all branch-scoped tables, in this order
 const BRANCH_TABLES = [
   "clock", "aggregate_state", "domain_events", "command_receipts", "speech_commits", "jobs",
-  "consumer_offsets", "consumer_inbox", "conversation_lines", "agent_activations",
+  "consumer_offsets", "consumer_inbox", "agent_activations",
   "controller_leases", "observations", "perception_state", "memory_records",
   "memory_revisions", "memory_watermarks", "triggers", "operations",
 ] as const;
