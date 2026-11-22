@@ -14,12 +14,12 @@ tasks:
   escortSupporter: { agentId: npc-luchen, safetyBonus: 4 }
   # 追风：护送与侦察向导对任何队伍同效，不限定本派。
   universalGuide: { agentId: species-fauna, travelDiscountPerRoad: 1 }
-  # 洛：非豁免队伍的修复额外 +15，按任务类型固定，不限定本派。
+  # 洛：修复额外 +15，对任何队伍同效；excludedTeamIds 声明不参与该加成的豁免队伍。
   universalRepairer:
     { agentId: species-extraterrestrial, stabilityBonus: 15, excludedTeamIds: [team-star] }
   # 修复任务的工作节点；库存点必须在该节点或队伍出发节点。
   repairWorkNodeId: grayharbor
-  # 只需能源的修复队伍；豁免洛的额外加成，也豁免供给库存点要求。
+  # 只需能源的修复队伍：豁免供给库存点要求，并取 energyOnly 的基础稳定度。
   energyOnlyRepairTeamIds: [team-star]
   # 修复完成的基础稳定度：普通队伍 25，仅能源队伍 40。
   repairBaseStability: { standard: 25, energyOnly: 40 }

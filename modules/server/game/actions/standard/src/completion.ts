@@ -179,7 +179,7 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     ports["game.world"].changeMeter("migration.safety", 10, "task");
   } else if (task.taskType === "repair") {
     // 材料已在完成 job 开头结算（失败会回滚整个 job），这里只应用完成效果。
-    // 基础值与随队加成全部来自内容规则参数；仅能源队伍按规则豁免通用修复者的额外加成。
+    // 基础值与随队加成全部来自内容规则参数；通用修复者的豁免队伍由其 excludedTeamIds 声明。
     const delta =
       repairBaseStability(content, task.teamId) +
       repairStabilityBonus(content, ownerFactionId, task.participants) +

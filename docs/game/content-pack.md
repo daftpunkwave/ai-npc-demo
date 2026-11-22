@@ -466,9 +466,9 @@ tasks:
   escortSupporter: { agentId: npc-luchen, safetyBonus: 4 }             # 迁徙道路护送 +4 的本派治安支持者
   universalGuide: { agentId: species-fauna, travelDiscountPerRoad: 1 } # 追风：护送/侦察向导对任何队伍同效
   universalRepairer:
-    { agentId: species-extraterrestrial, stabilityBonus: 15, excludedTeamIds: [team-star] } # 洛：非豁免队伍修复额外 +15
+    { agentId: species-extraterrestrial, stabilityBonus: 15, excludedTeamIds: [team-star] } # 洛：修复额外 +15；excludedTeamIds 为豁免队伍
   repairWorkNodeId: grayharbor               # 修复任务的工作节点；库存点必须在该节点或队伍出发节点
-  energyOnlyRepairTeamIds: [team-star]       # 只需能源的修复队伍；豁免洛的加成与供给库存点要求
+  energyOnlyRepairTeamIds: [team-star]       # 只需能源的修复队伍：豁免供给库存点要求并取 energyOnly 基础值
   repairBaseStability: { standard: 25, energyOnly: 40 }
 settlement:
   dailySupplyStockpileId: sp-commons

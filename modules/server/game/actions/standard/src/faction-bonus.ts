@@ -75,14 +75,14 @@ export function repairBaseStability(content: GameContent, teamId: string): numbe
   return isEnergyOnlyRepairTeam(content, teamId) ? base.energyOnly : base.standard;
 }
 
-/** 修复稳定度的通用修复者加成：对任何队伍同效，但仅能源修复队伍按规则豁免。 */
+/** 修复稳定度的通用修复者加成：对任何队伍同效，但通用修复者自己声明的豁免队伍除外。 */
 export function universalRepairStabilityBonus(
   content: GameContent,
   participants: readonly string[],
   teamId: string,
 ): number {
   const repairer = content.rules.tasks.universalRepairer;
-  if (isEnergyOnlyRepairTeam(content, teamId) || !hasUniversalParticipant(content, participants, repairer.agentId)) {
+  if (repairer.excludedTeamIds.includes(teamId) || !hasUniversalParticipant(content, participants, repairer.agentId)) {
     return 0;
   }
   return repairer.stabilityBonus;
