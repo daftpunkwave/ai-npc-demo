@@ -358,4 +358,6 @@ willingness(kind, requester) = 1
 
 一个 turn 并入多个 trigger 时，按创建顺序逐个处理：`task-invite` 与 `agreement-proposal` 各自执行自己的命令；对白意图取优先级最高的 trigger 的结果（同优先级取最晚的那个）。
 
+#### 违约后的立场与理由
+
 用 [内容包](../game/content-pack.md) 第 11 节的 `s-promise` 推算（tick 2 协议生效，break 分支 tick 37 违约）：tick 60 时岑雁对玩家的 trust ≈ 1×0.5^(58/120) − 8×0.5^(23/480) ≈ −7.0。M1、M3 的 willingness ≈ 1 + 1 − 1.76 + jitter ∈ [−0.01, 0.50]，必然 decline，理由 `past-breach`；M0、M2 没有关系摘要，willingness = 2 + jitter ∈ [1.75, 2.25]，必然 accept。keep 分支在 tick 14–16 履约，trust 约 +8.6（取 8），四组都 accept。这就是 [构建计划](../delivery/build-plan.md) S21 断言的依据。

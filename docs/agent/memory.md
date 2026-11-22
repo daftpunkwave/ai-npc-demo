@@ -1,6 +1,6 @@
 # 记忆模块详细设计
 
-> 状态：部分实现。M0 与 M1 可作为 agent 级模块在独立测试装配中运行，MemoryPort 宿主负责观察摄入、不可变 revision、水位、整理租约、CAS/rebase 与承诺唤醒；主装配、M2/M3 及完整 turn 消费仍待接入。记忆策略用于验证经历怎样改变 NPC 的后续选择。通用模块/插件协议见 [插件机制](../architecture/plugins.md)，实验口径见 [评估](../platform/evaluation.md)。
+> 记忆策略用于验证经历怎样改变 NPC 的后续选择。MemoryPort 宿主负责观察摄入、不可变 revision、水位、整理租约、CAS/rebase 与承诺唤醒。交付进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。通用模块/插件协议见 [插件机制](../architecture/plugins.md)，实验口径见 [评估](../platform/evaluation.md)。
 
 ## 1. 职责与不变量
 

@@ -1,6 +1,6 @@
 # 积木组合与配置生效
 
-> 状态：部分实现。`server` 已实现装配解析、模块配置校验与在线 RunSpec、manifest 的冻结。浏览器装配握手可返回空模块集，`client`、`console` 的浏览器端装配，以及 Agent 策略、模型与工具的运行期绑定为目标。本文规定组合语义。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[configuration.md — 配置格式](../platform/configuration.md#10-完整配置文件首版)。
+> 本文规定装配、profile、冻结清单与运行期绑定的语义。交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[configuration.md — 配置格式](../platform/configuration.md#10-完整配置文件首版)。
 
 ## 1. 五类对象分开
 

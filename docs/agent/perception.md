@@ -1,6 +1,6 @@
 # 世界感知模块详细设计
 
-> 状态：目标。perception 决定角色在何时、通过何种渠道获得哪些观察。
+> perception 决定角色在何时、通过何种渠道获得哪些观察。交付进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。
 
 ## 1. 职责与输入边界
 

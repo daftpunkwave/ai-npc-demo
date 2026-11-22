@@ -15,7 +15,7 @@
 |---|---|
 | [design/README.md — 完整游戏设计（权威）](design/README.md) | 世界、玩法、数值、派系、角色、多人、资产的目标设计 |
 | [00-scope-and-invariants.md — 序章切片范围与不变量](00-scope-and-invariants.md) | 范围、15 个上场身份、6 种资源边界、验收与术语 |
-| [IMPLEMENTATION-STATUS.md — 实现状态](IMPLEMENTATION-STATUS.md) | 当前代码/内容与规格的差距；迁移清单，不是第二套规则 |
+| [IMPLEMENTATION-STATUS.md — 实现状态](IMPLEMENTATION-STATUS.md) | 已交付能力与代码、内容的迁移缺口 |
 | [design/STRUCTURE.md — 设计目录与维护规则](design/STRUCTURE.md) | 三层结构、目录映射、不实现清单与维护规则 |
 | [AGENTS.md — 开发规范](../AGENTS.md) | 工程约束、验证要求与 Git 工作流 |
 
@@ -80,6 +80,7 @@
 | realm/kind 依赖白名单、技术栈与源码 header | [tech-stack.md](delivery/tech-stack.md) |
 | 共享 Agent 工作流、Git 授权与本地补充边界 | [AGENTS.md](../AGENTS.md) |
 | 实施顺序与完成判据 | [build-plan.md](delivery/build-plan.md) |
+| 已交付能力与迁移缺口 | [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) |
 | 切片验收（Demo） | [roadmap-and-acceptance.md](delivery/roadmap-and-acceptance.md)；整局验收见 [design/gameplay/05](design/gameplay/05-chapter.md) 与 [design/gameplay/16](design/gameplay/16-campaign-arc.md) |
 | 参考依据、借鉴边界与设计取舍 | [references/README.md — 来源与设计决策](references/README.md) |
 | 序章模块映射与可替换边界 | [game/systems.md — 职能边界](game/systems.md) |
@@ -92,4 +93,4 @@
 4. **序章文档只定义切片内的规则。** 切片外系统的入口与接口以 [00-scope-and-invariants.md — 序章切片范围](00-scope-and-invariants.md#1-切片范围) 为准。
 5. **文档链接使用“原始文件名 — 中文名称”。** 未存在的目标文件、代码示例与无可访问地址的来源不伪造链接。
 6. **变更后运行 `pnpm check:docs`。** 它检查根 `README.md`、`AGENTS.md`、服务端 README 和 `docs/**/*.md` 的相对链接、标题锚点与 Markdown 表格列数。
-7. 工程文档标注交付状态时沿用 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览) 的“已实现”“部分实现”“目标”。部分实现需写清已交付范围，具体迁移项见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。
+7. **交付进度集中维护。** 已交付范围与迁移缺口记录在 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](IMPLEMENTATION-STATUS.md)。计划与导航引用该页。实施顺序和完成判据见 [build-plan.md — 构建计划](delivery/build-plan.md)。
