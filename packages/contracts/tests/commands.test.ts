@@ -8,15 +8,19 @@ import {
   agreementProposePayloadSchema,
   agreementRespondPayloadSchema,
   cardEffectSchema,
+  commandPayloadOf,
   commandPayloadSchemas,
   commandRequestSchema,
   commandTypeSchema,
   commandTypes,
   dialogueSayPayloadSchema,
+  DomainError,
   informationSharePayloadSchema,
   overrideEffectSchema,
   policySetPayloadSchema,
   probeAskPayloadSchema,
+  roadIdFromPolicyKey,
+  roadStatusPolicyKey,
   scenarioCompensatePayloadSchema,
   scenarioDraftPayloadSchema,
   scenarioOverridePayloadSchema,
@@ -328,5 +332,55 @@ describe("剧情卡效果", () => {
     }
     expectInvalid(overrideEffectSchema, { kind: "meter-set", meter: "watergate.allocation", value: 45 });
     expectInvalid(overrideEffectSchema, { kind: "road-status-set", roadId: "r-gh-ps", status: "blocked" });
+  });
+});
+
+describe("道路政策键", () => {
+  it("构造与解析互逆，且与 PolicyChanged/policy.set 使用同一格式", () => {
+    const key = roadStatusPolicyKey("r-gh-ps");
+    expect(key).toBe("road.status:r-gh-ps");
+    expect(roadIdFromPolicyKey(key)).toBe("r-gh-ps");
+    expectValid(policySetPayloadSchema, { key, value: "closed" });
+  });
+
+  it("非道路政策键解析为 null", () => {
+    expect(roadIdFromPolicyKey("watergate.allocation")).toBeNull();
+    expect(roadIdFromPolicyKey("road.status:")).toBe("");
+    expect(roadIdFromPolicyKey("road")).toBeNull();
+  });
+});
+
+describe("commandPayloadOf", () => {
+  it("按命令类型复验并收窄 payload", () => {
+    const payload = commandPayloadOf("task.cancel", { taskId: "task-000000000001" });
+    expect(payload.taskId).toBe("task-000000000001");
+
+    const dispatch = commandPayloadOf("task.dispatch", {
+      taskType: "scout",
+      teamId: "team-000000000001",
+      params: { nodeId: "grayharbor" },
+    });
+    expect(dispatch.taskType).toBe("scout");
+    expect(dispatch.params).toEqual({ nodeId: "grayharbor" });
+  });
+
+  it("拒绝不符合契约的 payload 并给出路径详情", () => {
+    expect(() => commandPayloadOf("task.cancel", {})).toThrow(DomainError);
+    try {
+      commandPayloadOf("task.cancel", { taskId: 123 });
+    } catch (error) {
+      expect(error).toBeInstanceOf(DomainError);
+      const domainError = error as DomainError;
+      expect(domainError.code).toBe("invalid-state");
+      expect(JSON.stringify(domainError.details)).toContain("taskId");
+      return;
+    }
+    throw new Error("非法 payload 没有被拒绝");
+  });
+
+  it("接受委托类型的全部命令目录键", () => {
+    for (const type of commandTypes) {
+      expect(() => commandPayloadOf(type, { __unexpected: true })).toThrow(DomainError);
+    }
   });
 });

@@ -1090,3 +1090,71 @@ function dataObject(value: Json): Readonly<Record<string, Json>> {
     ? value
     : {};
 }
+
+describe("road policy hostile relation", () => {
+  it("treats a closed road policy change as hostile toward the road counterpart", () => {
+    const memory = port();
+    const event = observation({
+      id: "obs-000000000301",
+      seq: 1,
+      tick: 40,
+      eventType: "PolicyChanged",
+      subjectIds: ["human-earth-alliance"],
+      facts: { key: "road.status:r-gh-ps", newValue: "closed" },
+    });
+    const plan = memory.prepareIngest({
+      scope,
+      baseRevision: 0,
+      observations: [event],
+      worldTick: 40,
+    }, view());
+    const hostile = plan.inserts.filter(
+      (row) => row.kind === "relation" && dataObject(row.content.data)["cause"] === "hostile-policy",
+    );
+    expect(hostile.length).toBeGreaterThan(0);
+    expect(hostile.every((row) => dataObject(row.content.data)["dimension"] === "wariness")).toBe(true);
+  });
+
+  it("treats restricted road policy without passage as hostile, and neutral changes as non-hostile", () => {
+    const memory = port();
+    const restricted = observation({
+      id: "obs-000000000302",
+      seq: 1,
+      tick: 41,
+      eventType: "PolicyChanged",
+      subjectIds: ["human-earth-alliance"],
+      facts: { key: "road.status:r-gh-ps", newValue: "restricted" },
+    });
+    const restrictedPlan = memory.prepareIngest({
+      scope,
+      baseRevision: 0,
+      observations: [restricted],
+      worldTick: 41,
+    }, view());
+    expect(
+      restrictedPlan.inserts.some(
+        (row) => row.kind === "relation" && dataObject(row.content.data)["cause"] === "hostile-policy",
+      ),
+    ).toBe(true);
+
+    const neutral = observation({
+      id: "obs-000000000303",
+      seq: 2,
+      tick: 42,
+      eventType: "PolicyChanged",
+      subjectIds: ["human-earth-alliance"],
+      facts: { key: "watergate.allocation", newValue: "rotation" },
+    });
+    const neutralPlan = memory.prepareIngest({
+      scope,
+      baseRevision: 0,
+      observations: [neutral],
+      worldTick: 42,
+    }, view());
+    expect(
+      neutralPlan.inserts.some(
+        (row) => row.kind === "relation" && dataObject(row.content.data)["cause"] === "hostile-policy",
+      ),
+    ).toBe(false);
+  });
+});
