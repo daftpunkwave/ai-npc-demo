@@ -18,6 +18,7 @@ import type {
   GameResourcesPort,
   GameWorldPort,
 } from "@ai-npc/module-sdk";
+import { campaignViewOf } from "./projection/campaign";
 import { metersView } from "./projection/meters";
 import { stockpileViews } from "./projection/resources";
 import { characterViews, teamViews } from "./projection/world-views";
@@ -30,6 +31,8 @@ import {
   notebookEntries,
 } from "./projection/comms";
 import { notificationViews } from "./projection/notifications";
+
+export { campaignViewOf } from "./projection/campaign";
 
 /** 投影输入：world/map 必填，其余游戏端口可选。 */
 export interface PlayerProjectionInput {
@@ -96,17 +99,7 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
   const inbox = inboxItems(input.comms, playerPrincipalId);
   const notebook = notebookEntries(content, input.comms, playerPrincipalId);
   return playerProjectionSchema.parse({
-    campaign: campaign === null
-      ? null
-      : {
-          campaignId: campaign.campaignId,
-          factionId: campaign.factionId,
-          factionName: content.factions.get(campaign.factionId)?.name ?? campaign.factionId,
-          commission: content.starts.get(campaign.factionId)?.commission ?? "第 7 日",
-          status: campaign.status,
-          outcome: campaign.outcome,
-          startTick: campaign.startTick,
-        },
+    campaign: campaign === null ? null : campaignViewOf(campaign, content),
     clock,
     map: { nodes: nodeViews, roads: roadViews },
     meters: meterView,

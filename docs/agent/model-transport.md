@@ -1,6 +1,6 @@
 # 模型传输：统一 ModelPort 与三个适配器
 
-> 状态：部分实现。当前装配支持本地夹具驱动的确定性模型传输。本文维护规范化线协议及三种传输方案的配置。参见 [model-pool.md — 模型池](model-pool.md)、[prompts.md — Prompt 与输出契约](prompts.md)。
+> 状态：已实现。当前装配支持 OpenAI 兼容、Anthropic 与本地夹具驱动的确定性模型传输；真实供应商连通性按部署凭据单独验证。本文维护规范化线协议及三种传输方案的配置。参见 [model-pool.md — 模型池](model-pool.md)、[prompts.md — Prompt 与输出契约](prompts.md)。
 
 ## 1. 分层
 
@@ -43,7 +43,7 @@ interface NormalizedToolCall {
 type NormalizedMessage =
   | { readonly role: "user"; readonly content: string }
   | { readonly role: "assistant"; readonly content: string | null; readonly toolCalls: readonly NormalizedToolCall[];
-      readonly providerReplay: Json | null }   // opaque provider-native content, replayed verbatim by the same adapter
+      readonly providerReplay: Json | null }   // provider-native content, replayed only by the same adapter under its history rules
   | { readonly role: "tool"; readonly toolCallId: string; readonly content: string; readonly isError: boolean };
 
 interface ModelRequest {
@@ -276,7 +276,7 @@ const response = parameters.serverSideFallback === "off"
 | 规范化消息 | Anthropic 消息 |
 |---|---|
 | user | `{ role: "user", content: <text> }` |
-| assistant，带 `providerReplay`（来自本适配器的上一轮响应） | `{ role: "assistant", content: <providerReplay> }`，原样回放，包含其中的 thinking 块 |
+| assistant，带 `providerReplay`（来自本适配器的上一轮响应） | `{ role: "assistant", content: <providerReplay> }`。没有服务端 fallback 时原样回放，包含 thinking 块；有 fallback 时保留 `text` 与 `fallback` 边界，丢弃最终边界前的 `thinking`/`redacted_thinking`/客户端 `tool_use`，并保留最终边界后的全部块 |
 | assistant，不带 `providerReplay` | `{ role: "assistant", content: [{type:"text",text}] + [{type:"tool_use", id, name, input: arguments}] }`，文本为空时省略 text 块 |
 | 连续的多条 tool 消息 | 合并成**一条** user 消息：`{ role: "user", content: [{ type: "tool_result", tool_use_id, content, is_error }, ...] }` |
 

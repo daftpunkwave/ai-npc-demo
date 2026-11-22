@@ -331,6 +331,55 @@ describe("SQLite 存档", () => {
     expect(persistenceOf(value)).toEqual(before);
   });
 
+  it("事件前沿按分支索引读取：无事件分支记 0，非法序号在创建快照时被拒绝", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 3, mode: "paused" });
+    const save = new SqliteSaveService(value.storage, value.host);
+
+    // 复制主分支为一条没有任何事件的分支，连同时钟一起复制：事件前沿 MAX 为空时按 0 处理，快照仍可创建。
+    value.storage.transact((tx) => {
+      const branch = tx.rows("branches").get({ branch_id: value.branchId });
+      const clock = tx.branch(value.branchId).table("clock").get({});
+      if (branch === null || clock === null) {
+        throw new Error("缺少测试分支或时钟");
+      }
+      tx.rows("branches").put({ ...branch, branch_id: "brn-no-events" });
+      // 时钟行携带源 branch_id：剥掉后由新分支 scope 注入自己的分支列。
+      const { branch_id: _sourceBranch, ...clockFields } = clock;
+      void _sourceBranch;
+      tx.branch("brn-no-events").table("clock").put({ ...clockFields, world_tick: 2 });
+    });
+    const emptySnapshot = save.createSnapshot({ sourceBranchId: "brn-no-events", label: "空分支", createdBy: "operator-1" });
+    expect(emptySnapshot.worldSeq).toBe(0);
+
+    // 非法事件序号的两层防御：非整数由存储层读取时拒绝；负整数到达服务层前沿校验后拒绝。
+    value.storage.transact((tx) => {
+      tx.run(
+        `INSERT INTO domain_events (branch_id, world_seq, event_id, world_tick, type, schema_version, principal_id,
+                                    causation_ids_json, correlation_id, audience_json, payload_json, committed_at)
+         SELECT 'brn-no-events', 1.5, event_id, world_tick, type, schema_version, principal_id,
+                causation_ids_json, correlation_id, audience_json, payload_json, committed_at
+           FROM domain_events WHERE branch_id = ? LIMIT 1`,
+        [value.branchId],
+      );
+    });
+    const nonIntegerError = expectDomainError(
+      () => save.createSnapshot({ sourceBranchId: "brn-no-events", label: "非整数序号", createdBy: "operator-1" }),
+      "invalid-state",
+    );
+    expect(nonIntegerError.safeMessage).toContain("超出安全范围");
+
+    value.storage.transact((tx) => {
+      tx.run("UPDATE domain_events SET world_seq = -1 WHERE branch_id = 'brn-no-events'");
+    });
+    const negativeError = expectDomainError(
+      () => save.createSnapshot({ sourceBranchId: "brn-no-events", label: "负序号", createdBy: "operator-1" }),
+      "invalid-state",
+    );
+    expect(negativeError.safeMessage).toContain("事件前沿");
+  });
+
   it("事务内创建快照随调用方回滚，不留下冻结分支或快照行", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");

@@ -189,6 +189,8 @@ export function estimateTokens(text: string): number {
 | `toolLoopReserveTokens`（给工具循环留的空间） | 1600 | — |
 | `segmentBudgets` | world 800、task 500、memory 1000、history 800 | facts 800、history 400 |
 
+选用模型决策的 run 在启动预检时要求 `decision` 与 `speech` 两个子块齐全；缺失任一子块以 `assembly-incompatible` 拒绝启动，诊断包含 profile 与用途。确定性决策跳过上下文构建，不消费这两个子块，空配置可以省略它们。
+
 有效上限 `L = min(maxInputTokens, 模型窗口 − reservedOutputTokens − safetyTokens)`；decision 首轮请求的目标上限为 `L − toolLoopReserveTokens`，speech 的目标上限为 `L`。若模型窗口不足以容纳 `reservedOutputTokens` 与 `safetyTokens`，`L` 为 0，表示没有可用输入预算，构建直接返回 `over-budget`，不把下限钳制成正数。组装顺序：
 
 1. 按段配额生成各段（每段内部超出配额时，按该段的裁剪规则先删到配额以内）。

@@ -16,7 +16,7 @@ import {
   type StorageTransaction,
 } from "@ai-npc/contracts";
 import type { HostServices } from "@ai-npc/contracts";
-import type { AggregateEntry, AggregateRecord, WorldTx } from "@ai-npc/module-sdk";
+import type { AggregateEntry, AggregateListOptions, AggregateRecord, WorldTx } from "@ai-npc/module-sdk";
 import { type ContributorScope } from "./types";
 import { isThenable, readJsonCell, requireStorageNumber, requireStorageString } from "./storage-values";
 
@@ -129,11 +129,18 @@ export class TransactionWorldTx implements WorldTx {
     };
   }
 
-  list<TState>(aggregateType: string): readonly AggregateEntry<TState>[] {
+  list<TState>(aggregateType: string, options?: AggregateListOptions): readonly AggregateEntry<TState>[] {
     this.assertOwned(aggregateType);
+    // 条件查询下推为存储层索引范围查询；不带选项时保持全类型按 ID 升序的既有行为。
     const rows = this.aggregateTable.list(
       { aggregate_type: aggregateType },
-      { orderBy: [{ column: "aggregate_id" }] },
+      {
+        prefix: options?.idPrefix === undefined ? undefined : { column: "aggregate_id", value: options.idPrefix },
+        before: options?.idBefore === undefined ? undefined : { column: "aggregate_id", value: options.idBefore },
+        orderBy: [{ column: "aggregate_id", direction: options?.descending === true ? "desc" : "asc" }],
+        limit: options?.limit,
+        offset: options?.offset,
+      },
     );
     return rows.map((row) => ({
       id: requireStorageString(row, "aggregate_state", "aggregate_id"),

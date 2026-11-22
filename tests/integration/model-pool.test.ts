@@ -1,5 +1,5 @@
 /**
- * 验证模型池共享限额、重试退避及持久预算的尝试级语义。
+ * 验证模型池共享限额、重试退避、持久预算与凭据脱敏证据的尝试级原子语义。
  * 使用真实 SQLite、预算和模型池 provider，时间与单次传输由测试注入。
  * 禁止联网、等待真实退避或跟其他运行共享数据库。
  */
@@ -11,6 +11,7 @@ import { serverModuleDefinitions } from "@ai-npc/app-server";
 import { estimateModelInputTokens, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
 import type { AgentModelPoolPort, ModelCallInput, ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
+import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
 const capabilities = {
   toolCalling: true, strictTools: true, structuredOutput: "json_schema", assistantReplay: "verbatim",
@@ -44,7 +45,11 @@ function work(overrides: Partial<ModelWorkScope> = {}): ModelWorkScope {
   };
 }
 
-async function poolHarness(complete: ModelTransportPort["complete"], credential: string | null = null) {
+async function poolHarness(
+  complete: ModelTransportPort["complete"],
+  credential: string | null = null,
+  wrapStorage: (storage: StoragePort) => StoragePort = (storage) => storage,
+) {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-model-pool-"));
   const timers = new Set<{ at: number; resolve: () => void }>();
   const retryWaits: number[] = [];
@@ -79,7 +84,7 @@ async function poolHarness(complete: ModelTransportPort["complete"], credential:
   const storage = storageInstance.port as StoragePort;
   const budget = await create("platform.budget.standard", { "platform.storage": storage });
   const pool = await create("agent.model-pool.shared", {
-    "platform.storage": storage,
+    "platform.storage": wrapStorage(storage),
     "platform.budget": budget.port,
     "platform.secrets": { resolve: () => credential },
     "platform.observability": { recordSpan: vi.fn() },
@@ -153,6 +158,31 @@ describe("共享模型池与预算", () => {
         expect(text).toContain("[REDACTED]");
         expect(text).not.toContain(credential);
       }
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("脱敏审计与 attempt 终态同事务：审计写入失败时终态一并回滚", async () => {
+    const credential = "fixture-only-test-secret";
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue({
+      ...response, text: credential, wire: { requestBody: { value: credential }, responseBody: { value: credential } },
+    });
+    const harness = await poolHarness(
+      complete,
+      credential,
+      (storage) => storageFailingOnLifecycleAudit(storage, "注入审计写入失败"),
+    );
+    try {
+      const run = harness.pool.bindRun({ routes: [{ ...route, credentialRef: "SYNTHETIC_MODEL_KEY" }], limits });
+      await expect(run.call(work(), "decision", 100, request)).rejects.toMatchObject({ code: "provider-failed" });
+      const state = harness.storage.transact((tx) => ({
+        attempt: tx.rows("model_attempts").list({ work_ref: work().workRef })[0],
+        events: tx.rows("lifecycle_events").list({ type: "ModelCredentialRedacted" }),
+      }));
+      // 同一事务回滚：attempt 不落终态，也不留下脱敏事件半套记录。
+      expect(state.attempt).toMatchObject({ status: "started", is_effective: 0 });
+      expect(state.events).toHaveLength(0);
     } finally {
       await harness.dispose();
     }

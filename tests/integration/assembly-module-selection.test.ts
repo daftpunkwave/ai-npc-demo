@@ -1,6 +1,6 @@
 /**
  * 校验装配驱动的模块选择：kernel 解析计划、按计划实例化、公开端口绑定与有效配置。
- * 覆盖三种主装配的完整 server 模块集、测试装配只差装配 ID、模块启动顺序与规则贡献集合、
+ * 覆盖三种主装配的完整 server 模块集、标准与测试装配的传输差异、模块启动顺序与规则贡献集合、
  * 升级装配替换剧情贡献，以及资源阈值取自模块配置并影响库存等级。
  * 依赖真实模块定义与内容包、临时 SQLite 数据目录、最小假宿主与内存事务；
  * 不启动网络监听，也不经 startHost 组装宿主。
@@ -91,10 +91,12 @@ describe("装配驱动的模块选择与启动", () => {
       const assembly = loadAssembly(ref);
       const resolved = await resolveServerAssembly(assembly, serverModuleDefinitions);
       expect(resolved.plan.assemblyId).toBe(ref);
-      expect(resolved.plan.modules).toHaveLength(ref === "local-slg-escalating-v1" ? 16 : ref === "local-slg-test-v1" ? 21 : 18);
+      expect(resolved.plan.modules).toHaveLength(ref === "local-slg-escalating-v1" ? 16 : ref === "local-slg-test-v1" ? 21 : 22);
       if (ref !== "local-slg-escalating-v1") {
-        expect(resolved.plan.agentSlots.decision).toEqual(ref === "local-slg-test-v1"
-          ? ["agent.decision.deterministic", "agent.decision.model"] : ["agent.decision.deterministic"]);
+        expect(resolved.plan.agentSlots.decision).toEqual([
+          "agent.decision.deterministic",
+          "agent.decision.model",
+        ]);
         expect(resolved.modules.capabilities.map(({ capability }) => capability))
           .toEqual(expect.arrayContaining(["agent.scheduling", "agent.tools"]));
       }
@@ -103,7 +105,7 @@ describe("装配驱动的模块选择与启动", () => {
     }
   });
 
-  it("只在测试装配引入模型池及确定性传输", async () => {
+  it("标准装配使用真实传输，测试装配使用确定性传输", async () => {
     const standard = loadAssembly("local-slg-standard-v1");
     const test = loadAssembly("local-slg-test-v1");
     const standardPlan = (await resolveServerAssembly(standard, serverModuleDefinitions)).plan;
@@ -111,10 +113,17 @@ describe("装配驱动的模块选择与启动", () => {
     expect(test.assemblyId).toBe("local-slg-test-v1");
     const standardIds = new Set(standardPlan.modules.map(({ moduleId }) => moduleId));
     const testIds = new Set(testPlan.modules.map(({ moduleId }) => moduleId));
-    expect([...standardIds].every((id) => testIds.has(id))).toBe(true);
-    expect([...testIds].filter((id) => !standardIds.has(id)).sort()).toEqual([
-      "agent.model-pool.shared", "platform.budget.standard", "platform.model-transport.deterministic",
+    expect([...standardIds].filter((id) => !testIds.has(id)).sort()).toEqual([
+      "platform.model-transport.anthropic",
+      "platform.model-transport.openai-compatible",
     ]);
+    expect([...testIds].filter((id) => !standardIds.has(id)).sort()).toEqual([
+      "platform.model-transport.deterministic",
+    ]);
+    for (const id of ["agent.model-pool.shared", "platform.budget.standard"]) {
+      expect(standardIds.has(id)).toBe(true);
+      expect(testIds.has(id)).toBe(true);
+    }
   });
 
   it("按解析计划实例化模块并按依赖顺序注入公开端口与规则贡献", async () => {
@@ -139,7 +148,7 @@ describe("装配驱动的模块选择与启动", () => {
       expect(runtime.contributors.map((contributor) => contributor.moduleId)).toContain("game.scenario.watergate");
       const clockPlan = startup.plan.modules.find((module) => module.moduleId === "game.clock.controlled");
       expect(clockPlan?.config).toMatchObject({ secondsPerTick: 20 });
-      expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(18);
+      expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(22);
     } finally {
       await started.started.dispose();
       await started.storageStarted.dispose();

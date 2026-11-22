@@ -4,7 +4,7 @@
  * 禁止在 worker 失败后继续推进时钟、跳过断线宽限或在关闭时跳过资源释放。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { DomainError, canonicalJson, type Json, type StoragePort } from "@ai-npc/contracts";
+import { DomainError, type Json, type StoragePort } from "@ai-npc/contracts";
 import {
   clearRuleFailure,
   readRuleFailure,
@@ -12,7 +12,7 @@ import {
   writeRuleFailure,
   type Authority,
 } from "@ai-npc/authority";
-import type { ClockState } from "@ai-npc/module-sdk";
+import { insertLifecycleAuditEvent, type ClockState } from "@ai-npc/module-sdk";
 import type { HostServices } from "@ai-npc/contracts";
 import { advanceSteppingTick, advanceWorldTick, catchUpWorldTick } from "../tick";
 import { clockView } from "./clock-view";
@@ -66,17 +66,16 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
 
   /**
    * 记录运营性生命周期事件（自动暂停等）；与领域事件分离。
-   * 审计写入失败只记日志，不覆盖触发它的业务结果。
+   * 写入走统一审计契约；审计写入失败只记日志，不覆盖触发它的业务结果。
    */
   const recordLifecycleEvent = (type: string, subjectId: string, payload: Json): void => {
     try {
       storage.transact((tx) => {
         const branch = tx.rows("branches").get({ branch_id: active.branchId });
         const runId = branch !== null && typeof branch["run_id"] === "string" ? branch["run_id"] : null;
-        tx.run(
-          "INSERT INTO lifecycle_events (run_id, branch_id, type, subject_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [runId, active.branchId, type, subjectId, canonicalJson(payload), host.nowIso()],
-        );
+        insertLifecycleAuditEvent(tx, {
+          runId, branchId: active.branchId, type, subjectId, payload, createdAt: host.nowIso(),
+        });
       });
     } catch (error) {
       host.logger.error("生命周期审计写入失败", {

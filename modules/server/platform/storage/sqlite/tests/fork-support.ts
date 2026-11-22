@@ -17,7 +17,6 @@ export const TABLES_EXPECTED_EQUAL = [
   "jobs",
   "consumer_offsets",
   "consumer_inbox",
-  "conversation_lines",
   "observations",
   "perception_state",
   "memory_records",
@@ -124,16 +123,6 @@ export function seedSourceBranch(port: StoragePort): void {
       consumer_id: "projection",
       event_id: "evt-1",
       processed_at: NOW,
-    });
-    branch.table("conversation_lines").put({
-      conversation_id: "conv-1",
-      seq: 1,
-      dialogue_id: "dlg-1",
-      speaker_id: "agt-cenyan",
-      audience_json: [],
-      text: "水闸还撑得住。",
-      world_tick: 3,
-      event_id: "evt-3",
     });
     branch.table("agent_activations").put({ agent_id: "agt-cenyan", status: "active", updated_at: NOW });
     branch.table("controller_leases").put({

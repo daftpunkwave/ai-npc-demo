@@ -14,6 +14,7 @@ export { createScopedStateKey } from "./ports";
 export { isApprovedSpeechUsable } from "./speech-approval";
 export type {
   AggregateEntry,
+  AggregateListOptions,
   AggregateRecord,
   ApprovedSpeech,
   ApprovedSpeechReader,
@@ -36,4 +37,6 @@ export * from "./game-route";
 export * from "./contributor";
 export * from "./agent-ports";
 export * from "./model-ports";
+export * from "./model-transport";
 export * from "./artifact-store";
+export * from "./lifecycle-audit";

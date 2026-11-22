@@ -158,7 +158,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 ### S08 游戏模块（二）：通信、行动、协议、剧情、存档
 
 - **先读**：[规则](../game/rules.md) 第 2、6、7、9 节、[内容包](../game/content-pack.md) 第 7–9 节、[领域模型](../architecture/domain-model.md) 第 4–7 节、[运营](../platform/operations.md) 第 3、4、6 节。
-- **产出**：`game.comms.standard`（`dialogue.say`、`speech.commit`、`seat.say`、`information.share`、`probe.ask`、广播权限、送达延迟表、`conversation_lines` 投影；`campaign.start` 的后续钩子：开局消息与知识授权）、`game.actions.standard`（派遣的十步校验、邀请回复、取消、出发与完成 job、风险抽样与 `TaskDelayed`）、`game.agreements.standard`（提出即提出者已接受、回复、还价、过期、生效效果、履约/违约订阅）、`game.scenario.watergate` 与 `game.scenario.watergate-escalating`（`campaign.start` 后续钩子安排卡片 job、效果白名单、草稿/发布/撤回/补偿/覆盖命令；escalating 订阅 `DayPassed` 与 `TaskCompleted`）、`game.save.sqlite`（静默 → 分支复制 → 快照记录；恢复预检 → 复制 → 切换在线别名）。此时还没有 Agent，静默只需暂停时钟并排空 job。
+- **产出**：`game.comms.standard`（`dialogue.say`、`speech.commit`、`seat.say`、`information.share`、`probe.ask`、广播权限、送达延迟表；`campaign.start` 的后续钩子：开局消息与知识授权）、`game.actions.standard`（派遣的十步校验、邀请回复、取消、出发与完成 job、风险抽样与 `TaskDelayed`）、`game.agreements.standard`（提出即提出者已接受、回复、还价、过期、生效效果、履约/违约订阅）、`game.scenario.watergate` 与 `game.scenario.watergate-escalating`（`campaign.start` 后续钩子安排卡片 job、效果白名单、草稿/发布/撤回/补偿/覆盖命令；escalating 订阅 `DayPassed` 与 `TaskCompleted`）、`game.save.sqlite`（静默 → 分支复制 → 快照记录；恢复预检 → 复制 → 切换在线别名）。此时还没有 Agent，静默只需暂停时钟并排空 job。
 - **迁移**：见 [IMPLEMENTATION-STATUS.md — 玩家公开广播](../IMPLEMENTATION-STATUS.md#34-玩家公开广播)。
 - **测试**覆盖 [rules.md — 命令、通信、任务与协议](../game/rules.md#命令通信任务与协议) 的断言。协议八种条款各有一条履约与一条违约用例。验证公社玩家水闸条款生效和改策违约，并检查中继中断时的广播受众。两个剧情模块在同一脚本下的卡片触发 tick 与指标不同。`campaign.start` 之后开局消息、知识授权与剧情卡 job 齐全。快照后恢复，世界状态逐行相等且时钟为 paused。
 - **完成判据**：`pnpm check` 通过；`tests/scenarios/world-only.test.ts` 用纯命令脚本跑完 168 tick，得到确定的 `ChapterStageEvaluated`。
