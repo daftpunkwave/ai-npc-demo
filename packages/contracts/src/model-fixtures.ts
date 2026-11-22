@@ -41,6 +41,7 @@ export const modelFixtureSchema = z.object({
     agentId: z.string().min(1).optional(),
     round: z.number().int().positive().optional(),
     schemaName: z.string().min(1).optional(),
+    triggerPrincipalCount: z.number().int().nonnegative().optional(),
     inputIncludes: z.array(z.string().min(1)).optional(),
   }).strict(),
   response: z.union([fixtureResponse, fixtureFailure]),

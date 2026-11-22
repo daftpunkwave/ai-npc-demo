@@ -59,11 +59,11 @@ export async function startAgentRunModules(input: {
       const pool = running.find(({ moduleId }) => moduleId === planned.moduleId)?.port as AgentModelPoolPort | undefined;
       if (typeof pool?.bindRun !== "function") throw new Error("Model pool did not expose its port");
       model = pool.bindRun(configuration.models);
-      for (const agentId of configuration.modelAgents) {
-        const profile = configuration.profiles.get(agentId)!;
+      for (const [agentId, profile] of configuration.profiles) {
+        if (!configuration.modelAgents.has(agentId)) continue;
         const route = model.route(agentId, "decision");
         const modelWindowTokens = route.capabilities.contextWindowTokens;
-        const budget = modelContextBudget(profile, "decision", route);
+        const budget = modelContextBudget(profile, "decision");
         const { targetTokens } = resolveContextTokenLimits({ phase: "decision", budget, modelWindowTokens });
         const definitions = tools.bindingsFor(agentId).map(({ toolId, version }) => {
           const tool = tools.definition(toolId, version);
@@ -76,7 +76,7 @@ export async function startAgentRunModules(input: {
         }) + (budget.segmentBudgets["input"] ?? 400) + 4;
         const speechRoute = model.route(agentId, "speech");
         const speechLimits = resolveContextTokenLimits({
-          phase: "speech", budget: modelContextBudget(profile, "speech", speechRoute),
+          phase: "speech", budget: modelContextBudget(profile, "speech"),
           modelWindowTokens: speechRoute.capabilities.contextWindowTokens,
         });
         if (minimum > targetTokens || speechLimits.effectiveMaxTokens <= 0) {

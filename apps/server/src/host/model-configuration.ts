@@ -85,7 +85,7 @@ export async function resolveModelConfiguration(input: {
       Object.values(model.maxOutputTokensByPurpose).some((limit) => limit > model.capabilities.maxOutputTokens)) {
       fail(`模型 ${modelId} 的输出上限超过能力声明`);
     }
-    return [modelId, { ...model, externalModel: resolveModelEnv(model.externalModel, loadContext),
+    return [modelId, { ...model, connection, externalModel: resolveModelEnv(model.externalModel, loadContext),
       modelId, price: { ...price, currency: pricing.currency } }] as const;
   }));
   if (layout.evaluator !== undefined && !models.has(layout.evaluator.modelId)) fail("评估主体引用了未知模型");
@@ -94,7 +94,7 @@ export async function resolveModelConfiguration(input: {
   for (const mount of layout.mounts) {
     const model = models.get(mount.modelId);
     if (model === undefined) fail(`挂载引用了未知模型 ${mount.modelId}`);
-    const connection = connections.get(model.connectionId)!;
+    const { connection } = model;
     for (const agentId of mount.agentIds) {
       if (!knownAgentIds.has(agentId)) fail(`模型挂载引用了未知 Agent ${agentId}`);
       for (const purpose of mount.purposes) {
@@ -111,8 +111,8 @@ export async function resolveModelConfiguration(input: {
       }
     }
   }
-  for (const agentId of modelAgents) {
-    const profile = profiles.get(agentId)!;
+  for (const [agentId, profile] of profiles) {
+    if (!modelAgents.has(agentId)) continue;
     for (const purpose of ["decision", "speech"] as const) {
       const route = mounts.get(`${agentId}:${purpose}`);
       if (route === undefined) fail(`Agent ${agentId} 缺少必需的 ${purpose} 挂载`);

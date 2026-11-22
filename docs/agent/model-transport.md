@@ -335,7 +335,7 @@ fixture 文件每行一个 JSON：
  "response":{"finishReason":"tool_calls","toolCalls":[{"name":"decision_submit","arguments":{"stance":"decline","dialogueIntent":{"kind":"refuse","audience":["player-1"],"tone":"cold","reasonCode":"past-breach","subjectRef":null,"factRefs":[]},"noteworthy":[],"citedMemoryIds":[],"decisionNote":"fixture"}}]}}
 ```
 
-- `match` 的全部字段都满足才命中：`purpose` 相等；`agentId` 等于 `request.context.agentId`（可省略）；`round` 等于 `request.context.round`（可省略）；`schemaName` 等于 `request.output.schemaName`（可省略）；`inputIncludes` 中每个字符串都出现在 `system` 与全部消息拼接后的文本里（可省略）。
+- `match` 的全部字段都满足才命中。可选条件包括 `agentId`、`round`、`schemaName`、`triggerPrincipalCount` 及 `inputIncludes`。发言主体数为零的自主回合命中无对白夹具，文本条件在 `system` 与全部消息的拼接文本中匹配。
 - 响应可以是正常结果，也可以是故障注入：`{"error":{"kind":"timeout"}}`、`{"delayMs":5000, ...}`（先等待再返回，用于测试晚到结果被 fencing 拒绝）。
 - 响应可以设置 `"usage": null` 模拟供应商缺少用量。账本按本次预留结算并标记用量未知。
 - 没有命中时返回默认值：decision 返回一次 `decision_submit`，完整参数为 `{ stance: "none", dialogueIntent: { kind: "acknowledge", audience: request.context.triggerPrincipalIds, tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] }, noteworthy: [], citedMemoryIds: [], decisionNote: "" }`；默认 decision 仅适用于触发主体均为本次请求中合法 principal 且数量为 1–4 人的请求，否则须提供合法 fixture，不得靠截断受众伪装成功；speech（schemaName `speech`）返回 `{"utterance":"我知道了。","citedRefs":[]}`；schemaName `reflection` 返回 `{"reflections":[]}`；schemaName `daily-review` 返回 `{"beliefOps":[],"currentConcerns":null,"intents":[]}`；embedding 返回由文本 SHA-256 确定的 64 维向量。

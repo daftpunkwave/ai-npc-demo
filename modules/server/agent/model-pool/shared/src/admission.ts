@@ -42,7 +42,7 @@ export class ModelAdmission {
   private readonly queue = new Set<Waiting>();
   private readonly active = new Map<string, number>();
   private readonly accounts = new Map<string, Set<Debit>>();
-  private readonly lastAgent = new Map<Group, string>();
+  private readonly waitingAgents = new Map<Group, Set<string>>();
   private slot = 0;
   private alarm: AbortController | null = null;
 
@@ -54,9 +54,13 @@ export class ModelAdmission {
       const signal = request.scope.signal;
       const onAbort = () => this.pump();
       const removeListener = () => signal.removeEventListener("abort", onAbort);
+      const group = groupFor(request.route.purpose);
+      const agents = this.waitingAgents.get(group) ?? new Set<string>();
+      agents.add(request.scope.agentId);
+      this.waitingAgents.set(group, agents);
       this.queue.add({
         ...request,
-        group: groupFor(request.route.purpose),
+        group,
         resolve: (release) => { removeListener(); resolve(release); },
         reject: (error) => { removeListener(); reject(error); },
       });
@@ -78,14 +82,14 @@ export class ModelAdmission {
         if (!currentWork(item.scope)) throw new DomainError("cancelled", "模型调用的工作租约已失效");
         if (item.scope.deadlineMs <= now) throw backpressure();
       } catch (error) {
-        this.queue.delete(item);
+        this.remove(item, false);
         item.reject(error);
       }
     }
     while (this.queue.size > 0) {
       const item = this.next(now);
       if (item === undefined) break;
-      this.queue.delete(item);
+      this.remove(item, true);
       this.start(item, now);
     }
     if (this.queue.size === 0) return;
@@ -101,19 +105,37 @@ export class ModelAdmission {
       this.host.logger.error("模型队列等待失败", { error: error instanceof Error ? error.name : "unknown" });
       for (const item of this.queue) item.reject(backpressure());
       this.queue.clear();
+      this.waitingAgents.clear();
     });
   }
 
+  private remove(item: Waiting, admitted: boolean): void {
+    this.queue.delete(item);
+    const agents = this.waitingAgents.get(item.group);
+    if (agents === undefined) return;
+    const { agentId } = item.scope;
+    const stillWaiting = [...this.queue].some((entry) => entry.group === item.group && entry.scope.agentId === agentId);
+    if (!stillWaiting || admitted) agents.delete(agentId);
+    if (stillWaiting && admitted) agents.add(agentId);
+    if (agents.size === 0) this.waitingAgents.delete(item.group);
+  }
+
   private next(now: number): Waiting | undefined {
-    for (let offset = 0; offset < shares.length; offset += 1) {
-      const index = (this.slot + offset) % shares.length;
-      const group = shares[index]!;
-      const candidates = [...this.queue].filter((item) => item.group === group && this.fits(item, now));
-      const item = candidates.find(({ scope }) => scope.agentId !== this.lastAgent.get(group)) ?? candidates[0];
-      if (item === undefined) continue;
-      this.lastAgent.set(group, item.scope.agentId);
-      this.slot = (index + 1) % shares.length;
-      return item;
+    const groups = [...shares.slice(this.slot), ...shares.slice(0, this.slot)];
+    for (const [offset, group] of groups.entries()) {
+      const agents = this.waitingAgents.get(group);
+      if (agents === undefined) continue;
+      const candidates = new Map<string, Waiting>();
+      for (const item of this.queue) {
+        const { agentId } = item.scope;
+        if (item.group === group && !candidates.has(agentId) && this.fits(item, now)) candidates.set(agentId, item);
+      }
+      for (const agentId of agents) {
+        const item = candidates.get(agentId);
+        if (item === undefined) continue;
+        this.slot = (this.slot + offset + 1) % shares.length;
+        return item;
+      }
     }
     return undefined;
   }

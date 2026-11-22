@@ -33,13 +33,12 @@ function displayName(content: ContentPack, id: string): string {
 export function modelContextBudget(
   profile: ResolvedAgentProfile,
   purpose: "decision" | "speech",
-  route: Pick<ModelRoute, "maxOutputTokens">,
 ): ContextBuildRequest["budget"] {
   const settings = asRecord(profile.slots.context?.config);
   const budget = asRecord(settings[purpose]);
   return {
     maxInputTokens: Number(budget["maxInputTokens"]),
-    reservedOutputTokens: route.maxOutputTokens,
+    reservedOutputTokens: profile.budgets.reserveOutputTokens[purpose],
     safetyTokens: Number(budget["safetyTokens"]),
     toolLoopReserveTokens: purpose === "decision" ? Number(budget["toolLoopReserveTokens"]) : 0,
     segmentBudgets: Object.fromEntries(Object.entries(asRecord(budget["segmentBudgets"])).filter(
@@ -105,7 +104,7 @@ export function decisionContext(input: {
   });
   const affairs = frozen.world.taskInvitations.map(({ taskId, dispatcherId }) =>
     `- [${taskId}] ${displayName(content, dispatcherId)} 邀请你参与任务，待答复。`);
-  const budget = modelContextBudget(profile, "decision", route);
+  const budget = modelContextBudget(profile, "decision");
   const history = budget.historyTurns === 0 ? [] : frozen.observations.filter((observation) =>
     !frozen.triggerObservations.includes(observation)).flatMap((observation) => {
     const parsed = dialogueSubmittedPayloadSchema.safeParse(asRecord(observation.content)["facts"]);

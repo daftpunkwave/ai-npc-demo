@@ -50,7 +50,7 @@ async function modelHost(options: Partial<HostOptions> = {}) {
   return host;
 }
 
-function startConversation(host: RunningHost, text: string): string {
+function runCampaign(host: RunningHost, tick = 0): AuthContext {
   const auth: AuthContext = {
     principalId: "player-1", kind: "player", roles: ["player"], worldId: host.worldId,
     branchId: host.branchId, actingAsAgentId: null, controllerEpoch: null, turnId: null, turnLeaseEpoch: null,
@@ -62,8 +62,13 @@ function startConversation(host: RunningHost, text: string): string {
     const clock = tx.branch(host.branchId).table("clock");
     const row = clock.get({});
     if (row === null) throw new Error("Test clock not initialized");
-    clock.put({ ...row, mode: "running", run_version: Number(row["run_version"]) + 1 });
+    clock.put({ ...row, mode: "running", world_tick: tick, run_version: Number(row["run_version"]) + 1 });
   });
+  return auth;
+}
+
+function startConversation(host: RunningHost, text: string): string {
+  const auth = runCampaign(host);
   const message = host.authority.commands.execute(auth, gameCommandEnvelope("dialogue.say",
     { targetAgentId: target, text }, "cmd-000000000002"));
   expect(message).toMatchObject({ commandStatus: "accepted", acceptedEventIds: [expect.any(String)] });
@@ -121,6 +126,25 @@ function submitted(round: number, candidate: Json, delayMs = 0): Json {
 }
 
 describe("确定性模型装配与角色对白", () => {
+  it("完成没有发言主体的自主巡检，且不生成对白", async () => {
+    const host = await modelHost();
+    runCampaign(host, 8);
+    const turn = await vi.waitFor(() => {
+      const result = host.storage.transact((tx) => {
+        const source = tx.branch(host.branchId).table("triggers").list({ agent_id: target, kind: "patrol" })[0];
+        const turnId = source?.["consumed_by_turn_id"];
+        return typeof turnId === "string" ? tx.rows("turn_runs").get({ turn_id: turnId }) : null;
+      });
+      expect(result?.["ended_at"]).toEqual(expect.any(String));
+      return result;
+    }, { timeout: 8_000, interval: 20 });
+    expect(turn).toMatchObject({ status: "completed" });
+    expect(requests(host, String(turn?.["turn_id"]))).toEqual([
+      expect.objectContaining({ purpose: "decision", context: expect.objectContaining({ triggerPrincipalIds: [] }) }),
+    ]);
+    expect(replies(host)).toHaveLength(0);
+  });
+
   it("经真实模型池执行查询并原样回放，再通过独立 speech 提交回复", async () => {
     const host = await modelHost();
     const turn = await turnFor(host, startConversation(host, "我想请你护送一趟。"));

@@ -13,9 +13,11 @@ import {
   LoadingError,
   loadConfigDocument,
   loadContentPack,
+  loadModelFixtures,
   loadRoster,
   loadRunSpec,
   resolveConfigReference,
+  resolveModelEnv,
   runSpecSchema,
   validateRunSpec,
   type ConfigDraftReader,
@@ -80,6 +82,38 @@ function makeTempConfigDir(): string {
 }
 
 describe("配置加载", () => {
+  it("模型环境变量仅从注入环境的自有字段读取", () => {
+    const env = Object.assign(Object.create({ INHERITED_KEY: "outside-config" }) as Record<string, string>, {
+      _MODEL2: "fixture-model",
+    });
+    expect(resolveModelEnv("env:_MODEL2", { configDir, env })).toBe("fixture-model");
+    for (const ref of ["env:INHERITED_KEY", "env:2MODEL", "env:_MODEL2\n", "env:"]) {
+      expect(captureLoadingError(() => resolveModelEnv(ref, { configDir, env })).code).toBe("env");
+    }
+  });
+
+  it("模型夹具拒绝目录外引用、重复 ID、非法 JSON 和过大的文件", () => {
+    const repo = makeTempConfigDir();
+    try {
+      const context = { configDir: join(repo, "config") };
+      const directory = join(repo, "tests", "fixtures", "model");
+      mkdirSync(context.configDir);
+      mkdirSync(directory, { recursive: true });
+      const local = join(directory, "sample.jsonl");
+      const ref = "tests/fixtures/model/sample.jsonl";
+      const line = JSON.stringify({ id: "known", match: { purpose: "decision" }, response: { finishReason: "stop" } });
+      writeFileSync(local, `${line}\n${line}`, "utf8");
+      expect(() => loadModelFixtures(["tests/fixtures/model/../outside.jsonl"], context)).toThrow();
+      expect(captureLoadingError(() => loadModelFixtures([ref], context)).message).toContain("夹具 ID 重复");
+      writeFileSync(local, "{", "utf8");
+      expect(captureLoadingError(() => loadModelFixtures([ref], context)).message).toContain("夹具行不是合法 JSON");
+      writeFileSync(local, "x".repeat(1_048_577), "utf8");
+      expect(captureLoadingError(() => loadModelFixtures([ref], context)).message).toContain("不超过 1 MiB");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it("从仓库 config/ 加载 online-default 与 core-3", () => {
     const run = loadRunSpec("online-default", { configDir }, { seed: "online-seed-test" });
     expect(run.value.id).toBe("online-default");

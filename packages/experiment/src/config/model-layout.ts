@@ -9,7 +9,7 @@ import { z } from "zod";
 import { jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@ai-npc/contracts";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { parseYamlText } from "../loading/yaml";
-import { loadConfigDocument, resolveConfigReference, type ConfigLoadContext } from "./load-config";
+import { envReferenceName, loadConfigDocument, resolveConfigReference, type ConfigLoadContext } from "./load-config";
 import { configRefSchema } from "./schema";
 
 const positive = z.number().int().positive();
@@ -82,8 +82,9 @@ export function loadModelPricing(context: ConfigLoadContext) {
 
 export function resolveModelEnv(value: string, context: ConfigLoadContext): string {
   if (!value.startsWith("env:")) return value;
-  const key = value.slice(4);
-  const resolved = /^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) ? context.env?.[key] : undefined;
+  const key = envReferenceName(value);
+  const env = context.env ?? {};
+  const resolved = key !== null && Object.hasOwn(env, key) ? env[key] : undefined;
   if (!resolved?.trim()) {
     throw new LoadingError({ code: "env", source: "model-layout", message: "模型布局引用的环境变量无效或未设置" });
   }

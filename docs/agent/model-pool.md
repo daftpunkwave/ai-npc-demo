@@ -179,7 +179,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 
 1. 预检时把 `mounts` 展开成 `(agentId, purpose) → modelId` 的映射；任何键出现两次即拒绝，不按“后者覆盖”。
 2. 由 `modelId` 找到 model 与 connection，解析 `env:` 值（外部模型名、endpoint）与 `credentialRef`（密钥只交给适配器，不写进任何记录）。
-3. `maxOutputTokens` 取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值。它是发给供应商的硬上限。预算按 profile 的 `reserveOutputTokens` 预留，按实际用量结算。Anthropic 模型的思考也计入输出，具体上限见 [model-transport.md — Anthropic 配置](model-transport.md#41-配置)。
+3. 挂载用途的最大输出取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值。预检要求 profile 的 `reserveOutputTokens` 在该上限以内。实际请求以预留值限制输出并按实际用量结算。Anthropic 模型的思考也计入输出。参见 [model-transport.md — Anthropic 配置](model-transport.md#41-配置)。
 4. 生成去密钥的路由表（agentId、purpose、modelId、connectionId、adapterId、externalModel、参数 hash）写入 manifest。
 
 ### 12.3 排队、限流与重试

@@ -117,7 +117,7 @@ export class ModelTurn {
     const { pool, ports, profile, frozen } = this.options;
     const route = pool.route(frozen.scope.agentId, "speech");
     const { effectiveMaxTokens } = resolveContextTokenLimits({
-      phase: "speech", budget: modelContextBudget(profile, "speech", route),
+      phase: "speech", budget: modelContextBudget(profile, "speech"),
       modelWindowTokens: route.capabilities.contextWindowTokens,
     });
     return (request, round) => ports.decision.speak({

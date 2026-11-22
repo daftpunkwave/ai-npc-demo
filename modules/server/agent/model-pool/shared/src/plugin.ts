@@ -82,7 +82,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     if (!Number.isSafeInteger(reserveOutputTokens) || reserveOutputTokens < 1 || reserveOutputTokens > route.maxOutputTokens) {
       throw new DomainError("assembly-incompatible", "模型输出预留与挂载不兼容");
     }
-    if (estimated > requestInput.inputLimit || estimated + route.maxOutputTokens > route.capabilities.contextWindowTokens) {
+    if (estimated > requestInput.inputLimit || estimated + reserveOutputTokens > route.capabilities.contextWindowTokens) {
       throw new DomainError("budget-exhausted", "模型输入超过本轮窗口", { details: { kind: "over-budget" } });
     }
     if (requestInput.tools.length > 0 && (requestInput.output.kind !== "text" || !route.capabilities.toolCalling) ||
@@ -112,7 +112,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         request = modelRequestSchema.parse({
           llmCallId, attemptId, purpose: route.purpose, externalModel: route.externalModel,
           system: requestInput.system, messages: requestInput.messages, tools: requestInput.tools, output: requestInput.output,
-          parameters: route.parameters, maxOutputTokens: route.maxOutputTokens,
+          parameters: route.parameters, maxOutputTokens: reserveOutputTokens,
           timeoutMs: Math.floor(Math.min(route.requestTimeoutMs, scope.deadlineMs - startedAt)),
           context: {
             agentId: scope.agentId, evaluatorId: null, workRef: scope.workRef, round: requestInput.round,

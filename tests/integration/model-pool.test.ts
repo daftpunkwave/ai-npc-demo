@@ -44,7 +44,7 @@ function work(overrides: Partial<ModelWorkScope> = {}): ModelWorkScope {
   };
 }
 
-async function poolHarness(complete: ModelTransportPort["complete"]) {
+async function poolHarness(complete: ModelTransportPort["complete"], credential: string | null = null) {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-model-pool-"));
   const timers = new Set<{ at: number; resolve: () => void }>();
   const retryWaits: number[] = [];
@@ -81,7 +81,7 @@ async function poolHarness(complete: ModelTransportPort["complete"]) {
   const pool = await create("agent.model-pool.shared", {
     "platform.storage": storage,
     "platform.budget": budget.port,
-    "platform.secrets": { resolve: () => null },
+    "platform.secrets": { resolve: () => credential },
     "platform.observability": { recordSpan: vi.fn() },
     "platform.model-transport": [{ adapterId: route.adapterId, capabilities: () => capabilities, complete }],
   });
@@ -114,6 +114,50 @@ function networkError(kind: "network" | "server"): ModelTransportError {
 const limits = { maxTokens: null, maxCost: null };
 
 describe("共享模型池与预算", () => {
+  it("发送上限与预留一致，即使挂载允许更大的输出", async () => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const run = harness.pool.bindRun({ routes: [route], limits });
+      await run.call(work(), "decision", 30, request);
+      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(30);
+      const entries = harness.storage.transact((tx) => tx.rows("budget_ledger").list({ work_ref: work().workRef }));
+      expect(entries).toEqual([expect.objectContaining({ reserved_output: 30, actual_output: 30 })]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("阻断含凭据的响应并保存脱敏证据", async () => {
+    const credential = "fixture-only-test-secret";
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue({
+      ...response, text: credential, wire: { requestBody: { value: credential }, responseBody: { value: credential } },
+    });
+    const harness = await poolHarness(complete, credential);
+    try {
+      const run = harness.pool.bindRun({ routes: [{ ...route, credentialRef: "SYNTHETIC_MODEL_KEY" }], limits });
+      await expect(run.call(work(), "decision", 100, request)).rejects.toMatchObject({ code: "provider-failed" });
+      expect(complete.mock.calls[0]?.[1]).toBe(credential);
+      const evidence = harness.storage.transact((tx) => ({
+        attempt: tx.rows("model_attempts").list({ work_ref: work().workRef })[0],
+        artifacts: tx.rows("artifacts").list(),
+        events: tx.rows("lifecycle_events").list({ type: "ModelCredentialRedacted" }),
+      }));
+      expect(evidence.attempt).toMatchObject({ is_effective: 0, status: "failed" });
+      expect(evidence.events).toHaveLength(1);
+      expect(evidence.artifacts).toHaveLength(2);
+      for (const artifact of evidence.artifacts) {
+        const body = artifact["body"];
+        expect(body).toBeInstanceOf(Uint8Array);
+        const text = new TextDecoder().decode(body as Uint8Array);
+        expect(text).toContain("[REDACTED]");
+        expect(text).not.toContain(credential);
+      }
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("重试等待 1 秒、4 秒并为每次尝试按预留结算未知用量", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>()
       .mockRejectedValueOnce(networkError("network"))
@@ -155,6 +199,29 @@ describe("共享模型池与预算", () => {
       await waiting;
       expect(complete).toHaveBeenCalledTimes(2);
     } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("三个主体同时积压时各自轮流获得模型名额", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const held = new Promise<ModelResponse>((resolve) => { releaseFirst = () => resolve(response); });
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockReturnValueOnce(held).mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const first = "species-fauna";
+      const [a, b, c] = ["human-independent", "human-earth-alliance", "human-alien-accord"] as const;
+      const calls = [first, a, a, b, b, c];
+      const run = harness.pool.bindRun({ routes: [...new Set(calls)].map((agentId) => ({ ...route, agentId })), limits });
+      const pending = calls.map((agentId, index) => run.call(work({
+        agentId, workRef: `turn-${String(index + 1).padStart(12, "0")}`,
+      }), "decision", 100, request));
+      await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+      releaseFirst?.();
+      await Promise.all(pending);
+      expect(complete.mock.calls.map(([input]) => input.context.agentId)).toEqual([first, a, b, c, a, b]);
+    } finally {
+      releaseFirst?.();
       await harness.dispose();
     }
   });

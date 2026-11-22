@@ -28,6 +28,7 @@ function matches(match: ModelFixture["match"], request: ModelRequest, inputText:
     (match.agentId === undefined || match.agentId === request.context.agentId) &&
     (match.round === undefined || match.round === request.context.round) &&
     (match.schemaName === undefined || (request.output.kind === "json" && match.schemaName === request.output.schemaName)) &&
+    (match.triggerPrincipalCount === undefined || match.triggerPrincipalCount === request.context.triggerPrincipalIds.length) &&
     (match.inputIncludes?.every((part) => inputText.includes(part)) ?? true);
 }
 
