@@ -5,7 +5,7 @@
  */
 import {
   cleanJsonSchemaForModel, decisionSubmissionSchema, decisionSubmitWireSchema, dialogueSubmittedPayloadSchema,
-  type ContextArtifact, type ContextBuildRequest, type Json, type MemoryBundle, type NormalizedTool,
+  DomainError, type ContextArtifact, type ContextBuildRequest, type Json, type MemoryBundle, type NormalizedTool,
 } from "@ai-npc/contracts";
 import type { ContentPack, ResolvedAgentProfile } from "@ai-npc/experiment";
 import type { DecisionValidation, ModelRoute } from "@ai-npc/module-sdk";
@@ -30,12 +30,23 @@ function displayName(content: ContentPack, id: string): string {
     (id === content.index.playerPrincipalId ? content.locale.playerName : id);
 }
 
+/**
+ * 读取 profile 上下文配置中指定用途的预算块。
+ * decision 与 speech 预算块都是模型决策装配的必需项：缺失或非对象（含 null）
+ * 会让窗口上限经 Number(undefined) 变成 NaN，使启动预检与运行期预算比较全部
+ * 失真，因此统一按缺失配置拒绝；块内字段的有效性由模块配置 schema 保证。
+ */
 export function modelContextBudget(
   profile: ResolvedAgentProfile,
   purpose: "decision" | "speech",
 ): ContextBuildRequest["budget"] {
   const settings = asRecord(profile.slots.context?.config);
-  const budget = asRecord(settings[purpose]);
+  const block = settings[purpose];
+  if (typeof block !== "object" || block === null || Array.isArray(block)) {
+    throw new DomainError("assembly-incompatible",
+      `Agent profile「${profile.profileId}」的上下文配置缺少 ${purpose} 预算块，无法启用模型决策`);
+  }
+  const budget = asRecord(block);
   return {
     maxInputTokens: Number(budget["maxInputTokens"]),
     reservedOutputTokens: profile.budgets.reserveOutputTokens[purpose],
