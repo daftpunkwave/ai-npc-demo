@@ -1210,6 +1210,9 @@ importers:
       '@ai-npc/mod-platform-access-policy-roster':
         specifier: workspace:*
         version: link:../modules/server/platform/access-policy/roster
+      '@ai-npc/mod-platform-observability-sqlite':
+        specifier: workspace:*
+        version: link:../modules/server/platform/observability/sqlite
       '@ai-npc/mod-platform-operations-standard':
         specifier: workspace:*
         version: link:../modules/server/platform/operations/standard

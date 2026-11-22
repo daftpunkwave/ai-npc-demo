@@ -37,3 +37,4 @@ export * from "./contributor";
 export * from "./agent-ports";
 export * from "./model-ports";
 export * from "./artifact-store";
+export * from "./lifecycle-audit";
