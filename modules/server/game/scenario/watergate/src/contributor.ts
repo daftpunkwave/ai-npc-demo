@@ -4,7 +4,7 @@
  * 禁止调用角色模型、修改指标（覆盖除外）或重复触发同一卡片。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；卡片与指标键来自受限内容枚举。 */
-import type { CardEffect, EventEnvelope, Json, OverrideEffect } from "@ai-npc/contracts";
+import type { EventEnvelope, Json, OverrideEffect } from "@ai-npc/contracts";
 import { commandPayloadOf } from "@ai-npc/contracts";
 import {
   gameModuleIds,
