@@ -150,3 +150,22 @@ describe("可选 preview 字段", () => {
     expect(report.violations.map((violation) => violation.code)).toContain("preview-missing");
   });
 });
+
+describe("SVG 结构安全", () => {
+  it.each([
+    ["script 元素", "<script>alert(1)</script>", "script"],
+    ["事件处理器", '<circle onload="alert(1)"/>', "事件处理器"],
+    ["远端引用", '<image href="https://example.com/x.png"/>', "远端引用"],
+    ["CSS url()", '<rect style="fill:url(https://example.com/x.png)"/>', "CSS"],
+  ])("拒绝包含%s的资产", (_label, injection, expectedMessage) => {
+    const root = createFixture();
+    const svgPath = join(root, "assets/world/grayharbor-relay.svg");
+    const source = readFileSync(svgPath, "utf8");
+    writeFileSync(svgPath, source.replace("</svg>", `${injection}</svg>`), "utf8");
+    const report = checkAssets({ root });
+    const unsafe = report.violations.find((violation) => violation.code === "asset-unsafe");
+    expect(unsafe).toBeDefined();
+    expect(unsafe?.message).toContain(expectedMessage);
+    expect(unsafe?.message).toContain("assets/world/grayharbor-relay.svg");
+  });
+});
