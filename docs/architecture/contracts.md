@@ -41,7 +41,7 @@ interface EventEnvelope {
   readonly principalId: string;
   readonly causationIds: readonly string[];
   readonly correlationId: string;
-  readonly audience: readonly AudienceSpec[]; // domain-model §7
+  readonly audience: readonly AudienceSpec[]; // 见领域模型 §7
   readonly payload: Json;
 }
 
@@ -127,14 +127,14 @@ interface ResolvedModuleSet {
 
 type AgentSlot = "perception" | "memory" | "context" | "compression" | "toolView" | "decision";
 
-interface AssemblyDescriptor {           // file format: platform/configuration.md §10.1
+interface AssemblyDescriptor {           // 装配文件格式
   readonly schemaVersion: number;
   readonly assemblyId: string;
-  readonly configs: Readonly<Record<string, Json>>;          // named config blocks
+  readonly configs: Readonly<Record<string, Json>>;          // 命名配置块
   readonly realms: {
     readonly server: {
       readonly bindings: readonly CapabilityBinding[];
-      readonly agentSlots: Readonly<Record<AgentSlot, readonly string[]>>; // implementations profiles may pick
+      readonly agentSlots: Readonly<Record<AgentSlot, readonly string[]>>; // profile 可选择的实现
     };
     readonly client: { readonly bindings: readonly CapabilityBinding[] };
     readonly console: { readonly bindings: readonly CapabilityBinding[] };
@@ -144,8 +144,8 @@ interface AssemblyDescriptor {           // file format: platform/configuration.
 interface CapabilityBinding {
   readonly capability: CapabilityId;
   readonly moduleId: string;
-  readonly configRef: string | null;     // key in AssemblyDescriptor.configs
-  readonly fallbackModuleIds?: readonly string[]; // unused in the first version (strict, no fallback)
+  readonly configRef: string | null;     // AssemblyDescriptor.configs 中的键
+  readonly fallbackModuleIds?: readonly string[]; // 首版未使用（严格模式，无 fallback）
 }
 
 interface ModuleDefinition {
@@ -161,7 +161,7 @@ interface ModuleDefinition {
   readonly configSchema: StrictConfigSchema;
   readonly defaults?: Json;
   readonly stateSchemaVersion: number | null;
-  readonly ownsAggregates?: readonly string[];   // game modules: aggregate types this module may write (domain-model §4)
+  readonly ownsAggregates?: readonly string[];   // 游戏模块可写的 aggregate 类型，权限见领域模型 §4
   readonly migrationPaths: readonly MigrationPath[];
   readonly contributions?: readonly ContributionRef[];
   readonly experimentAxes?: readonly ExperimentAxis[];
@@ -179,24 +179,24 @@ interface ModuleInstance {
 interface ModuleCreateInput {
   readonly moduleId: string;
   readonly realm: Realm;
-  readonly config: Json;                                   // validated against configSchema, defaults applied
+  readonly config: Json;                                   // 经 configSchema 校验并应用默认值
   readonly scope: { readonly worldId?: string; readonly branchId?: string; readonly agentId?: string; readonly sessionId?: string };
-  readonly ports: Readonly<Record<string, unknown>>;       // resolved `requires`, keyed by capability id, narrowed by the kind mapping
+  readonly ports: Readonly<Record<string, unknown>>;       // 已解析的 requires，按 capability ID 索引，并按 kind 映射收窄
   readonly host: HostServices;
   readonly signal: AbortSignal;
 }
 
-interface HostServices {                                   // the only way modules reach time, randomness, ids and I/O
+interface HostServices {                                   // 模块访问时间、随机数、ID 与 I/O 的唯一入口
   ids(prefix: string): string;
   nowIso(): string;
   monotonicMs(): number;
-  sleep(ms: number, signal?: AbortSignal): Promise<void>; // the only way a module waits (backoff, polling)
-  rng(...seedParts: string[]): () => number;               // rules.md §11
-  hash(value: Json): Promise<string>;                      // sha256 of canonical JSON
+  sleep(ms: number, signal?: AbortSignal): Promise<void>; // 模块等待的唯一入口（退避与轮询）
+  rng(...seedParts: string[]): () => number;               // 见规则 §11
+  hash(value: Json): Promise<string>;                      // 规范 JSON 的 SHA-256
   logger: { info(msg: string, data?: Json): void; warn(msg: string, data?: Json): void; error(msg: string, data?: Json): void };
   tracer: { span<T>(name: string, attrs: Json, fn: () => T): T };
-  storage?: unknown;                                       // server only: scoped storage port of the owning module
-  model?: unknown;                                         // server only: ScopedModelPort (agent/model-pool.md §12.1)
+  storage?: unknown;                                       // 仅服务端：所属模块的作用域存储端口
+  model?: unknown;                                         // 仅服务端：ScopedModelPort（模型池 §12.1）
 }
 
 interface UiExtension {

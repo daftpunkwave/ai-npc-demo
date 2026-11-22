@@ -13,7 +13,7 @@
   </defs>
   <rect width="800" height="450" fill="url(#bg)"/>
 
-  <!-- vault wall -->
+  <!-- 档案库墙体 -->
   <path d="M0 60h800v330H0z" fill="url(#concrete)"/>
   <path d="M0 60h800v18H0z" fill="#76786a" opacity=".5"/>
   <path d="M0 380h800v10H0z" fill="#101514"/>
@@ -26,7 +26,7 @@
     <rect x="740" y="140" width="42" height="30"/><rect x="740" y="260" width="44" height="26"/>
   </g>
 
-  <!-- circular vault door -->
+  <!-- 圆形金库门 -->
   <g>
     <circle cx="400" cy="238" r="132" fill="#1a201e" stroke="#6d6c5b" stroke-width="5"/>
     <circle cx="400" cy="238" r="114" fill="url(#door)" stroke="#a7a48e" stroke-width="3"/>
@@ -44,7 +44,7 @@
     <circle cx="400" cy="238" r="142" fill="none" stroke="#b08a56" stroke-width="1.5" opacity=".4" stroke-dasharray="3 8"/>
   </g>
 
-  <!-- archive shelves -->
+  <!-- 档案架 -->
   <g fill="#1a211e">
     <path d="M42 214h92v14H42zM42 258h92v14H42zM42 302h92v14H42zM666 214h92v14h-92zM666 258h92v14h-92zM666 302h92v14h-92z"/>
   </g>
@@ -59,7 +59,7 @@
     <rect x="676" y="266" width="9" height="30"/><rect x="692" y="262" width="11" height="34"/>
   </g>
 
-  <!-- tree roots breaking through ceiling -->
+  <!-- 穿透天花板的树根 -->
   <g stroke="#3b3226" fill="none" stroke-linecap="round">
     <path d="M118 60c26 34 20 60 54 74s50 0 60 26" stroke-width="8"/>
     <path d="M164 104c-18 10-22 24-16 38M186 130c18 4 28 16 30 30" stroke-width="4"/>
@@ -70,11 +70,11 @@
     <path d="M128 96c-14-6-20-16-18-28 12 2 20 12 18 28zM148 116c18-4 28-14 30-26-14-2-26 8-30 26zM652 108c-16-4-24-14-24-26 14 0 24 10 24 26z"/>
   </g>
 
-  <!-- dust light shafts -->
+  <!-- 尘埃光束 -->
   <path d="M250 60l120 0 70 330H214z" fill="url(#dust)" opacity=".5" filter="url(#soft)"/>
   <path d="M560 60h70l100 330H600z" fill="url(#dust)" opacity=".3" filter="url(#soft)"/>
 
-  <!-- terminal -->
+  <!-- 终端 -->
   <g>
     <path d="M344 360h112v18H344z" fill="#202825"/>
     <path d="M358 330h84v30h-84z" fill="#141c1a"/>
@@ -86,7 +86,7 @@
     <rect x="376" y="342" width="30" height="2"/><rect x="376" y="346" width="44" height="2"/><rect x="410" y="342" width="14" height="2"/>
   </g>
 
-  <!-- floor and debris -->
+  <!-- 地面与碎片 -->
   <path d="M0 390h800v60H0z" fill="#131917"/>
   <path d="M0 390h800v8H0z" fill="#5d5a48" opacity=".3"/>
   <g stroke="#2b312b" stroke-width="2"><path d="M0 416h800M0 438h800M120 398v52M300 398v52M500 398v52M680 398v52"/></g>

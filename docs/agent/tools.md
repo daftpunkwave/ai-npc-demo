@@ -82,6 +82,8 @@ binding 可以限制地点、目标类型、自己受委托的资产、最大数
 | task.respond | command | 对收到的任务邀请回复参加或拒绝，附拒绝理由 |
 | task.cancel | command | 本身份有权取消的任务引用，返回撤销裁决，不保证已完成任务可回滚 |
 | policy.set | command | 仅战略 Agent：修改本派系拥有的政策（水闸分配、受控道路状态） |
+
+定向消息的授权受众集合是派发前置条件：集合缺失时网关按 `no-authority` 拒绝，不因无法校验而放行。公开广播按绑定的广播权限单独判断。
 | decision.submit | —（宿主处理） | 结束本轮决策，提交立场与对白意图；不是世界命令，见 [prompts](prompts.md) 第 2.3 节 |
 
 各工具的输入 schema、对应命令、入模字段与默认工具集见第 13 节。
@@ -207,15 +209,15 @@ tool-view 实现仅由 Agent profile 的槽选择；binding 的 viewConstraints 
 ```ts
 const Cargo = z.object({ supply: z.number().int(), energy: z.number().int(), medical: z.number().int() });
 
-const DispatchParams = z.object({            // flat: fields that the chosen taskType does not use must be null
-  fromStockpileId: z.string().nullable(), toStockpileId: z.string().nullable(), cargo: Cargo.nullable(),   // transport
-  roadId: z.string().nullable(), durationTicks: z.number().int().nullable(),                              // escort
-  groupId: z.string().nullable(), toNodeId: z.string().nullable(), medicalStockpileId: z.string().nullable(), // rescue
-  energyStockpileId: z.string().nullable(), supplyStockpileId: z.string().nullable(),                     // repair
-  nodeId: z.string().nullable(),                                                                          // scout
+const DispatchParams = z.object({            // 平铺结构：所选 taskType 不使用的字段必须为 null。
+  fromStockpileId: z.string().nullable(), toStockpileId: z.string().nullable(), cargo: Cargo.nullable(),   // 运输
+  roadId: z.string().nullable(), durationTicks: z.number().int().nullable(),                              // 护送
+  groupId: z.string().nullable(), toNodeId: z.string().nullable(), medicalStockpileId: z.string().nullable(), // 救援
+  energyStockpileId: z.string().nullable(), supplyStockpileId: z.string().nullable(),                     // 修复
+  nodeId: z.string().nullable(),                                                                          // 侦察
 });
 
-const ToolTerm = z.object({                   // flat version of the Term union; unused fields are null
+const ToolTerm = z.object({                   // Term 联合类型的平铺版本；未使用字段为 null。
   kind: z.enum(["deliver", "escort", "rescue", "repair-relay", "share-evidence", "grant-passage", "water-allocation", "delegate"]),
   obligorId: z.string(),
   resource: z.enum(["supply", "energy", "medical"]).nullable(), amount: z.number().int().nullable(),
@@ -252,7 +254,7 @@ envelope 指 `executionStatus`、`commandStatus`、`reasonCode`、`receiptId`、
 ### 13.2 binding 模板与工具集
 
 ```yaml
-# config/toolsets/character-default.yaml
+# 角色默认工具集：config/toolsets/character-default.yaml
 schemaVersion: 1
 toolsetId: character-default
 tools:

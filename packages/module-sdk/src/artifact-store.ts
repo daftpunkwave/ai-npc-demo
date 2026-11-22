@@ -75,7 +75,7 @@ function decodeBody(row: StorageRow): string {
   throw new Error("artifact body is missing or unsupported");
 }
 
-/** Storage-backed immutable artifact store shared by tool and speech stages. */
+/** 由存储支持的不可变 artifact 仓库，供工具与对白阶段共用。 */
 export class StoredAgentArtifactStore implements AgentArtifactStore {
   constructor(
     private readonly storage: StoragePort,

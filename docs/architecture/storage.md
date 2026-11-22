@@ -28,7 +28,7 @@ PRAGMA busy_timeout = 5000;
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
 ```sql
--- ===== deployment scope =====
+-- ===== 部署级作用域 =====
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 -- 0004 为 schema_migrations 增加 checksum TEXT NOT NULL，并回填已发布迁移的内容指纹。
 
@@ -97,7 +97,7 @@ CREATE TABLE run_requests (             -- player "test preset" applications
   decided_at TEXT
 );
 
-CREATE TABLE config_drafts (            -- console-saved assemblies / model layouts; refs resolve repo files first, then drafts
+CREATE TABLE config_drafts (            -- 控制台保存的装配与模型布局；引用先解析仓库文件，再解析草稿
   kind TEXT NOT NULL CHECK (kind IN ('assembly', 'model-layout', 'profile', 'toolset')),
   config_id TEXT NOT NULL,
   version INTEGER NOT NULL,
@@ -107,13 +107,13 @@ CREATE TABLE config_drafts (            -- console-saved assemblies / model layo
   PRIMARY KEY (kind, config_id, version)
 );
 
--- ===== branch scope (copied by forkBranch) =====
+-- ===== 分支级作用域（由 forkBranch 复制） =====
 CREATE TABLE clock (
   branch_id TEXT PRIMARY KEY REFERENCES branches(branch_id),
   world_tick INTEGER NOT NULL,
   mode TEXT NOT NULL CHECK (mode IN ('running', 'pausing', 'paused', 'resuming', 'stepping')),
   seconds_per_tick INTEGER NOT NULL,
-  run_version INTEGER NOT NULL,         -- incremented on every mode change; used as expectedVersion
+  run_version INTEGER NOT NULL,         -- 每次模式变更时递增，用作 expectedVersion
   step_target_tick INTEGER,
   updated_at TEXT NOT NULL
 );
@@ -342,7 +342,7 @@ CREATE TABLE operations (
   UNIQUE (branch_id, command_id)
 );
 
--- ===== run scope (never copied; kept for audit) =====
+-- ===== 运行级作用域（从不复制，仅保留用于审计） =====
 CREATE TABLE runs (
   run_id TEXT PRIMARY KEY,
   world_id TEXT NOT NULL REFERENCES worlds(world_id),
@@ -546,7 +546,7 @@ CREATE TABLE probe_results (
 ### 2.1 后续迁移
 
 ```sql
--- 0002_operation-idempotency.sql
+-- 迁移 0002_operation-idempotency.sql
 -- 部署级表：主键不含 branch_id，不参与分支复制，在线别名切换与重启后仍然有效。
 CREATE TABLE IF NOT EXISTS operation_idempotency (
   world_id TEXT NOT NULL,
@@ -566,7 +566,7 @@ CREATE TABLE IF NOT EXISTS operation_idempotency (
 CREATE INDEX IF NOT EXISTS operation_idempotency_kind
   ON operation_idempotency (world_id, operation_kind, created_at);
 
--- 0003_jobs-scheduled-index.sql
+-- 迁移 0003_jobs-scheduled-index.sql
 -- 热路径只读最早到期的一条 scheduled job；部分索引避免已完成行留在索引里。
 DROP INDEX jobs_due;
 CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHERE status = 'scheduled';
@@ -579,7 +579,7 @@ CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHER
 快照、恢复、实验分支和开环沙盒都用同一个操作：把源分支的全部分支级数据拷贝到一个新的 `branch_id`。数据规模很小（序章数千行），整表拷贝足够快，也最不容易出错。
 
 ```ts
-// all branch-scoped tables, in this order
+// 所有分支级表，按以下顺序复制。
 const BRANCH_TABLES = [
   "clock", "aggregate_state", "domain_events", "command_receipts", "speech_commits", "jobs",
   "consumer_offsets", "consumer_inbox", "agent_activations",
@@ -588,14 +588,14 @@ const BRANCH_TABLES = [
 ] as const;
 
 function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: string | null): void {
-  // 1. insert the branches row: parent = src, forked_at_world_seq = max(world_seq of src)
-  // 2. for each table: INSERT INTO t (branch_id, <other columns>) SELECT ?, <other columns> FROM t WHERE branch_id = ?
-  // 3. fix-ups in dst:
-  //    - clock.mode = 'paused', run_version = run_version + 1
-  //    - controller_leases.controller_epoch = controller_epoch + 1 (fences anything issued for src)
-  //    - triggers: a trigger consumed by a turn that did not reach 'completed'/'failed'/'budget-exhausted' is released
-  //      (consumed_by_turn_id = NULL); triggers consumed by a finished turn are deleted
-  //    - agent_activations.status = 'dormant' (the caller re-activates the roster after reserving quota, see the table below)
+  // 1. 插入 branches 行：parent = src，forked_at_world_seq = src 的最大 world_seq。
+  // 2. 逐表执行 INSERT INTO t (branch_id, <other columns>) SELECT ?, <other columns> FROM t WHERE branch_id = ?。
+  // 3. 在 dst 中修正：
+  //    - clock.mode 设为 'paused'，run_version 递增 1。
+  //    - controller_leases.controller_epoch = controller_epoch + 1（使所有针对 src 签发的控制失效）。
+  //    - 被未达到 completed、failed 或 budget-exhausted 的 turn 消费的 trigger 重新释放；
+  //      即 consumed_by_turn_id = NULL；已完成 turn 消费的 trigger 删除。
+  //    - agent_activations.status = 'dormant'（调用方预留配额后再激活名册，见下表）。
 }
 ```
 
@@ -621,18 +621,18 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 ## 4. 常用查询
 
 ```sql
--- memory records visible at revision :R
+-- revision :R 可见的记忆记录
 SELECT * FROM memory_records
 WHERE branch_id = :b AND agent_id = :a AND created_revision <= :R
   AND (retired_revision IS NULL OR retired_revision > :R) AND status = 'active';
 
--- due jobs for tick :T
+-- tick :T 到期的 job
 SELECT * FROM jobs WHERE branch_id = :b AND status = 'scheduled' AND due_tick <= :T ORDER BY due_tick, seq;
 
--- new events for a consumer
+-- 消费者尚未处理的新事件
 SELECT * FROM domain_events WHERE branch_id = :b AND world_seq > :offset ORDER BY world_seq LIMIT 200;
 
--- active agent quota across the deployment
+-- 部署范围的活动 Agent 配额
 SELECT count(*) FROM agent_activations a JOIN branches b ON a.branch_id = b.branch_id
 WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 ```

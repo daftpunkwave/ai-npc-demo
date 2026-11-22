@@ -57,13 +57,13 @@
   <circle cx="612" cy="118" r="17" fill="#f6d7a6" opacity=".8"/>
   <path d="M556 112c18-8 42-9 62-3m-70 16c28-8 54-7 82 1" stroke="#e8c79b" stroke-width="1.5" opacity=".35" fill="none"/>
 
-  <!-- distant dead skyline -->
+  <!-- 远处死寂天际线 -->
   <g opacity=".5" fill="#1b2b2f">
     <path d="M0 236h58v-42h24v30h31v-63h18v63h36v-27h44v42h39v-55h21v55h58v-34h40v34h35v-51h23v51h43v-25h46v25h60v-40h28v40h35v-18h52v32H0z"/>
     <path d="M92 191v45m69-45v45m112-45v45m130-45v45m112-45v45m89-45v45" stroke="#0c1619" stroke-width="3"/>
   </g>
 
-  <!-- sea and harbor basin -->
+  <!-- 海面与港湾盆地 -->
   <rect y="232" width="800" height="218" fill="url(#water)"/>
   <path d="M0 250c90 10 160-6 246 2s166 16 252 4 206-12 302 2v-18H0z" fill="#84908a" opacity=".22"/>
   <g stroke="#d8b183" stroke-opacity=".28" stroke-width="2">
@@ -71,7 +71,7 @@
     <path d="M120 300h74m-82 8h104m-112 10h74"/>
   </g>
 
-  <!-- quay -->
+  <!-- 码头 -->
   <path d="M0 350h800v100H0z" fill="#211f1b"/>
   <path d="M0 350h800v16H0z" fill="url(#planks)"/>
   <path d="M0 366h800v7H0z" fill="#0f0e0c" opacity=".7"/>
@@ -81,14 +81,14 @@
   </g>
   <path d="M0 350h800v10H0z" fill="#b08b5c" opacity=".25"/>
 
-  <!-- mooring bollards and ropes -->
+  <!-- 系泊柱与绳索 -->
   <g fill="#111513" stroke="#3c403a" stroke-width="2">
     <path d="M98 350h18v30H98zM104 340h6v12h-6z"/>
     <path d="M702 350h18v30h-18zM708 340h6v12h-6z"/>
   </g>
   <path d="M110 356c40 36 92 20 124 44m444-44c-46 30-104 18-132 44" fill="none" stroke="#8b775d" stroke-width="2" opacity=".55"/>
 
-  <!-- relay tower -->
+  <!-- 中继塔 -->
   <g>
     <path d="M338 342l16-210h52l16 210z" fill="url(#tower)"/>
     <path d="M346 342l12-210m64 210l-12-210" stroke="#78807a" stroke-width="2" opacity=".5"/>
@@ -107,7 +107,7 @@
     </g>
   </g>
 
-  <!-- crane -->
+  <!-- 起重机 -->
   <g stroke="#1a2222" fill="none">
     <path d="M652 350V128h12v222m-6-204l-92 44m92-44l96 36" stroke-width="9"/>
     <path d="M560 176v54m-14 0h28m-14-54v-18" stroke-width="4"/>
@@ -116,7 +116,7 @@
   </g>
   <path d="M560 230l-26 44h34l-8-44" fill="#1c2221"/>
 
-  <!-- moored barges -->
+  <!-- 停泊驳船 -->
   <g>
     <path d="M122 318h176l-22 34H140z" fill="#272a25"/>
     <path d="M140 318h140v-22H152z" fill="#35352c"/>
@@ -137,7 +137,7 @@
     <rect x="574" y="300" width="16" height="12" fill="#eaa05d" opacity=".75"/>
   </g>
 
-  <!-- pier lamp and reflection -->
+  <!-- 码头灯与倒影 -->
   <g>
     <path d="M244 350V286" stroke="#161a18" stroke-width="5"/>
     <path d="M230 286h28l-4-12h-20z" fill="#1d2320"/>
@@ -146,7 +146,7 @@
   </g>
   <path d="M206 352c40 4 62 30 92 40 28 10 58 8 80 22" stroke="#f0bd7c" stroke-width="8" opacity=".12" fill="none" filter="url(#blur6)"/>
 
-  <!-- pier cargo and figures -->
+  <!-- 码头货物与人物 -->
   <g>
     <path d="M24 330h56l6 22H18z" fill="#2e3029"/>
     <path d="M30 330v-24h44v24" fill="#393a30"/>
@@ -172,7 +172,7 @@
     <path d="M58 350v18m56-18v18m54-18v18m60-18v18m52-18v18m58-18v18m58-18v18m54-18v18m60-18v18m52-18v18m58-18v18m58-18v18"/>
   </g>
 
-  <!-- fog and grain -->
+  <!-- 雾与颗粒 -->
   <rect y="120" width="800" height="230" filter="url(#fog)" opacity=".55"/>
   <rect width="800" height="450" fill="url(#rain)" opacity=".5"/>
   <rect width="800" height="450" filter="url(#grain)" opacity=".55"/>

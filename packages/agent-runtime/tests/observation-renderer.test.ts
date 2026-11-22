@@ -1,6 +1,7 @@
 /**
- * 验证 summary 观察不包含仅限 full 的引用、事实与声明。
- * 依赖真实内容包及携带全部引用字段的对白事件；断言授权明细只在 full 中保留。
+ * 核心职责：验证 summary 观察不包含仅限 full 的引用、事实与声明。
+ * 交互契约：依赖真实内容包及携带全部引用字段的对白事件。
+ * 约束与禁忌：断言授权明细只在 full 中保留，不使用生产数据库。
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

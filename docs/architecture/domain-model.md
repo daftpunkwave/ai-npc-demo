@@ -21,7 +21,7 @@
 | `del` | 委托 | `pg` | 通行许可 |
 | `kg` | 知识授权 | `obs` | 观察 |
 | `mem` | 记忆记录 | `turn` | Agent turn |
-| `att` | 模型 attempt | `llm` | 逻辑模型调用 |
+| `att` | 模型 attempt 与 turn 工具执行关联 | `llm` | 逻辑模型调用 |
 | `tc` | 工具调用 | `art` | artifact |
 | `trc` | trace | `spn` | span |
 | `snap` | 快照 | `ses` | 会话令牌 |
@@ -37,15 +37,15 @@
 ```ts
 type PrincipalKind = "player" | "agent" | "operator" | "researcher" | "evaluator" | "system";
 
-interface AuthContext {            // always built by the host, never taken from payloads
-  readonly principalId: string;    // "player-1", an agentId, a console account, or "system:world"
+interface AuthContext {            // 始终由宿主构建，绝不从 payload 读取
+  readonly principalId: string;    // "player-1"、agentId、控制台账号或 "system:world"
   readonly kind: PrincipalKind;
   readonly roles: readonly string[];
   readonly worldId: string;
   readonly branchId: string;
-  readonly actingAsAgentId: string | null; // set when a human seat acts for a non-human faction agent
-  readonly controllerEpoch: number | null; // required when kind === "agent" or actingAsAgentId != null
-  readonly turnLeaseEpoch: number | null;  // required for commands issued from an agent turn
+  readonly actingAsAgentId: string | null; // 真人席位代理非人类派系 Agent 时设置
+  readonly controllerEpoch: number | null; // kind === "agent" 或 actingAsAgentId != null 时必填
+  readonly turnLeaseEpoch: number | null;  // 从 Agent turn 发出的命令必填
   readonly turnId: string | null;
 }
 ```
@@ -87,25 +87,25 @@ interface AuthContext {            // always built by the host, never taken from
 所有规则处理器（命令处理器、job 处理器、时钟步骤、事件订阅）都是**同步函数**：在 authority 打开的事务里执行，不 await、不调用模型、不做网络 I/O。处理器不直接持有数据库，而是通过 authority 提供的事务内接口登记变更；事务由 authority 统一提交或回滚，模块不能自行提交。
 
 ```ts
-interface WorldTx {                        // one per transaction, scoped to the calling module
+interface WorldTx {                        // 每个事务一个实例，作用域限定为调用模块
   readonly worldTick: number;
-  get<T>(aggregateType: string, aggregateId: string): { version: number; state: T } | null; // own types only
-  list<T>(aggregateType: string): { id: string; version: number; state: T }[];               // own types only
-  put(aggregateType: string, aggregateId: string, state: Json): void;    // own types only; version + 1
-  remove(aggregateType: string, aggregateId: string): void;              // own types only
-  emit(type: string, payload: Json, audience: AudienceSpec[], causationIds?: string[]): string; // returns eventId
-  schedule(kind: string, dueTick: number, idempotencyKey: string, payload: Json): void; // no-op if the key exists
+  get<T>(aggregateType: string, aggregateId: string): { version: number; state: T } | null; // 仅限本模块拥有的类型
+  list<T>(aggregateType: string): { id: string; version: number; state: T }[];               // 仅限本模块拥有的类型
+  put(aggregateType: string, aggregateId: string, state: Json): void;    // 仅限本模块拥有的类型；version + 1
+  remove(aggregateType: string, aggregateId: string): void;              // 仅限本模块拥有的类型
+  emit(type: string, payload: Json, audience: AudienceSpec[], causationIds?: string[]): string; // 返回 eventId
+  schedule(kind: string, dueTick: number, idempotencyKey: string, payload: Json): void; // 键已存在时不执行
   cancelJobs(idempotencyKeyPrefix: string): void;
   requestClockStop(requestId: string, reason: string): void; // 与业务结果同事务提交的持久停止点
 }
 
 interface HandlerContext {
   readonly auth: AuthContext;
-  readonly tx: WorldTx;                    // writes are limited to the aggregate types this module owns
-  readonly modules: GameModulePorts;       // this module's own capabilities plus ports declared in its requires
-  readonly approvedSpeech: { read(ref: string): ApprovedSpeech | null }; // host-injected, synchronous, read-only, transaction-scoped
-  readonly content: ContentIndex;          // read-only content pack
-  readonly rng: (...parts: string[]) => () => number; // rngFor(runSeed, ...parts), rules §11
+  readonly tx: WorldTx;                    // 写入范围仅限本模块拥有的 aggregate 类型
+  readonly modules: GameModulePorts;       // 本模块自身能力，加上其 requires 声明的端口
+  readonly approvedSpeech: { read(ref: string): ApprovedSpeech | null }; // 宿主注入、同步、只读、限定当前事务
+  readonly content: ContentIndex;          // 只读内容包
+  readonly rng: (...parts: string[]) => () => number; // rngFor(runSeed, ...parts)，见规则 §11
   readonly ids: (prefix: string) => string;
 }
 
@@ -283,11 +283,11 @@ COMMIT
 
 ```ts
 type AudienceSpec =
-  | { kind: "public" }                    // everyone
-  | { kind: "node"; nodeId: string }      // whoever is located at the node when the event commits
-  | { kind: "principals"; ids: string[] } // explicit principals
-  | { kind: "faction"; factionId: string }// the faction's strategic agent + its characters
-  | { kind: "system" };                   // no in-world audience; research views only
+  | { kind: "public" }                    // 所有人
+  | { kind: "node"; nodeId: string }      // 事件提交时位于该节点的所有主体
+  | { kind: "principals"; ids: string[] } // 显式列出的 principal
+  | { kind: "faction"; factionId: string }// 该派系的战略 Agent 及其角色
+  | { kind: "system" };                   // 世界内无受众，仅供研究视图
 ```
 
 宿主在事件提交后计算每个主体是否“有资格获知”（硬 ACL），结果交给感知模块决定何时、以何种细度形成观察（见 [感知](../agent/perception.md) 第 11 节）。规则：

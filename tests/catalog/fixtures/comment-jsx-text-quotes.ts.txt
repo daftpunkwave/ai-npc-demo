@@ -1,0 +1,7 @@
+/**
+ * 核心职责：验证 JSX 文本中的引号不会开启字符串模式。
+ * 交互契约：仅作为边界检查输入，不会被编译或执行。
+ * 约束与禁忌：不得漏掉 JSX 结束标签后的真实注释。
+ */
+export const view = <div>don't stop</div>;
+// english trailing comment

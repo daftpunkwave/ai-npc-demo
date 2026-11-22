@@ -8,7 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
-import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
+import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
+import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type HostServices, type ModelFixture, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
 import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
@@ -49,6 +50,7 @@ async function poolHarness(
   complete: ModelTransportPort["complete"],
   credential: string | null = null,
   wrapStorage: (storage: StoragePort) => StoragePort = (storage) => storage,
+  transport: ModelTransportPort | null = null,
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-model-pool-"));
   const timers = new Set<{ at: number; resolve: () => void }>();
@@ -88,7 +90,7 @@ async function poolHarness(
     "platform.budget": budget.port,
     "platform.secrets": { resolve: () => credential },
     "platform.observability": { recordSpan: vi.fn() },
-    "platform.model-transport": [{ adapterId: route.adapterId, capabilities: () => capabilities, complete }],
+    "platform.model-transport": [transport ?? { adapterId: route.adapterId, capabilities: () => capabilities, complete }],
   });
   await budget.start(signal);
   await pool.start(signal);
@@ -168,6 +170,18 @@ describe("Agent 路由视图注入契约", () => {
 });
 
 describe("共享模型池与预算", () => {
+  it("挂载引用未授权密钥时在装配入口显式失败", async () => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      expect(() => harness.pool.bindRun({ routes: [{ ...route, credentialRef: "SYNTHETIC_MODEL_KEY" }], limits }))
+        .toThrow("模型连接缺少已授权的密钥引用");
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("发送上限与预留一致，即使挂载允许更大的输出", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);
@@ -460,6 +474,64 @@ describe("模型决策终态归因", () => {
       }))).rejects.toMatchObject({ code: "cancelled" });
     } finally {
       await dispose();
+    }
+  });
+});
+
+describe("五个触发主体的确定性传输", () => {
+  const fivePrincipals = ["player-1", "human-earth-alliance", "human-pacifist", "human-alien-accord", "species-fauna"];
+
+  function fiveFixtureRoute(fixtureRows: readonly ModelFixture[]): ModelRoute {
+    return { ...route, adapterId: "platform.model-transport.deterministic", fixtureRows };
+  }
+
+  async function deterministicTransport(): Promise<ModelTransportPort> {
+    const instance = await deterministicModelTransportDefinition.create({
+      moduleId: deterministicModelTransportDefinition.id, realm: "server", config: {}, scope: {}, ports: {},
+      host: new Proxy({} as HostServices, { get: () => { throw new Error("Transport requested an unexpected host service"); } }),
+      signal: new AbortController().signal,
+    });
+    return instance.port as ModelTransportPort;
+  }
+
+  it("主体数超出默认响应范围时按显式夹具正向返回决策响应", async () => {
+    const fixture: ModelFixture = {
+      id: "five-principals", match: { purpose: "decision", triggerPrincipalCount: 5 },
+      response: { finishReason: "tool_calls", toolCalls: [{ name: "decision_submit", arguments: {
+        stance: "none", decisionNote: "fixture",
+      } }] },
+    };
+    const harness = await poolHarness(vi.fn(), null, (storage) => storage, await deterministicTransport());
+    try {
+      const run = harness.pool.bindRun({ routes: [fiveFixtureRoute([fixture])], limits });
+      const result = await run.call(work({ triggerPrincipalIds: fivePrincipals }), "decision", 100, request);
+      expect(result.response.finishReason).toBe("tool_calls");
+      expect(result.response.toolCalls[0]).toMatchObject({ name: "decision_submit" });
+      expect(result.attempts).toHaveLength(1);
+      expect(result.attempts[0]).toMatchObject({ status: "succeeded", substituted: false });
+      const attempts = harness.storage.transact((tx) => tx.rows("model_attempts").list({ work_ref: work().workRef }));
+      expect(attempts[0]).toMatchObject({ status: "succeeded", is_effective: 1 });
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("五个触发主体缺少匹配夹具时按协议失败并保留失败证据与保守结算", async () => {
+    const harness = await poolHarness(vi.fn(), null, (storage) => storage, await deterministicTransport());
+    try {
+      const run = harness.pool.bindRun({ routes: [fiveFixtureRoute([])], limits });
+      await expect(run.call(work({ triggerPrincipalIds: fivePrincipals }), "decision", 100, request))
+        .rejects.toMatchObject({ code: "provider-failed", details: { kind: "protocol" } });
+      const state = harness.storage.transact((tx) => ({
+        attempts: tx.rows("model_attempts").list({ work_ref: work().workRef }),
+        ledger: tx.rows("budget_ledger").list({ work_ref: work().workRef }),
+      }));
+      expect(state.attempts).toHaveLength(1);
+      expect(state.attempts[0]).toMatchObject({ status: "failed", is_effective: 0, error_json: { kind: "protocol" } });
+      expect(state.ledger).toHaveLength(1);
+      expect(state.ledger[0]).toMatchObject({ usage_unknown: 1, settled_at: expect.any(String) });
+    } finally {
+      await harness.dispose();
     }
   });
 });

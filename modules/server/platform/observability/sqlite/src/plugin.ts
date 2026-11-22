@@ -22,6 +22,7 @@ const configSchema = z.object({
   timelineLimit: z.number().int().min(1).max(1_000),
 }).strict();
 
+/** trace_spans 表的写入记录；模型尝试的 RunSpan 与 turn 阶段的 TurnSpan 是结构对齐的独立声明，经各自端口映射为该结构落库。 */
 export interface SpanRecord {
   readonly spanId: string;
   readonly traceId: string;

@@ -1,0 +1,7 @@
+/**
+ * 夹具：JSX 结束标签之后的注释仍会被扫描。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 约束与禁忌：不得把 JSX 结束标签误判为正则表达式。
+ */
+export const view = <div></div>;
+// comment after jsx must still be checked

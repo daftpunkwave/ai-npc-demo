@@ -13,9 +13,13 @@ import {
   type ModelObservabilityPort, type ModelRoute, type ModelRunLimits, type ModelWorkScope,
 } from "@ai-npc/module-sdk";
 import { AttemptEvidence, modelSubstituted } from "./attempt-evidence";
-import { backpressure, currentWork, ModelAdmission } from "./admission";
+import { sharedModelPoolDefinition } from "./definition";
+import { backpressure, currentWork, hasRequestHeadroom, ModelAdmission } from "./admission";
 
+/** 重试退避的固定序列；超过长度即不再重试。 */
 const retryDelays = [1000, 4000];
+/** 单次重试等待的上限，避免供应商给的 retry-after 无限拉长本轮。 */
+const maxRetryWaitMs = 30_000;
 
 function requireCurrent(scope: ModelWorkScope): void {
   if (!currentWork(scope)) throw new DomainError("cancelled", "模型调用的工作租约已失效");
@@ -35,10 +39,11 @@ export function createSharedModelPool(input: ModuleCreateInput) {
   const secrets = ports["platform.secrets"] as { resolve(ref: string): string | null };
   const admission = new ModelAdmission(host);
   const evidence = new AttemptEvidence(ports["platform.storage"] as StoragePort, host,
-    ports["platform.observability"] as ModelObservabilityPort);
+    ports["platform.observability"] as ModelObservabilityPort, sharedModelPoolDefinition.version);
   evidence.recoverInterrupted();
 
-  function credentials(route: ModelRoute, adapter: ModelTransportPort): string | null {
+  /** 解析路由的单个凭据明文，未配置引用时返回 null；同时经传输适配器校验连接与凭据形态。 */
+  function resolveCredential(route: ModelRoute, adapter: ModelTransportPort): string | null {
     const credential = route.credentialRef === null ? null : secrets.resolve(route.credentialRef);
     if (adapter.validateConnection !== undefined) adapter.validateConnection(route.endpoint, credential !== null);
     else if (route.credentialRef !== null && credential === null) {
@@ -81,7 +86,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     requireCurrent(scope);
     const adapter = transports.get(route.adapterId);
     if (adapter === undefined) throw new DomainError("assembly-incompatible", "模型传输未装配");
-    const credential = credentials(route, adapter);
+    const credential = resolveCredential(route, adapter);
     const jsonInstructionTokens = requestInput.output.kind === "json" && route.capabilities.structuredOutput === "json_object"
       ? estimateTokens(jsonOutputSuffix ?? "") : 0;
     const estimated = estimateModelInputTokens(requestInput) + jsonInstructionTokens;
@@ -114,7 +119,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
       try {
         requireCurrent(scope);
         startedAt = host.monotonicMs();
-        if (scope.deadlineMs - startedAt < route.requestTimeoutMs / 2) throw backpressure();
+        if (!hasRequestHeadroom(scope, route.requestTimeoutMs, startedAt)) throw backpressure();
         request = modelRequestSchema.parse({
           llmCallId, attemptId, purpose: route.purpose, externalModel: route.externalModel,
           system: requestInput.system, messages: requestInput.messages, tools: requestInput.tools, output: requestInput.output,
@@ -165,8 +170,8 @@ export function createSharedModelPool(input: ModuleCreateInput) {
       const failure = error ?? modelTransportFailure("protocol");
       const delay = retryDelays[index];
       if (delay === undefined || !failure.retryable || !isRetryableModelError(failure.kind)) throw providerFailure(failure, response);
-      const wait = Math.min(30_000, Math.max(delay, failure.retryAfterMs ?? 0));
-      if (host.monotonicMs() + wait + route.requestTimeoutMs / 2 >= scope.deadlineMs) throw backpressure();
+      const wait = Math.min(maxRetryWaitMs, Math.max(delay, failure.retryAfterMs ?? 0));
+      if (!hasRequestHeadroom(scope, route.requestTimeoutMs, host.monotonicMs() + wait)) throw backpressure();
       budget.check(reservation);
       try {
         await host.sleep(wait, scope.signal);
@@ -195,7 +200,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
           route.capabilities.contextWindowTokens > supported.contextWindowTokens || route.maxOutputTokens > supported.maxOutputTokens) {
           throw new DomainError("assembly-incompatible", "模型布局声明了传输不支持的能力");
         }
-        credentials(route, adapter);
+        resolveCredential(route, adapter);
         mounts.set(key, route);
       }
       function mounted(agentId: string, purpose: Purpose): ModelRoute {

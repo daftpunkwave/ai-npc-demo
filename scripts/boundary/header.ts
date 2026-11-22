@@ -1,14 +1,16 @@
 /**
- * 规则 7：检查手写源码文件头的原生格式、中文说明与注释引用禁忌。
- * 按扩展名选择语言原生注释；注释里只允许解释代码本身，判定为启发式后仍需人工复核。
- * 禁止修改被检查文件、把数据配置当成源码或因为目录可写而放宽格式要求。
+ * 规则 7：检查手写源码文件头的原生格式，并确保说明性注释包含中文且不引用开发文档。
+ * 按扩展名选择语言原生注释；工具指令可省略说明，其余注释只应解释代码本身。
+ * 已发布迁移受校验和保护，只保留旧规则；禁止修改被检查文件或放宽新增源码要求。
  */
 /* eslint-disable security/detect-object-injection -- 索引均来自本文件扫描的源文本字符下标或固定映射表，不来自外部输入。 */
 import { extname } from "node:path";
 import { FORBIDDEN_COMMENT_PATTERNS } from "./header-comments";
 import { HEADER_LANGUAGE_BY_EXTENSION, RULE_SOURCE_HEADER } from "./constants";
 import { violation } from "./finding";
+import { commentNeedsChinese, headerIsIncomplete, isFrozenMigration } from "./header-policy";
 import { lineAt } from "./paths";
+import { collectTypeScriptCommentSpans } from "./typescript-comments";
 import type { BoundaryViolation, CommentSpan, HeaderLanguage, HeaderReadResult } from "./types";
 
 function firstNonWhitespaceIndex(source: string, from: number): number {
@@ -252,19 +254,21 @@ function collectDelimitedCommentSpans(source: string, language: HeaderLanguage):
   return spans;
 }
 
-function collectCommentSpans(source: string, language: HeaderLanguage): CommentSpan[] {
+function collectCommentSpans(source: string, language: HeaderLanguage, filePath: string): CommentSpan[] {
+  if (language === "typescript") {
+    return collectTypeScriptCommentSpans(source, /\.(?:jsx|tsx)$/i.test(filePath));
+  }
   if (language === "sql" || language === "shell" || language === "python") {
     return collectLineCommentSpans(source, language === "sql" ? "--" : "#");
   }
   return collectDelimitedCommentSpans(source, language);
 }
 
-function compactHeaderDescription(headerText: string): string {
+function headerDescriptionLines(headerText: string): string[] {
   return headerText
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*\*?\s*/, "").trim())
-    .join(" ")
-    .trim();
+    .filter((line) => line !== "");
 }
 
 /**
@@ -278,6 +282,7 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
     return [];
   }
   const source = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+  const frozenMigration = isFrozenMigration(filePath);
   const violations: BoundaryViolation[] = [];
   const header = readHeader(source, language);
 
@@ -294,7 +299,8 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
       ),
     );
   } else {
-    const description = compactHeaderDescription(header.text);
+    const descriptionLines = headerDescriptionLines(header.text);
+    const description = descriptionLines.join(" ");
     if (description === "") {
       violations.push(
         violation(
@@ -315,15 +321,45 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
           "文件头缺少中文说明。",
         ),
       );
+    } else if (!frozenMigration && headerIsIncomplete(descriptionLines)) {
+      violations.push(
+        violation(
+          RULE_SOURCE_HEADER,
+          "header-incomplete",
+          filePath,
+          lineAt(source, header.contentStart),
+          "文件头需分别说明职责、交互契约与约束禁忌。",
+        ),
+      );
     }
   }
 
-  const spans = collectCommentSpans(source, language);
+  const spans = collectCommentSpans(source, language, filePath);
   const checkedSpans: readonly CommentSpan[] =
     language === "python" && header.status === "ok"
       ? [...spans, { text: header.text, start: header.contentStart }]
       : spans;
   for (const span of checkedSpans) {
+    if (
+      !frozenMigration &&
+      commentNeedsChinese(span.text) &&
+      !/[\u3400-\u9fff]/u.test(span.text) &&
+      !(
+        header.status === "ok" &&
+        span.start < header.contentStart + header.text.length &&
+        span.start + span.text.length > header.contentStart
+      )
+    ) {
+      violations.push(
+        violation(
+          RULE_SOURCE_HEADER,
+          "comment-missing-chinese",
+          filePath,
+          lineAt(source, span.start),
+          "说明性注释缺少中文内容。",
+        ),
+      );
+    }
     for (const forbidden of FORBIDDEN_COMMENT_PATTERNS) {
       const match = forbidden.pattern.exec(span.text);
       if (match === null) {

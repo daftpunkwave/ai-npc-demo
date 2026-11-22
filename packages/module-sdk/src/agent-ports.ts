@@ -25,6 +25,7 @@ import type {
 } from "@ai-npc/contracts";
 import type { MemoryScope } from "@ai-npc/contracts";
 import type { DelegationView } from "./game-ports";
+import type { AgentDecisionStatus } from "./model-ports";
 import type { ScopedModelPort } from "./ports";
 
 /** 感知策略对单个已提交事件、单个主体给出的结果。 */
@@ -111,7 +112,7 @@ export interface MemoryRecordView {
   };
 }
 
-/** Host-supplied identity context used by memory policies without exposing the content package. */
+/** 宿主提供的身份上下文；记忆策略使用该结构时不暴露内容包。 */
 export interface MemoryAgentIdentity {
   readonly factionId: string;
   readonly values: readonly string[];
@@ -331,7 +332,7 @@ export interface DeterministicDecisionInput extends Pick<AgentDecisionInput,
 }
 
 export interface AgentDecisionResult {
-  readonly status: "ok" | "invalid-decision" | "model-failed" | "budget-exhausted" | "over-budget";
+  readonly status: AgentDecisionStatus;
   readonly decision: DecisionSubmission | null;
   readonly stages: readonly AgentStageEffective[];
   readonly reason: string | null;

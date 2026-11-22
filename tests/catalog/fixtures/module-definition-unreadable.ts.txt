@@ -1,6 +1,7 @@
 /**
  * 夹具：模块定义不可读时，检查器不能被静默放行。
  * 仅作为边界检查输入，不会被编译或执行。
+ * 约束与禁忌：不提供可读取的 definition kind。
  */
 import { packageName } from "@ai-npc/contracts";
 

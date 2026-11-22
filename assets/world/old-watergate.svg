@@ -57,7 +57,7 @@
   </g>
   <circle cx="646" cy="96" r="26" fill="#e9d6b0" opacity=".25" filter="url(#soft)"/>
 
-  <!-- reservoir -->
+  <!-- 水库 -->
   <rect y="214" width="800" height="236" fill="url(#reservoir)"/>
   <g stroke="#a7b4a8" stroke-opacity=".22" stroke-width="2">
     <path d="M0 236c80 8 140-4 220 2s150 10 240 4 180-8 340 2"/>
@@ -66,7 +66,7 @@
     <path d="M0 316c100 4 170-2 260 2s150 4 250 0 180-2 290 4"/>
   </g>
 
-  <!-- dam wall across frame -->
+  <!-- 横贯画面的坝墙 -->
   <path d="M0 250h800v122H0z" fill="url(#concrete)"/>
   <path d="M0 250h800v12H0z" fill="#9a9788" opacity=".5"/>
   <path d="M0 356h800v16H0z" fill="#1a211f" opacity=".8"/>
@@ -78,7 +78,7 @@
     <path d="M32 270h40v10H32zM120 300h64v8h-64zM690 280h58v10h-58zM610 336h70v8h-70z"/>
   </g>
 
-  <!-- sluice gates -->
+  <!-- 闸门 -->
   <g>
     <path d="M102 250h186v104H102z" fill="#1a2322"/>
     <path d="M116 256h74v92h-74zM204 256h70v92h-70z" fill="url(#rust)"/>
@@ -95,14 +95,14 @@
     <path d="M160 232l-16 12m80-12l16 12" stroke="#6f604a" stroke-width="3"/>
   </g>
 
-  <!-- water spill -->
+  <!-- 溢流水流 -->
   <g opacity=".75">
     <path d="M122 348h70v30h-70zM210 348h58v30h-58z" fill="#8b9d94"/>
     <path d="M122 350c12 8 20 4 30 12s20 4 30 10M210 350c10 6 18 4 26 10s18 4 24 8" stroke="#d7dfd5" stroke-width="3" fill="none"/>
     <path d="M120 372c18 8 30 2 44 10s30 2 44 8M206 372c14 6 24 2 36 8s22 2 30 6" stroke="#aebbb1" stroke-width="2" fill="none" filter="url(#soft)"/>
   </g>
 
-  <!-- control cabin and catwalk -->
+  <!-- 控制舱与检修通道 -->
   <g>
     <path d="M512 214h154v38H512z" fill="#2a3330"/>
     <path d="M524 196h118v20H524z" fill="#3b423a"/>
@@ -121,7 +121,7 @@
     <circle cx="512" cy="134" r="14" fill="url(#lamp)" opacity=".7"/>
   </g>
 
-  <!-- catwalk and railings -->
+  <!-- 检修通道与栏杆 -->
   <path d="M0 334h470v8H0z" fill="#222b28"/>
   <g stroke="#1b2421" stroke-width="3">
     <path d="M0 318h470M0 306h470"/>
@@ -129,7 +129,7 @@
   </g>
   <path d="M0 338h470" stroke="#7f7b68" stroke-width="2" opacity=".4"/>
 
-  <!-- maintenance figure -->
+  <!-- 检修人员 -->
   <g fill="#111715">
     <circle cx="410" cy="300" r="6"/>
     <path d="M402 308h16l4 20h-24zM404 328h6v10h-6zM414 328h6v10h-6z"/>
@@ -137,7 +137,7 @@
   </g>
   <circle cx="444" cy="322" r="3" fill="#ffd08a" opacity=".8"/>
 
-  <!-- rust stains and warning stripes -->
+  <!-- 锈迹与警示条纹 -->
   <g stroke="#8c5a3a" stroke-width="3" opacity=".35">
     <path d="M96 258c6 18 2 34 8 50s2 30 0 48"/>
     <path d="M290 260c-4 20 2 32-2 50s2 30 0 46"/>
@@ -147,7 +147,7 @@
     <path d="M332 360h28l-10 22h-28zM372 360h28l-10 22h-28z"/>
   </g>
 
-  <!-- mist, rain, grain -->
+  <!-- 薄雾、雨与颗粒 -->
   <rect y="190" width="800" height="170" filter="url(#fog)" opacity=".6"/>
   <rect width="800" height="450" fill="url(#rain)" opacity=".45"/>
   <rect width="800" height="450" filter="url(#grain)" opacity=".5"/>
