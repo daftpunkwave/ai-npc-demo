@@ -1,8 +1,7 @@
 /**
  * 声明无长期记忆模块的 agent 级能力与空配置。
- * Declares the no-long-term-memory module as an agent-scoped service.
- * Depends on the shared module contract and descriptor validation only.
- * Must not load the implementation or preserve hidden history.
+ * 只依赖共享模块契约与描述符校验。
+ * 禁止加载实现或保留隐藏历史。
  */
 import {
   capabilityIdSchema,

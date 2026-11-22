@@ -1,8 +1,7 @@
 /**
  * 为记忆宿主测试提供隔离 SQLite、名册、profile 与观察夹具。
- * Provides isolated SQLite, roster, profile, and observation fixtures for memory-host tests.
- * Depends on the real storage adapter and deterministic host services.
- * Must not seed memory records directly or bypass the host publication path.
+ * 依赖真实存储适配器与确定性宿主服务。
+ * 禁止直接写入记忆记录，或绕过宿主发布路径。
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -1,8 +1,7 @@
 /**
  * 在冻结 revision 视图上实现结构化账本 MemoryPort。
- * Implements the structured-ledger MemoryPort over a frozen revision view.
- * Depends on deterministic ledger rules and host-injected IDs only.
- * Must not read storage, call models, or trust unvalidated self-reported citations.
+ * 只依赖确定性账本规则与宿主注入的 ID 服务。
+ * 禁止读取存储、调用模型，或信任未校验的自报引用。
  */
 import type {
   AgentMemoryQuery,

@@ -1,8 +1,7 @@
 /**
  * 导出结构化记忆账本模块的稳定公开入口。
- * Public entry for the structured-ledger memory module.
- * Exposes descriptor data without loading implementation state.
- * Must not create storage or a parallel memory host.
+ * 只暴露描述符数据，不加载实现状态。
+ * 禁止创建存储或平行的记忆宿主。
  */
 export { memoryLedgerModuleDefinition } from "./definition";
 export type { LedgerConfig } from "./definition";

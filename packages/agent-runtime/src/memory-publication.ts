@@ -1,7 +1,7 @@
 /**
  * 在 actor 事务外生成记忆计划，并在短事务内完成 CAS 或 rebase 发布。
- * Generates use and maintenance plans outside actors and publishes them with fencing.
- * Must not call modules while an actor transaction is open.
+ * 整理计划携带租约 epoch 提交，过期租约由 MemoryStore 拒绝。
+ * actor 事务开启期间禁止调用模块。
  */
 import type {
   AgentObservation,

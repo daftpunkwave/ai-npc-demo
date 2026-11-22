@@ -1,8 +1,7 @@
 /**
  * 使用已校验配置创建结构化账本记忆策略。
- * Creates the ledger memory policy with its parsed strict configuration.
- * Depends on MemoryPort and the module lifecycle helper.
- * Must not access SQLite or model transports directly.
+ * 依赖 MemoryPort 与模块生命周期辅助。
+ * 禁止直接访问 SQLite 或模型传输层。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";

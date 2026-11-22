@@ -1,8 +1,7 @@
 /**
  * 验证结构化账本的摄入、关系、检索、强化与唤醒建议。
- * Verifies structured-ledger ingestion, relations, recall, usage, and wake-up proposals.
- * Depends on deterministic IDs and frozen revision fixtures.
- * Must not use SQLite or model transports.
+ * 依赖确定性 ID 与冻结 revision 夹具。
+ * 禁止使用 SQLite 或模型传输层。
  */
 import { describe, expect, it } from "vitest";
 import type {

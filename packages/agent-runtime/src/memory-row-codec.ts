@@ -1,7 +1,7 @@
 /**
  * 解码记忆水位、观察与追加式行版本。
- * Converts storage rows into typed memory records and safe scalar values.
- * Must not perform transactions, policy decisions, or writes.
+ * 把存储行转换为类型化记忆记录与安全标量值。
+ * 禁止执行事务、策略裁决或写入。
  */
 import {
   agentObservationSchema,

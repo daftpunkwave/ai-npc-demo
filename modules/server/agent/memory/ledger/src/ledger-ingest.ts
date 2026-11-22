@@ -1,7 +1,7 @@
 /**
  * 将新观察按显著度分流为经历、聚合记录、关系与承诺行。
- * Builds deterministic ingestion rows from a frozen revision view.
- * Must not bypass the memory host or infer records from unobserved events.
+ * 从冻结 revision 视图构建确定性摄入行。
+ * 禁止绕过记忆宿主，或从未观察的事件推断记录。
  */
 import type { AgentObservation, IdPrefix } from "@ai-npc/contracts";
 import type { RevisionView } from "@ai-npc/module-sdk";

@@ -1,7 +1,7 @@
 /**
  * 从已授权的任务与协议观察生成、关闭主观承诺记录。
- * Builds and closes prospective memory rows without changing formal contracts.
- * Must not invent a deadline that is absent from this or an earlier observation.
+ * 只依据观察内容生成行，不改动正式契约。
+ * 禁止虚构本次或更早观察中不存在的截止时间。
  */
 import type { AgentObservation, IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
 import type {
