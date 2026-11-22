@@ -220,7 +220,8 @@ export class CommandGateway {
     const handlerContext = createHandlerContext({
       auth,
       tx: handlerTx,
-      modules: this.bindModules(tx, auth, envelope, registration.owner.moduleId, clock, collector),      content: this.content,
+      modules: this.bindModules(tx, auth, envelope, registration.owner.moduleId, clock, collector),
+      content: this.content,
       approvedSpeech: this.approvedSpeech,
       host: this.host,
       runSeed: this.runSeed,
