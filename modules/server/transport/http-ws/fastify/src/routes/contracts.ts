@@ -28,6 +28,7 @@ import type {
   ClientContentView,
   CommandEnvelope,
   CommandReceipt,
+  ConsoleSnapshotRestoreResponse,
   IdPrefix,
   Json,
   PlayerProjection,
@@ -223,6 +224,7 @@ export interface ConsoleReadPort {
   ) => ObservationsResponse;
   turns?: (query: {
     readonly runId?: string;
+    readonly branchId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;
@@ -287,6 +289,8 @@ export interface ServerAppOptions {
     createSnapshot: SnapshotCreateHook;
     listSnapshots: () => readonly SnapshotRecordView[];
     restoreSnapshot: SnapshotRestoreHook;
+    /** 只读恢复预检；返回检查项，不切换在线分支。 */
+    validateRestore?: (snapshotId: string) => ConsoleSnapshotRestoreResponse;
   };
   readonly reset: ResetHook;
   readonly identities: readonly ServerIdentity[];

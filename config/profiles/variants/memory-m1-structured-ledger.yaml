@@ -4,4 +4,21 @@ kind: variant
 parent: null
 patch:
   slots:
-    memory: { module: agent.memory.ledger, config: {} }
+    memory:
+      module: agent.memory.ledger
+      config:
+        capacity: { short: 50, long: 120, core: 30 }
+        salienceThresholds: { long: 0.5, short: 0.2 }
+        decayBaseTicks: { short: 48, long: 480 }
+        relationModifiersPerTarget: 20
+        recall:
+          mustIncludeProspective: 5
+          mustIncludeAboutCounterpart: 2
+          topK: 6
+          candidateLimit: 30
+          weights: { strength: 0.35, salience: 0.25, relevance: 0.30, recency: 0.10 }
+        relationInput: enabled
+        prospectiveInput: enabled
+        wakeups: enabled
+        reinforcement: validated-reference
+        maintenanceTrigger: world-period

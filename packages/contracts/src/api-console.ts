@@ -225,7 +225,7 @@ export const modelConfigDraftSchema = z
     connectionId: z.string().min(1),
     externalModel: z.string().min(1),
     parameters: jsonValueSchema,
-    capabilities: modelCapabilitiesSchema.optional(),
+    capabilities: modelCapabilitiesSchema,
     limits: modelLimitsSchema,
     maxOutputTokensByPurpose: z.record(z.string().min(1), z.number().int().positive()),
   })
@@ -250,7 +250,7 @@ export const modelEvaluatorDraftSchema = z
 /** 模型布局草稿：连接、模型、挂载与 evaluator。 */
 export const modelLayoutDraftSchema = z
   .object({
-    schemaVersion: z.number().int().positive(),
+    schemaVersion: z.literal(1),
     layoutId: z.string().min(1),
     connections: z.record(z.string().min(1), modelConnectionDraftSchema),
     models: z.record(z.string().min(1), modelConfigDraftSchema),
@@ -274,7 +274,7 @@ export const modelConnectionViewSchema = z
 
 export const modelLayoutViewSchema = z
   .object({
-    schemaVersion: z.number().int().positive(),
+    schemaVersion: z.literal(1),
     layoutId: z.string().min(1),
     connections: z.record(z.string().min(1), modelConnectionViewSchema),
     models: z.record(z.string().min(1), modelConfigDraftSchema),

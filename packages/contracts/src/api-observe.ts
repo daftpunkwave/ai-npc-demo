@@ -260,7 +260,7 @@ export const turnDetailSchema = turnSummarySchema
       })
       .strict()
       .nullable(),
-    traceId: idSchemas.trc,
+    traceId: idSchemas.trc.nullable(),
   })
   .strict();
 
@@ -269,6 +269,7 @@ export type TurnDetail = z.infer<typeof turnDetailSchema>;
 export const turnsQuerySchema = z
   .object({
     runId: idSchemas.run.optional(),
+    branchId: z.string().min(1).optional(),
     agentId: principalIdSchema.optional(),
     status: z.string().min(1).optional(),
     limit: z.number().int().min(1).optional(),

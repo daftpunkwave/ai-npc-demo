@@ -117,6 +117,28 @@ describe("控制台研究接口", () => {
     const parsed = modelLayoutValidateResponseSchema.parse(validation.json());
     expect(parsed.ok).toBe(false);
     expect(parsed.errors.some((issue) => issue.code === "mount-duplicate")).toBe(true);
+
+    const missingCapabilities = JSON.parse(JSON.stringify(layout)) as {
+      models?: Record<string, Record<string, unknown>>;
+    };
+    delete missingCapabilities.models?.["fixture-model"]?.["capabilities"];
+    const invalidCapabilities = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/model-layouts/validate",
+      headers: modelHeader(consoleToken, "operator"),
+      payload: { layout: missingCapabilities },
+    });
+    expect(invalidCapabilities.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalidCapabilities.json()).error.code).toBe("validation");
+
+    const invalidVersion = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/model-layouts/validate",
+      headers: modelHeader(consoleToken, "operator"),
+      payload: { layout: { ...layout, schemaVersion: 2 } },
+    });
+    expect(invalidVersion.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalidVersion.json()).error.code).toBe("validation");
   });
 
   it("拒绝玩家读取研究接口，并返回有数据来源的调试队列", async () => {
@@ -176,5 +198,48 @@ describe("控制台研究接口", () => {
       headers,
     });
     expect(compare.statusCode).toBe(403);
+    const missing = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/branches/compare?left=${host.branchId}&right=br-missing&atSeq=0`,
+      headers,
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it("尚无 trace 的 queued turn 仍能返回可展示详情", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const createdAt = new Date().toISOString();
+    host.storage.transact((tx) => {
+      const runId = String(tx.rows("runs").list({ branch_id: host.branchId })[0]?.["run_id"]);
+      tx.rows("turn_runs").put({
+        turn_id: "turn-000000000099",
+        run_id: runId,
+        branch_id: host.branchId,
+        agent_id: "human-independent",
+        agent_turn_index: 99,
+        status: "queued",
+        trigger_ids_json: [],
+        input_frontier_json: null,
+        memory_revision: null,
+        profile_hash: "queued",
+        controller_epoch: 1,
+        turn_lease_epoch: 0,
+        lease_expires_at: null,
+        terminal_reason: null,
+        effective_json: [],
+        created_at: createdAt,
+        started_at: null,
+        ended_at: null,
+        created_tick: 0,
+      });
+    });
+    const detail = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/turns/turn-000000000099",
+      headers: modelHeader(consoleToken),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ status: "queued", traceId: null });
   });
 });

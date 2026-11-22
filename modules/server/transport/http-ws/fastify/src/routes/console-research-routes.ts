@@ -117,6 +117,7 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     if (requireResearchSession(context, request, reply) === null) return;
     if (options.console?.turns === undefined) return sendHttpError(reply, "not-ready", "turn 查询尚未就绪");
     const runId = queryText(request.query, "runId");
+    const branchId = queryText(request.query, "branchId");
     const agentId = queryText(request.query, "agentId");
     const status = queryText(request.query, "status");
     const limit = queryInteger(request.query, "limit", 50);
@@ -124,6 +125,7 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
     const parsedAgentId = agentId === undefined ? null : principalIdSchema.safeParse(agentId);
     const parsed = turnsQuerySchema.safeParse({
       ...(runId === undefined ? {} : { runId }),
+      ...(branchId === undefined ? {} : { branchId }),
       ...(agentId === undefined ? {} : { agentId }),
       ...(status === undefined ? {} : { status }),
       ...(limit === null ? {} : { limit }),

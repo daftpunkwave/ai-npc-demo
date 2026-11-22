@@ -11,6 +11,8 @@ import {
   clockControlRequestSchema,
   clockResponseSchema,
   clockStepRequestSchema,
+  consoleSnapshotRestoreRequestSchema,
+  consoleSnapshotRestoreResponseSchema,
   snapshotCreateRequestSchema,
   snapshotCreateResponseSchema,
   snapshotListResponseSchema,
@@ -43,6 +45,8 @@ export interface CampaignOperationsRegistration {
   readonly includeReset?: boolean;
   /** 是否注册“受控单步推进”；当前只有控制台运营入口提供。 */
   readonly includeStep?: boolean;
+  /** 控制台恢复入口允许先执行只读 dry-run。 */
+  readonly includeDryRun?: boolean;
 }
 
 /** 读取可选 branchId 查询参数：缺省返回 undefined，非法值返回 null 由路由按 400 拒绝。 */
@@ -205,9 +209,19 @@ export function registerCampaignOperations(
     if (session === null) {
       return;
     }
-    const body = snapshotRestoreRequestSchema.safeParse(request.body);
+    const body = registration.includeDryRun === true
+      ? consoleSnapshotRestoreRequestSchema.safeParse(request.body)
+      : snapshotRestoreRequestSchema.safeParse(request.body);
     if (!body.success) {
       return sendHttpError(reply, "validation", "恢复请求结构不合法");
+    }
+    if (registration.includeDryRun === true && "dryRun" in body.data && body.data.dryRun === true) {
+      if (options.save.validateRestore === undefined) {
+        return sendHttpError(reply, "not-ready", "恢复预检尚未就绪");
+      }
+      return consoleSnapshotRestoreResponseSchema.parse(
+        options.save.validateRestore(body.data.snapshotId),
+      );
     }
     const restored = options.save.restoreSnapshot({
       snapshotId: body.data.snapshotId,

@@ -14,8 +14,13 @@ export function queryText(query: unknown, key: string): string | undefined {
 }
 
 export function queryInteger(query: unknown, key: string, fallback: number): number | null {
-  const raw = queryText(query, key);
-  if (raw === undefined) return fallback;
+  if (typeof query !== "object" || query === null || Array.isArray(query)) return fallback;
+  const record = query as Readonly<Record<string, unknown>>;
+  if (!Object.hasOwn(record, key)) return fallback;
+  // key 只来自本目录固定路由字段名，不接收调用方拼接。
+  // eslint-disable-next-line security/detect-object-injection
+  const raw = record[key];
+  if (typeof raw !== "string" || raw.trim().length === 0) return null;
   const value = Number(raw);
   return Number.isInteger(value) ? value : null;
 }

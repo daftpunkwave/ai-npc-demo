@@ -250,6 +250,18 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             operationId: restoreInput.operationId,
             principalId: restoreInput.principalId,
           }),
+        validateRestore: (snapshotId) => {
+          const inspection = runtime.save.inspectRestore(snapshotId);
+          return {
+            ok: true,
+            checks: [
+              { name: "snapshot-integrity", ok: true, message: null },
+              { name: "source-run", ok: true, message: inspection.sourceRun.runId },
+              { name: "world", ok: true, message: inspection.worldId },
+              { name: "checkpoint", ok: true, message: `t${inspection.worldTick} / seq ${inspection.worldSeq}` },
+            ],
+          };
+        },
       },
       reset: (operationId, principalId) => operations.reset({ operationId, principalId }),
       onBranchChanged: (nextBranchId) => switchLiveBranch(active, nextBranchId),

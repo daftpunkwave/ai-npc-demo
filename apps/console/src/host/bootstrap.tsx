@@ -11,7 +11,7 @@ import {
   type StartedBrowserModules,
 } from "@ai-npc/client-sdk";
 import { ApiClient, takeHashToken } from "@ai-npc/client-protocol";
-import type { ConsoleActiveRole, SessionDescriptor } from "@ai-npc/contracts";
+import type { ClockView, ConsoleActiveRole, SessionDescriptor } from "@ai-npc/contracts";
 import { consoleModuleDefinitions } from "./module-catalog";
 import { ConsoleShell } from "../ui/console-shell";
 
@@ -23,9 +23,20 @@ interface ConsoleReady {
 }
 
 function operationId(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+  const alphabet = "abcdefghjkmnpqrstuvwxyz234567";
   const bytes = crypto.getRandomValues(new Uint8Array(12));
   return `op-${Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("")}`;
+}
+
+async function waitForClockSettled(api: ApiClient, ticks: number): Promise<ClockView> {
+  // 单步按 20 秒/tick 推进；每 tick 预留 45 秒，避免页面在 24 tick 的单步中途误报超时。
+  const attempts = Math.max(60, ticks * 90);
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const clock = (await api.consoleHealth()).clock;
+    if (clock.mode !== "stepping") return clock;
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("单步推进超时，请重新读取时钟状态");
 }
 
 function chooseRole(session: SessionDescriptor): ConsoleActiveRole {
@@ -66,6 +77,8 @@ export function ConsoleBootstrap(): ReactNode {
         session,
         operationId,
         reload: () => window.location.reload(),
+        confirm: (message: string) => window.confirm(message),
+        waitForClockSettled: (ticks: number) => waitForClockSettled(api, ticks),
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
         },

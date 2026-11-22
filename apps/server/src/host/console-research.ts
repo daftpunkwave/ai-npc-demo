@@ -44,15 +44,24 @@ function secretRedactor(content: GameContent): (value: Json) => Json {
     if (text.length === 0) return [];
     return [{ text, label: `[SECRET ${secret.secretId} len=${text.length}]` }];
   }).sort((left, right) => right.text.length - left.text.length);
+  const replaceText = (text: string): string => {
+    let result = text;
+    for (const replacement of replacements) result = result.replaceAll(replacement.text, replacement.label);
+    return result;
+  };
   const redact = (value: Json): Json => {
-    if (typeof value === "string") {
-      let result = value;
-      for (const replacement of replacements) result = result.replaceAll(replacement.text, replacement.label);
-      return result;
-    }
+    if (typeof value === "string") return replaceText(value);
     if (Array.isArray(value)) return value.map(redact);
     if (value !== null && typeof value === "object") {
-      return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, redact(nested)]));
+      const result: Record<string, Json> = {};
+      for (const [key, nested] of Object.entries(value)) {
+        const base = replaceText(key);
+        let redactedKey = base;
+        let suffix = 2;
+        while (Object.hasOwn(result, redactedKey)) redactedKey = `${base}#${suffix++}`;
+        result[redactedKey] = redact(nested);
+      }
+      return result;
     }
     return value;
   };
@@ -98,6 +107,7 @@ export interface ConsoleResearchPort {
   ) => ReturnType<ServerRuntime["observability"]["observations"]>;
   readonly turns: (query: {
     readonly runId?: string;
+    readonly branchId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;
@@ -318,10 +328,17 @@ export function createConsoleResearchPort(input: {
       try {
         parsed = JSON.parse(text) as Json;
       } catch {
-        differences.push({ path: artifactId, expected: "valid JSON", actual: text.slice(0, 200) });
+        differences.push({ path: artifactId, expected: "valid JSON", actual: null });
         continue;
       }
-      const actualHash = createHash("sha256").update(canonicalJson(parsed)).digest("hex");
+      let canonical: string;
+      try {
+        canonical = canonicalJson(parsed);
+      } catch {
+        differences.push({ path: artifactId, expected: "canonical JSON", actual: null });
+        continue;
+      }
+      const actualHash = createHash("sha256").update(canonical).digest("hex");
       const expectedHash = String(row["content_hash"]);
       if (actualHash !== expectedHash) {
         differences.push({ path: artifactId, expected: expectedHash, actual: actualHash });
@@ -345,6 +362,10 @@ export function createConsoleResearchPort(input: {
       return runtime.observability.observations(branchId, agentId, fromSeq, limit);
     },
     turns: (query) => {
+      if (query.branchId !== undefined) {
+        assertBranchScope(query.branchId);
+        return runtime.observability.turns(query);
+      }
       const runId = query.runId;
       if (runId !== undefined) {
         const runWorld = runtime.storage.transact((tx) =>

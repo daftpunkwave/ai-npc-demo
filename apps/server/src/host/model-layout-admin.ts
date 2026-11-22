@@ -127,7 +127,8 @@ function validationErrors(layout: ModelLayoutDraft, knownAgentIds: ReadonlySet<s
         errors.push({ code: "endpoint", message: `连接 ${connectionId} 的端点不是合法 URL` });
       }
     }
-    if (connection.credentialRef !== undefined && !credentialEnvironment.test(connection.credentialRef)) {
+    const credentialRef = connection.credentialRef?.replace(/^env:/u, "");
+    if (credentialRef !== undefined && !credentialEnvironment.test(credentialRef)) {
       errors.push({ code: "credential-ref", message: `连接 ${connectionId} 的 credentialRef 必须是环境变量名` });
     }
   }

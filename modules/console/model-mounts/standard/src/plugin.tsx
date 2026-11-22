@@ -93,6 +93,7 @@ function ModelMountsPage(): ReactNode {
       setValidation(await host.api.validateModelLayout(parsed));
       setError(null);
     } catch (cause) {
+      setValidation(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
@@ -167,6 +168,7 @@ function ModelMountsPage(): ReactNode {
             value={draft}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
               setDraft((event.target as unknown as { value: string }).value);
+              setValidation(null);
             }}
           />
           <div className="console-action-row">

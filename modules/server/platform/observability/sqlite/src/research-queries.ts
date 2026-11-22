@@ -43,6 +43,7 @@ import { readMemory, readMemoryDiff, readObservations } from "./memory-research"
 
 type TurnFilters = {
   readonly runId?: string;
+  readonly branchId?: string;
   readonly agentId?: string;
   readonly status?: string;
   readonly limit?: number;
@@ -181,6 +182,7 @@ export class ResearchQueries {
   turns(query: TurnFilters): TurnsResponse {
     const filter: Record<string, string> = {};
     if (query.runId !== undefined) filter["run_id"] = query.runId;
+    if (query.branchId !== undefined) filter["branch_id"] = query.branchId;
     if (query.agentId !== undefined) filter["agent_id"] = query.agentId;
     if (query.status !== undefined) filter["status"] = query.status;
     const rows = this.storage.transact((tx) => tx.rows("turn_runs").list(
@@ -240,7 +242,7 @@ export class ResearchQueries {
         WHERE turn_id = ? ORDER BY CASE WHEN name = 'turn' THEN 0 ELSE 1 END, start_ms LIMIT 1`,
       [turnId],
     ))[0]?.["trace_id"];
-    if (typeof trace !== "string") throw new DomainError("invalid-state", `turn ${turnId} 缺少 trace`);
+    const traceId = typeof trace === "string" ? trace : null;
     const artifactIds = stages.flatMap((stage) => {
       if (stage.stage !== "turn.context" && stage.stage !== "turn.compression") return [];
       if (stage.effective === null || Array.isArray(stage.effective) || typeof stage.effective !== "object") return [];
@@ -260,7 +262,7 @@ export class ResearchQueries {
       toolCalls,
       decision: this.decisionOf(stages),
       speech,
-      traceId: trace,
+      traceId,
     }));
   }
 

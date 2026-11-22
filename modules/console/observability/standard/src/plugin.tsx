@@ -3,7 +3,7 @@
  * 交互契约：依赖 console API、当前会话与 React；所有数据经服务端授权查询。
  * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据。
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import {
   timelineResponseSchema,
@@ -53,6 +53,7 @@ function ObservabilityPage(): ReactNode {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactBody, setArtifactBody] = useState<string | null>(null);
   const [artifactView, setArtifactView] = useState<"redacted" | "raw">("redacted");
+  const artifactRequestSeq = useRef(0);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -159,7 +160,7 @@ function ObservabilityPage(): ReactNode {
     let cancelled = false;
     void Promise.all([
       host.api.consoleInspector(selectedAgent, host.session.branchId),
-      host.api.consoleTurns({ agentId: selectedAgent, limit: 20 }),
+      host.api.consoleTurns({ agentId: selectedAgent, branchId: host.session.branchId, limit: 20 }),
     ]).then(([nextInspector, nextTurns]) => {
       if (cancelled) return;
       setInspector(nextInspector);
@@ -182,11 +183,16 @@ function ObservabilityPage(): ReactNode {
       setTrace(null);
       return;
     }
+    setTrace(null);
     let cancelled = false;
     void host.api.consoleTurn(selectedTurn).then(async (detail) => {
       if (cancelled) return;
       setTurnDetail(detail);
       setDetailError(null);
+      if (detail.traceId === null) {
+        setTrace(null);
+        return;
+      }
       try {
         const nextTrace = await host.api.consoleTrace(detail.traceId);
         if (!cancelled) setTrace(nextTrace);
@@ -205,12 +211,17 @@ function ObservabilityPage(): ReactNode {
   );
 
   const readArtifact = async (artifactId: string, view: "redacted" | "raw"): Promise<void> => {
+    const request = artifactRequestSeq.current + 1;
+    artifactRequestSeq.current = request;
     try {
-      setArtifactBody((await host.api.consoleArtifact(artifactId, view)).body);
+      const artifact = await host.api.consoleArtifact(artifactId, view);
+      if (request !== artifactRequestSeq.current) return;
+      setArtifactBody(artifact.body);
       setSelectedArtifactId(artifactId);
       setArtifactView(view);
       setDetailError(null);
     } catch (cause) {
+      if (request !== artifactRequestSeq.current) return;
       setDetailError(String(cause));
     }
   };
@@ -261,7 +272,7 @@ function ObservabilityPage(): ReactNode {
       </div>
       <div className="console-two-column research-grid">
         <section className="console-panel">
-          <header><h2>Agent 检查器</h2><span>{selectedAgentView?.location ?? "未定位"}</span></header>
+          <header><h2>Agent 检查器</h2><span>{inspector?.location ?? selectedAgentView?.location ?? "未定位"}</span></header>
           {inspector === null ? <p className="console-empty">选择 Agent 后读取检查器。</p> : (
             <div className="agent-inspector">
               <div className="console-kv">

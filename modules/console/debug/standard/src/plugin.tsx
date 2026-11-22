@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止在浏览器重建请求、直接调用模型或把 hash 校验成功说成重新执行。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
   DebugQueuesResponse,
@@ -33,6 +33,7 @@ function DebugPage(): ReactNode {
   const [agentId, setAgentId] = useState("human-independent");
   const [reason, setReason] = useState("人工检查");
   const [error, setError] = useState<string | null>(null);
+  const replayRequest = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,12 +50,22 @@ function DebugPage(): ReactNode {
     return () => { cancelled = true; };
   }, [host.api]);
 
+  useEffect(() => {
+    replayRequest.current += 1;
+    setReplay(null);
+  }, [selectedTurn]);
+
   const replayTurn = async (): Promise<void> => {
     if (selectedTurn === null) return;
+    const request = replayRequest.current + 1;
+    replayRequest.current = request;
     try {
-      setReplay(await host.api.consoleReplayTurn(selectedTurn));
+      const response = await host.api.consoleReplayTurn(selectedTurn);
+      if (request !== replayRequest.current) return;
+      setReplay(response);
       setError(null);
     } catch (cause) {
+      if (request !== replayRequest.current) return;
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
@@ -94,6 +105,7 @@ function DebugPage(): ReactNode {
                 key={turn.turnId}
                 className={turn.turnId === selectedTurn ? "is-selected" : ""}
                 onClick={() => {
+                  replayRequest.current += 1;
                   setSelectedTurn(turn.turnId);
                   setReplay(null);
                 }}

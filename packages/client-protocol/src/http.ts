@@ -13,6 +13,7 @@ import {
   clientContentViewSchema,
   clockResponseSchema,
   commandReceiptSchema,
+  consoleSnapshotRestoreResponseSchema,
   conversationResponseSchema,
   debugQueuesResponseSchema,
   debugWakeRequestSchema,
@@ -390,6 +391,7 @@ export class ApiClient {
 
   consoleTurns(input: {
     readonly runId?: string;
+    readonly branchId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;
@@ -398,6 +400,7 @@ export class ApiClient {
       turnsResponseSchema,
       `/api/v1/console/turns${queryString({
         runId: input.runId,
+        branchId: input.branchId,
         agentId: input.agentId,
         status: input.status,
         limit: input.limit,
@@ -502,13 +505,17 @@ export class ApiClient {
     });
   }
 
-  consoleRestoreSnapshot(input: { readonly operationId: string; readonly snapshotId: string }) {
+  consoleRestoreSnapshot(input: {
+    readonly operationId: string;
+    readonly snapshotId: string;
+    readonly dryRun?: boolean;
+  }) {
     return this.request(
-      snapshotRestoreResponseSchema,
+      consoleSnapshotRestoreResponseSchema,
       "/api/v1/console/campaign/restore",
       {
         method: "POST",
-        body: input,
+        body: { ...input, dryRun: input.dryRun ?? false },
         activeRole: this.requireActiveRole(),
       },
     );

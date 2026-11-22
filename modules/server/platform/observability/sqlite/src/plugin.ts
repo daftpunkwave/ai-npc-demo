@@ -261,6 +261,7 @@ export class ObservabilityPort {
 
   turns(query: {
     readonly runId?: string;
+    readonly branchId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;
@@ -365,8 +366,7 @@ export class ObservabilityPort {
         memoryRevision: revision,
         derivedThroughTick,
       },
-      recentTurns: this.turns({ agentId: input.agentId, limit: 20 }).turns
-        .filter((turn) => turn.branchId === input.branchId),
+      recentTurns: this.turns({ agentId: input.agentId, branchId: input.branchId, limit: 20 }).turns,
     });
   }
 

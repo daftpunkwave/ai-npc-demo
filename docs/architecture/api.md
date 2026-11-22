@@ -168,7 +168,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `POST /campaign/step`（已实现） | operator | `{ operationId, expectedRunVersion, ticks }`（1–24） | `ClockView`：进入 `stepping` 模式，宿主按 tick 间隔逐 tick 推进到目标后回到 `paused`；推进失败或章节终点时按 [运营](../platform/operations.md) 第 2 节退出 |
 | `POST /campaign/snapshots`（已实现） | operator | `{ operationId, label }` | `{ snapshotId, worldTick }` |
 | `GET /campaign/snapshots`（已实现） | operator、researcher | — | `{ snapshots: SnapshotView[] }` |
-| `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId }` | `{ branchId, clock }`；创建后继在线分支，旧分支保留。`dryRun` 只读预检尚未实现，恢复前由服务端执行内部一致性校验 |
+| `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId, dryRun? }` | `dryRun: true` 返回 `{ ok, checks }` 只读预检；否则返回 `{ branchId, clock }` 并创建后继在线分支，旧分支保留 |
 | `GET /run-requests` | operator | — | 玩家的 run 申请列表 |
 | `POST /run-requests/{requestId}/approve` / `reject` | operator | `{ note }` | approve 返回 `{ runId }` |
 
@@ -349,7 +349,7 @@ interface TurnDetail extends TurnSummary {
                rawArtifactId: string | null; viewArtifactId: string | null; operationId: string | null }[];
   decision: Json | null;          // 通过校验的 decision_submit 参数
   speech: { speechArtifactId: string; text: string; fallback: boolean } | null;
-  traceId: string;
+  traceId: string | null; // queued turn 尚未产生 span 时为 null
 }
 ```
 

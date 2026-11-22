@@ -342,7 +342,23 @@ describe("slice A research path", () => {
       payload: { operationId: "op-000000000002", label: "slice-a" },
     });
     expect(snapshot.statusCode).toBe(200);
-    expect(snapshot.json()).toMatchObject({ snapshotId: expect.any(String), worldTick: expect.any(Number) });
+    const snapshotBody = snapshot.json() as { readonly snapshotId: string };
+    expect(snapshotBody).toMatchObject({ snapshotId: expect.any(String), worldTick: expect.any(Number) });
+    const preview = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/restore",
+      headers,
+      payload: {
+        operationId: "op-000000000003",
+        snapshotId: snapshotBody.snapshotId,
+        dryRun: true,
+      },
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({ ok: true, checks: expect.arrayContaining([
+      expect.objectContaining({ name: "source-run", ok: true }),
+      expect.objectContaining({ name: "checkpoint", ok: true }),
+    ]) });
     expect(current).toBeGreaterThanOrEqual(0);
   });
 });

@@ -133,7 +133,7 @@ export const consoleSnapshotRestoreRequestSchema = z
   .object({
     operationId: idSchemas.op,
     snapshotId: idSchemas.snap,
-    dryRun: z.boolean(),
+    dryRun: z.boolean().default(false),
   })
   .strict();
 

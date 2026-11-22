@@ -20,6 +20,8 @@ interface ConsoleHostPort {
   readonly session: SessionDescriptor;
   operationId(): string;
   reload(): void;
+  confirm(message: string): boolean;
+  waitForClockSettled(ticks: number): Promise<ClockView>;
 }
 
 interface ConsolePagePort extends BrowserViewPort {
@@ -65,6 +67,7 @@ function FactionOpsPage(): ReactNode {
       await refresh();
     } catch (cause) {
       setError(actionError(cause));
+      await refresh().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -81,11 +84,13 @@ function FactionOpsPage(): ReactNode {
 
   const step = (): Promise<void> => run(async () => {
     if (clock === null) throw new Error("时钟尚未加载");
-    setClock(await host.api.consoleStepCampaign({
+    const next = await host.api.consoleStepCampaign({
       operationId: host.operationId(),
       expectedRunVersion: clock.runVersion,
       ticks,
-    }));
+    });
+    setClock(next);
+    setClock(await host.waitForClockSettled(ticks));
     setMessage(`已请求推进 ${ticks} tick`);
   });
 
@@ -95,7 +100,20 @@ function FactionOpsPage(): ReactNode {
   });
 
   const restore = (snapshotId: string): Promise<void> => run(async () => {
-    await host.api.consoleRestoreSnapshot({ operationId: host.operationId(), snapshotId });
+    const preview = await host.api.consoleRestoreSnapshot({
+      operationId: host.operationId(),
+      snapshotId,
+      dryRun: true,
+    });
+    if (!("checks" in preview) || !preview.ok) {
+      throw new Error("恢复预检未通过");
+    }
+    if (!host.confirm("确认恢复该快照并切换在线分支？")) return;
+    await host.api.consoleRestoreSnapshot({
+      operationId: host.operationId(),
+      snapshotId,
+      dryRun: false,
+    });
     host.reload();
   });
 
