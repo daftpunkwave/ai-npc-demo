@@ -159,18 +159,18 @@ memory 实验固定解析后的路由、参数、池限额和预算；轮换运�
 当前宿主通过 `RunModelPort` 绑定冻结路由。模型决策和对白只取得绑定当前 turn、主体与用途的调用回调。回调固定截止时间及租约检查，策略只能提交该阶段的规范化请求。
 
 ```ts
-interface ScopedModelPort {             // what runtime / memory / speech receive; already bound to an agent or evaluator
+interface ScopedModelPort {             // runtime、memory 与 speech 收到的调用端口；已绑定 Agent 或 evaluator。
   call(input: {
     purpose: Purpose;
-    workRef: string;                    // turn id, maintenance id or probe id
+    workRef: string;                    // turn ID、整理任务 ID 或探针 ID。
     system: string;
     messages: NormalizedMessage[];
     tools: NormalizedTool[];
     output: ModelRequest["output"];
-    reserveOutputTokens: number;        // budget reservation, from the profile
-    deadlineMs: number;                 // absolute monotonic deadline of the turn or job
-    fence: () => boolean;               // re-checked before sending and after receiving; false => discard
-  }): Promise<ModelCallResult>;         // { response, attempts: AttemptRecord[] } or throws ModelPoolError
+    reserveOutputTokens: number;        // 预算预留，取自 profile。
+    deadlineMs: number;                 // turn 或 job 的绝对单调截止时间。
+    fence: () => boolean;               // 发送前与接收后都会复查；返回 false 时丢弃结果。
+  }): Promise<ModelCallResult>;         // 返回 { response, attempts }；失败时抛出 ModelPoolError。
 }
 ```
 
@@ -187,7 +187,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 
 - 全池一个 admission 队列，按 `(purpose 份额, 等待时间)` 出队：decision 与 speech 共享 70% 的份额，memory-maintenance 至少 20%，evaluation 至多 10%；同一 purpose 内按 Agent 轮转。
 - 出队时检查：该 model 的 `maxConcurrent`；`rateLimitKey` 对应账号在最近 60 秒内的请求数与 token 数（估算输入 + `reserveOutputTokens`）不超过 `requestsPerMinute` 与 `tokensPerMinute`；`fence()` 仍为 true；距 `deadlineMs` 至少还剩 `requestTimeoutMs` 的一半。不满足时继续排队，等到 deadline 就以 `backpressure` 失败。
-- 队列长度上限 200；超过时新请求立即以 `backpressure` 失败。
+- 队列长度上限 200；超过时新请求立即以 `backpressure` 失败。上述余量判据在准入筛选、发送前检查与重试判断三处共用同一实现，不各自重算超时的一半。
 - 重试：只对可重试错误（`rate-limited`、`timeout`、`network`、`server`）重试，最多 2 次，等待 1 秒、4 秒，若错误带 `retryAfterMs` 且更长则用它，单次等待上限 30 秒。每次重试都是新的 attempt，之前的 attempt 标为 superseded。不可重试错误与 `protocol` 错误（refusal、JSON 不合法）不在模型池内重试，交给调用方按失败策略处理。
 - 收到响应后再检查一次 `fence()`：为 false 时响应只归档、标 superseded，不返回给调用方使用。
 
@@ -195,7 +195,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 
 - 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。
 - run、Agent、turn 三级预算：run 的 `maxTokens` 与 `maxCost`（来自 RunSpec，可为 null 表示不限）、每个 Agent 每游戏日的 `maxTokensPerAgentPerDay`（profile 的 budgets，默认 60000）、turn 的调用次数上限（profile）。任何一级不足时以 `budget-exhausted` 失败，不排队。
-- 进程退出时未结算的预留在重启后按预留计入，并标记为未知用量。缺少完整归档的运行标记为证据不完整。
+- 进程退出时未结算的预留在重启后按预留计入，并标记为未知用量；该清理只扫 `settled_at IS NULL` 并由部分索引支撑。缺少完整归档的运行标记为证据不完整，其中 `started` 的尝试标记为 `process-interrupted`。
 - 费用：布局的 `pricingRef` 选择价目文件，省略时为 `config/pricing.yaml`。文件按 `modelId` 给出 `externalModel` 与每百万输入/输出 token 的单价；预检要求实际解析出的供应商模型与记录一致。manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
 
 ### 12.5 记录

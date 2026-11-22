@@ -9,11 +9,13 @@
     "./check-catalog": "./check-catalog.ts",
     "./check-docs": "./check-docs.ts",
     "./direct-execution": "./direct-execution.ts",
+    "./measure-model-evidence": "./measure-model-evidence.ts",
     "./port-listeners": "./port-listeners.ts"
   },
   "dependencies": {
     "@ai-npc/app-server": "workspace:*",
     "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/module-sdk": "workspace:*",
     "fast-xml-parser": "^5.12.1",
     "yaml": "^2.9.1"
   }

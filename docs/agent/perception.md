@@ -193,12 +193,12 @@ perception:
 ```ts
 interface ObservationContent {
   eventType: string;
-  summaryZh: string;            // rendered from the template of the event type
-  subjectIds: string[];         // principals involved
+  summaryZh: string;            // 由事件类型的模板渲染。
+  subjectIds: string[];         // 涉及的 principal。
   nodeId: string | null;
   refs: { agreementId?: string; taskId?: string; evidenceId?: string; conversationId?: string; dialogueId?: string; messageId?: string };
-  facts: Json;                  // payload fields kept after the detail filter
-  claim: { sourceId: string; senderId: string; text: string } | null; // for reported speech and rumors
+  facts: Json;                  // 细度过滤后保留的 payload 字段。
+  claim: { sourceId: string; senderId: string; text: string } | null; // 用于转述对白与传闻。
   detail: "full" | "summary";
 }
 ```

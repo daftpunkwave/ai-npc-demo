@@ -27,23 +27,23 @@ provider HTTP API / deterministic fixtures
 type Purpose = "decision" | "speech" | "memory-maintenance" | "compression" | "embedding" | "evaluation";
 
 interface NormalizedTool {
-  readonly name: string;            // wire name, see §6
+  readonly name: string;            // 线上传输名，见 §6
   readonly description: string;
-  readonly inputSchema: JsonSchema; // strict profile, see §7
+  readonly inputSchema: JsonSchema; // 严格 schema profile，见 §7
 }
 
 interface NormalizedToolCall {
-  readonly id: string;              // provider call id
-  readonly name: string;            // wire name
-  readonly arguments: Json | null;  // parsed object, null when parsing failed
-  readonly argumentsRaw: string;    // exactly what the provider sent
+  readonly id: string;              // 供应商调用 ID
+  readonly name: string;            // 线上传输名
+  readonly arguments: Json | null;  // 解析后的对象；解析失败时为 null
+  readonly argumentsRaw: string;    // 供应商发送的原始文本
   readonly parseError: string | null;
 }
 
 type NormalizedMessage =
   | { readonly role: "user"; readonly content: string }
   | { readonly role: "assistant"; readonly content: string | null; readonly toolCalls: readonly NormalizedToolCall[];
-      readonly providerReplay: Json | null }   // provider-native content, replayed only by the same adapter under its history rules
+      readonly providerReplay: Json | null }   // 供应商原生内容，仅由同一适配器按其历史规则回放
   | { readonly role: "tool"; readonly toolCallId: string; readonly content: string; readonly isError: boolean };
 
 interface ModelRequest {
@@ -51,50 +51,50 @@ interface ModelRequest {
   readonly attemptId: string;
   readonly purpose: Purpose;
   readonly externalModel: string;
-  readonly system: string;          // must stay byte-identical across rounds of one tool loop
-  readonly messages: readonly NormalizedMessage[]; // append-only across rounds of one tool loop
-  readonly tools: readonly NormalizedTool[];       // must stay identical across rounds of one tool loop
+  readonly system: string;          // 同一工具循环的各轮之间必须保持逐字节一致
+  readonly messages: readonly NormalizedMessage[]; // 同一工具循环内只追加
+  readonly tools: readonly NormalizedTool[];       // 同一工具循环内必须保持一致
   readonly output: { readonly kind: "text" } | { readonly kind: "json"; readonly schemaName: string; readonly schema: JsonSchema };
   readonly maxOutputTokens: number;
-  readonly parameters: Json;        // adapter-specific, validated by the adapter's configSchema
+  readonly parameters: Json;        // 适配器专用，由适配器的 configSchema 校验
   readonly timeoutMs: number;
-  readonly context: {               // for fixtures and archiving only; real adapters ignore it
+  readonly context: {               // 仅用于夹具与归档；真实适配器忽略
     readonly agentId: string | null;
     readonly evaluatorId: string | null;
-    readonly workRef: string;       // turn id, maintenance id or probe id
-    readonly round: number;         // 1-based round within one tool loop (1 for single calls)
-    readonly triggerPrincipalIds: readonly string[]; // speakers/senders of the triggers of this turn
-    readonly contextArtifactId?: string; // archived context for this round, when available
+    readonly workRef: string;       // turn ID、整理任务 ID 或探针 ID
+    readonly round: number;         // 工具循环内从 1 开始；单次调用固定为 1
+    readonly triggerPrincipalIds: readonly string[]; // 本 turn 各 trigger 的发言者或发送者
+    readonly contextArtifactId?: string; // 可用时归档本轮上下文
   };
 }
 
 interface ModelResponse {
   readonly finishReason: "stop" | "tool_calls" | "length" | "refusal";
   readonly text: string | null;
-  readonly json: Json | null;       // parsed when output.kind === "json"
+  readonly json: Json | null;       // output.kind === "json" 时解析
   readonly jsonError: string | null;
   readonly toolCalls: readonly NormalizedToolCall[];
   readonly providerReplay: Json | null;
   readonly usage: { inputTokens: number | null; outputTokens: number | null; cachedInputTokens: number | null; estimated: boolean };
-  readonly servedModel: string | null;      // model id reported by the provider
+  readonly servedModel: string | null;      // 供应商报告的模型 ID
   readonly providerRequestId: string | null;
-  readonly fallbackUsed: boolean;           // provider switched models inside the call
-  readonly wire: { readonly requestBody: Json; readonly responseBody: Json }; // archived, never contains credentials
+  readonly fallbackUsed: boolean;           // 供应商在调用内部切换了模型
+  readonly wire: { readonly requestBody: Json; readonly responseBody: Json }; // 归档内容，绝不包含凭据
 }
 
 interface ModelTransportError {
   readonly kind: "rate-limited" | "timeout" | "network" | "server" | "bad-request" | "auth" | "not-found" | "protocol";
-  readonly retryable: boolean;      // true for rate-limited, timeout, network, server
+  readonly retryable: boolean;      // rate-limited、timeout、network、server 可重试
   readonly retryAfterMs: number | null;
   readonly httpStatus: number | null;
-  readonly message: string;         // safe, no credentials
+  readonly message: string;         // 安全信息，不含凭据
 }
 
 interface ModelTransportPort {
   readonly adapterId: string;
   readonly capabilities: (modelConfig: Json) => ModelCapabilities;
   complete(request: ModelRequest, credential: string | null, connection: ModelConnectionInput):
-    Promise<ModelResponse>; // throws ModelTransportError
+    Promise<ModelResponse>; // 失败时抛出 ModelTransportError
   embed?(input: { externalModel: string; texts: readonly string[]; timeoutMs: number }, credential: string | null):
     Promise<{ vectors: number[][]; usage: { inputTokens: number | null } }>;
 }
@@ -109,7 +109,7 @@ interface ModelCapabilities {
   readonly toolCalling: boolean;
   readonly strictTools: boolean;
   readonly structuredOutput: "json_schema" | "json_object" | "none";
-  readonly assistantReplay: "standard" | "verbatim";   // OpenAI-compatible only; see §3.1
+  readonly assistantReplay: "standard" | "verbatim";   // 仅 OpenAI 兼容适配器使用，见 §3.1
   readonly contextWindowTokens: number;
   readonly maxOutputTokens: number;
   readonly embedding: boolean;
@@ -239,18 +239,18 @@ models:
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
 
-// one client per connection, created once; the pool owns retries, so the SDK must not retry on its own
+// 每个连接只创建一个客户端；重试由模型池负责，SDK 不得自行重试。
 const client = new Anthropic({ apiKey: credential, maxRetries: 0 });
 
 const params = {
-  model: request.externalModel,                        // e.g. "claude-opus-5-5"
+  model: request.externalModel,                        // 例如 "claude-opus-5-5"
   max_tokens: request.maxOutputTokens,
   system: request.system,
-  messages: toAnthropicMessages(request.messages),     // see mapping table below
+  messages: toAnthropicMessages(request.messages),     // 映射见下表
   ...(request.tools.length > 0 && {
     tools: request.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema,
                                        ...(parameters.strictTools === true && { strict: true }) })),
-    tool_choice: { type: "auto" as const },            // forced tool choice is rejected by claude-opus-5-5
+    tool_choice: { type: "auto" as const },            // claude-opus-5-5 会拒绝强制工具选择
   }),
   output_config: {
     effort: parameters.effort ?? "medium",
@@ -258,7 +258,7 @@ const params = {
   },
 };
 
-const options = { timeout: request.timeoutMs };         // per-request timeout
+const options = { timeout: request.timeoutMs };         // 单次请求超时
 const response = parameters.serverSideFallback === "off"
   ? await client.messages.create(params, options)
   : await client.beta.messages.create({ ...params, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }, options);

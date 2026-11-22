@@ -13,9 +13,13 @@ import {
   type ModelObservabilityPort, type ModelRoute, type ModelRunLimits, type ModelWorkScope,
 } from "@ai-npc/module-sdk";
 import { AttemptEvidence, modelSubstituted } from "./attempt-evidence";
-import { backpressure, currentWork, ModelAdmission } from "./admission";
+import { sharedModelPoolDefinition } from "./definition";
+import { backpressure, currentWork, hasRequestHeadroom, ModelAdmission } from "./admission";
 
+/** 重试退避的固定序列；超过长度即不再重试。 */
 const retryDelays = [1000, 4000];
+/** 单次重试等待的上限，避免供应商给的 retry-after 无限拉长本轮。 */
+const maxRetryWaitMs = 30_000;
 
 function requireCurrent(scope: ModelWorkScope): void {
   if (!currentWork(scope)) throw new DomainError("cancelled", "模型调用的工作租约已失效");
@@ -35,7 +39,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
   const secrets = ports["platform.secrets"] as { resolve(ref: string): string | null };
   const admission = new ModelAdmission(host);
   const evidence = new AttemptEvidence(ports["platform.storage"] as StoragePort, host,
-    ports["platform.observability"] as ModelObservabilityPort);
+    ports["platform.observability"] as ModelObservabilityPort, sharedModelPoolDefinition.version);
   evidence.recoverInterrupted();
 
   /** 解析路由的单个凭据明文，未配置引用时返回 null；同时经传输适配器校验连接与凭据形态。 */
@@ -115,7 +119,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
       try {
         requireCurrent(scope);
         startedAt = host.monotonicMs();
-        if (scope.deadlineMs - startedAt < route.requestTimeoutMs / 2) throw backpressure();
+        if (!hasRequestHeadroom(scope, route.requestTimeoutMs, startedAt)) throw backpressure();
         request = modelRequestSchema.parse({
           llmCallId, attemptId, purpose: route.purpose, externalModel: route.externalModel,
           system: requestInput.system, messages: requestInput.messages, tools: requestInput.tools, output: requestInput.output,
@@ -166,8 +170,8 @@ export function createSharedModelPool(input: ModuleCreateInput) {
       const failure = error ?? modelTransportFailure("protocol");
       const delay = retryDelays[index];
       if (delay === undefined || !failure.retryable || !isRetryableModelError(failure.kind)) throw providerFailure(failure, response);
-      const wait = Math.min(30_000, Math.max(delay, failure.retryAfterMs ?? 0));
-      if (host.monotonicMs() + wait + route.requestTimeoutMs / 2 >= scope.deadlineMs) throw backpressure();
+      const wait = Math.min(maxRetryWaitMs, Math.max(delay, failure.retryAfterMs ?? 0));
+      if (!hasRequestHeadroom(scope, route.requestTimeoutMs, host.monotonicMs() + wait)) throw backpressure();
       budget.check(reservation);
       try {
         await host.sleep(wait, scope.signal);

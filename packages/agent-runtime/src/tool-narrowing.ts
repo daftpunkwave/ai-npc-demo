@@ -75,7 +75,7 @@ function narrowSchema(schema: Json, field: string, values: readonly string[]): J
   };
 }
 
-/** Project the current turn's tools without mutating the registered definitions. */
+/** 为当前 turn 投影工具，不修改已注册的工具定义。 */
 export function narrowToolsForTurn(
   tools: AgentToolsPort,
   agentId: string,

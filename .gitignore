@@ -1,20 +1,20 @@
-# dependencies
+# 依赖
 node_modules/
 .pnpm-store/
 
-# build output
+# 构建产物
 dist/
 build/
 *.tsbuildinfo
 
-# environment / secrets
+# 环境文件与密钥
 .env
 .env.*
 !.env.example
 *.pem
 *.key
 
-# local save files & databases
+# 本地存档与数据库
 *.db
 *.db-wal
 *.db-shm
@@ -22,25 +22,25 @@ build/
 *.sqlite3
 saves/
 
-# logs & temp
+# 日志与临时文件
 *.log
 logs/
 tmp/
 .cache/
 
-# test / coverage
+# 测试与覆盖率
 coverage/
 .nyc_output/
 test-results/
 playwright-report/
 
-# runtime data, builds and local consoles
+# 运行时数据、构建产物与本地控制台
 data/
 data-e2e/
 apps/server/console-static/
 apps/client/dist/
 
-# editors & OS
+# 编辑器与操作系统
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
@@ -49,10 +49,10 @@ apps/client/dist/
 Thumbs.db
 *.swp
 
-# local agent scratch
+# 本地 Agent 草稿
 .claude/settings.local.json
 /docs.local/
 
-# root-local agent instructions
+# 根目录本地 Agent 指令
 /AGENTS.local.md
 /CLAUDE.local.md
