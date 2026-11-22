@@ -242,4 +242,24 @@ describe("控制台研究接口", () => {
     expect(detail.statusCode).toBe(200);
     expect(detail.json()).toMatchObject({ status: "queued", traceId: null });
   });
+
+  it("观察分页拒绝空或非整数的 limit，并先按分支筛选 turn", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    const invalidLimit = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/observations?branchId=${host.branchId}&fromSeq=0&limit=`,
+      headers,
+    });
+    expect(invalidLimit.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalidLimit.json()).error.code).toBe("validation");
+    const turns = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/turns?branchId=${host.branchId}&agentId=human-independent&limit=1`,
+      headers,
+    });
+    expect(turns.statusCode).toBe(200);
+    expect(turns.json()).toMatchObject({ turns: [] });
+  });
 });
