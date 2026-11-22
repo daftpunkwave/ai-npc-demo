@@ -21,7 +21,6 @@ export const BRANCH_TABLES = [
   "clock_stop_requests",
   "consumer_offsets",
   "consumer_inbox",
-  "conversation_lines",
   "agent_activations",
   "controller_leases",
   "observations",

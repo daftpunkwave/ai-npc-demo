@@ -28,8 +28,16 @@ export interface StorageOrder {
   readonly direction?: "asc" | "desc";
 }
 
-/** 列表查询选项：排序、条数与偏移。 */
+/** 列表查询选项：前缀过滤、排他上界、排序、条数与偏移。 */
 export interface StorageListOptions {
+  /**
+   * 前缀过滤：指定 TEXT 列的值必须以 value 开头，按 SQLite BINARY（UTF-8 字节序）比较。
+   * 实现编译为索引范围查询而非 LIKE 扫描；value 必须为可打印 ASCII（0x20–0x7E），
+   * 否则字节上界无法用合法 UTF-8 表达，直接拒绝。
+   */
+  readonly prefix?: { readonly column: string; readonly value: string };
+  /** 排他上界：指定 TEXT 列的值必须小于 value；与 prefix 组合可表达有界区间，取值约束同 prefix。 */
+  readonly before?: { readonly column: string; readonly value: string };
   readonly orderBy?: readonly StorageOrder[];
   readonly limit?: number;
   readonly offset?: number;

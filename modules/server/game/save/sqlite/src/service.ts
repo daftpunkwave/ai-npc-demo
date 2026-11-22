@@ -119,15 +119,16 @@ function objectValue(value: StorageCell | undefined, column: string): Json {
   return value as Json;
 }
 
+/** 分支事件前沿：domain_events 主键为 (branch_id, world_seq)，MAX 走主键索引而非全表遍历。 */
 function maxWorldSeq(tx: StorageTransaction, branchId: string): number {
-  let max = 0;
-  for (const row of tx.branch(branchId).table("domain_events").list()) {
-    const value = row["world_seq"];
-    if (typeof value === "number" && value > max) {
-      max = value;
-    }
+  const value = tx.branch(branchId).table("domain_events").max("world_seq");
+  if (value === null) {
+    return 0;
   }
-  return max;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new DomainError("invalid-state", "分支事件前沿不是非负安全整数", { details: { branchId } });
+  }
+  return value;
 }
 
 /**
