@@ -10,7 +10,6 @@
   "dependencies": {
     "@ai-npc/client-sdk": "workspace:*",
     "@ai-npc/contracts": "workspace:*",
-    "react": "^19",
-    "zod": "^4"
+    "react": "^19"
   }
 }

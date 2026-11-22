@@ -1,6 +1,6 @@
 # 技术栈、工程约定与本地运行
 
-> 本文规定首版技术栈与工程约定。已经引入的依赖以 `pnpm-lock.yaml` 锁定的版本为准。本机已验证 Node v26.13.1 支持 `node:sqlite` 的 WAL、`VACUUM INTO` 和 `backup()`。参见 [code-structure.md — 代码目录](../architecture/code-structure.md)、[build-plan.md — 构建计划](build-plan.md)。
+> 本文规定首版技术栈与工程约定。已经引入的依赖以 `pnpm-lock.yaml` 锁定的版本为准。本机已验证 Node v26.13.1 支持 `node:sqlite` 的 WAL、`VACUUM INTO` 和 `backup()`；`engines.node` 声明运行时下限 `>=24`，`@types/node` 按 `^26` 描述类型面，24/25 运行时未经验证，开发与运行环境按 v26 执行。参见 [code-structure.md — 代码目录](../architecture/code-structure.md)、[build-plan.md — 构建计划](build-plan.md)。
 
 ## 1. 选型一览
 
@@ -10,10 +10,11 @@
 | 包管理 | pnpm workspaces | `pnpm@12` | Node 25 起不再自带 corepack，用 `npm install -g pnpm@12` 安装 |
 | 语言 | TypeScript | `typescript@^7` | `strict: true`；只用于类型检查（`noEmit`） |
 | 运行 TS | tsx | `tsx@^4` | 服务端开发、启动与 `scripts/*.ts` 都用 tsx 直接运行源码 |
-| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`、`@fastify/static@^10` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器 |
+| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`、`@fastify/static@^10` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器，依赖由该适配器包的 manifest 声明 |
 | 数据库 | SQLite | Node 内置 `node:sqlite`（`DatabaseSync`） | 同步 API、WAL、单写者；只在 `platform.storage.sqlite` 适配器内出现 |
-| 校验 | Zod | `zod@^4` | 所有 DTO、配置、内容与 LLM 输出的唯一运行时校验；`z.toJSONSchema()` 生成工具与输出 schema |
+| 校验 | Zod | `zod@^4`（锁定 `4.6.7`） | 所有 DTO、配置、内容与 LLM 输出的唯一运行时校验；`z.toJSONSchema()` 生成工具与输出 schema。多数包声明下限 `^4`，`packages/experiment` 另声明 `^4.6.7` 下限，新增使用方按实现所需下限声明 |
 | 配置/内容 | YAML | `yaml@^2` | `config/**`、`content/**` 都是 YAML，读入后用 Zod 校验 |
+| 资产校验脚本 | fast-xml-parser | `fast-xml-parser@^5` | 解析资产包 SVG/XML，只被 `scripts/check-assets.ts` 引用，由 `scripts` 包声明 |
 | 浏览器构建 | Vite | `vite@^8`、`@vitejs/plugin-react` | 客户端与控制台各一个 Vite 配置 |
 | UI | React | `react@^19`、`react-dom@^19` | 不引入状态管理库与 CSS 框架 |
 | 2.5D 灰盒场景 | PixiJS | `pixi.js@^8` | 只在 `client.scene-renderer.pixi` 适配器内出现；3D 目标另实现同一端口 |
@@ -67,7 +68,7 @@ packages:
 规则：
 
 - 包之间只能 import 对方 `exports` 暴露的入口（即 `@ai-npc/xxx`），禁止 `@ai-npc/xxx/src/...` 深层路径。
-- 一个包 import 的每个 workspace 包都必须写在自己的 `dependencies` 里；`check-boundaries` 同时检查源码 import 与 `package.json`。
+- 一个包 import 的每个 workspace 包都必须写在自己的 `dependencies` 里；生产源码 import 的第三方库也必须写在自己的 `dependencies` 里（仅测试文件豁免，`*.config.ts` 工具入口按第 1 节由 devDependencies 供给）；根清单不声明生产依赖，运行时职责全部落在应用包与模块包。`check-boundaries` 同时检查源码 import 与 `package.json`。
 - 模块生产源码及 `dependencies` 按下表的 realm/kind 白名单检查；未列出的库不因“纯工具”或 adapter 身份自动获准。测试工具仅用于测试，构建工具仅用于源码配置，不得被生产实现引用。新增依赖先评审并更新本表，不允许跨模块实现依赖。
 - `modules/**/tests/**` 下的模块测试不属于生产源码，可以使用 vitest、Node 内置模块与宿主机制包的公开入口；深层导入、跨模块实现依赖与循环依赖仍照常检查。
 
@@ -82,7 +83,7 @@ packages:
 
 源码依赖包括静态 import、re-export、字面量动态 import 及相对路径跨包引用；生产模块禁止非字面量动态加载；检查脚本仅可从显式、已校验的 catalog 路径加载定义，不得扫描执行任意模块。包依赖图同时检查 `dependencies` 与实际引用，不允许借未使用的依赖声明或 devDependencies 藏入生产依赖。运行时 `requires` 是能力 port 的依赖图，浏览器 `requiresRemote` 经握手校验，不授权源码 import provider 的实现；三种检查不能互相替代。
 - 每个模块包除了 `"."` 还导出 `"./definition": "./src/definition.ts"`。`definition.ts` 只含描述符数据，**不得静态 import 实现文件、React、PixiJS、Fastify 或模型 SDK**；`create` 用动态 `import("./plugin")` 加载实现。这样三个组合根的 `module-catalog.ts` 都能在 Node 中导入，供 `check-catalog` 使用。
-- `tests` 与 `scripts` 两个包可为验证依赖任意 workspace 的公开入口（包括模块包），但不豁免深层导入、循环依赖或生产源码边界；测试夹具不作为生产模块加载。
+- `tests` 与 `scripts` 两个包可为验证依赖任意 workspace 的公开入口（包括模块包），但不豁免深层导入、循环依赖或生产源码边界；两者生产源码 import 的第三方库仍须写进自身 `dependencies`，测试夹具不作为生产模块加载。
 
 ## 3. TypeScript 配置
 
