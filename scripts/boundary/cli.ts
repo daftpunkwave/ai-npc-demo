@@ -3,30 +3,15 @@
  * 只在被直接执行时扫描仓库；作为模块导入时不启动扫描、不打印任何内容。
  * 禁止在此忽略违规、修改退出码或把检查结果写入仓库。
  */
-import { realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDirectExecution } from "../direct-execution";
 import { checkBoundaries } from "./checker";
 import { scanRepository } from "./repository";
 import type { BoundaryViolation } from "./types";
 
 export function formatViolation(item: BoundaryViolation): string {
   return `${item.file}:${item.line}: [规则 ${item.rule} / ${item.code}] ${item.message}`;
-}
-
-function isDirectExecution(moduleUrl: string): boolean {
-  const entryPath = process.argv[1];
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- process.argv[1] 在仓库 noUncheckedIndexedAccess 下可能为 undefined；Codacy 未开启该选项。
-  if (entryPath === undefined) {
-    return false;
-  }
-  const modulePath = fileURLToPath(moduleUrl);
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- 只比较仓库内固定入口文件的 realpath，不是外部路径。
-    return realpathSync(resolve(entryPath)) === realpathSync(modulePath);
-  } catch {
-    return resolve(entryPath) === modulePath;
-  }
 }
 
 function runCli(): void {
