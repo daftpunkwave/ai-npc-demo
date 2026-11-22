@@ -7,4 +7,5 @@
 // @ts-expect-error
 // @vitest-environment node
 // prettier-ignore
+/// <reference types="vite/client" />
 export const value = missingValue;

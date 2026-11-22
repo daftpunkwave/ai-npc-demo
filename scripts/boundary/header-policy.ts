@@ -25,7 +25,7 @@ function commentBody(comment: string): string {
 
 function directiveExplanation(body: string): string | null {
   if (
-    body.startsWith("<reference") ||
+    (body.charAt(0) === "<" && body.startsWith("reference", 1)) ||
     body === "nosemgrep" ||
     body.startsWith("nosemgrep:") ||
     body.startsWith("@vitest-environment") ||
