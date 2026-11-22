@@ -281,7 +281,9 @@ describe("确定性模型装配与角色对白", () => {
         .replace("maxToolCallsPerRound: 3", "maxToolCallsPerRound: 1"), "utf8");
     const host = await modelHost({ configRoot });
     const turn = await turnFor(host, startConversation(host, "请调查。"));
-    expect(turn).toMatchObject({ status: "failed", terminal_reason: "over-budget" });
+    // status 记录失败类别（over-budget 归为 failed），terminal_reason 记录细分原因：
+    // 本场景的阻塞点是每轮工具调用次数用尽，而不是输入窗口放不下，因此记为 call-budget。
+    expect(turn).toMatchObject({ status: "failed", terminal_reason: "call-budget" });
     const all = requests(host, String(turn["turn_id"]));
     expect(all.map(({ purpose }) => purpose)).toEqual(["decision", "decision", "decision"]);
     expect(replies(host)).toHaveLength(0);
