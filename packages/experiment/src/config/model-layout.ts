@@ -59,6 +59,7 @@ const pricingSchema = z.object({
   pricingVersion: name,
   currency: z.string().regex(/^[A-Z]{3}$/u),
   models: z.record(configRefSchema, z.object({
+    externalModel: name,
     inputPerMTok: z.number().nonnegative(), outputPerMTok: z.number().nonnegative(),
   }).strict()),
 }).strict();

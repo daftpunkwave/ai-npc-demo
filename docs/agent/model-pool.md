@@ -196,7 +196,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 - 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。
 - run、Agent、turn 三级预算：run 的 `maxTokens` 与 `maxCost`（来自 RunSpec，可为 null 表示不限）、每个 Agent 每游戏日的 `maxTokensPerAgentPerDay`（profile 的 budgets，默认 60000）、turn 的调用次数上限（profile）。任何一级不足时以 `budget-exhausted` 失败，不排队。
 - 进程退出时未结算的预留在重启后按预留计入，并标记为未知用量。缺少完整归档的运行标记为证据不完整。
-- 费用：布局的 `pricingRef` 选择价目文件，省略时为 `config/pricing.yaml`。文件按 `modelId` 给出每百万输入/输出 token 的单价与币种（默认全部为 0，即只统计 token）；manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
+- 费用：布局的 `pricingRef` 选择价目文件，省略时为 `config/pricing.yaml`。文件按 `modelId` 给出 `externalModel` 与每百万输入/输出 token 的单价；预检要求实际解析出的供应商模型与记录一致。manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
 
 ### 12.5 记录
 

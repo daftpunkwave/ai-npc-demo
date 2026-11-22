@@ -366,6 +366,6 @@ schemaVersion: 1
 pricingVersion: "2026-11-live"
 currency: USD
 models:
-  npc-chat:   { inputPerMTok: 0.3, outputPerMTok: 1.2 } # DeepSeek Flash peak list price, 2026-11
-  npc-claude: { inputPerMTok: 4.0, outputPerMTok: 20.0 } # Claude Opus 5.5 list price, 2026-11
+  npc-chat:   { externalModel: deepseek-flash, inputPerMTok: 0.3, outputPerMTok: 1.2 } # DeepSeek Flash peak list price, 2026-11
+  npc-claude: { externalModel: claude-opus-5-5, inputPerMTok: 4.0, outputPerMTok: 20.0 } # Claude Opus 5.5 list price, 2026-11
 ```

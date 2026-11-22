@@ -6,7 +6,7 @@
 import { vi } from "vitest";
 
 const origin = "https://model.example.test";
-const externalModel = "integration-test-model";
+const externalModel = "deepseek-flash";
 export const standardModelTestKey = "integration-test-api-key";
 
 export function stubStandardModelHttp(): () => void {

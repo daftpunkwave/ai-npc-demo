@@ -91,8 +91,15 @@ export async function resolveModelConfiguration(input: {
       Object.values(model.maxOutputTokensByPurpose).some((limit) => limit > model.capabilities.maxOutputTokens)) {
       fail(`模型 ${modelId} 的输出上限超过能力声明`);
     }
-    return [modelId, { ...model, connection, externalModel: resolveModelEnv(model.externalModel, loadContext, "NPC_OPENAI_COMPAT_MODEL"),
-      modelId, price: { ...price, currency: pricing.currency } }] as const;
+    const externalModel = resolveModelEnv(model.externalModel, loadContext, "NPC_OPENAI_COMPAT_MODEL");
+    if (price.externalModel !== externalModel) {
+      fail(`模型 ${modelId} 的 externalModel 与价目记录不一致`);
+    }
+    const { externalModel: _pricedExternalModel, ...priceFields } = price;
+    return [modelId, {
+      ...model, connection, externalModel, modelId,
+      price: { ...priceFields, currency: pricing.currency },
+    }] as const;
   }));
   if (layout.evaluator !== undefined && !models.has(layout.evaluator.modelId)) fail("评估主体引用了未知模型");
   if (layout.evaluator?.enabled === true) fail("当前运行装配未启用模型评估主体");
