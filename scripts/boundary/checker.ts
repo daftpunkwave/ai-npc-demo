@@ -4,7 +4,7 @@
  * 禁止在此放行无法判定 kind 的模块、跳过文件或改变规则编号。
  */
 import { extname } from "node:path";
-import { RULE_MODULE_REALM, SCRIPT_EXTENSIONS } from "./constants";
+import { RULE_DEPENDENCY_GRAPH, RULE_MODULE_REALM, SCRIPT_EXTENSIONS } from "./constants";
 import { checkDefinitionFileImports, isModuleDefinitionFile } from "./definition";
 import { checkDependencyGraph } from "./dependency-graph";
 import { dedupeAndSort, violation } from "./finding";
@@ -18,7 +18,7 @@ import {
   isVerificationPackage,
   resolveWorkspaceImport,
 } from "./package-registry";
-import { isSkippedPath, nodeBuiltinName, normalizeRepoPath, packageNameOfSpecifier } from "./paths";
+import { isSkippedPath, isToolConfigFile, nodeBuiltinName, normalizeRepoPath, packageNameOfSpecifier } from "./paths";
 import type {
   BoundaryCheckInput,
   BoundaryPackage,
@@ -86,7 +86,11 @@ export function checkBoundaries(input: BoundaryCheckInput): readonly BoundaryVio
       const testFile = importer !== undefined && isTestFile(file.path, importer);
       const importerModule = importer === undefined ? undefined : modulePackages.get(importer.name);
       const imports = collectImports(file.content);
-      if (importer !== undefined && !testFile && !isVerificationPackage(importer)) {
+      const verificationImporter = importer !== undefined && isVerificationPackage(importer);
+      // 工具入口（*.config.ts）的导入由 devDependencies 供给，不计入生产使用；
+      // 验证包的全部源码（含测试）收集第三方导入，供依赖图检查验证包自身的声明。
+      const toolConfigEntry = importer !== undefined && isToolConfigFile(file.path);
+      if (importer !== undefined && !toolConfigEntry && (!testFile || verificationImporter)) {
         const imported = productionImports.get(importer.name) ?? new Set<string>();
         for (const record of imports) {
           if (record.kind === "dynamic-non-literal") {
@@ -94,17 +98,31 @@ export function checkBoundaries(input: BoundaryCheckInput): readonly BoundaryVio
           }
           const resolution = resolveWorkspaceImport(record.specifier, packagesByName);
           if (resolution.target !== undefined) {
-            imported.add(resolution.target.name);
+            if (!verificationImporter) {
+              imported.add(resolution.target.name);
+            }
             continue;
           }
-          // 第三方导入也计入生产使用：dependencies 声明而生产源码未引用的库按依赖图规则报违规。
+          // 第三方导入也计入生产使用：dependencies 声明而源码未引用的库按依赖图规则报违规。
           if (nodeBuiltinName(record.specifier) === null) {
             imported.add(packageNameOfSpecifier(record.specifier));
           }
         }
-        // .tsx/.jsx 经自动 JSX transform 隐式引入 react/jsx-runtime，视为事实使用 react。
-        if (/\.[jt]sx$/.test(extension)) {
+        // .tsx/.jsx 经自动 JSX transform 隐式引入 react/jsx-runtime，视为事实使用 react；
+        // 生产源码使用 JSX 而未声明 react 时按未声明第三方依赖报违规。
+        if (!verificationImporter && /\.[jt]sx$/.test(extension)) {
           imported.add("react");
+          if (!Object.prototype.hasOwnProperty.call(importer.dependencies, "react")) {
+            violations.push(
+              violation(
+                RULE_DEPENDENCY_GRAPH,
+                "undeclared-third-party-dependency",
+                file.path,
+                1,
+                "自动 JSX transform 隐式依赖 react，须在 dependencies 声明。",
+              ),
+            );
+          }
         }
         productionImports.set(importer.name, imported);
       }

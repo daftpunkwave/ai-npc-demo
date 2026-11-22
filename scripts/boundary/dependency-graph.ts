@@ -34,17 +34,17 @@ export function checkDependencyGraph(
     }
   }
 
-  // 验证包的 workspace 依赖用于测试自身覆盖，不计入生产引用；其余包的声明必须被生产源码实际使用。
+  // 验证包的 workspace 依赖用于测试自身覆盖，不计入生产引用，workspace 声明豁免 unused 检查；
+  // 第三方声明对其照常检查（生产与测试源码的导入都计入使用）。
   // 根包没有生产源码，任何 dependencies 声明都无使用方，运行时职责应落在应用与模块包。
   for (const pkg of packages) {
     const isRootPackage = pkg.directory === "";
-    if (isVerificationPackage(pkg) && !isRootPackage) {
-      continue;
-    }
+    const verificationWorkspaceExempt = isVerificationPackage(pkg) && !isRootPackage;
     const imported = productionImports.get(pkg.name) ?? new Set<string>();
     for (const dependencyName of Object.keys(pkg.dependencies)) {
       const isWorkspaceDependency = dependencyName.startsWith("@ai-npc/");
-      if (!imported.has(dependencyName)) {
+      const exempt = verificationWorkspaceExempt && isWorkspaceDependency;
+      if (!exempt && !imported.has(dependencyName)) {
         violations.push(
           violation(
             RULE_DEPENDENCY_GRAPH,

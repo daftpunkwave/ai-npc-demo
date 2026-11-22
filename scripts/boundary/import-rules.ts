@@ -337,16 +337,20 @@ function inspectExternalImport(
     );
   }
 
-  if (importer !== undefined && canCheckThirdPartyDeclaration(testFile) && !isToolConfigFile(file.path)) {
-    if (!Object.prototype.hasOwnProperty.call(importer.dependencies, packageBase)) {
-      const devOnly = Object.prototype.hasOwnProperty.call(importer.devDependencies, packageBase);
+  if (importer !== undefined && canCheckThirdPartyDeclaration(testFile)) {
+    const declaredInDependencies = Object.prototype.hasOwnProperty.call(importer.dependencies, packageBase);
+    const declaredInDev = Object.prototype.hasOwnProperty.call(importer.devDependencies, packageBase);
+    // 工具入口（*.config.ts）不是生产实现，导入构建/测试工具写进 devDependencies 即可；
+    // 但两段都没声明的导入仍然报违规，防止借配置文件名绕过依赖声明。
+    const toolConfigEntry = isToolConfigFile(file.path);
+    if (!declaredInDependencies && !(toolConfigEntry && declaredInDev)) {
       violations.push(
         violation(
           RULE_DEPENDENCY_GRAPH,
-          devOnly ? "dependency-declared-in-dev-dependencies" : "undeclared-third-party-dependency",
+          !toolConfigEntry && declaredInDev ? "dependency-declared-in-dev-dependencies" : "undeclared-third-party-dependency",
           file.path,
           record.line,
-          devOnly
+          declaredInDev
             ? `${packageBase} 只写在 devDependencies，生产源码依赖必须写入 dependencies。`
             : `引用了未在 dependencies 声明的第三方库 ${packageBase}。`,
         ),

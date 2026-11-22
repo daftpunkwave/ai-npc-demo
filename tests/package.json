@@ -4,6 +4,7 @@
     "private":  true,
     "type":  "module",
     "dependencies":  {
+                         "@playwright/test":  "^1",
                          "@ai-npc/agent-runtime":  "workspace:*",
                          "@ai-npc/mod-agent-compression-none":  "workspace:*",
                          "@ai-npc/mod-agent-compression-window":  "workspace:*",
