@@ -21,6 +21,7 @@ import {
   sessionAssemblyResponseSchema,
   sessionDescriptorSchema,
   streamAppendMessageSchema,
+  type CampaignView,
   type ClockView,
   type CommandReceipt,
   type Json,
@@ -273,6 +274,8 @@ function conversationPort(harness: GameHarness): ConversationReadPort {
 
 interface AppOverrides {
   readonly projection?: () => PlayerProjection;
+  /** 战役轻量读取端口；验证 GET /campaign 走它并在未接线时回退完整投影。 */
+  readonly campaign?: () => CampaignView | null;
   readonly pause?: () => ClockView;
   readonly reset?: () => { readonly branchId: string; readonly clock: ClockView };
   readonly now?: () => number;
@@ -331,6 +334,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     sessionAssembly: overrides.sessionAssembly ?? { client: clientAssembly, console: consoleAssembly },
     starts: overrides.starts ?? (() => []),
     projection: overrides.projection ?? (() => projection(clockView(harness))),
+    ...(overrides.campaign === undefined ? {} : { campaign: overrides.campaign }),
     clock: () => clockView(harness),
     ...(overrides.conversation === undefined
       ? {}
@@ -673,6 +677,64 @@ describe("服务端 API", () => {
     // 时钟随投影返回；campaign 响应只含 campaign 与开局选项。
     const view = await app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
     expect(view.json()).toMatchObject({ projection: { clock: { worldTick: 0, mode: "running" } } });
+  });
+
+  it("GET /campaign 走轻量战役读取端口，未接线时回退完整投影", async () => {
+    const value = await createTrackedGameHarness(active);
+    let projectionCalls = 0;
+    let campaignCalls = 0;
+    const lightView: CampaignView = {
+      campaignId: "cmp-000000000001",
+      factionId: "human-neutral",
+      factionName: "灰港公社",
+      commission: "轻量读取",
+      status: "running",
+      outcome: null,
+      startTick: 4,
+    };
+
+    // 接线轻量端口：/campaign 只调 campaign()，不构建完整投影。
+    const wired = await appFor(value, {
+      projection: () => {
+        projectionCalls += 1;
+        return projection(clockView(value));
+      },
+      starts: () => [],
+      campaign: () => {
+        campaignCalls += 1;
+        return lightView;
+      },
+    });
+    const wiredSession = await login(wired, "player-token");
+    projectionCalls = 0;
+    const wiredResponse = await wired.inject({
+      method: "GET",
+      url: "/api/v1/campaign",
+      headers: { authorization: `Bearer ${wiredSession}` },
+    });
+    expect(wiredResponse.statusCode).toBe(200);
+    expect(campaignResponseSchema.parse(wiredResponse.json())).toMatchObject({ campaign: lightView });
+    expect(campaignCalls).toBe(1);
+    expect(projectionCalls).toBe(0);
+
+    // 未接线：回退完整投影，返回投影内的 campaign（开局前为 null）。
+    const fallback = await appFor(value, {
+      projection: () => {
+        projectionCalls += 1;
+        return projection(clockView(value));
+      },
+      starts: () => [],
+    });
+    const fallbackSession = await login(fallback, "player-token");
+    projectionCalls = 0;
+    const fallbackResponse = await fallback.inject({
+      method: "GET",
+      url: "/api/v1/campaign",
+      headers: { authorization: `Bearer ${fallbackSession}` },
+    });
+    expect(fallbackResponse.statusCode).toBe(200);
+    expect(campaignResponseSchema.parse(fallbackResponse.json())).toMatchObject({ campaign: null });
+    expect(projectionCalls).toBeGreaterThan(0);
   });
 
   it("GET /conversations/{agentId} 返回真实对白，选择最近一次交换并校验分页", async () => {

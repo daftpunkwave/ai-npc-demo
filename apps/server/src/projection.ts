@@ -7,6 +7,7 @@
 import {
   playerProjectionSchema,
   type AgreementView,
+  type CampaignView,
   type CharacterView,
   type ClockView,
   type ConversationLine,
@@ -23,6 +24,7 @@ import {
 import { addAmounts, factionStandingNode } from "@ai-npc/module-sdk";
 import type {
   AgreementView as AgreementPortView,
+  CampaignView as WorldCampaignView,
   GameActionsPort,
   GameAgreementsPort,
   GameCommsPort,
@@ -553,6 +555,22 @@ function notificationViews(input: {
   return items;
 }
 
+/**
+ * 战役视图：世界快照提供事实字段，派系名与首个委托取自内容索引；
+ * 战役读取端口与完整投影共用同一映射，避免两处口径漂移。
+ */
+export function campaignViewOf(campaign: WorldCampaignView, content: GameContent): CampaignView {
+  return {
+    campaignId: campaign.campaignId,
+    factionId: campaign.factionId,
+    factionName: content.factions.get(campaign.factionId)?.name ?? campaign.factionId,
+    commission: content.starts.get(campaign.factionId)?.commission ?? "第 7 日",
+    status: campaign.status,
+    outcome: campaign.outcome,
+    startTick: campaign.startTick,
+  };
+}
+
 /** 构建完整玩家投影；缺少可选端口时对应集合为空，绝不伪造私有数据。 */
 export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProjection {
   const { content, clock, world, map } = input;
@@ -596,17 +614,7 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
   const inbox = inboxItems(input.comms, playerPrincipalId);
   const notebook = notebookEntries(content, input.comms, playerPrincipalId);
   return playerProjectionSchema.parse({
-    campaign: campaign === null
-      ? null
-      : {
-          campaignId: campaign.campaignId,
-          factionId: campaign.factionId,
-          factionName: content.factions.get(campaign.factionId)?.name ?? campaign.factionId,
-          commission: content.starts.get(campaign.factionId)?.commission ?? "第 7 日",
-          status: campaign.status,
-          outcome: campaign.outcome,
-          startTick: campaign.startTick,
-        },
+    campaign: campaign === null ? null : campaignViewOf(campaign, content),
     clock,
     map: { nodes: nodeViews, roads: roadViews },
     meters: meterView,

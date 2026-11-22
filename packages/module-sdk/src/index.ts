@@ -14,6 +14,7 @@ export { createScopedStateKey } from "./ports";
 export { isApprovedSpeechUsable } from "./speech-approval";
 export type {
   AggregateEntry,
+  AggregateListOptions,
   AggregateRecord,
   ApprovedSpeech,
   ApprovedSpeechReader,
