@@ -262,4 +262,38 @@ describe("控制台研究接口", () => {
     expect(turns.statusCode).toBe(200);
     expect(turns.json()).toMatchObject({ turns: [] });
   });
+
+  it("记忆快照与差异拒绝高于已提交水位的 revision", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    const revision = host.storage.transact((tx) =>
+      tx.branch(host.branchId).table("memory_watermarks").get({ agent_id: "human-independent" })
+        ?.["revision"]);
+    expect(revision).toBe(0);
+
+    const initial = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/memory?branchId=${host.branchId}&revision=0`,
+      headers,
+    });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toEqual({ revision: 0, records: [] });
+
+    const futureSnapshot = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/memory?branchId=${host.branchId}&revision=1`,
+      headers,
+    });
+    expect(futureSnapshot.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(futureSnapshot.json()).error.code).toBe("not-found");
+
+    const futureDiff = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/memory/diff?branchId=${host.branchId}&from=0&to=1`,
+      headers,
+    });
+    expect(futureDiff.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(futureDiff.json()).error.code).toBe("not-found");
+  });
 });

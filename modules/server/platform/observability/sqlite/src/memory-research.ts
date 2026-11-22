@@ -79,6 +79,16 @@ export function readMemory(
   revision: number,
 ): MemoryResponse {
   const worldId = readWorldId(storage, branchId);
+  const storedRevision = storage.transact((tx) =>
+    tx.branch(branchId).table("memory_watermarks").get({ agent_id: agentId })?.["revision"]);
+  const committedRevision = storedRevision ?? 0;
+  if (typeof committedRevision !== "number" || !Number.isSafeInteger(committedRevision) ||
+    committedRevision < 0) {
+    throw new DomainError("invalid-state", `Agent ${agentId} 的记忆水位不是非负整数`);
+  }
+  if (revision > committedRevision) {
+    throw new DomainError("not-found", `记忆 revision ${revision} 尚未提交`);
+  }
   const rows = storage.transact((tx) => tx.branch(branchId).table("memory_records")
     .list({ agent_id: agentId }, { orderBy: [{ column: "memory_id" }, { column: "row_version" }] })
     .filter((row) =>
