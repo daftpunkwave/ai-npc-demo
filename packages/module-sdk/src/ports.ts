@@ -63,6 +63,23 @@ export interface AggregateEntry<TState> {
 }
 
 /**
+ * WorldTx.list 的条件查询选项：按聚合 ID 前缀与主键序分页，由存储层下推为索引范围查询，
+ * 避免反序列化全类型聚合后筛选。idPrefix 按聚合 ID 的字典序匹配，必须为可打印 ASCII。
+ */
+export interface AggregateListOptions {
+  /** 只返回 aggregate_id 以该前缀开头的聚合；空串表示不过滤。 */
+  readonly idPrefix?: string;
+  /** 排他上界：只返回 aggregate_id 小于该值的聚合；与 idPrefix 组合可表达有界区间。 */
+  readonly idBefore?: string;
+  /** 按 aggregate_id 降序返回；缺省升序。 */
+  readonly descending?: boolean;
+  /** 返回条数上限。 */
+  readonly limit?: number;
+  /** 跳过条数。 */
+  readonly offset?: number;
+}
+
+/**
  * authority 在一个事务内提供给规则处理器的受控读写端口。
  * 处理器只能读写自己声明 ownsAggregates 的聚合类型，事件与 job 也经此登记后由 authority 统一提交；
  * 不提供直接 SQL、手动提交/回滚或跨模块实现的万能执行通道。
@@ -70,7 +87,7 @@ export interface AggregateEntry<TState> {
 export interface WorldTx {
   readonly worldTick: number;
   get<TState>(aggregateType: string, aggregateId: string): AggregateRecord<TState> | null;
-  list<TState>(aggregateType: string): readonly AggregateEntry<TState>[];
+  list<TState>(aggregateType: string, options?: AggregateListOptions): readonly AggregateEntry<TState>[];
   put(aggregateType: string, aggregateId: string, state: Json): void;
   remove(aggregateType: string, aggregateId: string): void;
   emit(type: string, payload: Json, audience: readonly AudienceSpec[], causationIds?: readonly string[]): string;

@@ -82,14 +82,21 @@ function makeTempConfigDir(): string {
 }
 
 describe("配置加载", () => {
-  it("模型环境变量仅从注入环境的自有字段读取", () => {
-    const env = Object.assign(Object.create({ INHERITED_KEY: "outside-config" }) as Record<string, string>, {
-      _MODEL2: "fixture-model",
+  it("模型环境变量仅接受登记名称并从注入环境的自有字段读取", () => {
+    const env = Object.assign(Object.create({ NPC_OPENAI_COMPAT_MODEL: "outside-config" }) as Record<string, string>, {
+      NPC_OPENAI_COMPAT_BASE_URL: "http://127.0.0.1:11434/v1",
+      NPC_OPENAI_COMPAT_MODEL: "fixture-model",
     });
-    expect(resolveModelEnv("env:_MODEL2", { configDir, env })).toBe("fixture-model");
-    for (const ref of ["env:INHERITED_KEY", "env:2MODEL", "env:_MODEL2\n", "env:"]) {
+    expect(resolveModelEnv("env:NPC_OPENAI_COMPAT_MODEL", { configDir, env })).toBe("fixture-model");
+    for (const ref of ["env:INHERITED_KEY", "env:NPC_OPENAI_COMPAT_MODEL\n", "env:"]) {
       expect(captureLoadingError(() => resolveModelEnv(ref, { configDir, env })).code).toBe("env");
     }
+    const inheritedOnly = Object.create({
+      NPC_OPENAI_COMPAT_MODEL: "outside-config",
+    }) as Record<string, string>;
+    expect(captureLoadingError(() =>
+      resolveModelEnv("env:NPC_OPENAI_COMPAT_MODEL", { configDir, env: inheritedOnly })).code,
+    ).toBe("env");
   });
 
   it("模型夹具拒绝目录外引用、重复 ID、非法 JSON 和过大的文件", () => {

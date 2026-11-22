@@ -5,12 +5,18 @@
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { createScopedWorldTxFactory, systemPrincipalId, type Authority } from "@ai-npc/authority";
-import { DomainError, commandReceiptSchema, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import {
+  DomainError,
+  commandReceiptSchema,
+  type CampaignView,
+  type StoragePort,
+  type StorageTransaction,
+} from "@ai-npc/contracts";
 import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
 import type { CommandReceiptReadPort, ConversationReadPort, ServerRuntime } from "./module-catalog";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";
-import { buildPlayerProjection } from "../projection";
+import { buildPlayerProjection, campaignViewOf } from "../projection";
 import type { HostServices } from "@ai-npc/contracts";
 
 export interface ReadPortsInput {
@@ -30,6 +36,8 @@ export interface HostReadPorts {
   readonly receipts: CommandReceiptReadPort;
   /** 当前玩家投影；由游戏端口与时钟在同一只读事务内组装。 */
   projection(): ReturnType<typeof buildPlayerProjection>;
+  /** 当前战役视图；只读世界端口的 campaign 聚合并补内容索引字段，不构建完整投影。 */
+  campaign(): CampaignView | null;
   /** 会话读取端口；分页与送达过滤在传输层完成。 */
   readonly conversation: ConversationReadPort;
 }
@@ -91,6 +99,12 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
     });
   });
 
+  const campaign: HostReadPorts["campaign"] = () =>
+    storage.transact((tx) => {
+      const raw = portsIn(tx)["game.world"].campaign();
+      return raw === null ? null : campaignViewOf(raw, gameContent);
+    });
+
   const conversation: ConversationReadPort = {
     worldTick: () => runtime.clock.read(active.branchId).worldTick,
     conversationsOf: (principalId: string) =>
@@ -132,5 +146,5 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
       gameContent.characters.get(principalId)?.name ?? gameContent.factions.get(principalId)?.leaderName ?? principalId,
   };
 
-  return { portsIn, receipts, projection, conversation };
+  return { portsIn, receipts, projection, campaign, conversation };
 }

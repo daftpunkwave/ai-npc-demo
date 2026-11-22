@@ -1,10 +1,11 @@
 /**
- * 验证表级 scope 读写：JSON 编解码、分支隔离、等值过滤、排序分页、主键校验与 upsert。
+ * 验证表级 scope 读写：JSON 编解码、分支隔离、等值过滤、排序分页、主键校验与 upsert；
+ * 前缀与排他上界查询下推为主键范围扫描。
  * 依赖存储模块测试助手与存储端口契约。
  * 禁止绕过 scoped 分支接口直接访问分支级表，或让测试依赖未声明的默认行序。
  */
 import { describe, expect, it } from "vitest";
-import type { StorageRow } from "@ai-npc/contracts";
+import type { StoragePort, StorageRow } from "@ai-npc/contracts";
 import { expectDomainError, openStorageHarness } from "./support";
 
 const BRANCH_A = "brn-a";
@@ -313,6 +314,117 @@ describe("原始查询与 BLOB", () => {
       ).toThrow("回滚原始写入");
       const count = harness.port.transact((tx) => tx.get("SELECT COUNT(*) AS total FROM worlds")?.["total"]);
       expect(count).toBe(0);
+    } finally {
+      await harness.dispose();
+    }
+  });
+});
+
+describe("前缀范围查询", () => {
+  function seedMemberships(port: StoragePort): void {
+    port.transact((tx) => {
+      const table = tx.branch(BRANCH_A).table("aggregate_state");
+      const ids = ["player-1:conv-2", "player-1:conv-1", "player-2:conv-1", "player-1x:conv-1"];
+      for (const [index, aggregateId] of ids.entries()) {
+        table.put({ aggregate_type: "membership", aggregate_id: aggregateId, version: 1, state_json: {} });
+        void index;
+      }
+    });
+  }
+
+  it("按前缀过滤并按 ID 升序返回", async () => {
+    const harness = await openStorageHarness();
+    try {
+      seedMemberships(harness.port);
+      const ids = harness.port.transact((tx) =>
+        tx
+          .branch(BRANCH_A)
+          .table("aggregate_state")
+          .list({ aggregate_type: "membership" }, { prefix: { column: "aggregate_id", value: "player-1:" } })
+          .map((row) => String(row["aggregate_id"])),
+      );
+      // 前缀以冒号结尾：player-1x 不以 "player-1:" 开头，不进入结果。
+      expect(ids).toEqual(["player-1:conv-1", "player-1:conv-2"]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("与降序、limit、offset 与排他上界组合", async () => {
+    const harness = await openStorageHarness();
+    try {
+      seedMemberships(harness.port);
+      harness.port.transact((tx) => {
+        const table = tx.branch(BRANCH_A).table("aggregate_state");
+        const filter = { aggregate_type: "membership" };
+        const descending = {
+          prefix: { column: "aggregate_id", value: "player-1:" },
+          orderBy: [{ column: "aggregate_id", direction: "desc" as const }],
+        };
+        expect(
+          table
+            .list(filter, { ...descending, limit: 1 })
+            .map((row) => String(row["aggregate_id"])),
+        ).toEqual(["player-1:conv-2"]);
+        expect(
+          table
+            .list(filter, { ...descending, limit: 1, offset: 1 })
+            .map((row) => String(row["aggregate_id"])),
+        ).toEqual(["player-1:conv-1"]);
+        expect(
+          table
+            .list(filter, {
+              prefix: { column: "aggregate_id", value: "player-1:" },
+              before: { column: "aggregate_id", value: "player-1:conv-2" },
+            })
+            .map((row) => String(row["aggregate_id"])),
+        ).toEqual(["player-1:conv-1"]);
+        // 空前缀等价于不过滤，仍按 ID 升序。
+        expect(
+          table.list(filter, { prefix: { column: "aggregate_id", value: "" } }).map((row) => String(row["aggregate_id"])),
+        ).toEqual(["player-1:conv-1", "player-1:conv-2", "player-1x:conv-1", "player-2:conv-1"]);
+      });
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("拒绝非可打印 ASCII 前缀与未知列", async () => {
+    const harness = await openStorageHarness();
+    try {
+      harness.port.transact((tx) => {
+        const table = tx.branch(BRANCH_A).table("aggregate_state");
+        expectDomainError(
+          () => table.list({}, { prefix: { column: "aggregate_id", value: "玩家:" } }),
+          "validation",
+        );
+        expectDomainError(() => table.list({}, { prefix: { column: "missing", value: "a" } }), "validation");
+        expectDomainError(() => table.list({}, { before: { column: "aggregate_id", value: "\u007F" } }), "validation");
+      });
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("前缀与排他上界条件走主键索引，事件前沿 MAX 同样只做索引查询", async () => {
+    const harness = await openStorageHarness();
+    try {
+      harness.port.transact((tx) => {
+        const plan = tx
+          .all(
+            "EXPLAIN QUERY PLAN SELECT aggregate_id FROM aggregate_state WHERE branch_id = ? AND aggregate_type = ? AND aggregate_id >= ? AND aggregate_id < ?",
+            [BRANCH_A, "membership", "player-1:", "player-1:z"],
+          )
+          .map((row) => String(row["detail"]))
+          .join("\n");
+        expect(plan).toMatch(/SEARCH aggregate_state USING (PRIMARY KEY|COVERING INDEX)/);
+
+        const maxPlan = tx
+          .all("EXPLAIN QUERY PLAN SELECT MAX(world_seq) AS value FROM domain_events WHERE branch_id = ?", [BRANCH_A])
+          .map((row) => String(row["detail"]))
+          .join("\n");
+        expect(maxPlan).toMatch(/SEARCH domain_events USING (PRIMARY KEY|COVERING INDEX)/);
+      });
     } finally {
       await harness.dispose();
     }

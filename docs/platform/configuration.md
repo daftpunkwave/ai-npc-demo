@@ -357,14 +357,15 @@ runSpecTemplate:
 
 玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。
 
-### 10.5 价目 `config/pricing.yaml`
+### 10.5 价目 `config/pricing*.yaml`
+
+模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。
 
 ```yaml
 schemaVersion: 1
-pricingVersion: "2026-11"
+pricingVersion: "2026-11-live"
 currency: USD
 models:
-  npc-chat:    { inputPerMTok: 0, outputPerMTok: 0 }      # fill in from the provider's price list
-  npc-claude:  { inputPerMTok: 4.0, outputPerMTok: 20.0 } # claude-opus-5-5 list price, 2026-11
-  npc-fixture: { inputPerMTok: 0, outputPerMTok: 0 }
+  npc-chat:   { externalModel: deepseek-flash, inputPerMTok: 0.3, outputPerMTok: 1.2 } # DeepSeek Flash peak list price, 2026-11
+  npc-claude: { externalModel: claude-opus-5-5, inputPerMTok: 4.0, outputPerMTok: 20.0 } # Claude Opus 5.5 list price, 2026-11
 ```

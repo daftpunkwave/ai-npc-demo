@@ -38,7 +38,8 @@ function temporaryDirectory(): string {
 function hostWithAgents(overrides: Partial<HostOptions> = {}): Promise<RunningHost> {
   const host = startHost({
     dataDir: temporaryDirectory(), playerToken: "turn-player", consoleToken: "turn-console",
-    assemblyRef: "local-slg-standard-v1", rosterRef: "core-3", ...overrides,
+    assemblyRef: "local-slg-test-v1", rosterRef: "core-3",
+    ...(overrides.configRoot === undefined ? deterministicConfig() : {}), ...overrides,
   });
   hosts.push(host);
   return host;
@@ -134,29 +135,29 @@ function holdFirstDecision(): { readonly definitions: NonNullable<HostOptions["m
   return { definitions, entered, release };
 }
 
-function memoryConfig(memory: "none" | "ledger"): Pick<HostOptions, "configRoot" | "runSpecRef"> {
-  const root = temporaryDirectory();
-  for (const directory of ["profiles", "rosters", "toolsets"]) {
-    cpSync(resolve("config", directory), join(root, directory), { recursive: true });
-  }
+function deterministicConfig(memory?: "none" | "ledger"): Pick<HostOptions, "configRoot" | "runSpecRef"> {
+  const directory = temporaryDirectory();
+  const root = join(directory, "config");
+  cpSync(resolve("config"), root, { recursive: true });
+  cpSync(resolve("tests/fixtures/model"), join(directory, "tests/fixtures/model"), { recursive: true });
   writeFileSync(join(root, "memory-comparison.yaml"), `
 schemaVersion: 1
 id: memory-comparison
-moduleAssemblyRef: local-slg-standard-v1
+moduleAssemblyRef: local-slg-test-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
 rosterRef: core-3
-modelLayoutRef: unused-model-layout
+modelLayoutRef: deterministic-model-layout-v1
 player: { principalId: player-1, factionId: null }
 mode: live
 initialState: { kind: cold-start }
-variant: { id: memory-comparison, profilePatchRefs: [comparison-strategy, decision-deterministic], agentIds: null }
+variant: { id: memory-comparison, profilePatchRefs: [${memory === undefined ? "" : "comparison-strategy, "}decision-deterministic], agentIds: null }
 script: null
 clock: { kind: realtime }
 budget: { maxTokens: null, maxCost: null }
 failurePolicy: strict
 `, "utf8");
-  writeFileSync(join(root, "comparison-strategy.yaml"), `
+  if (memory !== undefined) writeFileSync(join(root, "comparison-strategy.yaml"), `
 schemaVersion: 1
 profileId: comparison-strategy
 kind: variant
@@ -339,7 +340,7 @@ describe("确定性 Agent turn", () => {
     { label: "M0", memory: "none" as const, stance: "accept", reason: "none" },
     { label: "M1", memory: "ledger" as const, stance: "decline", reason: "past-breach" },
   ])("$label 在交付协议违约后按自身记忆裁决护送请求", async ({ memory, stance, reason }) => {
-    const host = await hostWithAgents(memoryConfig(memory));
+    const host = await hostWithAgents(deterministicConfig(memory));
     const submit = player();
     submit(host, "campaign.start", { factionId: "human-neutral" });
     clock(host, 2, "running");

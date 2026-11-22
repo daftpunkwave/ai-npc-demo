@@ -219,6 +219,8 @@ export interface ModelConnectionInput {
   readonly endpoint: string | null;
   readonly fixtures: readonly ModelFixture[];
   readonly signal: AbortSignal;
+  readonly capabilities?: ModelCapabilities;
+  readonly jsonOutputSuffix?: string;
 }
 
 /**
@@ -227,10 +229,12 @@ export interface ModelConnectionInput {
  */
 export interface ModelTransportPort {
   readonly adapterId: string;
-  capabilities(modelConfig: Json): ModelCapabilities;
+  capabilities(modelConfig: Json, model?: { readonly externalModel: string; readonly capabilities: ModelCapabilities }): ModelCapabilities;
+  validateConnection?(endpoint: string | null, hasCredential: boolean): void;
   complete(request: ModelRequest, credential: string | null, connection: ModelConnectionInput): Promise<ModelResponse>;
   embed?(
     input: { externalModel: string; texts: readonly string[]; timeoutMs: number },
     credential: string | null,
+    connection?: ModelConnectionInput,
   ): Promise<ModelEmbeddingResponse>;
 }

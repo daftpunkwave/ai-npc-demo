@@ -4,7 +4,7 @@
  * 归档失败时标记运行证据不完整，禁止把敏感正文写入日志。
  */
 import type { HostServices, Json, ModelRequest, ModelResponse, ModelTransportError, StoragePort } from "@ai-npc/contracts";
-import { StoredAgentArtifactStore, type ModelObservabilityPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
+import { insertLifecycleAuditEvent, StoredAgentArtifactStore, type ModelObservabilityPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
 
 export type AttemptStatus = "succeeded" | "failed" | "superseded" | "cancelled";
 
@@ -97,11 +97,13 @@ export class AttemptEvidence {
         request_artifact_id: requestArtifact.artifactId, response_artifact_id: responseArtifact.artifactId,
         usage_json: response?.usage ?? null, timings_json: timings, error_json: error,
       });
-      if (containedCredential) tx.run(
-        `INSERT INTO lifecycle_events (run_id, branch_id, type, subject_id, payload_json, created_at)
-          VALUES (?, ?, 'ModelCredentialRedacted', ?, ?, ?)`,
-        [scope.runId, scope.branchId, scope.agentId, JSON.stringify({ attemptId: request.attemptId }), this.host.nowIso()],
-      );
+      if (containedCredential) {
+        // 脱敏审计与 attempt 终态同事务写入：attempt 更新失败则审计一并回滚，反之亦然。
+        insertLifecycleAuditEvent(tx, {
+          runId: scope.runId, branchId: scope.branchId, type: "ModelCredentialRedacted",
+          subjectId: scope.agentId, payload: { attemptId: request.attemptId }, createdAt: this.host.nowIso(),
+        });
+      }
     });
     this.observability.recordSpan({
       spanId: this.host.ids("spn"), traceId: scope.traceId, parentSpanId: null, runId: scope.runId,

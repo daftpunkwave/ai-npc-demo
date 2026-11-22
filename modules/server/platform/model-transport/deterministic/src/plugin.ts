@@ -8,7 +8,7 @@ import {
   type Json, type ModelFixture, type ModelRequest, type ModelTransportError,
   type ModelTransportPort, type ModuleCreateInput,
 } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import { createStatelessModule, isRetryableModelError } from "@ai-npc/module-sdk";
 
 const adapterId = "platform.model-transport.deterministic";
 const capabilities = {
@@ -18,7 +18,7 @@ const capabilities = {
 
 function transportError(kind: ModelTransportError["kind"], retryAfterMs: number | null = null): ModelTransportError {
   return {
-    kind, retryAfterMs, retryable: ["rate-limited", "timeout", "network", "server"].includes(kind),
+    kind, retryAfterMs, retryable: isRetryableModelError(kind),
     httpStatus: null, message: `确定性传输：${kind}`,
   };
 }

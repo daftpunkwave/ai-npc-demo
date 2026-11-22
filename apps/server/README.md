@@ -18,12 +18,20 @@
 - `console.health` 每 2 秒推送快照，`console.timeline` 在世界变化后推送，二者使用独立频道序号。
 - HTTP 请求和 Agent turn 阶段写入 `trace_spans`。turn 记录有效配置、冻结输入、决定与对白 artifact 引用。
 - `config/assemblies/*.yaml`：标准、测试与升级剧情三份装配，均包含 server、client 与 console 绑定；`check:catalog` 对三个 realm 执行能力闭包、作用域、重复绑定、拓扑与配置 schema 预检。
-- 标准与测试装配解析并冻结名册的 profile 与工具集。开局事务激活名册，恢复事务在切换分支时重新校验活动身份配额。标准装配使用确定性策略和安全模板。测试装配预检并冻结模型挂载、提示词版本和价目，通过本地夹具运行模型决策、工具循环与独立对白。
+- 标准与测试装配预检并冻结名册的 profile、工具集、模型挂载、提示词版本和价目。开局事务激活名册，恢复事务在切换分支时重新校验活动身份配额。标准装配支持 OpenAI 兼容和 Anthropic 传输，测试装配通过本地夹具运行模型决策、工具循环与独立对白。
 
 ## 尚未包含
 
-- 真实模型调用与实验评估。
+- 实验评估。
 - 席位契约、t144 程序案、公开广播和六资源交接。
+
+## 运行标准装配
+
+首次启动前，复制 `.env.example` 为 `.env`，填写 `NPC_OPENAI_COMPAT_BASE_URL`、`NPC_OPENAI_COMPAT_MODEL` 和 `NPC_OPENAI_COMPAT_API_KEY`，然后运行 `pnpm dev`。回环 OpenAI 兼容端点的密钥可以留空。示例配置使用 DeepSeek Flash，更换兼容供应商或型号时需核对布局能力、限流和价目。参见 [模型传输](../../docs/agent/model-transport.md#3-openai-兼容适配器)、[模型池价目](../../docs/agent/model-pool.md#124-预算与费用)。
+
+将 `NPC_MODEL_LAYOUT` 设为 `claude-model-layout-v1` 并设置 `ANTHROPIC_API_KEY`，可以把决策交给 Claude Opus 5.5。对白仍由兼容端点生成。已有存档按冻结布局重启。希望新建使用不同布局的运行时，请指定独立的 `NPC_DATA_DIR`。
+
+配置好真实凭据后，可以运行 `pnpm exec vitest run --config tests/live/vitest.config.ts`，用合成数据验证两个供应商的工具往返与结构化输出。缺少各自密钥的用例会跳过。
 
 ## 运行确定性模型测试装配
 
@@ -42,7 +50,7 @@ pnpm dev
 - 宿主是组合根：除 `src/host/module-catalog.ts` 外不直接 import 游戏模块。
 - 宿主事务的 module scope 临时拥有全部游戏聚合，只为投影/时钟读端口提供事务上下文；命令写入仍由 authority 的模块 ownership 校验。
 - 首次启动检测到已有 online 分支时直接复用；不覆盖已有世界。重启沿用已冻结的装配与 run，不按当前入参重建。
-- 已冻结的纯世界装配和已有的确定性策略运行在复算原摘要通过后重启。新建运行按装配选择确定性策略或夹具模型。
+- 已冻结的纯世界、确定性策略和夹具模型运行在复算原摘要通过后重启。新建运行按装配和布局选择传输。
 - worker 按时钟模块有效配置的 `secondsPerTick` 推进，运行 due job/clock step/consumer；时钟读写只经模块端口，宿主不重复实现时钟状态。
 
 开发期间遇到 `contentVersion` 不匹配时，重置开发数据后重新开局。参见 [operations.md — 重置开发数据](../../docs/platform/operations.md#101-重置开发数据)。

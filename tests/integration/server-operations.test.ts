@@ -5,7 +5,7 @@
  * 依赖真实宿主、SQLite 存储与 HTTP inject；不伪造幂等记录或跳过存储事务。
  * 禁止用进程内缓存替代部署级表，也不在用例间复用数据目录。
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,9 +19,20 @@ import {
 import { OperationJournal, operationRequestHash, startHost, type RunningHost } from "@ai-npc/app-server";
 import type { OperationKey } from "@ai-npc/app-server";
 import { gameCommandEnvelope } from "./game-support";
+import { stubStandardModelHttp } from "./standard-model-support";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
+let restoreStandardModelHttp: (() => void) | undefined;
+
+beforeEach(() => {
+  restoreStandardModelHttp = stubStandardModelHttp();
+});
+
+afterEach(() => {
+  restoreStandardModelHttp?.();
+  restoreStandardModelHttp = undefined;
+});
 
 afterEach(async () => {
   // 先等待全部宿主关闭（单个失败不跳过其余），再删除全部已登记目录，最后汇总抛出：

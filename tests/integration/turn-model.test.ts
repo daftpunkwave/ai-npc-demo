@@ -7,9 +7,10 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@ai-npc/app-server";
+import { loadAssembly, serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@ai-npc/app-server";
 import { modelRequestSchema, type AuthContext, type Json, type StorageRow } from "@ai-npc/contracts";
 import { gameCommandEnvelope } from "./game-support";
+import { standardModelTestKey, stubStandardModelHttp } from "./standard-model-support";
 
 const target = "human-independent";
 const roots: string[] = [];
@@ -44,7 +45,7 @@ function fixtureConfig(lines: readonly Json[], layoutTransform = (layout: string
 async function modelHost(options: Partial<HostOptions> = {}) {
   const host = await startHost({
     dataDir: rootDir(), playerToken: "model-player", consoleToken: "model-console",
-    assemblyRef: "local-slg-test-v1", rosterRef: "core-3", ...options,
+    ...(options.assembly === undefined ? { assemblyRef: "local-slg-test-v1" } : {}), rosterRef: "core-3", ...options,
   });
   opened.push(host);
   return host;
@@ -289,16 +290,29 @@ describe("确定性模型装配与角色对白", () => {
     expect(replies(host)).toHaveLength(0);
   });
 
-  it("保持已部署的确定性运行的冻结清单和工作数据", async () => {
+  it.each([false, true])("保持已部署的确定性运行的冻结清单（旧目录包含模型池：%s）", async (poolInCatalog) => {
     const configRoot = fixtureConfig([]);
     const baseline = join(configRoot, "profiles", "platform-baseline.yaml");
-    writeFileSync(baseline, readFileSync(baseline, "utf8").replace("agent.decision.model", "agent.decision.deterministic"), "utf8");
-    const runSpec = join(configRoot, "runs", "online-default.yaml");
-    writeFileSync(runSpec, readFileSync(runSpec, "utf8").replace(/^variant:.*$/mu, "variant: null"), "utf8");
-    const excluded = ["agent.decision.model", "agent.model-pool.shared", "platform.budget.standard", "platform.model-transport.deterministic"];
+    if (poolInCatalog) {
+      const runSpec = join(configRoot, "runs", "online-default.yaml");
+      writeFileSync(runSpec, readFileSync(runSpec, "utf8").replace("variant: null",
+        "variant: { id: decision-deterministic, profilePatchRefs: [decision-deterministic], agentIds: null }"), "utf8");
+    } else {
+      writeFileSync(baseline, readFileSync(baseline, "utf8").replace("agent.decision.model", "agent.decision.deterministic"), "utf8");
+    }
+    const liveTransports = ["platform.model-transport.openai-compatible", "platform.model-transport.anthropic"];
+    const poolModules = ["agent.decision.model", "agent.model-pool.shared", "platform.budget.standard", "platform.model-transport.deterministic"];
+    const standard = loadAssembly("local-slg-standard-v1");
+    const { bindings, agentSlots } = standard.realms.server;
+    const assembly = { ...standard, realms: { ...standard.realms, server: {
+      bindings: bindings.filter(({ moduleId }) => ![...liveTransports, ...poolModules].includes(moduleId))
+        .map((binding) => binding.capability === "platform.secrets" ? { ...binding, configRef: null } : binding),
+      agentSlots: { ...agentSlots, decision: ["agent.decision.deterministic"] },
+    } } };
+    const excluded = poolInCatalog ? liveTransports : [...liveTransports, ...poolModules];
     const dataDir = rootDir();
     const old = await modelHost({
-      dataDir, configRoot, assemblyRef: "local-slg-standard-v1",
+      dataDir, configRoot, assembly,
       moduleDefinitions: serverModuleDefinitions.filter(({ id }) => !excluded.includes(id)),
     });
     const frozen = (host: RunningHost) => host.storage.transact((tx) => tx.rows("runs")
@@ -314,6 +328,102 @@ describe("确定性模型装配与角色对白", () => {
       manifest_hash: expected?.["manifest_hash"], manifest_json: expected?.["manifest_json"],
       run_spec_json: expected?.["run_spec_json"],
     });
+  });
+
+  it("使用原价目摘要重启此前已冻结的夹具模型运行", async () => {
+    const dataDir = rootDir();
+    const before = await modelHost({ dataDir, moduleDefinitions: serverModuleDefinitions.filter(({ id }) =>
+      id !== "platform.model-transport.openai-compatible" && id !== "platform.model-transport.anthropic") });
+    const frozen = (host: RunningHost) => host.storage.transact((tx) => tx.rows("runs").list({ branch_id: host.branchId })[0]);
+    const expected = frozen(before);
+    expect(expected?.["manifest_json"]).toMatchObject({ models: { pricingVersion: "2026-11" } });
+    await before.close();
+    opened.splice(opened.indexOf(before), 1);
+    const resumed = await modelHost({ dataDir });
+    expect(frozen(resumed)).toMatchObject({ manifest_hash: expected?.["manifest_hash"], manifest_json: expected?.["manifest_json"] });
+  });
+
+  it("标准装配使用兼容传输完成玩家对白，凭据只存在于 HTTP 头", async () => {
+    const restoreFetch = stubStandardModelHttp();
+    try {
+      const host = await modelHost({ assemblyRef: "local-slg-standard-v1" });
+      runCampaign(host);
+      const record = await turnFor(host, startConversation(host, "请留意水闸的状态。"));
+      expect(record).toMatchObject({ status: "completed" });
+      const turnId = String(record["turn_id"]);
+      const rows = attempts(host, turnId);
+      expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ purpose: "decision", adapter_id: "platform.model-transport.openai-compatible", status: "succeeded" }),
+        expect.objectContaining({ purpose: "speech", adapter_id: "platform.model-transport.openai-compatible", status: "succeeded" }),
+      ]));
+      expect(replies(host)).toEqual(expect.arrayContaining([expect.objectContaining({ type: "DialogueSubmitted" })]));
+      const wires = rows.map((row) => artifact(host, row["request_artifact_id"]));
+      expect(JSON.stringify(wires)).toContain("json_object");
+      expect(JSON.stringify(wires)).not.toContain(standardModelTestKey);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("预检拒绝模型与价目记录指向不同的供应商模型", async () => {
+    const restoreFetch = stubStandardModelHttp();
+    try {
+      vi.stubEnv("NPC_OPENAI_COMPAT_MODEL", "unpriced-model");
+      await expect(modelHost({ assemblyRef: "local-slg-standard-v1" })).rejects.toThrow(
+        "externalModel 与价目记录不一致",
+      );
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("确定性决策沿用空上下文配置完成对白且不发起模型调用", async () => {
+    const configRoot = fixtureConfig([]);
+    writeFileSync(join(configRoot, "deterministic-simplified-context.yaml"), `
+schemaVersion: 1
+id: deterministic-simplified-context
+moduleAssemblyRef: local-slg-test-v1
+worldPackRef: earth-2964-v1
+scenarioRef: watergate-v1
+rosterRef: core-3
+modelLayoutRef: deterministic-model-layout-v1
+player: { principalId: player-1, factionId: null }
+mode: live
+initialState: { kind: cold-start }
+variant: { id: deterministic-simplified-context, profilePatchRefs: [simplified-context, decision-deterministic], agentIds: null }
+script: null
+clock: { kind: realtime }
+budget: { maxTokens: null, maxCost: null }
+failurePolicy: strict
+`, "utf8");
+    writeFileSync(join(configRoot, "simplified-context.yaml"), `
+schemaVersion: 1
+profileId: simplified-context
+kind: variant
+parent: null
+patch:
+  slots:
+    context: { module: agent.context.ordered-blocks, config: {} }
+`, "utf8");
+    const host = await modelHost({ configRoot, runSpecRef: "deterministic-simplified-context" });
+    const turn = await turnFor(host, startConversation(host, "请简要回应。"));
+    expect(turn).toMatchObject({ status: "completed" });
+    expect(attempts(host, String(turn["turn_id"]))).toHaveLength(0);
+    expect(replies(host).map((row) => row["payload_json"])).toEqual([
+      expect.objectContaining({ text: "我知道了。" }),
+    ]);
+  });
+
+  it.each([
+    { name: "缺少 decision 预算的战略 profile", drop: "decision" },
+    { name: "缺少 speech 预算的战略 profile", drop: "speech" },
+  ])("预检拒绝$name", async ({ drop }) => {
+    const configRoot = fixtureConfig([]);
+    const strategic = join(configRoot, "profiles", "agent-strategic-default.yaml");
+    writeFileSync(strategic, readFileSync(strategic, "utf8")
+      .replace(new RegExp(`^ {6}${drop}: \\{.*\\n`, "mu"), ""), "utf8");
+    await expect(modelHost({ configRoot })).rejects.toThrow(
+      `agent-strategic-default」的上下文配置缺少 ${drop} 预算块`);
   });
 
   it.each([

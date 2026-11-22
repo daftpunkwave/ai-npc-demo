@@ -201,6 +201,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         agents: (branchId) => runtime.observability.agents(branchId),
       },
       projection: () => reads.projection(),
+      campaign: () => reads.campaign(),
       clock: () => clockView(lifecycle.clockState()),
       pause: (operationId, expected, principalId) =>
         operations.pause(expected, { operationId, principalId }),
