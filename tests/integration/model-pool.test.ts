@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
-import { estimateModelInputTokens, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
-import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type ModelCallInput, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
+import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
@@ -345,6 +345,133 @@ describe("共享模型池与预算", () => {
       expect(complete).toHaveBeenCalledTimes(1);
     } finally {
       await harness.dispose();
+    }
+  });
+});
+
+describe("模型决策终态归因", () => {
+  type DecideInput = Parameters<ModelDecisionPort["decide"]>[0];
+  const validSubmission: DecisionSubmission = {
+    stance: "inform", dialogueIntent: {
+      kind: "acknowledge", audience: ["player-1"], tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [],
+    },
+    noteworthy: [], citedMemoryIds: [], decisionNote: "",
+  };
+
+  function decideInput(call: DecideInput["call"], overrides: Partial<DecideInput> = {}): DecideInput {
+    return {
+      system: "规则", user: "测试请求", tools: [], inputLimit: 1000, firstInputLimit: 1000,
+      toolViewLimits: new Map(), maxRounds: 2, maxCallsPerRound: 2, maxCallsPerTurn: 4,
+      nudgeSubmit: "请提交决定", budgetStop: "预算已用尽",
+      call, executeTool: async () => ({ modelText: "查询完成", isError: false }),
+      validate: (candidate) => candidate === null ? { reasons: ["缺少提交"] } : { decision: validSubmission },
+      ...overrides,
+    };
+  }
+
+  /** 每轮都返回一个非 decision_submit 的工具调用，模拟模型持续调用工具而不提交决定。 */
+  function toolLoopCall(): DecideInput["call"] {
+    return async (input) => ({
+      response: modelResponseSchema.parse({
+        ...response, finishReason: "tool_calls", toolCalls: [
+          { id: `call-${input.round}`, name: "world_inspect", arguments: { nodeId: null }, argumentsRaw: "{}", parseError: null },
+        ],
+      }),
+      attempts: [],
+    });
+  }
+
+  async function decideHarness() {
+    const harness = await poolHarness(vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response));
+    const run = harness.pool.bindRun({ routes: [route, { ...route, purpose: "speech" as const }], limits });
+    const instance = await createDecisionModule({
+      [agentModelPoolCapability]: bindAgentModelRoutes(run, route.agentId),
+    });
+    return {
+      decide: (instance.port as ModelDecisionPort).decide,
+      dispose: async () => {
+        await instance.dispose();
+        await harness.dispose();
+      },
+    };
+  }
+
+  it("截止余量不足的 backpressure 保留模型失败类别并标注 deadline-backpressure", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(async () => {
+        throw new DomainError("provider-failed", "模型队列在截止前无法接纳调用", { details: { kind: "backpressure" } });
+      }));
+      expect(result).toMatchObject({ status: "model-failed", reason: "deadline-backpressure", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("内容窗口不足归入 over-budget 并标注 context-window", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(async () => {
+        throw new DomainError("budget-exhausted", "模型输入超过本轮窗口", { details: { kind: "over-budget" } });
+      }));
+      expect(result).toMatchObject({ status: "over-budget", reason: "context-window", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("额度账本耗尽归入 budget-exhausted 并标注 call-budget", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(async () => {
+        throw new DomainError("budget-exhausted", "角色当日的模型额度已用尽");
+      }));
+      expect(result).toMatchObject({ status: "budget-exhausted", reason: "call-budget", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("轮次耗尽仍无有效提交时归入 budget-exhausted 并标注 round-limit", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(toolLoopCall()));
+      expect(result).toMatchObject({ status: "budget-exhausted", reason: "round-limit", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("调用次数用完仍无提交时归入 over-budget 并标注 call-budget", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(toolLoopCall(), { maxCallsPerTurn: 0 }));
+      expect(result).toMatchObject({ status: "over-budget", reason: "call-budget", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("工具视图放不下输入窗口时归入 over-budget 并标注 context-window", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      const result = await decide(decideInput(toolLoopCall(), {
+        inputLimit: 10, toolViewLimits: new Map([["world_inspect", 10]]),
+      }));
+      expect(result).toMatchObject({ status: "over-budget", reason: "context-window", decision: null });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("取消错误按取消语义传播，不落入任何失败归因", async () => {
+    const { decide, dispose } = await decideHarness();
+    try {
+      await expect(decide(decideInput(async () => {
+        throw new DomainError("cancelled", "模型调用的工作租约已失效");
+      }))).rejects.toMatchObject({ code: "cancelled" });
+    } finally {
+      await dispose();
     }
   });
 });

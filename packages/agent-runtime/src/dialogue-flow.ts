@@ -34,6 +34,7 @@ import {
   type SpeechValidation,
 } from "./speech-guards";
 import { renderSafeSpeech } from "./speech-template";
+import { TurnStopped } from "./turn-lease";
 
 export interface SpeechHistoryLine {
   readonly dialogueId: string;
@@ -275,7 +276,8 @@ export class DialogueFlow {
           }
           fallbackReason = "validation-failed";
         } catch (error) {
-          if (error instanceof DomainError && error.code === "cancelled") throw error;
+          // 取消与停止不是生成失败：按取消语义传播给调用方，不落会被 fencing 拒绝的 fallback artifact。
+          if (error instanceof TurnStopped || (error instanceof DomainError && error.code === "cancelled")) throw error;
           attempts.push({
             attempt,
             status: "failed",

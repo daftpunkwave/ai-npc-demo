@@ -295,7 +295,9 @@ export class TurnWorker {
         });
         this.assertCurrent(turn, "deciding");
         if (result.status !== "ok") {
-          throw new TurnStopped(result.status === "budget-exhausted" ? "budget-exhausted" : "failed", result.status);
+          // terminal_reason 优先取细分原因（round-limit、call-budget、context-window、deadline-backpressure 等），
+          // 与租约到期的 turn-deadline 分别记录；无细分时回退到失败类别本身。
+          throw new TurnStopped(result.status === "budget-exhausted" ? "budget-exhausted" : "failed", result.reason ?? result.status);
         }
         const value = model !== null ? result.decision :
           checkedDecision(result.decision, frozen, memory, prospective, toolCalls.map(({ result }) => result));

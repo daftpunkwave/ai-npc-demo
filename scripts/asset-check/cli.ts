@@ -1,11 +1,8 @@
 /**
- * 核心职责：输出资产校验结果并判定 CLI 退出码，提供直接执行判定。
+ * 核心职责：输出资产校验结果并判定 CLI 退出码。
  * 交互契约：失败项逐行打印明确原因，成功时报告覆盖数量；返回 0 或 1。
  * 约束与禁忌：禁止在此扩展校验规则；规则缺口由主检查器报告。
  */
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { checkAssets } from "./checker";
 import type { AssetCliOptions } from "./report-types";
 
@@ -29,15 +26,3 @@ export function runAssetCheckCli(options: AssetCliOptions = {}): number {
   return 1;
 }
 
-export function isDirectExecution(moduleUrl: string): boolean {
-  const entryPath = process.argv[1] ?? "";
-  if (entryPath.length === 0) {
-    return false;
-  }
-  const modulePath = fileURLToPath(moduleUrl);
-  try {
-    return realpathSync(resolve(entryPath)) === realpathSync(modulePath);
-  } catch {
-    return resolve(entryPath) === modulePath;
-  }
-}
