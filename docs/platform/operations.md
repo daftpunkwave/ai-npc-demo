@@ -164,3 +164,15 @@ failurePolicy: online-fallback
 
 1. 停止服务，删除 `NPC_DATA_DIR` 指向的 Demo 开发数据目录（默认 `./data`）。该目录包含开发存档和自动生成的本地令牌。
 2. 执行 `pnpm dev:server`。服务端使用当前内容包重新建库并创建在线世界和 run。
+
+### 10.2 能力闭包升级迁移
+
+代码升级后模块目录或装配的能力闭包发生变化时，旧在线 run 的冻结 manifest 无法按当前模块目录复算，服务端在监听前拒绝启动并保持源 run 与分支原样。错误信息给出两条出路：回退到创建该 run 的代码版本，或设置 `NPC_MIGRATE_ONLINE_RUN=1` 执行显式迁移。
+
+显式迁移在单个存储事务内完成：
+
+1. 从源在线分支派生新 `kind = online` 分支：全部分支级表原样复制（事件与事件序号延续），新分支时钟置为 `paused`，未完成 trigger 释放，Agent 激活置为 `dormant`。
+2. 写入新 `mode = live` 的 run 行：RunSpec 与 `seed` 沿用源 run，manifest 按当前能力闭包重新冻结。
+3. `world_aliases('online')` 原子切换到新分支。
+
+源 run 行、源分支与源 manifest 不做任何修改，迁移失败时事务整体回滚。内容版本不一致、seed 或引用不一致、`manifest_hash` 校验失败不属于能力闭包升级，即使开关打开也拒绝启动，不进入迁移。

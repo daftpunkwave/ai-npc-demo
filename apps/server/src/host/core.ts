@@ -58,6 +58,7 @@ import {
 import { generateRunSeed } from "./random";
 import { assertStorageCompatible, contentVersionMismatch, readOnlineEntry, type OnlineEntry } from "./online-entry";
 import type { HostOptions } from "./options";
+import { migrateOnlineRun, migrationSummary, OnlineRunMigrationRequiredError } from "./run-migration";
 
 /** 本次启动实际使用的世界、装配、RunSpec 与冻结 manifest。 */
 export interface ActiveRunState {
@@ -317,7 +318,37 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       ...(agents?.models ? { models: agents.models.manifest } : {}),
     });
     if (rebuilt.manifestHash !== storedHash) {
-      throw new Error("冻结 manifest 无法复算：装配、名册或内容版本与 run 记录不一致");
+      // 冻结 manifest 与当前解析结果不一致即能力闭包升级：显式迁移派生新 run，源 run 与分支保持原样。
+      const migrationInput = {
+        storage,
+        host,
+        online,
+        runSpec: frozenSpec as unknown as Json,
+        manifest: rebuilt.manifest,
+        manifestHash: rebuilt.manifestHash,
+      };
+      if (options.migrateOnlineRun !== true) {
+        throw new OnlineRunMigrationRequiredError({
+          runId: online.runId,
+          branchId: online.branchId,
+          detail: `冻结 manifest_hash「${storedHash}」，按当前装配与模块目录复算为「${rebuilt.manifestHash}」`,
+        });
+      }
+      const migrated = migrateOnlineRun(migrationInput);
+      host.logger.info(migrationSummary(migrationInput, migrated));
+      return {
+        active: {
+          worldId: online.worldId,
+          branchId: migrated.branchId,
+          assembly,
+          resolved,
+          runSpec: frozenSpec,
+          manifest: rebuilt.manifest,
+          manifestHash: rebuilt.manifestHash,
+          agents,
+        },
+        startup,
+      };
     }
     return {
       active: {
