@@ -66,6 +66,8 @@ function isExpressionSuffix(character: string): boolean {
 
 /** 以显式词法状态扫描注释，不执行源码，也不把 JSX 文本或正则字符类当作代码。 */
 class TypeScriptCommentScanner {
+  private readonly source: string;
+  private readonly jsx: boolean;
   private readonly spans: CommentSpan[] = [];
   private readonly templateExpressionDepths: number[] = [];
   private readonly jsxExpressionDepths: number[] = [];
@@ -80,10 +82,10 @@ class TypeScriptCommentScanner {
   private jsxTag: JsxTagKind | null = null;
   private jsxTagBraceDepth = 0;
 
-  constructor(
-    private readonly source: string,
-    private readonly jsx: boolean,
-  ) {}
+  constructor(source: string, jsx: boolean) {
+    this.source = source;
+    this.jsx = jsx;
+  }
 
   collect(): CommentSpan[] {
     while (this.index < this.source.length) {
