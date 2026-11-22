@@ -1,14 +1,15 @@
 # 实现状态与迁移清单
 
-> 本页记录代码与内容相对 [00-scope-and-invariants.md — 序章范围](00-scope-and-invariants.md)、[rules.md — 序章规则](game/rules.md) 的差距。完成迁移后更新这里的状态。实施顺序见 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览)。
+> 本页集中记录已交付能力，以及代码和内容相对 [00-scope-and-invariants.md — 序章范围](00-scope-and-invariants.md) 与 [rules.md — 序章规则](game/rules.md) 的差距。交付范围变化时更新本页。实施顺序与步骤完成判据由 [build-plan.md — 构建计划](delivery/build-plan.md) 规定。
 > Demo 版本为 `0.1.0`，运行内容版本为 `0.2.0`。
 
 ## 1. 总览
 
-标准与测试装配已运行 Agent 感知、公平调度和 M0/M1 记忆。标准装配使用确定性决策和模板对白。测试装配使用模型池和确定性传输运行模型决策、工具循环及独立对白。控制台展示运行总览、模块装配、时间线和 Agent 状态，operator 可以暂停、继续、创建及恢复快照。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
+标准与测试装配已接入 Agent 感知、公平调度、M0/M1 记忆、上下文、压缩与工具视图。标准装配使用确定性决策和模板对白。测试装配使用模型池和确定性传输运行模型决策、工具循环及独立对白。控制台展示运行总览、模块装配、时间线和 Agent 状态，operator 可以暂停、继续、创建及恢复快照。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
 
 | 项 | 规格 | 当前实现 | 状态 |
 |---|---|---|---|
+| 工程与服务端基础 | workspace、公共契约、kernel、存储、authority 与服务端宿主 | 已有 SQLite 分支复制与备份、命令网关、事件消费者、装配预检，以及在线 RunSpec 与 manifest 冻结 | **已实现** |
 | 玩家身份与开局 | 公社党魁，占 `seat.commune` | 以 `player-1` 登录；`campaign.start` 与 `/campaign` 只开放 `human-neutral`，其余四席 `enabled: false` | **已对齐** |
 | 玩家权力 | 直接改水闸、以党魁身份签水闸条款、公开广播 | `policy.set` 与 `water-allocation` 条款已按 campaign 的玩家与派系裁决；公开广播命令待定稿 | **部分实现** |
 | 席位契约 | 命令、事件、投影、存档可追溯席位与实际动作者 | 以 principal、派系和分支关联数据，公共契约及持久层未记录 `seatId` | **待补契约** |
@@ -25,10 +26,12 @@
 | 玩家客户端 | 登录、开局、授权投影、人物/地点、对话、HUD、设置、通知 | 已实现，`player-start` e2e 通过 | **已实现基础流程** |
 | 控制台首批页面 | 运行总览、模块装配、时间线、Agent 摘要 | 已实现，`console-basic` e2e 与角色权限测试通过 | **已实现首批页面** |
 | 控制台运营 API | 按角色提供时钟、单步、存档与恢复 | operator 可暂停/继续、受控单步、创建快照与恢复，operator 与 researcher 可列快照；单步进入 stepping 后由宿主 worker 逐 tick 推进，入口只作用于在线分支 | **已实现** |
-| Agent 模型调用 | 集中路由、用途隔离、预算与证据 | 测试装配预检并冻结挂载，按尝试计费和归档，已验证岑雁的模型对白 | **已实现确定性传输路径** |
+| Agent 模型调用 | 集中路由、用途隔离、预算与证据 | 测试装配预检并冻结挂载，按尝试计费和归档，已验证岑雁的模型决策与独立对白 | **已实现确定性传输路径** |
 | 双端端口 | 只监听 5173 与 3000 | 开发/生产启动均验证，占用 3000 时启动失败 | **已对齐** |
+| 模块替换 | 分别验证剧情规则、HUD、观测页和记忆替换 | 已验证服务端剧情替换，其他替换证据仍需补齐 | **部分实现** |
+| 交付验收 | 三核心角色场景、完整序章场景与交付包 | 已有世界规则场景与玩家、控制台基础 e2e，仍缺完整场景验收及交付包 | **部分验证** |
 
-## 2. 本次已对齐
+## 2. 已交付能力说明
 
 1. **名册与身份**：新增 `config/rosters/standard-15.yaml`，同步 `core-3`、`.env.example`、`config/runs/online-default.yaml` 与服务端默认 `rosterRef`。单人正式名册的 schema 上限改为 15。
 2. **内容包 0.2.0**：`factions.yaml` 拆分为 `factionHomeNodeId`、`outpostNodeId`、`territoryNodeId`，并补上党魁、秘密与关系；`characters.yaml` 对齐 8 名公社支持者和 3 名外域 Agent，新增 `characterId` 与 `secret`；`starts.yaml` 只启用公社席，并补上闻昭的第三条开局消息；`world-init.yaml` 的职责委托改用党魁运行身份；`evidence.yaml` 清理旧身份持有者；`locale/zh-CN.yaml` 的玩家称呼改为“党魁”并补齐材料、食物、水词条。
@@ -78,14 +81,18 @@
 
 测试装配的模型原文与上下文随现有 artifact 仓内联存储。独立的大正文存储、OpenAI 兼容和 Anthropic 传输、M2/M3、完整证据与提案及派遣交互、正式 3D 资产和剩余控制台页面仍有交付缺口。3D 资产按 [02-modeling-spec.md — 建模规格](design/assets/02-modeling-spec.md) 单独验收。
 
-## 4. 迁移顺序
+## 4. 迁移验收要点
 
-| 交付内容 | 范围 | 完成判据 |
+下表按主题列出迁移验收要点。实施顺序见 [build-plan.md — 构建计划](delivery/build-plan.md)。
+
+| 交付内容 | 范围 | 验收要点 |
 |---|---|---|
 | 身份配额 | 部署级 15 个活动身份的配额 | 达到配额后第 16 个身份激活被拒，释放后可重新激活 |
 | 章节交接 | 六种资源在 t168 的初值与投影 | 评估事件带交接数据，冻结分支可复算 |
 | 程序案与章节评估 | t144 表决、议事录与 t168 评估关联 | 表决、投影、章节结果及存档恢复均有验证 |
+| 玩家公开广播 | 公社党魁经命令网关提交广播 | 提交产生 `MessageSent`，投递遵循 [rules.md — 通信、证据与传闻](game/rules.md#9-通信证据与传闻) 的广播规则。中继中断时只向发布地的收件者投递 |
 | 席位契约 | 命令、事件、投影、存档的席位归属 | 恢复和回放保留席位与实际动作者 |
+| 时钟操作原子性 | 暂停、继续的状态变更与幂等结果 | 两者在同一事务提交。故障注入验证提交前退出不留下部分结果，提交后用原请求重试返回首次成功结果 |
 | 冻结装配升级 | 旧 manifest 与新增必需能力之间建立显式迁移 | 后继 run/分支保留旧证据，并能从新 manifest 再次恢复 |
 | 剩余控制台运营 | 席位接管、剧情编辑、模型挂载与调试页面 | 运营操作受角色、scope 与版本约束 |
 | 认知管线 | Agent 运行时、记忆与模型路径 | 三核心角色端到端验证通过 |

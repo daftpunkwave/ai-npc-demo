@@ -1,6 +1,6 @@
 # 全职能模块目录与默认装配
 
-> 状态：部分实现。`server` 首批模块、玩家客户端、控制台前三个页面、三 realm 装配与目录预检已实现。Agent 感知、M0/M1 记忆和确定性策略已启用，测试装配接入模型池与本地夹具。本文维护模块 ID、能力、实例作用域与默认装配规格。参见 [modules.md — 模块边界](modules.md)、[plugins.md — 插件机制](plugins.md)、[composition.md — 装配冻结](composition.md)。
+> 本文维护模块 ID、能力、实例作用域与默认装配规格。交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。参见 [modules.md — 模块边界](modules.md)、[plugins.md — 插件机制](plugins.md)、[composition.md — 装配冻结](composition.md)。
 
 ## 1. 目录、装配、profile 不是一回事
 
@@ -81,7 +81,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `agent.model-pool` | `agent.model-pool.shared` | — | 独立评估用 `agent.model-pool.isolated` | deployment | RunSpec 模型布局 |
 | `agent.tools` | `agent.tools.game-tools` | — | 按工具族拆分的 contributor | deployment | roster toolset/binding |
 
-`agent.runtime` 不在目录中。turn 管线、预算、租约、证据和会话边界是宿主固定机制。上表的默认项指首版完成后的组合，S16–S17 的标准装配暂用 `agent.decision.deterministic`，S18 接入真实模型后切换。参见 [build-plan.md — 装配随步骤增长](../delivery/build-plan.md#02-脚本配置与装配随步骤增长)、[memory.md — 记忆](../agent/memory.md)、[evaluation.md — 评估](../platform/evaluation.md)。
+`agent.runtime` 不在目录中。turn 管线、预算、租约、证据和会话边界是宿主固定机制。上表的默认项用于 [首版目标装配](#8-默认装配)。参见 [memory.md — 记忆](../agent/memory.md)、[evaluation.md — 评估](../platform/evaluation.md)。
 
 下文与 Agent 专篇中的 `memory.ledger`、`perception.local`、`context.ordered-blocks` 等是本表 `agent.<family>.<impl>` 的简写；冻结 manifest 与 trace 必须记录完整模块 ID，不能只写简写。
 
@@ -178,7 +178,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | client | 5 章 `required` 与 `default` 模块（HUD 为 `client.hud.standard`） |
 | console | 6 章全部页面模块（可观测页为 `console.observability.standard`） |
 
-`local-slg-test-v1` 与标准装配的浏览器差别是 scene-renderer 使用 `client.scene-renderer.null`，用于 CI 与无画面回归；真实模型 transport 尚未交付，因此当前测试装配和标准装配暂时保留相同 server 绑定。模型布局与名册不属于装配，测试时通过 RunSpec 或环境变量选择。装配文件的完整内容见 [配置](../platform/configuration.md) 第 10.1 节，逐步增长见 [构建计划](../delivery/build-plan.md) 第 0.2 节。
+测试装配使用 `client.scene-renderer.null` 做无画面回归。当前 server 与浏览器绑定见 [标准装配](../../config/assemblies/local-slg-standard-v1.yaml) 与 [测试装配](../../config/assemblies/local-slg-test-v1.yaml)。模型布局与名册由 RunSpec 或环境变量选择。完整首版的装配规格见 [configuration.md — 完整配置文件](../platform/configuration.md#10-完整配置文件首版)。
 
 M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `game.scenario.watergate-escalating`；`client.hud` 换成 `client.hud.compact`；`console.observability` 换成 `console.observability.lite`；Agent profile 的 memory 槽在 M0–M3 之间切换。
 

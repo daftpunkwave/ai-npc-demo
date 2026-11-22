@@ -1,6 +1,6 @@
 # 系统架构总览
 
-> 状态：部分实现。首版目标是单玩家、统一世界观、标准 15 个 Agent 与两个本地端口。当前仓库已具备 `server` 宿主及首批模块，实现进度见 [build-plan.md — 构建计划](../delivery/build-plan.md#1-步骤总览)。
+> 首版目标是单玩家、统一世界观、标准 15 个 Agent 与两个本地端口。交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
 本篇与世界背景摘要中的 `v0.3` 标记各自的文档修订。Demo 发布版本记录产品交付，`contentVersion` 标识每次运行冻结的内容包。参见 [roadmap-and-acceptance.md — 交付包与判定](../delivery/roadmap-and-acceptance.md#9-交付包与判定)、[content-pack.md — 序章内容契约](../game/content-pack.md#1-文件清单)。
 

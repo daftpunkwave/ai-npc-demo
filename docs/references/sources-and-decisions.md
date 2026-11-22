@@ -106,4 +106,4 @@ PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。
 - OSGi 只核实规范索引页，未逐条阅读 Core/Compendium；不能引用具体条款号。
 - Home Assistant 只核实 manifest 页面；未验证其运行时行为。
 - agent-prism 的 `assemble.ts` 只读了部分区间（约 L1 到 499，全文 725 行），不能据此描述未读部分；本项目不复制其 725 行单文件结构。
-- `server` 首批 provider、装配与目录预检已实现。Agent 认知、模型连接及 `client`、`console` 页面为目标，性能与行为结论须由运行证据支持。参见 [module-catalog.md — 模块目录](../architecture/module-catalog.md)、[build-plan.md — 构建进度](../delivery/build-plan.md#1-步骤总览)。
+- 交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。性能与行为结论须由运行证据支持。

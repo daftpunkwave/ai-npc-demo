@@ -1,6 +1,6 @@
 # 上下文模块详细设计
 
-> 状态：目标。context 决定这次模型调用会收到哪些合法材料及其顺序。相邻模块见 [memory](memory.md)、[感知](perception.md)、[压缩与工具视图](compression-and-tool-view.md)。
+> context 决定这次模型调用会收到哪些合法材料及其顺序。相邻模块见 [memory](memory.md)、[感知](perception.md)、[压缩与工具视图](compression-and-tool-view.md)。交付进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。
 
 ## 1. 边界与调用阶段
 

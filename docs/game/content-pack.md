@@ -10,16 +10,16 @@
 | 文件 | 内容 | 本文章节 |
 |---|---|---|
 | `pack.yaml` | 包 ID、版本、文件列表、默认剧情 | 本节 |
-| `lore.yaml` | 所有主体共享的公开世界观摘要 | 第 2 节 |
-| `map.yaml` | 节点、道路、坐标、设施 | 第 3 节 |
-| `factions.yaml` | 8 个派系及其党魁人格（4 名 AI 党魁 + 3 外域 + 公社席位） | 第 4 节 |
-| `characters.yaml` | 8 名公社支持者 + 3 名外域 Agent 的人格与初始状态（4 名 AI 党魁在 `factions.yaml`） | 第 5 节 |
-| `world-init.yaml` | 库存点、队伍、群体、初始委托、初始指标 | 第 6 节 |
-| `evidence.yaml` | 证据条目与秘密 | 第 7 节 |
-| `starts.yaml` | 五席开局；本切片只启用公社席 | 第 8 节 |
-| `scenarios/watergate-v1.yaml` | 序章九张剧情卡 | 第 9 节 |
-| `prompts/zh-CN.yaml`、`locale/zh-CN.yaml` | prompt 模板、观察摘要模板、原因码提示与界面文字 | [prompts](../agent/prompts.md)、[感知](../agent/perception.md) 第 11.4 节 |
-| `scripts/*.yaml` | 记忆实验输入脚本 | 第 11 节 |
+| `lore.yaml` | 所有主体共享的公开世界观摘要 | [公开世界观](#2-公开世界观loreyaml) |
+| `map.yaml` | 节点、道路、坐标、设施 | [地图](#3-地图mapyaml) |
+| `factions.yaml` | 8 个派系及其党魁人格（4 名 AI 党魁 + 3 外域 + 公社席位） | [派系与党魁](#4-派系与党魁factionsyaml) |
+| `characters.yaml` | 8 名公社支持者 + 3 名外域 Agent 的人格与初始状态（4 名 AI 党魁在 `factions.yaml`） | [角色](#5-角色charactersyaml) |
+| `world-init.yaml` | 库存点、队伍、群体、初始委托、初始指标 | [世界初态](#6-世界初态world-inityaml) |
+| `evidence.yaml` | 证据条目与秘密 | [证据与秘密](#7-证据与秘密evidenceyaml) |
+| `starts.yaml` | 五席开局，序章只启用公社席 | [五席开局](#8-五席开局startsyaml本切片只启用公社) |
+| `scenarios/watergate-v1.yaml` | 序章九张剧情卡 | [序章剧情卡](#9-序章剧情卡scenarioswatergate-v1yaml) |
+| `prompts/zh-CN.yaml`、`locale/zh-CN.yaml` | prompt 模板、观察摘要模板、原因码提示与界面文字 | [模板、词表与界面文字](#12-模板词表与界面文字promptszh-cnyamllocalezh-cnyaml) |
+| `scripts/*.yaml` | 记忆实验输入脚本 | [记忆实验输入脚本](#11-记忆实验输入脚本scriptsyaml) |
 
 ```yaml
 # pack.yaml

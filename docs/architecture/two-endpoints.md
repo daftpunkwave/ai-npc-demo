@@ -124,7 +124,7 @@ flowchart LR
 
 命令、脚本与本地拓扑的实现方式见 [技术栈](../delivery/tech-stack.md) 第 4、6 节。要点：
 
-> 下表命令均已实现；`pnpm test:e2e` 覆盖玩家与控制台关键路径，`pnpm check:ports` 验证开发和生产启动只产生两个监听。参见 [build-plan.md — 构建计划](../delivery/build-plan.md#1-步骤总览)。
+> `pnpm test:e2e` 覆盖玩家与控制台关键路径，`pnpm check:ports` 验证开发和生产启动只产生两个监听。交付进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。
 
 | 命令 | 行为 |
 |---|---|

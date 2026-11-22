@@ -30,6 +30,8 @@
 
 ## 玩法
 
+[gameplay/README.md — 玩法设计与序章范围](gameplay/README.md) 提供完整玩法与 Demo 切片的阅读入口。
+
 | 设计主题 | 阅读入口 |
 |---|---|
 | 一周怎么过、五种开局、玩家到底能做什么 | [核心循环与开局](gameplay/01-cycle-and-opening.md) |

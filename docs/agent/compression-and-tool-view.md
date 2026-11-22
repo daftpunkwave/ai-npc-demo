@@ -1,6 +1,6 @@
 # 压缩与工具结果视图详细设计
 
-> 状态：目标。两个槽分别回答“历史材料怎样变短”和“工具结果给模型看多细”。它们共享 provenance/预算协议，但必须能独立替换、独立比较。相关契约见 [context](context.md)、[工具](tools.md)。
+> 压缩槽裁剪历史材料，工具视图槽约束工具结果的可见字段与长度。两个槽共享 provenance 和预算协议，分别支持替换和比较。相关契约见 [context](context.md)、[工具](tools.md)。交付进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。
 
 ## 1. 两个模块的边界
 

@@ -2,7 +2,7 @@
 
 > 设计层的工具目录见 [11-agent-actions.md — Agent 职能](../design/gameplay/11-agent-actions.md)。
 
-> 状态：目标。ToolDefinition 维护共享工具，ToolBinding 为各 Agent 配置授权。
+> ToolDefinition 维护共享工具，ToolBinding 为各 Agent 配置授权。交付进度见 [IMPLEMENTATION-STATUS.md — 总览](../IMPLEMENTATION-STATUS.md#1-总览)。
 
 ## 1. 定义、绑定与执行
 

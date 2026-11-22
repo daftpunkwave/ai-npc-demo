@@ -1,10 +1,8 @@
 # HTTP 与 WebSocket API
 
-> 状态：部分实现。本文是首版的完整接口规格。所有接口由 `server` 在 `127.0.0.1:3000` 提供，目标客户端经 `:5173` 的代理以相对路径访问。公共 DTO 在 `packages/contracts` 中用 Zod 定义。参见 [tech-stack.md — 技术栈](../delivery/tech-stack.md#6-本地双端拓扑)、[domain-model.md — 领域模型](domain-model.md)、[contracts.md — 公共契约](contracts.md)。
+> 本文规定首版 HTTP 与 WebSocket 接口。接口由 `server` 在 `127.0.0.1:3000` 提供，玩家客户端经 `:5173` 的代理以相对路径访问。公共 DTO 在 `packages/contracts` 中用 Zod 定义。交付范围见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。参见 [tech-stack.md — 技术栈](../delivery/tech-stack.md#6-本地双端拓扑)、[domain-model.md — 领域模型](domain-model.md)、[contracts.md — 公共契约](contracts.md)。
 
 ## 1. 通用约定
-
-当前已实现第 2 节的 HTTP 路由、第 3 节未标记为“目标”的玩家路由、第 4 节的玩家数据推送与控制台健康/时间线推送、第 5.1 节的健康、模块目录、装配列表与装配详情，以及第 5.3 节的暂停、继续、单步、快照创建/列表与恢复控制台入口。预检、草稿、席位接管、其他控制台页面和各实验接口仍按目标状态后续交付。
 
 | 项 | 约定 |
 |---|---|
@@ -131,7 +129,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ## 5. 控制台 API（`/api/v1/console/*`）
 
-本节已实现的接口包括第 5.1 节的健康、模块目录、装配列表/详情，第 5.3 节的暂停、继续、单步、快照创建/列表与恢复，以及第 5.5 节的时间线与 Agent 状态摘要。预检、草稿、模型池、席位接管与运行申请、剧情和调试接口仍为目标。
+表中已交付的路由标记为“已实现”，其余路由定义首版目标契约。
 
 ### 5.1 运行总览与模块装配
 
@@ -192,8 +190,8 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 请求参数 | 响应 |
 |---|---|---|
-| `GET /timeline` | `branchId`、`fromSeq`、`limit`（≤ 200）、`order`（`asc`/`desc`）、`types`、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件 |
-| `GET /agents` | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }` |
+| `GET /timeline`（已实现） | `branchId`、`fromSeq`、`limit`（≤ 200）、`order`（`asc`/`desc`）、`types`、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件 |
+| `GET /agents`（已实现） | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }` |
 | `GET /agents/{agentId}/inspector` | `branchId` | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn |
 | `GET /agents/{agentId}/memory` | `branchId`、`revision` | `{ revision, records: MemoryRecord[] }` |
 | `GET /agents/{agentId}/memory/diff` | `branchId`、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
