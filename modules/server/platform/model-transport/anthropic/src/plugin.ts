@@ -5,7 +5,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { DomainError, jsonValueSchema, type ModelTransportPort, type ModuleCreateInput } from "@ai-npc/contracts";
-import { createStatelessModule, modelHttpFailure, modelTransportFailure, parseModelEndpoint } from "@ai-npc/module-sdk";
+import { createStatelessModule, modelBaseUrl, modelHttpFailure, modelTransportFailure, parseModelEndpoint } from "@ai-npc/module-sdk";
 import { anthropicTransportId } from "./definition";
 import { anthropicParameters, messagesRequest } from "./messages-request";
 import { messagesResponse } from "./messages-response";
@@ -34,7 +34,7 @@ export function createAnthropicTransport(input: ModuleCreateInput, fetcher = glo
   const clients = new Map<string, { readonly credential: string; readonly client: Anthropic }>();
 
   function clientFor(endpoint: URL, credential: string): Anthropic {
-    const baseURL = endpoint.href.replace(/\/+$/u, "");
+    const baseURL = modelBaseUrl(endpoint);
     const existing = clients.get(baseURL);
     if (existing?.credential === credential) return existing.client;
     const client = new Anthropic({

@@ -22,10 +22,26 @@ export function modelHttpFailure(status: number, retryAfter: string | null): Mod
   if (status === 401 || status === 403) return modelTransportFailure("auth", status);
   if (status === 404) return modelTransportFailure("not-found", status);
   if (status === 408 || status === 409 || status === 429) {
-    const milliseconds = retryAfter === null || retryAfter.trim() === "" ? NaN : Math.ceil(Number(retryAfter) * 1_000);
+    const milliseconds = retryAfter === null || retryAfter.trim() === "" ? Number.NaN : Math.ceil(Number(retryAfter) * 1_000);
     return modelTransportFailure("rate-limited", status, Number.isSafeInteger(milliseconds) && milliseconds >= 0 ? milliseconds : null);
   }
   return modelTransportFailure(status >= 500 ? "server" : "protocol", status);
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
+export function modelBaseUrl(endpoint: URL): string {
+  return trimTrailingSlashes(endpoint.href);
+}
+
+export function modelEndpointUrl(endpoint: URL, path: string): URL {
+  const url = new URL(endpoint.href);
+  url.pathname = `${trimTrailingSlashes(url.pathname)}/${path}`;
+  return url;
 }
 
 export function isLoopbackModelEndpoint(url: URL): boolean {

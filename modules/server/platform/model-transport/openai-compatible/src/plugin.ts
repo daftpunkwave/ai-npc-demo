@@ -4,7 +4,10 @@
  * 禁止读取环境、追随重定向、发送供应商私有上下文或自行重试。
  */
 import { DomainError, jsonValueSchema, type Json, type ModelTransportPort, type ModuleCreateInput } from "@ai-npc/contracts";
-import { createStatelessModule, isLoopbackModelEndpoint, modelHttpFailure, modelTransportFailure, parseModelEndpoint } from "@ai-npc/module-sdk";
+import {
+  createStatelessModule, isLoopbackModelEndpoint, modelEndpointUrl, modelHttpFailure,
+  modelTransportFailure, parseModelEndpoint,
+} from "@ai-npc/module-sdk";
 import { z } from "zod";
 import { chatRequest, openAIParameters } from "./chat-request";
 import { chatResponse } from "./chat-response";
@@ -26,12 +29,12 @@ function validateEndpoint(endpoint: string | null, hasCredential: boolean): URL 
 
 export function createOpenAICompatibleTransport(input: ModuleCreateInput, fetcher = globalThis.fetch) {
   async function post(url: URL, path: string, body: Json, credential: string | null, timeoutMs: number, signal: AbortSignal): Promise<Json> {
-    url.pathname = `${url.pathname.replace(/\/+$/u, "")}/${path}`;
+    const target = modelEndpointUrl(url, path);
     const timeout = AbortSignal.timeout(timeoutMs);
     let response: Response;
     let raw: unknown;
     try {
-      response = await fetcher(url, {
+      response = await fetcher(target, {
         method: "POST", body: JSON.stringify(body), redirect: "error", signal: AbortSignal.any([signal, timeout]),
         headers: { "Content-Type": "application/json", ...(credential === null ? {} : { Authorization: `Bearer ${credential}` }) },
       });
