@@ -207,15 +207,15 @@ tool-view 实现仅由 Agent profile 的槽选择；binding 的 viewConstraints 
 ```ts
 const Cargo = z.object({ supply: z.number().int(), energy: z.number().int(), medical: z.number().int() });
 
-const DispatchParams = z.object({            // flat: fields that the chosen taskType does not use must be null
-  fromStockpileId: z.string().nullable(), toStockpileId: z.string().nullable(), cargo: Cargo.nullable(),   // transport
-  roadId: z.string().nullable(), durationTicks: z.number().int().nullable(),                              // escort
-  groupId: z.string().nullable(), toNodeId: z.string().nullable(), medicalStockpileId: z.string().nullable(), // rescue
-  energyStockpileId: z.string().nullable(), supplyStockpileId: z.string().nullable(),                     // repair
-  nodeId: z.string().nullable(),                                                                          // scout
+const DispatchParams = z.object({            // 平铺结构：所选 taskType 不使用的字段必须为 null。
+  fromStockpileId: z.string().nullable(), toStockpileId: z.string().nullable(), cargo: Cargo.nullable(),   // 运输
+  roadId: z.string().nullable(), durationTicks: z.number().int().nullable(),                              // 护送
+  groupId: z.string().nullable(), toNodeId: z.string().nullable(), medicalStockpileId: z.string().nullable(), // 救援
+  energyStockpileId: z.string().nullable(), supplyStockpileId: z.string().nullable(),                     // 修复
+  nodeId: z.string().nullable(),                                                                          // 侦察
 });
 
-const ToolTerm = z.object({                   // flat version of the Term union; unused fields are null
+const ToolTerm = z.object({                   // Term 联合类型的平铺版本；未使用字段为 null。
   kind: z.enum(["deliver", "escort", "rescue", "repair-relay", "share-evidence", "grant-passage", "water-allocation", "delegate"]),
   obligorId: z.string(),
   resource: z.enum(["supply", "energy", "medical"]).nullable(), amount: z.number().int().nullable(),
@@ -252,7 +252,7 @@ envelope 指 `executionStatus`、`commandStatus`、`reasonCode`、`receiptId`、
 ### 13.2 binding 模板与工具集
 
 ```yaml
-# config/toolsets/character-default.yaml
+# 角色默认工具集：config/toolsets/character-default.yaml
 schemaVersion: 1
 toolsetId: character-default
 tools:

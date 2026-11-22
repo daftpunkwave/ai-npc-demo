@@ -225,16 +225,16 @@ trigger 来源与优先级：
 | `patrol` | 战略 Agent 每天 8 时一次巡检 | 10 | 受限 |
 
 ```yaml
-# scene profile, run-scoped
+# 场景 profile，按 run 作用域
 scheduling:
   module: agent.scheduling.fair
   config:
     maxConcurrentTurns: 4
-    mergeLimit: 5          # max triggers merged into one turn
-    cooldownTicks: 1       # min ticks between autonomous turns of one agent
-    agingPerTick: 5        # priority bonus per tick waited
+    mergeLimit: 5          # 每个 turn 最多合并的 trigger 数
+    cooldownTicks: 1       # 同一 Agent 自主 turn 之间的最小 tick 间隔
+    agingPerTick: 5        # 每等待一个 tick 增加的优先级
     agingCap: 40
-    patrolHour: 8          # strategic agents only
+    patrolHour: 8          # 仅战略 Agent 使用
 ```
 
 每推进一个 tick，调度器向已激活且由 Agent 控制的身份请求 `memory.proposeWakeups({ worldTick: T })`，对已到期建议按 `dedupeKey` 创建 `prospective` trigger。推进到 `patrolHour` 时，调度器为其中的战略 Agent 写入当日 `patrol` trigger，以 `patrol:<agentId>:<day>` 去重。巡检从时钟产生，独立于感知观察与记忆建议。
@@ -253,20 +253,20 @@ scheduling:
 
 ```ts
 async function runTurn(turnId: string): Promise<void> {
-  // 1. claim: in one tx -> check branch active, agent active and agent-controlled, turnLeaseEpoch += 1, status = preparing
-  // 2. freeze (13.4): wait for memory ingest/readiness outside any tx, then record InputFrontier + memoryRevision in one tx
-  // 3. observations of this turn = trigger observations + observations in (previous frontier, this frontier]
-  // 4. bundle = memory.retrieve(query built from triggers, memory.md §11.9)          (sync)
-  // 5. artifact = context.build(decision phase); compression if needed                 (sync, before the first request only)
-  // 6. decision loop (agent.decision.model): for round = 1..maxDecisionRounds
-  //      request -> pool.call(decision) -> handle the round (rules below) -> append assistant + tool results
-  //      stop when decision_submit is valid; nudge once if the model ends with plain text (prompts.md §2.3)
-  //    agent.decision.deterministic replaces steps 5-6 with §13.7 and never calls a model
-  // 7. speech: if dialogueIntent.kind != "none" -> speech request -> validate -> template fallback -> speech.commit
-  //    (agent.decision.deterministic always uses the safe templates of prompts.md §5)
-  //    probe turns write the validated speech to probe_results instead of speech.commit
-  // 8. settle: in the agent's actor tx -> memory.recordUse plan (CAS with rebase, 13.5), turn completed, effective record
-  // every stage writes a span; every commit re-checks controllerEpoch, turnLeaseEpoch and branch status
+  // 1. 领取：在一个事务内检查分支与 Agent 均处于活动状态且由 Agent 控制，递增 turnLeaseEpoch，并将状态设为 preparing。
+  // 2. 冻结（13.4）：在事务外等待记忆摄入与就绪，然后在一个事务内记录 InputFrontier 与 memoryRevision。
+  // 3. 本 turn 的观察 = trigger 携带的观察 + (上一 frontier, 当前 frontier] 内的观察。
+  // 4. bundle = memory.retrieve(由 trigger 构建的查询，见 memory.md §11.9)。（同步）
+  // 5. artifact = context.build(decision 阶段)；需要时执行压缩。（同步，仅首次请求前）
+  // 6. decision 循环（agent.decision.model）：round 从 1 到 maxDecisionRounds。
+  //      请求 -> pool.call(decision) -> 按下方规则处理本轮 -> 追加 assistant 与 tool 结果。
+  //      decision_submit 通过校验时停止；模型只返回纯文本时提醒一次（prompts.md §2.3）。
+  //    agent.decision.deterministic 以 §13.7 替代步骤 5-6，并且绝不调用模型。
+  // 7. speech：dialogueIntent.kind != "none" 时 -> speech 请求 -> 校验 -> 模板后备 -> speech.commit。
+  //    （agent.decision.deterministic 始终使用 prompts.md §5 的安全模板。）
+  //    probe turn 把通过校验的对白写入 probe_results，而不是 speech.commit。
+  // 8. 结算：在 Agent 的 actor 事务内 -> memory.recordUse 计划（带 rebase 的 CAS，13.5），完成 turn，记录 effective。
+  // 每个阶段都写入 span；每次提交都重新检查 controllerEpoch、turnLeaseEpoch 与分支状态。
 }
 ```
 

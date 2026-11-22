@@ -175,6 +175,55 @@ describe("规则 7：手写源码文件头", () => {
     expectRule(violations, 7);
   });
 
+  it("文件头需要完整说明职责、交互契约与约束禁忌", () => {
+    const violations = checkHeader("scripts/sample.ts", "header-incomplete.ts.txt");
+    expectCode(violations, "header-incomplete");
+    expectRule(violations, 7);
+  });
+
+  it("说明性注释需要中文说明", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-no-chinese.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("JSX 结束标签不会吞掉后续注释", () => {
+    const violations = checkHeader("scripts/sample.tsx", "comment-after-jsx.ts.txt");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("已发布迁移保留原注释与内容校验和", () => {
+    const violations = checkSourceFile({
+      path: "modules/server/platform/storage/sqlite/migrations/0001_init.sql",
+      content: [
+        "-- 已发布的初始迁移。",
+        "CREATE TABLE sample (id TEXT PRIMARY KEY);",
+        "-- english inline comment remains part of the published checksum",
+      ].join("\n"),
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("新增迁移仍需要完整的文件头与中文注释", () => {
+    const violations = checkSourceFile({
+      path: "modules/server/platform/storage/sqlite/migrations/0012_new-table.sql",
+      content: [
+        "-- 新增迁移。",
+        "CREATE TABLE sample (id TEXT PRIMARY KEY);",
+        "-- english inline comment",
+      ].join("\n"),
+    });
+    expectCode(violations, "header-incomplete");
+    expectCode(violations, "comment-missing-chinese");
+    expectRule(violations, 7);
+  });
+
+  it("纯工具指令不要求自然语言说明", () => {
+    const violations = checkHeader("scripts/sample.ts", "comment-directive-only.ts.txt");
+    expect(violations).toEqual([]);
+  });
+
   it("文件头不得引用开发文档路径", () => {
     const violations = checkHeader("scripts/sample.ts", "header-doc-reference.ts.txt");
     expectCode(violations, "header-doc-path-reference");

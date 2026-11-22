@@ -1,4 +1,8 @@
-/* 建立玩家端颜色、排版、按钮和可见焦点的基础规则，不承载具体模块布局。 */
+/*
+ * 核心职责：建立玩家端颜色、排版、按钮和可见焦点的基础规则。
+ * 交互契约：只提供全局 CSS 变量与基础元素样式，供各模块样式组合。
+ * 约束与禁忌：不承载具体模块布局、场景状态或业务逻辑。
+ */
 :root {
   font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
   color: #ece7dc;

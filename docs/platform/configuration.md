@@ -142,9 +142,9 @@ assemblyId: local-slg-standard-v1
 configs:                         # named config blocks referenced by bindings
   clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
-  # host, ports, allowed origins and the data directory are NOT configured here:
-  # the server host derives them from env (tech-stack.md §5) and merges them into the
-  # transport.http-ws.fastify and platform.storage.sqlite configs at startup
+  # 此处不配置 host、端口、允许的 Origin 与数据目录：
+  # 服务端宿主从环境变量读取，并在启动时合并到
+  # transport.http-ws.fastify 与 platform.storage.sqlite 的配置中。
 realms:
   server:
     bindings:
@@ -218,7 +218,7 @@ realms:
 解析顺序固定为 `platform-baseline` → `scene-watergate` → Agent profile → variant patch。合并规则：`slots` 按槽整块替换（不深合并），其他顶层键整键替换。RunSpec 里的 `failurePolicy` 最后覆盖 profile 中的同名字段（在线世界为 `online-fallback`，实验默认 `strict`）；variant 的 `agentIds` 不为 null 时，patch 只作用于列出的 Agent。
 
 ```yaml
-# platform-baseline.yaml
+# 平台基线 profile：platform-baseline.yaml
 schemaVersion: 1
 profileId: platform-baseline
 kind: platform
@@ -252,7 +252,7 @@ slots:
 ```
 
 ```yaml
-# scene-watergate.yaml (run-scoped settings live here)
+# 场景 profile scene-watergate.yaml（按 run 作用域的设置在此）
 schemaVersion: 1
 profileId: scene-watergate
 kind: scene
@@ -263,7 +263,7 @@ scheduling:
 ```
 
 ```yaml
-# agent-character-default.yaml
+# 角色 Agent 默认 profile：agent-character-default.yaml
 schemaVersion: 1
 profileId: agent-character-default
 kind: agent
@@ -272,7 +272,7 @@ slots: {}
 ```
 
 ```yaml
-# agent-strategic-default.yaml
+# 战略 Agent 默认 profile：agent-strategic-default.yaml
 schemaVersion: 1
 profileId: agent-strategic-default
 kind: agent
@@ -300,7 +300,7 @@ variant patch 放在 `config/profiles/variants/`，`memory` 槽的完整参数�
 | `decision-deterministic` | `slots.decision = { module: agent.decision.deterministic, config: {} }`（工程测试用） |
 
 ```yaml
-# variants/memory-m1-structured-ledger.yaml (the shape of every variant file)
+# 变体文件 memory-m1-structured-ledger.yaml（所有变体文件的形状）
 schemaVersion: 1
 profileId: memory-m1-structured-ledger
 kind: variant

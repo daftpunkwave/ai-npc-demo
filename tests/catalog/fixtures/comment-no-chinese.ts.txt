@@ -1,0 +1,8 @@
+/**
+ * 夹具：文件头使用中文，但正文存在缺少中文的说明性注释。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 禁止把该夹具当成生产源码。
+ */
+export const value = 1;
+// explain the behavior here
+value.toString();

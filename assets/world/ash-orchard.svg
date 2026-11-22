@@ -28,7 +28,7 @@
     <path d="M-20 132c90-12 160 10 250 0s150-12 240 0 140 8 200-2"/>
   </g>
 
-  <!-- distant orchard rows in fog -->
+  <!-- 雾中的远处果园行列 -->
   <g stroke="#32463f" stroke-width="4" opacity=".45">
     <path d="M40 236l120-36M120 236l120-36M200 236l120-36M280 236l120-36M360 236l120-36M440 236l120-36M520 236l120-36M600 236l120-36M680 236l120-36"/>
   </g>
@@ -36,7 +36,7 @@
     <path d="M136 206c20-24 44-24 62 0-18 8-44 8-62 0zM256 196c18-22 40-22 58 0-18 8-40 8-58 0zM376 190c20-24 44-24 62 0-18 8-44 8-62 0zM496 196c18-22 40-22 58 0-18 8-40 8-58 0zM616 190c20-24 44-24 62 0-18 8-44 8-62 0z"/>
   </g>
 
-  <!-- flooded ground -->
+  <!-- 被淹地面 -->
   <rect y="228" width="800" height="222" fill="url(#water)"/>
   <g stroke="#c7d3c2" stroke-opacity=".2" stroke-width="2">
     <path d="M0 242c80 6 150-2 230 2s160 8 250 2 180-6 320 2"/>
@@ -45,7 +45,7 @@
     <path d="M0 350c100 4 170-2 260 2s150 4 250 0 180-2 290 4"/>
   </g>
 
-  <!-- greenhouse clinic -->
+  <!-- 温室诊所 -->
   <g>
     <path d="M430 274c0-52 36-92 84-92s84 40 84 92v56H430z" fill="url(#glass)" stroke="#8fb7a6" stroke-width="2"/>
     <path d="M514 182v148M430 274h168M458 212l112 116M570 212L458 328" stroke="#a8c6b5" stroke-width="1.5" opacity=".6"/>
@@ -61,14 +61,14 @@
     <path d="M514 172v-22" stroke="#9ab3a1" stroke-width="2"/>
   </g>
 
-  <!-- orchard trees foreground -->
+  <!-- 前景果树 -->
   <g>
     <path d="M112 352c-8-50 4-92 22-124M244 352c-2-54 6-98 18-130M690 352c-6-48 2-88 18-120" stroke="#201f18" stroke-width="9" stroke-linecap="round"/>
     <path d="M134 236c-26-18-34-42-22-64 18 6 28 24 28 44M134 236c28-10 42-30 38-54-22 2-38 22-38 54M134 236c-2-28 8-48 24-58 6 22-2 44-24 58M262 230c-24-16-30-38-20-58 16 6 26 22 26 40M262 230c26-8 38-28 34-50-20 2-34 20-34 50" fill="#2f463c" stroke="#4f6a58" stroke-width="1" opacity=".9"/>
     <path d="M708 240c-24-14-30-36-18-56 14 6 24 22 24 38M708 240c26-8 38-28 34-50-20 2-34 20-34 50" fill="#2b4138" stroke="#4f6a58" stroke-width="1"/>
   </g>
 
-  <!-- red lanterns -->
+  <!-- 红灯笼 -->
   <g>
     <path d="M96 282c0 18 10 28 22 28s22-10 22-28-10-28-22-28-22 10-22 28z" fill="#c84a35"/>
     <path d="M96 282h44M118 254v-14M118 310v12" stroke="#4c3228" stroke-width="2"/>
@@ -78,7 +78,7 @@
     <circle cx="198" cy="300" r="30" fill="url(#lantern)" opacity=".45"/>
   </g>
 
-  <!-- boardwalk -->
+  <!-- 木板路 -->
   <g>
     <path d="M0 376h370v20H0z" fill="#2a2b22"/>
     <path d="M0 376h370v6H0z" fill="#4d4a37"/>
@@ -86,7 +86,7 @@
     <path d="M370 376l22-56h10l-14 56z" fill="#24261e"/>
   </g>
 
-  <!-- floating petals / debris -->
+  <!-- 漂浮花瓣与碎屑 -->
   <g fill="#d9a5a0" opacity=".6">
     <ellipse cx="380" cy="270" rx="8" ry="2" transform="rotate(18 380 270)"/>
     <ellipse cx="410" cy="296" rx="6" ry="1.8" transform="rotate(-12 410 296)"/>

@@ -1,6 +1,7 @@
 /**
- * 汇总服务端宿主公开入口；传输应用由 transport provider 提供。
- * 不启动服务、不打开存储。
+ * 核心职责：汇总服务端宿主公开入口。
+ * 交互契约：只导出宿主、配置与类型；传输应用由 transport provider 提供。
+ * 约束与禁忌：不启动服务、不打开存储、不监听端口。
  */
 export { createServerApp, resolveGameModuleBindings } from "./host/module-catalog";
 export type { GameModuleBindings, GameModulePublicPort } from "./host/game-port-binder";

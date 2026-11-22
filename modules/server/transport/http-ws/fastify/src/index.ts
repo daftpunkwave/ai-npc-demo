@@ -1,6 +1,7 @@
 /**
- * 汇总 HTTP/WS 传输模块的公开入口：定义、配置 schema 与端口类型。
- * 不创建 Fastify 实例、不监听端口。
+ * 核心职责：汇总 HTTP/WS 传输模块的公开入口。
+ * 交互契约：只导出定义、配置 schema 与端口类型。
+ * 约束与禁忌：不创建 Fastify 实例、不监听端口。
  */
 export const packageName = "@ai-npc/mod-transport-http-ws-fastify";
 

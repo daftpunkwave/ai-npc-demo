@@ -1,0 +1,10 @@
+/**
+ * 夹具：文件头使用中文，正文只包含无需自然语言说明的工具指令。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 禁止把该夹具当成生产源码。
+ */
+// eslint-disable-next-line no-console
+// @ts-expect-error
+// @vitest-environment node
+// prettier-ignore
+export const value = missingValue;

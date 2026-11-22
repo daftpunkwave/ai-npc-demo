@@ -1,3 +1,4 @@
 -- 夹具：SQL 文件使用原生行注释作为文件头。
 -- 仅作为边界检查输入，不会被编译或执行。
+-- 约束与禁忌：不得据此执行任何数据库操作。
 CREATE TABLE sample (id TEXT PRIMARY KEY);

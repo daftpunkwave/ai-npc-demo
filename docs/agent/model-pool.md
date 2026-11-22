@@ -159,18 +159,18 @@ memory 实验固定解析后的路由、参数、池限额和预算；轮换运�
 当前宿主通过 `RunModelPort` 绑定冻结路由。模型决策和对白只取得绑定当前 turn、主体与用途的调用回调。回调固定截止时间及租约检查，策略只能提交该阶段的规范化请求。
 
 ```ts
-interface ScopedModelPort {             // what runtime / memory / speech receive; already bound to an agent or evaluator
+interface ScopedModelPort {             // runtime、memory 与 speech 收到的调用端口；已绑定 Agent 或 evaluator。
   call(input: {
     purpose: Purpose;
-    workRef: string;                    // turn id, maintenance id or probe id
+    workRef: string;                    // turn ID、整理任务 ID 或探针 ID。
     system: string;
     messages: NormalizedMessage[];
     tools: NormalizedTool[];
     output: ModelRequest["output"];
-    reserveOutputTokens: number;        // budget reservation, from the profile
-    deadlineMs: number;                 // absolute monotonic deadline of the turn or job
-    fence: () => boolean;               // re-checked before sending and after receiving; false => discard
-  }): Promise<ModelCallResult>;         // { response, attempts: AttemptRecord[] } or throws ModelPoolError
+    reserveOutputTokens: number;        // 预算预留，取自 profile。
+    deadlineMs: number;                 // turn 或 job 的绝对单调截止时间。
+    fence: () => boolean;               // 发送前与接收后都会复查；返回 false 时丢弃结果。
+  }): Promise<ModelCallResult>;         // 返回 { response, attempts }；失败时抛出 ModelPoolError。
 }
 ```
 

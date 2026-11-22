@@ -68,10 +68,10 @@
 
 ```ts
 interface CommandEnvelope {
-  commandId: string;                 // client generated, "cmd-..." ; reuse it when retrying
-  type: string;                      // for player command permissions, see the next section
+  commandId: string;                 // 客户端生成，格式为 "cmd-..."；重试时复用同一 ID
+  type: string;                      // 玩家命令权限见下一节
   schemaVersion: 1;
-  expectedVersions?: Record<string, number>; // "aggregateType:aggregateId" -> version
+  expectedVersions?: Record<string, number>; // "aggregateType:aggregateId" 到 version 的映射
   payload: Json;
 }
 
@@ -79,12 +79,12 @@ interface CommandReceipt {
   receiptId: string;
   commandId: string;
   commandStatus: "accepted" | "rejected";
-  reasonCode: string | null;         // domain-model §9; null when accepted
+  reasonCode: string | null;         // 见领域模型 §9；受理时为 null
   safeMessage: string | null;
   acceptedEventIds: string[];
   operationId: string | null;
   resultingVersions: Record<string, number>;
-  result: Json | null;               // e.g. { taskId } for task.dispatch, { agreementId } for agreement.propose
+  result: Json | null;               // 例如 task.dispatch 返回 { taskId }，agreement.propose 返回 { agreementId }
   worldTick: number;
 }
 
@@ -279,7 +279,7 @@ interface CampaignView {
   factionName: string;
   commission: string;
   status: "running" | "evaluated";
-  outcome: "equilibrium" | "strained" | null;   // set after ChapterStageEvaluated
+  outcome: "equilibrium" | "strained" | null;   // ChapterStageEvaluated 后设置
   startTick: number;
 }
 
@@ -310,13 +310,13 @@ interface ConversationLine {
 
 interface TimelineItem {
   kind: "domain" | "lifecycle";
-  worldSeq: number | null;       // domain events only
+  worldSeq: number | null;       // 仅领域事件有值
   worldTick: number | null;
   eventId: string | null;
   type: string;
   principalId: string | null;
   audience: AudienceSpec[] | null;
-  summaryZh: string;             // rendered with observationTemplates, true-world view
+  summaryZh: string;             // 使用 observationTemplates 渲染，展示真实世界视图
   payload: Json;
   correlationId: string | null;
   createdAt: string;
@@ -327,7 +327,7 @@ interface EventPreview { type: string; audience: AudienceSpec[]; payload: Json; 
 interface ModuleDescriptorView {
   moduleId: string; realm: Realm; kind: ModuleKind; version: string; apiVersion: string;
   provides: CapabilityRef[]; requires: CapabilityRef[]; ownsAggregates: string[];
-  configJsonSchema: Json;        // z.toJSONSchema(configSchema)
+  configJsonSchema: Json;        // 由 z.toJSONSchema(configSchema) 生成
   experimentAxes: { key: string; label: string; values?: Json[] }[];
 }
 
@@ -347,7 +347,7 @@ interface TurnDetail extends TurnSummary {
               requestArtifactId: string | null; responseArtifactId: string | null; usage: Json; error: Json | null }[];
   toolCalls: { toolCallId: string; toolId: string; executionStatus: string | null; commandStatus: string | null;
                rawArtifactId: string | null; viewArtifactId: string | null; operationId: string | null }[];
-  decision: Json | null;          // the validated decision_submit arguments
+  decision: Json | null;          // 通过校验的 decision_submit 参数
   speech: { speechArtifactId: string; text: string; fallback: boolean } | null;
   traceId: string;
 }

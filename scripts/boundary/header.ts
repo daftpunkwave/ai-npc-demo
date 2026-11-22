@@ -1,7 +1,7 @@
 /**
- * 规则 7：检查手写源码文件头的原生格式、中文说明与注释引用禁忌。
- * 按扩展名选择语言原生注释；注释里只允许解释代码本身，判定为启发式后仍需人工复核。
- * 禁止修改被检查文件、把数据配置当成源码或因为目录可写而放宽格式要求。
+ * 规则 7：检查手写源码文件头的原生格式，并确保说明性注释包含中文且不引用开发文档。
+ * 按扩展名选择语言原生注释；工具指令可省略说明，其余注释只应解释代码本身。
+ * 已发布迁移受校验和保护，只保留旧规则；禁止修改被检查文件或放宽新增源码要求。
  */
 /* eslint-disable security/detect-object-injection -- 索引均来自本文件扫描的源文本字符下标或固定映射表，不来自外部输入。 */
 import { extname } from "node:path";
@@ -10,6 +10,25 @@ import { HEADER_LANGUAGE_BY_EXTENSION, RULE_SOURCE_HEADER } from "./constants";
 import { violation } from "./finding";
 import { lineAt } from "./paths";
 import type { BoundaryViolation, CommentSpan, HeaderLanguage, HeaderReadResult } from "./types";
+
+const REGEX_START_KEYWORDS = new Set([
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
+const FROZEN_MIGRATION_DIRECTORY = "modules/server/platform/storage/sqlite/migrations/";
+// 已发布迁移参与内容校验和；新增迁移仍接受完整的文件头与中文注释检查。
+const FROZEN_MIGRATION_VERSION_LIMIT = 11;
 
 function firstNonWhitespaceIndex(source: string, from: number): number {
   let index = from;
@@ -173,7 +192,7 @@ function collectDelimitedCommentSpans(source: string, language: HeaderLanguage):
   const spans: CommentSpan[] = [];
   // eslint-disable-next-line xss/no-mixed-html -- html 是布尔判定变量，不是 HTML 片段。
   const html = language === "html";
-  type Mode = "code" | "line" | "block" | "html" | "single" | "double" | "template";
+  type Mode = "code" | "line" | "block" | "html" | "single" | "double" | "template" | "regex";
   let mode: Mode = "code";
   let start = 0;
 
@@ -206,6 +225,16 @@ function collectDelimitedCommentSpans(source: string, language: HeaderLanguage):
         mode = "single";
       } else if (character === "`") {
         mode = "template";
+      } else if (
+        language === "typescript" &&
+        character === "/" &&
+        next !== "/" &&
+        next !== "*" &&
+        canStartRegex(source, index)
+      ) {
+        mode = "regex";
+      } else if (language === "typescript" && character === "\\") {
+        index += 1;
       }
       continue;
     }
@@ -233,6 +262,14 @@ function collectDelimitedCommentSpans(source: string, language: HeaderLanguage):
       }
       continue;
     }
+    if (mode === "regex") {
+      if (character === "\\") {
+        index += 1;
+      } else if (character === "/") {
+        mode = "code";
+      }
+      continue;
+    }
     if (character === "\\") {
       index += 1;
       continue;
@@ -252,6 +289,22 @@ function collectDelimitedCommentSpans(source: string, language: HeaderLanguage):
   return spans;
 }
 
+function canStartRegex(source: string, index: number): boolean {
+  let previous = index - 1;
+  while (previous >= 0 && /\s/.test(source[previous] ?? "")) {
+    previous -= 1;
+  }
+  if (previous < 0 || "([{:;,=!?&|+-*%^~>".includes(source[previous] ?? "")) {
+    return true;
+  }
+  let wordStart = previous;
+  while (wordStart >= 0 && /[A-Za-z_$]/.test(source[wordStart] ?? "")) {
+    wordStart -= 1;
+  }
+  const keyword = source.slice(wordStart + 1, previous + 1);
+  return REGEX_START_KEYWORDS.has(keyword);
+}
+
 function collectCommentSpans(source: string, language: HeaderLanguage): CommentSpan[] {
   if (language === "sql" || language === "shell" || language === "python") {
     return collectLineCommentSpans(source, language === "sql" ? "--" : "#");
@@ -259,12 +312,61 @@ function collectCommentSpans(source: string, language: HeaderLanguage): CommentS
   return collectDelimitedCommentSpans(source, language);
 }
 
-function compactHeaderDescription(headerText: string): string {
+function commentBody(comment: string): string {
+  return comment
+    .replace(/^\/\*+/, "")
+    .replace(/\*\/$/, "")
+    .replace(/^\/\/+/, "")
+    .replace(/^<!--/, "")
+    .replace(/-->$/, "")
+    .replace(/^\s*(?:--|#)+/, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*\*?\s*/, "").trim())
+    .filter((line) => line !== "")
+    .join(" ")
+    .trim();
+}
+
+function directiveExplanation(body: string): string | null {
+  if (
+    /^(?:<reference\b|nosemgrep(?:\s*:\s*[\w.-]+)?$|@vitest-environment\b|prettier-ignore\b|c8 ignore\b|istanbul ignore\b|v8 ignore\b|sourceMappingURL=)/.test(
+      body,
+    )
+  ) {
+    return null;
+  }
+  if (/^@ts-(?:expect-error|ignore|nocheck)\b/.test(body)) {
+    const withoutDirective = body.replace(/^@ts-[\w-]+\b/, "").trim();
+    return withoutDirective === "" ? null : withoutDirective;
+  }
+  if (/\beslint-(?:disable|enable)(?:-next-line|-line)?\b/.test(body)) {
+    const separator = body.indexOf("--");
+    return separator === -1 ? null : body.slice(separator + 2).trim();
+  }
+  return body;
+}
+
+function needsChineseExplanation(comment: string): boolean {
+  const body = commentBody(comment);
+  const explanation = directiveExplanation(body);
+  return explanation !== null && /[A-Za-z]{2}/.test(explanation);
+}
+
+function isFrozenMigration(filePath: string): boolean {
+  const normalized = filePath.replaceAll("\\", "/");
+  if (!normalized.startsWith(FROZEN_MIGRATION_DIRECTORY)) {
+    return false;
+  }
+  const match = /^(\d{4})_.*\.sql$/u.exec(normalized.slice(FROZEN_MIGRATION_DIRECTORY.length));
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
+  return match !== null && Number(match[1]) <= FROZEN_MIGRATION_VERSION_LIMIT;
+}
+
+function headerDescriptionLines(headerText: string): string[] {
   return headerText
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*\*?\s*/, "").trim())
-    .join(" ")
-    .trim();
+    .filter((line) => line !== "");
 }
 
 /**
@@ -278,6 +380,7 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
     return [];
   }
   const source = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+  const frozenMigration = isFrozenMigration(filePath);
   const violations: BoundaryViolation[] = [];
   const header = readHeader(source, language);
 
@@ -294,7 +397,8 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
       ),
     );
   } else {
-    const description = compactHeaderDescription(header.text);
+    const descriptionLines = headerDescriptionLines(header.text);
+    const description = descriptionLines.join(" ");
     if (description === "") {
       violations.push(
         violation(
@@ -315,6 +419,16 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
           "文件头缺少中文说明。",
         ),
       );
+    } else if (!frozenMigration && descriptionLines.length < 3) {
+      violations.push(
+        violation(
+          RULE_SOURCE_HEADER,
+          "header-incomplete",
+          filePath,
+          lineAt(source, header.contentStart),
+          "文件头需分别说明职责、交互契约与约束禁忌。",
+        ),
+      );
     }
   }
 
@@ -324,6 +438,26 @@ export function checkFileHeader(filePath: string, content: string): readonly Bou
       ? [...spans, { text: header.text, start: header.contentStart }]
       : spans;
   for (const span of checkedSpans) {
+    if (
+      !frozenMigration &&
+      needsChineseExplanation(span.text) &&
+      !/[\u3400-\u9fff]/u.test(span.text) &&
+      !(
+        header.status === "ok" &&
+        span.start < header.contentStart + header.text.length &&
+        span.start + span.text.length > header.contentStart
+      )
+    ) {
+      violations.push(
+        violation(
+          RULE_SOURCE_HEADER,
+          "comment-missing-chinese",
+          filePath,
+          lineAt(source, span.start),
+          "说明性注释缺少中文内容。",
+        ),
+      );
+    }
     for (const forbidden of FORBIDDEN_COMMENT_PATTERNS) {
       const match = forbidden.pattern.exec(span.text);
       if (match === null) {
