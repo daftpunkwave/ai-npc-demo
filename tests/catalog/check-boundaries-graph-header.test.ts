@@ -19,6 +19,7 @@ import {
   packagesWith,
   readFixture,
 } from "./check-boundaries-support";
+import { scanRepository } from "@ai-npc/scripts/check-boundaries";
 
 describe("规则 6：依赖图与动态加载", () => {
   it("字面量动态导入按普通 import 检查", () => {
@@ -58,6 +59,79 @@ describe("规则 6：依赖图与动态加载", () => {
     });
     expectCode(violations, "unused-workspace-dependency");
     expectRule(violations, 6);
+  });
+
+  it("拒绝未使用的第三方依赖声明", () => {
+    const authorityPackage = packageManifest("@ai-npc/authority", "packages/authority", {
+      dependencies: { yaml: "^2" },
+    });
+    const violations = checkFixture("packages/authority/src/index.ts", "no-imports.ts.txt", {
+      packages: packagesWith([authorityPackage]),
+    });
+    expectCode(violations, "unused-third-party-dependency");
+    expectRule(violations, 6);
+  });
+
+  it("拒绝根清单声明生产依赖", () => {
+    const rootPackage = packageManifest("ai-npc-demo", "", {
+      dependencies: { fastify: "^5" },
+    });
+    const violations = checkBoundaries({ files: [], packages: [rootPackage] });
+    expectCode(violations, "unused-third-party-dependency");
+    expectRule(violations, 6);
+    expect(violations[0]?.message).toContain("fastify");
+  });
+
+  it("验证包生产源码导入第三方仍须自身声明", () => {
+    const scriptsPackage = packageManifest("@ai-npc/scripts", "scripts", {
+      exports: { "./check-boundaries": "./check-boundaries.ts" },
+    });
+    const violations = checkFixture("scripts/check-sample.ts", "undeclared-third-party.ts.txt", {
+      packages: [scriptsPackage],
+    });
+    expectCode(violations, "undeclared-third-party-dependency");
+    expectRule(violations, 6);
+  });
+
+  it("工具配置文件导入 devDependencies 构建工具不报违规", () => {
+    const appClientPackage = packageManifest("@ai-npc/app-client", "apps/client", {
+      devDependencies: { vite: "^8" },
+    });
+    const violations = checkFixture("apps/client/vite.config.ts", "tool-config-import.ts.txt", {
+      packages: [appClientPackage],
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("工具配置文件导入未声明的库仍报违规", () => {
+    const appClientPackage = packageManifest("@ai-npc/app-client", "apps/client", {});
+    const violations = checkFixture("apps/client/vite.config.ts", "tool-config-import.ts.txt", {
+      packages: [appClientPackage],
+    });
+    expectCode(violations, "undeclared-third-party-dependency");
+    expectRule(violations, 6);
+  });
+
+  it("拒绝生产 JSX 文件未声明 react", () => {
+    const modulePackage = packageManifest("@ai-npc/fake-client", "modules/client/fake/standard", {
+      dependencies: { "@ai-npc/client-sdk": "workspace:*" },
+    });
+    const violations = checkFixture("modules/client/fake/standard/src/plugin.tsx", "jsx-plugin.ts.txt", {
+      packages: [modulePackage],
+      definitionKinds: [{ packageName: "@ai-npc/fake-client", kind: "service" }],
+    });
+    expectCode(violations, "undeclared-third-party-dependency");
+    expectRule(violations, 6);
+    expect(violations.some((item) => item.message.includes("JSX"))).toBe(true);
+  });
+
+  it("仓库扫描把根包纳入依赖图检查范围", () => {
+    const scanned = scanRepository(process.cwd());
+    const rootPackage = scanned.packages.find((pkg) => pkg.directory === "");
+    expect(rootPackage).toBeDefined();
+    expect(rootPackage?.name).toBe("ai-npc-demo");
+    // 真实根清单不声明生产依赖；一旦引入，依赖图规则会立即报未使用。
+    expect(Object.keys(rootPackage?.dependencies ?? {})).toEqual([]);
   });
 
   it("拒绝包依赖环", () => {
