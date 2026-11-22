@@ -6,20 +6,30 @@
 import type { AudienceSpec, CardEffect, OverrideEffect, ResourceDelta, ResourceId } from "@ai-npc/contracts";
 import {
   principalsAudience,
+  requireGameContent,
   type GameContent,
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
-import { DomainError, isSignatureOnlyPrincipal } from "@ai-npc/contracts";
+import { DomainError } from "@ai-npc/contracts";
 
 type EffectContext = HandlerContext<GameModulePorts, unknown>;
 
-/** 规则第 9 节规定剧情卡广播视为在 grayharbor 发布，与玩家当前起点无关。 */
-const scenarioBroadcastOriginNodeId = "grayharbor";
+/** 读取剧情声明的广播发布节点；与玩家当前起点无关。 */
+function broadcastOriginNodeId(content: GameContent): string | undefined {
+  return content.scenarios.get(content.defaultScenario)?.broadcastOriginNodeId;
+}
+
+/** 读取剧情声明的 signature-only 署名名单；名单之外的署名按已定义主体校验。 */
+function signatureOnlyIds(content: GameContent): readonly string[] {
+  return content.scenarios.get(content.defaultScenario)?.signatureOnlyPrincipalIds ?? [];
+}
 
 /** 应用标准剧情卡效果。 */
 export function applyCardEffects(context: EffectContext, cardId: string, effects: readonly CardEffect[]): void {
   const ports = context.modules;
+  const content = requireGameContent(context.content);
+  const originNodeId = broadcastOriginNodeId(content);
   for (const effect of effects) {
     if (effect.kind === "broadcast") {
       // 中继中断时只送达该发布节点的主体，正常与降级时远端按规则延迟。
@@ -29,7 +39,7 @@ export function applyCardEffects(context: EffectContext, cardId: string, effects
         text: effect.text,
         channel: "broadcast",
         intentKind: "scenario",
-        originNodeId: scenarioBroadcastOriginNodeId,
+        ...(originNodeId === undefined ? {} : { originNodeId }),
       });
     } else if (effect.kind === "message") {
       ports["game.comms"].postMessage({
@@ -130,13 +140,13 @@ export function applyOverrideEffects(context: EffectContext, effects: readonly O
   }
 }
 
-/** 主体是否由内容包定义：玩家、角色与作为战略主体的派系；signature-only 署名只表示事件来源。 */
+/** 主体是否由内容包定义：玩家、角色、作为战略主体的派系，或剧情声明的 signature-only 署名。 */
 function knownPrincipal(content: GameContent, principalId: string): boolean {
   return (
     principalId === content.playerPrincipalId ||
     content.characters.has(principalId) ||
     content.factions.has(principalId) ||
-    isSignatureOnlyPrincipal(principalId)
+    signatureOnlyIds(content).includes(principalId)
   );
 }
 

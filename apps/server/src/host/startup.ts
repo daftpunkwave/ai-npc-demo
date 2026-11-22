@@ -1,5 +1,5 @@
 /**
- * 宿主核心启动：校验部署参数、加载内容与装配、启动存储、确定在线 run（首次创建或按冻结别名重启）、
+ * 宿主启动编排：校验部署参数、加载内容与装配、启动存储、确定在线 run（首次创建或按冻结别名重启）、
  * 启动其余模块并构造运行期端口，最后把时钟停在暂停态。
  * 依赖 kernel 解析/生命周期、组合根模块目录、实验配置加载器、部署配置校验与存储事务。
  * 禁止绕过解析计划直接引用模块实现、按当前入参重建已冻结的在线 run，或在失败时留下已启动实例。
@@ -96,8 +96,8 @@ export interface SessionAssemblies {
   readonly console: ResolvedModuleSet;
 }
 
-/** 启动完成后的宿主核心：已启动实例、运行期端口与冻结的在线 run。 */
-export interface HostCore {
+/** 启动完成后的宿主启动聚合：已启动实例、运行期端口与冻结的在线 run。 */
+export interface HostStartup {
   readonly host: HostServices;
   readonly storage: StoragePort;
   readonly storageStarted: StartedInstances;
@@ -119,8 +119,8 @@ const defaultRunSpecRef = "online-default";
 const defaultAssemblyRef = "local-slg-standard-v1";
 const defaultRosterRef = "standard-15";
 
-/** 打开并启动宿主核心；调用方负责之后的传输装配与端口监听。 */
-export async function createHostCore(options: HostOptions): Promise<HostCore> {
+/** 打开并启动宿主；调用方负责之后的传输装配与端口监听。 */
+export async function createHostStartup(options: HostOptions): Promise<HostStartup> {
   assertDistinctTokens([
     { label: "player token", credential: options.playerToken },
     { label: "console token", credential: options.consoleToken },

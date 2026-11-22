@@ -4,6 +4,7 @@
  * 禁止在冻结观察与全局契约表之外推断事实。
  */
 import type { IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
+import { roadIdFromPolicyKey } from "@ai-npc/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
@@ -246,5 +247,6 @@ function isHostilePolicy(event: LedgerEvent, view: RevisionView): boolean {
   if (key === "watergate.allocation" && next === "harbor-first") {
     return view.identity.factionId === "human-earth-alliance" || view.identity.factionId === "species-flora";
   }
-  return key === "road.status" && (next === "closed" || next === "restricted");
+  // 道路状态政策键携带具体道路 ID（road.status:<roadId>），按前缀判定而不是整键比较。
+  return roadIdFromPolicyKey(key) !== null && (next === "closed" || next === "restricted");
 }

@@ -15,11 +15,10 @@ import {
   type HandlerContext,
 } from "@ai-npc/module-sdk";
 import {
-  escortSupporterAgentId,
-  externalGuideAgentId,
-  externalRepairSupporterAgentId,
-  hasFactionSupporter,
-  repairSupporterAgentId,
+  escortSafetyBonus,
+  repairBaseStability,
+  repairStabilityBonus,
+  universalRepairStabilityBonus,
 } from "./faction-bonus";
 import type { TaskState } from "./state";
 
@@ -180,27 +179,19 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     ports["game.world"].changeMeter("migration.safety", 10, "task");
   } else if (task.taskType === "repair") {
     // 材料已在完成 job 开头结算（失败会回滚整个 job），这里只应用完成效果。
-    const teamStar = task.teamId === "team-star";
-    let delta = teamStar ? 40 : 25;
-    if (hasFactionSupporter(content, ownerFactionId, task.participants, repairSupporterAgentId)) {
-      delta += 10;
-    }
-    // 洛的 +15 是独立于本派工务岗位的设计加成，只排除 team-star 任务。
-    if (task.participants.includes(externalRepairSupporterAgentId) && !teamStar) {
-      delta += 15;
-    }
+    // 基础值与随队加成全部来自内容规则参数；通用修复者的豁免队伍由其 excludedTeamIds 声明。
+    const delta =
+      repairBaseStability(content, task.teamId) +
+      repairStabilityBonus(content, ownerFactionId, task.participants) +
+      universalRepairStabilityBonus(content, task.participants, task.teamId);
     ports["game.world"].changeMeter("relay.stability", delta, "task");
   } else if (task.taskType === "scout") {
     scoutReport(context, task, workNodeId);
   } else {
     const params = task.params as { readonly roadId: string };
     if (content.migrationRoads.includes(params.roadId)) {
-      // 迁徙道路护送只认本派治安/向导支持者；追风按设计对任何队伍同效。
-      const bonus =
-        hasFactionSupporter(content, ownerFactionId, task.participants, escortSupporterAgentId) ||
-        task.participants.includes(externalGuideAgentId)
-          ? 4
-          : 0;
+      // 迁徙道路护送的随队加成来自内容规则参数；通用向导对任何队伍同效。
+      const bonus = escortSafetyBonus(content, ownerFactionId, task.participants);
       ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
     }
   }

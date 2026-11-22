@@ -3,15 +3,15 @@
  * 依赖计划校验、世界/资源端口、内容索引与事务上下文；不执行 job，也不在失败时保留预留。
  * 禁止越过资源预留直接结算、使用真实时间或自造成随机种子。
  */
-import type { Json } from "@ai-npc/contracts";
+import { commandPayloadOf, type Json } from "@ai-npc/contracts";
 import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@ai-npc/module-sdk";
-import { planDispatch, type DispatchInput } from "./plan";
+import { planDispatch } from "./plan";
 import type { DelegationDraw, InvitationState, TaskState } from "./state";
 import { asPorts, taskAudience, taskEnvelope, teamOwnerFaction, type ActionContext } from "./task-shared";
 
 /** 派遣：先按规则校验并预留资源/委托，再写任务、邀请与离队 job。 */
 export function dispatch(context: ActionContext, payload: Json): HandlerResult {
-  const input = payload as unknown as DispatchInput;
+  const input = commandPayloadOf("task.dispatch", payload);
   const plan = planDispatch(context, input);
   if (!plan.ok) {
     return { kind: "rejected", reasonCode: plan.reasonCode, safeMessage: plan.safeMessage };

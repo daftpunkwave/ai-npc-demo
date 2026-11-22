@@ -105,6 +105,11 @@ facilities:
   archive-vault: 档案库
   landing-anchor: 降落锚
 playerName: 党魁
+notifications:
+  invite: 收到新的协议提案
+  deadline: 协议条款将在 {window} tick 内到期
+  failedTask: 委托的任务已失败
+  crisis: 局势指标处于危急
 ui:
   noReply: （对方暂未回应）
   waitingReply: 等待回应

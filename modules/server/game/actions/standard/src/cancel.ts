@@ -3,7 +3,7 @@
  * 依赖任务/邀请聚合、预留与委托回补辅助、世界端口与内容索引；不执行完成结算。
  * 禁止让已结束的任务再次取消、跳过失败回滚或把材料结算重复扣减。
  */
-import type { Json } from "@ai-npc/contracts";
+import { commandPayloadOf, type Json } from "@ai-npc/contracts";
 import { effectivePrincipalId, principalsAudience, requireGameContent, type HandlerResult } from "@ai-npc/module-sdk";
 import { refundDelegation, releaseReserved, settleRepairMaterials } from "./reservations";
 import { readTaskState, type InvitationState } from "./state";
@@ -11,7 +11,7 @@ import { asPorts, taskAudience, type ActionContext } from "./task-shared";
 
 /** 取消任务：待定阶段释放全部预留，运行阶段按是否已开始工作决定结算或释放。 */
 export function cancel(context: ActionContext, payload: Json): HandlerResult {
-  const input = payload as unknown as { readonly taskId: string };
+  const input = commandPayloadOf("task.cancel", payload);
   const task = readTaskState(context.tx, input.taskId);
   if (task === null) {
     return { kind: "rejected", reasonCode: "invalid-params", safeMessage: "任务不存在" };

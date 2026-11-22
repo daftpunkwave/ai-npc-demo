@@ -124,6 +124,7 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
       owns: tasks.filter((task) => task.kind === "own"),
       meters: meterView,
       inbox,
+      texts: content.notificationTexts,
       playerPrincipalId,
       tick,
     }),

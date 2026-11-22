@@ -1,4 +1,7 @@
 schemaVersion: 1
+broadcastOriginNodeId: grayharbor
+pressureCardId: card-relay-alarm
+signatureOnlyPrincipalIds: [npc-shenli, npc-suhui, npc-guxun]
 scenarioId: watergate-v1
 cards:
   - cardId: card-relay-alarm

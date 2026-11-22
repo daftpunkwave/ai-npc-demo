@@ -4,6 +4,7 @@
  * 禁止替当事人应答、跳过生效前校验，或在写入失败时保留部分生效结果。
  */
 import type { Json, ReasonCode, Term } from "@ai-npc/contracts";
+import { commandPayloadOf } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   principalsAudience,
@@ -149,11 +150,7 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
 
 /** 提出协议：提出者在当事人内、当事人都是已知主体、条款需通过校验；期限超过 168 tick 时显式拒绝。 */
 export function propose(context: AgreementContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly parties: readonly string[];
-    readonly terms: readonly Term[];
-    readonly expiresInTicks: number;
-  };
+  const input = commandPayloadOf("agreement.propose", payload);
   const proposerId = effectivePrincipalId(context.auth);
   if (!input.parties.includes(proposerId)) {
     return { kind: "rejected", reasonCode: "not-a-party", safeMessage: "提出者必须是当事人" };
@@ -199,11 +196,7 @@ export function propose(context: AgreementContext, payload: Json): HandlerResult
 
 /** 应答协议：拒绝关闭提案，还价生成新版本，最后一位接受者触发生效。 */
 export function respond(context: AgreementContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly agreementId: string;
-    readonly response: "accept" | "reject" | "counter";
-    readonly counterTerms?: readonly Term[];
-  };
+  const input = commandPayloadOf("agreement.respond", payload);
   const actor = effectivePrincipalId(context.auth);
   const state = readAgreementState(context.tx, input.agreementId);
   if (state === null) {

@@ -4,6 +4,8 @@
  * 禁止在此执行命令或维护处理器注册表，处理模块由宿主装配。
  */
 import { z } from "zod";
+import { type Json } from "./json";
+import { DomainError } from "./errors";
 import {
   agreementProposePayloadSchema,
   agreementRespondPayloadSchema,
@@ -75,3 +77,17 @@ const commandRequestOptions = commandTypes.map((type) =>
 export const commandRequestSchema: z.ZodType<CommandRequest> = z.union(
   commandRequestOptions,
 ) as unknown as z.ZodType<CommandRequest>;
+
+/**
+ * 按命令类型复验并收窄 payload：命令网关已用同一 schema 校验过入站载荷，
+ * 规则处理器用本函数拿到的直接是推导类型，取代手写形状断言；形状不符抛 DomainError。
+ */
+export function commandPayloadOf<T extends CommandType>(type: T, payload: Json): CommandPayloadFor<T> {
+  const result = commandPayloadSchemas[type].safeParse(payload);
+  if (!result.success) {
+    throw new DomainError("invalid-state", `命令 ${type} 的 payload 不符合契约`, {
+      details: { issues: result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`) },
+    });
+  }
+  return result.data as CommandPayloadFor<T>;
+}

@@ -152,7 +152,87 @@ describe("内容包加载", () => {
       ),
     );
     expect(extra.code).toBe("unexpected-file");
-    expect(extra.path).toBe("files.9");
+    expect(extra.path).toBe("files.10");
+  });
+
+  it("旧格式内容包缺少规则文件时被拒绝且定位到具体文件", () => {
+    // 内容包按内容版本冻结：旧格式不做默认值补齐，按内容包文档补齐 rules.yaml 后提高内容版本。
+    const missingRules = readContentPackSources(contentRoot, packId);
+    const files = new Map(missingRules.files);
+    files.delete("rules.yaml");
+    const error = captureLoadingError(() => parseContentPack({ packId: missingRules.packId, files }));
+    expect(error.code).toBe("missing-file");
+    expect(error.source).toBe("rules.yaml");
+  });
+
+  it("规则参数引用不存在的内容对象时拒绝加载", () => {
+    const unknownAgent = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources("rules.yaml", "capacitySupporter: { agentId: npc-wenyuan", "capacitySupporter: { agentId: npc-missing"),
+      ),
+    );
+    expect(unknownAgent.code).toBe("cross-check");
+    expect(unknownAgent.source).toBe("rules.yaml");
+    expect(unknownAgent.path).toBe("tasks.capacitySupporter.agentId");
+
+    const unknownSeat = captureLoadingError(() =>
+      parseContentPack(mutatedSources("rules.yaml", "watergateSeatId: seat.commune", "watergateSeatId: seat.missing")),
+    );
+    expect(unknownSeat.code).toBe("cross-check");
+    expect(unknownSeat.path).toBe("watergateSeatId");
+
+    // 只有派系身份的 AI 党魁没有角色档案，配为岗位主体会在运行时永不触发加成，校验直接拒绝。
+    const factionOnlySupporter = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources("rules.yaml", "capacitySupporter: { agentId: npc-wenyuan", "capacitySupporter: { agentId: human-neutral"),
+      ),
+    );
+    expect(factionOnlySupporter.code).toBe("cross-check");
+    expect(factionOnlySupporter.path).toBe("tasks.capacitySupporter.agentId");
+  });
+
+  it("剧情元数据引用错误时拒绝加载", () => {
+    const unknownOrigin = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources(
+          "scenarios/watergate-v1.yaml",
+          "broadcastOriginNodeId: grayharbor",
+          "broadcastOriginNodeId: missing-node",
+        ),
+      ),
+    );
+    expect(unknownOrigin.code).toBe("cross-check");
+    expect(unknownOrigin.source).toBe("scenarios/watergate-v1.yaml");
+    expect(unknownOrigin.path).toBe("broadcastOriginNodeId");
+
+    const unknownPressure = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources("scenarios/watergate-v1.yaml", "pressureCardId: card-relay-alarm", "pressureCardId: card-missing"),
+      ),
+    );
+    expect(unknownPressure.code).toBe("cross-check");
+    expect(unknownPressure.path).toBe("pressureCardId");
+
+    const collidingSignature = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources(
+          "scenarios/watergate-v1.yaml",
+          "signatureOnlyPrincipalIds: [npc-shenli, npc-suhui, npc-guxun]",
+          "signatureOnlyPrincipalIds: [npc-wenzhao, npc-suhui, npc-guxun]",
+        ),
+      ),
+    );
+    expect(collidingSignature.code).toBe("cross-check");
+    expect(collidingSignature.path).toBe("signatureOnlyPrincipalIds.0");
+  });
+
+  it("locale 缺少通知文案键时错误定位到具体键", () => {
+    const error = captureLoadingError(() =>
+      parseContentPack(mutatedSources("locale/zh-CN.yaml", "  invite: 收到新的协议提案\n", "\n")),
+    );
+    expect(error.code).toBe("schema");
+    expect(error.source).toBe("locale/zh-CN.yaml");
+    expect(error.path).toBe("notifications.invite");
   });
 
   it("全局 ID 冲突与不可达证据被拒绝", () => {

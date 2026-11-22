@@ -26,6 +26,8 @@ import {
   type ContentPackFile,
   contentPromptsSchema,
   type ContentPrompts,
+  contentRulesSchema,
+  type ContentRules,
   contentScenarioSchema,
   type ContentScenario,
   contentScriptSchema,
@@ -46,6 +48,7 @@ const requiredFileNames = [
   "factions.yaml",
   "characters.yaml",
   "world-init.yaml",
+  "rules.yaml",
   "evidence.yaml",
   "starts.yaml",
   "prompts/zh-CN.yaml",
@@ -201,6 +204,7 @@ export function parseContentPack(sources: ContentPackSources): ContentPack {
     requireFile(sources, "world-init.yaml"),
     "world-init.yaml",
   );
+  const rules: ContentRules = parseDocument(contentRulesSchema, requireFile(sources, "rules.yaml"), "rules.yaml");
   const evidence: ContentEvidence = parseDocument(
     contentEvidenceSchema,
     requireFile(sources, "evidence.yaml"),
@@ -234,6 +238,7 @@ export function parseContentPack(sources: ContentPackSources): ContentPack {
     factions,
     characters,
     worldInit,
+    rules,
     evidence,
     starts,
     scenarios,

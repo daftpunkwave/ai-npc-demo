@@ -138,7 +138,8 @@ function bindGamePorts(
       dependencyPorts[capability] = port;
     }
     const port = binding.bind(txFor, content, (prefix) => host.ids(prefix), {
-      ports: dependencyPorts as Readonly<Partial<GameModulePorts>>,
+      // 冻结依赖端口记录，使绑定上下文成为不可变视图；端口实例仍绑定当前事务、在各模块间共享。
+      ports: Object.freeze(dependencyPorts) as Readonly<Partial<GameModulePorts>>,
       callerModuleId: caller.moduleId,
       callerProvides: caller.provides,
     });

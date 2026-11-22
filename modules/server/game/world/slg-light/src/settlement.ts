@@ -6,7 +6,7 @@
  * 禁止重复结算同一 tick、在事务内调用模型或把未达标的指标算作均衡。
  */
 import { DomainError, type Json, type MeterChange, type MeterChangeCause, type NumericMeterId, type ResourceId } from "@ai-npc/contracts";
-import type { GameModulePorts, HandlerContext, AgreementCounts, WorldTx } from "@ai-npc/module-sdk";
+import type { GameModulePorts, GameSettlementRules, HandlerContext, AgreementCounts, WorldTx } from "@ai-npc/module-sdk";
 import { requireGameContent, type MetersView } from "@ai-npc/module-sdk";
 import { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
 import {
@@ -40,12 +40,13 @@ function addChange(
   }
 }
 
-/** 计算每日指标变化；返回新指标与变化列表。 */
+/** 计算每日指标变化；道路判定对象与数值来自内容规则参数。 */
 function computeDaily(
   previous: MetersView,
   tick: number,
   elapsed: number,
   modules: GameModulePorts,
+  settlement: GameSettlementRules,
 ): { readonly next: MetersView; readonly changes: MeterChange[] } {
   const changes: MeterChange[] = [];
   const allocation = previous["watergate.allocation"];
@@ -53,12 +54,12 @@ function computeDaily(
   const orchardDelta = allocation === "harbor-first" ? -9 : allocation === "rotation" ? -2 : 5;
   let migrationDelta = 0;
   if (elapsed >= 96) {
-    const status = modules["game.map"].roadStatus("r-gh-ps");
+    const status = modules["game.map"].roadStatus(settlement.migrationRoadId);
     if (status === "closed") {
       migrationDelta = -10;
     } else if (
       status === "restricted" &&
-      !modules["game.map"].hasPassage("r-gh-ps", "species-fauna", tick)
+      !modules["game.map"].hasPassage(settlement.migrationRoadId, settlement.migrationPassageFactionId, tick)
     ) {
       migrationDelta = -6;
     } else {
@@ -129,27 +130,30 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
   }
   const content = requireGameContent(context.content);
   const modules = context.modules;
+  const settlement = content.rules.settlement;
   const previous = metersView(state);
-  const { next, changes } = computeDaily(previous, tick, elapsed, modules);
+  const { next, changes } = computeDaily(previous, tick, elapsed, modules, settlement);
   const threshold = thresholdEvents(previous, next, new Set(state.triggered));
   const triggered = [...state.triggered, ...threshold.added];
   const day = elapsed / 24;
   // 先在同一事务内检查供给与果园医疗两个目标库存的可用量，再执行扣减。
-  // 检查通过后写入仍可能失败时抛 DomainError，整个结算事务回滚，DayPassed 不提交。
-  const supplyPlan = content.stockpiles.has("sp-commons")
-    ? planDeduction(modules, "sp-commons", "supply", 6)
+  // 目标库存与数量来自内容规则参数；检查通过后写入仍可能失败时抛 DomainError 回滚。
+  const supplyPlan = content.stockpiles.has(settlement.dailySupplyStockpileId)
+    ? planDeduction(modules, settlement.dailySupplyStockpileId, "supply", settlement.dailySupplyAmount)
     : 0;
   if (supplyPlan === null) {
-    throw settlementFailure("每日结算读取公共供给库存失败", { stockpileId: "sp-commons" });
+    throw settlementFailure("每日结算读取公共供给库存失败", { stockpileId: settlement.dailySupplyStockpileId });
   }
   const consumedSupply = supplyPlan;
   const orchardDamaged =
     next["orchard.water"] === 0 &&
     threshold.added.includes("OrchardDamaged") &&
-    content.stockpiles.has("sp-flora");
-  const orchardMedical = orchardDamaged ? planDeduction(modules, "sp-flora", "medical", 5) : 0;
+    content.stockpiles.has(settlement.orchardMedicalStockpileId);
+  const orchardMedical = orchardDamaged
+    ? planDeduction(modules, settlement.orchardMedicalStockpileId, "medical", settlement.orchardMedicalAmount)
+    : 0;
   if (orchardMedical === null) {
-    throw settlementFailure("每日结算读取果园医疗库存失败", { stockpileId: "sp-flora" });
+    throw settlementFailure("每日结算读取果园医疗库存失败", { stockpileId: settlement.orchardMedicalStockpileId });
   }
 
   context.tx.put("meters", "meters", {
@@ -167,7 +171,7 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
 
   if (consumedSupply > 0) {
     const consumed = modules["game.resources"].consume({
-      stockpileId: "sp-commons",
+      stockpileId: settlement.dailySupplyStockpileId,
       delta: { supply: consumedSupply, energy: 0, medical: 0 },
       reason: "daily-consumption",
       taskId: null,
@@ -178,12 +182,12 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
       throw settlementFailure("每日供给扣减失败，结算事务已回滚", { reasonCode: consumed.reasonCode });
     }
   }
-  if (consumedSupply < 6) {
+  if (consumedSupply < settlement.dailySupplyAmount) {
     context.tx.emit("SupplyShortage", { value: consumedSupply }, [{ kind: "public" }]);
   }
   if (orchardMedical > 0) {
     const adjusted = modules["game.resources"].adjust({
-      stockpileId: "sp-flora",
+      stockpileId: settlement.orchardMedicalStockpileId,
       delta: { medical: -orchardMedical },
       reason: "orchard-damage",
     });
