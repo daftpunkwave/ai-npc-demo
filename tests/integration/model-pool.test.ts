@@ -168,6 +168,18 @@ describe("Agent 路由视图注入契约", () => {
 });
 
 describe("共享模型池与预算", () => {
+  it("挂载引用未授权密钥时在装配入口显式失败", async () => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      expect(() => harness.pool.bindRun({ routes: [{ ...route, credentialRef: "SYNTHETIC_MODEL_KEY" }], limits }))
+        .toThrow("模型连接缺少已授权的密钥引用");
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("发送上限与预留一致，即使挂载允许更大的输出", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);

@@ -220,6 +220,124 @@ describe("确定性模型装配与角色对白", () => {
     expect(replies(host)).toHaveLength(0);
   });
 
+  it("工具预算触发预算停止后，收尾轮提交的决定仍被接受", async () => {
+    const configRoot = fixtureConfig([
+      { id: "inspect", match: { purpose: "decision", agentId: target, round: 1 },
+        response: { finishReason: "tool_calls", toolCalls: [{ name: "world_inspect", arguments: { nodeId: null } }] } },
+      { id: "blocked", match: { purpose: "decision", agentId: target, round: 2 },
+        response: { finishReason: "tool_calls", toolCalls: [
+          { name: "world_inspect", arguments: { nodeId: null } },
+          { name: "decision_submit", arguments: { ...submission as object, citedMemoryIds: ["mem-000000000099"] } },
+        ] } },
+      submitted(3, submission),
+      { id: "speech", match: { purpose: "speech", agentId: target },
+        response: { finishReason: "stop", json: { utterance: "好的。", citedRefs: [] } } },
+    ]);
+    writeFileSync(join(configRoot, "profiles", "platform-baseline.yaml"),
+      readFileSync(join(configRoot, "profiles", "platform-baseline.yaml"), "utf8")
+        .replace("maxToolCallsPerTurn: 8", "maxToolCallsPerTurn: 1")
+        .replace("maxToolCallsPerRound: 3", "maxToolCallsPerRound: 1"), "utf8");
+    const host = await modelHost({ configRoot });
+    const turn = await turnFor(host, startConversation(host, "请调查。"));
+    expect(turn).toMatchObject({ status: "completed" });
+    const turnId = String(turn["turn_id"]);
+    const all = requests(host, turnId);
+    const decisions = all.filter(({ purpose }) => purpose === "decision");
+    expect(decisions).toHaveLength(3);
+    expect(all.some(({ purpose }) => purpose === "speech")).toBe(true);
+    const wrap = decisions[2]?.messages.filter(({ role }) => role === "tool") ?? [];
+    expect(wrap).toHaveLength(3);
+    expect(wrap[0]).toMatchObject({ role: "tool", isError: false });
+    expect(wrap[1]).toMatchObject({ role: "tool", isError: true,
+      content: expect.stringContaining("budget-exhausted") });
+    expect(wrap[1]).toMatchObject({ content: expect.stringContaining("已达到本轮的调用上限") });
+    expect(wrap[2]).toMatchObject({ role: "tool", isError: true,
+      content: expect.stringContaining("invalid_decision") });
+    const toolRows = host.storage.transact((tx) => tx.rows("tool_calls").list({ turn_id: turnId }));
+    expect(toolRows).toHaveLength(1);
+    const toolAttemptId = String(toolRows[0]?.["attempt_id"]);
+    expect(toolAttemptId).toMatch(/^att-/);
+    const modelAttemptIds = attempts(host, turnId).map((row) => String(row["attempt_id"]));
+    expect(modelAttemptIds.length).toBeGreaterThanOrEqual(3);
+    expect(modelAttemptIds.every((id) => id !== toolAttemptId)).toBe(true);
+    expect(replies(host)).toHaveLength(1);
+  });
+
+  it("预算停止后的收尾轮仍未提交决定时按 over-budget 结束", async () => {
+    const configRoot = fixtureConfig([
+      { id: "inspect", match: { purpose: "decision", agentId: target, round: 1 },
+        response: { finishReason: "tool_calls", toolCalls: [{ name: "world_inspect", arguments: { nodeId: null } }] } },
+      { id: "blocked", match: { purpose: "decision", agentId: target, round: 2 },
+        response: { finishReason: "tool_calls", toolCalls: [
+          { name: "world_inspect", arguments: { nodeId: null } },
+          { name: "decision_submit", arguments: { ...submission as object, citedMemoryIds: ["mem-000000000099"] } },
+        ] } },
+      { id: "no-submit", match: { purpose: "decision", agentId: target, round: 3 },
+        response: { finishReason: "stop", text: "没有需要执行的动作。" } },
+    ]);
+    writeFileSync(join(configRoot, "profiles", "platform-baseline.yaml"),
+      readFileSync(join(configRoot, "profiles", "platform-baseline.yaml"), "utf8")
+        .replace("maxToolCallsPerTurn: 8", "maxToolCallsPerTurn: 1")
+        .replace("maxToolCallsPerRound: 3", "maxToolCallsPerRound: 1"), "utf8");
+    const host = await modelHost({ configRoot });
+    const turn = await turnFor(host, startConversation(host, "请调查。"));
+    expect(turn).toMatchObject({ status: "failed", terminal_reason: "over-budget" });
+    const all = requests(host, String(turn["turn_id"]));
+    expect(all.map(({ purpose }) => purpose)).toEqual(["decision", "decision", "decision"]);
+    expect(replies(host)).toHaveLength(0);
+  });
+
+  it("重复的 decision_submit 只接受首个并回传 duplicate 错误键", async () => {
+    const bad = { ...submission as object, citedMemoryIds: ["mem-000000000099"] } as Json;
+    const host = await modelHost({ configRoot: fixtureConfig([
+      { id: "duplicated", match: { purpose: "decision", agentId: target, round: 1 },
+        response: { finishReason: "tool_calls", toolCalls: [
+          { name: "decision_submit", arguments: bad },
+          { name: "decision_submit", arguments: bad },
+        ] } },
+      submitted(2, submission),
+      { id: "speech", match: { purpose: "speech", agentId: target },
+        response: { finishReason: "stop", json: { utterance: "好的。", citedRefs: [] } } },
+    ]) });
+    const turn = await turnFor(host, startConversation(host, "请回应。"));
+    expect(turn).toMatchObject({ status: "completed" });
+    const all = requests(host, String(turn["turn_id"]));
+    const decisions = all.filter(({ purpose }) => purpose === "decision");
+    expect(decisions).toHaveLength(2);
+    expect(all.some(({ purpose }) => purpose === "speech")).toBe(true);
+    const wrap = decisions[1]?.messages.filter(({ role }) => role === "tool") ?? [];
+    expect(wrap).toHaveLength(2);
+    expect(wrap[0]).toMatchObject({ role: "tool", isError: true,
+      content: expect.stringContaining("invalid_decision") });
+    expect(wrap[1]).toMatchObject({ role: "tool", isError: true,
+      content: expect.stringContaining("duplicate_decision_submit") });
+    expect(replies(host)).toHaveLength(1);
+  });
+
+  it("工具消息已提交相同意图时跳过最终对白且不重复发送", async () => {
+    const intent = { kind: "inform", tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] };
+    const host = await modelHost({ configRoot: fixtureConfig([
+      { id: "send-message", match: { purpose: "decision", agentId: target, round: 1 },
+        response: { finishReason: "tool_calls", toolCalls: [{
+          name: "message_send", arguments: { to: ["player-1"], intent },
+        }] } },
+      submitted(2, { stance: "inform", dialogueIntent: { ...intent, audience: ["player-1"] },
+        noteworthy: [], citedMemoryIds: [], decisionNote: "" } as Json),
+      { id: "speech", match: { purpose: "speech", agentId: target },
+        response: { finishReason: "stop", json: { utterance: "给你发过消息了。", citedRefs: [] } } },
+    ]) });
+    const turn = await turnFor(host, startConversation(host, "请给我发一条消息。"));
+    expect(turn).toMatchObject({ status: "completed" });
+    const turnId = String(turn["turn_id"]);
+    expect(requests(host, turnId).filter(({ purpose }) => purpose === "speech")).toHaveLength(1);
+    expect(turn["effective_json"]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ stage: "turn.speech", status: "skipped", reason: "message-already-committed" }),
+    ]));
+    expect(host.storage.transact((tx) => tx.branch(host.branchId).table("domain_events")
+      .list({ type: "MessageSent", principal_id: target }))).toHaveLength(1);
+    expect(replies(host)).toHaveLength(0);
+  });
+
   it("对白只带受众可见资料，引用校验两次失败后使用安全模板", async () => {
     const host = await modelHost({ configRoot: fixtureConfig([submitted(1, submission), {
       id: "speech-invalid-reference", match: { purpose: "speech", agentId: target },
