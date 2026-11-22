@@ -14,6 +14,17 @@ const parser = new XMLParser({
   isArray: (name) => ["title", "desc", "script"].includes(name),
 });
 
+/** 值中是否含浏览器会折叠掉的 ASCII 控制字符（含 DEL）或反斜杠。 */
+function hasControlOrBackslash(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f || code === 0x5c) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function assertSafe(node: unknown, path: string): void {
   if (Array.isArray(node)) {
     for (const item of node) {
@@ -40,7 +51,7 @@ function assertSafe(node: unknown, path: string): void {
       // 的原始值不匹配协议前缀，却会在解析时折叠成 javascript: 或协议相对地址。
       // 解析器不解码 XML 实体，因此 "java&#9;script:" 会原样保留；浏览器渲染时才解码，
       // 所以字符引用同样必须拒绝，否则白名单会被绕过。
-      if (/[\u0000-\u001f\u007f\\]/u.test(value) || /&#(?:x0*[0-9a-f]+|0*\d+);/iu.test(value)) {
+      if (hasControlOrBackslash(value) || /&#(?:x0*[0-9a-f]+|0*\d+);/iu.test(value)) {
         throw new Error(`资产引用包含控制字符、字符引用或反斜杠 ${key}: ${path}`);
       }
       const href = value.trim().toLowerCase();
