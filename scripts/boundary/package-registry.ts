@@ -13,8 +13,9 @@ import {
 import { packageNameOfSpecifier } from "./paths";
 import type { BoundaryPackage, CheckContext, WorkspaceImportResolution } from "./types";
 
+/** 根包目录为空串：它只承载 workspace 编排与工具链配置，按验证包口径豁免 workspace 声明检查。 */
 export function isVerificationPackage(pkg: BoundaryPackage): boolean {
-  return pkg.name === "@ai-npc/tests" || pkg.name === "@ai-npc/scripts";
+  return pkg.name === "@ai-npc/tests" || pkg.name === "@ai-npc/scripts" || pkg.directory === "";
 }
 
 export function isTestFile(filePath: string, pkg: BoundaryPackage): boolean {
@@ -31,6 +32,14 @@ export function isTestFile(filePath: string, pkg: BoundaryPackage): boolean {
  */
 export function canCheckDependencyDeclaration(pkg: BoundaryPackage, testFile: boolean): boolean {
   return !isVerificationPackage(pkg) && !testFile;
+}
+
+/**
+ * 第三方库不走公开入口约定，验证包与根包的生产源码导入也必须在自身 manifest 声明；
+ * 仅测试文件（*.test.ts 等）豁免，其导入的 vitest 等工具由调用方 runtime 提供。
+ */
+export function canCheckThirdPartyDeclaration(testFile: boolean): boolean {
+  return !testFile;
 }
 
 export function findOwningPackage(

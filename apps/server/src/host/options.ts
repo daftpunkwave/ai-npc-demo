@@ -35,4 +35,10 @@ export interface HostOptions {
   /** 玩家浏览器端口；只用于健康摘要与 Origin 白名单，不启动第二个服务端监听。 */
   readonly clientPort?: number;
   readonly allowedOrigins?: readonly string[];
+  /**
+   * 在线 run 的冻结 manifest 无法按当前模块目录复算（能力闭包升级）时执行显式迁移：
+   * 从源分支派生新分支与新 run 并切换 online 别名，源 run 与分支保持原样。
+   * 缺省拒绝启动并给出迁移指引，不静默修改旧 run。
+   */
+  readonly migrateOnlineRun?: boolean;
 }
