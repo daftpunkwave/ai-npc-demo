@@ -8,7 +8,8 @@ import { arrayValue } from "./runtime-records";
 import { TurnStopped, type ClaimedTurn } from "./turn-lease";
 
 /**
- * turn 阶段经注入的 recordSpan 写入观测的 span 声明，标识字段与结束时间非空；
+ * turn 阶段经注入的 recordSpan 写入观测的 span 声明：runId、branchId、agentId、turnId 与
+ * endMs 非空，parentSpanId、moduleId 与 moduleVersion 允许为空；
  * 与 SDK 的 RunSpan 是结构对齐的独立声明，宿主把它映射到同一 trace_spans 写入边界。
  */
 export interface TurnSpan {

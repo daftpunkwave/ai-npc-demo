@@ -48,6 +48,14 @@ type TurnPorts = { readonly toolView: AgentToolViewPort } & (
   { readonly model: null; readonly deterministicDecision: AgentDecisionPort<DeterministicDecisionInput> }
 );
 
+/** 确定性决策端口仅在未挂模型路径的装配下存在；越界访问说明装配与运行时模型配置不一致，显式失败并给出主体上下文。 */
+function deterministicDecisionPort(ports: TurnPorts, agentId: string): AgentDecisionPort<DeterministicDecisionInput> {
+  if (ports.model !== null || ports.deterministicDecision === null) {
+    throw new Error(`Deterministic decision port missing for ${agentId}`);
+  }
+  return ports.deterministicDecision;
+}
+
 export class TurnWorker {
   private readonly ports = new Map<string, TurnPorts>();
   private readonly disposables: { dispose(): Promise<void> }[] = [];
@@ -274,7 +282,7 @@ export class TurnWorker {
           toolViewLimits: new Map(projected?.bindings.map(({ toolId, viewConstraints }) => [toModelToolName(toolId), viewConstraints.maxTokens])),
           executeTool: (call, round) => executeCall(call, round), toolResults: toolCalls,
           contextSelection: this.selection(profile, "context"), compressionSelection: this.selection(profile, "compression"),
-        }) : await this.decideBeforeDeadline(ports.deterministicDecision!, {
+        }) : await this.decideBeforeDeadline(deterministicDecisionPort(ports, agentId), {
           session: frozen.scope, runId: turn.runId, turnId, attemptId: toolAttemptId, frontier: frozen.frontier,
           profileHash, runSeed: this.execution.runSeed, agentTurnIndex: turn.agentTurnIndex,
           triggers: turn.triggers, observations: frozen.observations, memory, prospective,
