@@ -17,7 +17,7 @@ import {
   type StorageRawRow,
   type StorageRow,
 } from "@ai-npc/contracts";
-import { decodeMemoryRecord, decodeObservation } from "./research-codec";
+import { decodeMemoryRecord, decodeObservation, numberColumn } from "./research-codec";
 
 function readWorldId(storage: StoragePort, branchId: string): string {
   const worldId = storage.transact((tx) => tx.rows("branches").get({ branch_id: branchId })?.["world_id"]);
@@ -79,9 +79,9 @@ export function readMemory(
   revision: number,
 ): MemoryResponse {
   const worldId = readWorldId(storage, branchId);
-  const storedRevision = storage.transact((tx) =>
-    tx.branch(branchId).table("memory_watermarks").get({ agent_id: agentId })?.["revision"]);
-  const committedRevision = storedRevision ?? 0;
+  const watermark = storage.transact((tx) =>
+    tx.branch(branchId).table("memory_watermarks").get({ agent_id: agentId }));
+  const committedRevision = watermark === null ? 0 : watermark["revision"];
   if (typeof committedRevision !== "number" || !Number.isSafeInteger(committedRevision) ||
     committedRevision < 0) {
     throw new DomainError("invalid-state", `Agent ${agentId} 的记忆水位不是非负整数`);
@@ -91,9 +91,10 @@ export function readMemory(
   }
   const rows = storage.transact((tx) => tx.branch(branchId).table("memory_records")
     .list({ agent_id: agentId }, { orderBy: [{ column: "memory_id" }, { column: "row_version" }] })
-    .filter((row) =>
-      Number(row["created_revision"]) <= revision &&
-      (row["retired_revision"] === null || Number(row["retired_revision"]) > revision)));
+    .filter((row) => {
+      if (numberColumn(row, "created_revision") > revision) return false;
+      return row["retired_revision"] === null || numberColumn(row, "retired_revision") > revision;
+    }));
   return memoryResponseSchema.parse({
     revision,
     records: rows.map((row) => decodeMemoryRecord(row, { worldId, branchId, agentId, revision })),

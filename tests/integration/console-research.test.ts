@@ -296,4 +296,39 @@ describe("控制台研究接口", () => {
     expect(futureDiff.statusCode).toBe(404);
     expect(errorResponseSchema.parse(futureDiff.json()).error.code).toBe("not-found");
   });
+
+  it("非法记忆行不会被静默过滤为空快照", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    host.storage.transact((tx) => {
+      tx.branch(host.branchId).table("memory_records").put({
+        agent_id: "human-independent",
+        memory_id: "mem-000000000099",
+        row_version: 1,
+        module_id: "agent.memory.ledger",
+        kind: "episodic",
+        tier: "short",
+        status: "active",
+        epistemic: "verified-event",
+        release_policy_id: "policy-1",
+        valid_from_tick: 0,
+        valid_until_tick: null,
+        created_revision: "invalid",
+        retired_revision: null,
+        strength: 1,
+        salience: 0,
+        recall_count: 0,
+        tags_json: [],
+        source_observation_ids_json: ["obs-000000000001"],
+        content_json: {},
+      });
+    });
+    const response = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/memory?branchId=${host.branchId}&revision=0`,
+      headers: modelHeader(consoleToken),
+    });
+    expect(response.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(response.json()).error.code).toBe("invalid-state");
+  });
 });
