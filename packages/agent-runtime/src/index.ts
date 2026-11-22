@@ -15,6 +15,8 @@ export type {
 export { AgentRuntime } from "./runtime";
 export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";
 export type { TurnExecutionOptions } from "./turn-worker";
+export { TurnLeases, TurnStopped } from "./turn-lease";
+export type { ClaimedTurn } from "./turn-lease";
 export type { ReadTurnWorld, TurnWorldRead } from "./turn-input";
 export { MemoryHost } from "./memory-host";
 export type { MemoryHostOptions } from "./memory-host";

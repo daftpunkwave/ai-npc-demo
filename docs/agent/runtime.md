@@ -299,6 +299,8 @@ failurePolicy: strict         # strict | online-fallback (RunSpec.failurePolicy 
 
 所有模型阶段共用 `maxModelCallsPerTurn` 硬上限。发出请求、nudge 后再次询问、重试或重新规划前都检查剩余额度，模型池的重试同样消耗额度。有效决定完成前耗尽预算时，turn 标记 `budget-exhausted`。决定含有对白意图但没有额度生成或重试对白时，走安全模板并记录 `speech-fallback` 与预算原因。
 
+`budget-exhausted` 类终态用 terminal_reason 区分成因：`round-limit`（决策轮次用完仍无有效提交）、`call-budget`（额度账本拒绝）、`context-window`（输入超出模型窗口）。模型池因截止余量不足无法接纳请求时，决策层保留 `model-failed` 类别并以 `deadline-backpressure` 标注；租约已超过截止时间时终态为 `budget-exhausted`、原因 `turn-deadline`，两者分别记录。turn 因接管、暂停或运行时停止进入取消语义时，在途对白生成按取消中止，不生成安全模板 fallback，也不留下 `generation-failed` 记录。
+
 | 失败点 | strict（实验默认） | online-fallback（在线世界默认） |
 |---|---|---|
 | 记忆未就绪（等待超时，或 13.4 节的“整理失败”） | turn failed（`not-ready`），样本无效 | 等待超过 `onlineDegradeAfterMs` 或整理失败时，用当前已提交的 revision 继续，turn 标记 `degraded` |
