@@ -48,8 +48,19 @@ interface WhereClause {
   readonly params: readonly StorageValue[];
 }
 
-/** 前缀查询要求的取值范围：可打印 ASCII（0x20–0x7E）保证字节上界能用合法 UTF-8 字符串表达，末字符码点 +1 与字节进位一致。 */
-const PREFIX_PATTERN = /^[\x20-\x7E]*$/;
+/**
+ * 前缀查询要求的取值范围：可打印 ASCII（0x20–0x7E）保证字节上界能用合法 UTF-8 字符串表达，
+ * 末字符码点 +1 与字节进位一致。逐码点扫描而非正则，检查本就是线性遍历且无回溯歧义。
+ */
+function isPrintableAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code > 0x7e) {
+      return false;
+    }
+  }
+  return true;
+}
 /** 单张表的读写实现；branchId 为 null 时表示部署级或运行级表。 */
 class TableAccess implements StorageTable {
   readonly table: string;
@@ -106,7 +117,7 @@ class TableAccess implements StorageTable {
   /** 把前缀编译为闭开区间条件 col >= prefix AND col < upper；SQLite 可用主键/索引做范围扫描。 */
   private prefixWhere(prefix: { readonly column: string; readonly value: string }): WhereClause {
     requireColumn(this.info, prefix.column);
-    if (!PREFIX_PATTERN.test(prefix.value)) {
+    if (!isPrintableAscii(prefix.value)) {
       validationFailure("前缀过滤的值必须是可打印 ASCII", { table: this.table, column: prefix.column });
     }
     if (prefix.value.length === 0) {
@@ -124,7 +135,7 @@ class TableAccess implements StorageTable {
   /** 把排他上界编译为 col < before；与 prefix 组合表达有界区间，取值约束同前缀。 */
   private beforeWhere(before: { readonly column: string; readonly value: string }): WhereClause {
     requireColumn(this.info, before.column);
-    if (!PREFIX_PATTERN.test(before.value)) {
+    if (!isPrintableAscii(before.value)) {
       validationFailure("排他上界的值必须是可打印 ASCII", { table: this.table, column: before.column });
     }
     return {

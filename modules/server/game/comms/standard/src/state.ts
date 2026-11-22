@@ -109,10 +109,20 @@ const SORT_KEY_WIDTH = 10;
  * 排序字段（tick、seq）与排序尾段（消息、对白、条目 ID）取自小写 base32 或内容 ID，
  * 字典序与此前端口实现使用的 localeCompare 排序一致。
  */
-const KEY_COMPONENT_PATTERN = /^[\x20-\x7E]*$/;
+function isPrintableAscii(value: string): boolean {
+  // 逐码点扫描而非正则：字符类正则会触发 ReDoS 类静态告警，
+  // 而这里的检查本就是线性扫描，显式循环语义等价且无回溯歧义。
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code > 0x7e) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function assertKeyComponent(value: string, label: string): void {
-  if (value.length === 0 || value.includes(":") || !KEY_COMPONENT_PATTERN.test(value)) {
+  if (value.length === 0 || value.includes(":") || !isPrintableAscii(value)) {
     throw new DomainError("validation", `通信索引键的 ${label} 必须为非空可打印 ASCII 且不含冒号`, {
       details: { label, value },
     });
