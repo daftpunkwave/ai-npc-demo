@@ -1,0 +1,8 @@
+/**
+ * 夹具：工具配置入口导入构建工具。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 构建工具在 devDependencies 声明即可，工具配置不是生产实现。
+ */
+import { defineConfig } from "vite";
+
+export default defineConfig({});

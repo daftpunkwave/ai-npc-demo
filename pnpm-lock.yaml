@@ -174,16 +174,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@fastify/cors':
-        specifier: ^11.4.3
-        version: 11.4.3
-      '@fastify/websocket':
-        specifier: ^11.3.7
-        version: 11.3.7
-      fastify:
-        specifier: ^5.12.8
-        version: 5.12.8
     devDependencies:
       '@ai-npc/app-server':
         specifier: workspace:*
@@ -203,9 +193,6 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.3.0(@types/react@19.3.0)
-      fast-xml-parser:
-        specifier: ^5.12.1
-        version: 5.12.1
       tsx:
         specifier: ^4
         version: 4.23.15
@@ -218,9 +205,6 @@ importers:
       vitest:
         specifier: ^5
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
 
   apps/client:
     dependencies:
@@ -269,6 +253,13 @@ importers:
       '@ai-npc/mod-client-world-view-standard':
         specifier: workspace:*
         version: link:../../modules/client/world-view/standard
+      react:
+        specifier: ^19
+        version: 19.3.1
+      react-dom:
+        specifier: ^19
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
       '@types/react':
         specifier: ^19
         version: 19.3.0
@@ -278,12 +269,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5
         version: 5.2.0(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
-      react:
-        specifier: ^19
-        version: 19.3.1
-      react-dom:
-        specifier: ^19
-        version: 19.3.1(react@19.3.1)
       vite:
         specifier: ^8
         version: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
@@ -308,6 +293,13 @@ importers:
       '@ai-npc/mod-console-observability-standard':
         specifier: workspace:*
         version: link:../../modules/console/observability/standard
+      react:
+        specifier: ^19
+        version: 19.3.1
+      react-dom:
+        specifier: ^19
+        version: 19.3.1(react@19.3.1)
+    devDependencies:
       '@types/react':
         specifier: ^19
         version: 19.3.0
@@ -317,12 +309,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5
         version: 5.2.0(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
-      react:
-        specifier: ^19
-        version: 19.3.1
-      react-dom:
-        specifier: ^19
-        version: 19.3.1(react@19.3.1)
       vite:
         specifier: ^8
         version: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
@@ -494,9 +480,6 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/characters/standard:
     dependencies:
@@ -512,9 +495,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/dialogue/standard:
     dependencies:
@@ -530,9 +510,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/faction-start/standard:
     dependencies:
@@ -545,9 +522,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/hud/standard:
     dependencies:
@@ -563,9 +537,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/input/standard:
     dependencies:
@@ -575,9 +546,6 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/notifications/standard:
     dependencies:
@@ -593,9 +561,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/scene-renderer/null:
     dependencies:
@@ -611,9 +576,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/scene-renderer/pixi:
     dependencies:
@@ -632,9 +594,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/screen-projection/isometric:
     dependencies:
@@ -644,9 +603,6 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/settings/standard:
     dependencies:
@@ -659,9 +615,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/client/world-view/standard:
     dependencies:
@@ -674,12 +627,6 @@ importers:
       '@ai-npc/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
-      react:
-        specifier: ^19
-        version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/console/health/standard:
     dependencies:
@@ -695,9 +642,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/console/module-admin/standard:
     dependencies:
@@ -713,9 +657,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/console/observability/standard:
     dependencies:
@@ -731,9 +672,6 @@ importers:
       react:
         specifier: ^19
         version: 19.3.1
-      zod:
-        specifier: ^4
-        version: 4.6.7
 
   modules/server/agent/compression/none:
     dependencies:
@@ -1180,7 +1118,20 @@ importers:
 
   packages/observability: {}
 
-  scripts: {}
+  scripts:
+    dependencies:
+      '@ai-npc/app-server':
+        specifier: workspace:*
+        version: link:../apps/server
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
+      fast-xml-parser:
+        specifier: ^5.12.1
+        version: 5.12.1
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   tests:
     dependencies:
@@ -1280,6 +1231,15 @@ importers:
       '@ai-npc/scripts':
         specifier: workspace:*
         version: link:../scripts
+      '@playwright/test':
+        specifier: ^1
+        version: 1.65.1
+      vitest:
+        specifier: ^5
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: ^4
         version: 4.6.7

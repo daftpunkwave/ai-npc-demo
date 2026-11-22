@@ -12,7 +12,6 @@
     "@ai-npc/client-sdk": "workspace:*",
     "@ai-npc/contracts": "workspace:*",
     "pixi.js": "^8",
-    "react": "^19",
-    "zod": "^4"
+    "react": "^19"
   }
 }

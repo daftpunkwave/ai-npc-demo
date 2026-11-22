@@ -1,0 +1,8 @@
+/**
+ * 夹具：只写 JSX 而不显式导入 react 的插件源码。
+ * 仅作为边界检查输入，不会被编译或执行。
+ * 自动 JSX transform 会在运行时引入 react/jsx-runtime，未声明 react 属于违规样例。
+ */
+export function Plugin() {
+  return <section>夹具</section>;
+}
