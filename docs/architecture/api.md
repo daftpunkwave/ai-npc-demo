@@ -148,10 +148,10 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /model-layouts` | operator、researcher | — | `{ layouts: { layoutId, source }[] }` |
-| `GET /model-layouts/{layoutId}` | operator、researcher | — | 去密钥的 layout（connections 只显示 `adapterId`、`endpoint` 主机名与 `credentialRef` 名称） |
-| `GET /model-layouts/{layoutId}/routes` | operator、researcher | — | `{ routes: { agentId, purpose, modelId, connectionId, adapterId, externalModel }[] }`：按角色看的已解析路由 |
-| `POST /model-layouts/validate` | operator | `{ layout }` | `{ ok, errors }`：只做静态预检，不发网络请求 |
+| `GET /model-layouts`（已实现） | operator、researcher | — | `{ layouts: { layoutId, source }[] }` |
+| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 只显示 `adapterId`、`endpoint` 主机名与 `credentialRef` 名称） |
+| `GET /model-layouts/{layoutId}/routes`（已实现） | operator、researcher | — | `{ routes: { agentId, purpose, modelId, connectionId, adapterId, externalModel }[] }`：按角色看的已解析路由 |
+| `POST /model-layouts/validate`（已实现） | operator | `{ layout }` | `{ ok, errors }`：只做静态预检，不发网络请求 |
 | `POST /model-layouts/drafts` | operator | `{ layout }` | `{ layoutId, version }`：保存为草稿，只对新 run 生效 |
 | `POST /model-layouts/{layoutId}/probe` | operator | `{ modelId, operationId }` | `{ ok, latencyMs, servedModel, error? }`：一次计费的连通性测试，记录为 attempt |
 
@@ -192,18 +192,18 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | `GET /timeline`（已实现） | `branchId`、`fromSeq`、`limit`（≤ 200）、`order`（`asc`/`desc`）、`types`、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件 |
 | `GET /agents`（已实现） | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }` |
-| `GET /agents/{agentId}/inspector` | `branchId` | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn |
-| `GET /agents/{agentId}/memory` | `branchId`、`revision` | `{ revision, records: MemoryRecord[] }` |
-| `GET /agents/{agentId}/memory/diff` | `branchId`、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
-| `GET /agents/{agentId}/observations` | `branchId`、`fromSeq`、`limit` | `{ observations: AgentObservation[] }` |
-| `GET /turns` | `runId`、`agentId`、`status`、`limit` | turn 列表 |
-| `GET /turns/{turnId}` | — | turn 详情：frontier、各阶段 requested/resolved/effective、span、context artifact 引用、全部 model attempt、tool call（原始与视图 artifact 引用）、receipt、对白 |
-| `GET /artifacts/{artifactId}` | `view=redacted\|raw` | artifact 正文；`raw` 需要 researcher 角色，并记一条审计生命周期事件 |
-| `GET /traces/{traceId}` | — | span 树 |
-| `GET /branches/compare` | `left`、`right`、`atSeq` | 两个分支在相同检查点后的事件、指标与协议差异摘要 |
-| `GET /debug/queues` | — | 调度队列、模型池队列、维护队列 |
-| `POST /debug/turns/{turnId}/replay` | — | 审计重放：用已归档的 artifact 重建最终请求并比较 hash，不调用模型；返回 `{ requestHashMatch, differences }` |
-| `POST /debug/agents/{agentId}/wake` | `{ reason, operationId }` | 注入一个 `debug` trigger；当前 run 被标记 contaminated |
+| `GET /agents/{agentId}/inspector`（已实现） | `branchId` | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn |
+| `GET /agents/{agentId}/memory`（已实现） | `branchId`、`revision` | `{ revision, records: MemoryRecord[] }` |
+| `GET /agents/{agentId}/memory/diff`（已实现） | `branchId`、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
+| `GET /agents/{agentId}/observations`（已实现） | `branchId`、`fromSeq`、`limit` | `{ observations: AgentObservation[] }` |
+| `GET /turns`（已实现） | `runId`、`agentId`、`status`、`limit` | turn 列表 |
+| `GET /turns/{turnId}`（已实现） | — | turn 详情：frontier、各阶段 requested/resolved/effective、span、context artifact 引用、全部 model attempt、tool call（原始与视图 artifact 引用）、receipt、对白 |
+| `GET /artifacts/{artifactId}`（已实现） | `view=redacted\|raw` | artifact 正文；`raw` 需要 researcher 角色，并记一条审计生命周期事件 |
+| `GET /traces/{traceId}`（已实现） | — | span 树 |
+| `GET /branches/compare`（事件差异已实现） | `left`、`right`、`atSeq` | 两个分支在相同检查点后的事件差异摘要；指标与协议差异仍待补齐 |
+| `GET /debug/queues`（已实现） | — | 调度队列、模型池队列、维护队列 |
+| `POST /debug/turns/{turnId}/replay`（hash 校验已实现） | — | 校验已归档 artifact 的规范 JSON hash；不调用模型，返回 `{ requestHashMatch, differences }` |
+| `POST /debug/agents/{agentId}/wake`（已实现） | `{ reason, operationId }` | 注入一个 `debug` trigger；当前 run 被标记 contaminated |
 
 ### 5.6 评估与导出
 

@@ -1,6 +1,6 @@
 # 两个本地端口与三运行域
 
-> 状态：基础双端已实现。玩家客户端监听 `127.0.0.1:5173`，服务端监听 `127.0.0.1:3000` 并通过 `/console/*` 提供控制台静态页面；Origin、会话、角色与 WS 频道均经服务端校验。完整运营、研究与评估页面仍按后续能力补齐。本文定义双端的部署和权限边界。参见 [api.md — HTTP 与 WebSocket API](api.md)、[module-catalog.md — 模块目录](module-catalog.md)、[client-and-rendering.md — 场景适配](client-and-rendering.md)、[observability.md — 观测](../platform/observability.md)、[evaluation.md — 评估](../platform/evaluation.md)。
+> 状态：基础双端与切片 A 研究页面已实现。玩家客户端监听 `127.0.0.1:5173`，服务端监听 `127.0.0.1:3000` 并通过 `/console/*` 提供控制台静态页面；Origin、会话、角色与 WS 频道均经服务端校验。完整运营、评估与后续研究页面仍按后续能力补齐。本文定义双端的部署和权限边界。参见 [api.md — HTTP 与 WebSocket API](api.md)、[module-catalog.md — 模块目录](module-catalog.md)、[client-and-rendering.md — 场景适配](client-and-rendering.md)、[observability.md — 观测](../platform/observability.md)、[evaluation.md — 评估](../platform/evaluation.md)。
 >
 > 这里的“端口”指网络监听端口；模块之间通过 capability port（能力端口）交互，见 [模块边界](modules.md) 与 [公共契约](contracts.md)，两者不是同一概念。
 
