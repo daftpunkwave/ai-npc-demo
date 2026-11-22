@@ -35,6 +35,8 @@ export class OnlineRunMigrationRequiredError extends Error {
 export interface MigratedOnlineRun {
   readonly runId: string;
   readonly branchId: string;
+  /** 源分支被归档前的状态，供启动失败补偿原样写回。 */
+  readonly sourceBranchStatus: "active" | "paused";
 }
 
 /** 迁移输入：在线入口、冻结 RunSpec 原文与按当前能力闭包重建的 manifest。 */
@@ -172,6 +174,18 @@ function archiveSourceBranch(tx: StorageTransaction, online: OnlineEntry): void 
 }
 
 /**
+ * 读取源分支可恢复的状态：readOnlineEntry 只放行 active 与 paused，
+ * 这里再校验一次，避免未知状态被当作可补偿状态参与回写。
+ */
+function sourceBranchStatusOf(branch: Readonly<Record<string, unknown>>): "active" | "paused" {
+  const status = branch["status"];
+  if (status !== "active" && status !== "paused") {
+    throw new DomainError("invalid-state", `在线分支状态为 ${String(status)}，不在可迁移状态内`);
+  }
+  return status;
+}
+
+/**
  * 把派生分支的 Agent 激活恢复为源分支的状态：fork 的安全修正把复制出的激活置 dormant，
  * 迁移是恢复而非重开，源分支名册中 active 的身份在新分支上保持 active，
  * 否则迁移后的世界将不再调度 NPC。
@@ -194,6 +208,7 @@ export function migrateOnlineRun(input: MigrateOnlineRunInput): MigratedOnlineRu
   const runId = input.host.ids("run");
   const branchId = input.host.ids("br");
   const nowIso = input.host.nowIso();
+  const sourceBranchStatus = sourceBranchStatusOf(input.online.branch);
   input.storage.transact((tx) => {
     assertAliasStillOnSourceBranch(tx, input.online);
     input.storage.forkBranch(tx, {
@@ -208,22 +223,27 @@ export function migrateOnlineRun(input: MigrateOnlineRunInput): MigratedOnlineRu
     restoreForkedActivations(tx, input.online.branchId, branchId);
     tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: nowIso });
   });
-  return { runId, branchId };
+  return { runId, branchId, sourceBranchStatus };
 }
 
 /**
- * 迁移已提交但宿主启动失败时的补偿：把 online 别名恢复指向源分支，并把源分支状态恢复 active。
+ * 迁移已提交但宿主启动失败时的补偿：把 online 别名恢复指向源分支，并恢复源分支迁移前的状态。
+ * 迁移把源分支置为 archived，这里只能写回迁移事务读取到的原状态（active 或 paused），
+ * 不能无条件设为 active：paused 是合法的在线分支状态，改写它会放大失败影响面。
  * 迁移产生的新分支与新 run 不删除，作为孤儿记录留存供审计；源 run 行与 manifest 始终未变。
+ *
+ * @param sourceBranchStatus 迁移事务读取到的源分支状态；只接受 active 或 paused。
  */
 export function restoreOnlineAliasToSourceBranch(
   storage: StoragePort,
   nowIso: string,
   sourceBranchId: string,
+  sourceBranchStatus: "active" | "paused",
 ): void {
   storage.transact((tx) => {
     const sourceBranch = tx.rows("branches").get({ branch_id: sourceBranchId });
     if (sourceBranch !== null) {
-      tx.rows("branches").put({ ...sourceBranch, status: "active" });
+      tx.rows("branches").put({ ...sourceBranch, status: sourceBranchStatus });
     }
     tx.rows("world_aliases").put({ alias: "online", branch_id: sourceBranchId, updated_at: nowIso });
   });
