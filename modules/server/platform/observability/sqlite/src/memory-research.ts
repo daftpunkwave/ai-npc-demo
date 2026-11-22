@@ -27,11 +27,14 @@ function readWorldId(storage: StoragePort, branchId: string): string {
 
 function observationRow(row: StorageRawRow): StorageRow {
   const text = (key: string): string => {
+    // key 只由本文件固定观察字段名调用，不接受请求输入。
+    // eslint-disable-next-line security/detect-object-injection
     const value = row[key];
     if (typeof value !== "string") throw new DomainError("invalid-state", `观察字段 ${key} 不是文本`);
     return value;
   };
   const integer = (key: string): number => {
+    // eslint-disable-next-line security/detect-object-injection
     const value = row[key];
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
       throw new DomainError("invalid-state", `观察字段 ${key} 不是非负整数`);
@@ -39,6 +42,7 @@ function observationRow(row: StorageRawRow): StorageRow {
     return value;
   };
   const finite = (key: string): number => {
+    // eslint-disable-next-line security/detect-object-injection
     const value = row[key];
     if (typeof value !== "number" || !Number.isFinite(value)) {
       throw new DomainError("invalid-state", `观察字段 ${key} 不是有限数字`);
