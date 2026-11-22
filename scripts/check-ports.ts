@@ -215,17 +215,26 @@ async function waitForReady(child: ChildProcess): Promise<void> {
 }
 
 async function assertPortsFree(): Promise<void> {
-  for (const port of expectedPorts) {
-    await new Promise<void>((resolvePort, reject) => {
-      const server = createServer();
-      server.once("error", reject);
-      server.listen(port, "127.0.0.1", () => {
-        server.close((error) => (error === undefined ? resolvePort() : reject(error)));
-      });
-    }).catch((error: unknown) => {
-      throw new Error(`端口 ${port} 已被占用，端口检查不能开始：${error instanceof Error ? error.message : String(error)}`);
-    });
+  let lastError: unknown = new Error("端口尚未释放");
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    try {
+      for (const port of expectedPorts) {
+        await new Promise<void>((resolvePort, reject) => {
+          const server = createServer();
+          server.once("error", reject);
+          server.listen(port, "127.0.0.1", () => {
+            server.close((error) => (error === undefined ? resolvePort() : reject(error)));
+          });
+        });
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      await sleep(100);
+    }
   }
+  throw new Error(`端口 3000 或 5173 已被占用，端口检查不能开始：${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 async function verifyMode(mode: "dev" | "start", env: NodeJS.ProcessEnv): Promise<void> {

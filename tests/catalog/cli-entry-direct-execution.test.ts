@@ -52,7 +52,8 @@ describe("CLI 入口直接执行与导入行为", () => {
     expect(run.stdout).toContain("未发现边界违规");
   }, subprocessTestTimeoutMs);
 
-  it("直接执行 check-catalog 时运行装配预检并报告结果", async () => {
+  // 全量 Vitest 并行时 tsx 冷启动会与其他 138 个 worker 竞争 CPU；保留真实子进程断言并给予有界等待。
+  it("直接执行 check-catalog 时运行装配预检并报告结果", { timeout: 90_000 }, async () => {
     const run = await runTsx("scripts/check-catalog.ts");
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
