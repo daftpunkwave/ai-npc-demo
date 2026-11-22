@@ -139,6 +139,8 @@ export function scanRepository(root: string): BoundaryCheckInput {
   if (packageDirectories.size === 0) {
     throw new Error(`未在 ${absoluteRoot} 找到 workspace 包。`);
   }
+  // 根包不在 workspace packages 段内，显式纳入检查：根清单声明的生产依赖没有生产源码使用方时须报违规。
+  packageDirectories.add("");
   const packages = [...packageDirectories]
     .sort()
     .map((directory) => readPackageManifest(absoluteRoot, directory));

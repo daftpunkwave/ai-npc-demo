@@ -55,6 +55,8 @@ export interface DeploymentConfig {
   readonly assemblyRef: string;
   readonly modelLayoutRef: string;
   readonly rosterRef: string;
+  /** 在线 run 能力闭包升级时的显式迁移开关；缺省关闭，拒绝启动并给出迁移指引。 */
+  readonly migrateOnlineRun: boolean;
   /** 只包含非空的已配置令牌；缺省令牌在解析凭据时生成。 */
   readonly configuredTokens: Partial<Record<TokenRole, string>>;
 }
@@ -122,6 +124,22 @@ function readFixedPort(env: DeploymentConfigInput["env"], name: string, expected
   return expected;
 }
 
+/** 解析布尔开关；只接受约定取值，其余非空值报错，避免手误后静默按关闭执行。 */
+function readBooleanFlag(env: DeploymentConfigInput["env"], name: string): boolean {
+  const raw = readText(env, name);
+  if (raw === undefined) {
+    return false;
+  }
+  const normalized = raw.toLowerCase();
+  if (normalized === "1" || normalized === "true") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false") {
+    return false;
+  }
+  throw new Error(`${name} 只接受 1/true 或 0/false（不区分大小写），收到 "${raw}"`);
+}
+
 /**
  * 校验任意两个非空令牌都不同。
  * 重复时指出具体来源，避免传输层按 Map 覆盖身份后静默降级为后一个角色。
@@ -173,6 +191,7 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     modelLayoutRef: readText(input.env, "NPC_MODEL_LAYOUT") ??
       (assemblyRef === "local-slg-test-v1" ? "deterministic-model-layout-v1" : defaultModelLayoutRef),
     rosterRef: readText(input.env, "NPC_ROSTER") ?? defaultRosterRef,
+    migrateOnlineRun: readBooleanFlag(input.env, "NPC_MIGRATE_ONLINE_RUN"),
     configuredTokens,
   };
 }
