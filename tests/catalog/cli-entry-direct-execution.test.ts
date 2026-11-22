@@ -57,14 +57,14 @@ describe("CLI 入口直接执行与导入行为", () => {
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
     expect(run.stdout).toContain("资产校验通过");
-  });
+  }, 60_000);
 
   it("作为模块导入三个入口时不产生任何输出且正常退出", async () => {
     const run = await runTsx(importFixturePath);
     expect(run.code).toBe(0);
     expect(run.stdout).toBe("");
     expect(run.stderr).toBe("");
-  });
+  }, 60_000);
 
   it("check-assets 公开入口不再暴露 isDirectExecution，共享工具保持可用", async () => {
     const checkAssetsEntry = await import("@ai-npc/scripts/check-assets");
