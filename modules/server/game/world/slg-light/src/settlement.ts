@@ -122,7 +122,8 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
   }
   const record = readWorldState(context.tx, "meters", "meters", metersStateSchema);
   if (record === null) {
-    return;
+    // 已开局却缺指标聚合：不能当作「没到结算日」静默跳过，否则日结永久不发生且无失败证据。
+    throw settlementFailure("每日结算缺少指标聚合", {});
   }
   const state = record.state;
   if (state.lastDailyTick === tick) {
@@ -228,7 +229,8 @@ export function runChapterEvaluation(
   }
   const meterRecord = readWorldState(tx, "meters", "meters", metersStateSchema);
   if (meterRecord === null) {
-    return undefined;
+    // 已到章节终点却缺指标聚合：静默返回会让章节永不停停钟且无失败证据，改为显式失败。
+    throw settlementFailure("章节评估缺少指标聚合", {});
   }
   const meters = metersView(meterRecord.state);
   const counts = loadCounts();
