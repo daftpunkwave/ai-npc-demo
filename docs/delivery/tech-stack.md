@@ -169,7 +169,7 @@ packages:
 
 部署参数只有这一个来源：主机、两个端口、数据目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `NPC_DATA_DIR`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/ai-npc.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
 
-开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)。
+开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)；旧在线 run 的能力闭包升级迁移开关 `NPC_MIGRATE_ONLINE_RUN` 见 [operations.md — 能力闭包升级迁移](../platform/operations.md#102-能力闭包升级迁移)。
 
 ## 6. 本地双端拓扑
 

@@ -65,6 +65,7 @@ export async function startServer(options: StartServerOptions): Promise<StartupH
       transportHost: config.serverHost,
       transportPort: config.serverPort,
       clientPort: config.clientPort,
+      migrateOnlineRun: config.migrateOnlineRun,
     });
   } catch (error) {
     discardStaged(staged, logError);
