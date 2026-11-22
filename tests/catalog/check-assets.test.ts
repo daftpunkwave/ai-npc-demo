@@ -1,5 +1,6 @@
 /**
- * 校验资产检查器对清单覆盖、唯一性、kind 与 ID 对应及内容包版本对应的判定。
+ * 校验资产检查器对清单覆盖、唯一性、kind 与 ID 对应、内容包版本对应、路径越界、
+ * SVG 结构安全与内容包结构校验的判定。
  * 夹具复制真实资产与内容包到临时目录，只改清单或内容包后直接调用可导入的校验函数。
  * 禁止只断言文件存在、跳过检查器或把失败夹具当作通过。
  */
@@ -167,5 +168,76 @@ describe("SVG 结构安全", () => {
     expect(unsafe).toBeDefined();
     expect(unsafe?.message).toContain(expectedMessage);
     expect(unsafe?.message).toContain("assets/world/grayharbor-relay.svg");
+  });
+});
+
+describe("资产路径越界与文件校验", () => {
+  it.each([
+    ["上级目录", "../package.json"],
+    ["绝对路径", "/etc/grayharbor-relay.svg"],
+    ["URL 协议", "https://example.com/x.svg"],
+    ["反斜杠分隔", "assets\\world\\grayharbor-relay.svg"],
+  ])("拒绝%s声明的资产路径", (_label, path) => {
+    const root = createFixture();
+    updateManifest(root, (manifest) => {
+      const location = manifest.assets.find((asset) => asset["kind"] === "location");
+      if (location === undefined) {
+        throw new Error("测试夹具缺少地点资产");
+      }
+      location["path"] = path;
+    });
+    const report = checkAssets({ root });
+    const invalid = report.violations.find((violation) => violation.code === "asset-path");
+    expect(invalid).toBeDefined();
+    expect(invalid?.message).toContain(path);
+  });
+
+  it("声明的资产文件为空时失败", () => {
+    const root = createFixture();
+    writeFileSync(join(root, "assets/world/grayharbor-relay.svg"), "", "utf8");
+    const report = checkAssets({ root });
+    expect(report.violations.map((violation) => violation.code)).toContain("asset-empty");
+  });
+});
+
+describe("内容包结构校验", () => {
+  /** 替换临时内容包中的单个 YAML 文件文本后写回。 */
+  function rewritePackFile(root: string, fileName: string, transform: (source: string) => string): void {
+    const filePath = join(root, `content/world-packs/earth-2964-v1/${fileName}`);
+    writeFileSync(filePath, transform(readFileSync(filePath, "utf8")), "utf8");
+  }
+
+  it("packId 与内容包目录名不一致时失败", () => {
+    const root = createFixture();
+    rewritePackFile(root, "pack.yaml", (source) =>
+      source.replace("packId: earth-2964-v1", "packId: other-pack"),
+    );
+    const report = checkAssets({ root });
+    expect(report.violations.map((violation) => violation.code)).toContain("pack-id-mismatch");
+  });
+
+  it("pack.yaml schemaVersion 非 1 时失败", () => {
+    const root = createFixture();
+    rewritePackFile(root, "pack.yaml", (source) =>
+      source.replace("schemaVersion: 1", "schemaVersion: 2"),
+    );
+    const report = checkAssets({ root });
+    expect(report.violations.map((violation) => violation.code)).toContain("pack-invalid");
+  });
+
+  it("map.yaml 出现重复 nodeId 时失败", () => {
+    const root = createFixture();
+    rewritePackFile(root, "map.yaml", (source) =>
+      source.replace("- { nodeId: watergate,", "- { nodeId: grayharbor,"),
+    );
+    const report = checkAssets({ root });
+    expect(report.violations.map((violation) => violation.code)).toContain("node-duplicate");
+  });
+
+  it("内容包节点数与期望不符时失败", () => {
+    const root = createFixture();
+    rewritePackFile(root, "map.yaml", (source) => source.replace(/^.*nodeId: anchor.*\n/m, ""));
+    const report = checkAssets({ root });
+    expect(report.violations.map((violation) => violation.code)).toContain("node-count");
   });
 });
