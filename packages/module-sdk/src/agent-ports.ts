@@ -112,7 +112,7 @@ export interface MemoryRecordView {
   };
 }
 
-/** Host-supplied identity context used by memory policies without exposing the content package. */
+/** 宿主提供的身份上下文；记忆策略使用该结构时不暴露内容包。 */
 export interface MemoryAgentIdentity {
   readonly factionId: string;
   readonly values: readonly string[];

@@ -85,14 +85,14 @@ const DecisionSubmit = z.object({
   dialogueIntent: z.object({
     kind: z.enum(["none", "acknowledge", "answer", "agree", "refuse", "counter-offer", "request", "inform",
                   "warn", "thank", "apologize", "decline-to-disclose", "report-result", "remind"]),
-    audience: z.array(z.string()).max(4),            // principal ids
+    audience: z.array(z.string()).max(4),            // principal 标识
     tone: z.enum(["warm", "neutral", "cold", "urgent"]),
     reasonCode: z.enum(["none", "danger", "duty", "past-breach", "low-trust", "lack-resources",
                         "policy", "need-guarantee", "injured", "busy"]),
-    subjectRef: z.string().nullable(),              // agr-, task-, inv- or ev- id
-    factRefs: z.array(z.string()).max(6),           // ids shown in this request
+    subjectRef: z.string().nullable(),              // agr-、task-、inv- 或 ev- ID
+    factRefs: z.array(z.string()).max(6),           // 本请求中展示的 ID
   }),
-  noteworthy: z.array(z.object({                     // model-reported points, adjudicated by memory (see memory.md §11)
+  noteworthy: z.array(z.object({                     // 模型报告、由记忆模块裁决的要点（见 memory.md §11）
     kind: z.enum(["promise-by-other", "promise-by-me", "claim", "request"]),
     aboutId: z.string(),
     summary: z.string().max(60),
@@ -100,7 +100,7 @@ const DecisionSubmit = z.object({
     sourceRefs: z.array(z.string()).min(1).max(3),
   })).max(3),
   citedMemoryIds: z.array(z.string()).max(8),
-  decisionNote: z.string().max(120),                 // one-sentence factual basis citing IDs; research-only, never passed to speech
+  decisionNote: z.string().max(120),                 // 一句话事实依据并引用 ID；仅供研究，不传给 speech
 });
 ```
 

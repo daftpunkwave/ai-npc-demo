@@ -159,48 +159,48 @@ memory:
 
 ```ts
 interface MemoryPort {
-  // fold newly delivered observations (seq > consumed) into a plan; never calls a model
+  // 将新送达的观察（seq > consumed）折叠进计划；不调用模型。
   prepareIngest(input: { scope: MemoryScope; baseRevision: number; observations: AgentObservation[]; worldTick: number },
                 view: RevisionView): MemoryChangePlan;
-  // read-only, bound to a frozen revision
+  // 只读，并绑定冻结 revision。
   retrieve(query: MemoryQuery, view: RevisionView): MemoryBundle;
-  // decide whether maintenance work is due; returns null when nothing is due (called by the host, runtime.md §13.1)
+  // 判断是否到期执行整理；无事可做时返回 null（由宿主调用，见 runtime.md §13.1）。
   planMaintenance(input: { scope: MemoryScope; revision: number; worldTick: number; observationSeqThrough: number;
                            trigger: "day-passed" | "importance" }): MaintenanceTask | null;
-  // run outside the actor lock; may call the model port with purpose memory-maintenance
+  // 在 actor 锁外执行；可用 purpose memory-maintenance 调用模型端口。
   runMaintenance(task: MaintenanceTask, view: RevisionView, model: ScopedModelPort | null): Promise<MemoryChangePlan>;
-  // after a turn: reinforce validated citations and adjudicate model-reported noteworthy points
+  // turn 结束后：强化通过校验的引用，并裁决模型报告的自报要点。
   recordUse(input: { scope: MemoryScope; baseRevision: number; turnId: string; citedMemoryIds: string[];
                      noteworthy: Noteworthy[]; inputObservations: AgentObservation[]; worldTick: number },
             view: RevisionView): MemoryChangePlan;
-  // prospective wake-ups; the scheduler calls it once per tick (runtime.md §13.2); M0 and M2 return []
+  // 前瞻唤醒；调度器每个 tick 调用一次（runtime.md §13.2）；M0 与 M2 返回 []。
   proposeWakeups(input: { scope: MemoryScope; revision: number; worldTick: number },
                  view: RevisionView): WakeupProposal[];
   exportState(scope: MemoryScope, revision: number): MemoryCheckpoint;
-  importState(scope: MemoryScope, checkpoint: MemoryCheckpoint): MemoryChangePlan; // throws on incompatible schema
+  importState(scope: MemoryScope, checkpoint: MemoryCheckpoint): MemoryChangePlan; // schema 不兼容时抛出。
 }
 
 interface MemoryAgentIdentity {
   factionId: string;
-  values: string[];                       // stable persona values supplied by the host
+  values: string[];                       // 宿主提供的稳定人格价值。
   initialRelations: { targetId: string; trust: number }[];
   personalityKeywords: Record<"agreement" | "rescue" | "resource" | "road" | "evidence", string[]>;
 }
 
-interface NewMemoryRow {           // one row version; memoryId is new, or an existing id for a new version
+interface NewMemoryRow {           // 一行版本；memoryId 可新建，也可复用已有 ID 生成新版本。
   memoryId: string;
   kind: MemoryRecord["kind"];
   tier: "short" | "long" | "core" | "none";
   status: MemoryRecord["status"];
   epistemic: MemoryRecord["epistemic"];
-  releasePolicyId: string;         // most restrictive of the sources (prompts.md §3)
+  releasePolicyId: string;         // 取所有来源中最严格的策略（prompts.md §3）。
   validFromTick: number;
   validUntilTick: number | null;
-  strength: number;                // s0 = salience at creation
+  strength: number;                // 创建时 s0 = salience。
   salience: number;
   recallCount: number;
-  lastReinforcedTick: number;      // validFromTick at creation
-  tags: string[];                  // vocabulary in §11.2
+  lastReinforcedTick: number;      // 创建时等于 validFromTick。
+  tags: string[];                  // 词汇表见 §11.2。
   sourceObservationIds: string[];
   sourceTurnId?: string;           // recordUse 新建记录必填为本 turn 的 turnId；其他变更计划省略
   content: { summaryZh: string; counterpartIds: string[]; data: Json };
@@ -208,33 +208,33 @@ interface NewMemoryRow {           // one row version; memoryId is new, or an ex
 
 interface MemoryChangePlan {
   baseRevision: number;
-  observationSeqThrough: number;   // highest observation folded in by this plan
+  observationSeqThrough: number;   // 本计划纳入的最高 observation seq。
   inserts: NewMemoryRow[];
   retires: { memoryId: string; status: MemoryRecord["status"] }[];
-  derivedThroughSeq: number | null;  // set only by maintenance plans
-  derivedThroughTick: number | null; // set only by maintenance plans (= the task's due_tick)
+  derivedThroughSeq: number | null;  // 仅整理计划设置。
+  derivedThroughTick: number | null; // 仅整理计划设置，等于任务的 due_tick。
   changeKind: "ingest" | "maintenance" | "use" | "import";
 }
 
-interface MaintenanceTask {        // stored in maintenance_runs.task_json
+interface MaintenanceTask {        // 存入 maintenance_runs.task_json。
   moduleId: string;
   trigger: "day-passed" | "importance";
-  dueTick: number;                 // day-passed: the DayPassed tick; importance: current tick + 1
+  dueTick: number;                 // day-passed 取 DayPassed 的 tick；importance 取当前 tick + 1。
   baseRevision: number;
   observationSeqThrough: number;
-  day: number | null;              // for day-passed
-  needsModel: boolean;             // false for M1 and for M3 agents outside the daily top-8
+  day: number | null;              // 仅 day-passed 有值。
+  needsModel: boolean;             // M1 与每日 top-8 之外的 M3 Agent 为 false。
 }
 
 interface MemoryBundle {
   status: "ok" | "empty-by-design" | "not-ready";
   revision: number;
-  coreBlock: string | null;        // M3 only
+  coreBlock: string | null;        // 仅 M3 使用。
   relationSummary: { targetId: string; trust: number; affinity: number; wariness: number;
                      causes: RelationCause[]; reasonMemoryIds: string[] }[];
   items: { memoryId: string; kind: MemoryRecord["kind"]; epistemic: MemoryRecord["epistemic"]; summaryZh: string;
            validFromTick: number; score: number; mustInclude: boolean; releasePolicyId: string; sourceObservationIds: string[] }[];
-  candidates: number;              // size of the candidate pool, for observability
+  candidates: number;              // 候选池大小，用于观测。
   dropped: { memoryId: string; reason: "budget" | "dedupe" | "rank" }[];
 }
 

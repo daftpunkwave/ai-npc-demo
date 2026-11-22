@@ -16,20 +16,15 @@ const host: HostServices = {
   nowIso: () => "2026-01-01T00:00:00.000Z",
   monotonicMs: () => 0,
   sleep: async () => {
-    // The handle test does not wait.
+    // 该 handle 测试不会等待。
   },
   rng: () => () => 0.5,
   hash: async () => "hash",
+  // 本测试不校验日志输出。
   logger: {
-    info: () => {
-      // No log assertions are needed.
-    },
-    warn: () => {
-      // No log assertions are needed.
-    },
-    error: () => {
-      // No log assertions are needed.
-    },
+    info: () => {},
+    warn: () => {},
+    error: () => {},
   },
   tracer: {
     span: (_name, _attrs, fn) => fn(),
@@ -60,7 +55,7 @@ describe("AgentModuleHandle", () => {
           throw startupError;
         },
         drain: async () => {
-          // Nothing is running.
+          // 没有正在运行的资源。
         },
         dispose: async () => {
           disposals += 1;

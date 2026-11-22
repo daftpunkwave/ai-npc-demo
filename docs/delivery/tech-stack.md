@@ -90,7 +90,7 @@ packages:
 根目录三份配置。`contracts` 与 `kernel` 同时被两个程序编译，因此不能使用 Node 或 DOM 专有 API，这条规则由编译器直接保证。
 
 ```jsonc
-// tsconfig.base.json
+// 基础 TypeScript 配置
 {
   "compilerOptions": {
     "target": "ES2023",
@@ -148,7 +148,7 @@ packages:
 | `pnpm typecheck` | 已实现 | `tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json` | 检查服务端与浏览器的 TypeScript |
 | `pnpm test` | 已实现 | `vitest run` | 单元、契约、集成、目录、场景测试 |
 | `pnpm test:e2e` | 已实现 | `playwright test` | 两端口启动、玩家与控制台关键路径 |
-| `pnpm check:boundaries` | 已实现 | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header |
+| `pnpm check:boundaries` | 已实现 | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header、中文说明与三项完整性 |
 | `pnpm check:catalog` | 已实现 | `tsx scripts/check-catalog.ts` | 检查装配的 realm/kind、能力闭包、作用域、重复绑定、拓扑和配置 schema |
 | `pnpm check:assets` | 已实现 | `tsx scripts/check-assets.ts` | 核对资产清单、版本与内容包覆盖 |
 | `pnpm check:docs` | 已实现 | `tsx scripts/check-docs.ts` | 检查相对链接、锚点与表格列数 |
@@ -176,7 +176,7 @@ packages:
 只有两个监听：`127.0.0.1:5173`（客户端）与 `127.0.0.1:3000`（服务端 + `/console`）。实现方式固定如下：
 
 ```ts
-// apps/client/vite.config.ts (essential parts); env comes from scripts/dev.ts or scripts/start.ts
+// 客户端 Vite 配置（关键部分）；环境变量由 dev/start 脚本提供
 const host = process.env.NPC_SERVER_HOST ?? "127.0.0.1";
 const clientPort = Number(process.env.NPC_CLIENT_PORT ?? 5173);
 const api = { target: `http://${host}:${process.env.NPC_SERVER_PORT ?? 3000}`, ws: true, changeOrigin: false };
@@ -188,7 +188,7 @@ export default defineConfig({
 ```
 
 ```ts
-// apps/console/vite.config.ts (essential parts)
+// 控制台 Vite 配置（关键部分）
 export default defineConfig({
   plugins: [react()],
   base: "/console/",
@@ -216,7 +216,7 @@ export default defineConfig({
 
 ### 7.1 手写源码文件头
 
-每个手写源码文件（含测试、脚本、迁移与源码配置）使用语言原生的中文注释 header（保留英文专有名词），准确说明该文件的功能职责、依赖契约及禁止事项。按实际文件编写，不套用与实现无关的口号；所有代码注释与 header 均只解释代码本身，不引用开发文档路径、链接或构建阶段编号；脱离开发文档也应能理解职责和约束。
+每个手写源码文件（含测试、脚本、迁移与源码配置）使用语言原生的中文注释 header（保留英文专有名词），至少分别说明该文件的功能职责、依赖契约及禁止事项。按实际文件编写，不套用与实现无关的口号；所有代码注释与 header 均只解释代码本身，不引用开发文档路径、链接或构建阶段编号；脱离开发文档也应能理解职责和约束。
 
 ```ts
 /**
@@ -228,7 +228,7 @@ export default defineConfig({
 
 TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 PEP 257 模块 docstring（位于可选 shebang/编码声明之后），shell 用 `#`，SQL 用 `--`，CSS 用块注释，HTML 用原生注释；有 shebang 时保留首行，header 紧随其后。JSON、锁文件、二进制、第三方代码与生成产物不插入注释；数据配置不伪装成源码。Markdown 用标题与范围说明，不强塞代码式 header。函数仅在非直观约束或原因需要解释时注释，不机械重复签名。
 
-`pnpm check:boundaries` 已检查 header 的存在性、原生格式和开发文档或阶段引用。职责与依赖描述的准确性由人工复核。
+`pnpm check:boundaries` 已检查 header 的存在性、原生格式、说明性注释的中文内容，以及开发文档或阶段引用。使用规范类别标签的 header 还必须同时包含职责、交互契约与约束禁忌三类标签；未带类别标签的旧 header 只通过至少三条不同说明做结构检查，语义完整性仍由人工复核。已发布 SQLite 迁移受 `schema_migrations` 校验和保护，不得为补写注释而修改原文；这些历史文件保留发布时文本，新增迁移仍须遵循本节。
 
 ## 8. 测试放置
 

@@ -19,8 +19,8 @@
 席位字段：
 
 ```text
-seatId            // seat.commune | seat.ember | seat.earth | seat.truce | seat.farstar
-controllerType    // human | ai | stand-in | vassal | vacant
+seatId            // 席位 ID：seat.commune | seat.ember | seat.earth | seat.truce | seat.farstar
+controllerType    // 控制类型：human | ai | stand-in | vassal | vacant
 controllerSeatId  // vassal 时指向吞并者席位
 controllerEpoch   // 每次控制者变更 +1；旧 epoch 的迟到命令一律拒绝
 joinedAtTick

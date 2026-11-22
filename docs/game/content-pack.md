@@ -23,7 +23,7 @@
 | `scripts/*.yaml` | 记忆实验输入脚本 | [记忆实验输入脚本](#11-记忆实验输入脚本scriptsyaml) |
 
 ```yaml
-# pack.yaml
+# 内容包清单 pack.yaml
 schemaVersion: 1
 packId: earth-2964-v1
 contentVersion: "0.2.0"
@@ -439,7 +439,7 @@ teams:
   - { teamId: team-star,    ownerFactionId: species-extraterrestrial, nodeId: anchor,     capabilities: [repair, transport],         capacity: 15 }
 groups:
   - { groupId: grp-injured-migrants, nodeId: pass, injured: 6, deadlineTick: 48 }
-# duty delegations granted by each faction to its leader/agent at campaign start
+# 开局时各派系授予其领袖或 Agent 的职责委托
 dutyDelegations:
   - { granteeId: human-independent, grantorFactionId: human-independent,        teamIds: [team-rubble],  stockpileId: sp-rubble,  maxDraw: { supply: 10, energy: 4, medical: 2 }, untilTick: 168 }
   - { granteeId: human-earth-alliance, grantorFactionId: human-earth-alliance,     teamIds: [team-earth],   stockpileId: sp-earth,   maxDraw: { supply: 6,  energy: 0, medical: 8 }, untilTick: 168 }
@@ -690,7 +690,7 @@ agents:
 ```
 
 ```yaml
-# config/rosters/core-3.yaml: development and diagnosis only; never reported as the full first version
+# 开发与诊断名册 core-3.yaml：仅用于开发诊断，绝不作为完整首版结果报告
 schemaVersion: 1
 rosterId: core-3
 agents:
@@ -818,7 +818,7 @@ checkpoints:
 | | `lexicons.*` | 规则与评估用的关键词表，见下 | 照抄下方 YAML |
 
 ```yaml
-# prompts/zh-CN.yaml (labels part)
+# 提示词词表 prompts/zh-CN.yaml（labels 部分）
 labels:
   kinds: { character: 人物, strategic: 党魁/外域 }
   intents: { none: 不说话, acknowledge: 表示知道了, answer: 回答对方的问题, agree: 同意, refuse: 拒绝, counter-offer: 提出替代方案,
@@ -834,7 +834,7 @@ labels:
 ```
 
 ```yaml
-# locale/zh-CN.yaml (names part)
+# 本地化词表 locale/zh-CN.yaml（names 部分）
 taskTypes: { transport: 运输, escort: 护送, rescue: 救援, repair: 修复, scout: 侦察 }
 meters: { relay.stability: 中继稳定度, orchard.water: 果园水量, migration.safety: 迁徙安全, watergate.allocation: 水闸分配 }
 meterLevels: { critical: 危急, strained: 紧张, stable: 稳定 }
@@ -847,9 +847,9 @@ facilities: { relay: 中继站, field-hospital: 野战医院, sluice: 闸门, cl
 playerName: 党魁
 ```
 ```yaml
-# locale/zh-CN.yaml (lexicons part)
+# 本地化词表 locale/zh-CN.yaml（lexicons 部分）
 lexicons:
-  # deterministic decision: first matching entry wins; specific words come before generic ones
+  # 确定性决策：首个匹配项生效；具体词必须排在泛化词之前
   taskKeywords:
     - { word: 护送, taskType: escort }
     - { word: 救, taskType: rescue }
@@ -867,7 +867,7 @@ lexicons:
   forgetMarkers: ["不记得", "忘了"]
   completionClaims: ["已经送到", "送到了", "已完成", "已经完成", "修好了"]
   progressClaims: ["已经安排", "已经出发"]
-  # memory query: keyword -> tags (tag vocabulary in memory.md §11.2)
+  # 记忆查询：关键词到标签的映射（标签词汇见 memory.md §11.2）
   memoryQueryTags:
     - { word: 护送, tags: [escort] }
     - { word: 供给, tags: [transport, resource] }
@@ -889,7 +889,7 @@ lexicons:
     - { word: 答应, tags: [agreement] }
     - { word: 约定, tags: [agreement] }
     - { word: 承诺, tags: [agreement] }
-  # salience personality multipliers (memory.md §11.2): category -> words in persona values
+  # 显著度的人格乘数（memory.md §11.2）：类别到人格价值词的映射
   personalityKeywords:
     agreement: [重兑现, 对重复承诺敏感, 重递信承诺]
     rescue: [护弱者, 保护平民, 护幼体]

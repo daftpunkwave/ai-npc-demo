@@ -242,10 +242,10 @@ tick 168 时提交 `ChapterStageEvaluated`，内容包括三个指标的当前�
 规则模块不得使用 `Math.random()`。所有随机抽样都通过宿主注入的确定性随机源：
 
 ```ts
-// seed string -> uint32 via the first 8 hex digits of sha256
+// 将种子字符串的 SHA-256 前 8 个十六进制字符转换为 uint32。
 function rngFor(runSeed: string, ...parts: string[]): () => number {
   let a = parseInt(sha256Hex([runSeed, ...parts].join(":")).slice(0, 8), 16) >>> 0;
-  return () => { // mulberry32
+return () => { // mulberry32 伪随机算法
     a = (a + 0x6d2b79f5) >>> 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -253,9 +253,9 @@ function rngFor(runSeed: string, ...parts: string[]): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// risk rolls for one road of one departing task:
-//   const r = rngFor(runSeed, "risk", teamId, String(departTick), roadId);
-//   delayed = r() < 0.15 * risk; injured = r() < 0.05 * risk; victimIndex = Math.floor(r() * participantsSortedById.length)
+// 一次出发任务中单条道路的风险掷点：
+//   例如 const r = rngFor(runSeed, "risk", teamId, String(departTick), roadId);
+//   公式：delayed = r() < 0.15 * risk; injured = r() < 0.05 * risk; victimIndex = Math.floor(r() * participantsSortedById.length)
 ```
 
 - 种子只能由 `runSeed` 与语义字段（tick、agentId、teamId、roadId 等）组成，**不得包含随机生成的 ID**（taskId、turnId 等），这样同一 seed 下的不同变体分支在相同局面里会得到相同的抽样结果。
