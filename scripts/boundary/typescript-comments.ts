@@ -7,6 +7,7 @@
 import type { CommentSpan } from "./types";
 
 type Mode = "code" | "line" | "block" | "single" | "double" | "template" | "regex" | "jsxText";
+type JsxTagKind = "opening" | "closing";
 
 const EXPRESSION_START_KEYWORDS = new Set([
   "await",
@@ -60,285 +61,323 @@ function isExpressionPrefixOperator(character: string): boolean {
 }
 
 function isExpressionSuffix(character: string): boolean {
-  return character === ")" || character === "]" || character === "}";
+  return character === "]" || character === "}";
 }
 
-/** 只把能开启表达式的 `/` 视为正则，避免后缀自增后的除法吞掉尾随注释。 */
-export function collectTypeScriptCommentSpans(source: string, jsx = false): CommentSpan[] {
-  const spans: CommentSpan[] = [];
-  const templateExpressionDepths: number[] = [];
-  const jsxExpressionDepths: number[] = [];
-  const parenthesisContexts: (string | null)[] = [];
-  let mode: Mode = "code";
-  let start = 0;
-  let expectExpression = true;
-  let index = 0;
-  let inRegexCharacterClass = false;
-  let pendingControlKeyword: string | null = null;
-  let jsxTextDepth = 0;
-  let jsxTag: "opening" | "closing" | null = null;
-  let jsxTagBraceDepth = 0;
+/** 以显式词法状态扫描注释，不执行源码，也不把 JSX 文本或正则字符类当作代码。 */
+class TypeScriptCommentScanner {
+  private readonly spans: CommentSpan[] = [];
+  private readonly templateExpressionDepths: number[] = [];
+  private readonly jsxExpressionDepths: number[] = [];
+  private readonly parenthesisContexts: (string | null)[] = [];
+  private mode: Mode = "code";
+  private start = 0;
+  private expectExpression = true;
+  private index = 0;
+  private inRegexCharacterClass = false;
+  private pendingControlKeyword: string | null = null;
+  private jsxTextDepth = 0;
+  private jsxTag: JsxTagKind | null = null;
+  private jsxTagBraceDepth = 0;
 
-  while (index < source.length) {
-    const character = source.charAt(index);
-    const next = source.charAt(index + 1);
+  constructor(
+    private readonly source: string,
+    private readonly jsx: boolean,
+  ) {}
 
-    if (mode === "line") {
-      if (character === "\n") {
-        spans.push({ text: source.slice(start, index), start });
-        mode = "code";
-      }
-      index += 1;
-      continue;
+  collect(): CommentSpan[] {
+    while (this.index < this.source.length) {
+      this.scanCurrentMode();
     }
-    if (mode === "block") {
-      if (character === "*" && next === "/") {
-        spans.push({ text: source.slice(start, index + 2), start });
-        mode = "code";
-        index += 2;
-      } else {
-        index += 1;
-      }
-      continue;
+    if (this.mode === "line" || this.mode === "block") {
+      this.spans.push({ text: this.source.slice(this.start), start: this.start });
     }
-    if (mode === "single" || mode === "double") {
-      if (character === "\\") {
-        index += 2;
-      } else if ((mode === "single" && character === "'") || (mode === "double" && character === '"')) {
-        mode = "code";
-        expectExpression = false;
-        index += 1;
-      } else {
-        index += 1;
-      }
-      continue;
-    }
-    if (mode === "regex") {
-      if (character === "\\") {
-        index += 2;
-      } else if (character === "[") {
-        inRegexCharacterClass = true;
-        index += 1;
-      } else if (character === "]") {
-        inRegexCharacterClass = false;
-        index += 1;
-      } else if (character === "/" && !inRegexCharacterClass) {
-        mode = "code";
-        expectExpression = false;
-        index += 1;
-      } else {
-        index += 1;
-      }
-      continue;
-    }
-    if (mode === "template") {
-      if (character === "\\") {
-        index += 2;
-      } else if (character === "`") {
-        mode = "code";
-        expectExpression = false;
-        index += 1;
-      } else if (character === "$" && next === "{") {
-        templateExpressionDepths.push(0);
-        mode = "code";
-        expectExpression = true;
-        index += 2;
-      } else {
-        index += 1;
-      }
-      continue;
-    }
-    if (mode === "jsxText") {
-      if (character === "<") {
-        mode = "code";
-        expectExpression = true;
-        continue;
-      }
-      if (character === "{") {
-        jsxExpressionDepths.push(0);
-        mode = "code";
-        expectExpression = true;
-      }
-      index += 1;
-      continue;
-    }
+    return this.spans;
+  }
 
-    if (isWhitespace(character)) {
-      index += 1;
-      continue;
+  private character(offset = 0): string {
+    return this.source.charAt(this.index + offset);
+  }
+
+  private scanCurrentMode(): void {
+    if (this.mode === "line") this.scanLine();
+    else if (this.mode === "block") this.scanBlock();
+    else if (this.mode === "single" || this.mode === "double") this.scanQuoted();
+    else if (this.mode === "regex") this.scanRegex();
+    else if (this.mode === "template") this.scanTemplate();
+    else if (this.mode === "jsxText") this.scanJsxText();
+    else this.scanCode();
+  }
+
+  private scanLine(): void {
+    if (this.character() === "\n") {
+      this.spans.push({ text: this.source.slice(this.start, this.index), start: this.start });
+      this.mode = "code";
     }
-    if (character === "/" && next === "/") {
-      start = index;
-      mode = "line";
-      index += 2;
-      continue;
+    this.index += 1;
+  }
+
+  private scanBlock(): void {
+    if (this.character() === "*" && this.character(1) === "/") {
+      this.spans.push({ text: this.source.slice(this.start, this.index + 2), start: this.start });
+      this.mode = "code";
+      this.index += 2;
+    } else {
+      this.index += 1;
     }
-    if (character === "/" && next === "*") {
-      start = index;
-      mode = "block";
-      index += 2;
-      continue;
+  }
+
+  private scanQuoted(): void {
+    const character = this.character();
+    if (character === "\\") {
+      this.index += 2;
+      return;
     }
-    if (jsx && jsxTag === null && character === "<" && expectExpression) {
-      if (next === "/") {
-        jsxTag = "closing";
-        index += 2;
-        continue;
-      }
-      if (next === ">" || isIdentifierStart(next)) {
-        jsxTag = "opening";
-        index += 1;
-        continue;
-      }
+    if ((this.mode === "single" && character === "'") || (this.mode === "double" && character === '"')) {
+      this.mode = "code";
+      this.expectExpression = false;
     }
-    if (jsxTag !== null && character === "{") {
-      jsxTagBraceDepth += 1;
-      expectExpression = true;
-      index += 1;
-      continue;
+    this.index += 1;
+  }
+
+  private scanRegex(): void {
+    const character = this.character();
+    if (character === "\\") {
+      this.index += 2;
+      return;
     }
-    if (jsxTag !== null && character === "}" && jsxTagBraceDepth > 0) {
-      jsxTagBraceDepth -= 1;
-      expectExpression = false;
-      index += 1;
-      continue;
+    if (character === "[") this.inRegexCharacterClass = true;
+    else if (character === "]") this.inRegexCharacterClass = false;
+    else if (character === "/" && !this.inRegexCharacterClass) {
+      this.mode = "code";
+      this.expectExpression = false;
     }
-    if (jsxTag !== null && character === ">" && jsxTagBraceDepth === 0) {
-      const selfClosing = previousNonWhitespace(source, index) === "/";
-      if (jsxTag === "closing") {
-        jsxTextDepth = Math.max(0, jsxTextDepth - 1);
-      } else if (!selfClosing) {
-        jsxTextDepth += 1;
-      }
-      jsxTag = null;
-      mode = jsxTextDepth > 0 ? "jsxText" : "code";
-      expectExpression = false;
-      index += 1;
-      continue;
-    }
-    if (character !== "(" && !isIdentifierStart(character)) {
-      pendingControlKeyword = null;
-    }
-    if (character === "'") {
-      mode = "single";
-      index += 1;
-      continue;
-    }
-    if (character === '"') {
-      mode = "double";
-      index += 1;
-      continue;
+    this.index += 1;
+  }
+
+  private scanTemplate(): void {
+    const character = this.character();
+    if (character === "\\") {
+      this.index += 2;
+      return;
     }
     if (character === "`") {
-      mode = "template";
-      index += 1;
-      continue;
+      this.mode = "code";
+      this.expectExpression = false;
+    } else if (character === "$" && this.character(1) === "{") {
+      this.templateExpressionDepths.push(0);
+      this.mode = "code";
+      this.expectExpression = true;
+      this.index += 2;
+      return;
     }
-    if (character === "/") {
-      if (jsxTag !== null && jsxTagBraceDepth === 0) {
-        expectExpression = true;
-        index += 1;
-        continue;
-      }
-      const previous = source[index - 1] ?? "";
-      if (expectExpression && previous !== "<") {
-        mode = "regex";
-      } else {
-        expectExpression = true;
-      }
-      index += 1;
-      continue;
-    }
-    if (character === "}" && templateExpressionDepths.length > 0) {
-      const depthIndex = templateExpressionDepths.length - 1;
-      const depth = templateExpressionDepths[depthIndex] ?? 0;
-      if (depth === 0) {
-        templateExpressionDepths.pop();
-        mode = "template";
-      } else {
-        templateExpressionDepths[depthIndex] = depth - 1;
-        expectExpression = false;
-      }
-      index += 1;
-      continue;
-    }
-    if (character === "}" && jsxExpressionDepths.length > 0) {
-      const depthIndex = jsxExpressionDepths.length - 1;
-      const depth = jsxExpressionDepths[depthIndex] ?? 0;
-      if (depth === 0) {
-        jsxExpressionDepths.pop();
-        mode = "jsxText";
-      } else {
-        jsxExpressionDepths[depthIndex] = depth - 1;
-        expectExpression = false;
-      }
-      index += 1;
-      continue;
-    }
-    if (character === "{") {
-      if (templateExpressionDepths.length > 0) {
-        const depthIndex = templateExpressionDepths.length - 1;
-        templateExpressionDepths[depthIndex] = (templateExpressionDepths[depthIndex] ?? 0) + 1;
-      }
-      if (jsxExpressionDepths.length > 0) {
-        const depthIndex = jsxExpressionDepths.length - 1;
-        jsxExpressionDepths[depthIndex] = (jsxExpressionDepths[depthIndex] ?? 0) + 1;
-      }
-      expectExpression = true;
-      index += 1;
-      continue;
-    }
-    if (character === "(") {
-      parenthesisContexts.push(pendingControlKeyword);
-      pendingControlKeyword = null;
-      expectExpression = true;
-      index += 1;
-      continue;
-    }
-    if (character === ")") {
-      const controlHeader = parenthesisContexts.pop() ?? null;
-      pendingControlKeyword = null;
-      expectExpression = controlHeader !== null;
-      index += 1;
-      continue;
-    }
-    if (isDigit(character)) {
-      expectExpression = false;
-      index += 1;
-      continue;
-    }
-    if (isIdentifierStart(character)) {
-      let end = index + 1;
-      while (isIdentifierPart(source.charAt(end))) {
-        end += 1;
-      }
-      const word = source.slice(index, end);
-      if (word === "of" && parenthesisContexts.at(-1) === "for") {
-        expectExpression = true;
-      } else {
-        expectExpression = EXPRESSION_START_KEYWORDS.has(word);
-      }
-      pendingControlKeyword = CONTROL_HEADER_KEYWORDS.has(word) ? word : null;
-      index = end;
-      continue;
-    }
-    if ((character === "+" || character === "-") && next === character) {
-      index += 2;
-      continue;
-    }
-    if (isExpressionSuffix(character)) {
-      expectExpression = false;
-      index += 1;
-      continue;
-    }
-    if (isExpressionPrefixOperator(character)) {
-      expectExpression = true;
-    }
-    index += 1;
+    this.index += 1;
   }
 
-  if (mode === "line" || mode === "block") {
-    spans.push({ text: source.slice(start), start });
+  private scanJsxText(): void {
+    const character = this.character();
+    if (character === "<") {
+      this.mode = "code";
+      this.expectExpression = true;
+      return;
+    }
+    if (character === "{") {
+      this.jsxExpressionDepths.push(0);
+      this.mode = "code";
+      this.expectExpression = true;
+    }
+    this.index += 1;
   }
-  return spans;
+
+  private scanCode(): void {
+    const character = this.character();
+    if (isWhitespace(character)) {
+      this.index += 1;
+      return;
+    }
+    if (this.scanCommentStart()) return;
+    if (this.scanJsx()) return;
+    if (character !== "(" && !isIdentifierStart(character)) this.pendingControlKeyword = null;
+    if (this.scanStringStart()) return;
+    if (this.scanSlash()) return;
+    if (this.scanTemplateExpressionClose()) return;
+    if (this.scanJsxExpressionClose()) return;
+    if (this.scanParenthesis()) return;
+    if (this.scanOpenBrace()) return;
+    if (isDigit(character)) {
+      this.expectExpression = false;
+      this.index += 1;
+      return;
+    }
+    if (isIdentifierStart(character)) {
+      this.scanIdentifier();
+      return;
+    }
+    if ((character === "+" || character === "-") && this.character(1) === character) {
+      this.index += 2;
+      return;
+    }
+    if (isExpressionSuffix(character)) this.expectExpression = false;
+    else if (isExpressionPrefixOperator(character)) this.expectExpression = true;
+    this.index += 1;
+  }
+
+  private scanCommentStart(): boolean {
+    if (this.character() !== "/") return false;
+    const next = this.character(1);
+    if (next !== "/" && next !== "*") return false;
+    this.start = this.index;
+    this.mode = next === "/" ? "line" : "block";
+    this.index += 2;
+    return true;
+  }
+
+  private scanJsx(): boolean {
+    if (this.jsxTag !== null) return this.scanJsxTagContent();
+    if (!this.jsx || this.character() !== "<" || !this.expectExpression) return false;
+    const next = this.character(1);
+    if (next === "/") {
+      this.jsxTag = "closing";
+      this.index += 2;
+      return true;
+    }
+    if (next === ">" || isIdentifierStart(next)) {
+      this.jsxTag = "opening";
+      this.index += 1;
+      return true;
+    }
+    return false;
+  }
+
+  private scanJsxTagContent(): boolean {
+    const character = this.character();
+    if (character === "{") {
+      this.jsxTagBraceDepth += 1;
+      this.expectExpression = true;
+      this.index += 1;
+      return true;
+    }
+    if (character === "}" && this.jsxTagBraceDepth > 0) {
+      this.jsxTagBraceDepth -= 1;
+      this.expectExpression = false;
+      this.index += 1;
+      return true;
+    }
+    if (character !== ">" || this.jsxTagBraceDepth > 0) return false;
+    const selfClosing = previousNonWhitespace(this.source, this.index) === "/";
+    if (this.jsxTag === "closing") this.jsxTextDepth = Math.max(0, this.jsxTextDepth - 1);
+    else if (!selfClosing) this.jsxTextDepth += 1;
+    this.jsxTag = null;
+    this.mode = this.jsxTextDepth > 0 ? "jsxText" : "code";
+    this.expectExpression = false;
+    this.index += 1;
+    return true;
+  }
+
+  private scanStringStart(): boolean {
+    const character = this.character();
+    if (character === "'") this.mode = "single";
+    else if (character === '"') this.mode = "double";
+    else if (character === "`") this.mode = "template";
+    else return false;
+    this.index += 1;
+    return true;
+  }
+
+  private scanSlash(): boolean {
+    if (this.character() !== "/") return false;
+    if (this.jsxTag !== null && this.jsxTagBraceDepth === 0) {
+      this.expectExpression = true;
+      this.index += 1;
+      return true;
+    }
+    if (this.expectExpression && this.source.charAt(this.index - 1) !== "<") {
+      this.mode = "regex";
+      this.inRegexCharacterClass = false;
+    } else {
+      this.expectExpression = true;
+    }
+    this.index += 1;
+    return true;
+  }
+
+  private scanTemplateExpressionClose(): boolean {
+    if (this.character() !== "}" || this.templateExpressionDepths.length === 0) return false;
+    const depthIndex = this.templateExpressionDepths.length - 1;
+    const depth = this.templateExpressionDepths[depthIndex] ?? 0;
+    if (depth === 0) {
+      this.templateExpressionDepths.pop();
+      this.mode = "template";
+    } else {
+      this.templateExpressionDepths[depthIndex] = depth - 1;
+      this.expectExpression = false;
+    }
+    this.index += 1;
+    return true;
+  }
+
+  private scanJsxExpressionClose(): boolean {
+    if (this.character() !== "}" || this.jsxExpressionDepths.length === 0) return false;
+    const depthIndex = this.jsxExpressionDepths.length - 1;
+    const depth = this.jsxExpressionDepths[depthIndex] ?? 0;
+    if (depth === 0) {
+      this.jsxExpressionDepths.pop();
+      this.mode = "jsxText";
+    } else {
+      this.jsxExpressionDepths[depthIndex] = depth - 1;
+      this.expectExpression = false;
+    }
+    this.index += 1;
+    return true;
+  }
+
+  private scanParenthesis(): boolean {
+    const character = this.character();
+    if (character === "(") {
+      this.parenthesisContexts.push(this.pendingControlKeyword);
+      this.pendingControlKeyword = null;
+      this.expectExpression = true;
+    } else if (character === ")") {
+      const controlHeader = this.parenthesisContexts.pop() ?? null;
+      this.pendingControlKeyword = null;
+      this.expectExpression = controlHeader !== null;
+    } else {
+      return false;
+    }
+    this.index += 1;
+    return true;
+  }
+
+  private scanOpenBrace(): boolean {
+    if (this.character() !== "{") return false;
+    if (this.templateExpressionDepths.length > 0) {
+      const depthIndex = this.templateExpressionDepths.length - 1;
+      this.templateExpressionDepths[depthIndex] = (this.templateExpressionDepths[depthIndex] ?? 0) + 1;
+    }
+    if (this.jsxExpressionDepths.length > 0) {
+      const depthIndex = this.jsxExpressionDepths.length - 1;
+      this.jsxExpressionDepths[depthIndex] = (this.jsxExpressionDepths[depthIndex] ?? 0) + 1;
+    }
+    this.expectExpression = true;
+    this.index += 1;
+    return true;
+  }
+
+  private scanIdentifier(): void {
+    let end = this.index + 1;
+    while (isIdentifierPart(this.source.charAt(end))) {
+      end += 1;
+    }
+    const word = this.source.slice(this.index, end);
+    const wasExpectingExpression = this.expectExpression;
+    this.expectExpression = word === "of" && this.parenthesisContexts.at(-1) === "for"
+      ? true
+      : EXPRESSION_START_KEYWORDS.has(word);
+    this.pendingControlKeyword = wasExpectingExpression && CONTROL_HEADER_KEYWORDS.has(word) ? word : null;
+    this.index = end;
+  }
+}
+
+export function collectTypeScriptCommentSpans(source: string, jsx = false): CommentSpan[] {
+  return new TypeScriptCommentScanner(source, jsx).collect();
 }
