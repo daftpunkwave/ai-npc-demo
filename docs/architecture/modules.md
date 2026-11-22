@@ -1,6 +1,6 @@
 # 全职能模块职责与依赖边界
 
-> 状态：部分实现。`server` 已接入首批游戏、存储、授权、运营与传输 provider。Agent 认知 provider、`client` 和 `console` 模块为目标。本文定义各模块的职责、依赖与数据所有权。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[composition.md — 装配](composition.md)、[code-structure.md — 代码目录](code-structure.md)。
+> 状态：部分实现。`server` 已接入首批游戏、存储、授权、运营与传输 provider，以及感知、公平调度、记忆、决策与模型池等 Agent 认知 provider；`client` 与 `console` 模块已实现并绑定三份装配。本文定义各模块的职责、依赖与数据所有权。参见 [module-catalog.md — 模块目录](module-catalog.md)、[plugins.md — 插件机制](plugins.md)、[composition.md — 装配](composition.md)、[code-structure.md — 代码目录](code-structure.md)。
 
 ## 1. 设计原则：宿主保留，职能可换
 
