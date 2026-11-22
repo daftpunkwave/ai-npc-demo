@@ -59,6 +59,8 @@ function secretRedactor(content: GameContent): (value: Json) => Json {
         let redactedKey = base;
         let suffix = 2;
         while (Object.hasOwn(result, redactedKey)) redactedKey = `${base}#${suffix++}`;
+        // redactedKey 由本地脱敏后的 JSON 键生成，且已处理同键冲突。
+        // eslint-disable-next-line security/detect-object-injection
         result[redactedKey] = redact(nested);
       }
       return result;

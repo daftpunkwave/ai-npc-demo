@@ -4,6 +4,7 @@
  * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
+/* eslint-disable no-unused-vars -- 宿主端口方法参数名只表达调用契约，Codacy 未能解析。 */
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
