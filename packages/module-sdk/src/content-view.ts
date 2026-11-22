@@ -40,3 +40,11 @@ export function factionStandingNode(
 ): string | undefined {
   return faction.factionHomeNodeId ?? faction.outpostNodeId ?? faction.territoryNodeId;
 }
+
+/**
+ * 判断主体是否直接持有章节规则声明的运营席（如公社席）：主体是派系且其 playerSeat 匹配。
+ * AI 党魁以派系 ID 行动因此直接命中；玩家的 campaign 派系由调用方另行核对后传入 factionId。
+ */
+export function holdsOperationalSeat(content: GameContent, principalId: string): boolean {
+  return content.factions.get(principalId)?.playerSeat === content.rules.watergateSeatId;
+}
