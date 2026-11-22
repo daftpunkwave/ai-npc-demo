@@ -14,6 +14,17 @@ const parser = new XMLParser({
   isArray: (name) => ["title", "desc", "script"].includes(name),
 });
 
+/** 值中是否含浏览器会折叠掉的 ASCII 控制字符（含 DEL）或反斜杠。 */
+function hasControlOrBackslash(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f || code === 0x5c) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function assertSafe(node: unknown, path: string): void {
   if (Array.isArray(node)) {
     for (const item of node) {
@@ -32,9 +43,23 @@ function assertSafe(node: unknown, path: string): void {
       throw new Error(`资产包含事件处理器 ${key}: ${path}`);
     }
     if (key === "@href" || key.endsWith(":href")) {
-      const href = String(value).toLowerCase();
-      if (href.startsWith("//") || href.startsWith("http:") || href.startsWith("https:") || href.startsWith("data:")) {
-        throw new Error(`资产包含远端引用 ${href}: ${path}`);
+      // 非字符串值无法判定协议（String(对象) 会得到 "[object Object]" 并被误判为相对路径），直接拒绝。
+      if (typeof value !== "string") {
+        throw new Error(`资产引用不是字符串 ${key}: ${path}`);
+      }
+      // 控制字符与反斜杠会改变浏览器的 URL 解析：形如 "java\tscript:" 或 "\evil.com/x"
+      // 的原始值不匹配协议前缀，却会在解析时折叠成 javascript: 或协议相对地址。
+      // 解析器不解码 XML 实体，因此 "java&#9;script:" 会原样保留；浏览器渲染时才解码，
+      // 所以字符引用同样必须拒绝，否则白名单会被绕过。
+      if (hasControlOrBackslash(value) || /&#(?:x0*[0-9a-f]+|0*\d+);/iu.test(value)) {
+        throw new Error(`资产引用包含控制字符、字符引用或反斜杠 ${key}: ${path}`);
+      }
+      const href = value.trim().toLowerCase();
+      // 只允许文档内片段引用与不带协议的相对路径：白名单式判断才能同时排除
+      // javascript:/vbscript:/file: 等可执行或本地协议，以及协议相对 //host。
+      const safe = href.startsWith("#") || (!href.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/u.test(href));
+      if (!safe) {
+        throw new Error(`资产包含不允许的引用 ${href}: ${path}`);
       }
     }
     if (key === "@style" && /url\s*\(/i.test(String(value))) {

@@ -281,6 +281,8 @@ describe("确定性模型装配与角色对白", () => {
         .replace("maxToolCallsPerRound: 3", "maxToolCallsPerRound: 1"), "utf8");
     const host = await modelHost({ configRoot });
     const turn = await turnFor(host, startConversation(host, "请调查。"));
+    // status 记录失败类别（over-budget 归为 failed）；决策循环一旦进入预算停止收尾，
+    // terminal_reason 直接取 over-budget，不再被轮内细分原因（call-budget/context-window）覆盖。
     expect(turn).toMatchObject({ status: "failed", terminal_reason: "over-budget" });
     const all = requests(host, String(turn["turn_id"]));
     expect(all.map(({ purpose }) => purpose)).toEqual(["decision", "decision", "decision"]);

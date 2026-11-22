@@ -176,7 +176,11 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
       }
     }
     ports["game.world"].setGroupStatus(params.groupId, "rescued", null, 0, workNodeId);
-    ports["game.world"].changeMeter("migration.safety", 10, "task");
+    // 指标写入失败（指标聚合缺失）时整笔完成回滚，避免任务显示完成而世界指标未变化。
+    const rescueMeter = ports["game.world"].changeMeter("migration.safety", 10, "task");
+    if (!rescueMeter.ok) {
+      return { ok: false, reasonCode: rescueMeter.reasonCode, safeMessage: "救援安全度写入失败" };
+    }
   } else if (task.taskType === "repair") {
     // 材料已在完成 job 开头结算（失败会回滚整个 job），这里只应用完成效果。
     // 基础值与随队加成全部来自内容规则参数；通用修复者的豁免队伍由其 excludedTeamIds 声明。
@@ -184,7 +188,10 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
       repairBaseStability(content, task.teamId) +
       repairStabilityBonus(content, ownerFactionId, task.participants) +
       universalRepairStabilityBonus(content, task.participants, task.teamId);
-    ports["game.world"].changeMeter("relay.stability", delta, "task");
+    const repairMeter = ports["game.world"].changeMeter("relay.stability", delta, "task");
+    if (!repairMeter.ok) {
+      return { ok: false, reasonCode: repairMeter.reasonCode, safeMessage: "修复稳定度写入失败" };
+    }
   } else if (task.taskType === "scout") {
     scoutReport(context, task, workNodeId);
   } else {
@@ -192,7 +199,10 @@ export function completeTask(context: CompletionContext, task: TaskState): Compl
     if (content.migrationRoads.includes(params.roadId)) {
       // 迁徙道路护送的随队加成来自内容规则参数；通用向导对任何队伍同效。
       const bonus = escortSafetyBonus(content, ownerFactionId, task.participants);
-      ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
+      const escortMeter = ports["game.world"].changeMeter("migration.safety", 12 + bonus, "task");
+      if (!escortMeter.ok) {
+        return { ok: false, reasonCode: escortMeter.reasonCode, safeMessage: "护送安全度写入失败" };
+      }
     }
   }
   moveTeamAndParticipants(context, task, workNodeId, completedAt);

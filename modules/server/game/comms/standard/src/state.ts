@@ -129,8 +129,14 @@ function assertKeyComponent(value: string, label: string): void {
   }
 }
 
-/** 非负整数补零成定长字符串，使字典序与数值序一致；超出宽度直接报错。 */
+/** 非负整数补零成定长字符串，使字典序与数值序一致；负数与超宽直接报错。 */
 function sortKey(value: number, label: string): string {
+  // 负数的符号位会破坏定长补零的字典序（如 -3 补成 00000000-3），必须当作契约违规拒绝。
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new DomainError("validation", `通信索引键的 ${label} 必须为非负安全整数`, {
+      details: { label, value },
+    });
+  }
   const text = String(value);
   if (text.length > SORT_KEY_WIDTH) {
     throw new DomainError("validation", `通信索引键的 ${label} 超出排序键宽度`, {

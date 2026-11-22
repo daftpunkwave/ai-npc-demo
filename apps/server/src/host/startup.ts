@@ -77,11 +77,13 @@ export interface ActiveRunState {
   readonly agents: AgentConfiguration | null;
 }
 
-/** 恢复或重开后的活动 run 与启动计划；执行迁移时携带源分支标识供失败补偿。 */
+/** 恢复或重开后的活动 run 与启动计划；执行迁移时携带源分支标识与原状态供失败补偿。 */
 export interface ResumedRunState {
   readonly active: ActiveRunState;
   readonly startup: ResolvedServerAssembly;
   readonly migratedFromBranchId?: string;
+  /** 迁移前的源分支状态；有 migratedFromBranchId 时必定给出，补偿时原样写回。 */
+  readonly migratedSourceBranchStatus?: "active" | "paused";
 }
 
 /** 首次启动的待提交状态；时钟 provider 启动后再在同一事务内写入在线世界与初始时钟行。 */
@@ -261,8 +263,9 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
 
   /** 重启：沿用在线别名指向的分支与已冻结 run，不复用当前入参重建 RunSpec。 */
   const resumeRun = async (online: OnlineEntry): Promise<ResumedRunState> => {
-    // 本次启动执行迁移时记录源分支；宿主启动失败时按它恢复在线入口。
+    // 本次启动执行迁移时记录源分支与其原状态；宿主启动失败时按它恢复在线入口。
     let migratedSourceBranchId: string | null = null;
+    let migratedSourceBranchStatus: "active" | "paused" | null = null;
     const run = online.run;
     const parsed = runSpecSchema.safeParse(run["run_spec_json"]);
     if (!parsed.success) {
@@ -346,6 +349,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
       }
       const migrated = migrateOnlineRun(migrationInput);
       migratedSourceBranchId = online.branchId;
+      migratedSourceBranchStatus = migrated.sourceBranchStatus;
       host.logger.info(migrationSummary(migrationInput, migrated));
       return {
         active: {
@@ -360,6 +364,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
         },
         startup,
         migratedFromBranchId: migratedSourceBranchId,
+        migratedSourceBranchStatus: migratedSourceBranchStatus ?? undefined,
       };
     }
     return {
@@ -385,8 +390,9 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   let sessionAssemblies: SessionAssemblies;
   let active: ActiveRunState;
   let activeStartup: ResolvedServerAssembly;
-  // 本次启动若执行了迁移，记录源分支；后续启动失败时按它恢复在线入口，避免失败后别名悬在新 run 上。
+  // 本次启动若执行了迁移，记录源分支与其原状态；后续启动失败时按它恢复在线入口，避免失败后别名悬在新 run 上。
   let migratedSourceBranchId: string | null = null;
+  let migratedSourceBranchStatus: "active" | "paused" | null = null;
   try {
     const online = storage.transact(readOnlineEntry);
 
@@ -402,6 +408,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
       chosen = resumed.active;
       startup = resumed.startup;
       migratedSourceBranchId = resumed.migratedFromBranchId ?? null;
+      migratedSourceBranchStatus = resumed.migratedSourceBranchStatus ?? null;
     }
     assertStorageCompatible(startup.plan, requestedStartup.plan, storageModuleId);
     activeStartup = startup;
@@ -467,13 +474,20 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     // 迁移已提交但启动失败：先把在线别名与源分支状态恢复到迁移前，源 run/分支回到可重启状态；
     // 迁移产生的新分支与新 run 留存为孤儿记录。补偿失败只记日志，不掩盖原始启动错误。
     if (migratedSourceBranchId !== null) {
-      try {
-        restoreOnlineAliasToSourceBranch(storage, host.nowIso(), migratedSourceBranchId);
-        host.logger.info(`启动失败后已恢复在线入口到源分支 ${migratedSourceBranchId}`);
-      } catch (compensationError) {
-        host.logger.error("启动失败后恢复在线入口失败", {
-          message: compensationError instanceof Error ? compensationError.message : String(compensationError),
+      // 源分支状态在迁移结果里给出；缺失说明迁移记录不完整，宁可保留原错误也不猜一个状态写回。
+      if (migratedSourceBranchStatus === null) {
+        host.logger.error("启动失败后缺少迁移源分支状态，跳过在线入口补偿", {
+          branchId: migratedSourceBranchId,
         });
+      } else {
+        try {
+          restoreOnlineAliasToSourceBranch(storage, host.nowIso(), migratedSourceBranchId, migratedSourceBranchStatus);
+          host.logger.info(`启动失败后已恢复在线入口到源分支 ${migratedSourceBranchId}`);
+        } catch (compensationError) {
+          host.logger.error("启动失败后恢复在线入口失败", {
+            message: compensationError instanceof Error ? compensationError.message : String(compensationError),
+          });
+        }
       }
     }
     // 启动失败时逆序释放已创建实例；清理失败只记日志，保留原始启动错误。
