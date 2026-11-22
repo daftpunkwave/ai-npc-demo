@@ -3,7 +3,7 @@
  * 模型池绑定不可变路由，宿主为每个工作和用途注入独立的调用句柄。
  * 禁止通过这些端口获取凭据、执行世界命令或更改冻结路由。
  */
-import { capabilityIdSchema, DomainError } from "@ai-npc/contracts";
+import { capabilityIdSchema, DomainError, modelCapabilitiesSchema } from "@ai-npc/contracts";
 import type {
   AgentModelCallResult, CapabilityId, DecisionSubmission, Json, MemoryScope, ModelCapabilities, ModelFixture, ModelOutput,
   NormalizedMessage, NormalizedTool, NormalizedToolCall, Purpose,
@@ -103,7 +103,7 @@ export const modelDecisionPurposeRequirements: AgentModelPurposeRequirement = {
 
 /**
  * 校验模块 ports 表中模型池能力键下注入的原始值，并收窄为路由视图。
- * 视图注入缺失、必需用途缺失或能力不匹配都抛出 assembly-incompatible；
+ * 视图注入缺失、必需用途缺失、能力声明缺失或不合法、能力不满足端口要求都抛出 assembly-incompatible；
  * 消费方以声明的能力键取值后经此入口校验，替代对注入值的裸类型断言。
  */
 export function resolveAgentModelRoutes(input: {
@@ -115,13 +115,17 @@ export function resolveAgentModelRoutes(input: {
   if (typeof view !== "object" || view === null) {
     throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 缺少模型池能力的路由视图注入`);
   }
-  const routes = view as Partial<Record<AgentRequiredModelPurpose, { readonly capabilities?: unknown }>>;
+  const routes = view as Partial<Record<AgentRequiredModelPurpose, unknown>>;
   for (const purpose of agentRequiredModelPurposes) {
-    const capabilities = routes[purpose]?.capabilities;
-    if (typeof capabilities !== "object" || capabilities === null) {
+    const route = routes[purpose];
+    if (typeof route !== "object" || route === null) {
       throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 的路由视图缺少必需的 ${purpose} 用途`);
     }
-    if (!input.requirements[purpose](capabilities as ModelCapabilities)) {
+    const capabilities = modelCapabilitiesSchema.safeParse((route as { readonly capabilities?: unknown }).capabilities);
+    if (!capabilities.success) {
+      throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 的 ${purpose} 模型路由能力声明缺失或不合法`);
+    }
+    if (!input.requirements[purpose](capabilities.data)) {
       throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 的 ${purpose} 模型路由不满足端口能力要求`);
     }
   }

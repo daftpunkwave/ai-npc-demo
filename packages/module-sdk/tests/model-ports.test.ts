@@ -78,4 +78,37 @@ describe("Agent 模型路由视图契约", () => {
     const view = bindAgentModelRoutes(fakeRun({ speech: { structuredOutput: "none" } }), "agent-a");
     expect(() => resolve(view)).toThrow(/不满足端口能力要求/);
   });
+
+  it("对白路由结构化输出缺失或非法时报能力声明不合法", () => {
+    const base = bindAgentModelRoutes(fakeRun(), "agent-a");
+    const missing = {
+      decision: base.decision,
+      speech: { capabilities: { ...capabilities, structuredOutput: undefined }, maxOutputTokens: 4096 },
+    };
+    expect(() => resolve(missing)).toThrow(/speech 模型路由能力声明缺失或不合法/);
+    const malformed = {
+      decision: base.decision,
+      speech: { capabilities: { ...capabilities, structuredOutput: 42 }, maxOutputTokens: 4096 },
+    };
+    expect(() => resolve(malformed)).toThrow(/speech 模型路由能力声明缺失或不合法/);
+  });
+
+  it("决策路由能力声明不是对象时报能力声明不合法", () => {
+    const base = bindAgentModelRoutes(fakeRun(), "agent-a");
+    const malformed = { decision: { capabilities: "json_schema", maxOutputTokens: 4096 }, speech: base.speech };
+    expect(() => resolve(malformed)).toThrow(/decision 模型路由能力声明缺失或不合法/);
+  });
+
+  it("决策路由能力缺少必填字段时报能力声明不合法", () => {
+    const base = bindAgentModelRoutes(fakeRun(), "agent-a");
+    const incomplete = {
+      decision: { capabilities: { toolCalling: true }, maxOutputTokens: 4096 }, speech: base.speech,
+    };
+    expect(() => resolve(incomplete)).toThrow(/decision 模型路由能力声明缺失或不合法/);
+  });
+
+  it("路由视图条目不是对象时报缺少必需用途", () => {
+    const malformed = { decision: "decision-route", speech: { capabilities, maxOutputTokens: 4096 } };
+    expect(() => resolve(malformed)).toThrow(/缺少必需的 decision 用途/);
+  });
 });
