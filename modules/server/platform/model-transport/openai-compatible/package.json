@@ -1,0 +1,14 @@
+{
+  "name": "@ai-npc/mod-platform-model-transport-openai-compatible",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./definition": "./src/definition.ts"
+  },
+  "dependencies": {
+    "@ai-npc/contracts": "workspace:*",
+    "@ai-npc/module-sdk": "workspace:*",
+    "zod": "^4"
+  }
+}

@@ -1,0 +1,35 @@
+schemaVersion: 1
+layoutId: claude-model-layout-v1
+pricingRef: pricing-live
+connections:
+  openai-compat:
+    adapterId: platform.model-transport.openai-compatible
+    endpoint: env:NPC_OPENAI_COMPAT_BASE_URL
+    credentialRef: env:NPC_OPENAI_COMPAT_API_KEY
+    rateLimitKey: openai-compat-account
+  anthropic:
+    adapterId: platform.model-transport.anthropic
+    credentialRef: env:ANTHROPIC_API_KEY
+    rateLimitKey: anthropic-account
+models:
+  npc-chat:
+    connectionId: openai-compat
+    externalModel: env:NPC_OPENAI_COMPAT_MODEL
+    parameters: { temperature: 0.6, maxTokensField: max_tokens }
+    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: verbatim, contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }
+    limits: { maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000, requestTimeoutMs: 30000 }
+    maxOutputTokensByPurpose: { speech: 400, memory-maintenance: 800 }
+  npc-claude:
+    connectionId: anthropic
+    externalModel: claude-opus-5-5
+    parameters: { effort: medium, serverSideFallback: default, strictTools: false }
+    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_schema, assistantReplay: verbatim, contextWindowTokens: 1000000, maxOutputTokens: 128000, embedding: false, embeddingDimensions: null }
+    limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
+    maxOutputTokensByPurpose: { decision: 16000 }
+mounts:
+  - modelId: npc-claude
+    agentIds: &roster [npc-wenzhao, npc-yinuo, npc-wenyuan, npc-taoan, npc-muzhi, npc-luchen, npc-ahe, npc-qilu, human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial]
+    purposes: [decision]
+  - modelId: npc-chat
+    agentIds: *roster
+    purposes: [speech, memory-maintenance]

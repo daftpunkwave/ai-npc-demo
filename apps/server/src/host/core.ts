@@ -42,15 +42,14 @@ import {
   type ResolvedServerAssembly,
 } from "./assembly";
 import { disposeInReverse } from "./dispose";
+import { resolveFrozenAssembly } from "./frozen-assembly";
 import { buildRunManifest, readFrozenManifest, type RunManifest } from "./manifest";
-import { hasModelPool } from "./model-configuration";
+import { usesFixtureModelTransport } from "./model-configuration";
 import {
   createServerRuntime,
   parseTransportConfig,
   plannedModuleForCapability,
   allModuleDefinitions,
-  serverAgentModuleDefinitions,
-  serverModelModuleDefinitions,
   serverModuleDefinitions,
   toGameContent,
   type ServerRuntime,
@@ -175,7 +174,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   const prepareFirstRun = async (): Promise<PendingFirstRun> => {
     const roster = loadRoster(options.rosterRef ?? defaultRosterRef, loadContext);
     validateRoster(roster.value, content);
-    const runSpecRef = options.runSpecRef ?? (hasModelPool(requestedResolved.plan) ? "online-model-test" : defaultRunSpecRef);
+    const runSpecRef = options.runSpecRef ?? (usesFixtureModelTransport(requestedResolved.plan) ? "online-model-test" : defaultRunSpecRef);
     const loaded = loadRunSpec(runSpecRef, loadContext, {
       seed: generateRunSeed(),
       moduleAssemblyRef: requestedAssembly.assemblyId,
@@ -458,30 +457,5 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     active,
     activeStartup,
     sessionAssembly: sessionAssemblies,
-  };
-}
-
-async function resolveFrozenAssembly(
-  current: AssemblyDescriptor,
-  definitions: readonly ModuleDefinition[],
-  facts: ReturnType<typeof readFrozenManifest>,
-): Promise<{ readonly assembly: AssemblyDescriptor; readonly definitions: readonly ModuleDefinition[]; readonly legacyDecision: boolean }> {
-  const excluded = new Set<string>(serverModelModuleDefinitions.map(({ id }) => id));
-  if (!facts.hasAgentSlots) for (const { id } of serverAgentModuleDefinitions) excluded.add(id);
-  const previousDefinitions = definitions.filter(({ id }) => !excluded.has(id));
-  const registry = createModuleRegistry();
-  for (const definition of previousDefinitions) registry.register(definition);
-  if (await computeCatalogHash(registry.snapshot(), canonicalHasher) !== facts.catalogHash) {
-    return { assembly: current, definitions, legacyDecision: false };
-  }
-  const bindings = current.realms.server.bindings.filter(({ moduleId }) => !excluded.has(moduleId));
-  const slots = current.realms.server.agentSlots;
-  const server = facts.hasAgentSlots && slots !== undefined
-    ? { bindings, agentSlots: { ...slots, decision: slots.decision?.filter((id) => !excluded.has(id)) } }
-    : { bindings };
-  return {
-    assembly: { ...current, realms: { ...current.realms, server } },
-    definitions: previousDefinitions,
-    legacyDecision: facts.hasAgentSlots,
   };
 }

@@ -39,6 +39,7 @@ const modelSchema = z.object({
 const modelLayoutSchema = z.object({
   schemaVersion: z.literal(1),
   layoutId: configRefSchema,
+  pricingRef: configRefSchema.optional(),
   connections: z.record(configRefSchema, connectionSchema),
   models: z.record(configRefSchema, modelSchema),
   mounts: z.array(z.object({
@@ -76,17 +77,23 @@ export function loadModelLayout(modelLayoutRef: string, context: ConfigLoadConte
   return parsed.data;
 }
 
-export function loadModelPricing(context: ConfigLoadContext) {
-  return loadConfigDocument("pricing", pricingSchema, context).value;
+export function loadModelPricing(context: ConfigLoadContext, ref = "pricing") {
+  return loadConfigDocument(ref, pricingSchema, context).value;
 }
 
-export function resolveModelEnv(value: string, context: ConfigLoadContext): string {
+const publicModelEnv = ["NPC_OPENAI_COMPAT_BASE_URL", "NPC_OPENAI_COMPAT_MODEL"] as const;
+
+export function resolveModelEnv(value: string, context: ConfigLoadContext, allowed?: typeof publicModelEnv[number]): string {
   if (!value.startsWith("env:")) return value;
   const key = envReferenceName(value);
+  const permitted = allowed === undefined ? publicModelEnv : [allowed];
+  if (key === null || !permitted.some((name) => name === key)) {
+    throw new LoadingError({ code: "env", source: "model-layout", message: `模型参数只允许引用 ${permitted.join(" 或 ")}` });
+  }
   const env = context.env ?? {};
-  const resolved = key !== null && Object.hasOwn(env, key) ? env[key] : undefined;
+  const resolved = Object.hasOwn(env, key) ? env[key]?.trim() : undefined;
   if (!resolved?.trim()) {
-    throw new LoadingError({ code: "env", source: "model-layout", message: "模型布局引用的环境变量无效或未设置" });
+    throw new LoadingError({ code: "env", source: "model-layout", message: `模型布局需要设置 ${key}` });
   }
   return resolved;
 }

@@ -6,14 +6,17 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startHost, type RunningHost } from "@ai-npc/app-server";
 import type { AuthContext } from "@ai-npc/contracts";
 import { loadRoster } from "@ai-npc/experiment";
 import { gameCommandEnvelope } from "./game-support";
+import { stubStandardModelHttp } from "./standard-model-support";
 
 const hosts: RunningHost[] = [];
 const dirs: string[] = [];
+
+beforeEach(stubStandardModelHttp);
 
 afterEach(async () => {
   // 先等待全部宿主关闭再删除数据目录：SQLite 句柄未释放时 Windows 删除会抛 EBUSY。

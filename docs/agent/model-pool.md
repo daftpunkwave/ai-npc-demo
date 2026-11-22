@@ -56,6 +56,7 @@ evaluation 由独立 evaluator 配置引用 `modelId`，调用主体类型为 ev
 ~~~yaml
 schemaVersion: 1
 layoutId: shared-model-layout-v1
+pricingRef: pricing-live
 mounts:
   - modelId: npc-chat
     agentIds: [npc-yinuo]
@@ -66,7 +67,7 @@ evaluator:
   modelId: npc-chat
 ~~~
 
-Claude 布局沿用上例的 evaluator 配置。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
+`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`。Claude 布局沿用上例的 evaluator 配置。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
 
 ## 5. 解析与 run 冻结
 
@@ -195,7 +196,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 - 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。
 - run、Agent、turn 三级预算：run 的 `maxTokens` 与 `maxCost`（来自 RunSpec，可为 null 表示不限）、每个 Agent 每游戏日的 `maxTokensPerAgentPerDay`（profile 的 budgets，默认 60000）、turn 的调用次数上限（profile）。任何一级不足时以 `budget-exhausted` 失败，不排队。
 - 进程退出时未结算的预留在重启后按预留计入，并标记为未知用量。缺少完整归档的运行标记为证据不完整。
-- 费用：`config/pricing.yaml` 按 `modelId` 给出每百万输入/输出 token 的单价与币种（默认全部为 0，即只统计 token）；manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
+- 费用：布局的 `pricingRef` 选择价目文件，省略时为 `config/pricing.yaml`。文件按 `modelId` 给出每百万输入/输出 token 的单价与币种（默认全部为 0，即只统计 token）；manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
 
 ### 12.5 记录
 

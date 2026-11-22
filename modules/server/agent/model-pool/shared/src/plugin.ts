@@ -4,26 +4,21 @@
  * 禁止静默切换模型或向已失效工作返回可执行的结果。
  */
 import {
-  DomainError, estimateModelInputTokens, modelRequestSchema, modelResponseSchema, modelTransportErrorSchema,
+  DomainError, estimateModelInputTokens, estimateTokens, modelRequestSchema, modelResponseSchema, modelTransportErrorSchema,
   type AgentModelCallResult, type ModelRequest, type ModelResponse, type ModelTransportError,
   type ModelTransportPort, type ModuleCreateInput, type Purpose, type StoragePort,
 } from "@ai-npc/contracts";
 import {
-  createStatelessModule, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput,
+  createStatelessModule, isRetryableModelError, modelTransportFailure, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput,
   type ModelObservabilityPort, type ModelRoute, type ModelRunLimits, type ModelWorkScope,
 } from "@ai-npc/module-sdk";
 import { AttemptEvidence, modelSubstituted } from "./attempt-evidence";
 import { backpressure, currentWork, ModelAdmission } from "./admission";
 
 const retryDelays = [1000, 4000];
-const retryable = new Set<ModelTransportError["kind"]>(["rate-limited", "timeout", "network", "server"]);
 
 function requireCurrent(scope: ModelWorkScope): void {
   if (!currentWork(scope)) throw new DomainError("cancelled", "模型调用的工作租约已失效");
-}
-
-function transportError(kind: ModelTransportError["kind"]): ModelTransportError {
-  return { kind, retryable: retryable.has(kind), retryAfterMs: null, httpStatus: null, message: `模型传输失败：${kind}` };
 }
 
 function providerFailure(error: ModelTransportError, response: ModelResponse | null): DomainError {
@@ -43,29 +38,37 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     ports["platform.observability"] as ModelObservabilityPort);
   evidence.recoverInterrupted();
 
-  function credentials(route: ModelRoute): string | null {
-    if (route.credentialRef === null) return null;
-    const credential = secrets.resolve(route.credentialRef);
-    if (credential === null) throw new DomainError("assembly-incompatible", "模型连接缺少已授权的密钥引用");
+  function credentials(route: ModelRoute, adapter: ModelTransportPort): string | null {
+    const credential = route.credentialRef === null ? null : secrets.resolve(route.credentialRef);
+    if (adapter.validateConnection !== undefined) adapter.validateConnection(route.endpoint, credential !== null);
+    else if (route.credentialRef !== null && credential === null) {
+      throw new DomainError("assembly-incompatible", "模型连接缺少已授权的密钥引用");
+    }
     return credential;
   }
 
-  async function complete(adapter: ModelTransportPort, request: ModelRequest, route: ModelRoute, credential: string | null, scope: ModelWorkScope) {
+  async function complete(
+    adapter: ModelTransportPort, request: ModelRequest, route: ModelRoute,
+    credential: string | null, scope: ModelWorkScope, jsonOutputSuffix: string | undefined,
+  ) {
     const timer = new AbortController();
     const signal = AbortSignal.any([scope.signal, timer.signal]);
     try {
       const response = await Promise.race([
-        adapter.complete(request, credential, { endpoint: route.endpoint, fixtures: route.fixtureRows, signal }),
-        host.sleep(request.timeoutMs, signal).then(() => { throw transportError("timeout"); }),
+        adapter.complete(request, credential, {
+          endpoint: route.endpoint, fixtures: route.fixtureRows, signal, capabilities: route.capabilities,
+          ...(jsonOutputSuffix === undefined ? {} : { jsonOutputSuffix }),
+        }),
+        host.sleep(request.timeoutMs, signal).then(() => { throw modelTransportFailure("timeout"); }),
       ]);
       const parsed = modelResponseSchema.safeParse(response);
-      if (!parsed.success) return { response: null, error: transportError("protocol") };
+      if (!parsed.success) return { response: null, error: modelTransportFailure("protocol") };
       const invalid = parsed.data.finishReason === "length" || parsed.data.finishReason === "refusal" ||
         parsed.data.jsonError !== null || (request.output.kind === "json" && parsed.data.json === null);
-      return { response: parsed.data, error: invalid ? transportError("protocol") : null };
+      return { response: parsed.data, error: invalid ? modelTransportFailure("protocol") : null };
     } catch (error) {
       const classified = modelTransportErrorSchema.safeParse(error);
-      return { response: null, error: classified.success ? classified.data : transportError("protocol") };
+      return { response: null, error: classified.success ? classified.data : modelTransportFailure("protocol") };
     } finally {
       timer.abort();
     }
@@ -73,12 +76,15 @@ export function createSharedModelPool(input: ModuleCreateInput) {
 
   async function call(
     scope: ModelWorkScope, route: ModelRoute, limits: ModelRunLimits, reserveOutputTokens: number, requestInput: ModelCallInput,
+    jsonOutputSuffix: string | undefined,
   ): Promise<AgentModelCallResult> {
     requireCurrent(scope);
     const adapter = transports.get(route.adapterId);
     if (adapter === undefined) throw new DomainError("assembly-incompatible", "模型传输未装配");
-    const credential = credentials(route);
-    const estimated = estimateModelInputTokens(requestInput);
+    const credential = credentials(route, adapter);
+    const jsonInstructionTokens = requestInput.output.kind === "json" && route.capabilities.structuredOutput === "json_object"
+      ? estimateTokens(jsonOutputSuffix ?? "") : 0;
+    const estimated = estimateModelInputTokens(requestInput) + jsonInstructionTokens;
     if (!Number.isSafeInteger(reserveOutputTokens) || reserveOutputTokens < 1 || reserveOutputTokens > route.maxOutputTokens) {
       throw new DomainError("assembly-incompatible", "模型输出预留与挂载不兼容");
     }
@@ -125,7 +131,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         evidence.begin(scope, route, request, previous?.attemptId);
         if (previous !== undefined) attempts[attempts.length - 1] = { ...previous, status: "superseded" };
         sent = true;
-        result = await complete(adapter, request, route, credential, scope);
+        result = await complete(adapter, request, route, credential, scope, jsonOutputSuffix);
         respondedAt = host.monotonicMs();
       } finally {
         release(sent);
@@ -150,15 +156,15 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         throw new DomainError("provider-failed", "模型调用证据未能完整保存", { cause: error });
       }
       requireCurrent(scope);
-      if (status === "failed" && error === null) throw providerFailure(transportError("protocol"), null);
+      if (status === "failed" && error === null) throw providerFailure(modelTransportFailure("protocol"), null);
       attempts.push({
         attemptId, status, error: error === null ? null : { kind: error.kind },
         modelId: route.modelId, servedModel: response?.servedModel ?? null, substituted: modelSubstituted(route, response),
       });
       if (status === "succeeded" && response !== null) return { response, attempts };
-      const failure = error ?? transportError("protocol");
+      const failure = error ?? modelTransportFailure("protocol");
       const delay = retryDelays[index];
-      if (delay === undefined || !failure.retryable || !retryable.has(failure.kind)) throw providerFailure(failure, response);
+      if (delay === undefined || !failure.retryable || !isRetryableModelError(failure.kind)) throw providerFailure(failure, response);
       const wait = Math.min(30_000, Math.max(delay, failure.retryAfterMs ?? 0));
       if (host.monotonicMs() + wait + route.requestTimeoutMs / 2 >= scope.deadlineMs) throw backpressure();
       budget.check(reservation);
@@ -172,14 +178,14 @@ export function createSharedModelPool(input: ModuleCreateInput) {
   }
 
   const pool: AgentModelPoolPort = {
-    bindRun({ routes, limits }) {
+    bindRun({ routes, limits, jsonOutputSuffix }) {
       const mounts = new Map<string, ModelRoute>();
       for (const route of routes) {
         const key = `${route.agentId}:${route.purpose}`;
         if (mounts.has(key)) throw new DomainError("assembly-incompatible", "模型用途重复挂载");
         const adapter = transports.get(route.adapterId);
         if (adapter === undefined) throw new DomainError("assembly-incompatible", "模型连接引用了未装配的传输");
-        const supported = adapter.capabilities(route.parameters);
+        const supported = adapter.capabilities(route.parameters, route);
         if ((route.capabilities.toolCalling && !supported.toolCalling) ||
           (route.capabilities.strictTools && !supported.strictTools) ||
           (route.capabilities.structuredOutput !== "none" && supported.structuredOutput === "none") ||
@@ -189,7 +195,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
           route.capabilities.contextWindowTokens > supported.contextWindowTokens || route.maxOutputTokens > supported.maxOutputTokens) {
           throw new DomainError("assembly-incompatible", "模型布局声明了传输不支持的能力");
         }
-        credentials(route);
+        credentials(route, adapter);
         mounts.set(key, route);
       }
       function mounted(agentId: string, purpose: Purpose): ModelRoute {
@@ -203,7 +209,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
           return { capabilities, maxOutputTokens };
         },
         call(scope, purpose, reserveOutputTokens, request) {
-          return call(scope, mounted(scope.agentId, purpose), limits, reserveOutputTokens, request);
+          return call(scope, mounted(scope.agentId, purpose), limits, reserveOutputTokens, request, jsonOutputSuffix);
         },
       };
     },
