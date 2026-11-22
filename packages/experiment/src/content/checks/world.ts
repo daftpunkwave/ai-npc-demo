@@ -4,7 +4,7 @@
  * 禁止修补缺失引用、跳过错误或在该文件中构建索引。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
-import { isSignatureOnlyPrincipal, sourceIdSchema } from "@ai-npc/contracts";
+import { sourceIdSchema } from "@ai-npc/contracts";
 import type {
   ContentCard,
   ContentCharacters,
@@ -14,6 +14,7 @@ import type {
   ContentFactions,
   ContentMap,
   ContentNode,
+  ContentScenario,
   ContentStarts,
   ContentStockpile,
   ContentTeam,
@@ -294,11 +295,15 @@ function isSourceId(value: string): boolean {
 }
 
 /**
- * 判断广播署名或消息来源是已登记主体还是 signature-only 署名。
- * 未上场的具名单由公共契约维护，内容加载与剧情模块共用同一份名单。
+ * 判断广播署名或消息来源是已登记主体还是剧情声明的 signature-only 署名。
+ * 未上场的具名名单由剧情文件声明，内容加载与剧情模块共用同一份名单。
  */
-function isKnownOrSignature(principalIds: ReadonlySet<string>, principalId: string): boolean {
-  return principalIds.has(principalId) || isSignatureOnlyPrincipal(principalId);
+function isKnownOrSignature(
+  principalIds: ReadonlySet<string>,
+  signatureOnlyIds: readonly string[],
+  principalId: string,
+): boolean {
+  return principalIds.has(principalId) || signatureOnlyIds.includes(principalId);
 }
 
 /** 剧情卡跨文件校验所需的上下文；避免函数参数继续膨胀。 */
@@ -309,6 +314,38 @@ export interface ScenarioCheckContext {
   readonly stockpiles: ReadonlyMap<string, ContentStockpile>;
   readonly principalIds: ReadonlySet<string>;
   readonly agentIds: ReadonlySet<string>;
+  /** 剧情声明的 signature-only 署名名单。 */
+  readonly signatureOnlyIds: readonly string[];
+}
+
+/**
+ * 校验剧情文件的元数据：广播发布节点、压力卡与 signature-only 名单。
+ * signature-only 署名不得与已定义的身份重名，否则署名会实例化为角色。
+ */
+export function checkScenarioMeta(
+  context: Omit<ScenarioCheckContext, "signatureOnlyIds">,
+  scenario: ContentScenario,
+): void {
+  const { file, nodes, principalIds, agentIds } = context;
+  if (!nodes.has(scenario.broadcastOriginNodeId)) {
+    fail(file, "broadcastOriginNodeId", `广播发布节点「${scenario.broadcastOriginNodeId}」不存在`);
+  }
+  if (
+    scenario.pressureCardId !== undefined &&
+    !scenario.cards.some((card) => card.cardId === scenario.pressureCardId)
+  ) {
+    fail(file, "pressureCardId", `压力卡「${scenario.pressureCardId}」不在剧情卡列表中`);
+  }
+  const seen = new Set<string>();
+  scenario.signatureOnlyPrincipalIds.forEach((principalId, index) => {
+    if (seen.has(principalId)) {
+      fail(file, `signatureOnlyPrincipalIds.${index}`, `signature-only 署名「${principalId}」重复声明`);
+    }
+    seen.add(principalId);
+    if (agentIds.has(principalId) || principalIds.has(principalId)) {
+      fail(file, `signatureOnlyPrincipalIds.${index}`, `signature-only 署名「${principalId}」与已定义的身份重名`);
+    }
+  });
 }
 
 /** 校验剧情卡效果引用的主体、节点、库存点与召集对象。 */
@@ -317,17 +354,17 @@ export function checkScenario(
   card: ContentCard,
   cardIndex: number,
 ): void {
-  const { file, nodes, factions, stockpiles, principalIds, agentIds } = context;
+  const { file, nodes, factions, stockpiles, principalIds, agentIds, signatureOnlyIds } = context;
   card.effects.forEach((effect, effectIndex) => {
     const path = `cards.${cardIndex}.effects.${effectIndex}`;
     switch (effect.kind) {
       case "broadcast":
-        if (!isKnownOrSignature(principalIds, effect.speakerId) && !isSourceId(effect.speakerId)) {
+        if (!isKnownOrSignature(principalIds, signatureOnlyIds, effect.speakerId) && !isSourceId(effect.speakerId)) {
           fail(file, `${path}.speakerId`, `广播署名「${effect.speakerId}」不存在`);
         }
         break;
       case "message":
-        if (!isKnownOrSignature(principalIds, effect.from)) {
+        if (!isKnownOrSignature(principalIds, signatureOnlyIds, effect.from)) {
           fail(file, `${path}.from`, `消息发送者「${effect.from}」不存在`);
         }
         effect.to.forEach((to, toIndex) => {

@@ -152,7 +152,68 @@ describe("内容包加载", () => {
       ),
     );
     expect(extra.code).toBe("unexpected-file");
-    expect(extra.path).toBe("files.9");
+    expect(extra.path).toBe("files.10");
+  });
+
+  it("规则参数引用不存在的内容对象时拒绝加载", () => {
+    const unknownAgent = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources("rules.yaml", "capacitySupporter: { agentId: npc-wenyuan", "capacitySupporter: { agentId: npc-missing"),
+      ),
+    );
+    expect(unknownAgent.code).toBe("cross-check");
+    expect(unknownAgent.source).toBe("rules.yaml");
+    expect(unknownAgent.path).toBe("tasks.capacitySupporter.agentId");
+
+    const unknownSeat = captureLoadingError(() =>
+      parseContentPack(mutatedSources("rules.yaml", "watergateSeatId: seat.commune", "watergateSeatId: seat.missing")),
+    );
+    expect(unknownSeat.code).toBe("cross-check");
+    expect(unknownSeat.path).toBe("watergateSeatId");
+  });
+
+  it("剧情元数据引用错误时拒绝加载", () => {
+    const unknownOrigin = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources(
+          "scenarios/watergate-v1.yaml",
+          "broadcastOriginNodeId: grayharbor",
+          "broadcastOriginNodeId: missing-node",
+        ),
+      ),
+    );
+    expect(unknownOrigin.code).toBe("cross-check");
+    expect(unknownOrigin.source).toBe("scenarios/watergate-v1.yaml");
+    expect(unknownOrigin.path).toBe("broadcastOriginNodeId");
+
+    const unknownPressure = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources("scenarios/watergate-v1.yaml", "pressureCardId: card-relay-alarm", "pressureCardId: card-missing"),
+      ),
+    );
+    expect(unknownPressure.code).toBe("cross-check");
+    expect(unknownPressure.path).toBe("pressureCardId");
+
+    const collidingSignature = captureLoadingError(() =>
+      parseContentPack(
+        mutatedSources(
+          "scenarios/watergate-v1.yaml",
+          "signatureOnlyPrincipalIds: [npc-shenli, npc-suhui, npc-guxun]",
+          "signatureOnlyPrincipalIds: [npc-wenzhao, npc-suhui, npc-guxun]",
+        ),
+      ),
+    );
+    expect(collidingSignature.code).toBe("cross-check");
+    expect(collidingSignature.path).toBe("signatureOnlyPrincipalIds.0");
+  });
+
+  it("locale 缺少通知文案键时错误定位到具体键", () => {
+    const error = captureLoadingError(() =>
+      parseContentPack(mutatedSources("locale/zh-CN.yaml", "  invite: 收到新的协议提案\n", "\n")),
+    );
+    expect(error.code).toBe("schema");
+    expect(error.source).toBe("locale/zh-CN.yaml");
+    expect(error.path).toBe("notifications.invite");
   });
 
   it("全局 ID 冲突与不可达证据被拒绝", () => {

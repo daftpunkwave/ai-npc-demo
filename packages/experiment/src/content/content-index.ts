@@ -6,7 +6,8 @@
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
 import { checkScripts } from "./checks/scripts";
 import { checkTemplates } from "./checks/templates";
-import { checkEvidence, checkFactionsAndCharacters, checkMap, checkScenario, checkStarts, checkWorldInit } from "./checks/world";
+import { checkEvidence, checkFactionsAndCharacters, checkMap, checkScenario, checkScenarioMeta, checkStarts, checkWorldInit } from "./checks/world";
+import { checkRules } from "./checks/rules";
 import { fail, registerGlobalIds, uniqueById } from "./checks/common";
 import type {
   ContentCard,
@@ -24,6 +25,7 @@ import type {
   ContentPackFile,
   ContentPrompts,
   ContentRoad,
+  ContentRules,
   ContentScenario,
   ContentScript,
   ContentSecret,
@@ -42,6 +44,7 @@ export interface ContentParts {
   readonly factions: ContentFactions;
   readonly characters: ContentCharacters;
   readonly worldInit: ContentWorldInit;
+  readonly rules: ContentRules;
   readonly evidence: ContentEvidence;
   readonly starts: ContentStarts;
   readonly scenarios: ReadonlyMap<string, ContentScenario>;
@@ -223,6 +226,7 @@ export function buildContentIndex(parts: ContentParts): ContentIndex {
   checkMap(parts.map, nodes, factions);
   checkFactionsAndCharacters(parts.factions, parts.characters, nodes, factions, principalIds);
   checkWorldInit(parts.worldInit, nodes, factions, teams, stockpiles, principalIds);
+  checkRules(parts.rules, parts.factions, nodes, roads, stockpiles, teams, agentIds);
   checkEvidence(parts.evidence, nodes, principalIds);
   checkStarts(parts.starts, factions, teams, stockpiles, evidence, principalIds);
 
@@ -235,9 +239,10 @@ export function buildContentIndex(parts: ContentParts): ContentIndex {
       fail(file, "scenarioId", `重复的剧情 ID「${scenario.scenarioId}」`);
     }
     scenariosById.set(scenario.scenarioId, scenario);
+    checkScenarioMeta({ file, nodes, factions, stockpiles, principalIds, agentIds }, scenario);
     scenario.cards.forEach((card, cardIndex) => {
       checkScenario(
-        { file, nodes, factions, stockpiles, principalIds, agentIds },
+        { file, nodes, factions, stockpiles, principalIds, agentIds, signatureOnlyIds: scenario.signatureOnlyPrincipalIds },
         card,
         cardIndex,
       );

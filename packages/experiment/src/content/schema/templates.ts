@@ -171,6 +171,8 @@ export const contentLocaleSchema = z
     nodes: z.record(z.string().min(1), textSchema),
     facilities: z.record(z.string().min(1), textSchema),
     playerName: textSchema,
+    /** 投影派生的提醒文案；deadline 中的 {window} 由投影以到期窗口 tick 数替换。 */
+    notifications: exactRecord(["invite", "deadline", "failedTask", "crisis"], textSchema),
     ui: z.record(z.string().min(1), textSchema),
     lexicons: z
       .object({

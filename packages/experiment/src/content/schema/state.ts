@@ -18,6 +18,7 @@ import {
   groupIdSchema,
   nodeIdSchema,
   nonNegativeIntSchema,
+  roadIdSchema,
   schemaVersion,
   secretIdSchema,
   scenarioCardIdSchema,
@@ -165,11 +166,90 @@ export const contentStartsSchema = z
   })
   .strict();
 
+/** rules.yaml：章节规则的岗位、日结目标与公社席；规则层只消费描述符，不写具体内容 ID。 */
+export const contentRulesSchema = z
+  .object({
+    schemaVersion,
+    tasks: z
+      .object({
+        capacitySupporter: z
+          .object({
+            agentId: principalIdSchema,
+            capacityBonus: z.number().int().positive(),
+          })
+          .strict(),
+        repairSupporter: z
+          .object({
+            agentId: principalIdSchema,
+            stabilityBonus: z.number().int().positive(),
+          })
+          .strict(),
+        rescueSupporter: z
+          .object({
+            agentId: principalIdSchema,
+            durationDiscountTicks: z.number().int().positive(),
+          })
+          .strict(),
+        scoutSupporter: z
+          .object({
+            agentId: principalIdSchema,
+            travelDiscountPerRoad: z.number().int().positive(),
+          })
+          .strict(),
+        escortSupporter: z
+          .object({
+            agentId: principalIdSchema,
+            safetyBonus: z.number().int().positive(),
+          })
+          .strict(),
+        universalGuide: z
+          .object({
+            agentId: principalIdSchema,
+            travelDiscountPerRoad: z.number().int().positive(),
+          })
+          .strict(),
+        universalRepairer: z
+          .object({
+            agentId: principalIdSchema,
+            stabilityBonus: z.number().int().positive(),
+            excludedTeamIds: z.array(teamIdSchema),
+          })
+          .strict(),
+        repairWorkNodeId: nodeIdSchema,
+        energyOnlyRepairTeamIds: z.array(teamIdSchema),
+        repairBaseStability: z
+          .object({
+            standard: z.number().int().positive(),
+            energyOnly: z.number().int().positive(),
+          })
+          .strict(),
+      })
+      .strict(),
+    settlement: z
+      .object({
+        dailySupplyStockpileId: stockpileIdSchema,
+        dailySupplyAmount: z.number().int().positive(),
+        orchardMedicalStockpileId: stockpileIdSchema,
+        orchardMedicalAmount: z.number().int().positive(),
+        migrationRoadId: roadIdSchema,
+        migrationPassageFactionId: factionIdSchema,
+      })
+      .strict(),
+    watergateSeatId: textSchema,
+  })
+  .strict();
+
 /** scenarios/*.yaml：首章剧情卡；效果形状复用公共契约。 */
 export const contentScenarioSchema = z
   .object({
     schemaVersion,
     scenarioId: contentIdSchema,
+    /** 剧情卡广播的发布节点；与玩家当前位置无关。 */
+    broadcastOriginNodeId: nodeIdSchema,
+    /** 触发后启用每日剧情压力的卡片；缺省表示本章没有压力卡。 */
+    pressureCardId: scenarioCardIdSchema.optional(),
+    /** 只作事件署名、不实例化角色的具名人物名单。 */
+    signatureOnlyPrincipalIds: z.array(principalIdSchema),
     cards: z
       .array(
         z
@@ -245,6 +325,7 @@ export const contentScriptSchema = z
   .strict();
 
 export type ContentWorldInit = z.infer<typeof contentWorldInitSchema>;
+export type ContentRules = z.infer<typeof contentRulesSchema>;
 export type ContentEvidence = z.infer<typeof contentEvidenceSchema>;
 export type ContentStarts = z.infer<typeof contentStartsSchema>;
 export type ContentScenario = z.infer<typeof contentScenarioSchema>;
