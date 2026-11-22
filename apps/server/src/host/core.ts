@@ -58,6 +58,13 @@ import {
 import { generateRunSeed } from "./random";
 import { assertStorageCompatible, contentVersionMismatch, readOnlineEntry, type OnlineEntry } from "./online-entry";
 import type { HostOptions } from "./options";
+import {
+  assertMigrationScopeIsCapabilityClosure,
+  migrateOnlineRun,
+  migrationSummary,
+  OnlineRunMigrationRequiredError,
+  restoreOnlineAliasToSourceBranch,
+} from "./run-migration";
 
 /** 本次启动实际使用的世界、装配、RunSpec 与冻结 manifest。 */
 export interface ActiveRunState {
@@ -71,10 +78,11 @@ export interface ActiveRunState {
   readonly agents: AgentConfiguration | null;
 }
 
-/** 恢复或重开后的活动 run 与启动计划。 */
+/** 恢复或重开后的活动 run 与启动计划；执行迁移时携带源分支标识供失败补偿。 */
 export interface ResumedRunState {
   readonly active: ActiveRunState;
   readonly startup: ResolvedServerAssembly;
+  readonly migratedFromBranchId?: string;
 }
 
 /** 首次启动的待提交状态；时钟 provider 启动后再在同一事务内写入在线世界与初始时钟行。 */
@@ -254,6 +262,8 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
 
   /** 重启：沿用在线别名指向的分支与已冻结 run，不复用当前入参重建 RunSpec。 */
   const resumeRun = async (online: OnlineEntry): Promise<ResumedRunState> => {
+    // 本次启动执行迁移时记录源分支；宿主启动失败时按它恢复在线入口。
+    let migratedSourceBranchId: string | null = null;
     const run = online.run;
     const parsed = runSpecSchema.safeParse(run["run_spec_json"]);
     if (!parsed.success) {
@@ -317,7 +327,41 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       ...(agents?.models ? { models: agents.models.manifest } : {}),
     });
     if (rebuilt.manifestHash !== storedHash) {
-      throw new Error("冻结 manifest 无法复算：装配、名册或内容版本与 run 记录不一致");
+      // 冻结 manifest 与当前解析结果不一致时，只有装配能力闭包差异（模块绑定集与摘要）允许显式迁移；
+      // seed、RunSpec 选择、内容、名册或 Agent 配置任一差异都意味着这不是升级，拒绝迁移保持拒绝启动。
+      assertMigrationScopeIsCapabilityClosure(manifestValue, rebuilt.manifest);
+      const migrationInput = {
+        storage,
+        host,
+        online,
+        runSpec: frozenSpec as unknown as Json,
+        manifest: rebuilt.manifest,
+        manifestHash: rebuilt.manifestHash,
+      };
+      if (options.migrateOnlineRun !== true) {
+        throw new OnlineRunMigrationRequiredError({
+          runId: online.runId,
+          branchId: online.branchId,
+          detail: `冻结 manifest_hash「${storedHash}」，按当前装配与模块目录复算为「${rebuilt.manifestHash}」`,
+        });
+      }
+      const migrated = migrateOnlineRun(migrationInput);
+      migratedSourceBranchId = online.branchId;
+      host.logger.info(migrationSummary(migrationInput, migrated));
+      return {
+        active: {
+          worldId: online.worldId,
+          branchId: migrated.branchId,
+          assembly,
+          resolved,
+          runSpec: frozenSpec,
+          manifest: rebuilt.manifest,
+          manifestHash: rebuilt.manifestHash,
+          agents,
+        },
+        startup,
+        migratedFromBranchId: migratedSourceBranchId,
+      };
     }
     return {
       active: {
@@ -342,6 +386,8 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   let sessionAssemblies: SessionAssemblies;
   let active: ActiveRunState;
   let activeStartup: ResolvedServerAssembly;
+  // 本次启动若执行了迁移，记录源分支；后续启动失败时按它恢复在线入口，避免失败后别名悬在新 run 上。
+  let migratedSourceBranchId: string | null = null;
   try {
     const online = storage.transact(readOnlineEntry);
 
@@ -356,6 +402,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       const resumed = await resumeRun(online);
       chosen = resumed.active;
       startup = resumed.startup;
+      migratedSourceBranchId = resumed.migratedFromBranchId ?? null;
     }
     assertStorageCompatible(startup.plan, requestedStartup.plan, storageModuleId);
     activeStartup = startup;
@@ -418,6 +465,18 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       }
     }
   } catch (error) {
+    // 迁移已提交但启动失败：先把在线别名与源分支状态恢复到迁移前，源 run/分支回到可重启状态；
+    // 迁移产生的新分支与新 run 留存为孤儿记录。补偿失败只记日志，不掩盖原始启动错误。
+    if (migratedSourceBranchId !== null) {
+      try {
+        restoreOnlineAliasToSourceBranch(storage, host.nowIso(), migratedSourceBranchId);
+        host.logger.info(`启动失败后已恢复在线入口到源分支 ${migratedSourceBranchId}`);
+      } catch (compensationError) {
+        host.logger.error("启动失败后恢复在线入口失败", {
+          message: compensationError instanceof Error ? compensationError.message : String(compensationError),
+        });
+      }
+    }
     // 启动失败时逆序释放已创建实例；清理失败只记日志，保留原始启动错误。
     try {
       await disposeInReverse([
