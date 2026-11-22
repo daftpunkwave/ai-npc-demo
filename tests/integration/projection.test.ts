@@ -641,3 +641,44 @@ describe("提醒与收件箱的内容边界", () => {
     expect(inbox).toHaveLength(50);
   });
 });
+
+describe("提醒派生的失败与危急分支", () => {
+  it("自己的任务出发失败时派生失败提醒", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    const ownTaskId = dispatchTask(value, playerAuth(value), PARTIAL_SUPPLY_TRANSPORT);
+    expect(
+      executeCommand(value, operatorAuth(value), "scenario.override", {
+        effects: ["r-gh-wg", "r-gh-or", "r-gh-ps", "r-gh-ar", "r-gh-an"].map((roadId) => ({
+          kind: "road-status-set",
+          roadId,
+          status: "closed",
+        })),
+        note: "关闭灰港全部对外道路，使玩家运输目的地不可达",
+      }).commandStatus,
+    ).toBe("accepted");
+    advanceTo(value, 1);
+    expect(projection(value).tasks.find((task) => task.taskId === ownTaskId)).toMatchObject({
+      taskStatus: "failed",
+    });
+    expect(projection(value).notifications).toEqual([
+      { kind: "urgent", text: "委托的任务已失败", worldTick: 1 },
+    ]);
+  });
+
+  it("指标进入危急时派生危急提醒", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    expect(
+      executeCommand(value, operatorAuth(value), "scenario.override", {
+        effects: [{ kind: "meter-set", meter: "relay.stability", value: 15 }],
+        note: "测试指标危急",
+      }).commandStatus,
+    ).toBe("accepted");
+    const view = projection(value);
+    expect(view.meters?.relayStability).toMatchObject({ value: 15, level: "critical" });
+    expect(view.notifications).toEqual([
+      { kind: "urgent", text: "局势指标处于危急", worldTick: 0 },
+    ]);
+  });
+});
