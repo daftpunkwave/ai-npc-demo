@@ -1246,6 +1246,9 @@ importers:
       '@ai-npc/mod-platform-model-transport-anthropic':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/anthropic
+      '@ai-npc/mod-platform-model-transport-deterministic':
+        specifier: workspace:*
+        version: link:../modules/server/platform/model-transport/deterministic
       '@ai-npc/mod-platform-model-transport-openai-compatible':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/openai-compatible
