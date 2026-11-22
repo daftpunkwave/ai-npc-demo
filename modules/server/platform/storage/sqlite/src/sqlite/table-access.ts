@@ -1,5 +1,5 @@
 /**
- * 实现表级读写接口：按主键读写、等值过滤、排序分页与 JSON 编解码，并强制分支 scope。
+ * 实现表级读写接口：按主键读写、等值过滤、前缀与排他上界范围查询、排序分页与 JSON 编解码，并强制分支 scope。
  * 依赖 node:sqlite 预编译语句、迁移推导的表目录与行编解码；只接受目录内的表名与列名。
  * 禁止跨分支读写、把调用方字符串拼成 SQL、绕过主键完整性检查或在事务外观测到中间状态。
  */
@@ -48,6 +48,8 @@ interface WhereClause {
   readonly params: readonly StorageValue[];
 }
 
+/** 前缀查询要求的取值范围：可打印 ASCII（0x20–0x7E）保证字节上界能用合法 UTF-8 字符串表达，末字符码点 +1 与字节进位一致。 */
+const PREFIX_PATTERN = /^[\x20-\x7E]*$/;
 /** 单张表的读写实现；branchId 为 null 时表示部署级或运行级表。 */
 class TableAccess implements StorageTable {
   readonly table: string;
@@ -101,6 +103,36 @@ class TableAccess implements StorageTable {
     return where.clauses.length === 0 ? "" : ` WHERE ${where.clauses.join(" AND ")}`;
   }
 
+  /** 把前缀编译为闭开区间条件 col >= prefix AND col < upper；SQLite 可用主键/索引做范围扫描。 */
+  private prefixWhere(prefix: { readonly column: string; readonly value: string }): WhereClause {
+    requireColumn(this.info, prefix.column);
+    if (!PREFIX_PATTERN.test(prefix.value)) {
+      validationFailure("前缀过滤的值必须是可打印 ASCII", { table: this.table, column: prefix.column });
+    }
+    if (prefix.value.length === 0) {
+      return { clauses: [], params: [] };
+    }
+    const chars = [...prefix.value];
+    const last = chars.pop() as string;
+    const upper = `${chars.join("")}${String.fromCharCode(last.charCodeAt(0) + 1)}`;
+    return {
+      clauses: [`${q(prefix.column)} >= ?`, `${q(prefix.column)} < ?`],
+      params: [prefix.value, upper],
+    };
+  }
+
+  /** 把排他上界编译为 col < before；与 prefix 组合表达有界区间，取值约束同前缀。 */
+  private beforeWhere(before: { readonly column: string; readonly value: string }): WhereClause {
+    requireColumn(this.info, before.column);
+    if (!PREFIX_PATTERN.test(before.value)) {
+      validationFailure("排他上界的值必须是可打印 ASCII", { table: this.table, column: before.column });
+    }
+    return {
+      clauses: [`${q(before.column)} < ?`],
+      params: [before.value],
+    };
+  }
+
   private assertKey(key: StorageFilter): void {
     if (typeof key !== "object" || key === null || Array.isArray(key)) {
       validationFailure(`表 ${this.table} 的主键必须是对象`, { table: this.table });
@@ -135,6 +167,12 @@ class TableAccess implements StorageTable {
   list(filter: StorageFilter = {}, options: StorageListOptions = {}): readonly StorageRow[] {
     this.assertTransactionActive();
     const where = this.buildWhere(filter);
+    const prefix = options.prefix === undefined ? null : this.prefixWhere(options.prefix);
+    const before = options.before === undefined ? null : this.beforeWhere(options.before);
+    const full: WhereClause = {
+      clauses: [...where.clauses, ...(prefix?.clauses ?? []), ...(before?.clauses ?? [])],
+      params: [...where.params, ...(prefix?.params ?? []), ...(before?.params ?? [])],
+    };
     const orderBy = options.orderBy ?? [];
     const orderClauses = orderBy.map((order) => {
       requireColumn(this.info, order.column);
@@ -147,9 +185,9 @@ class TableAccess implements StorageTable {
       }
       return `${q(order.column)} ${direction === "asc" ? "ASC" : "DESC"}`;
     });
-    const params: StorageValue[] = [...where.params];
+    const params: StorageValue[] = [...full.params];
     const limitClause = this.buildLimitClause(options, params);
-    const sql = `SELECT * FROM ${q(this.table)}${this.whereSql(where)}${
+    const sql = `SELECT * FROM ${q(this.table)}${this.whereSql(full)}${
       orderClauses.length === 0 ? "" : ` ORDER BY ${orderClauses.join(", ")}`
     }${limitClause}`;
     const rows = this.database.prepare(sql).all(...params);
