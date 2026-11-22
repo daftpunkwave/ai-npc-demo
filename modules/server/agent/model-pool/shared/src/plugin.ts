@@ -38,7 +38,8 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     ports["platform.observability"] as ModelObservabilityPort);
   evidence.recoverInterrupted();
 
-  function credentials(route: ModelRoute, adapter: ModelTransportPort): string | null {
+  /** 解析路由的单个凭据明文，未配置引用时返回 null；同时经传输适配器校验连接与凭据形态。 */
+  function resolveCredential(route: ModelRoute, adapter: ModelTransportPort): string | null {
     const credential = route.credentialRef === null ? null : secrets.resolve(route.credentialRef);
     if (adapter.validateConnection !== undefined) adapter.validateConnection(route.endpoint, credential !== null);
     else if (route.credentialRef !== null && credential === null) {
@@ -81,7 +82,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     requireCurrent(scope);
     const adapter = transports.get(route.adapterId);
     if (adapter === undefined) throw new DomainError("assembly-incompatible", "模型传输未装配");
-    const credential = credentials(route, adapter);
+    const credential = resolveCredential(route, adapter);
     const jsonInstructionTokens = requestInput.output.kind === "json" && route.capabilities.structuredOutput === "json_object"
       ? estimateTokens(jsonOutputSuffix ?? "") : 0;
     const estimated = estimateModelInputTokens(requestInput) + jsonInstructionTokens;
@@ -195,7 +196,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
           route.capabilities.contextWindowTokens > supported.contextWindowTokens || route.maxOutputTokens > supported.maxOutputTokens) {
           throw new DomainError("assembly-incompatible", "模型布局声明了传输不支持的能力");
         }
-        credentials(route, adapter);
+        resolveCredential(route, adapter);
         mounts.set(key, route);
       }
       function mounted(agentId: string, purpose: Purpose): ModelRoute {

@@ -26,6 +26,7 @@ export interface ToolGatewayTurn {
   readonly session: MemoryScope;
   readonly runId: string;
   readonly turnId: string;
+  /** 本 turn 的工具执行关联 ID：tool_calls 归档与同 turn 去重共用；与模型传输 attempt 同用 att 前缀，但作用域为一个 turn。 */
   readonly attemptId: string;
   readonly agentId: string;
   readonly round: number;

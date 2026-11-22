@@ -14,6 +14,9 @@ type DecisionResult = Awaited<ReturnType<ModelDecisionPort["decide"]>>;
 type ToolResult = Extract<NormalizedMessage, { role: "tool" }>;
 const submit = "decision_submit";
 
+// 工具错误载荷是模型可见契约：error 键取值 budget-exhausted（与平台 DomainError 码同族）、
+// invalid_decision 与 duplicate_decision_submit；这些值已被集成测试断言并随请求归档进入历史证据，
+// 调整键名前必须同步验证测试与历史回放兼容。
 function errorTool(toolCallId: string, value: Json): ToolResult {
   return { role: "tool", toolCallId, content: canonicalJson(value), isError: true };
 }
@@ -35,6 +38,8 @@ const modelDecision: ModelDecisionPort = {
     const seen = new Set<string>();
     let corrected = false;
     let usedTools = 0;
+    // 预算停止：某轮因工具限额或上下文阈值被拦截后，先向模型回传 budget-exhausted 工具错误，
+    // 并只保留一个收尾轮——工具继续拒绝、模型须直接提交 decision_submit，未获接受即按 over-budget 结束。
     let awaitingBudgetStop = false;
     for (let round = 1; round <= input.maxRounds; round += 1) {
       let response;

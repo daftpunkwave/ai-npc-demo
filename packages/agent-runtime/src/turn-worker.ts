@@ -42,9 +42,10 @@ export interface TurnExecutionOptions {
   readonly model?: RunModelPort | null;
 }
 
+/** 每 Agent 已装配的 turn 模块端口：model 为模型路径端口组，deterministicDecision 为未挂模型池时的确定性决策端口，二者互斥。 */
 type TurnPorts = { readonly toolView: AgentToolViewPort } & (
-  { readonly model: ModelTurnPorts; readonly decision: null } |
-  { readonly model: null; readonly decision: AgentDecisionPort<DeterministicDecisionInput> }
+  { readonly model: ModelTurnPorts; readonly deterministicDecision: null } |
+  { readonly model: null; readonly deterministicDecision: AgentDecisionPort<DeterministicDecisionInput> }
 );
 
 export class TurnWorker {
@@ -84,10 +85,10 @@ export class TurnWorker {
         })).port;
         const context = (await this.createSlot<AgentContextPort>(agentId, slots.context)).port;
         const compression = (await this.createSlot<AgentCompressionPort>(agentId, slots.compression)).port;
-        this.ports.set(agentId, { decision: null, toolView, model: { decision, context, compression } });
+        this.ports.set(agentId, { deterministicDecision: null, toolView, model: { decision, context, compression } });
       } else {
         const decision = (await this.createSlot<AgentDecisionPort<DeterministicDecisionInput>>(agentId, slots.decision)).port;
-        this.ports.set(agentId, { decision, toolView, model: null });
+        this.ports.set(agentId, { deterministicDecision: decision, toolView, model: null });
       }
     }
   }
@@ -161,9 +162,11 @@ export class TurnWorker {
       } }), this.selection(profile, "memory"));
       const retrieved = new Set<string>(memory.items.map(({ memoryId }) => memoryId));
       const prospective = promises.filter(({ memoryId }) => retrieved.has(memoryId));
-      const attemptId = host.ids("att");
+      // 本 turn 的工具执行关联 ID：tool_calls 归档去重、上下文构建与确定性工具回传校验共用；
+      // 与模型传输 attempt 同用 att 前缀，但作用域是整个 turn 而非单次网络尝试。
+      const toolAttemptId = host.ids("att");
       const toolCalls: ToolCallOutcome[] = [];
-      const sent = new Set<string>();
+      const committedMessageIntents = new Set<string>();
       const messagePrincipalIds = new Set([content.index.playerPrincipalId, ...this.runtime.roster.agents.map((entry) => entry.agentId)]);
       messagePrincipalIds.delete(agentId);
       const model = ports.model === null || this.execution.model == null ? null : new ModelTurn({
@@ -206,7 +209,7 @@ export class TurnWorker {
       });
       const ownsFaction = content.index.factions.has(agentId);
       const toolTurn = {
-        session: frozen.scope, runId: turn.runId, turnId, agentId, attemptId,
+        session: frozen.scope, runId: turn.runId, turnId, agentId, attemptId: toolAttemptId,
         auth: turn.auth, phase: "decision" as const, audience: [], narrowing: {
           messagePrincipalIds,
           invitedTaskIds: frozen.world.taskInvitations.map(({ taskId }) => taskId),
@@ -243,12 +246,12 @@ export class TurnWorker {
         this.leases.move(turn, "executing", "deciding");
         if (outcome.toolId === "message.send" && outcome.result.commandStatus === "accepted") {
           const intent = messageIntentFromArguments(call.arguments);
-          if (intent !== null) sent.add(canonicalJson(intent));
+          if (intent !== null) committedMessageIntents.add(canonicalJson(intent));
         }
         return outcome;
       };
       const executeTool: DeterministicDecisionInput["executeTool"] = (call) => {
-        if (call.attemptId !== attemptId) throw new TurnStopped("failed", "invalid-tool-attempt");
+        if (call.attemptId !== toolAttemptId) throw new TurnStopped("failed", "invalid-tool-attempt");
         return executeCall({
           id: call.providerCallId, name: toModelToolName(call.toolId), arguments: call.arguments,
           argumentsRaw: canonicalJson(call.arguments), parseError: null,
@@ -267,12 +270,12 @@ export class TurnWorker {
         const readOnly = new Set(this.execution.tools.definitions().filter(({ effect }) =>
           effect === "query").map(({ toolId }) => toModelToolName(toolId)));
         const result = model !== null ? await model.decide({
-          attemptId, tools: [...(projected?.tools ?? []).filter(({ name }) => !turn.probe || readOnly.has(name)), decisionSubmitTool(content)],
+          attemptId: toolAttemptId, tools: [...(projected?.tools ?? []).filter(({ name }) => !turn.probe || readOnly.has(name)), decisionSubmitTool(content)],
           toolViewLimits: new Map(projected?.bindings.map(({ toolId, viewConstraints }) => [toModelToolName(toolId), viewConstraints.maxTokens])),
           executeTool: (call, round) => executeCall(call, round), toolResults: toolCalls,
           contextSelection: this.selection(profile, "context"), compressionSelection: this.selection(profile, "compression"),
-        }) : await this.decideBeforeDeadline(ports.decision!, {
-          session: frozen.scope, runId: turn.runId, turnId, attemptId, frontier: frozen.frontier,
+        }) : await this.decideBeforeDeadline(ports.deterministicDecision!, {
+          session: frozen.scope, runId: turn.runId, turnId, attemptId: toolAttemptId, frontier: frozen.frontier,
           profileHash, runSeed: this.execution.runSeed, agentTurnIndex: turn.agentTurnIndex,
           triggers: turn.triggers, observations: frozen.observations, memory, prospective,
           self: {
@@ -303,7 +306,7 @@ export class TurnWorker {
         effective: toolCalls.map(({ viewArtifact }) => viewArtifact.artifactId),
       }, this.selection(profile, "toolView"));
       const intent = decision.value.dialogueIntent;
-      if (intent.kind === "none" || sent.has(canonicalJson(intent))) {
+      if (intent.kind === "none" || committedMessageIntents.has(canonicalJson(intent))) {
         evidence.record("turn.speech", evidence.start(), {
           status: "skipped", reason: intent.kind === "none" ? "no-dialogue-intent" : "message-already-committed", effective: null,
         });
