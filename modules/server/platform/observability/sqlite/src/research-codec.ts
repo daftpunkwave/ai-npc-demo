@@ -3,6 +3,7 @@
  * 交互契约：只接收已由 StoragePort 读取的原始行和 scope，不执行事务或业务判断。
  * 约束与禁忌：不得把缺失字段补成伪造证据；无法解释的行必须抛出明确错误。
  */
+/* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 TurnSummary 与 TurnDetail 的联合误判为 any。 */
 import {
   DomainError,
   agentObservationSchema,

@@ -117,7 +117,9 @@ function ModelMountsPage(): ReactNode {
                 type="button"
                 key={layoutId}
                 className={layoutId === selectedId ? "is-selected" : ""}
-                onClick={() => setSelectedId(layoutId)}
+                onClick={() => {
+                  setSelectedId(layoutId);
+                }}
               >
                 <span>{layoutId}</span>
                 <small>{layoutId === selectedId ? "当前查看" : "打开详情"}</small>

@@ -3,10 +3,10 @@
  * 交互契约：依赖 StoragePort 的固定数据表与 HostServices 的 ID/时间；不触发模型、规则或后台任务。
  * 约束与禁忌：禁止返回未归档内容或无来源示例；原始 artifact 读取必须同时写审计生命周期事件。
  */
+/* eslint-disable no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 构造器参数属性通过 this 使用，Codacy 缺少 workspace 类型解析时会把契约联合判成 any。 */
 import {
   DomainError,
   inputFrontierSchema,
-  jsonValueSchema,
   memoryDiffResponseSchema,
   memoryResponseSchema,
   observationsResponseSchema,
@@ -37,7 +37,6 @@ import {
   decodeMemoryRecord,
   decodeObservation,
   jsonColumn,
-  nullableStringColumn,
   numberColumn,
   stringColumn,
   summaryFromRow,
@@ -218,7 +217,6 @@ export class ResearchQueries {
     const row = this.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: turnId }));
     if (row === null) throw new DomainError("not-found", `turn ${turnId} 不存在`);
     const summary = summaryOf(this.storage, row);
-    const branchId = summary.branchId;
     const effective = Array.isArray(row["effective_json"]) ? row["effective_json"] : [];
     const stages = effective.map((entry) => turnStageViewSchema.parse(entry));
     const attempts = this.storage.transact((tx) => tx.rows("model_attempts")

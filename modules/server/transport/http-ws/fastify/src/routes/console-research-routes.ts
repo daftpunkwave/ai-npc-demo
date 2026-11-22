@@ -35,6 +35,8 @@ const researchRoles = ["researcher"] as const;
 
 function pathText(params: unknown, key: string): string | undefined {
   if (typeof params !== "object" || params === null || Array.isArray(params)) return undefined;
+  // key 只来自本文件固定路由字段名，不接受调用方拼接。
+  // eslint-disable-next-line security/detect-object-injection
   const value = (params as Readonly<Record<string, unknown>>)[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
