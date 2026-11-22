@@ -1,8 +1,7 @@
 /**
  * 持久化整理任务、租约、重试与重启恢复。
- * Persists memory maintenance work, leases, retries, and restart recovery.
- * Depends on the storage port, host clock/IDs, and public maintenance-task data.
- * Must not run module logic or publish memory revisions.
+ * 依赖 storage port、宿主时钟与 ID 服务，以及公开的整理任务数据。
+ * 禁止执行模块逻辑或发布记忆 revision。
  */
 import { maintenanceTaskSchema } from "@ai-npc/contracts";
 import type {

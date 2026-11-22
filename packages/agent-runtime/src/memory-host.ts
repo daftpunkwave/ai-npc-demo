@@ -1,8 +1,7 @@
 /**
  * 协调记忆模块生命周期、摄入、检索、整理与唤醒 trigger。
- * Coordinates memory module lifecycles, ingestion, retrieval, maintenance, and wake-up triggers.
- * Depends on injected storage, profiles, registered modules, and immutable revision views.
- * Must not call models inside actor transactions or allow modules to publish rows directly.
+ * 依赖注入的存储 port、profile、已注册模块与不可变 revision 视图。
+ * 禁止在 actor 事务内调用模型，或允许模块直接发布记忆行。
  */
 import type {
   AgentMemoryQuery,
