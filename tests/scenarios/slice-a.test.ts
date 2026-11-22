@@ -245,6 +245,14 @@ describe("slice A research path", () => {
     });
     expect(conflictingWake.statusCode).toBe(409);
     expect(errorResponseSchema.parse(conflictingWake.json()).error.code).toBe("idempotency-conflict");
+    const conflictingAgentWake = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/debug/agents/human-earth-alliance/wake",
+      headers,
+      payload: { reason: "场景测试人工唤醒", operationId: "op-000000000009" },
+    });
+    expect(conflictingAgentWake.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(conflictingAgentWake.json()).error.code).toBe("idempotency-conflict");
 
     const timelineResponse = await host.app.inject({
       method: "GET",
