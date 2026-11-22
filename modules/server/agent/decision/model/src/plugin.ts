@@ -18,20 +18,28 @@ function errorTool(toolCallId: string, value: Json): ToolResult {
   return { role: "tool", toolCallId, content: canonicalJson(value), isError: true };
 }
 
-function classify(error: unknown): Exclude<DecisionResult["status"], "ok"> {
+// 非 ok 终态保留既有失败类别（status 语义不变），细分原因供终态记录区分：
+// round-limit 轮次达到上限、call-budget 额度账本耗尽、context-window 内容窗口不足、deadline-backpressure 截止余量不足。
+function classify(error: unknown): { status: Exclude<DecisionResult["status"], "ok">; reason: string | null } {
   if (!(error instanceof DomainError) || error.code === "cancelled") throw error;
   const details = error.details;
   if (typeof details === "object" && details !== null && !Array.isArray(details)) {
-    if (details["finishReason"] === "length" || details["finishReason"] === "refusal") return "invalid-decision";
-    if (details["kind"] === "over-budget") return "over-budget";
+    if (details["finishReason"] === "length" || details["finishReason"] === "refusal") {
+      return { status: "invalid-decision", reason: null };
+    }
+    if (details["kind"] === "over-budget") return { status: "over-budget", reason: "context-window" };
+    if (details["kind"] === "backpressure") return { status: "model-failed", reason: "deadline-backpressure" };
   }
-  return error.code === "budget-exhausted" ? "budget-exhausted" : "model-failed";
+  return error.code === "budget-exhausted"
+    ? { status: "budget-exhausted", reason: "call-budget" }
+    : { status: "model-failed", reason: null };
 }
 
 const modelDecision: ModelDecisionPort = {
   async decide(input) {
     const messages: NormalizedMessage[] = [{ role: "user", content: input.user }];
-    const fail = (status: Exclude<DecisionResult["status"], "ok">): DecisionResult => ({ status, decision: null, messages });
+    const fail = (status: Exclude<DecisionResult["status"], "ok">, reason: string | null = null): DecisionResult =>
+      ({ status, decision: null, reason, messages });
     const seen = new Set<string>();
     let corrected = false;
     let usedTools = 0;
@@ -44,7 +52,8 @@ const modelDecision: ModelDecisionPort = {
           inputLimit: round === 1 ? input.firstInputLimit : input.inputLimit,
         }));
       } catch (error) {
-        return fail(classify(error));
+        const { status, reason } = classify(error);
+        return fail(status, reason);
       }
       if (response.finishReason === "length" || response.finishReason === "refusal") return fail("invalid-decision");
       const { toolCalls, text, providerReplay } = response;
@@ -54,7 +63,7 @@ const modelDecision: ModelDecisionPort = {
       for (const { id } of toolCalls) seen.add(id);
       messages.push({ role: "assistant", content: text, toolCalls, providerReplay });
       if (toolCalls.length === 0) {
-        if (awaitingBudgetStop) return fail("over-budget");
+        if (awaitingBudgetStop) return fail("over-budget", "call-budget");
         if (corrected || round === input.maxRounds) return fail("invalid-decision");
         corrected = true;
         messages.push({ role: "user", content: input.nudgeSubmit });
@@ -101,17 +110,17 @@ const modelDecision: ModelDecisionPort = {
         messages.push(result);
       }
       if (validated !== null) {
-        if ("decision" in validated) return { status: "ok", decision: validated.decision, messages };
+        if ("decision" in validated) return { status: "ok", decision: validated.decision, reason: null, messages };
         if (corrected || round === input.maxRounds) return fail("invalid-decision");
         corrected = true;
       }
-      if (awaitingBudgetStop) return fail("over-budget");
+      if (awaitingBudgetStop) return fail("over-budget", "call-budget");
       if (budgetBlocked) {
-        if (round === input.maxRounds) return fail("over-budget");
+        if (round === input.maxRounds) return fail("over-budget", "call-budget");
         awaitingBudgetStop = true;
       }
     }
-    return fail("budget-exhausted");
+    return fail("budget-exhausted", "round-limit");
   },
 
   async speak({ request, call, inputLimit, round }) {

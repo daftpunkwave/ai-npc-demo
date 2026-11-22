@@ -259,6 +259,54 @@ describe("确定性模型装配与角色对白", () => {
     expect(replies(host)).toHaveLength(0);
   });
 
+  it("对白在途发生接管时保留取消语义，不落被 fencing 拒绝的 fallback 对白", async () => {
+    const host = await modelHost({ configRoot: fixtureConfig([submitted(1, submission), {
+      id: "speech-delayed", match: { purpose: "speech", agentId: target },
+      response: { finishReason: "stop", json: { utterance: "不应提交这条对白。", citedRefs: [] }, delayMs: 1_000 },
+    }]) });
+    const event = startConversation(host, "请回应。");
+    const turn = await turnFor(host, event, false);
+    const turnId = String(turn["turn_id"]);
+    await vi.waitFor(() => expect(attempts(host, turnId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ purpose: "speech", status: "started" }),
+    ])));
+    host.storage.transact((tx) => {
+      const leases = tx.branch(host.branchId).table("controller_leases");
+      const prior = leases.get({ agent_id: target });
+      if (prior === null) throw new Error("Missing test controller lease");
+      leases.put({ ...prior, controller_kind: "human", controller_principal_id: "operator-1", controller_epoch: 2 });
+    });
+    // 取消会释放触发消费状态，改为按 turnId 等待终态。
+    const terminal = await vi.waitFor(() => {
+      const row = host.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: turnId }));
+      expect(row?.["ended_at"]).toEqual(expect.any(String));
+      return row!;
+    }, { timeout: 8_000, interval: 20 });
+    expect(terminal).toMatchObject({ status: "cancelled", terminal_reason: "stale-controller" });
+    await vi.waitFor(() => expect(attempts(host, turnId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ purpose: "speech", status: "superseded", is_effective: 0 }),
+    ])), { timeout: 5_000 });
+    // 取消的对白阶段直接中止：不生成 safe-template fallback artifact，也没有生成失败记录。
+    const speechArtifacts = host.storage.transact((tx) =>
+      tx.rows("artifacts").list({ run_id: turn["run_id"] as string }).filter((row) => row["kind"] === "speech"));
+    expect(speechArtifacts).toHaveLength(0);
+    expect(replies(host)).toHaveLength(0);
+  });
+
+  it("每轮都调用工具但轮次耗尽仍无有效提交时，以 round-limit 原因结束", async () => {
+    const inspect = (round: number) => ({
+      id: `inspect-${round}`, match: { purpose: "decision", agentId: target, round },
+      response: {
+        finishReason: "tool_calls",
+        toolCalls: [{ name: "world_inspect", arguments: { nodeId: null } }],
+      },
+    });
+    const host = await modelHost({ configRoot: fixtureConfig([inspect(1), inspect(2), inspect(3), inspect(4)]) });
+    const turn = await turnFor(host, startConversation(host, "请持续调查。"));
+    expect(turn).toMatchObject({ status: "budget-exhausted", terminal_reason: "round-limit" });
+    expect(replies(host)).toHaveLength(0);
+  });
+
   it("接管发生在已提交的工具动作之后时保留原触发的消费位置", async () => {
     const host = await modelHost({ configRoot: fixtureConfig([{
       id: "send-a-message", match: { purpose: "decision", agentId: target, round: 1 },

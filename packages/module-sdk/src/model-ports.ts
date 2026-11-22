@@ -177,6 +177,8 @@ export interface ModelDecisionPort {
   }): Promise<{
     readonly status: "ok" | "invalid-decision" | "model-failed" | "budget-exhausted" | "over-budget";
     readonly decision: DecisionSubmission | null;
+    /** 非 ok 终态的细分原因：round-limit、call-budget、context-window、deadline-backpressure；无细分时为 null。 */
+    readonly reason: string | null;
     readonly messages: readonly NormalizedMessage[];
   }>;
   speak(input: {
