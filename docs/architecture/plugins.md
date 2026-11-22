@@ -1,6 +1,6 @@
 # 模块、插件与宿主契约
 
-> 状态：部分实现。`packages/kernel` 与 `packages/module-sdk` 已支持描述符校验、能力解析、状态访问范围与生命周期，首批 `server` 模块已接入。`client` 和 `console` 的宿主接入为目标。本文规定插件与宿主的通用契约。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)、[configuration.md — 配置](../platform/configuration.md)。
+> 状态：部分实现。`packages/kernel` 与 `packages/module-sdk` 已支持描述符校验、能力解析、状态访问范围与生命周期，首批 `server` 模块已接入，`client` 和 `console` 的宿主接入已实现。本文规定插件与宿主的通用契约。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)、[configuration.md — 配置](../platform/configuration.md)。
 
 ## 1. 术语：模块、插件、积木
 

@@ -3,10 +3,14 @@
  * 依赖 Playwright、测试环境变量与固定 Vite/Fastify 拓扑；不访问真实模型。
  * 禁止复用未知本地服务、自动改端口或把数据写入常规开发目录。
  */
+import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 const dataDir = resolve(process.cwd(), "data-e2e", `run-${process.pid}`);
+// 操作系统可能复用先前 e2e 运行的 PID，残留目录会让服务端重新打开旧数据库；
+// 在 webServer 启动前清空本运行目录，保证每次 e2e 都从全新世界开始。
+rmSync(dataDir, { recursive: true, force: true });
 
 export default defineConfig({
   testDir: "./tests/e2e",
