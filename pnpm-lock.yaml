@@ -356,12 +356,18 @@ importers:
       '@ai-npc/mod-agent-decision-deterministic':
         specifier: workspace:*
         version: link:../../modules/server/agent/decision/deterministic
+      '@ai-npc/mod-agent-decision-model':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/decision/model
       '@ai-npc/mod-agent-memory-ledger':
         specifier: workspace:*
         version: link:../../modules/server/agent/memory/ledger
       '@ai-npc/mod-agent-memory-none':
         specifier: workspace:*
         version: link:../../modules/server/agent/memory/none
+      '@ai-npc/mod-agent-model-pool-shared':
+        specifier: workspace:*
+        version: link:../../modules/server/agent/model-pool/shared
       '@ai-npc/mod-agent-perception-local':
         specifier: workspace:*
         version: link:../../modules/server/agent/perception/local
@@ -449,6 +455,12 @@ importers:
       '@ai-npc/mod-platform-access-policy-roster':
         specifier: workspace:*
         version: link:../../modules/server/platform/access-policy/roster
+      '@ai-npc/mod-platform-budget-standard':
+        specifier: workspace:*
+        version: link:../../modules/server/platform/budget/standard
+      '@ai-npc/mod-platform-model-transport-deterministic':
+        specifier: workspace:*
+        version: link:../../modules/server/platform/model-transport/deterministic
       '@ai-npc/mod-platform-module-admin-standard':
         specifier: workspace:*
         version: link:../../modules/server/platform/module-admin/standard
@@ -765,6 +777,15 @@ importers:
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
+  modules/server/agent/decision/model:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+
   modules/server/agent/memory/ledger:
     dependencies:
       '@ai-npc/contracts':
@@ -778,6 +799,15 @@ importers:
         version: 4.6.7
 
   modules/server/agent/memory/none:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+
+  modules/server/agent/model-pool/shared:
     dependencies:
       '@ai-npc/contracts':
         specifier: workspace:*
@@ -953,6 +983,24 @@ importers:
       zod:
         specifier: ^4
         version: 4.6.7
+
+  modules/server/platform/budget/standard:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
+
+  modules/server/platform/model-transport/deterministic:
+    dependencies:
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../../packages/contracts
+      '@ai-npc/module-sdk':
+        specifier: workspace:*
+        version: link:../../../../../packages/module-sdk
 
   modules/server/platform/module-admin/standard:
     dependencies:

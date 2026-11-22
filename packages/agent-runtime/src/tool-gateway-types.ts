@@ -14,7 +14,7 @@ import {
   type ToolExecutionResult,
 } from "@ai-npc/contracts";
 import type { AgentToolsPort } from "@ai-npc/module-sdk";
-import type { AgentArtifactRecord } from "./artifact-store";
+import type { AgentArtifactRecord } from "@ai-npc/module-sdk";
 import type { ToolNarrowingValues } from "./tool-narrowing";
 
 export interface ToolCatalogPort extends AgentToolsPort {

@@ -1,0 +1,19 @@
+schemaVersion: 1
+layoutId: deterministic-model-layout-v1
+connections:
+  fixtures:
+    adapterId: platform.model-transport.deterministic
+    rateLimitKey: fixtures
+    fixtureFiles: [tests/fixtures/model/default.jsonl]
+models:
+  npc-fixture:
+    connectionId: fixtures
+    externalModel: deterministic-v1
+    parameters: {}
+    capabilities: { toolCalling: true, strictTools: true, structuredOutput: json_schema, assistantReplay: verbatim, contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: true, embeddingDimensions: 64 }
+    limits: { maxConcurrent: 2, requestsPerMinute: 240, tokensPerMinute: 1000000, requestTimeoutMs: 10000 }
+    maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
+mounts:
+  - modelId: npc-fixture
+    agentIds: [npc-wenzhao, npc-yinuo, npc-wenyuan, npc-taoan, npc-muzhi, npc-luchen, npc-ahe, npc-qilu, human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial]
+    purposes: [decision, speech, memory-maintenance]

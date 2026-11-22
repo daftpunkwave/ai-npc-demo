@@ -5,13 +5,13 @@
  */
 import {
   canonicalJson,
+  estimateSystemAndUserTokens,
   resolveContextTokenLimits,
   type ContextArtifact,
   type ContextBuildRequest,
   type Json,
 } from "@ai-npc/contracts";
 import type { AgentCompressionPort, AgentContextPort } from "@ai-npc/module-sdk";
-import { estimateSystemAndUserTokens } from "./token-estimate";
 
 export interface ContextPipelineOptions {
   readonly context: AgentContextPort;
@@ -24,6 +24,7 @@ export interface ContextPipelineOptions {
 
 export interface PreparedContext {
   readonly artifact: ContextArtifact;
+  readonly original?: ContextArtifact;
   readonly compressionStatus: "not-triggered" | "compressed" | "cannot-fit";
   readonly lossReport: Json;
   readonly ready: boolean;
@@ -96,6 +97,7 @@ export class AgentContextPipeline {
       failureReason: tokenEstimate <= targetTokens ? null : "compression-cannot-fit",
     };
     return {
+      original: built,
       artifact: {
         artifactId: this.options.host.ids("art"),
         ...artifactWithoutIdentity,

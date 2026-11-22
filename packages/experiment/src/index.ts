@@ -4,6 +4,7 @@
  * 禁止在此启动运行时、读取默认环境变量或隐藏加载失败。
  */
 export const packageName = "@ai-npc/experiment";
+export * from "./config/model-layout";
 
 export {
   loadContentPack,

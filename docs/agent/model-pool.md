@@ -1,6 +1,6 @@
 # 集中模型池与 Agent 挂载
 
-> 状态：目标。供应商连接和模型配置由模型池集中定义，Agent 通过挂载引用。本文给出路由、排队和预算契约。
+> 状态：部分实现。测试装配使用集中挂载、共享队列、尝试级预算账本和本地模型夹具。本文给出路由、排队和预算契约。
 
 ## 1. 核心关系
 
@@ -80,6 +80,8 @@ Agent profile 的装配顺序是平台配置、场景 profile、可复用 Agent 
 
 每个 run 独占 branchId，激活期间绑定 profileHash 和模型池快照。控制台改动只对新 run 生效；在线切换在维护边界创建后继分支/run，不修改已开始样本的路由。
 
+测试装配的 manifest 记录模型布局、价目、提示词及夹具摘要。旧线上运行经冻结摘要复算后继续使用原有策略。
+
 账号密钥轮换可以保留同 credentialRef，但连接失败或供应商返回模型标识变化必须留痕；供应商部署变化可能破坏可比性，不能仅凭 modelId 相同认定环境相同。
 
 ## 6. 能力预检与适配边界
@@ -153,6 +155,8 @@ memory 实验固定解析后的路由、参数、池限额和预算；轮换运�
 
 ### 12.1 调用入口
 
+当前宿主通过 `RunModelPort` 绑定冻结路由。模型决策和对白只取得绑定当前 turn、主体与用途的调用回调。回调固定截止时间及租约检查，策略只能提交该阶段的规范化请求。
+
 ```ts
 interface ScopedModelPort {             // what runtime / memory / speech receive; already bound to an agent or evaluator
   call(input: {
@@ -190,6 +194,7 @@ interface ScopedModelPort {             // what runtime / memory / speech receiv
 
 - 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。
 - run、Agent、turn 三级预算：run 的 `maxTokens` 与 `maxCost`（来自 RunSpec，可为 null 表示不限）、每个 Agent 每游戏日的 `maxTokensPerAgentPerDay`（profile 的 budgets，默认 60000）、turn 的调用次数上限（profile）。任何一级不足时以 `budget-exhausted` 失败，不排队。
+- 进程退出时未结算的预留在重启后按预留计入，并标记为未知用量。缺少完整归档的运行标记为证据不完整。
 - 费用：`config/pricing.yaml` 按 `modelId` 给出每百万输入/输出 token 的单价与币种（默认全部为 0，即只统计 token）；manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
 
 ### 12.5 记录

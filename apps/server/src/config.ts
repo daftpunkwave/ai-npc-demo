@@ -151,6 +151,7 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
   const clientPort = readFixedPort(input.env, "NPC_CLIENT_PORT", fixedClientPort);
   const dataDirValue = readText(input.env, "NPC_DATA_DIR") ?? defaultDataDir;
   const dataDir = isAbsolute(dataDirValue) ? resolve(dataDirValue) : resolve(input.projectRoot, dataDirValue);
+  const assemblyRef = readText(input.env, "NPC_ASSEMBLY") ?? defaultAssemblyRef;
   const configuredTokens: Partial<Record<TokenRole, string>> = {};
   for (const role of tokenRoles) {
     const credential = readText(input.env, tokenEnvNames[role]);
@@ -168,8 +169,9 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     serverPort,
     clientPort,
     dataDir,
-    assemblyRef: readText(input.env, "NPC_ASSEMBLY") ?? defaultAssemblyRef,
-    modelLayoutRef: readText(input.env, "NPC_MODEL_LAYOUT") ?? defaultModelLayoutRef,
+    assemblyRef,
+    modelLayoutRef: readText(input.env, "NPC_MODEL_LAYOUT") ??
+      (assemblyRef === "local-slg-test-v1" ? "deterministic-model-layout-v1" : defaultModelLayoutRef),
     rosterRef: readText(input.env, "NPC_ROSTER") ?? defaultRosterRef,
     configuredTokens,
   };

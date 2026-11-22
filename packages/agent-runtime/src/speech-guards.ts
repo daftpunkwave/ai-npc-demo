@@ -3,7 +3,7 @@
  * 交互契约：输入已过滤的可披露引用、受限秘密与当前 turn receipt 状态。
  * 约束与禁忌：不得用关键词检查宣称语义完全安全，也不得修改候选正文。
  */
-import type { Json } from "@ai-npc/contracts";
+import { speechOutputSchema, type Json } from "@ai-npc/contracts";
 
 export interface SpeechGenerationOutput {
   readonly utterance: string;
@@ -30,6 +30,7 @@ export interface SpeechGuardInput {
   readonly receipts: readonly SpeechReceiptState[];
   readonly completionClaims: readonly string[];
   readonly progressClaims: readonly string[];
+  readonly rejectedToolCommand?: boolean;
 }
 
 export interface SpeechCheck {
@@ -43,17 +44,9 @@ export interface SpeechValidation {
   readonly checks: readonly SpeechCheck[];
 }
 
-function isOutput(value: unknown): value is SpeechGenerationOutput {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const candidate = value as { readonly utterance?: unknown; readonly citedRefs?: unknown };
-  return typeof candidate.utterance === "string" &&
-    Array.isArray(candidate.citedRefs) &&
-    candidate.citedRefs.every((item) => typeof item === "string") &&
-    candidate.citedRefs.length <= 6;
-}
-
 export function validateSpeechOutput(input: SpeechGuardInput): SpeechValidation {
-  const output = isOutput(input.output) ? input.output : null;
+  const result = speechOutputSchema.safeParse(input.output);
+  const output = result.success ? result.data : null;
   const schemaPassed = output !== null &&
     output.utterance.length > 0 &&
     Array.from(output.utterance).length <= 160 &&
@@ -66,7 +59,7 @@ export function validateSpeechOutput(input: SpeechGuardInput): SpeechValidation 
     .find((term) => term.length > 0 && utterance.includes(term));
   const leakPassed = leaked === undefined;
   const hasCompletedTask = input.receipts.some((receipt) => receipt.taskStatus === "completed");
-  const hasRejected = input.receipts.some((receipt) => receipt.commandStatus === "rejected");
+  const hasRejected = input.rejectedToolCommand === true || input.receipts.some((receipt) => receipt.commandStatus === "rejected");
   const completionClaim = input.completionClaims.find((term) => utterance.includes(term));
   const progressClaim = hasRejected
     ? input.progressClaims.find((term) => utterance.includes(term))

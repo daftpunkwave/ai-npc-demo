@@ -24,6 +24,8 @@ import { compressionNoneModuleDefinition } from "@ai-npc/mod-agent-compression-n
 import { compressionWindowModuleDefinition } from "@ai-npc/mod-agent-compression-window/definition";
 import { orderedBlocksContextDefinition } from "@ai-npc/mod-agent-context-ordered-blocks/definition";
 import { deterministicDecisionModuleDefinition } from "@ai-npc/mod-agent-decision-deterministic/definition";
+import { modelDecisionDefinition } from "@ai-npc/mod-agent-decision-model/definition";
+import { sharedModelPoolDefinition } from "@ai-npc/mod-agent-model-pool-shared/definition";
 import { memoryLedgerModuleDefinition } from "@ai-npc/mod-agent-memory-ledger/definition";
 import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none/definition";
 import { perceptionModuleDefinition } from "@ai-npc/mod-agent-perception-local/definition";
@@ -48,6 +50,8 @@ import {
   type AccessPolicyPort,
 } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
+import { modelBudgetDefinition } from "@ai-npc/mod-platform-budget-standard/definition";
+import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
 import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
 import {
   observabilityModuleDefinition,
@@ -117,6 +121,10 @@ export function createSaveService(storage: StoragePort, host: HostServices): Sql
 }
 
 /** 全部 server 模块定义；moduleId 唯一性由注册表与 check-catalog 校验。 */
+export const serverModelModuleDefinitions = [
+  modelDecisionDefinition, sharedModelPoolDefinition, modelBudgetDefinition, deterministicModelTransportDefinition,
+] as const;
+
 export const serverAgentModuleDefinitions = [
   compressionNoneModuleDefinition,
   compressionWindowModuleDefinition,
@@ -128,6 +136,7 @@ export const serverAgentModuleDefinitions = [
   schedulingModuleDefinition,
   structuredToolViewModuleDefinition,
   gameToolsModuleDefinition,
+  ...serverModelModuleDefinitions,
 ] as const;
 
 export const serverModuleDefinitions = [

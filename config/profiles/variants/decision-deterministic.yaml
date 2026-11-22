@@ -1,0 +1,7 @@
+schemaVersion: 1
+profileId: decision-deterministic
+kind: variant
+parent: null
+patch:
+  slots:
+    decision: { module: agent.decision.deterministic, config: {} }

@@ -1,6 +1,6 @@
 # Prompt 与模型输入输出规格
 
-> 状态：部分实现。内容包已有 `prompts/zh-CN.yaml` 模板。按 purpose 组装模型请求、校验输出和冻结 `templateVersion` 的运行链路待接入。上下文分段与预算见 [上下文](context.md)，线协议见 [模型传输](model-transport.md)，决策与对白的边界见 [运行时](runtime.md) 第 7 节。
+> 状态：部分实现。测试装配使用 `prompts/zh-CN.yaml` 分别构建决策和对白请求，校验输出并冻结模板版本。上下文分段与预算见 [上下文](context.md)，线协议见 [模型传输](model-transport.md)，决策与对白的边界见 [运行时](runtime.md) 第 7 节。
 
 ## 1. 总则
 

@@ -13,7 +13,7 @@ import type {
   ToolExecutionResult,
 } from "@ai-npc/contracts";
 import type { AgentToolViewPort } from "@ai-npc/module-sdk";
-import type { AgentArtifactRecord, AgentArtifactStore } from "./artifact-store";
+import type { AgentArtifactRecord, AgentArtifactStore } from "@ai-npc/module-sdk";
 import {
   isToolCallIdentity,
   storageNullableString,

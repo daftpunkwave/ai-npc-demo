@@ -7,6 +7,7 @@
 import type { ReasonCode, RoadStatus } from "@ai-npc/contracts";
 import { DomainError } from "@ai-npc/contracts";
 import {
+  findRoadPath,
   gameModuleIds,
   type GameContent,
   type GameIdFactory,
@@ -17,31 +18,6 @@ import {
   type ScopedWorldTxFactory,
 } from "@ai-npc/module-sdk";
 import { passageGrantStateSchema, readMapState, roadStateSchema, type PassageGrantState } from "./state";
-
-interface PathCandidate {
-  readonly nodeId: string;
-  readonly cost: number;
-  readonly roadIds: readonly string[];
-}
-
-function comparePaths(left: PathCandidate, right: PathCandidate): number {
-  if (left.cost !== right.cost) {
-    return left.cost - right.cost;
-  }
-  if (left.roadIds.length !== right.roadIds.length) {
-    return left.roadIds.length - right.roadIds.length;
-  }
-  return left.roadIds.join("\u0000").localeCompare(right.roadIds.join("\u0000"));
-}
-
-function pushAdjacent(adjacency: Map<string, { readonly road: GameRoad; readonly to: string }[]>, road: GameRoad): void {
-  const forward = adjacency.get(road.a) ?? [];
-  forward.push({ road, to: road.b });
-  adjacency.set(road.a, forward);
-  const backward = adjacency.get(road.b) ?? [];
-  backward.push({ road, to: road.a });
-  adjacency.set(road.b, backward);
-}
 
 /** 地图端口实现；生命周期随一次处理器调用，构造后不跨事务复用。 */
 class SixNodeMapPort implements GameMapPort {
@@ -101,52 +77,8 @@ class SixNodeMapPort implements GameMapPort {
   }
 
   findRoute(query: RouteQuery): RouteResult | null {
-    if (!this.content.nodes.has(query.fromNodeId) || !this.content.nodes.has(query.toNodeId)) {
-      return null;
-    }
-    if (query.fromNodeId === query.toNodeId) {
-      return { roadIds: [], travelTicks: 0 };
-    }
-    const adjacency = new Map<string, { readonly road: GameRoad; readonly to: string }[]>();
-    for (const road of this.content.roads.values()) {
-      pushAdjacent(adjacency, road);
-    }
-    const best = new Map<string, PathCandidate>();
-    const settled = new Set<string>();
-    best.set(query.fromNodeId, { nodeId: query.fromNodeId, cost: 0, roadIds: [] });
-    while (settled.size < this.content.nodes.size) {
-      let current: PathCandidate | undefined;
-      for (const candidate of best.values()) {
-        if (settled.has(candidate.nodeId)) {
-          continue;
-        }
-        if (current === undefined || comparePaths(candidate, current) < 0) {
-          current = candidate;
-        }
-      }
-      if (current === undefined) {
-        break;
-      }
-      if (current.nodeId === query.toNodeId) {
-        return { roadIds: [...current.roadIds], travelTicks: current.cost };
-      }
-      settled.add(current.nodeId);
-      for (const edge of adjacency.get(current.nodeId) ?? []) {
-        if (settled.has(edge.to) || !this.canUse(edge.road, query.factionId, query.atTick)) {
-          continue;
-        }
-        const next: PathCandidate = {
-          nodeId: edge.to,
-          cost: current.cost + edge.road.travelTicks + (query.withCargo ? 1 : 0),
-          roadIds: [...current.roadIds, edge.road.roadId],
-        };
-        const existing = best.get(edge.to);
-        if (existing === undefined || comparePaths(next, existing) < 0) {
-          best.set(edge.to, next);
-        }
-      }
-    }
-    return null;
+    return findRoadPath(this.content.nodes, this.content.roads.values(), query,
+      (road) => this.canUse(road, query.factionId, query.atTick));
   }
 
   setRoadStatus(

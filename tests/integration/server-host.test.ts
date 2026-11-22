@@ -1178,7 +1178,8 @@ describe("服务端宿主", () => {
     const first = await startHost({
       ...options,
       assembly: legacy,
-      moduleDefinitions: serverModuleDefinitions.filter(({ id }) => !id.startsWith("agent.")),
+      moduleDefinitions: serverModuleDefinitions.filter(({ id, provides }) => !id.startsWith("agent.") &&
+        !provides.some(({ capability }) => capability === "platform.budget" || capability === "platform.model-transport")),
     });
     let manifest: StorageCell | undefined;
     try {

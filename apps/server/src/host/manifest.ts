@@ -53,6 +53,7 @@ export interface RunManifest {
   /** 装配未声明 Agent 槽位时为 null，表示未解析 profile、toolset 与模型布局。 */
   readonly agentSlots: Readonly<Record<string, readonly string[]>> | null;
   readonly agentProfiles?: Json;
+  readonly models?: Json;
 }
 
 export interface BuildRunManifestInput {
@@ -61,6 +62,7 @@ export interface BuildRunManifestInput {
   readonly roster: Roster;
   readonly resolved: ResolvedServerAssembly;
   readonly agentProfiles?: Json;
+  readonly models?: Json;
   readonly hash?: CanonicalHasher;
 }
 
@@ -112,6 +114,7 @@ export async function buildRunManifest(input: BuildRunManifestInput): Promise<Bu
     },
     agentSlots: slotEntries.length === 0 ? null : Object.fromEntries(slotEntries),
     ...(input.agentProfiles === undefined ? {} : { agentProfiles: input.agentProfiles }),
+    ...(input.models === undefined ? {} : { models: input.models }),
   };
   return {
     manifest,

@@ -43,12 +43,14 @@ import {
 } from "./assembly";
 import { disposeInReverse } from "./dispose";
 import { buildRunManifest, readFrozenManifest, type RunManifest } from "./manifest";
+import { hasModelPool } from "./model-configuration";
 import {
   createServerRuntime,
   parseTransportConfig,
   plannedModuleForCapability,
   allModuleDefinitions,
   serverAgentModuleDefinitions,
+  serverModelModuleDefinitions,
   serverModuleDefinitions,
   toGameContent,
   type ServerRuntime,
@@ -173,7 +175,8 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
   const prepareFirstRun = async (): Promise<PendingFirstRun> => {
     const roster = loadRoster(options.rosterRef ?? defaultRosterRef, loadContext);
     validateRoster(roster.value, content);
-    const loaded = loadRunSpec(options.runSpecRef ?? defaultRunSpecRef, loadContext, {
+    const runSpecRef = options.runSpecRef ?? (hasModelPool(requestedResolved.plan) ? "online-model-test" : defaultRunSpecRef);
+    const loaded = loadRunSpec(runSpecRef, loadContext, {
       seed: generateRunSeed(),
       moduleAssemblyRef: requestedAssembly.assemblyId,
       worldPackRef: packId,
@@ -182,7 +185,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     });
     validateRunSpec(loaded.value, content, roster);
     const agents = await resolveAgentConfiguration({
-      assembly: requestedResolved, roster: roster.value, runSpec: loaded.value, loadContext, definitions,
+      assembly: requestedResolved, roster: roster.value, runSpec: loaded.value, loadContext, definitions, content,
     });
     const sealed = await buildRunManifest({
       runSpec: loaded.value,
@@ -190,6 +193,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       roster: roster.value,
       resolved: requestedResolved,
       ...(agents === null ? {} : { agentProfiles: agents.manifest }),
+      ...(agents?.models ? { models: agents.models.manifest } : {}),
     });
     const worldId = host.ids("wld");
     const branchId = host.ids("br");
@@ -302,6 +306,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     const startup = await resolveServerAssembly(assembly, compatible.definitions, { configOverrides: deploymentOverrides, content });
     const agents = await resolveAgentConfiguration({
       assembly: resolved, roster: roster.value, runSpec: frozenSpec, loadContext, definitions: compatible.definitions,
+      content, legacyDecision: compatible.legacyDecision,
     });
     const rebuilt = await buildRunManifest({
       runSpec: frozenSpec,
@@ -309,6 +314,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
       roster: roster.value,
       resolved,
       ...(agents === null ? {} : { agentProfiles: agents.manifest }),
+      ...(agents?.models ? { models: agents.models.manifest } : {}),
     });
     if (rebuilt.manifestHash !== storedHash) {
       throw new Error("冻结 manifest 无法复算：装配、名册或内容版本与 run 记录不一致");
@@ -396,7 +402,7 @@ export async function createHostCore(options: HostOptions): Promise<HostCore> {
     });
     if (chosen.agents !== null) {
       initialAgentModules = await startAgentRunModules({
-        plan: startup.plan, configuration: chosen.agents, host, scope: { worldId: chosen.worldId, branchId: chosen.branchId },
+        plan: startup.plan, configuration: chosen.agents, content, host, scope: { worldId: chosen.worldId, branchId: chosen.branchId },
         running: [...storageStarted.instances, ...activeStarted.instances],
       });
     }
@@ -459,18 +465,23 @@ async function resolveFrozenAssembly(
   current: AssemblyDescriptor,
   definitions: readonly ModuleDefinition[],
   facts: ReturnType<typeof readFrozenManifest>,
-): Promise<{ readonly assembly: AssemblyDescriptor; readonly definitions: readonly ModuleDefinition[] }> {
-  if (facts.hasAgentSlots) return { assembly: current, definitions };
-  const agentModuleIds = new Set(serverAgentModuleDefinitions.map(({ id }) => id));
-  const worldOnlyDefinitions = definitions.filter(({ id }) => !agentModuleIds.has(id));
+): Promise<{ readonly assembly: AssemblyDescriptor; readonly definitions: readonly ModuleDefinition[]; readonly legacyDecision: boolean }> {
+  const excluded = new Set<string>(serverModelModuleDefinitions.map(({ id }) => id));
+  if (!facts.hasAgentSlots) for (const { id } of serverAgentModuleDefinitions) excluded.add(id);
+  const previousDefinitions = definitions.filter(({ id }) => !excluded.has(id));
   const registry = createModuleRegistry();
-  for (const definition of worldOnlyDefinitions) registry.register(definition);
+  for (const definition of previousDefinitions) registry.register(definition);
   if (await computeCatalogHash(registry.snapshot(), canonicalHasher) !== facts.catalogHash) {
-    return { assembly: current, definitions };
+    return { assembly: current, definitions, legacyDecision: false };
   }
-  const bindings = current.realms.server.bindings.filter(({ moduleId }) => !agentModuleIds.has(moduleId));
+  const bindings = current.realms.server.bindings.filter(({ moduleId }) => !excluded.has(moduleId));
+  const slots = current.realms.server.agentSlots;
+  const server = facts.hasAgentSlots && slots !== undefined
+    ? { bindings, agentSlots: { ...slots, decision: slots.decision?.filter((id) => !excluded.has(id)) } }
+    : { bindings };
   return {
-    assembly: { ...current, realms: { ...current.realms, server: { bindings } } },
-    definitions: worldOnlyDefinitions,
+    assembly: { ...current, realms: { ...current.realms, server } },
+    definitions: previousDefinitions,
+    legacyDecision: facts.hasAgentSlots,
   };
 }

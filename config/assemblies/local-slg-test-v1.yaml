@@ -17,6 +17,9 @@ realms:
       - { capability: game.save, moduleId: game.save.sqlite, configRef: null }
       - { capability: agent.scheduling, moduleId: agent.scheduling.fair, configRef: null }
       - { capability: agent.tools, moduleId: agent.tools.game-tools, configRef: null }
+      - { capability: agent.model-pool, moduleId: agent.model-pool.shared, configRef: null }
+      - { capability: platform.budget, moduleId: platform.budget.standard, configRef: null }
+      - { capability: platform.model-transport, moduleId: platform.model-transport.deterministic, configRef: null }
       - { capability: platform.storage, moduleId: platform.storage.sqlite, configRef: storage }
       - { capability: platform.access-policy, moduleId: platform.access-policy.roster, configRef: null }
       - { capability: platform.secrets, moduleId: platform.secrets.env, configRef: null }
@@ -30,7 +33,7 @@ realms:
       context: [agent.context.ordered-blocks]
       compression: [agent.compression.none, agent.compression.window]
       toolView: [agent.tool-view.structured]
-      decision: [agent.decision.deterministic]
+      decision: [agent.decision.deterministic, agent.decision.model]
   client:
     bindings:
       - { capability: client.world-view, moduleId: client.world-view.standard, configRef: null }

@@ -106,8 +106,8 @@ export class OnlineAgentHost {
     const running = [...core.storageStarted.instances, ...core.startedModules.instances];
     const prepared = scope.branchId === core.active.branchId ? this.initialModules : null;
     if (prepared !== null) this.initialModules = null;
-    const { started: modules, tools, scheduling, maxConcurrentTurns, patrolHour } = prepared ??
-      await startAgentRunModules({ plan: activeStartup.plan, configuration: agents, host, scope, running });
+    const { started: modules, tools, scheduling, model, maxConcurrentTurns, patrolHour } = prepared ??
+      await startAgentRunModules({ plan: activeStartup.plan, configuration: agents, content, host, scope, running });
     try {
       const read = agentWorldReaders({ storage, reads, content: gameContent, scope });
       const ports = Object.fromEntries([...running, ...modules.instances]
@@ -121,7 +121,7 @@ export class OnlineAgentHost {
         readWorld: read.perception, onStateChange,
         turnExecution: {
           runSeed: core.active.runSpec.seed, profileHashes: agents.profileHashes, tools,
-          approvals, readWorld: read.decision, ports,
+          approvals, readWorld: read.decision, ports, model,
           recordSpan: (span) => core.runtime.observability.recordSpan(span),
           executeCommand: (auth, envelope) => authority.commands.execute(auth, envelope),
         },

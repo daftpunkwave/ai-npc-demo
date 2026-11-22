@@ -19,7 +19,7 @@ import {
   type ToolExecutionResult,
 } from "@ai-npc/contracts";
 import type { AgentToolViewPort } from "@ai-npc/module-sdk";
-import { StoredAgentArtifactStore, type AgentArtifactStore } from "./artifact-store";
+import { StoredAgentArtifactStore, type AgentArtifactStore } from "@ai-npc/module-sdk";
 import { ToolOutcomeStore } from "./tool-outcome-store";
 import {
   allowedDynamicValues,
@@ -134,6 +134,18 @@ export class ToolGateway {
     if (dynamicError !== null) return this.settleError(input, binding, argsHash, "no-authority", dynamicError);
     const validation = this.options.tools.validateArguments?.(toolId, args) ?? { ok: true as const };
     if (!validation.ok) return this.settleError(input, binding, argsHash, "invalid-params", validation.error);
+    if (toolId === "message.send" && typeof args === "object" && args !== null && !Array.isArray(args)) {
+      const recipients = args["to"];
+      if (Array.isArray(recipients)) {
+        const allowed = input.narrowing.messagePrincipalIds;
+        const unauthorized = recipients.includes("public")
+          ? recipients.length !== 1 || binding.permissionProfile !== "message-principals-or-public"
+          : allowed !== undefined && recipients.some((value) => typeof value !== "string" || !allowed.has(value));
+        if (unauthorized) {
+          return this.settleError(input, binding, argsHash, "no-authority", "Recipient is outside the authorized message audience.");
+        }
+      }
+    }
 
     if (this.callBudgetExhausted(input, toolId, binding, existing)) {
       return this.settleError(input, binding, argsHash, "budget-exhausted", "Tool call budget is exhausted for this turn.", existing);

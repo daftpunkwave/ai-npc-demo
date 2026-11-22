@@ -1,11 +1,11 @@
 # 实现状态与迁移清单
 
 > 本页记录代码与内容相对 [00-scope-and-invariants.md — 序章范围](00-scope-and-invariants.md)、[rules.md — 序章规则](game/rules.md) 的差距。完成迁移后更新这里的状态。实施顺序见 [build-plan.md — 步骤总览](delivery/build-plan.md#1-步骤总览)。
-> 2026-11-20 核对基线为 `758e1a5`（#47）及当前工作树；Demo 版本为 `0.1.0`，运行内容版本为 `0.2.0`。
+> Demo 版本为 `0.1.0`，运行内容版本为 `0.2.0`。
 
 ## 1. 总览
 
-标准与测试装配已运行 Agent 感知、公平调度、M0/M1 记忆和确定性决策。玩家可以完成公社开局、选择角色并在会话中看到已提交的模板回复。控制台展示运行总览、模块装配、时间线和 Agent 状态，operator 可以暂停、继续、创建及恢复快照。实时模型路径、t144 程序案、玩家广播、席位契约与六资源交接尚未实现。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
+标准与测试装配已运行 Agent 感知、公平调度和 M0/M1 记忆。标准装配使用确定性决策和模板对白。测试装配使用模型池和确定性传输运行模型决策、工具循环及独立对白。控制台展示运行总览、模块装配、时间线和 Agent 状态，operator 可以暂停、继续、创建及恢复快照。参见 [apps/server/README.md — 服务端当前范围](../apps/server/README.md)、[apps/client/README.md — 玩家端](../apps/client/README.md)、[apps/console/README.md — 控制台](../apps/console/README.md)。
 
 | 项 | 规格 | 当前实现 | 状态 |
 |---|---|---|---|
@@ -25,6 +25,7 @@
 | 玩家客户端 | 登录、开局、授权投影、人物/地点、对话、HUD、设置、通知 | 已实现，`player-start` e2e 通过 | **已实现基础流程** |
 | 控制台首批页面 | 运行总览、模块装配、时间线、Agent 摘要 | 已实现，`console-basic` e2e 与角色权限测试通过 | **已实现首批页面** |
 | 控制台运营 API | 按角色提供时钟、单步、存档与恢复 | operator 可暂停/继续、受控单步、创建快照与恢复，operator 与 researcher 可列快照；单步进入 stepping 后由宿主 worker 逐 tick 推进，入口只作用于在线分支 | **已实现** |
+| Agent 模型调用 | 集中路由、用途隔离、预算与证据 | 测试装配预检并冻结挂载，按尝试计费和归档，已验证岑雁的模型对白 | **已实现确定性传输路径** |
 | 双端端口 | 只监听 5173 与 3000 | 开发/生产启动均验证，占用 3000 时启动失败 | **已对齐** |
 
 ## 2. 本次已对齐
@@ -41,6 +42,7 @@
 10. **Agent 感知与记忆基础**：感知消费者持久化延迟观察与 trigger，公平调度创建租约隔离的 turn；M0 只推进观察与派生水位，M1 将经历、关系、承诺与自报要点写入结构化账本。记忆发布保存不可变 revision，维护与引用强化在 actor 事务外生成计划并按 revision CAS；冲突计划可 rebase 或重算，整理租约在重启后恢复，到期承诺按去重键生成 `prospective` trigger。
 11. **确定性 Agent turn**。从冻结观察和记忆生成决定，动作经工具网关执行，安全模板通过权威命令提交。新消息在下一轮处理，暂停或控制权变化拦截晚到发布。各阶段保存 span 与生效记录。
 12. **受控单步推进**：operator 经 `/api/v1/console/campaign/step` 按 `operationId` 与 `expectedRunVersion` 从 `paused` 进入 `stepping`（`ticks` 1–24），宿主 tick worker 逐 tick 推进并在到达目标、推进失败或章节终点时收尾回 `paused`；单步同样纳入部署级幂等表（迁移 0008 扩展 `step` 种类），单步中的快照先受控暂停，重启把非暂停时钟归位为 `paused`。
+13. **模型决策与预算账本**。测试装配按 Agent 和用途绑定模型，限流账号可跨模型 ID 共享。每次发出的尝试分别预留和结算预算，缺失 usage 按预留计入账本。工具历史逐轮追加，独立的对白请求经过披露、引用、泄密和状态检查。前版确定性运行可按原冻结摘要恢复。
 
 ## 3. 剩余迁移项
 
@@ -74,7 +76,7 @@
 
 ### 3.8 剩余表现与 Agent 管线
 
-确定性 turn 已接入两份主装配。模型路径、M2/M3、完整证据与提案及派遣交互、正式 3D 资产和剩余控制台页面仍缺失。3D 资产按 [02-modeling-spec.md — 建模规格](design/assets/02-modeling-spec.md) 单独验收。
+测试装配的模型原文与上下文随现有 artifact 仓内联存储。独立的大正文存储、OpenAI 兼容和 Anthropic 传输、M2/M3、完整证据与提案及派遣交互、正式 3D 资产和剩余控制台页面仍有交付缺口。3D 资产按 [02-modeling-spec.md — 建模规格](design/assets/02-modeling-spec.md) 单独验收。
 
 ## 4. 迁移顺序
 
