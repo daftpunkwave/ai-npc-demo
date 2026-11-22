@@ -377,6 +377,55 @@ describe("确定性模型装配与角色对白", () => {
     }
   });
 
+  it("确定性决策沿用空上下文配置完成对白且不发起模型调用", async () => {
+    const configRoot = fixtureConfig([]);
+    writeFileSync(join(configRoot, "deterministic-simplified-context.yaml"), `
+schemaVersion: 1
+id: deterministic-simplified-context
+moduleAssemblyRef: local-slg-test-v1
+worldPackRef: earth-2964-v1
+scenarioRef: watergate-v1
+rosterRef: core-3
+modelLayoutRef: deterministic-model-layout-v1
+player: { principalId: player-1, factionId: null }
+mode: live
+initialState: { kind: cold-start }
+variant: { id: deterministic-simplified-context, profilePatchRefs: [simplified-context, decision-deterministic], agentIds: null }
+script: null
+clock: { kind: realtime }
+budget: { maxTokens: null, maxCost: null }
+failurePolicy: strict
+`, "utf8");
+    writeFileSync(join(configRoot, "simplified-context.yaml"), `
+schemaVersion: 1
+profileId: simplified-context
+kind: variant
+parent: null
+patch:
+  slots:
+    context: { module: agent.context.ordered-blocks, config: {} }
+`, "utf8");
+    const host = await modelHost({ configRoot, runSpecRef: "deterministic-simplified-context" });
+    const turn = await turnFor(host, startConversation(host, "请简要回应。"));
+    expect(turn).toMatchObject({ status: "completed" });
+    expect(attempts(host, String(turn["turn_id"]))).toHaveLength(0);
+    expect(replies(host).map((row) => row["payload_json"])).toEqual([
+      expect.objectContaining({ text: "我知道了。" }),
+    ]);
+  });
+
+  it.each([
+    { name: "缺少 decision 预算的战略 profile", drop: "decision" },
+    { name: "缺少 speech 预算的战略 profile", drop: "speech" },
+  ])("预检拒绝$name", async ({ drop }) => {
+    const configRoot = fixtureConfig([]);
+    const strategic = join(configRoot, "profiles", "agent-strategic-default.yaml");
+    writeFileSync(strategic, readFileSync(strategic, "utf8")
+      .replace(new RegExp(`^ {6}${drop}: \\{.*\\n`, "mu"), ""), "utf8");
+    await expect(modelHost({ configRoot })).rejects.toThrow(
+      `agent-strategic-default」的上下文配置缺少 ${drop} 预算块`);
+  });
+
   it.each([
     { name: "重复挂载", purposes: "[decision, decision, speech]", error: "重复挂载" },
     { name: "缺少对白用途", purposes: "[decision]", error: "speech 挂载" },
