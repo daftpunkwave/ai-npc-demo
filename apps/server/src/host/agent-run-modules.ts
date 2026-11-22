@@ -58,7 +58,7 @@ export async function startAgentRunModules(input: {
       const planned = plannedModuleForCapability(plan, agentModelPoolCapability);
       const pool = running.find(({ moduleId }) => moduleId === planned.moduleId)?.port as AgentModelPoolPort | undefined;
       if (typeof pool?.bindRun !== "function") throw new Error("Model pool did not expose its port");
-      model = pool.bindRun(configuration.models);
+      model = pool.bindRun({ ...configuration.models, jsonOutputSuffix: input.content.prompts.jsonOutputSuffix });
       for (const [agentId, profile] of configuration.profiles) {
         if (!configuration.modelAgents.has(agentId)) continue;
         const routes = bindAgentModelRoutes(model, agentId);

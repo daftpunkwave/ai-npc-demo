@@ -217,15 +217,8 @@ export class StreamHub {
     }
     this.ensureSweepTimer();
     this.maybeSweep();
-    let projection: PlayerProjection;
-    try {
-      projection = this.options.projection();
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("尚未初始化")) {
-        return false;
-      }
-      throw error;
-    }
+    // 投影读取失败直接向上抛出：全库没有可静默跳过的“未初始化”错误文本，吞错会掩盖真实故障。
+    const projection = this.options.projection();
     const appends = this.lastProjection === null ? [] : appendedItems(this.lastProjection, projection);
     const changed = changedFields(this.lastProjection, this.lastFieldText, projection);
     this.lastProjection = Object.freeze({ ...projection });

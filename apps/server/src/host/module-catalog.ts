@@ -51,7 +51,9 @@ import {
 } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 import { modelBudgetDefinition } from "@ai-npc/mod-platform-budget-standard/definition";
+import { anthropicTransportDefinition } from "@ai-npc/mod-platform-model-transport-anthropic/definition";
 import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
+import { openAICompatibleTransportDefinition } from "@ai-npc/mod-platform-model-transport-openai-compatible/definition";
 import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
 import {
   observabilityModuleDefinition,
@@ -121,8 +123,11 @@ export function createSaveService(storage: StoragePort, host: HostServices): Sql
 }
 
 /** 全部 server 模块定义；moduleId 唯一性由注册表与 check-catalog 校验。 */
+export const serverLiveModelTransportDefinitions = [openAICompatibleTransportDefinition, anthropicTransportDefinition] as const;
+
 export const serverModelModuleDefinitions = [
   modelDecisionDefinition, sharedModelPoolDefinition, modelBudgetDefinition, deterministicModelTransportDefinition,
+  ...serverLiveModelTransportDefinitions,
 ] as const;
 
 export const serverAgentModuleDefinitions = [

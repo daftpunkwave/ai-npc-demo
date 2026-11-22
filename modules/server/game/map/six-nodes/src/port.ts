@@ -5,7 +5,7 @@
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { ReasonCode, RoadStatus } from "@ai-npc/contracts";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError, roadStatusPolicyKey } from "@ai-npc/contracts";
 import {
   findRoadPath,
   gameModuleIds,
@@ -101,7 +101,7 @@ class SixNodeMapPort implements GameMapPort {
     this.tx().put("road", roadId, { roadId, status });
     this.tx().emit(
       "PolicyChanged",
-      { key: `road.status:${roadId}`, oldValue: oldStatus ?? "open", newValue: status, byId },
+      { key: roadStatusPolicyKey(roadId), oldValue: oldStatus ?? "open", newValue: status, byId },
       [{ kind: "public" }],
     );
     return { ok: true };

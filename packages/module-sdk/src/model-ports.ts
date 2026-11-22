@@ -65,7 +65,11 @@ export interface RunModelPort {
 }
 
 export interface AgentModelPoolPort {
-  bindRun(input: { readonly routes: readonly ModelRoute[]; readonly limits: ModelRunLimits }): RunModelPort;
+  bindRun(input: {
+    readonly routes: readonly ModelRoute[];
+    readonly limits: ModelRunLimits;
+    readonly jsonOutputSuffix?: string;
+  }): RunModelPort;
 }
 
 /** 装配层模型池能力 ID；Agent 实例创建时在该能力键下注入 {@link AgentDecisionModelRoutes} 路由视图，而非池端口本身。 */

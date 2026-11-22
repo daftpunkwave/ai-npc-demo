@@ -4,7 +4,8 @@
  * 禁止调用角色模型、修改指标（覆盖除外）或重复触发同一卡片。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents, security/detect-object-injection -- Codacy 缺少 workspace 类型解析；卡片与指标键来自受限内容枚举。 */
-import type { CardEffect, EventEnvelope, Json, OverrideEffect } from "@ai-npc/contracts";
+import type { EventEnvelope, Json, OverrideEffect } from "@ai-npc/contracts";
+import { commandPayloadOf } from "@ai-npc/contracts";
 import {
   gameModuleIds,
   requireGameContent,
@@ -123,7 +124,8 @@ function triggerCard(context: ScenarioContext, cardId: string, version: number, 
   context.tx.put("scenario-card", cardId, triggered);
   context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "system" }]);
   applyCardEffects(context, cardId, state.effects.length > 0 ? state.effects : (card?.effects ?? []));
-  if (cardId === "card-relay-alarm") {
+  // 压力卡由剧情内容声明：触发后启用每日剧情压力，规则层不写具体卡片 ID。
+  if (scenario?.pressureCardId !== undefined && cardId === scenario.pressureCardId) {
     const run = ensureRunState(context);
     context.tx.put("scenario-run", run.scenarioId, { ...run, alarmTriggered: true });
   }
@@ -131,13 +133,7 @@ function triggerCard(context: ScenarioContext, cardId: string, version: number, 
 }
 
 function draft(context: ScenarioContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly cardId: string;
-    readonly version: number;
-    readonly triggerAtTick: number;
-    readonly effects: readonly CardEffect[];
-    readonly note: string;
-  };
+  const input = commandPayloadOf("scenario.draft", payload);
   if (readCardState(context.tx, input.cardId) !== null) {
     return {
       kind: "rejected",
@@ -169,11 +165,7 @@ function draft(context: ScenarioContext, payload: Json): HandlerResult {
 }
 
 function publish(context: ScenarioContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly cardId: string;
-    readonly version: number;
-    readonly triggerAtTick: number;
-  };
+  const input = commandPayloadOf("scenario.publish", payload);
   const state = readCardState(context.tx, input.cardId);
   if (state === null || state.status !== "draft") {
     return { kind: "rejected", reasonCode: "card-not-draft", safeMessage: "卡片不是可发布草稿" };
@@ -192,7 +184,7 @@ function publish(context: ScenarioContext, payload: Json): HandlerResult {
 }
 
 function withdraw(context: ScenarioContext, payload: Json): HandlerResult {
-  const input = payload as unknown as { readonly cardId: string };
+  const input = commandPayloadOf("scenario.withdraw", payload);
   const state = readCardState(context.tx, input.cardId);
   if (state === null) {
     return { kind: "rejected", reasonCode: "card-not-draft", safeMessage: "卡片不存在" };
@@ -214,11 +206,7 @@ function withdraw(context: ScenarioContext, payload: Json): HandlerResult {
 }
 
 function compensate(context: ScenarioContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly cardId: string;
-    readonly effects: readonly CardEffect[];
-    readonly note: string;
-  };
+  const input = commandPayloadOf("scenario.compensate", payload);
   const state = readCardState(context.tx, input.cardId);
   if (state === null) {
     return { kind: "rejected", reasonCode: "card-not-found", safeMessage: "补偿来源卡片不存在" };
@@ -245,10 +233,7 @@ function compensate(context: ScenarioContext, payload: Json): HandlerResult {
 }
 
 function override(context: ScenarioContext, payload: Json): HandlerResult {
-  const input = payload as unknown as {
-    readonly effects: readonly OverrideEffect[];
-    readonly note: string;
-  };
+  const input = commandPayloadOf("scenario.override", payload);
   applyOverrideEffects(context, input.effects);
   recordContamination(context, input.note, input.effects);
   context.tx.emit(

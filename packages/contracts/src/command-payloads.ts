@@ -143,6 +143,21 @@ export const policySetPayloadSchema = z
   })
   .strict();
 
+/** 道路状态政策键的固定前缀；政策键格式为 `road.status:<roadId>`。 */
+export const roadStatusPolicyKeyPrefix = "road.status:";
+
+/** 构造道路状态政策键；供 policy.set 与 PolicyChanged 事件使用同一格式。 */
+export function roadStatusPolicyKey(roadId: string): string {
+  return `${roadStatusPolicyKeyPrefix}${roadId}`;
+}
+
+/** 从政策键解析道路 ID；不是道路状态政策键时返回 null。 */
+export function roadIdFromPolicyKey(key: string): string | null {
+  return key.startsWith(roadStatusPolicyKeyPrefix)
+    ? key.slice(roadStatusPolicyKeyPrefix.length)
+    : null;
+}
+
 export const scenarioDraftPayloadSchema = z
   .object({
     cardId: contentIdSchemas.card,

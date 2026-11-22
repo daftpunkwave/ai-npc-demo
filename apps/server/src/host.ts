@@ -9,7 +9,7 @@ import { activateAgentRosterInTransaction, createCampaignStartActivationHook, Sp
 import { DomainError, type StoragePort } from "@ai-npc/contracts";
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
-import { createHostCore } from "./host/core";
+import { createHostStartup } from "./host/startup";
 import { disposeInReverse } from "./host/dispose";
 import { createLifecycle } from "./host/lifecycle";
 import type { LiveRunState } from "./host/live-state";
@@ -39,7 +39,7 @@ export interface RunningHost {
 
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
 export async function startHost(options: HostOptions): Promise<RunningHost> {
-  const core = await createHostCore(options);
+  const core = await createHostStartup(options);
   let agents: OnlineAgentHost | null = null;
   let app: ServerApp | null = null;
   const active: LiveRunState = {

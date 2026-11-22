@@ -4,6 +4,7 @@
  * 禁止用消费时钟判断时效、在生效前的事实上记履约，或让后一次写入覆盖前一次违约。
  */
 import type { EventEnvelope, Term } from "@ai-npc/contracts";
+import { roadStatusPolicyKey } from "@ai-npc/contracts";
 import type { AgreementState } from "./state";
 import { actorRepresentsObligor, cargoAmount, taskMatchesTerm, taskServesObligor } from "./fulfillment";
 import { fulfillTerm, markBreach } from "./agreement-lifecycle";
@@ -122,7 +123,7 @@ function policyBreachAt(
   }
   if (term.kind === "grant-passage") {
     return (
-      payload.key === `road.status:${term.roadId}` &&
+      payload.key === roadStatusPolicyKey(term.roadId) &&
       actorRepresentsObligor(payload.byId, term.obligorId, factionOfPrincipal) &&
       payload.newValue === "closed" &&
       eventTick <= term.untilTick

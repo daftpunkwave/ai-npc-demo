@@ -8,7 +8,7 @@ export const packageName = "@ai-npc/mod-game-world-slg-light";
 export { worldConfigSchema, worldModuleDefinition, type WorldConfig } from "./definition";
 export { createWorldContributor } from "./contributor";
 export { campaignAggregateId, cargoExceedsCapacity, createWorldPort, metersAggregateId } from "./port";
-export { clampMeter, meterLevel, metersSnapshot, thresholdEvents } from "./meters";
+export { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
 export type { MeterThresholdEvent } from "./meters";
 export { readWorldState } from "./state";
 export type {

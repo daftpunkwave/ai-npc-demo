@@ -7,7 +7,7 @@
 import type { ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
 import { principalsAudience, requireGameContent } from "@ai-npc/module-sdk";
 import { completeTask, failTask } from "./completion";
-import { hasFactionSupporter, transportCapacitySupporterAgentId } from "./faction-bonus";
+import { repairWorkNodeId, teamTransportCapacity } from "./faction-bonus";
 import { refundDelegation, releaseReserved, settleRepairMaterials } from "./reservations";
 import { rollRisk } from "./risk";
 import { computeTaskRoute } from "./routes";
@@ -62,7 +62,8 @@ function allowedNodesForTask(
     return group === undefined ? [] : [teamNodeId, group.nodeId, params.toNodeId];
   }
   if (task.taskType === "repair") {
-    return [teamNodeId, "grayharbor"];
+    // 修复工作节点来自内容规则参数，与派遣校验共用同一来源。
+    return [teamNodeId, repairWorkNodeId(content)];
   }
   return [teamNodeId, task.workNodeId ?? teamNodeId];
 }
@@ -115,11 +116,8 @@ export function depart(context: ActionContext, taskId: string): void {
   }
   if (task.taskType === "transport") {
     const params = task.params as { readonly cargo: ResourceAmounts };
-    const capacity =
-      team.capacity +
-      (hasFactionSupporter(content, team.ownerFactionId, participants, transportCapacitySupporterAgentId)
-        ? 5
-        : 0);
+    // 出发校验与派遣校验共用同一运力来源：队伍基准运力加内容规则的本派支持者加成。
+    const capacity = teamTransportCapacity(content, team.ownerFactionId, team.capacity, participants);
     if (params.cargo.supply + params.cargo.energy + params.cargo.medical > capacity) {
       failDeparture(context, task, "over-capacity");
       return;

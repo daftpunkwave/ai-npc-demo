@@ -7,10 +7,13 @@ import { canonicalJson, DomainError, type Json } from "@ai-npc/contracts";
 import { loadModelFixtures, loadModelLayout, loadModelPricing, resolveModelEnv,
   type ConfigLoadContext, type ResolvedAgentProfile, type RunSpec } from "@ai-npc/experiment";
 import type { ResolvedRealmPlan } from "@ai-npc/kernel";
-import { agentModelPoolCapability, agentRequiredModelPurposes, type ModelRoute, type ModelRunLimits } from "@ai-npc/module-sdk";
+import {
+  agentModelPoolCapability, agentRequiredModelPurposes, parseModelEndpoint, type ModelRoute, type ModelRunLimits,
+} from "@ai-npc/module-sdk";
 import { canonicalHasher } from "../host-services";
 
 const fixtureAdapter = "platform.model-transport.deterministic";
+const openAICompatibleAdapter = "platform.model-transport.openai-compatible";
 
 export interface ModelConfiguration {
   readonly routes: readonly ModelRoute[];
@@ -23,14 +26,18 @@ export function hasModelPool(plan: ResolvedRealmPlan): boolean {
     definition.provides.some(({ capability }) => capability === agentModelPoolCapability));
 }
 
+export function usesFixtureModelTransport(plan: ResolvedRealmPlan): boolean {
+  return plan.modules.some(({ moduleId }) => moduleId === fixtureAdapter);
+}
+
 function fail(message: string): never {
   throw new DomainError("assembly-incompatible", message);
 }
 
 function endpointOf(value: string, loadContext: ConfigLoadContext): string {
-  const url = URL.parse(resolveModelEnv(value, loadContext));
-  if (url === null || !["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    fail("模型端点必须为未携带凭据、参数或片段的 HTTP(S) URL");
+  const url = parseModelEndpoint(resolveModelEnv(value, loadContext, "NPC_OPENAI_COMPAT_BASE_URL"));
+  if (url === null) {
+    fail("模型端点必须使用 HTTPS 或回环 HTTP，且不携带凭据、参数或片段");
   }
   return url.href;
 }
@@ -50,12 +57,13 @@ export async function resolveModelConfiguration(input: {
     definition.provides.some(({ capability }) => capability === "platform.model-transport")).map(({ moduleId }) => moduleId));
   if (adapters.has(fixtureAdapter) && adapters.size > 1) fail("确定性传输不能与真实传输共用装配");
   const layout = loadModelLayout(runSpec.modelLayoutRef, loadContext);
-  const pricing = loadModelPricing(loadContext);
+  const pricing = loadModelPricing(loadContext, layout.pricingRef);
   const connections = new Map(await Promise.all(Object.entries(layout.connections).map(async ([connectionId, connection]) => {
     if (!adapters.has(connection.adapterId)) fail(`模型连接 ${connectionId} 引用了未装配的传输`);
     const fixture = connection.adapterId === fixtureAdapter;
-    if (fixture && (connection.endpoint !== undefined || connection.credentialRef !== null) ||
-      !fixture && (connection.endpoint === undefined || connection.fixtureFiles.length > 0)) {
+    if ((fixture && (connection.endpoint !== undefined || connection.credentialRef !== null)) ||
+      (!fixture && connection.fixtureFiles.length > 0) ||
+      (connection.adapterId === openAICompatibleAdapter && connection.endpoint === undefined)) {
       fail(`模型连接 ${connectionId} 使用了不适用的端点、密钥或夹具`);
     }
     const fixtureRows = connection.fixtureFiles.length === 0 ? [] : loadModelFixtures(connection.fixtureFiles, loadContext);
@@ -86,8 +94,15 @@ export async function resolveModelConfiguration(input: {
       Object.values(model.maxOutputTokensByPurpose).some((limit) => limit > model.capabilities.maxOutputTokens)) {
       fail(`模型 ${modelId} 的输出上限超过能力声明`);
     }
-    return [modelId, { ...model, connection, externalModel: resolveModelEnv(model.externalModel, loadContext),
-      modelId, price: { ...price, currency: pricing.currency } }] as const;
+    const externalModel = resolveModelEnv(model.externalModel, loadContext, "NPC_OPENAI_COMPAT_MODEL");
+    if (price.externalModel !== externalModel) {
+      fail(`模型 ${modelId} 的 externalModel 与价目记录不一致`);
+    }
+    const { externalModel: _pricedExternalModel, ...priceFields } = price;
+    return [modelId, {
+      ...model, connection, externalModel, modelId,
+      price: { ...priceFields, currency: pricing.currency },
+    }] as const;
   }));
   if (layout.evaluator !== undefined && !models.has(layout.evaluator.modelId)) fail("评估主体引用了未知模型");
   if (layout.evaluator?.enabled === true) fail("当前运行装配未启用模型评估主体");

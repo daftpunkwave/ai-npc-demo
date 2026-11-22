@@ -32,10 +32,14 @@ export type {
   WorldTxReader,
 } from "./ports";
 export * from "./game-ports";
-export * from "./game-utils";
+export * from "./resource-math";
+export * from "./principal-audience";
+export * from "./content-view";
+export * from "./meters-view";
 export * from "./game-route";
 export * from "./contributor";
 export * from "./agent-ports";
 export * from "./model-ports";
+export * from "./model-transport";
 export * from "./artifact-store";
 export * from "./lifecycle-audit";

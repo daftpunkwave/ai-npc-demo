@@ -130,6 +130,7 @@ export interface FrozenManifestFacts {
   readonly packId: string;
   readonly contentVersion: string;
   readonly hasAgentSlots: boolean;
+  readonly hasModels: boolean;
   readonly catalogHash: string;
 }
 
@@ -161,6 +162,7 @@ export function readFrozenManifest(value: Json): FrozenManifestFacts {
     packId: manifestString(content["packId"], "content.packId"),
     contentVersion: manifestString(content["contentVersion"], "content.contentVersion"),
     hasAgentSlots: manifest["agentSlots"] !== null && manifest["agentSlots"] !== undefined,
+    hasModels: manifest["models"] !== undefined,
     catalogHash: manifestString(assembly["catalogHash"], "assembly.catalogHash"),
   };
 }

@@ -551,7 +551,7 @@ describe("快照排空", () => {
   it("创建快照前先排空当前 tick 的到期 job 与时钟步骤", { timeout: 30_000 }, async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-world-tick-"));
     dirs.push(dataDir);
-    const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token", assemblyRef: "local-slg-test-v1" });
     hosts.push(host);
 
     const login = await host.app.inject({

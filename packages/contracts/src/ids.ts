@@ -132,19 +132,6 @@ export const contentIdSchemas = {
   src: sourceIdSchema,
 } as const;
 
-/**
- * 序章中不上场、但可作为剧情卡署名与消息来源的具名角色。
- * 这些 ID 只表示事件来源，不实例化角色、不调用模型；名单与内容包的剧情卡一致。
- */
-export const signatureOnlyPrincipalIds: readonly string[] = ["npc-shenli", "npc-suhui", "npc-guxun"];
-
-const signatureOnlyPrincipalIdSet: ReadonlySet<string> = new Set(signatureOnlyPrincipalIds);
-
-/** 判断主体 ID 是否是允许出现在剧情卡中的 signature-only 署名。 */
-export function isSignatureOnlyPrincipal(principalId: string): boolean {
-  return signatureOnlyPrincipalIdSet.has(principalId);
-}
-
 /** 内容包中的一种固定 ID，供需要接受任意内容 ID 的字段使用。 */
 export const contentIdSchema = z.union([
   nodeIdSchema,

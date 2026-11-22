@@ -8,13 +8,13 @@ import type { Authority } from "@ai-npc/authority";
 import type { StartedInstances } from "@ai-npc/kernel";
 import { startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import { agentWorldReaders } from "./agent-world-read";
-import type { HostCore } from "./core";
+import type { HostStartup } from "./startup";
 import { disposeInReverse } from "./dispose";
 import type { LiveRunState } from "./live-state";
 import type { HostReadPorts } from "./reads";
 
 interface OnlineAgentOptions {
-  readonly core: HostCore;
+  readonly core: HostStartup;
   readonly active: LiveRunState;
   readonly reads: HostReadPorts;
   readonly authority: Authority;

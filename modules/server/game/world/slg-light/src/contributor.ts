@@ -4,11 +4,12 @@
  * 禁止在这里直接写地图/库存聚合，或在命令处理器中读取进程时间与随机源。
  */
 import type { Json } from "@ai-npc/contracts";
-import { roadStatusSchema, watergateAllocationSchema } from "@ai-npc/contracts";
+import { commandPayloadOf, roadIdFromPolicyKey, roadStatusSchema, watergateAllocationSchema } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   factionAudience,
   gameModuleIds,
+  holdsOperationalSeat,
   principalsAudience,
   requireGameContent,
   type GameContent,
@@ -136,45 +137,34 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
     maxDraw: start.playerDelegation.maxDraw,
     untilTick: start.playerDelegation.untilTick,
   });
+  // 委托聚合写入与 DelegationCreated 事件统一走世界端口，避免开局路径与端口各自手写一份聚合装配。
+  const worldPort = asPorts(context)["game.world"];
   for (const delegation of delegations) {
-    const delegationId = context.ids("del");
-    context.tx.put("delegation", delegationId, {
-      delegationId,
-      grantorFactionId: delegation.grantorFactionId,
-      granteeId: delegation.granteeId,
-      teamIds: delegation.teamIds,
-      stockpileId: delegation.stockpileId,
-      remaining: delegation.maxDraw,
-      limit: delegation.maxDraw,
-      untilTick: delegation.untilTick,
-    });
-    context.tx.emit(
-      "DelegationCreated",
-      { delegationId, ...delegation },
-      [...principalsAudience([delegation.granteeId]), factionAudience(delegation.grantorFactionId)],
-    );
+    worldPort.createDelegation(delegation);
   }
   return { kind: "accepted", result: { campaignId } };
 }
 
 /**
- * 判断当前主体是否掌握公社水闸政策：AI 公社党魁直接以其派系 ID 行动，
+ * 判断当前主体是否掌握公社水闸政策：持有公社席的派系主体直接命中（AI 公社党魁以派系 ID 行动），
  * 玩家则按已开局 campaign 的 playerId 与 factionId 裁决，不信任命令自报身份。
+ * 公社席由内容规则参数声明，规则层不写具体派系 ID。
  */
 function controlsWatergate(context: WorldContext, principalId: string): boolean {
-  if (principalId === "human-neutral") {
+  const content = requireGameContent(context.content);
+  if (holdsOperationalSeat(content, principalId)) {
     return true;
   }
   const record = readWorldState(context.tx, "campaign", campaignAggregateId, campaignStateSchema);
   return (
     record !== null &&
     record.state.playerId === context.auth.principalId &&
-    record.state.factionId === "human-neutral"
+    holdsOperationalSeat(content, record.state.factionId)
   );
 }
 
 function policySet(context: WorldContext, payload: Json): HandlerResult {
-  const input = payload as { readonly key: string; readonly value: string };
+  const input = commandPayloadOf("policy.set", payload);
   const principalId = effectivePrincipalId(context.auth);
   const ports = asPorts(context);
   if (input.key === "watergate.allocation") {
@@ -191,8 +181,8 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
     }
     return { kind: "accepted" };
   }
-  if (input.key.startsWith("road.status:")) {
-    const roadId = input.key.slice("road.status:".length);
+  const roadId = roadIdFromPolicyKey(input.key);
+  if (roadId !== null) {
     if (ports["game.map"].road(roadId) === null) {
       return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "道路不存在" };
     }
@@ -226,7 +216,7 @@ export function createWorldContributor(): GameRuleContributor<GameModulePorts, u
       {
         type: "campaign.start",
         handler: (context, payload) => {
-          const input = payload as { readonly factionId: string };
+          const input = commandPayloadOf("campaign.start", payload);
           return initializeCampaign(context as WorldContext, input.factionId);
         },
       },

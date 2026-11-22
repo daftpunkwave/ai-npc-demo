@@ -3,6 +3,7 @@ assemblyId: local-slg-standard-v1
 configs:
   clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
+  model-secrets: { allowlist: [NPC_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY] }
 realms:
   server:
     bindings:
@@ -17,9 +18,13 @@ realms:
       - { capability: game.save, moduleId: game.save.sqlite, configRef: null }
       - { capability: agent.scheduling, moduleId: agent.scheduling.fair, configRef: null }
       - { capability: agent.tools, moduleId: agent.tools.game-tools, configRef: null }
+      - { capability: agent.model-pool, moduleId: agent.model-pool.shared, configRef: null }
       - { capability: platform.storage, moduleId: platform.storage.sqlite, configRef: storage }
       - { capability: platform.access-policy, moduleId: platform.access-policy.roster, configRef: null }
-      - { capability: platform.secrets, moduleId: platform.secrets.env, configRef: null }
+      - { capability: platform.secrets, moduleId: platform.secrets.env, configRef: model-secrets }
+      - { capability: platform.budget, moduleId: platform.budget.standard, configRef: null }
+      - { capability: platform.model-transport, moduleId: platform.model-transport.openai-compatible, configRef: null }
+      - { capability: platform.model-transport, moduleId: platform.model-transport.anthropic, configRef: null }
       - { capability: platform.operations, moduleId: platform.operations.standard, configRef: null }
       - { capability: platform.observability, moduleId: platform.observability.sqlite, configRef: null }
       - { capability: platform.module-admin, moduleId: platform.module-admin.standard, configRef: null }
@@ -30,7 +35,7 @@ realms:
       context: [agent.context.ordered-blocks]
       compression: [agent.compression.none, agent.compression.window]
       toolView: [agent.tool-view.structured]
-      decision: [agent.decision.deterministic]
+      decision: [agent.decision.deterministic, agent.decision.model]
   client:
     bindings:
       - { capability: client.world-view, moduleId: client.world-view.standard, configRef: null }
