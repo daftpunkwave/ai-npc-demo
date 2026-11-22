@@ -43,18 +43,19 @@ function FactionOpsPage(): ReactNode {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async (): Promise<void> => {
+  const refresh = async (isCurrent: () => boolean = () => true): Promise<void> => {
     const [health, nextSnapshots] = await Promise.all([
       host.api.consoleHealth(),
       host.api.consoleSnapshots(),
     ]);
+    if (!isCurrent()) return;
     setClock(health.clock);
     setSnapshots(nextSnapshots.snapshots);
   };
 
   useEffect(() => {
     let cancelled = false;
-    void refresh().catch((cause: unknown) => {
+    void refresh(() => !cancelled).catch((cause: unknown) => {
       if (!cancelled) setError(actionError(cause));
     });
     return () => { cancelled = true; };

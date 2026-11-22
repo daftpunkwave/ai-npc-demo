@@ -158,6 +158,11 @@ function ObservabilityPage(): ReactNode {
   useEffect(() => {
     if (selectedAgent === null) return;
     let cancelled = false;
+    setInspector(null);
+    setTurns([]);
+    setSelectedTurn(null);
+    setTurnDetail(null);
+    setTrace(null);
     void Promise.all([
       host.api.consoleInspector(selectedAgent, host.session.branchId),
       host.api.consoleTurns({ agentId: selectedAgent, branchId: host.session.branchId, limit: 20 }),
@@ -183,7 +188,12 @@ function ObservabilityPage(): ReactNode {
       setTrace(null);
       return;
     }
+    artifactRequestSeq.current += 1;
+    setTurnDetail(null);
     setTrace(null);
+    setSelectedArtifactId(null);
+    setArtifactBody(null);
+    setArtifactView("redacted");
     let cancelled = false;
     void host.api.consoleTurn(selectedTurn).then(async (detail) => {
       if (cancelled) return;
@@ -241,8 +251,18 @@ function ObservabilityPage(): ReactNode {
           <header><h2>世界时间线</h2><span>{events.length} 条{streamError === null ? "" : " · 重连中"}</span></header>
           {timelineError === null ? null : <div className="console-error" role="alert">时间线读取失败：{timelineError}</div>}
           <div className="timeline-list">
-            {events.length === 0 ? <p className="console-empty">当前分支尚无领域事件。</p> : events.map((event, index) => (
-              <article className="timeline-row" key={`${event.worldSeq ?? "life"}-${event.type}-${index}`}>
+            {events.length === 0 ? <p className="console-empty">当前分支尚无领域事件。</p> : events.map((event) => (
+              <article
+                className="timeline-row"
+                key={event.eventId ?? [
+                  "lifecycle",
+                  event.worldSeq,
+                  event.worldTick,
+                  event.type,
+                  event.principalId,
+                  event.createdAt,
+                ].join(":")}
+              >
                 <div><span>{event.worldSeq === null ? "lifecycle" : `#${event.worldSeq}`}</span><time>{event.worldTick === null ? "—" : `t${event.worldTick}`}</time></div>
                 <strong>{event.type}</strong>
                 <p>{event.summaryZh}</p>

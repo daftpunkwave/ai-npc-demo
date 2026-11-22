@@ -51,7 +51,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
 .console-brand span,
 .console-eyebrow {
   color: var(--accent);
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 0.64rem;
   font-weight: 700;
 }
@@ -64,7 +64,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
 .console-brand small {
   overflow: hidden;
   color: #6e7f79;
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 0.62rem;
   text-overflow: ellipsis;
 }
@@ -114,7 +114,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
   padding: 12px 16px;
   color: #65746f;
   border-top: 1px solid var(--line);
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 0.58rem;
 }
 
@@ -200,7 +200,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
   border: 1px solid #42584b;
   border-radius: 999px;
   background: #17251d;
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 0.66rem;
 }
 
@@ -236,7 +236,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
 
 .console-stat-grid strong {
   color: #f0eadc;
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 1.6rem;
   font-weight: 500;
 }
@@ -280,7 +280,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
 
 .console-panel > header span {
   color: var(--muted);
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 0.62rem;
 }
 
@@ -347,7 +347,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
 
 .console-kv div:last-child { border-bottom: 0; }
 .console-kv dt { color: var(--muted); }
-.console-kv dd { margin: 0; font-family: "Cascadia Mono", "SFMono-Regular", monospace; }
+.console-kv dd { margin: 0; font-family: "Cascadia Mono", SFMono-Regular, monospace; }
 
 .assembly-list button {
   display: grid;
@@ -415,7 +415,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
   gap: 8px;
   grid-row: 1 / 4;
   color: var(--accent);
-  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-family: "Cascadia Mono", SFMono-Regular, monospace;
   font-size: 0.64rem;
 }
 
@@ -499,7 +499,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
   color: var(--ink);
   border: 1px solid var(--line-strong);
   background: #111917;
-  font: 0.66rem/1.5 "Cascadia Mono", "SFMono-Regular", monospace;
+  font: 0.66rem/1.5 "Cascadia Mono", SFMono-Regular, monospace;
   resize: vertical;
 }
 .console-action-row { display: flex; align-items: center; gap: 12px; padding: 0 14px 14px; }
@@ -614,7 +614,7 @@ h1, h2, p, dl, dd { margin-top: 0; }
   overflow: auto;
   margin: 0;
   color: #bfc9c2;
-  font: 0.62rem/1.5 "Cascadia Mono", "SFMono-Regular", monospace;
+  font: 0.62rem/1.5 "Cascadia Mono", SFMono-Regular, monospace;
   white-space: pre-wrap;
 }
 .trace-tree { max-height: 520px; overflow: auto; margin: 0; padding: 12px 16px 12px 30px; }

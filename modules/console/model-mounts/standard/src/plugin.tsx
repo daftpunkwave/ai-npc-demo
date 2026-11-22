@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止显示凭据正文，禁止在研究员角色下调用操作员校验入口。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
   ConsoleActiveRole,
@@ -55,6 +55,7 @@ function ModelMountsPage(): ReactNode {
   const [draft, setDraft] = useState("");
   const [validation, setValidation] = useState<ModelLayoutValidateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const validationRequest = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +77,7 @@ function ModelMountsPage(): ReactNode {
       host.api.consoleModelRoutes(selectedId),
     ]).then(([nextLayout, nextRoutes]) => {
       if (cancelled) return;
+      validationRequest.current += 1;
       setLayout(nextLayout);
       setRoutes(nextRoutes);
       setDraft(JSON.stringify(draftFromView(nextLayout), null, 2));
@@ -88,11 +90,16 @@ function ModelMountsPage(): ReactNode {
   }, [host.api, selectedId]);
 
   const validate = async (): Promise<void> => {
+    const request = validationRequest.current + 1;
+    validationRequest.current = request;
     try {
       const parsed: unknown = JSON.parse(draft);
-      setValidation(await host.api.validateModelLayout(parsed));
+      const result = await host.api.validateModelLayout(parsed);
+      if (request !== validationRequest.current) return;
+      setValidation(result);
       setError(null);
     } catch (cause) {
+      if (request !== validationRequest.current) return;
       setValidation(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -167,6 +174,7 @@ function ModelMountsPage(): ReactNode {
             aria-label="模型布局草稿"
             value={draft}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+              validationRequest.current += 1;
               setDraft((event.target as unknown as { value: string }).value);
               setValidation(null);
             }}
