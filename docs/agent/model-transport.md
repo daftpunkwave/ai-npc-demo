@@ -141,7 +141,7 @@ models:
     maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
 ```
 
-`assistantReplay` 决定同一工具循环内怎样回传上一轮的 assistant 消息：`standard` 只回传 `role`、`content`、`tool_calls`；`verbatim` 把供应商返回的 assistant 消息对象原样回传（包括 `reasoning_content` 之类的扩展字段）。有的推理模型要求在工具循环内回传这类字段，有的会拒绝它们，按所用供应商的文档设置。`env:NAME` 形式的值在预检时解析；`externalModel` 与 `endpoint` 不是秘密，解析结果写入 manifest，`credentialRef` 只记录引用名。`capabilities` 由部署者按供应商文档填写，预检时与工具、输出协议核对；`/model-layouts/{id}/probe` 可做一次实测。
+`assistantReplay` 决定同一工具循环内怎样回传上一轮的 assistant 消息：`standard` 只回传 `role`、`content`、`tool_calls`；`verbatim` 把供应商返回的 assistant 消息对象原样回传（包括 `reasoning_content` 之类的扩展字段）。有的推理模型要求在工具循环内回传这类字段，有的会拒绝它们，按所用供应商的文档设置。`env:NAME` 形式的值在预检时解析；`externalModel` 与 `endpoint` 不是秘密，解析结果写入 manifest，`credentialRef` 只记录引用名。`capabilities` 由部署者按供应商文档填写，预检时与工具、输出协议核对。控制台的 `/model-layouts/{id}/probe` 实测接口属[目标契约](../architecture/api.md#52-模型池)，尚未实现；配置真实凭据后的连通性验证使用 `tests/live/` 下的手动用例。
 
 ### 3.2 请求映射
 
