@@ -5,7 +5,8 @@
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isDirectExecution, runAssetCheckCli } from "./asset-check/cli";
+import { runAssetCheckCli } from "./asset-check/cli";
+import { isDirectExecution } from "./direct-execution";
 
 export { checkAssets } from "./asset-check/checker";
 export { runAssetCheckCli } from "./asset-check/cli";

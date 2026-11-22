@@ -8,6 +8,7 @@
     "./check-boundaries": "./check-boundaries.ts",
     "./check-catalog": "./check-catalog.ts",
     "./check-docs": "./check-docs.ts",
+    "./direct-execution": "./direct-execution.ts",
     "./port-listeners": "./port-listeners.ts"
   },
   "dependencies": {

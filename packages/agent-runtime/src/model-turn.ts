@@ -20,6 +20,7 @@ import { TurnStopped, type ClaimedTurn } from "./turn-lease";
 
 type DecisionInput = Parameters<ModelDecisionPort["decide"]>[0];
 
+/** 模型路径 turn 的模块端口：decision 为决策槽模块端口（实现 ModelDecisionPort），context 与 compression 为上下文与压缩槽模块端口。 */
 export interface ModelTurnPorts {
   readonly decision: ModelDecisionPort;
   readonly context: AgentContextPort;
