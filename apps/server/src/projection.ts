@@ -20,7 +20,7 @@ import {
   type TeamView,
   type TermKind,
 } from "@ai-npc/contracts";
-import { addAmounts, factionStandingNode } from "@ai-npc/module-sdk";
+import { addAmounts, factionStandingNode, meterLevel } from "@ai-npc/module-sdk";
 import type {
   AgreementView as AgreementPortView,
   GameActionsPort,
@@ -71,14 +71,6 @@ export interface PlayerProjectionInput {
   readonly playerName?: string;
   /** 正在排队或执行 turn 的角色；由宿主调度器提供，缺省视为没有待回复。 */
   readonly awaitingReplyCharacters?: readonly string[];
-}
-
-/** 局势指标的展示等级（规则第 4 节）：≤20 危急、21–39 紧张、≥40 稳定。 */
-function meterLevel(value: number): "critical" | "strained" | "stable" {
-  if (value <= 20) {
-    return "critical";
-  }
-  return value <= 39 ? "strained" : "stable";
 }
 
 function metersView(world: GameWorldPort): PlayerMetersView | null {

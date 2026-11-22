@@ -726,10 +726,11 @@ export const gamePortCapabilities = Object.keys(gamePortCapabilityRegistry) as r
 export type GamePortCapability = keyof typeof gamePortCapabilityRegistry;
 
 /**
- * 组合根绑定模块端口时提供的已绑定端口快照与调用方身份。
- * 端口只包含该模块 provides 与 requires 声明的游戏能力，访问未声明的能力会立即失败；
+ * 组合根绑定模块端口时提供的依赖端口视图与调用方身份。
+ * ports 是按本次绑定新建的冻结记录，只含该模块 requires 声明的游戏能力；端口实例本身绑定当前事务、
+ * 在各模块间共享。需要按调用方收窄可见能力时由绑定器另行包一层代理，本类型不负责访问控制。
  * 调用方身份供需要校验触发来源的端口区分宿主、特定职责 provider 与一般消费者。
- * 绑定器按依赖顺序构造端口，模块不得借端口快照读取对方聚合。
+ * 绑定器按依赖顺序构造端口，模块不得借依赖端口读取对方聚合。
  */
 export interface GamePortBindContext {
   readonly ports: Readonly<Partial<GameModulePorts>>;
@@ -738,8 +739,3 @@ export interface GamePortBindContext {
   /** 请求方模块提供的能力；宿主自身为空数组。 */
   readonly callerProvides: readonly string[];
 }
-
-/** 可空的操作结果；成功时允许携带结果数据。 */
-export type GameOpResult<T extends Record<string, unknown> = Record<never, never>> =
-  | ({ readonly ok: true } & T)
-  | { readonly ok: false; readonly reasonCode: ReasonCode };

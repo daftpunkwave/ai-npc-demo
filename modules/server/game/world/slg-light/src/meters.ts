@@ -23,17 +23,6 @@ export function clampMeter(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-/** 指标展示等级。 */
-export function meterLevel(value: number): "critical" | "strained" | "stable" {
-  if (value <= 20) {
-    return "critical";
-  }
-  if (value <= 39) {
-    return "strained";
-  }
-  return "stable";
-}
-
 /** 从指标状态构造公开快照。 */
 export function metersSnapshot(meters: MetersView): MeterSnapshot {
   return {
