@@ -16,7 +16,7 @@ import { switchLiveBranch, type LiveRunState } from "./live-state";
 import type { OperationsFactory, ServerApp, ServerIdentity, ServerRuntime } from "./module-catalog";
 import type { HostOptions } from "./options";
 import type { HostReadPorts } from "./reads";
-import type { SessionAssemblies } from "./core";
+import type { SessionAssemblies } from "./startup";
 
 export interface TransportAppInput {
   readonly host: HostServices;
