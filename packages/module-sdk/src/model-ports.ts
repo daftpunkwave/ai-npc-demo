@@ -3,8 +3,9 @@
  * 模型池绑定不可变路由，宿主为每个工作和用途注入独立的调用句柄。
  * 禁止通过这些端口获取凭据、执行世界命令或更改冻结路由。
  */
+import { capabilityIdSchema, DomainError, modelCapabilitiesSchema } from "@ai-npc/contracts";
 import type {
-  AgentModelCallResult, DecisionSubmission, Json, MemoryScope, ModelCapabilities, ModelFixture, ModelOutput,
+  AgentModelCallResult, CapabilityId, DecisionSubmission, Json, MemoryScope, ModelCapabilities, ModelFixture, ModelOutput,
   NormalizedMessage, NormalizedTool, NormalizedToolCall, Purpose,
 } from "@ai-npc/contracts";
 
@@ -71,7 +72,69 @@ export interface AgentModelPoolPort {
   }): RunModelPort;
 }
 
-export type AgentDecisionModelRoutes = Readonly<Record<"decision" | "speech", ReturnType<RunModelPort["route"]>>>;
+/** 装配层模型池能力 ID；Agent 实例创建时在该能力键下注入 {@link AgentDecisionModelRoutes} 路由视图，而非池端口本身。 */
+export const agentModelPoolCapability: CapabilityId = capabilityIdSchema.parse("agent.model-pool");
+
+/** 模型决策类 Agent 模块运行必需的模型用途权威定义；路由视图构建、模块消费校验与挂载冻结预检共用此列表。 */
+export const agentRequiredModelPurposes = ["decision", "speech"] as const;
+
+export type AgentRequiredModelPurpose = (typeof agentRequiredModelPurposes)[number];
+
+/**
+ * Agent 实例创建时在模型池能力键下注入的路由视图：按必需用途给出该 Agent 本 run 已解析的路由，
+ * 路由条目复用 RunModelPort 的查询返回类型；与装配层面向宿主的 AgentModelPoolPort 分离。
+ */
+export type AgentDecisionModelRoutes = Readonly<Record<AgentRequiredModelPurpose, ReturnType<RunModelPort["route"]>>>;
+
+/** 从已绑定的 run 模型端口构建路由视图；注入方统一经此入口，保证必需用途齐全；新增用途时编译器强制同步此字面量。 */
+export function bindAgentModelRoutes(run: RunModelPort, agentId: string): AgentDecisionModelRoutes {
+  return {
+    decision: run.route(agentId, "decision"),
+    speech: run.route(agentId, "speech"),
+  };
+}
+
+/** 用途级路由能力要求：逐必需用途判断路由能力是否满足消费方端口的需求。 */
+export type AgentModelPurposeRequirement = Readonly<
+  Record<AgentRequiredModelPurpose, (capabilities: ModelCapabilities) => boolean>
+>;
+
+/** 模型决策端口对必需用途的能力要求：决策路由必须支持工具调用，对白路由必须支持结构化输出。 */
+export const modelDecisionPurposeRequirements: AgentModelPurposeRequirement = {
+  decision: (capabilities) => capabilities.toolCalling === true,
+  speech: (capabilities) => capabilities.structuredOutput !== "none",
+};
+
+/**
+ * 校验模块 ports 表中模型池能力键下注入的原始值，并收窄为路由视图。
+ * 视图注入缺失、必需用途缺失、能力声明缺失或不合法、能力不满足端口要求都抛出 assembly-incompatible；
+ * 消费方以声明的能力键取值后经此入口校验，替代对注入值的裸类型断言。
+ */
+export function resolveAgentModelRoutes(input: {
+  readonly view: unknown;
+  readonly moduleId: string;
+  readonly requirements: AgentModelPurposeRequirement;
+}): AgentDecisionModelRoutes {
+  const view = input.view;
+  if (typeof view !== "object" || view === null) {
+    throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 缺少模型池能力的路由视图注入`);
+  }
+  const routes = view as Partial<Record<AgentRequiredModelPurpose, unknown>>;
+  for (const purpose of agentRequiredModelPurposes) {
+    const route = routes[purpose];
+    if (typeof route !== "object" || route === null) {
+      throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 的路由视图缺少必需的 ${purpose} 用途`);
+    }
+    const capabilities = modelCapabilitiesSchema.safeParse((route as { readonly capabilities?: unknown }).capabilities);
+    if (!capabilities.success) {
+      throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 的 ${purpose} 模型路由能力声明缺失或不合法`);
+    }
+    if (!input.requirements[purpose](capabilities.data)) {
+      throw new DomainError("assembly-incompatible", `Agent 模块 ${input.moduleId} 的 ${purpose} 模型路由不满足端口能力要求`);
+    }
+  }
+  return view as AgentDecisionModelRoutes;
+}
 
 export interface ModelBudgetReservation {
   readonly scope: ModelWorkScope;

@@ -7,7 +7,9 @@ import { canonicalJson, DomainError, type Json } from "@ai-npc/contracts";
 import { loadModelFixtures, loadModelLayout, loadModelPricing, resolveModelEnv,
   type ConfigLoadContext, type ResolvedAgentProfile, type RunSpec } from "@ai-npc/experiment";
 import type { ResolvedRealmPlan } from "@ai-npc/kernel";
-import { parseModelEndpoint, type ModelRoute, type ModelRunLimits } from "@ai-npc/module-sdk";
+import {
+  agentModelPoolCapability, agentRequiredModelPurposes, parseModelEndpoint, type ModelRoute, type ModelRunLimits,
+} from "@ai-npc/module-sdk";
 import { canonicalHasher } from "../host-services";
 
 const fixtureAdapter = "platform.model-transport.deterministic";
@@ -20,7 +22,8 @@ export interface ModelConfiguration {
 }
 
 export function hasModelPool(plan: ResolvedRealmPlan): boolean {
-  return plan.modules.some(({ definition }) => definition.provides.some(({ capability }) => capability === "agent.model-pool"));
+  return plan.modules.some(({ definition }) =>
+    definition.provides.some(({ capability }) => capability === agentModelPoolCapability));
 }
 
 export function usesFixtureModelTransport(plan: ResolvedRealmPlan): boolean {
@@ -126,7 +129,7 @@ export async function resolveModelConfiguration(input: {
   }
   for (const [agentId, profile] of profiles) {
     if (!modelAgents.has(agentId)) continue;
-    for (const purpose of ["decision", "speech"] as const) {
+    for (const purpose of agentRequiredModelPurposes) {
       const route = mounts.get(`${agentId}:${purpose}`);
       if (route === undefined) fail(`Agent ${agentId} 缺少必需的 ${purpose} 挂载`);
       if (profile.budgets.reserveOutputTokens[purpose] > route.maxOutputTokens) {

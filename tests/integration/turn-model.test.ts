@@ -429,6 +429,7 @@ patch:
   it.each([
     { name: "重复挂载", purposes: "[decision, decision, speech]", error: "重复挂载" },
     { name: "缺少对白用途", purposes: "[decision]", error: "speech 挂载" },
+    { name: "缺少决策用途", purposes: "[speech]", error: "decision 挂载" },
   ])("预检拒绝$name", async ({ purposes, error }) => {
     const configRoot = fixtureConfig([], (layout) => layout.replace("[decision, speech, memory-maintenance]", purposes));
     await expect(modelHost({ configRoot })).rejects.toThrow(error);
@@ -436,6 +437,30 @@ patch:
 
   it("预检拒绝放不下必需上下文及工具 schema 的模型窗口", async () => {
     const configRoot = fixtureConfig([], (layout) => layout.replace("contextWindowTokens: 64000", "contextWindowTokens: 4500"));
+    await expect(modelHost({ configRoot })).rejects.toThrow("模型窗口无法容纳必需上下文和工具预算");
+  });
+
+  it("预检拒绝放不下对白输出预留的独立挂载窗口", async () => {
+    const configRoot = fixtureConfig([], (layout) => {
+      const agentIds = layout.match(/agentIds: \[([^\]]+)\]/)?.[1];
+      if (agentIds === undefined) throw new Error("Test layout missing mount agentIds");
+      return layout
+        .replace("models:", `models:
+  npc-fixture-speech-tiny:
+    connectionId: fixtures
+    externalModel: deterministic-v1
+    parameters: {}
+    capabilities: { toolCalling: true, strictTools: true, structuredOutput: json_schema, assistantReplay: verbatim, contextWindowTokens: 500, maxOutputTokens: 400, embedding: true, embeddingDimensions: 64 }
+    limits: { maxConcurrent: 2, requestsPerMinute: 240, tokensPerMinute: 1000000, requestTimeoutMs: 10000 }
+    maxOutputTokensByPurpose: { speech: 400 }`)
+        .replace("purposes: [decision, speech, memory-maintenance]", `purposes: [decision, memory-maintenance]
+  - modelId: npc-fixture-speech-tiny
+    agentIds: [${agentIds}]
+    purposes: [speech]`);
+    });
+    const pricing = join(configRoot, "pricing.yaml");
+    writeFileSync(pricing, readFileSync(pricing, "utf8")
+      .replace("models:", "models:\n  npc-fixture-speech-tiny: { externalModel: deterministic-v1, inputPerMTok: 0, outputPerMTok: 0 }"), "utf8");
     await expect(modelHost({ configRoot })).rejects.toThrow("模型窗口无法容纳必需上下文和工具预算");
   });
 });

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
 import { estimateModelInputTokens, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
-import type { AgentModelPoolPort, ModelCallInput, ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type ModelCallInput, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
@@ -117,6 +117,55 @@ function networkError(kind: "network" | "server"): ModelTransportError {
 }
 
 const limits = { maxTokens: null, maxCost: null };
+
+function decisionModuleDefinition() {
+  const definition = serverModuleDefinitions.find(({ id }) => id === "agent.decision.model");
+  if (definition === undefined) throw new Error("Test definition missing: agent.decision.model");
+  return definition;
+}
+
+function createDecisionModule(ports: Readonly<Record<string, unknown>>) {
+  const definition = decisionModuleDefinition();
+  return definition.create({
+    moduleId: definition.id, realm: "server", config: {}, scope: { agentId: route.agentId },
+    ports, host: createFakeHost(), signal: new AbortController().signal,
+  });
+}
+
+describe("Agent 路由视图注入契约", () => {
+  it("经真实模型池绑定的路由视图完成模型决策模块创建", async () => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const run = harness.pool.bindRun({ routes: [route, { ...route, purpose: "speech" as const }], limits });
+      const instance = await createDecisionModule({
+        [agentModelPoolCapability]: bindAgentModelRoutes(run, route.agentId),
+      });
+      try {
+        expect(instance.port).toBeDefined();
+      } finally {
+        await instance.dispose();
+      }
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("把模型池端口误当路由视图注入时模块创建显式失败", async () => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      await expect(createDecisionModule({ [agentModelPoolCapability]: harness.pool }))
+        .rejects.toThrow(/缺少必需的 decision 用途/);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("缺少模型池能力注入时模块创建显式失败", async () => {
+    await expect(createDecisionModule({})).rejects.toThrow(/缺少模型池能力的路由视图注入/);
+  });
+});
 
 describe("共享模型池与预算", () => {
   it("发送上限与预留一致，即使挂载允许更大的输出", async () => {

@@ -7,7 +7,7 @@ import { decisionSubmitTool, decisionSystem, modelContextBudget } from "@ai-npc/
 import { DomainError, estimateModelInputTokens, resolveContextTokenLimits, toModelToolName, type HostServices, type ModuleScope } from "@ai-npc/contracts";
 import type { ContentPack } from "@ai-npc/experiment";
 import { startInstances, type ResolvedRealmPlan, type RunningInstance, type StartedInstances } from "@ai-npc/kernel";
-import type { AgentModelPoolPort, AgentToolsPort, RunModelPort, SchedulingPort } from "@ai-npc/module-sdk";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type AgentToolsPort, type RunModelPort, type SchedulingPort } from "@ai-npc/module-sdk";
 import type { AgentConfiguration } from "./agent-configuration";
 import { plannedModuleForCapability, serverAgentRequiredCapabilities } from "./module-catalog";
 
@@ -55,13 +55,14 @@ export async function startAgentRunModules(input: {
     for (const [agentId, toolset] of configuration.toolsets) tools.bindAgentToolset({ ...toolset, agentId });
     let model: RunModelPort | null = null;
     if (configuration.models !== null) {
-      const planned = plannedModuleForCapability(plan, "agent.model-pool");
+      const planned = plannedModuleForCapability(plan, agentModelPoolCapability);
       const pool = running.find(({ moduleId }) => moduleId === planned.moduleId)?.port as AgentModelPoolPort | undefined;
       if (typeof pool?.bindRun !== "function") throw new Error("Model pool did not expose its port");
       model = pool.bindRun({ ...configuration.models, jsonOutputSuffix: input.content.prompts.jsonOutputSuffix });
       for (const [agentId, profile] of configuration.profiles) {
         if (!configuration.modelAgents.has(agentId)) continue;
-        const route = model.route(agentId, "decision");
+        const routes = bindAgentModelRoutes(model, agentId);
+        const route = routes.decision;
         const modelWindowTokens = route.capabilities.contextWindowTokens;
         const budget = modelContextBudget(profile, "decision");
         const { targetTokens } = resolveContextTokenLimits({ phase: "decision", budget, modelWindowTokens });
@@ -74,7 +75,7 @@ export async function startAgentRunModules(input: {
           system: decisionSystem(input.content, agentId, profile.budgets.maxToolCallsPerRound), messages: [],
           tools: [...definitions, decisionSubmitTool(input.content)], output: { kind: "text" },
         }) + (budget.segmentBudgets["input"] ?? 400) + 4;
-        const speechRoute = model.route(agentId, "speech");
+        const speechRoute = routes.speech;
         const speechLimits = resolveContextTokenLimits({
           phase: "speech", budget: modelContextBudget(profile, "speech"),
           modelWindowTokens: speechRoute.capabilities.contextWindowTokens,

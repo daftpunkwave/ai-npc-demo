@@ -4,7 +4,7 @@
  * 禁止在登记时执行模型调用或操作持久化状态。
  */
 import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { agentModelPoolCapability, defineModule } from "@ai-npc/module-sdk";
 
 export const sharedModelPoolDefinition: ModuleDefinition = defineModule({
   id: "agent.model-pool.shared",
@@ -13,7 +13,7 @@ export const sharedModelPoolDefinition: ModuleDefinition = defineModule({
   version: "1.0.0",
   apiVersion: "1",
   instanceScope: "deployment",
-  provides: [{ capability: capabilityIdSchema.parse("agent.model-pool"), cardinality: "exactly-one", instanceScope: "deployment" }],
+  provides: [{ capability: agentModelPoolCapability, cardinality: "exactly-one", instanceScope: "deployment" }],
   requires: [
     { capability: capabilityIdSchema.parse("platform.model-transport"), cardinality: "many", instanceScope: "deployment" },
     { capability: capabilityIdSchema.parse("platform.budget"), cardinality: "exactly-one", instanceScope: "deployment" },
