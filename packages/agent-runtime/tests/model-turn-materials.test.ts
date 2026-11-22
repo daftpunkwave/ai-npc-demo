@@ -44,6 +44,11 @@ function contextWithout(purpose: "decision" | "speech"): Json {
   return rest;
 }
 
+/** 把指定用途的预算子块替换为给定值，模拟非法的块形状。 */
+function contextWith(purpose: "decision" | "speech", value: Json): Json {
+  return { ...contextWithout(purpose), [purpose]: value };
+}
+
 /** 捕获 modelContextBudget 的领域错误；未抛错时让用例失败。 */
 function budgetError(context: Json, purpose: "decision" | "speech"): DomainError {
   try {
@@ -60,6 +65,15 @@ describe("模型上下文预算读取", () => {
     const error = budgetError(contextWithout(purpose), purpose);
     expect(error.code).toBe("assembly-incompatible");
     expect(error.message).toContain(`${profileId}」的上下文配置缺少 ${purpose} 预算块`);
+  });
+
+  it.each(["decision", "speech"] as const)("%s 预算子块为 null 或非对象时按缺失配置拒绝", (purpose) => {
+    const invalids: Json[] = [null, 8000, "budget", [], true];
+    for (const invalid of invalids) {
+      const error = budgetError(contextWith(purpose, invalid), purpose);
+      expect(error.code).toBe("assembly-incompatible");
+      expect(error.message).toContain(`${profileId}」的上下文配置缺少 ${purpose} 预算块`);
+    }
   });
 
   it("完整预算按 decision 用途解析并带上工具循环预留", () => {
