@@ -32,7 +32,11 @@ function assertSafe(node: unknown, path: string): void {
       throw new Error(`资产包含事件处理器 ${key}: ${path}`);
     }
     if (key === "@href" || key.endsWith(":href")) {
-      const href = String(value).trim().toLowerCase();
+      // 非字符串值无法判定协议（String(对象) 会得到 "[object Object]" 并被误判为相对路径），直接拒绝。
+      if (typeof value !== "string") {
+        throw new Error(`资产引用不是字符串 ${key}: ${path}`);
+      }
+      const href = value.trim().toLowerCase();
       // 只允许文档内片段引用与不带协议的相对路径：白名单式判断才能同时排除
       // javascript:/vbscript:/file: 等可执行或本地协议，以及协议相对 //host。
       const safe = href.startsWith("#") || (!href.startsWith("//") && !/^[a-z][a-z0-9+.-]*:/u.test(href));
