@@ -4,7 +4,7 @@
  * 禁止在登记时执行模型调用或操作持久化状态。
  */
 import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { agentModelPoolCapability, defineModule } from "@ai-npc/module-sdk";
 
 export const modelDecisionDefinition: ModuleDefinition = defineModule({
   id: "agent.decision.model",
@@ -15,7 +15,8 @@ export const modelDecisionDefinition: ModuleDefinition = defineModule({
   instanceScope: "agent",
   provides: [{ capability: capabilityIdSchema.parse("agent.decision"), cardinality: "exactly-one", instanceScope: "agent" }],
   requires: [
-    { capability: capabilityIdSchema.parse("agent.model-pool"), cardinality: "exactly-one", instanceScope: "deployment" },
+    // 装配依赖模型池存在；实例创建时宿主在该能力键下注入按必需用途解析的 AgentDecisionModelRoutes 路由视图。
+    { capability: agentModelPoolCapability, cardinality: "exactly-one", instanceScope: "deployment" },
   ],
   requiresRemote: [],
   configSchema: emptyModuleConfigSchema,

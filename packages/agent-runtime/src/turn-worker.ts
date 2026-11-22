@@ -8,9 +8,10 @@ import {
   type AgentTurnStatus, type AuthContext, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall,
 } from "@ai-npc/contracts";
 import type { ResolvedAgentProfile } from "@ai-npc/experiment";
-import type {
-  DeterministicDecisionInput, AgentDecisionPort, AgentToolViewPort, AgentContextPort, AgentCompressionPort,
-  ModelDecisionPort, RunModelPort,
+import {
+  agentModelPoolCapability, bindAgentModelRoutes,
+  type AgentDecisionPort, type AgentToolViewPort, type AgentContextPort, type AgentCompressionPort,
+  type DeterministicDecisionInput, type ModelDecisionPort, type RunModelPort,
 } from "@ai-npc/module-sdk";
 import { AgentModuleHandle } from "./agent-module-handle";
 import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
@@ -74,12 +75,12 @@ export class TurnWorker {
       const { slots } = profile;
       const toolView = (await this.createSlot<AgentToolViewPort>(agentId, slots.toolView)).port;
       const definition = this.runtime.moduleDefinitions.get(slots.decision?.module ?? "");
-      if (definition?.requires.some(({ capability }) => capability === "agent.model-pool")) {
+      if (definition?.requires.some(({ capability }) => capability === agentModelPoolCapability)) {
         const pool = this.execution.model;
         if (pool == null) throw new Error(`No scoped model pool for ${agentId}`);
         const decision = (await this.createSlot<ModelDecisionPort>(agentId, slots.decision, {
           ...this.execution.ports,
-          "agent.model-pool": { decision: pool.route(agentId, "decision"), speech: pool.route(agentId, "speech") },
+          [agentModelPoolCapability]: bindAgentModelRoutes(pool, agentId),
         })).port;
         const context = (await this.createSlot<AgentContextPort>(agentId, slots.context)).port;
         const compression = (await this.createSlot<AgentCompressionPort>(agentId, slots.compression)).port;

@@ -18,6 +18,7 @@ import {
   type RunSpec,
 } from "@ai-npc/experiment";
 import { resolveModuleConfig } from "@ai-npc/kernel";
+import { agentModelPoolCapability } from "@ai-npc/module-sdk";
 import type { ResolvedServerAssembly } from "./assembly";
 import { canonicalHasher } from "../host-services";
 import { resolveModelConfiguration, type ModelConfiguration } from "./model-configuration";
@@ -86,7 +87,7 @@ export async function resolveAgentConfiguration(input: {
         throw new Error(`Profile "${profile.profileId}" does not bind an Agent ${slot} provider`);
       }
       selections[slot] = { module: selected.module, config: resolveModuleConfig(definition, selected.config, profile.profileId) };
-      if (slot === "decision" && definition.requires.some(({ capability }) => capability === "agent.model-pool")) {
+      if (slot === "decision" && definition.requires.some(({ capability }) => capability === agentModelPoolCapability)) {
         modelAgents.add(agent.agentId);
       }
       slotModules.push({ moduleId: definition.id, version: definition.version, apiVersion: definition.apiVersion });

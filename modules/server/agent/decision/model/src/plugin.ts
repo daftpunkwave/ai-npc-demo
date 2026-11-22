@@ -6,7 +6,9 @@
 import {
   canonicalJson, DomainError, estimateModelInputTokens, type Json, type ModuleCreateInput, type NormalizedMessage,
 } from "@ai-npc/contracts";
-import { createStatelessModule, type AgentDecisionModelRoutes, type ModelDecisionPort } from "@ai-npc/module-sdk";
+import {
+  createStatelessModule, modelDecisionPurposeRequirements, resolveAgentModelRoutes, type ModelDecisionPort,
+} from "@ai-npc/module-sdk";
 
 type DecisionResult = Awaited<ReturnType<ModelDecisionPort["decide"]>>;
 type ToolResult = Extract<NormalizedMessage, { role: "tool" }>;
@@ -122,9 +124,8 @@ const modelDecision: ModelDecisionPort = {
 };
 
 export function createModelDecisionModule(input: ModuleCreateInput) {
-  const routes = input.ports["agent.model-pool"] as AgentDecisionModelRoutes | undefined;
-  if (routes?.decision.capabilities.toolCalling !== true || routes.speech.capabilities.structuredOutput === "none") {
-    throw new DomainError("assembly-incompatible", "模型决策缺少工具调用或结构化对白能力");
-  }
+  resolveAgentModelRoutes({
+    view: input.ports["agent.model-pool"], moduleId: input.moduleId, requirements: modelDecisionPurposeRequirements,
+  });
   return createStatelessModule(input, modelDecision);
 }
