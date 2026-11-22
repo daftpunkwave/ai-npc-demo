@@ -26,9 +26,11 @@
     "@ai-npc/mod-client-world-view-standard": "workspace:*",
     "react": "^19",
     "react-dom": "^19",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5",
     "vite": "^8"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
   }
 }

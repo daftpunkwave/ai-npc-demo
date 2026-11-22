@@ -36,6 +36,8 @@
                          "@ai-npc/mod-platform-secrets-env":  "workspace:*",
                          "@ai-npc/mod-platform-operations-standard":  "workspace:*",
                          "@ai-npc/mod-transport-http-ws-fastify":  "workspace:*",
+                         "vitest":  "^5",
+                         "yaml":  "^2.9.1",
                          "zod":  "^4"
                      }
 }

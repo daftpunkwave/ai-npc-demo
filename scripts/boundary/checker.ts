@@ -18,7 +18,7 @@ import {
   isVerificationPackage,
   resolveWorkspaceImport,
 } from "./package-registry";
-import { isSkippedPath, normalizeRepoPath } from "./paths";
+import { isSkippedPath, nodeBuiltinName, normalizeRepoPath, packageNameOfSpecifier } from "./paths";
 import type {
   BoundaryCheckInput,
   BoundaryPackage,
@@ -95,7 +95,16 @@ export function checkBoundaries(input: BoundaryCheckInput): readonly BoundaryVio
           const resolution = resolveWorkspaceImport(record.specifier, packagesByName);
           if (resolution.target !== undefined) {
             imported.add(resolution.target.name);
+            continue;
           }
+          // 第三方导入也计入生产使用：dependencies 声明而生产源码未引用的库按依赖图规则报违规。
+          if (nodeBuiltinName(record.specifier) === null) {
+            imported.add(packageNameOfSpecifier(record.specifier));
+          }
+        }
+        // .tsx/.jsx 经自动 JSX transform 隐式引入 react/jsx-runtime，视为事实使用 react。
+        if (/\.[jt]sx$/.test(extension)) {
+          imported.add("react");
         }
         productionImports.set(importer.name, imported);
       }

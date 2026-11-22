@@ -60,6 +60,48 @@ describe("规则 6：依赖图与动态加载", () => {
     expectRule(violations, 6);
   });
 
+  it("拒绝未使用的第三方依赖声明", () => {
+    const authorityPackage = packageManifest("@ai-npc/authority", "packages/authority", {
+      dependencies: { yaml: "^2" },
+    });
+    const violations = checkFixture("packages/authority/src/index.ts", "no-imports.ts.txt", {
+      packages: packagesWith([authorityPackage]),
+    });
+    expectCode(violations, "unused-third-party-dependency");
+    expectRule(violations, 6);
+  });
+
+  it("拒绝根清单声明生产依赖", () => {
+    const rootPackage = packageManifest("ai-npc-demo", "", {
+      dependencies: { fastify: "^5" },
+    });
+    const violations = checkBoundaries({ files: [], packages: [rootPackage] });
+    expectCode(violations, "unused-third-party-dependency");
+    expectRule(violations, 6);
+    expect(violations[0]?.message).toContain("fastify");
+  });
+
+  it("验证包生产源码导入第三方仍须自身声明", () => {
+    const scriptsPackage = packageManifest("@ai-npc/scripts", "scripts", {
+      exports: { "./check-boundaries": "./check-boundaries.ts" },
+    });
+    const violations = checkFixture("scripts/check-sample.ts", "undeclared-third-party.ts.txt", {
+      packages: [scriptsPackage],
+    });
+    expectCode(violations, "undeclared-third-party-dependency");
+    expectRule(violations, 6);
+  });
+
+  it("工具配置文件导入 devDependencies 构建工具不报违规", () => {
+    const appClientPackage = packageManifest("@ai-npc/app-client", "apps/client", {
+      devDependencies: { vite: "^8" },
+    });
+    const violations = checkFixture("apps/client/vite.config.ts", "tool-config-import.ts.txt", {
+      packages: [appClientPackage],
+    });
+    expect(violations).toEqual([]);
+  });
+
   it("拒绝包依赖环", () => {
     const cyclePackages = [
       packageManifest("@ai-npc/cycle-a", "packages/cycle-a", {

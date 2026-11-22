@@ -15,6 +15,7 @@ import { violation } from "./finding";
 import { dependencyAllowlist, isAllowedNodeBuiltin } from "./modules";
 import {
   canCheckDependencyDeclaration,
+  canCheckThirdPartyDeclaration,
   findOwningPackage,
   isBrowserForbiddenExternal,
   isExportDeclared,
@@ -29,6 +30,7 @@ import {
   isModuleCatalogFile,
   isModulePackageName,
   isRelativeSpecifier,
+  isToolConfigFile,
   nodeBuiltinName,
   packageNameOfSpecifier,
   resolveRelativePath,
@@ -335,7 +337,7 @@ function inspectExternalImport(
     );
   }
 
-  if (importer !== undefined && canCheckDependencyDeclaration(importer, testFile)) {
+  if (importer !== undefined && canCheckThirdPartyDeclaration(testFile) && !isToolConfigFile(file.path)) {
     if (!Object.prototype.hasOwnProperty.call(importer.dependencies, packageBase)) {
       const devOnly = Object.prototype.hasOwnProperty.call(importer.devDependencies, packageBase);
       violations.push(

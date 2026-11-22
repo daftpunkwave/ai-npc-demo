@@ -1,5 +1,5 @@
 /**
- * 规则 6 的包依赖图检查：未使用的 workspace 依赖声明与循环依赖。
+ * 规则 6 的包依赖图检查：未使用的 workspace 与第三方依赖声明、根清单生产依赖与循环依赖。
  * 图节点来自 dependencies 声明与生产源码实际引用，devDependencies 不构成运行时边。
  * 禁止把验证包的测试覆盖依赖算作生产使用，或跳过环检测。
  */
@@ -35,20 +35,25 @@ export function checkDependencyGraph(
   }
 
   // 验证包的 workspace 依赖用于测试自身覆盖，不计入生产引用；其余包的声明必须被生产源码实际使用。
+  // 根包没有生产源码，任何 dependencies 声明都无使用方，运行时职责应落在应用与模块包。
   for (const pkg of packages) {
-    if (isVerificationPackage(pkg)) {
+    const isRootPackage = pkg.directory === "";
+    if (isVerificationPackage(pkg) && !isRootPackage) {
       continue;
     }
     const imported = productionImports.get(pkg.name) ?? new Set<string>();
     for (const dependencyName of Object.keys(pkg.dependencies)) {
-      if (dependencyName.startsWith("@ai-npc/") && !imported.has(dependencyName)) {
+      const isWorkspaceDependency = dependencyName.startsWith("@ai-npc/");
+      if (!imported.has(dependencyName)) {
         violations.push(
           violation(
             RULE_DEPENDENCY_GRAPH,
-            "unused-workspace-dependency",
+            isWorkspaceDependency ? "unused-workspace-dependency" : "unused-third-party-dependency",
             `${pkg.directory}/package.json`,
             1,
-            `dependencies 声明了 workspace 依赖 ${dependencyName}，但生产源码没有引用它。`,
+            isWorkspaceDependency
+              ? `dependencies 声明了 workspace 依赖 ${dependencyName}，但生产源码没有引用它。`
+              : `dependencies 声明了第三方依赖 ${dependencyName}，但生产源码没有引用它。`,
           ),
         );
       }
