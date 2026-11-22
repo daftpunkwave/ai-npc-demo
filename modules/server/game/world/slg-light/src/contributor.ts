@@ -9,6 +9,7 @@ import {
   effectivePrincipalId,
   factionAudience,
   gameModuleIds,
+  holdsOperationalSeat,
   principalsAudience,
   requireGameContent,
   type GameContent,
@@ -145,18 +146,20 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
 }
 
 /**
- * 判断当前主体是否掌握公社水闸政策：AI 公社党魁直接以其派系 ID 行动，
+ * 判断当前主体是否掌握公社水闸政策：持有公社席的派系主体直接命中（AI 公社党魁以派系 ID 行动），
  * 玩家则按已开局 campaign 的 playerId 与 factionId 裁决，不信任命令自报身份。
+ * 公社席由内容规则参数声明，规则层不写具体派系 ID。
  */
 function controlsWatergate(context: WorldContext, principalId: string): boolean {
-  if (principalId === "human-neutral") {
+  const content = requireGameContent(context.content);
+  if (holdsOperationalSeat(content, principalId)) {
     return true;
   }
   const record = readWorldState(context.tx, "campaign", campaignAggregateId, campaignStateSchema);
   return (
     record !== null &&
     record.state.playerId === context.auth.principalId &&
-    record.state.factionId === "human-neutral"
+    holdsOperationalSeat(content, record.state.factionId)
   );
 }
 

@@ -18,14 +18,11 @@ import {
   type GameModulePorts,
   type HandlerContext,
 } from "@ai-npc/module-sdk";
-import { hasFactionSupporter, transportCapacitySupporterAgentId } from "./faction-bonus";
+import { isEnergyOnlyRepairTeam, repairWorkNodeId, teamTransportCapacity } from "./faction-bonus";
 import type { DispatchInput } from "./plan-types";
 import { computeTaskRoute } from "./routes";
 
 export type { DispatchInput } from "./plan-types";
-
-/** team-star 修复只需能源 10，供给库存点可为 null。 */
-const energyOnlyRepairTeamId = "team-star";
 
 export interface DispatchPlan {
   readonly taskType: DispatchInput["taskType"];
@@ -212,14 +209,16 @@ function resolveParams(
       if (params.supplyStockpileId !== null && supply === undefined) {
         return fail("invalid-params", "供给库存点不存在");
       }
-      const energyOnly = input.teamId === energyOnlyRepairTeamId;
+      // 仅能源修复队伍由内容规则声明；其余队伍必须提供供给库存点。
+      const energyOnly = isEnergyOnlyRepairTeam(content, input.teamId);
+      const workNodeId = repairWorkNodeId(content);
       if (!energyOnly && params.supplyStockpileId === null) {
         return fail("invalid-params", "修复任务必须提供供给库存点");
       }
-      if (energy.nodeId !== "grayharbor" && energy.nodeId !== teamNodeId) {
+      if (energy.nodeId !== workNodeId && energy.nodeId !== teamNodeId) {
         return fail("invalid-params", "能源库存点不在工作节点");
       }
-      if (supply !== undefined && supply.nodeId !== "grayharbor" && supply.nodeId !== teamNodeId) {
+      if (supply !== undefined && supply.nodeId !== workNodeId && supply.nodeId !== teamNodeId) {
         return fail("invalid-params", "供给库存点不在工作节点");
       }
       const stockpiles: Reservation[] = [{ stockpileId: energy.stockpileId, amount: { supply: 0, energy: 10, medical: 0 } }];
@@ -234,7 +233,7 @@ function resolveParams(
           fromStockpileId: energy.stockpileId,
           toStockpileId: supply?.stockpileId ?? null,
           stockpiles,
-          participantNodes: [teamNodeId, "grayharbor"],
+          participantNodes: [teamNodeId, workNodeId],
           originNodeId: null,
           cargoTotal: null,
         },
@@ -314,13 +313,9 @@ export function planDispatch(context: DispatchContext, input: DispatchInput): Pl
     return fail("team-not-at-origin", "队伍不在运输起点");
   }
 
-  // 第 6 步 over-capacity（仅运输，受邀者中有本派物资支持者时运力 +5）。
+  // 第 6 步 over-capacity（仅运输；运力加成来自内容规则岗位参数，与出发校验共用同一来源）。
   if (resolved.cargoTotal !== null) {
-    const capacity =
-      teamView.capacity +
-      (hasFactionSupporter(content, team.ownerFactionId, resolved.invitees, transportCapacitySupporterAgentId)
-        ? 5
-        : 0);
+    const capacity = teamTransportCapacity(content, team.ownerFactionId, teamView.capacity, resolved.invitees);
     if (resolved.cargoTotal > capacity) {
       return fail("over-capacity", "货物超过队伍运力");
     }

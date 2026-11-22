@@ -124,7 +124,8 @@ function triggerCard(context: ScenarioContext, cardId: string, version: number, 
   context.tx.put("scenario-card", cardId, triggered);
   context.tx.emit("ScenarioCardTriggered", { cardId, version, note: "triggered" }, [{ kind: "system" }]);
   applyCardEffects(context, cardId, state.effects.length > 0 ? state.effects : (card?.effects ?? []));
-  if (cardId === "card-relay-alarm") {
+  // 压力卡由剧情内容声明：触发后启用每日剧情压力，规则层不写具体卡片 ID。
+  if (scenario?.pressureCardId !== undefined && cardId === scenario.pressureCardId) {
     const run = ensureRunState(context);
     context.tx.put("scenario-run", run.scenarioId, { ...run, alarmTriggered: true });
   }

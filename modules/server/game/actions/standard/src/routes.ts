@@ -4,7 +4,7 @@
  * 禁止在出发时信任派遣时缓存的路线，也禁止把救援拆成不经过群体节点的单段路线。
  */
 import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
-import { externalGuideAgentId, hasFactionSupporter, rescueSupporterAgentId, scoutSupporterAgentId } from "./faction-bonus";
+import { repairWorkNodeId, rescueDurationDiscount, scoutTravelDiscountPerRoad } from "./faction-bonus";
 import type { DispatchInput } from "./plan-types";
 
 export interface PlannedRoute {
@@ -49,16 +49,22 @@ function join(first: Segment | null, second: Segment | null): Segment | null {
 
 /**
  * 用内容道路重算已选路径的行程；只改行程，不改 findRoute 选出的道路序列。
+ * 每经过一条道路按折扣值减时，折扣来自内容规则岗位参数。
  * 内容缺少某条道路时退回原行程，避免算出与路径不一致的用时。
  */
-function guidedTravelTicks(content: GameContent, roadIds: readonly string[], fallback: number): number {
+function guidedTravelTicks(
+  content: GameContent,
+  roadIds: readonly string[],
+  fallback: number,
+  discountPerRoad: number,
+): number {
   let total = 0;
   for (const roadId of roadIds) {
     const road = content.roads.get(roadId);
     if (road === undefined) {
       return fallback;
     }
-    total += Math.max(1, road.travelTicks - 1);
+    total += Math.max(1, road.travelTicks - discountPerRoad);
   }
   return total;
 }
@@ -153,10 +159,11 @@ export function computeTaskRoute(
     if (route === null) {
       return null;
     }
-    const helpers = hasFactionSupporter(content, factionId, participants, rescueSupporterAgentId);
+    // 救援用时折扣来自内容规则岗位参数（本派医政支持者）。
+    const discount = rescueDurationDiscount(content, factionId, participants);
     return {
       ...route,
-      duration: Math.max(1, route.travelTicks - (helpers ? 2 : 0)),
+      duration: Math.max(1, route.travelTicks - discount),
       workNodeId: params.toNodeId,
       patrolStartTick: null,
       patrolEndTick: null,
@@ -164,14 +171,16 @@ export function computeTaskRoute(
     };
   }
   if (input.taskType === "repair") {
-    const route = segment(ports, teamNodeId, "grayharbor", factionId, departTick, false);
+    // 修复工作节点来自内容规则参数，与派遣校验共用同一来源。
+    const workNodeId = repairWorkNodeId(content);
+    const route = segment(ports, teamNodeId, workNodeId, factionId, departTick, false);
     if (route === null) {
       return null;
     }
     return {
       ...route,
       duration: route.travelTicks + 6,
-      workNodeId: "grayharbor",
+      workNodeId,
       patrolStartTick: null,
       patrolEndTick: null,
       workStartTick: departTick + route.travelTicks,
@@ -185,11 +194,10 @@ export function computeTaskRoute(
   if (route === null) {
     return null;
   }
-  // 侦察向导只认本派情报/侦察支持者；追风按设计对任何队伍同效。
-  const guided =
-    hasFactionSupporter(content, factionId, participants, scoutSupporterAgentId) ||
-    participants.includes(externalGuideAgentId);
-  const travelTicks = guided ? guidedTravelTicks(content, route.roadIds, route.travelTicks) : route.travelTicks;
+  // 侦察逐路折扣来自内容规则岗位参数；通用向导对任何队伍同效。
+  const discountPerRoad = scoutTravelDiscountPerRoad(content, factionId, participants);
+  const travelTicks =
+    discountPerRoad > 0 ? guidedTravelTicks(content, route.roadIds, route.travelTicks, discountPerRoad) : route.travelTicks;
   return {
     roadIds: [...route.roadIds],
     travelTicks,

@@ -7,6 +7,7 @@
 import type { ReasonCode, Term } from "@ai-npc/contracts";
 import {
   coversAmounts,
+  holdsOperationalSeat,
   requireGameContent,
   type GameModulePorts,
   type HandlerContext,
@@ -25,13 +26,15 @@ export function termDeadline(term: Term): number {
 /**
  * 水闸义务人必须是当前 campaign 中占公社席的党魁；AI 公社党魁以其派系 ID 承担，
  * 玩家则以 campaign.playerId 承担，不能用其他派系或未开局身份代签。
+ * 公社席由内容规则参数声明，校验层不写具体派系 ID。
  */
 function controlsWatergate(context: TermContext, obligorId: string): boolean {
-  if (obligorId === "human-neutral") {
+  const content = requireGameContent(context.content);
+  if (holdsOperationalSeat(content, obligorId)) {
     return true;
   }
   const campaign = context.modules["game.world"].campaign();
-  return campaign !== null && campaign.playerId === obligorId && campaign.factionId === "human-neutral";
+  return campaign !== null && campaign.playerId === obligorId && holdsOperationalSeat(content, campaign.factionId);
 }
 
 /** 校验单条条款；合法返回 null。 */

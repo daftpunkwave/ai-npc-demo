@@ -9,6 +9,7 @@ import { commandPayloadOf } from "@ai-npc/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
+  holdsOperationalSeat,
   isApprovedSpeechUsable,
   requireGameContent,
   type GameContent,
@@ -109,7 +110,9 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
   const content = requireGameContent(context.content);
   if (input.channel === "broadcast") {
     const broadcaster = content.characters.get(speech.agentId);
-    const allowed = speech.agentId === "human-neutral" || broadcaster?.permissions?.includes("broadcast") === true;
+    // 公开广播权：持有运营席（公社席）的派系主体，或角色档案声明 broadcast 权限。
+    const allowed =
+      holdsOperationalSeat(content, speech.agentId) || broadcaster?.permissions?.includes("broadcast") === true;
     if (!allowed) {
       return { kind: "rejected", reasonCode: "no-authority", safeMessage: "该主体没有公开广播权限" };
     }
