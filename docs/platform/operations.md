@@ -169,10 +169,14 @@ failurePolicy: online-fallback
 
 代码升级后模块目录或装配的能力闭包发生变化时，旧在线 run 的冻结 manifest 无法按当前模块目录复算，服务端在监听前拒绝启动并保持源 run 与分支原样。错误信息给出两条出路：回退到创建该 run 的代码版本，或设置 `NPC_MIGRATE_ONLINE_RUN=1` 执行显式迁移。
 
+只有装配能力闭包差异（模块绑定集与其摘要）允许迁移：seed、RunSpec 选择、内容版本、名册或 Agent 配置与当前解析不一致时属于非升级差异，即使开关打开也拒绝迁移并保持拒绝启动。内容版本不一致、seed 或引用不一致、`manifest_hash` 校验失败同样不进入迁移。
+
 显式迁移在单个存储事务内完成：
 
-1. 从源在线分支派生新 `kind = online` 分支：全部分支级表原样复制（事件与事件序号延续），新分支时钟置为 `paused`，未完成 trigger 释放，Agent 激活置为 `dormant`。
-2. 写入新 `mode = live` 的 run 行：RunSpec 与 `seed` 沿用源 run，manifest 按当前能力闭包重新冻结。
-3. `world_aliases('online')` 原子切换到新分支。
+1. 校验 `world_aliases('online')` 仍指向迁移读取的源分支；别名已漂移时整体拒绝，防止并发启动互相覆盖在线入口。
+2. 从源在线分支派生新 `kind = online` 分支：全部分支级表原样复制（事件与事件序号延续），新分支时钟置为 `paused`，未完成 trigger 释放；名册中处于激活状态的身份在派生分支上恢复激活，迁移后的世界按原名册调度 Agent。
+3. 写入新 `mode = live` 的 run 行：RunSpec 与 `seed` 沿用源 run，manifest 按当前能力闭包重新冻结。
+4. 源分支状态置为 `archived`（与「重新开局把旧分支设为 archived」同一让位语义）：run 行、manifest 与事件历史全部保留，归档分支不计入部署级激活配额。
+5. `world_aliases('online')` 原子切换到新分支。
 
-源 run 行、源分支与源 manifest 不做任何修改，迁移失败时事务整体回滚。内容版本不一致、seed 或引用不一致、`manifest_hash` 校验失败不属于能力闭包升级，即使开关打开也拒绝启动，不进入迁移。
+源 run 行与源 manifest 不做任何修改，迁移失败时事务整体回滚。迁移提交后宿主启动失败时，服务端把在线别名与源分支状态恢复到迁移前，迁移产生的新分支与新 run 留存为孤儿记录供审计。

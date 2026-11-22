@@ -16,6 +16,14 @@ export type {
 export { filterPlan, loadAssembly, resolveServerAssembly, resolveSessionAssemblies, resolveServerModules } from "./host/assembly";
 export type { ResolvedServerAssembly, ResolveServerAssemblyOptions } from "./host/assembly";
 export { buildRunManifest, readFrozenManifest } from "./host/manifest";
+export {
+  assertMigrationScopeIsCapabilityClosure,
+  migrateOnlineRun,
+  migrationSummary,
+  OnlineRunMigrationRequiredError,
+  restoreOnlineAliasToSourceBranch,
+} from "./host/run-migration";
+export type { MigrateOnlineRunInput, MigratedOnlineRun } from "./host/run-migration";
 export type {
   BuiltRunManifest,
   BuildRunManifestInput,

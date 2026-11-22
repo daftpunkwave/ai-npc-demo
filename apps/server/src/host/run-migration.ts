@@ -1,10 +1,12 @@
 /**
- * 核心职责：识别在线 run 的能力闭包升级场景并执行显式迁移；迁移在单事务内派生新分支与新 run。
+ * 核心职责：识别在线 run 的能力闭包升级场景并执行显式迁移；迁移在单事务内派生新分支与新 run，
+ * 并提供启动失败后恢复在线入口的补偿事务。
  * 交互契约：依赖 StoragePort 的 forkBranch 端口、宿主 ID 与时间服务、冻结 manifest 的规范化哈希。
- * 约束与禁忌：不修改源 run 行、源分支与源 manifest；不决定迁移时机（由宿主启动编排按部署开关触发）；
- * 不可迁移的失败（数据损坏、内容版本不一致）不得进入迁移路径。
+ * 约束与禁忌：不修改源 run 行与源 manifest；源分支只允许两处让位语义变更（status 置 archived，
+ * 与重新开局的分支让位一致）；迁移事务内校验别名仍指向读取时的源分支，过时入口直接拒绝；
+ * 不可迁移的失败（数据损坏、内容版本不一致、非能力闭包差异）不得进入迁移路径。
  */
-import { type HostServices, type Json, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, canonicalJson, type HostServices, type Json, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
 import type { RunManifest } from "./manifest";
 import type { OnlineEntry } from "./online-entry";
 
@@ -29,7 +31,7 @@ export class OnlineRunMigrationRequiredError extends Error {
   }
 }
 
-/** 迁移结果：新 run 与新分支的标识；源 run 与源分支保持原样。 */
+/** 迁移结果：新 run 与新分支的标识；源 run 与源 manifest 保持原样。 */
 export interface MigratedOnlineRun {
   readonly runId: string;
   readonly branchId: string;
@@ -48,6 +50,49 @@ export interface MigrateOnlineRunInput {
 
 function numericCell(value: unknown, fallback: number): number {
   return typeof value === "number" ? value : fallback;
+}
+
+/** 规范化 JSON 等值比较；undefined 与 null 都表示「字段不存在」。 */
+function canonicalFieldEquals(frozen: unknown, rebuilt: unknown): boolean {
+  return canonicalJson((frozen ?? null) as Json) === canonicalJson((rebuilt ?? null) as Json);
+}
+
+/**
+ * 校验冻结 manifest 与重建 manifest 的差异只落在装配能力闭包上（assembly 字段）：
+ * seed、RunSpec 选择、内容版本、名册、Agent 槽位、profile 与模型配置任一变化都超出升级范围，
+ * 此时迁移会把改动后的配置应用到历史世界，必须拒绝而不是迁移。
+ */
+export function assertMigrationScopeIsCapabilityClosure(frozenManifestValue: Json, rebuilt: RunManifest): void {
+  const frozen = frozenManifestValue as Readonly<Record<string, Json>>;
+  const mismatches: string[] = [];
+  if (frozen["seed"] !== rebuilt.seed) {
+    mismatches.push("seed");
+  }
+  for (const field of ["selection", "content", "roster", "agentSlots", "agentProfiles", "models"] as const) {
+    if (!canonicalFieldEquals(frozen[field], rebuilt[field])) {
+      mismatches.push(field);
+    }
+  }
+  if (mismatches.length > 0) {
+    throw new DomainError(
+      "validation",
+      `冻结 manifest 的差异超出能力闭包范围（${mismatches.join("、")} 与当前解析不一致）；拒绝迁移，保持拒绝启动`,
+      { details: { fields: mismatches.join(",") } },
+    );
+  }
+}
+
+/** 迁移事务内的并发防御：online 别名必须仍指向读取时的源分支，漂移即拒绝，避免双迁移互相覆盖。 */
+function assertAliasStillOnSourceBranch(tx: StorageTransaction, online: OnlineEntry): void {
+  const alias = tx.rows("world_aliases").get({ alias: "online" });
+  const currentBranchId = typeof alias?.["branch_id"] === "string" ? alias["branch_id"] : "";
+  if (currentBranchId !== online.branchId) {
+    throw new DomainError(
+      "validation",
+      `在线别名已指向分支 ${currentBranchId}，不再是迁移读取的源分支 ${online.branchId}；拒绝基于过时入口迁移`,
+      { details: { aliasBranchId: currentBranchId, sourceBranchId: online.branchId } },
+    );
+  }
 }
 
 function putRunRow(tx: StorageTransaction, input: MigrateOnlineRunInput, runId: string, branchId: string, nowIso: string): void {
@@ -70,15 +115,38 @@ function putRunRow(tx: StorageTransaction, input: MigrateOnlineRunInput, runId: 
 }
 
 /**
- * 执行显式迁移：单事务内派生 online 分支、写入新 run 行并把 online 别名切换到新分支。
- * forkBranch 在同一事务内复制全部分支级表（事件与状态原样延续），并暂停新分支时钟、
- * 释放未完成 trigger、把激活置为 dormant；源 run 与源分支的所有行保持原样。
+ * 把源分支置为 archived：与「重新开局把旧分支设为 archived」同一让位语义。
+ * 只有分支状态位变化；run 行、manifest 与事件历史全部保留，且 archived 分支不再计入部署级激活配额。
+ */
+function archiveSourceBranch(tx: StorageTransaction, online: OnlineEntry): void {
+  tx.rows("branches").put({ ...online.branch, status: "archived" });
+}
+
+/**
+ * 把派生分支的 Agent 激活恢复为源分支的状态：fork 的安全修正把复制出的激活置 dormant，
+ * 迁移是恢复而非重开，源分支名册中 active 的身份在新分支上保持 active，
+ * 否则迁移后的世界将不再调度 NPC。
+ */
+function restoreForkedActivations(tx: StorageTransaction, sourceBranchId: string, dstBranchId: string): void {
+  tx.all(
+    "UPDATE agent_activations SET status = 'active' WHERE branch_id = ? AND agent_id IN " +
+      "(SELECT agent_id FROM agent_activations WHERE branch_id = ? AND status = 'active')",
+    [dstBranchId, sourceBranchId],
+  );
+}
+
+/**
+ * 执行显式迁移：单事务内校验别名、派生 online 分支、写入新 run 行、
+ * 把源分支置为 archived 并切换 online 别名。forkBranch 在同一事务内复制全部分支级表
+ * （事件与状态原样延续），并暂停新分支时钟、释放未完成 trigger、把激活置为 dormant 后
+ * 按源分支恢复。源 run 行与源 manifest 不做任何修改。
  */
 export function migrateOnlineRun(input: MigrateOnlineRunInput): MigratedOnlineRun {
   const runId = input.host.ids("run");
   const branchId = input.host.ids("br");
   const nowIso = input.host.nowIso();
   input.storage.transact((tx) => {
+    assertAliasStillOnSourceBranch(tx, input.online);
     input.storage.forkBranch(tx, {
       srcBranchId: input.online.branchId,
       dstBranchId: branchId,
@@ -87,14 +155,33 @@ export function migrateOnlineRun(input: MigrateOnlineRunInput): MigratedOnlineRu
       profileHash: null,
     });
     putRunRow(tx, input, runId, branchId, nowIso);
+    archiveSourceBranch(tx, input.online);
+    restoreForkedActivations(tx, input.online.branchId, branchId);
     tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: nowIso });
   });
   return { runId, branchId };
 }
 
-/** 迁移证据描述：源与新 run 的标识与沿用 seed，供启动日志与测试断言使用。 */
+/**
+ * 迁移已提交但宿主启动失败时的补偿：把 online 别名恢复指向源分支，并把源分支状态恢复 active。
+ * 迁移产生的新分支与新 run 不删除，作为孤儿记录留存供审计；源 run 行与 manifest 始终未变。
+ */
+export function restoreOnlineAliasToSourceBranch(
+  storage: StoragePort,
+  nowIso: string,
+  sourceBranchId: string,
+): void {
+  storage.transact((tx) => {
+    const sourceBranch = tx.rows("branches").get({ branch_id: sourceBranchId });
+    if (sourceBranch !== null) {
+      tx.rows("branches").put({ ...sourceBranch, status: "active" });
+    }
+    tx.rows("world_aliases").put({ alias: "online", branch_id: sourceBranchId, updated_at: nowIso });
+  });
+}
+
+/** 迁移证据描述：源与新 run 的标识，不含 seed 与任何凭据，供启动日志使用。 */
 export function migrationSummary(input: MigrateOnlineRunInput, migrated: MigratedOnlineRun): string {
-  return `在线 run 迁移完成：源 run ${input.online.runId}（分支 ${input.online.branchId}）保持原样，` +
-    `新 run ${migrated.runId}（分支 ${migrated.branchId}）按当前能力闭包冻结 manifest ${input.manifestHash}，` +
-    `seed 沿用源 run：${input.manifest.seed}。`;
+  return `在线 run 迁移完成：源 run ${input.online.runId}（分支 ${input.online.branchId}）已归档且数据保留，` +
+    `新 run ${migrated.runId}（分支 ${migrated.branchId}）按当前能力闭包冻结 manifest ${input.manifestHash}。`;
 }
