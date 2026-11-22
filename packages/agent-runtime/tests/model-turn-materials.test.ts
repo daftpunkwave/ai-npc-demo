@@ -91,4 +91,16 @@ describe("模型上下文预算读取", () => {
       historyTurns: 6, lendUnusedBudget: false,
     });
   });
+
+  // historyTurns 在 ordered-blocks schema 中可省略；缺失或非数字时必须收敛为 0，
+  // 否则 Number(undefined) 得到 NaN，Array.prototype.slice(-NaN) 会把全部历史当成最近 N 条。
+  it.each(["decision", "speech"] as const)("%s 预算在 historyTurns 缺失或非数字时按 0 条历史解析", (purpose) => {
+    const withoutHistory = { ...contextConfig } as Record<string, Json>;
+    delete withoutHistory["historyTurns"];
+    for (const context of [withoutHistory, { ...contextConfig, historyTurns: "8" }, { ...contextConfig, historyTurns: null }]) {
+      const budget = modelContextBudget(profileWith(context), purpose);
+      expect(Number.isNaN(budget.historyTurns)).toBe(false);
+      expect(budget.historyTurns).toBe(0);
+    }
+  });
 });
