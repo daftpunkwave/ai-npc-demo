@@ -73,10 +73,13 @@ describe("确定性模型传输", () => {
       system: "决策请求处理",
       context: { workRef: "model-test", agentId: "human-independent", evaluatorId: null, round: 2, triggerPrincipalIds: principalIds },
     });
-    await expect(port.complete(request, null, connection([scoped]))).rejects.toMatchObject({ kind: "protocol" });
-    await expect(port.complete({ ...request, context: { ...request.context, round: 1 } }, null, connection([scoped]))).rejects.toMatchObject({ kind: "protocol" });
     const matched = await port.complete({ ...request, messages: [{ role: "user", content: "请护送物资" }] }, null, connection([scoped]));
     expect(matched.wire.responseBody).toMatchObject({ fixtureId: "scoped" });
+    // 只把 round 改成不匹配，其余条件（agentId、主体数、inputIncludes）仍满足，单独验证 round。
+    await expect(port.complete(
+      { ...request, messages: [{ role: "user", content: "请护送物资" }], context: { ...request.context, round: 1 } },
+      null, connection([scoped]),
+    )).rejects.toMatchObject({ kind: "protocol" });
   });
 
   it("默认 decision 响应对 1–4 个去重主体返回一次 decision_submit，受众为主体全集", async () => {
@@ -104,9 +107,12 @@ describe("确定性模型传输", () => {
       modelRequest({ context: { workRef: "model-test", agentId: "human-independent", evaluatorId: null, round: 1, triggerPrincipalIds: principalIds } }),
       null, connection([]),
     )).rejects.toMatchObject({ kind: "protocol", retryable: false, httpStatus: null });
-    // 5 条记录去重后剩 4 个主体时仍允许默认响应。
+    // 五项记录含一个重复主体：去重后剩 4 个仍允许默认响应，受众只含去重后的主体。
     const deduplicated = await port.complete(
-      modelRequest({ context: { workRef: "model-test", agentId: "human-independent", evaluatorId: null, round: 1, triggerPrincipalIds: principalIds.slice(0, 4) } }),
+      modelRequest({ context: {
+        workRef: "model-test", agentId: "human-independent", evaluatorId: null, round: 1,
+        triggerPrincipalIds: [...principalIds.slice(0, 4), principalIds[0]!],
+      } }),
       null, connection([]),
     );
     expect(deduplicated.toolCalls[0]?.arguments).toMatchObject({

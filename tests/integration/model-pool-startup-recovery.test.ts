@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
 import type { Json, StoragePort } from "@ai-npc/contracts";
-import type { AgentBudgetPort, ModelObservabilityPort, ModelRoute } from "@ai-npc/module-sdk";
+import type { AgentBudgetPort, AgentModelPoolPort, ModelObservabilityPort, ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
 
 const roots: string[] = [];
@@ -164,22 +164,42 @@ describe("启动清扫", () => {
 });
 
 describe("证据归档与启动清理的查询路径", () => {
-  it("模型尝试 span 的模块版本取自模块定义，避免两处漂移", async () => {
+  it("模型尝试 span 的模块标识与版本取自模块定义，避免两处漂移", async () => {
     await withStorage(async (storage) => {
       const spans: { moduleId: string | null; moduleVersion: string | null; name: string }[] = [];
+      const budget = await createModule("platform.budget.standard", { "platform.storage": storage });
+      const definition = serverModuleDefinitions.find(({ id }) => id === "agent.model-pool.shared");
+      if (definition === undefined) throw new Error("缺少 agent.model-pool.shared 描述符");
+      const transport = await createModule("platform.model-transport.deterministic", {});
       const pool = await createModule("agent.model-pool.shared", {
         "platform.storage": storage,
-        "platform.budget": { check: vi.fn(), reserve: vi.fn(), settle: vi.fn() } satisfies AgentBudgetPort,
+        "platform.budget": budget.port,
         "platform.secrets": { resolve: () => null },
         "platform.observability": {
           recordSpan: (span) => { spans.push({ moduleId: span.moduleId, moduleVersion: span.moduleVersion, name: span.name }); },
         } satisfies ModelObservabilityPort,
-        "platform.model-transport": [],
+        "platform.model-transport": [transport.port],
       });
-      void pool;
-      const definition = serverModuleDefinitions.find(({ id }) => id === "agent.model-pool.shared");
-      expect(definition?.version).toBe("1.0.0");
-      expect(spans).toEqual([]);
+      const run = (pool.port as AgentModelPoolPort).bindRun({
+        routes: [{ ...route, adapterId: definition.id.replace("agent.model-pool.shared", "platform.model-transport.deterministic"),
+          fixtureRows: [] }],
+        limits: { maxTokens: null, maxCost: null },
+      });
+      // 零主体 decision 请求命不中默认响应，必然失败；这里只关心 span 元数据是否写全。
+      const callScope: ModelWorkScope = {
+        worldId: "wld-000000000001", branchId: "br-000000000001", runId: "run-000000000001",
+        agentId: route.agentId, workRef: "turn-000000000002", traceId: "trc-000000000002", worldTick: 26,
+        triggerPrincipalIds: [], maxModelCalls: 6, maxDailyTokens: 60_000, deadlineMs: 90_000,
+        signal: new AbortController().signal, fence: () => true,
+      };
+      await expect(run.call(callScope, "decision", 100, {
+        system: "测试", messages: [{ role: "user", content: "hi" }], tools: [], output: { kind: "text" },
+        inputLimit: 10_000, round: 1,
+      })).rejects.toBeDefined();
+      expect(spans).toEqual([
+        expect.objectContaining({ name: "model.attempt", moduleId: definition.id, moduleVersion: definition.version }),
+      ]);
+      expect(definition.version).toBe("1.0.0");
     });
   });
 

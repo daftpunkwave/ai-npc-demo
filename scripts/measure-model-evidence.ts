@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
 import { canonicalJson, type HostServices, type Json, type ModelFixture, type StoragePort } from "@ai-npc/contracts";
+import type { NormalizedMessage } from "@ai-npc/contracts";
 import type { AgentModelPoolPort, ModelCallInput, ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
 
 const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-archive-measure-"));
@@ -68,13 +69,30 @@ const scope: ModelWorkScope = {
   signal: new AbortController().signal, fence: () => true,
 };
 
-function callInput(round: number): ModelCallInput {
+/**
+ * 构造第 round 轮请求。后续轮次累积此前的 assistant 工具调用与 tool 结果，
+ * 让归档字节反映真实的多轮决策历史，而不是每轮都从同一条 user 消息开始。
+ */
+function callInput(round: number, history: readonly NormalizedMessage[] = []): ModelCallInput {
   return {
     system: "你是砾火同盟的党魁，只能依据授权资料行动。".repeat(4),
-    messages: [{ role: "user", content: "请检视隘口，然后提交决策。" }],
+    messages: [{ role: "user", content: "请检视隘口，然后提交决策。" }, ...history],
     tools: [{ name: "world_inspect", description: "读取节点状态", inputSchema: toolSchema }],
     output: { kind: "text" }, inputLimit: 30_000, round,
   };
+}
+
+/** 一轮往返之后的完整消息历史：assistant 发起工具调用，tool 返回检视结果。 */
+function appendRound(history: readonly NormalizedMessage[], round: number): NormalizedMessage[] {
+  const callId = `fixture-${round}-1`;
+  return [
+    ...history,
+    { role: "assistant", content: null, providerReplay: null, toolCalls: [{
+      id: callId, name: "world_inspect", arguments: { nodeId: "pass" },
+      argumentsRaw: '{"nodeId":"pass"}', parseError: null,
+    }] },
+    { role: "tool", toolCallId: callId, content: JSON.stringify({ nodeId: "pass", supply: 30, energy: 10, medical: 4 }), isError: false },
+  ];
 }
 
 function bytesOf(value: unknown): number {
@@ -109,8 +127,10 @@ async function main() {
       routes: [route], limits: { maxTokens: null, maxCost: null },
     });
     const rounds: { round: number; requestBytes: number; responseBytes: number; totalBytes: number }[] = [];
+    let history: readonly NormalizedMessage[] = [];
     for (let round = 1; round <= 3; round += 1) {
-      const result = await run.call(scope, "decision", 100, callInput(round));
+      const result = await run.call(scope, "decision", 100, callInput(round, history));
+      history = appendRound(history, round);
       const attemptId = result.attempts.at(-1)?.attemptId;
       const row = storage.transact((tx) => tx.rows("model_attempts").get({ attempt_id: String(attemptId) }));
       const artifacts = storage.transact((tx) => ({
