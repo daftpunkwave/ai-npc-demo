@@ -70,23 +70,34 @@ export class LedgerMemoryPort implements MemoryPort {
         (this.config.prospectiveInput === "enabled" || record.kind !== "prospective") &&
         record.validFromTick <= query.frontier.worldTick,
       );
-    const scored = candidates.map((record) => ({
+    type ScoredItem = {
+      readonly record: MemoryRecordView;
+      readonly score: number;
+      /** 去重键缓存：惰性计算一次，未进入必选与候选窗口的记录不承担 slice/sort/join 开销。 */
+      sourceKey: string | null;
+    };
+    const scored: readonly ScoredItem[] = candidates.map((record) => ({
       record,
       score: this.score(record, query),
-      sourceKey: sourceKeyOf(record),
+      sourceKey: null,
     })).sort((left, right) =>
       right.score - left.score ||
       right.record.validFromTick - left.record.validFromTick ||
       left.record.memoryId.localeCompare(right.record.memoryId),
     );
-    type ScoredItem = (typeof scored)[number];
+    const sourceKeyOf = (item: ScoredItem): string => {
+      item.sourceKey ??= recordSourceKey(item.record);
+      return item.sourceKey;
+    };
     const picked = new Map<string, ScoredItem & { mustInclude: boolean }>();
     const dropped: MemoryBundle["dropped"] = [];
     const droppedIds = new Set<string>();
     // dropped 是解释性明细而非完整清单：上限取候选窗口容量，使对象分配不随历史记忆总量增长。
     // 总数由 candidates 给出，超出上限的落选只保留在计数里。
     const droppedLimit = this.config.recall.candidateLimit;
+    // 同一记忆可能先在必选阶段因预算落选、又在候选池里被判一次落选，按 memoryId 幂等只记首次原因。
     const markDropped = (memoryId: string, reason: MemoryBundle["dropped"][number]["reason"]): void => {
+      if (droppedIds.has(memoryId)) return;
       droppedIds.add(memoryId);
       if (dropped.length < droppedLimit) dropped.push({ memoryId, reason });
     };
@@ -94,13 +105,14 @@ export class LedgerMemoryPort implements MemoryPort {
     let tokenEstimate = 0;
     const pickMandatory = (item: ScoredItem): boolean => {
       if (picked.has(item.record.memoryId) || picked.size >= query.maxItems) return false;
-      if (item.sourceKey.length > 0 && seenSources.has(item.sourceKey)) return false;
+      const sourceKey = sourceKeyOf(item);
+      if (sourceKey.length > 0 && seenSources.has(sourceKey)) return false;
       const itemTokens = estimateTokens(item.record.content.summaryZh);
       if (tokenEstimate + itemTokens > query.maxTokens) {
         markDropped(item.record.memoryId, "budget");
         return false;
       }
-      if (item.sourceKey.length > 0) seenSources.add(item.sourceKey);
+      if (sourceKey.length > 0) seenSources.add(sourceKey);
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: true });
       return true;
@@ -136,7 +148,8 @@ export class LedgerMemoryPort implements MemoryPort {
     for (const item of candidatePool) {
       if (picked.size >= Math.min(this.config.recall.topK, query.maxItems)) break;
       if (picked.has(item.record.memoryId)) continue;
-      if (item.sourceKey.length > 0 && seenSources.has(item.sourceKey)) {
+      const sourceKey = sourceKeyOf(item);
+      if (sourceKey.length > 0 && seenSources.has(sourceKey)) {
         markDropped(item.record.memoryId, "dedupe");
         continue;
       }
@@ -145,7 +158,7 @@ export class LedgerMemoryPort implements MemoryPort {
         markDropped(item.record.memoryId, "budget");
         continue;
       }
-      seenSources.add(item.sourceKey);
+      seenSources.add(sourceKey);
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: false });
     }
@@ -411,9 +424,9 @@ function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBu
 
 /**
  * 去重键：同一批来源观察的排序拼接。
- * 在候选打分时预计算一次，避免同一条记录在必选与候选池两处重复排序拼接。
+ * 由检索流程在记录首次参与必选或候选选择时调用并缓存，避免同一条记录两处重复排序拼接。
  */
-function sourceKeyOf(record: MemoryRecordView): string {
+function recordSourceKey(record: MemoryRecordView): string {
   return record.sourceObservationIds.slice().sort(compareStrings).join(",");
 }
 
