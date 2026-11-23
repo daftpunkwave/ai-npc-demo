@@ -144,7 +144,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
     input.consoleStaticDir ?? resolve(process.cwd(), "apps/server/console-static"),
   );
   try {
-    // 开发宿主与控制台构建并行启动；目录先存在，路由在空目录上登记，构建完成后无需重启服务端。
+    // 开发宿主与控制台构建并行启动：目录先存在，静态路由按请求路径读盘，构建完成后无需重启服务端。
     mkdirSync(consoleStaticDir, { recursive: true });
     const research = createConsoleResearchPort({
       runtime,

@@ -2395,6 +2395,40 @@ describe("服务端 API", () => {
     }
   });
 
+  it("控制台构建后新增的 hash 资产可正常返回，缺失资产返回 404 而不是 200 HTML", async () => {
+    const value = await createTrackedGameHarness(active);
+    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-assets-"));
+    const staticDir = join(directory, "console-static");
+    try {
+      mkdirSync(staticDir);
+      writeFileSync(join(staticDir, "index.html"), "<html>INDEX</html>");
+      // 路由在仅有 index 的状态下注册，模拟服务端先起、vite build --watch 后产出资产。
+      const app = await appFor(value, { consoleStaticDir: staticDir });
+      expect((await app.inject({ method: "GET", url: "/console/assets/main.js" })).statusCode).toBe(404);
+
+      mkdirSync(join(staticDir, "assets"));
+      writeFileSync(join(staticDir, "assets", "main-abc123.js"), "console.log('built');");
+      const asset = await app.inject({ method: "GET", url: "/console/assets/main-abc123.js" });
+      expect(asset.statusCode).toBe(200);
+      expect(asset.headers["content-type"]).toContain("javascript");
+      expect(asset.body).toContain("console.log('built')");
+
+      // 缺失的资产路径必须是 404 统一错误，不能被回退成 index.html 的 200 text/html。
+      const missing = await app.inject({ method: "GET", url: "/console/assets/nope-999.js" });
+      expect(missing.statusCode).toBe(404);
+      expect(missing.headers["content-type"]).toContain("application/json");
+      expect(errorResponseSchema.parse(missing.json()).error.code).toBe("not-found");
+      expect(missing.body).not.toContain("INDEX");
+
+      // 导航路径（无扩展名）仍然回退 index.html，供前端路由使用。
+      const navigation = await app.inject({ method: "GET", url: "/console/researcher/timeline" });
+      expect(navigation.statusCode).toBe(200);
+      expect(navigation.body).toContain("INDEX");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("控制台静态目录创建失败时释放已初始化资源", async () => {
     const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-failure-"));
     const blocker = join(directory, "not-a-directory");
