@@ -93,7 +93,9 @@ describe("协议", () => {
     const self = respondAgreement(value, playerAuth(value), agreementId, "accept");
     expect(self.commandStatus).toBe("rejected");
     expect(self.reasonCode).toBe("already-responded");
-    acceptAgreement(value, strategicAuth(value, "human-neutral"), agreementId);
+    const accepted = respondAgreement(value, strategicAuth(value, "human-neutral"), agreementId, "accept");
+    expect(accepted.commandStatus).toBe("accepted");
+    expect(accepted.result).toEqual({ agreementId, agreementStatus: "active" });
     expectAgreement(value, agreementId, { status: "active" });
     expectPartiesOnly(value, "AgreementResponded", ["player-1", "human-neutral"]);
     expectPartiesOnly(value, "AgreementActivated", ["player-1", "human-neutral"]);
@@ -109,6 +111,7 @@ describe("协议", () => {
     expect(counter.commandStatus).toBe("accepted");
     const nextId = (counter.result as { readonly agreementId: string }).agreementId;
     expect(nextId).not.toBe(agreementId);
+    expect(counter.result).toEqual({ agreementId: nextId, agreementStatus: "proposed" });
     expect(readGameAggregate(value, "agreement", agreementId)).toMatchObject({
       status: "superseded",
       supersededBy: nextId,
@@ -128,6 +131,37 @@ describe("协议", () => {
       [{ kind: "principals", ids: ["player-1", "human-neutral"] }],
       [{ kind: "principals", ids: ["player-1", "human-neutral"] }],
     ]);
+  });
+
+  it("拒绝回复返回与协议状态一致的固定 result", async () => {
+    const value = await harness();
+    const agreementId = proposeDelivery(value);
+    const rejected = executeCommand(value, strategicAuth(value, "human-neutral"), "agreement.respond", {
+      agreementId,
+      response: "reject",
+    });
+    expect(rejected.commandStatus).toBe("accepted");
+    expect(rejected.result).toEqual({ agreementId, agreementStatus: "rejected" });
+    expectAgreement(value, agreementId, { status: "rejected" });
+  });
+
+  it("部分当事人接受时 result 仍为 proposed，收齐接受后才生效", async () => {
+    const value = await harness();
+    const agreementId = proposeAgreement(
+      value,
+      playerAuth(value),
+      ["player-1", "human-neutral", "human-independent"],
+      [deliveryTerm(30)],
+    );
+    const partial = respondAgreement(value, strategicAuth(value, "human-neutral"), agreementId, "accept");
+    expect(partial.commandStatus).toBe("accepted");
+    expect(partial.result).toEqual({ agreementId, agreementStatus: "proposed" });
+    expectAgreement(value, agreementId, { status: "proposed" });
+    expect(gameEventTypes(value)).not.toContain("AgreementActivated");
+    const final = respondAgreement(value, strategicAuth(value, "human-independent"), agreementId, "accept");
+    expect(final.commandStatus).toBe("accepted");
+    expect(final.result).toEqual({ agreementId, agreementStatus: "active" });
+    expectAgreement(value, agreementId, { status: "active" });
   });
 
   it("未知当事人被拒绝，且不写入协议或 job", async () => {

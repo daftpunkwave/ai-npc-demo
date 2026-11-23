@@ -73,13 +73,18 @@ function initialState(
   };
 }
 
-/** 生效写入的结果；失败由 respond 转成拒绝，命令网关回滚整个保存点。 */
-type ActivationResult =
+/** 生效写入本身的结果；失败由 respond 转成拒绝，命令网关回滚整个保存点。 */
+type ActivationWriteResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly reasonCode: ReasonCode; readonly safeMessage: string };
 
+/** 生效后的协议状态，供 respond 构造固定的工具 result。 */
+type ActivationResult =
+  | { readonly ok: true; readonly status: AgreementState["status"] }
+  | { readonly ok: false; readonly reasonCode: ReasonCode; readonly safeMessage: string };
+
 /** 按条款创建授权：通行许可、水闸分配与队伍/库存委托。 */
-function applyActivation(context: AgreementContext, state: AgreementState): ActivationResult {
+function applyActivation(context: AgreementContext, state: AgreementState): ActivationWriteResult {
   const ports = asPorts(context);
   for (const term of state.terms) {
     if (term.kind === "grant-passage") {
@@ -144,8 +149,8 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
     }
   }
   context.tx.put("agreement", activated.agreementId, activated);
-  finishIfFulfilled(context, activated);
-  return { ok: true };
+  const finished = finishIfFulfilled(context, activated);
+  return { ok: true, status: finished.status };
 }
 
 /** 提出协议：提出者在当事人内、当事人都是已知主体、条款需通过校验；期限超过 168 tick 时显式拒绝。 */
@@ -222,7 +227,7 @@ export function respond(context: AgreementContext, payload: Json): HandlerResult
     context.tx.put("agreement", state.agreementId, { ...state, status: "rejected", responses: Object.fromEntries(responseMap) });
     context.tx.emit("AgreementRejected", { agreementId: state.agreementId, byId: actor }, principalsAudience(state.parties));
     cancelAgreementJobs(context, state);
-    return { kind: "accepted" };
+    return { kind: "accepted", result: { agreementId: state.agreementId, agreementStatus: "rejected" } };
   }
   if (input.response === "counter") {
     if (state.version >= maxAgreementVersion) {
@@ -265,22 +270,29 @@ export function respond(context: AgreementContext, payload: Json): HandlerResult
     );
     cancelAgreementJobs(context, state);
     scheduleExpiry(context, next);
-    return { kind: "accepted", result: { agreementId: next.agreementId } };
+    return { kind: "accepted", result: { agreementId: next.agreementId, agreementStatus: "proposed" } };
   }
   const responses = Object.fromEntries(new Map([...Object.entries(state.responses), [actor, "accept" as const]]));
   const next = { ...state, responses };
   context.tx.put("agreement", next.agreementId, next);
   const acceptedByAll = next.parties.every((party) => new Map(Object.entries(responses)).get(party) === "accept");
+  let activation: ActivationResult | undefined;
   if (acceptedByAll) {
     const invalid = validateTerms(context, next.terms, next.parties);
     if (invalid !== null) {
       return { kind: "rejected", reasonCode: invalid, safeMessage: "条款在生效前已失效" };
     }
     // 生效写入失败时按该原因码拒绝，保存点回滚后不保留回复与部分生效写入。
-    const activation = activate(context, next);
+    activation = activate(context, next);
     if (!activation.ok) {
       return { kind: "rejected", reasonCode: activation.reasonCode, safeMessage: activation.safeMessage };
     }
   }
-  return { kind: "accepted" };
+  return {
+    kind: "accepted",
+    result: {
+      agreementId: next.agreementId,
+      agreementStatus: activation?.ok ? activation.status : "proposed",
+    },
+  };
 }

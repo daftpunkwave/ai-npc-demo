@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import type { CommandEnvelope, CommandReceipt, Json, NormalizedToolCall, ToolExecutionResult } from "@ai-npc/contracts";
+import { DomainError, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall, type ToolExecutionResult } from "@ai-npc/contracts";
 import {
   assertToolCallResultPairing,
   StoredAgentArtifactStore,
@@ -245,6 +245,32 @@ describe("Tool view and gateway", () => {
       execution_status: "ok",
     });
   });
+
+  it("命令网关幂等冲突映射为工具 idempotency-conflict", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: () => {
+        throw new DomainError("idempotency-conflict", "命令 ID 已被不同内容使用");
+      },
+    });
+    const result = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-command-conflict",
+      wireName: "asset_dispatch",
+      arguments: dispatchArguments("team-allowed"),
+      argumentsRaw: JSON.stringify(dispatchArguments("team-allowed")),
+    });
+    expect(result.result.executionStatus).toBe("error");
+    expect(result.result.reasonCode).toBe("idempotency-conflict");
+  });
+
   it("删除 null 字段并用同一 operationId 返回原结果", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
