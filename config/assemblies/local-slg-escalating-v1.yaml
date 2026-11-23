@@ -21,6 +21,7 @@ realms:
       - { capability: platform.operations, moduleId: platform.operations.standard, configRef: null }
       - { capability: platform.observability, moduleId: platform.observability.sqlite, configRef: null }
       - { capability: platform.module-admin, moduleId: platform.module-admin.standard, configRef: null }
+      - { capability: platform.evaluation, moduleId: platform.evaluation.standard, configRef: null }
       - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
   client:
     bindings:

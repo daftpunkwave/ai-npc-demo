@@ -55,6 +55,7 @@ import {
 } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 import { modelBudgetDefinition } from "@ai-npc/mod-platform-budget-standard/definition";
+import { evaluationModuleDefinition } from "@ai-npc/mod-platform-evaluation-standard/definition";
 import { anthropicTransportDefinition } from "@ai-npc/mod-platform-model-transport-anthropic/definition";
 import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
 import { openAICompatibleTransportDefinition } from "@ai-npc/mod-platform-model-transport-openai-compatible/definition";
@@ -170,6 +171,7 @@ export const serverModuleDefinitions = [
   operationsModuleDefinition,
   observabilityModuleDefinition,
   moduleAdminModuleDefinition,
+  evaluationModuleDefinition,
   transportModuleDefinition,
   ...serverAgentModuleDefinitions,
 ] as const;
