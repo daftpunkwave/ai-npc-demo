@@ -26,7 +26,11 @@ import { orderedBlocksContextDefinition } from "@ai-npc/mod-agent-context-ordere
 import { deterministicDecisionModuleDefinition } from "@ai-npc/mod-agent-decision-deterministic/definition";
 import { modelDecisionDefinition } from "@ai-npc/mod-agent-decision-model/definition";
 import { sharedModelPoolDefinition } from "@ai-npc/mod-agent-model-pool-shared/definition";
-import { memoryLedgerModuleDefinition } from "@ai-npc/mod-agent-memory-ledger/definition";
+import {
+  memoryLayeredHybridModuleDefinition,
+  memoryLedgerModuleDefinition,
+  memoryStreamReflectionModuleDefinition,
+} from "@ai-npc/mod-agent-memory-ledger/definition";
 import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none/definition";
 import { perceptionModuleDefinition } from "@ai-npc/mod-agent-perception-local/definition";
 import { schedulingModuleDefinition } from "@ai-npc/mod-agent-scheduling-fair/definition";
@@ -139,6 +143,8 @@ export const serverAgentModuleDefinitions = [
   orderedBlocksContextDefinition,
   deterministicDecisionModuleDefinition,
   memoryLedgerModuleDefinition,
+  memoryStreamReflectionModuleDefinition,
+  memoryLayeredHybridModuleDefinition,
   memoryNoneModuleDefinition,
   perceptionModuleDefinition,
   schedulingModuleDefinition,

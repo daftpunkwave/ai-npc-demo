@@ -1,0 +1,8 @@
+schemaVersion: 1
+profileId: memory-m0-window
+kind: variant
+parent: null
+patch:
+  slots:
+    memory: { module: agent.memory.none, config: {} }
+    context: { module: agent.context.ordered-blocks, config: { historyTurns: 8 } }

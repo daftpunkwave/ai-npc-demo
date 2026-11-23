@@ -292,6 +292,8 @@ CREATE TABLE memory_records (           -- append-only row versions => immutable
 );
 CREATE INDEX memory_visible ON memory_records (branch_id, agent_id, created_revision, retired_revision);
 
+L6 公共编年史使用 `agent_id = '~public'` 保存一份分支级记录；每个 Agent 的冻结记忆视图读取自己的行并追加分支内所有仍为 active 的公共行。该哨兵不属于身份目录，也不创建独立水位。
+
 CREATE TABLE memory_revisions (
   branch_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,

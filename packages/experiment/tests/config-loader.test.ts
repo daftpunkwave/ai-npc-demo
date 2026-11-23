@@ -11,6 +11,8 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   LoadingError,
+  applyProfilePatch,
+  loadAgentProfile,
   loadConfigDocument,
   loadContentPack,
   loadModelFixtures,
@@ -249,6 +251,21 @@ describe("配置加载", () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it("四个记忆对比变体均可解析并切到对应槽位", () => {
+    const base = loadAgentProfile("agent-character-default", { configDir });
+    const windowProfile = applyProfilePatch(base, "memory-m0-window", { configDir });
+    const currentProfile = applyProfilePatch(base, "memory-m0-current", { configDir });
+    const m2Profile = applyProfilePatch(base, "memory-m2-stream-reflection", { configDir });
+    const m3Profile = applyProfilePatch(base, "memory-m3-layered-hybrid", { configDir });
+    expect(windowProfile.slots.memory?.module).toBe("agent.memory.none");
+    expect(windowProfile.slots.context?.config.historyTurns).toBe(8);
+    expect(currentProfile.slots.context?.config.historyTurns).toBe(0);
+    expect(m2Profile.slots.memory?.module).toBe("agent.memory.stream-reflection");
+    expect(m2Profile.slots.memory?.config).toMatchObject({ maintenanceTrigger: "importance-threshold" });
+    expect(m3Profile.slots.memory?.module).toBe("agent.memory.layered-hybrid");
+    expect(m3Profile.slots.memory?.config).toMatchObject({ coreBlockMaxTokens: 300 });
   });
 
   it("未知键被严格拒绝", () => {

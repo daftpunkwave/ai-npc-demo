@@ -174,7 +174,7 @@ export class LedgerMemoryPort implements MemoryPort {
     };
   }
 
-  planMaintenance(input: Parameters<MemoryPort["planMaintenance"]>[0]) {
+  planMaintenance(input: Parameters<MemoryPort["planMaintenance"]>[0], _view?: RevisionView) {
     if (input.trigger !== "day-passed") return null;
     return {
       moduleId: "agent.memory.ledger",

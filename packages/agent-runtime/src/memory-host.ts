@@ -18,9 +18,11 @@ import type {
   MemoryAgentIdentity,
   MemoryPort,
   RevisionView,
+  RunModelPort,
 } from "@ai-npc/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
-import { MemoryMaintenanceQueue } from "./memory-maintenance-queue";
+import { MemoryMaintenanceQueue, type ClaimedMaintenance } from "./memory-maintenance-queue";
+import { maintenanceModel } from "./maintenance-model";
 import { AgentModuleHandle } from "./agent-module-handle";
 import {
   publishMaintenance,
@@ -43,6 +45,8 @@ export interface MemoryHostOptions {
   readonly ports?: Readonly<Record<string, unknown>>;
   readonly maintenanceLeaseMs?: number;
   readonly maintenanceConcurrency?: number;
+  /** 宿主按 agent 与 purpose 绑定模型预算；整理模块只能经此端口调用。 */
+  readonly model?: RunModelPort | null;
 }
 
 export class MemoryHost {
@@ -110,6 +114,7 @@ export class MemoryHost {
   }
 
   async runDueMaintenance(worldTick: number): Promise<void> {
+    this.maintenance.limitModelTasks(worldTick);
     const claimed = this.maintenance.due(
       this.options.maintenanceConcurrency ?? 2,
       worldTick,
@@ -121,7 +126,7 @@ export class MemoryHost {
           this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch);
           return;
         }
-        await publishMaintenance(agentId, claim, this.publication(agentId));
+        await publishMaintenance(agentId, claim, this.publication(agentId, claim));
       } catch (error) {
         this.options.host.logger.error("Memory maintenance failed", {
           agentId,
@@ -238,6 +243,7 @@ export class MemoryHost {
     const dayTicks = [...new Set(observations
       .filter((observation) => observationObject(observation)["eventType"] === "DayPassed")
       .map((observation) => observation.knownAtTick))];
+    const view = this.view(agentId, watermark.revision);
     for (const dayTick of dayTicks) {
       const task = handle.port.planMaintenance({
         scope: this.scope(agentId),
@@ -245,7 +251,7 @@ export class MemoryHost {
         worldTick: dayTick,
         observationSeqThrough: watermark.observationSeqConsumed,
         trigger: "day-passed",
-      });
+      }, view);
       if (task !== null) this.maintenance.enqueue(agentId, task);
     }
     const importance = handle.port.planMaintenance({
@@ -254,7 +260,7 @@ export class MemoryHost {
       worldTick,
       observationSeqThrough: watermark.observationSeqConsumed,
       trigger: "importance",
-    });
+    }, view);
     if (importance !== null) this.maintenance.enqueue(agentId, importance);
   }
 
@@ -272,7 +278,7 @@ export class MemoryHost {
       worldTick: latest.tick,
       observationSeqThrough: watermark.observationSeqConsumed,
       trigger: "day-passed",
-    });
+    }, this.view(agentId, watermark.revision));
     if (task !== null) this.maintenance.enqueue(agentId, task);
   }
 
@@ -312,7 +318,7 @@ export class MemoryHost {
     return result;
   }
 
-  private publication(agentId: string) {
+  private publication(agentId: string, claim?: ClaimedMaintenance) {
     return {
       store: this.store,
       maintenance: this.maintenance,
@@ -322,7 +328,26 @@ export class MemoryHost {
       scope: this.scope(agentId),
       identity: this.identity(agentId),
       enqueueActor: this.enqueueActor.bind(this),
+      ...(claim === undefined ? {} : {
+        model: maintenanceModel({
+          model: this.options.model,
+          agentId,
+          claim,
+          scope: this.scope(agentId),
+          runId: this.options.runId,
+          profile: this.profile(agentId),
+          host: this.options.host,
+          signal: this.options.signal,
+          isCurrent: () => this.maintenance.isCurrent(claim.maintenanceId, claim.leaseEpoch),
+        }),
+      }),
     };
+  }
+
+  private profile(agentId: string): ResolvedAgentProfile {
+    const profile = this.options.profiles.get(agentId);
+    if (profile === undefined) throw new Error(`agent ${agentId} has no profile for memory maintenance`);
+    return profile;
   }
 
   private view(agentId: string, revision: number): RevisionView {

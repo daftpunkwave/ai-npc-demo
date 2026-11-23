@@ -109,6 +109,50 @@ export class MemoryMaintenanceQueue {
     );
   }
 
+  /** 验证模型调用结束时的租约仍属于本次认领。 */
+  isCurrent(maintenanceId: string, leaseEpoch: number): boolean {
+    return this.storage.transact((tx) => {
+      const current = tx.rows("maintenance_runs").get({ maintenance_id: maintenanceId });
+      return current !== null &&
+        current["status"] === "leased" &&
+        numberColumn(current, "lease_epoch") === leaseEpoch;
+    });
+  }
+
+  /**
+   * 按任务声明的模型配额降级超额的每日整理。
+   * 排名只依赖持久化任务字段，避免宿主知道具体记忆模块 ID。
+   */
+  limitModelTasks(worldTick: number): void {
+    this.storage.transact((tx) => {
+      const table = tx.rows("maintenance_runs");
+      const groups = new Map<string, { tasks: Array<{ row: StorageRow; task: MaintenanceTask }>; quota: number }>();
+      for (const row of table.list({ branch_id: this.branchId })) {
+        if (row["status"] !== "queued") continue;
+        if (row["trigger"] !== "day-passed") continue;
+        if (numberColumn(row, "due_tick") > worldTick) continue;
+        const task = maintenanceTaskSchema.parse(row["task_json"]);
+        if (task.modelQuota === undefined) continue;
+        const key = `${stringColumn(row, "module_id")}:${task.dueTick}`;
+        const group = groups.get(key) ?? { tasks: [], quota: task.modelQuota };
+        group.tasks.push({ row, task });
+        group.quota = Math.max(group.quota, task.modelQuota);
+        groups.set(key, group);
+      }
+      for (const { tasks, quota } of groups.values()) {
+        const candidates = tasks
+          .filter(({ task }) => task.needsModel)
+          .sort((left, right) =>
+            (right.task.modelPriority ?? 0) - (left.task.modelPriority ?? 0) ||
+            stringColumn(left.row, "agent_id").localeCompare(stringColumn(right.row, "agent_id")),
+          );
+        for (const { row, task } of candidates.slice(quota)) {
+          table.put({ ...row, task_json: { ...task, needsModel: false } });
+        }
+      }
+    });
+  }
+
   due(limit: number, worldTick: number): readonly ClaimedMaintenance[] {
     const nowIso = this.host.nowIso();
     const nowMs = new Date(nowIso).getTime();

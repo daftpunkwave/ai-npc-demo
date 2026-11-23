@@ -4,6 +4,9 @@
  * 禁止调用模块与模型，或暴露跨 agent 读取。
  */
 import { maintenanceTaskSchema } from "@ai-npc/contracts";
+
+/** 分支级公共记忆的存储主体；不参与身份目录或 Agent 查询。 */
+const publicMemoryAgentId = "~public";
 import {
   type AgentObservation,
   type HostServices,
@@ -164,11 +167,16 @@ export class MemoryStore {
           (row["retired_revision"] === null || numberColumn(row, "retired_revision") > revision) &&
           row["status"] === "active",
         )
-        .sort((left, right) =>
-          stringColumn(left, "memory_id").localeCompare(stringColumn(right, "memory_id")) ||
-          numberColumn(left, "row_version") - numberColumn(right, "row_version"),
-        )
         .map((row) => parseRecord(row));
+      const publicRecords = tx.branch(this.branchId)
+        .table("memory_records")
+        .list({ agent_id: publicMemoryAgentId })
+        .filter((row) => row["status"] === "active" && row["retired_revision"] === null)
+        .map((row) => parseRecord(row));
+      records.push(...publicRecords);
+      records.sort((left, right) =>
+        left.memoryId.localeCompare(right.memoryId) || left.rowVersion - right.rowVersion,
+      );
       return {
         scope: this.scope(agentId),
         revision,
@@ -253,10 +261,11 @@ export class MemoryStore {
         });
       }
       for (const insert of plan.inserts) {
+        const storageAgentId = insert.branchPublic === true ? publicMemoryAgentId : agentId;
         const current = currentById.get(insert.memoryId);
-        const nextRowVersion = (current?.rowVersion ?? this.maxRowVersion(tx, agentId, insert.memoryId)) + 1;
+        const nextRowVersion = (current?.rowVersion ?? this.maxRowVersion(tx, storageAgentId, insert.memoryId)) + 1;
         records.put(encodeMemoryRow({
-          agentId,
+          agentId: storageAgentId,
           moduleId,
           revision,
           rowVersion: nextRowVersion,
@@ -321,6 +330,7 @@ export class MemoryStore {
         ) {
           throw new Error(`maintenance lease ${options.maintenance.maintenanceId} is no longer current`);
         }
+        const maintenanceResult = plan.maintenanceResult;
         tx.rows("maintenance_runs").put({
           ...task,
           status: "completed",
@@ -331,7 +341,10 @@ export class MemoryStore {
             observationSeqThrough: plan.observationSeqThrough,
           },
           lease_expires_at: null,
-          error_json: null,
+          error_json: maintenanceResult === undefined ||
+            (maintenanceResult.status === "completed" && maintenanceResult.discarded.length === 0)
+            ? null
+            : maintenanceResult,
           ended_at: this.host.nowIso(),
         });
       }

@@ -166,7 +166,7 @@ interface MemoryPort {
   retrieve(query: MemoryQuery, view: RevisionView): MemoryBundle;
   // 判断是否到期执行整理；无事可做时返回 null（由宿主调用，见 runtime.md §13.1）。
   planMaintenance(input: { scope: MemoryScope; revision: number; worldTick: number; observationSeqThrough: number;
-                           trigger: "day-passed" | "importance" }): MaintenanceTask | null;
+                           trigger: "day-passed" | "importance" }, view?: RevisionView): MaintenanceTask | null;
   // 在 actor 锁外执行；可用 purpose memory-maintenance 调用模型端口。
   runMaintenance(task: MaintenanceTask, view: RevisionView, model: ScopedModelPort | null): Promise<MemoryChangePlan>;
   // turn 结束后：强化通过校验的引用，并裁决模型报告的自报要点。
@@ -203,6 +203,7 @@ interface NewMemoryRow {           // 一行版本；memoryId 可新建，也可
   tags: string[];                  // 词汇表见 §11.2。
   sourceObservationIds: string[];
   sourceTurnId?: string;           // recordUse 新建记录必填为本 turn 的 turnId；其他变更计划省略
+  branchPublic?: boolean;          // L6 公共编年史按分支只存一份，读取视图跨 Agent 合并
   content: { summaryZh: string; counterpartIds: string[]; data: Json };
 }
 
@@ -214,6 +215,8 @@ interface MemoryChangePlan {
   derivedThroughSeq: number | null;  // 仅整理计划设置。
   derivedThroughTick: number | null; // 仅整理计划设置，等于任务的 due_tick。
   changeKind: "ingest" | "maintenance" | "use" | "import";
+  maintenanceResult?: { status: "completed" | "partial"; failureReason: string | null;
+                        discarded: { source: string; reason: string }[] };
 }
 
 interface MaintenanceTask {        // 存入 maintenance_runs.task_json。
@@ -223,7 +226,9 @@ interface MaintenanceTask {        // 存入 maintenance_runs.task_json。
   baseRevision: number;
   observationSeqThrough: number;
   day: number | null;              // 仅 day-passed 有值。
-  needsModel: boolean;             // M1 与每日 top-8 之外的 M3 Agent 为 false。
+  needsModel: boolean;             // M0/M1 为 false；M2 importance 与 M3 当日 top-8 为 true。
+  modelPriority?: number;          // M3 当日变化量；宿主按此排名。
+  modelQuota?: number;             // M3 每日最多模型整理数，默认 8。
 }
 
 interface MemoryBundle {

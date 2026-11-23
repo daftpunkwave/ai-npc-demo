@@ -29,7 +29,7 @@ realms:
       - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
     agentSlots:
       perception: [agent.perception.local]
-      memory: [agent.memory.none, agent.memory.ledger]
+      memory: [agent.memory.none, agent.memory.ledger, agent.memory.stream-reflection, agent.memory.layered-hybrid]
       context: [agent.context.ordered-blocks]
       compression: [agent.compression.none, agent.compression.window]
       toolView: [agent.tool-view.structured]

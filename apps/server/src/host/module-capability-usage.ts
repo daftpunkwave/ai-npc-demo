@@ -407,7 +407,8 @@ export function checkModuleCapabilityUsage(input: {
     }
     const definitions = input.definitions.filter(
       (definition) => definition.realm === realm && (
-        definition.id === identifier || definition.id.startsWith(`${identifier}-`)
+        (definition.sourceModuleId ?? definition.id) === identifier ||
+        (definition.sourceModuleId ?? definition.id).startsWith(`${identifier}-`)
       ),
     );
     if (definitions.length === 0) {

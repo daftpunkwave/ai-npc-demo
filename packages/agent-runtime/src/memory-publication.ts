@@ -16,6 +16,7 @@ import type {
   MemoryAgentIdentity,
   MemoryPort,
   RevisionView,
+  ScopedModelPort,
 } from "@ai-npc/module-sdk";
 import type {
   ClaimedMaintenance,
@@ -43,6 +44,8 @@ export interface MemoryPublicationDependencies {
   readonly scope: MemoryScope;
   readonly identity: MemoryAgentIdentity;
   readonly enqueueActor: <T>(agentId: string, operation: () => T | Promise<T>) => Promise<T>;
+  /** 仅整理任务使用；没有模型时模块必须返回 partial 或显式失败。 */
+  readonly model?: ScopedModelPort | null;
 }
 
 export async function publishUse(
@@ -101,7 +104,7 @@ export async function publishMaintenance(
   };
   for (let rerun = 0; rerun <= 1; rerun += 1) {
     const view = store.readRevisionView(agentId, identity, task.baseRevision);
-    const plan = await port.runMaintenance(task, view, null);
+    const plan = await port.runMaintenance(task, view, dependencies.model ?? null);
     validateMaintenancePlan(plan, task);
     const outcome = await bindAndCommitPlan(
       agentId,
@@ -220,6 +223,19 @@ function validateMaintenancePlan(plan: MemoryChangePlan, task: MaintenanceTask):
   }
   if (plan.baseRevision !== task.baseRevision) {
     throw new Error("memory maintenance plan does not match the leased base revision");
+  }
+  const result = plan.maintenanceResult;
+  if (result?.status === "partial") {
+    if (result.failureReason === null) {
+      throw new Error("partial memory maintenance must record a failure reason");
+    }
+    if (plan.derivedThroughSeq !== null || plan.derivedThroughTick !== null) {
+      throw new Error("partial memory maintenance cannot advance its derived watermark");
+    }
+    return;
+  }
+  if (result?.status === "completed" && result.failureReason !== null) {
+    throw new Error("completed memory maintenance cannot record a failure reason");
   }
   if (
     plan.derivedThroughSeq === null ||

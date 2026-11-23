@@ -1,0 +1,17 @@
+schemaVersion: 1
+profileId: memory-m2-stream-reflection
+kind: variant
+parent: null
+patch:
+  slots:
+    memory:
+      module: agent.memory.stream-reflection
+      config:
+        capacity: { stream: 300, reflections: 60 }
+        retrieval:
+          topK: 6
+          candidateLimit: 40
+          weights: { relevance: 1, recency: 1, importance: 1 }
+          recencyDecayPerTick: 0.995
+        reflection: { importanceSumThreshold: 15, recentWindow: 15, maxPerRun: 3, minEvidence: 2 }
+        maintenanceTrigger: importance-threshold

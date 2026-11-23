@@ -182,6 +182,7 @@ export function insertObservation(
     readonly facts?: Json;
     readonly channel?: string;
     readonly subjectIds?: readonly string[];
+    readonly releasePolicyId?: string;
   },
 ): AgentObservation {
   const observation: AgentObservation = {
@@ -200,7 +201,7 @@ export function insertObservation(
     channel: input.channel ?? "party",
     epistemic: "witnessed",
     confidence: 1,
-    releasePolicyId: "parties:human-independent,player-1",
+    releasePolicyId: input.releasePolicyId ?? "parties:human-independent,player-1",
     content: {
       eventType: input.eventType,
       summaryZh: input.summary,

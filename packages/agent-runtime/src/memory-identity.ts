@@ -19,10 +19,19 @@ export function memoryIdentityForAgent(
   const initialRelations = character !== undefined
     ? character.initialRelations.map(({ targetId, trust }) => ({ targetId, trust }))
     : (faction?.relations ?? []).map(({ targetId, trust }) => ({ targetId, trust }));
+  const knownPrincipalNames: Record<string, string> = {};
+  for (const [id, entry] of content.index.characters) knownPrincipalNames[id] = entry.name;
+  for (const [id, entry] of content.index.factions) knownPrincipalNames[id] = entry.name;
+  if (character !== undefined) knownPrincipalNames[character.agentId] = character.name;
+  if (faction !== undefined) knownPrincipalNames[faction.factionId] = faction.name;
   return {
     factionId: character?.factionId ?? faction?.factionId ?? agentId,
     values: [...persona.values],
     initialRelations,
     personalityKeywords: content.locale.lexicons.personalityKeywords,
+    name: character?.name ?? faction?.leaderName ?? faction?.name ?? agentId,
+    role: persona.role,
+    goals: [...persona.goals],
+    knownPrincipalNames,
   };
 }

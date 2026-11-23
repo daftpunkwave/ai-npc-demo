@@ -100,6 +100,7 @@ export class AgentRuntime {
           runId: this.options.runId,
           signal: this.abort.signal,
           ...(this.options.turnExecution === undefined ? {} : { ports: this.options.turnExecution.ports }),
+          ...(this.options.turnExecution?.model == null ? {} : { model: this.options.turnExecution.model }),
         });
         await this.memory.start();
       }
