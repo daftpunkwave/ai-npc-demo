@@ -52,6 +52,14 @@ export type {
 } from "./config/load-config";
 export { configRefSchema, rosterSchema, runSpecSchema } from "./config/schema";
 export type { Roster, RunSpec } from "./config/schema";
+export {
+  experimentRunSpecTemplateSchema,
+  experimentSpecSchema,
+  expandExperimentRuns,
+  noScriptBranch,
+} from "./config/experiment-spec";
+export type { ExpandedRun, ExperimentRunSpecTemplate, ExperimentSpec } from "./config/experiment-spec";
+export { loadExperimentSpec, validateExperimentSpec } from "./config/load-experiment-spec";
 export { loadAgentToolset, type AgentToolset } from "./config/toolset";
 export {
   applyProfilePatch,
