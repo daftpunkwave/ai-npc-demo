@@ -296,15 +296,16 @@ function stageCredentials(
   tokens: Partial<Record<TokenRole, string>>,
   existing: Partial<Record<TokenRole, string>>,
 ): StagedCredentialsFile | null {
-  if (sameStoredTokens(tokens, existing)) {
-    return null;
-  }
   const directory = dirname(filePath);
   // mkdir 的 mode 只作用于本次新建的目录；数据目录可能由用户或旧版本预先创建，
   // 这里对新建与已存在两种情况统一显式收紧为 0700，与备份暂存目录保持同一口径，
   // 避免宽权限目录向本机其他用户暴露凭据文件名与轮换节奏。
+  // 收紧必须发生在令牌未变化的提前返回之前，保证每次启动都生效，而不只在令牌轮换时生效。
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   chmodSync(directory, 0o700);
+  if (sameStoredTokens(tokens, existing)) {
+    return null;
+  }
   const stagingPath = `${filePath}.${randomBytes(6).toString("hex")}.staging`;
   let handle: number | undefined;
   try {
