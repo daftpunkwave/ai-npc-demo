@@ -163,6 +163,26 @@ describe("模块能力声明对账", () => {
     expect(checkModuleCapabilityUsage({ root, definitions: [map, world] })).toEqual([]);
   });
 
+  it("只有契约语法内的字符串才作为能力访问参与对账", () => {
+    const root = fixture({
+      // 同一个索引位写 `game.world` 会被对账，写成 `game.WORLD` 不满足契约语法，不当作能力 ID。
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "export const valid = ports[\"game.world\"];",
+          "export const invalid = ports[\"game.WORLD\"];",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const state = ownState;\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations.filter((violation) => violation.code === "capability-unknown")).toEqual([]);
+    const undeclared = violations.filter((violation) => violation.code === "capability-undeclared");
+    expect(undeclared).toHaveLength(1);
+    expect(undeclared[0]?.message).toContain("game.world");
+  });
+
   it("登记定义没有源码目录时报告目录缺失", () => {
     const root = fixture({
       ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),

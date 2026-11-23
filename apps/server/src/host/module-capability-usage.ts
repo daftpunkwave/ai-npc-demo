@@ -7,7 +7,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import type { ModuleDefinition } from "@ai-npc/contracts";
+import { CAPABILITY_ID_PATTERN, type ModuleDefinition } from "@ai-npc/contracts";
 
 /** 一条源码能力访问与声明不一致的违规。 */
 export interface CapabilityUsageViolation {
@@ -22,37 +22,11 @@ export interface CapabilityUsageViolation {
  * - 声明解构：`const { "game.world": world } = context.modules`。
  * 扫描器跳过注释与普通字符串，避免把注释文字或频道名等对象键误判为能力使用；
  * 浏览器 realm 通过 client-sdk 的 `usePort` 取端口，不走索引访问，因此只对 server 模块做源码对账。
+ * 能力 ID 的语法只由公共契约提供，扫描与描述符校验共用同一判定，避免语法分叉后出现
+ * 描述符接受、扫描器静默跳过的字符串。
  */
-const capabilityGroups: ReadonlySet<string> = new Set([
-  "game",
-  "platform",
-  "client",
-  "console",
-  "agent",
-  "transport",
-]);
-
-/** 判断字符串是否为契约能力 ID：`<group>.<family>`，family 只含小写字母、数字与连字符。 */
 function isCapabilityId(value: string): boolean {
-  const separator = value.indexOf(".");
-  if (separator <= 0 || separator !== value.lastIndexOf(".")) {
-    return false;
-  }
-  if (!capabilityGroups.has(value.slice(0, separator))) {
-    return false;
-  }
-  const family = value.slice(separator + 1);
-  if (family.length === 0) {
-    return false;
-  }
-  for (const character of family) {
-    const isLowercase = character >= "a" && character <= "z";
-    const isDigit = character >= "0" && character <= "9";
-    if (!isLowercase && !isDigit && character !== "-") {
-      return false;
-    }
-  }
-  return true;
+  return CAPABILITY_ID_PATTERN.test(value);
 }
 
 const whitespaceCharacters: ReadonlySet<string> = new Set([" ", "\t", "\n", "\r"]);
