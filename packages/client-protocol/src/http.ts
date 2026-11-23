@@ -1,33 +1,21 @@
 /**
- * 提供浏览器与服务端之间的类型化 HTTP 客户端，统一处理会话令牌、角色请求头、响应 schema 与错误映射。
+ * 提供浏览器 HTTP 客户端入口，装配控制台领域请求，共用会话、角色请求头、响应校验与错误映射。
  * 依赖公共 DTO 与浏览器 Fetch/Storage 接口；不访问数据库、服务端模块或模型凭据。
  * 禁止绕过认证头、信任未校验响应，或把内部错误细节直接展示给玩家。
  */
 import {
   DomainError,
-  agentInspectorResponseSchema,
-  artifactResponseSchema,
-  branchCompareResponseSchema,
-  campaignStepRequestSchema,
+  assembliesResponseSchema,
+  assemblyDetailResponseSchema,
   campaignResponseSchema,
   clientContentViewSchema,
   clockResponseSchema,
   commandReceiptSchema,
-  consoleSnapshotRestoreResponseSchema,
+  consoleHealthResponseSchema,
   conversationResponseSchema,
-  debugQueuesResponseSchema,
-  debugWakeRequestSchema,
-  debugWakeResponseSchema,
   errorResponseSchema,
   loginResponseSchema,
-  memoryDiffResponseSchema,
-  memoryResponseSchema,
-  modelLayoutRoutesResponseSchema,
-  modelLayoutValidateRequestSchema,
-  modelLayoutValidateResponseSchema,
-  modelLayoutViewSchema,
-  modelLayoutsResponseSchema,
-  observationsResponseSchema,
+  modulesResponseSchema,
   presetsResponseSchema,
   resolvedModuleSetSchema,
   sessionDescriptorSchema,
@@ -35,10 +23,6 @@ import {
   snapshotListResponseSchema,
   snapshotRestoreResponseSchema,
   streamTicketResponseSchema,
-  traceResponseSchema,
-  turnDetailSchema,
-  turnReplayResponseSchema,
-  turnsResponseSchema,
   worldViewResponseSchema,
   type ClockControlRequest,
   type CommandEnvelope,
@@ -50,13 +34,13 @@ import {
   type SnapshotRestoreRequest,
 } from "@ai-npc/contracts";
 import { z } from "zod";
-import {
-  assemblyDetailResponseSchema,
-  assembliesResponseSchema,
-  consoleHealthResponseSchema,
-  modulesResponseSchema,
-} from "@ai-npc/contracts";
-import { agentsResponseSchema, timelineResponseSchema } from "@ai-npc/contracts";
+import { createDebugHttp } from "./http/debug";
+import { createModelLayoutHttp } from "./http/model-layouts";
+import { createOperationsHttp } from "./http/operations";
+import { createResearchHttp } from "./http/research";
+import { queryString, type ConsoleRequest, type RequestOptions } from "./http/request";
+
+export type { RequestOptions } from "./http/request";
 
 const sessionStorageKey = "ai-npc.session-token";
 
@@ -65,14 +49,6 @@ export interface ApiClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly storage?: BrowserStorage | null;
   readonly activeRole?: ConsoleActiveRole;
-}
-
-export interface RequestOptions {
-  readonly method?: "GET" | "POST";
-  readonly body?: unknown;
-  readonly authenticated?: boolean;
-  readonly activeRole?: ConsoleActiveRole;
-  readonly signal?: AbortSignal | undefined;
 }
 
 interface BrowserStorage {
@@ -109,16 +85,17 @@ function defaultStorage(): BrowserStorage | null {
   }
 }
 
-function queryString(values: Readonly<Record<string, string | number | undefined>>): string {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined) {
-      query.set(key, String(value));
-    }
-  }
-  const text = query.toString();
-  return text.length === 0 ? "" : `?${text}`;
+function createConsoleHttp(request: ConsoleRequest) {
+  return {
+    ...createModelLayoutHttp(request),
+    ...createResearchHttp(request),
+    ...createDebugHttp(request),
+    ...createOperationsHttp(request),
+  };
 }
+
+/** 将领域方法装配到原有的 ApiClient 调用入口。 */
+export interface ApiClient extends ReturnType<typeof createConsoleHttp> {}
 
 /** 浏览器 API 客户端；每次响应都经对应 Zod schema 收窄。 */
 export class ApiClient {
@@ -127,6 +104,8 @@ export class ApiClient {
   private readonly storage: BrowserStorage | null;
   private sessionToken: string | null;
   private activeRole: ConsoleActiveRole | undefined;
+  private readonly requestConsole: ConsoleRequest = (schema, path, options) =>
+    this.request(schema, path, { ...options, activeRole: this.requireActiveRole() });
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
@@ -134,6 +113,7 @@ export class ApiClient {
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
     this.activeRole = options.activeRole;
     this.sessionToken = this.storage?.getItem(sessionStorageKey) ?? null;
+    Object.assign(this, createConsoleHttp(this.requestConsole));
   }
 
   get token(): string | null {
@@ -261,267 +241,24 @@ export class ApiClient {
   }
 
   consoleHealth(signal?: AbortSignal) {
-    return this.request(consoleHealthResponseSchema, "/api/v1/console/health", {
-      activeRole: this.requireActiveRole(),
-      signal,
-    });
+    return this.requestConsole(consoleHealthResponseSchema, "/api/v1/console/health", { signal });
   }
 
   consoleModules(realm?: "server" | "client" | "console") {
-    return this.request(
+    return this.requestConsole(
       modulesResponseSchema,
       `/api/v1/console/modules${queryString({ realm })}`,
-      { activeRole: this.requireActiveRole() },
     );
   }
 
   consoleAssemblies() {
-    return this.request(assembliesResponseSchema, "/api/v1/console/assemblies", {
-      activeRole: this.requireActiveRole(),
-    });
+    return this.requestConsole(assembliesResponseSchema, "/api/v1/console/assemblies");
   }
 
   consoleAssembly(assemblyId: string) {
-    return this.request(
+    return this.requestConsole(
       assemblyDetailResponseSchema,
       `/api/v1/console/assemblies/${encodeURIComponent(assemblyId)}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleTimeline(input: {
-    readonly branchId?: string;
-    readonly fromSeq?: number;
-    readonly limit?: number;
-    readonly order?: "asc" | "desc";
-    readonly types?: readonly string[];
-    readonly agentId?: string;
-    readonly nodeId?: string;
-  }) {
-    return this.request(
-      timelineResponseSchema,
-      `/api/v1/console/timeline${queryString({
-        branchId: input.branchId,
-        fromSeq: input.fromSeq ?? 0,
-        limit: input.limit ?? 100,
-        order: input.order,
-        types: input.types?.join(","),
-        agentId: input.agentId,
-        nodeId: input.nodeId,
-      })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleAgents(branchId: string) {
-    return this.request(
-      agentsResponseSchema,
-      `/api/v1/console/agents${queryString({ branchId })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleModelLayouts() {
-    return this.request(modelLayoutsResponseSchema, "/api/v1/console/model-layouts", {
-      activeRole: this.requireActiveRole(),
-    });
-  }
-
-  consoleModelLayout(layoutId: string, signal?: AbortSignal) {
-    return this.request(
-      modelLayoutViewSchema,
-      `/api/v1/console/model-layouts/${encodeURIComponent(layoutId)}`,
-      { activeRole: this.requireActiveRole(), signal },
-    );
-  }
-
-  consoleModelRoutes(layoutId: string, signal?: AbortSignal) {
-    return this.request(
-      modelLayoutRoutesResponseSchema,
-      `/api/v1/console/model-layouts/${encodeURIComponent(layoutId)}/routes`,
-      { activeRole: this.requireActiveRole(), signal },
-    );
-  }
-
-  validateModelLayout(layout: unknown) {
-    return this.request(
-      modelLayoutValidateResponseSchema,
-      "/api/v1/console/model-layouts/validate",
-      {
-        method: "POST",
-        body: modelLayoutValidateRequestSchema.parse({ layout }),
-        activeRole: this.requireActiveRole(),
-      },
-    );
-  }
-
-  consoleInspector(agentId: string, branchId: string) {
-    return this.request(
-      agentInspectorResponseSchema,
-      `/api/v1/console/agents/${encodeURIComponent(agentId)}/inspector${queryString({ branchId })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleMemory(agentId: string, branchId: string, revision: number) {
-    return this.request(
-      memoryResponseSchema,
-      `/api/v1/console/agents/${encodeURIComponent(agentId)}/memory${queryString({ branchId, revision })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleMemoryDiff(agentId: string, branchId: string, from: number, to: number) {
-    return this.request(
-      memoryDiffResponseSchema,
-      `/api/v1/console/agents/${encodeURIComponent(agentId)}/memory/diff${queryString({ branchId, from, to })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleObservations(agentId: string, branchId: string, fromSeq = 0, limit = 100) {
-    return this.request(
-      observationsResponseSchema,
-      `/api/v1/console/agents/${encodeURIComponent(agentId)}/observations${queryString({
-        branchId,
-        fromSeq,
-        limit,
-      })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleTurns(input: {
-    readonly runId?: string;
-    readonly branchId?: string;
-    readonly agentId?: string;
-    readonly status?: string;
-    readonly limit?: number;
-  } = {}) {
-    return this.request(
-      turnsResponseSchema,
-      `/api/v1/console/turns${queryString({
-        runId: input.runId,
-        branchId: input.branchId,
-        agentId: input.agentId,
-        status: input.status,
-        limit: input.limit,
-      })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleTurn(turnId: string) {
-    return this.request(
-      turnDetailSchema,
-      `/api/v1/console/turns/${encodeURIComponent(turnId)}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleArtifact(artifactId: string, view: "redacted" | "raw") {
-    return this.request(
-      artifactResponseSchema,
-      `/api/v1/console/artifacts/${encodeURIComponent(artifactId)}${queryString({ view })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleTrace(traceId: string) {
-    return this.request(
-      traceResponseSchema,
-      `/api/v1/console/traces/${encodeURIComponent(traceId)}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleBranchCompare(left: string, right: string, atSeq: number) {
-    return this.request(
-      branchCompareResponseSchema,
-      `/api/v1/console/branches/compare${queryString({ left, right, atSeq })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleDebugQueues() {
-    return this.request(debugQueuesResponseSchema, "/api/v1/console/debug/queues", {
-      activeRole: this.requireActiveRole(),
-    });
-  }
-
-  consoleReplayTurn(turnId: string) {
-    return this.request(
-      turnReplayResponseSchema,
-      `/api/v1/console/debug/turns/${encodeURIComponent(turnId)}/replay`,
-      { method: "POST", body: {}, activeRole: this.requireActiveRole() },
-    );
-  }
-
-  consoleWakeAgent(agentId: string, reason: string, operationId: string) {
-    return this.request(
-      debugWakeResponseSchema,
-      `/api/v1/console/debug/agents/${encodeURIComponent(agentId)}/wake`,
-      {
-        method: "POST",
-        body: debugWakeRequestSchema.parse({ reason, operationId }),
-        activeRole: this.requireActiveRole(),
-      },
-    );
-  }
-
-  consolePauseCampaign(request: ClockControlRequest) {
-    return this.request(clockResponseSchema, "/api/v1/console/campaign/pause", {
-      method: "POST",
-      body: request,
-      activeRole: this.requireActiveRole(),
-    });
-  }
-
-  consoleResumeCampaign(request: ClockControlRequest) {
-    return this.request(clockResponseSchema, "/api/v1/console/campaign/resume", {
-      method: "POST",
-      body: request,
-      activeRole: this.requireActiveRole(),
-    });
-  }
-
-  consoleStepCampaign(request: z.input<typeof campaignStepRequestSchema>) {
-    return this.request(clockResponseSchema, "/api/v1/console/campaign/step", {
-      method: "POST",
-      body: campaignStepRequestSchema.parse(request),
-      activeRole: this.requireActiveRole(),
-    });
-  }
-
-  consoleSnapshots(signal?: AbortSignal) {
-    return this.request(snapshotListResponseSchema, "/api/v1/console/campaign/snapshots", {
-      activeRole: this.requireActiveRole(),
-      signal,
-    });
-  }
-
-  consoleCreateSnapshot(request: SnapshotCreateRequest) {
-    return this.request(snapshotCreateResponseSchema, "/api/v1/console/campaign/snapshots", {
-      method: "POST",
-      body: request,
-      activeRole: this.requireActiveRole(),
-    });
-  }
-
-  consoleRestoreSnapshot(input: {
-    readonly operationId: string;
-    readonly snapshotId: string;
-    readonly dryRun?: boolean;
-  }, signal?: AbortSignal) {
-    return this.request(
-      consoleSnapshotRestoreResponseSchema,
-      "/api/v1/console/campaign/restore",
-      {
-        method: "POST",
-        body: { ...input, dryRun: input.dryRun ?? false },
-        activeRole: this.requireActiveRole(),
-        signal,
-      },
     );
   }
 
