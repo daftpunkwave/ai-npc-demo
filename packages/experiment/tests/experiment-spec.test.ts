@@ -8,7 +8,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  applyProfilePatch,
   expandExperimentRuns,
+  loadAgentProfile,
   loadContentPack,
   loadExperimentSpec,
   loadRoster,
@@ -115,6 +117,49 @@ describe("实验规格加载与展开", () => {
     expect(spec.scriptBranches).toEqual([]);
     const runs = expandExperimentRuns(spec);
     expect(runs).toHaveLength(spec.variants.length * spec.repetitions);
+    // 无分支时 scriptBranch 为 null，不伪造任何可能撞上真实分支名的占位值。
+    expect(runs.every((run) => run.scriptBranch === null)).toBe(true);
+  });
+
+  it("脚本声明了分支时实验规格不能留空", () => {
+    const spec = specWith((value) => {
+      value["scriptBranches"] = [];
+    });
+    expect(() => validateExperimentSpec(spec, content, roster, { configDir }))
+      .toThrowError(/声明了分支 keep、break，实验规格不能留空/u);
+  });
+
+  it("重复声明的脚本分支被拒绝", () => {
+    const spec = specWith((value) => {
+      value["scriptBranches"] = ["keep", "keep"];
+    });
+    expect(() => validateExperimentSpec(spec, content, roster, { configDir }))
+      .toThrowError(/scriptBranches\.1.*重复声明/u);
+  });
+
+  it("公共补丁先叠加到基线，变体再叠加在其上", () => {
+    // decision-deterministic 把 decision 槽换成确定性决策；变体只改 memory 槽。
+    // 若把变体独立叠加到基线（而不是公共补丁的结果），下面的断言就会失败。
+    const spec = specWith((value) => {
+      value["commonPatchRefs"] = ["decision-deterministic"];
+      value["variants"] = ["memory-m1-structured-ledger"];
+    });
+    expect(() => validateExperimentSpec(spec, content, roster, { configDir })).not.toThrow();
+    const profile = applyProfilePatch(
+      applyProfilePatch(loadAgentProfile("agent-strategic-default", { configDir }), "decision-deterministic", { configDir }),
+      "memory-m1-structured-ledger",
+      { configDir },
+    );
+    expect(profile.slots.decision?.module).toBe("agent.decision.deterministic");
+    expect(profile.slots.memory?.module).toBe("agent.memory.ledger");
+  });
+
+  it("公共补丁本身不可解析时指出其位置", () => {
+    const spec = specWith((value) => {
+      value["commonPatchRefs"] = ["no-such-patch"];
+    });
+    expect(() => validateExperimentSpec(spec, content, roster, { configDir }))
+      .toThrowError(/commonPatchRefs\.0.*no-such-patch/u);
   });
 
   it("变体补丁排在公共补丁之后", () => {

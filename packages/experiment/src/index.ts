@@ -56,7 +56,6 @@ export {
   experimentRunSpecTemplateSchema,
   experimentSpecSchema,
   expandExperimentRuns,
-  noScriptBranch,
 } from "./config/experiment-spec";
 export type { ExpandedRun, ExperimentRunSpecTemplate, ExperimentSpec } from "./config/experiment-spec";
 export { loadExperimentSpec, validateExperimentSpec } from "./config/load-experiment-spec";

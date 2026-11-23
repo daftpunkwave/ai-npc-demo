@@ -43,7 +43,8 @@ export type ExperimentSpec = z.infer<typeof experimentSpecSchema>;
 /** 展开后的单个 run：变体、脚本分支、重复序号与派生 seed。 */
 export interface ExpandedRun {
   readonly variantRef: string;
-  readonly scriptBranch: string;
+  /** 脚本分支名；脚本没有命名分支时为 null，调用方据此省略 RunSpec 的 `script.branch`。 */
+  readonly scriptBranch: string | null;
   readonly repetition: number;
   readonly seed: string;
   /** 实际应用的 profile patch 列表；变体补丁总在最后。 */
@@ -57,10 +58,12 @@ export interface ExpandedRun {
  *
  * seed 为 `base.seed + ":rep" + 重复序号`，因此同一次重复的各变体共享 seed，
  * 便于配对比较；不同重复之间有独立随机流。
+ *
+ * `scriptBranches` 为空时 `scriptBranch` 为 `null`：脚本没有命名分支，
+ * 不伪造任何分支名，因为真实脚本完全可能把一个分支命名为任意合法标识符。
  */
 export function expandExperimentRuns(spec: ExperimentSpec): readonly ExpandedRun[] {
-  // 脚本没有命名分支时，每个变体在每个重复里只跑一次；用空分支名表示「不选分支」。
-  const branches = spec.scriptBranches.length === 0 ? [noScriptBranch] : spec.scriptBranches;
+  const branches: readonly (string | null)[] = spec.scriptBranches.length === 0 ? [null] : spec.scriptBranches;
   const runs: ExpandedRun[] = [];
   for (let repetition = 1; repetition <= spec.repetitions; repetition += 1) {
     const variants = spec.runOrder === "rotate"
@@ -81,9 +84,6 @@ export function expandExperimentRuns(spec: ExperimentSpec): readonly ExpandedRun
   }
   return runs;
 }
-
-/** 脚本没有命名分支时占位的分支名；宿主据此不给 RunSpec 写 `script.branch`。 */
-export const noScriptBranch = "default";
 
 /** 把数组左移 offset 位；offset 归一化到数组长度内，空数组原样返回。 */
 function rotate<T>(values: readonly T[], offset: number): readonly T[] {
