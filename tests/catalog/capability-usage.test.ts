@@ -187,19 +187,26 @@ describe("模块能力声明对账", () => {
     expect(invalid[0]?.message).toContain("<group>.<family>");
   });
 
-  it("语法非法但带能力 group 前缀的解构键同样报告为语法违规", () => {
+  it("语法非法但带能力 group 前缀的索引访问与解构键都报告为语法违规", () => {
     const root = fixture({
       ...sourceModule(
         "game.map.six-nodes",
         "port.ts",
-        ["const { \"game.world.extra\": state } = context.modules;", "export const combined = state;"].join("\n"),
+        [
+          "export const leadingDigit = ports[\"game.9world\"];",
+          "const { \"game.world.extra\": state } = context.modules;",
+          "export const combined = [leadingDigit, state];",
+        ].join("\n"),
       ),
       ...sourceModule("game.world.slg-light", "port.ts", "export const state = ownState;\n"),
     });
     const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
-    const invalid = violations.filter((violation) => violation.code === "capability-invalid");
-    expect(invalid).toHaveLength(1);
-    expect(invalid[0]?.message).toContain("game.world.extra");
+    const messages = violations
+      .filter((violation) => violation.code === "capability-invalid")
+      .map((violation) => violation.message);
+    expect(messages).toHaveLength(2);
+    expect(messages.join("\n")).toContain("game.9world");
+    expect(messages.join("\n")).toContain("game.world.extra");
   });
 
   it("普通字符串与无 group 前缀的键不报语法违规", () => {
