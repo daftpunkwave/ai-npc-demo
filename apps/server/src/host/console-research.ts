@@ -190,6 +190,7 @@ export function createConsoleResearchPort(input: {
       const world = ports["game.world"];
       const resources = ports["game.resources"];
       const comms = ports["game.comms"];
+      const actions = ports["game.actions"];
       const agreements = ports["game.agreements"];
       const tick = runtime.clock.readInTransaction(tx, branchId).worldTick;
       const character = world.character(agentId);
@@ -251,7 +252,7 @@ export function createConsoleResearchPort(input: {
           injuredUntilTick: character?.injuredUntilTick ?? null,
           currentTaskId: character?.currentTaskId ?? null,
           delegations,
-          invitations: [],
+          invitations: [...actions.invitationsOf(agentId)],
           agreements: ownAgreements,
           recentAgreements: ownAgreements,
         },

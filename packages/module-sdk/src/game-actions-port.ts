@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止在这里实现规则或读取行动模块之外的聚合。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名表达调用契约。 */
-import type { TaskStatus, TaskType } from "@ai-npc/contracts";
+import type { InvitationView, TaskStatus, TaskType } from "@ai-npc/contracts";
 
 /** 任务查询端口；任务聚合由行动模块拥有。 */
 export interface TaskView {
@@ -31,6 +31,7 @@ export interface TaskView {
 export interface GameActionsPort {
   task(taskId: string): TaskView | null;
   tasksOf(principalId: string): readonly TaskView[];
+  invitationsOf(inviteeId: string): readonly InvitationView[];
   isRoadEscorted(roadId: string, atTick: number): boolean;
   /**
    * 全部已完成任务，带权威完成 tick。
