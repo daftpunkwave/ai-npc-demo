@@ -229,6 +229,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     definitions: options.moduleDefinitions ?? serverModuleDefinitions,
     contentVersion: core.contentVersion,
     loadRoster: (rosterRef) => loadRoster(rosterRef, core.loadContext),
+    loadContext: core.loadContext,
     worldId: core.active.worldId,
     // loadAssembly 期望仓库根目录并在其下拼接 `config/assemblies`；
     // 宿主的 configRoot 指向配置目录本身，因此取其父目录作为仓库根。

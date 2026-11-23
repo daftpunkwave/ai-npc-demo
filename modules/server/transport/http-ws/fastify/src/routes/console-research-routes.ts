@@ -40,6 +40,8 @@ import {
   runCreateResponseSchema,
   exportRequestSchema,
   exportResponseSchema,
+  experimentCreateRequestSchema,
+  experimentCreateResponseSchema,
 } from "@ai-npc/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
@@ -332,6 +334,21 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     const body = runCreateRequestSchema.safeParse(request.body);
     if (!body.success) return sendHttpError(reply, "validation", "run 规格结构不合法");
     return runCreateResponseSchema.parse(await options.console.evaluationWrites.createRun(body.data.runSpec));
+  });
+
+  app.post("/api/v1/console/experiments", async (request, reply) => {
+    if (requireEvaluationWriter(request, reply) === null) return;
+    if (options.console?.evaluationWrites?.createExperiment === undefined) {
+      return sendHttpError(reply, "not-ready", "实验创建尚未就绪");
+    }
+    const body = experimentCreateRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "实验规格请求结构不合法");
+    const created = await options.console.evaluationWrites.createExperiment(body.data);
+    // 有 run 预检失败时如实返回 422 与逐条原因，不把部分失败伪装成成功。
+    if (created.errors.length > 0) {
+      return sendHttpError(reply, "assembly-incompatible", `实验中有 ${created.errors.length} 个 run 预检失败`);
+    }
+    return experimentCreateResponseSchema.parse({ experimentId: created.experimentId, runIds: [...created.runIds] });
   });
 
   app.post("/api/v1/console/exports", async (request, reply) => {

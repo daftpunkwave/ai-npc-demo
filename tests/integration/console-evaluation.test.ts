@@ -16,6 +16,7 @@ import {
   runsResponseSchema,
   runCreateResponseSchema,
   exportResponseSchema,
+  experimentCreateResponseSchema,
 } from "@ai-npc/contracts";
 
 const hosts: RunningHost[] = [];
@@ -462,6 +463,74 @@ describe("控制台评估读取接口", () => {
     expect(worldTickOf(viewStable.json())).toBe(tickAfterRestore);
   });
 
+  it("按实验规格展开并逐个创建 run，实验标识写入每个 run", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    // 内联规格指向测试装配：变体 × 脚本分支 × 重复次数都要体现在创建结果里。
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: {
+        schemaVersion: 1,
+        experimentId: "exp-inline-check-v1",
+        base: {
+          moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+          scenarioRef: "watergate-v1", rosterRef: "core-3",
+          modelLayoutRef: "deterministic-model-layout-v1",
+          seed: "inline-check-v1",
+          player: { principalId: "player-1", factionId: "human-neutral" },
+          mode: "closed-loop", initialState: { kind: "cold-start" },
+          clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+          failurePolicy: "strict",
+        },
+        scriptRef: "s-promise",
+        scriptBranches: ["keep", "break"],
+        commonPatchRefs: [],
+        variants: ["memory-m0-window", "memory-m1-structured-ledger"],
+        repetitions: 2,
+        runOrder: "sequential",
+      } },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const created = experimentCreateResponseSchema.parse(response.json());
+    expect(created.experimentId).toBe("exp-inline-check-v1");
+    // 2 变体 × 2 分支 × 2 重复 = 8 个 run。
+    expect(created.runIds).toHaveLength(8);
+
+    // 每个 run 都能被实验接口归组：归组依据是写入的 experimentId，不是 seed。
+    const detail = await host.app.inject({
+      method: "GET", url: "/api/v1/console/experiments/exp-inline-check-v1", headers,
+    });
+    expect(detail.statusCode).toBe(200);
+    const parsed = experimentDetailResponseSchema.parse(detail.json());
+    expect(parsed.runs).toHaveLength(8);
+    // 变体 × 脚本分支应分成 4 个格子。
+    expect(parsed.cells).toHaveLength(4);
+    expect(parsed.cells.map((cell) => `${cell.variant}/${cell.scriptBranch}`).sort())
+      .toEqual([
+        "memory-m0-window/break", "memory-m0-window/keep",
+        "memory-m1-structured-ledger/break", "memory-m1-structured-ledger/keep",
+      ]);
+  });
+
+  it("实验规格不合法时在创建任何 run 之前失败", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const before = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: { schemaVersion: 1, experimentId: "bad" } },
+    });
+    // 结构不合法由路由层拒绝。
+    expect(response.statusCode).toBe(400);
+
+    const after = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    expect(after).toBe(before);
+  });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

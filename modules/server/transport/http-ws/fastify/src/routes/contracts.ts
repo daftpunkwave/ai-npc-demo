@@ -294,6 +294,12 @@ export interface ConsoleReadPort {
       readonly redaction: "redacted" | "raw";
       readonly principalId: string;
     }): Promise<{ readonly artifactId: string }>;
+    /** 按实验规格展开并逐个创建 run。 */
+    createExperiment(request: { readonly experimentSpec: unknown } | { readonly experimentRef: string }): Promise<{
+      readonly experimentId: string;
+      readonly runIds: readonly string[];
+      readonly errors: readonly { readonly runId: string; readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[] }[];
+    }>;
   };
 }
 
