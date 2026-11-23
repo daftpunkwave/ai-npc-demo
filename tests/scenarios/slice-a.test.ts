@@ -221,6 +221,29 @@ describe("slice A research path", () => {
         actual: null,
       }]),
     });
+    const sensitiveFixture = "private-replay-fixture";
+    host.storage.transact((tx) => {
+      const artifacts = tx.rows("artifacts");
+      const artifact = artifacts.get({ artifact_id: canonicalArtifactId });
+      if (artifact === null) throw new Error("expected stored artifact");
+      artifacts.put({ ...artifact, body: new TextEncoder().encode(`{"unclosed":"${sensitiveFixture}`) });
+    });
+    const malformedReplay = await host.app.inject({
+      method: "POST",
+      url: `/api/v1/console/debug/turns/${turnId}/replay`,
+      headers,
+      payload: {},
+    });
+    expect(malformedReplay.statusCode).toBe(200);
+    expect(malformedReplay.json()).toMatchObject({
+      requestHashMatch: false,
+      differences: expect.arrayContaining([{
+        path: canonicalArtifactId,
+        expected: "valid JSON",
+        actual: null,
+      }]),
+    });
+    expect(malformedReplay.body).not.toContain(sensitiveFixture);
     host.storage.transact((tx) => {
       const attempts = tx.rows("model_attempts").list({ work_ref: turnId });
       const first = attempts[0];

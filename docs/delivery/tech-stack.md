@@ -114,7 +114,7 @@ packages:
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2023"], "types": ["node"] },
   "include": [
-    "apps/server/src", "packages/contracts/src", "packages/kernel/src",
+    "apps/server/src", "apps/server/tests", "packages/contracts/src", "packages/kernel/src",
     "packages/module-sdk/src", "packages/authority/src", "packages/agent-runtime/src",
     "packages/experiment/src", "packages/observability/src",
     "modules/server", "scripts", "tests"
@@ -128,7 +128,7 @@ packages:
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2023", "DOM", "DOM.Iterable"], "types": [] },
   "include": [
-    "apps/client/src", "apps/console/src", "packages/contracts/src", "packages/kernel/src",
+    "apps/client/src", "apps/console/src", "apps/console/tests", "packages/contracts/src", "packages/kernel/src",
     "packages/client-sdk/src", "packages/client-protocol/src", "modules/client", "modules/console"
   ]
 }
@@ -234,12 +234,13 @@ TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 P
 
 | 位置 | 内容 | 运行 |
 |---|---|---|
+| `apps/*/tests/*.test.ts` | 应用内部的宿主端口与界面行为 | `pnpm test` |
 | `modules/**/tests/*.test.ts` | 模块自身行为、参数边界 | `pnpm test` |
 | `packages/*/tests/*.test.ts` | 宿主机制单元测试 | `pnpm test` |
 | `tests/contract`、`tests/integration`、`tests/catalog`、`tests/scenarios` | 跨模块契约、事务/恢复、装配、多轮玩法 | `pnpm test` |
 | `tests/e2e/*.spec.ts` | Playwright；`webServer` 先执行 `pnpm build` 再用 `pnpm start` 起两端（环境变量见下） | `pnpm test:e2e` |
 | `tests/fixtures/` | 确定性模型脚本、场景输入脚本、期望快照 | 被以上测试读取 |
 
-`vitest.config.ts` 放在根目录，`include` 为 `["packages/*/tests/**/*.test.ts", "modules/**/tests/**/*.test.ts", "tests/{contract,integration,catalog,scenarios}/**/*.test.ts"]`。需要真实模型的测试不进入 `pnpm test`，单独放在 `tests/live/`，只在设置了相应 API key 时手动运行。
+`vitest.config.ts` 放在根目录，`include` 为 `["apps/*/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts", "modules/**/tests/**/*.test.ts", "tests/{contract,integration,catalog,scenarios}/**/*.test.ts"]`。需要真实模型的测试不进入 `pnpm test`，单独放在 `tests/live/`，只在设置了相应 API key 时手动运行。
 
 `playwright.config.ts` 的 `webServer` 固定使用测试环境：`NPC_ASSEMBLY=local-slg-test-v1`、`NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3`、`NPC_DATA_DIR=./data-e2e/run-<pid>`、`NPC_PLAYER_TOKEN=e2e-player`、`NPC_CONSOLE_TOKEN=e2e-console`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，Playwright 在 webServer 启动前清空该目录，保证全新世界），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。

@@ -6,19 +6,26 @@
 import {
   DomainError,
   branchCompareResponseSchema,
+  canonicalJson,
   debugQueuesResponseSchema,
   debugWakeResponseSchema,
-  jsonValueSchema,
   type BranchCompareResponse,
   type DebugQueuesResponse,
   type DebugWakeResponse,
   type HostServices,
   type StoragePort,
+  type StorageRawRow,
 } from "@ai-npc/contracts";
 import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
+import { numberColumn, parseJsonText, stringColumn } from "./research-codec";
 
-function jsonColumn(value: unknown) {
-  return jsonValueSchema.parse(value);
+function branchEvent(row: StorageRawRow | undefined) {
+  if (row === undefined) return null;
+  return {
+    type: stringColumn(row, "type"),
+    payload: parseJsonText(row["payload_json"]),
+    principalId: stringColumn(row, "principal_id"),
+  };
 }
 
 function oldest(values: readonly string[]): string | null {
@@ -41,30 +48,30 @@ export function compareBranchEvents(
   const rightRows = new Map(values(right).map((row) => [Number(row["world_seq"]), row]));
   const keys = [...new Set([...leftRows.keys(), ...rightRows.keys()])].sort((a, b) => a - b);
   const differences = keys.flatMap((seq) => {
-    const leftRow = leftRows.get(seq);
-    const rightRow = rightRows.get(seq);
-    if (JSON.stringify(leftRow) === JSON.stringify(rightRow)) return [];
-    return [{
-      kind: "event" as const,
-      key: String(seq),
-      left: leftRow === undefined ? null : jsonColumn({
-        type: leftRow["type"], payload: leftRow["payload_json"], principalId: leftRow["principal_id"],
-      }),
-      right: rightRow === undefined ? null : jsonColumn({
-        type: rightRow["type"], payload: rightRow["payload_json"], principalId: rightRow["principal_id"],
-      }),
-    }];
+    const leftEvent = branchEvent(leftRows.get(seq));
+    const rightEvent = branchEvent(rightRows.get(seq));
+    if (canonicalJson(leftEvent) === canonicalJson(rightEvent)) return [];
+    return [{ kind: "event" as const, key: String(seq), left: leftEvent, right: rightEvent }];
   });
   return branchCompareResponseSchema.parse({ left, right, atSeq, differences });
 }
 
 export function readDebugQueues(storage: StoragePort, branchId: string): DebugQueuesResponse {
   const scheduler = storage.transact((tx) => {
-    const rows = tx.all(
-      "SELECT created_tick FROM triggers WHERE branch_id = ? AND consumed_by_turn_id IS NULL",
-      [branchId],
+    const counts = tx.get(
+      `SELECT (SELECT COUNT(*) FROM triggers WHERE branch_id = ? AND consumed_by_turn_id IS NULL) +
+              COUNT(CASE WHEN status = 'queued' THEN 1 END) AS queued,
+              COUNT(CASE WHEN status IN ('preparing', 'waiting', 'deciding', 'executing', 'speaking', 'settling')
+                         THEN 1 END) AS running
+         FROM turn_runs WHERE branch_id = ?`,
+      [branchId, branchId],
     );
-    return { queued: rows.length, running: 0, oldestAt: null };
+    if (counts === null) throw new DomainError("invalid-state", "调度队列计数缺失");
+    return {
+      queued: numberColumn(counts, "queued"),
+      running: numberColumn(counts, "running"),
+      oldestAt: null,
+    };
   });
   const modelPool = storage.transact((tx) => {
     const rows = tx.all(
@@ -73,7 +80,7 @@ export function readDebugQueues(storage: StoragePort, branchId: string): DebugQu
         WHERE r.branch_id = ? AND m.status = 'started'`,
       [branchId],
     );
-    return { queued: 0, running: rows.length, oldestAt: oldest(rows.map((row) => String(row["created_at"]))) };
+    return { queued: null, running: rows.length, oldestAt: oldest(rows.map((row) => String(row["created_at"]))) };
   });
   const maintenance = storage.transact((tx) => {
     const rows = tx.all(

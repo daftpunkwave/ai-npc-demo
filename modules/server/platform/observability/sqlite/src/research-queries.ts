@@ -36,6 +36,7 @@ import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
 import {
   jsonColumn,
   numberColumn,
+  parseJsonText,
   stringColumn,
   summaryFromRow,
   detailFromSummary,
@@ -61,16 +62,6 @@ function parseArtifactBody(row: StorageRow): string {
   if (body instanceof Uint8Array) return new TextDecoder().decode(body);
   if (typeof body === "string") return body;
   throw new DomainError("invalid-state", "artifact 正文缺失；当前首版只读取内联 artifact");
-}
-
-function parseJsonText(value: unknown): Json {
-  if (typeof value !== "string") throw new DomainError("invalid-state", "观测 JSON 文本缺失");
-  try {
-    return jsonColumn(JSON.parse(value));
-  } catch (error) {
-    if (error instanceof DomainError) throw error;
-    throw new DomainError("invalid-state", "观测 JSON 文本无法解析");
-  }
 }
 
 function triggerKinds(
@@ -370,7 +361,7 @@ export class ResearchQueries {
       traceId: String(row["trace_id"]),
       parentSpanId: row["parent_span_id"] === null ? null : String(row["parent_span_id"]),
       name: String(row["name"]),
-      attrs: jsonColumn(parseJsonText(row["attrs_json"])),
+      attrs: parseJsonText(row["attrs_json"]),
       startedAt: row["started_at"] === null ? null : stringColumn(row, "started_at"),
       durationMs: row["end_ms"] === null ? null : Math.max(0, Number(row["end_ms"]) - Number(row["start_ms"])),
       children: [],

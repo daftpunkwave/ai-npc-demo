@@ -4,7 +4,7 @@
  * 禁止跳过暂停保存快照，或把恢复/重开实现成覆盖旧分支。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口方法参数名用于表达运营调用契约。 */
-import type { ClockView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ClockView, ModuleCreateInput, ModuleInstance, RestoreDryRunResponse } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
 import { operationsConfigSchema } from "./definition";
 
@@ -38,13 +38,6 @@ export interface RestoreInput {
   readonly runId?: string;
 }
 
-export interface RestoreInspectionView {
-  readonly sourceRun: { readonly runId: string };
-  readonly worldId: string;
-  readonly worldTick: number;
-  readonly worldSeq: number;
-}
-
 /**
  * 幂等执行入口：宿主按认证主体、operationId 与请求内容哈希识别重试，并把首次结果与业务写入
  * 在同一事务内持久化。未提供时，运营服务退回原有的非幂等回调。
@@ -71,7 +64,7 @@ export interface OperationsDriver {
   readonly step: (expectedRunVersion: number, ticks: number) => ClockView;
   readonly snapshot: (input: SnapshotInput) => SnapshotView;
   readonly restore: (input: RestoreInput) => RestoreOutcome;
-  readonly validateRestore?: (snapshotId: string) => RestoreInspectionView;
+  readonly validateRestore?: (snapshotId: string) => RestoreDryRunResponse;
   readonly reset: () => { readonly branchId: string; readonly clock: ClockView };
   /** 可选的幂等执行入口；提供后运营服务按 operationId 转发。 */
   readonly idempotent?: IdempotentOperationsDriver;
@@ -129,7 +122,7 @@ export class OperationsService {
     return this.driver.restore({ snapshotId, createdBy, ...(runId === undefined ? {} : { runId }) });
   }
 
-  validateRestore(snapshotId: string): RestoreInspectionView {
+  validateRestore(snapshotId: string): RestoreDryRunResponse {
     if (this.driver.validateRestore === undefined) {
       throw new Error("运营驱动未提供恢复预检");
     }

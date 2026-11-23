@@ -227,6 +227,7 @@ modules/server/agent/memory/ledger/
 
 | 位置 | 覆盖行为 |
 |---|---|
+| `apps/*/tests` | 应用内部的宿主端口与界面行为 |
 | 模块自己的 tests | 算法、状态变更、错误、来源与参数边界；行为测试不绑定内部拆函数方式 |
 | `tests/contract` | 跨域 schema、port、生命周期、scope、迁移、effective 参数 |
 | `tests/integration` | 事务/outbox/inbox、模型池、工具绑定、fencing、恢复与取消竞态 |

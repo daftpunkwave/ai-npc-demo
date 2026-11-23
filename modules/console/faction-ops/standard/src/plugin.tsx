@@ -107,9 +107,8 @@ function FactionOpsPage(): ReactNode {
       snapshotId,
       dryRun: true,
     });
-    if (!("checks" in preview) || !preview.ok) {
-      throw new Error("恢复预检未通过");
-    }
+    if (!("checks" in preview)) throw new Error("缺少恢复预检结果");
+    if (!preview.ok) throw new Error(preview.checks.find((check) => !check.ok)?.message ?? "恢复预检未通过");
     if (!host.confirm("确认恢复该快照并切换在线分支？")) return;
     await host.api.consoleRestoreSnapshot({
       operationId: host.operationId(),

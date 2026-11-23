@@ -6,6 +6,7 @@
   },
   "include": [
     "apps/server/src",
+    "apps/server/tests",
     "packages/contracts/src",
     "packages/kernel/src",
     "packages/module-sdk/src",

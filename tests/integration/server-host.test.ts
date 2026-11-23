@@ -17,6 +17,7 @@ import {
   consoleHealthResponseSchema,
   conversationResponseSchema,
   errorResponseSchema,
+  restoreDryRunResponseSchema,
   sessionAssemblyResponseSchema,
 } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
@@ -1448,8 +1449,16 @@ describe("服务端宿主", () => {
       headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" },
       payload: { operationId: "op-000000000108", snapshotId, dryRun: true },
     });
-    expect(preview.statusCode).toBe(409);
-    expect(errorResponseSchema.parse(preview.json()).error.safeMessage).toContain("contentVersion");
+    expect(preview.statusCode).toBe(200);
+    expect(restoreDryRunResponseSchema.parse(preview.json())).toMatchObject({
+      ok: false,
+      checks: [
+        { name: "snapshot-integrity", ok: true, message: null },
+        { name: "source-run", ok: false, message: expect.stringContaining("contentVersion") },
+        { name: "world", ok: true },
+        { name: "checkpoint", ok: true },
+      ],
+    });
 
     const restored = await host.app.inject({
       method: "POST",

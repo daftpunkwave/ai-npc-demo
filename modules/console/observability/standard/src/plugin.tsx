@@ -311,7 +311,7 @@ function ObservabilityPage(): ReactNode {
                 <div><dt>derived tick</dt><dd>{inspector.watermarks.derivedThroughTick}</dd></div>
               </div>
               <h3>记忆</h3>
-              {inspector.memoryRecords.slice(0, 8).map((record) => (
+              {inspector.memoryRecords.map((record) => (
                 <article key={record.memoryId}>
                   <strong>{record.kind} · {record.memoryId}</strong>
                   <small>{record.epistemic} · {record.status}</small>

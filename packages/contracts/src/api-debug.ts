@@ -49,7 +49,7 @@ export const queueSummarySchema = z
 export const debugQueuesResponseSchema = z
   .object({
     scheduler: queueSummarySchema,
-    modelPool: queueSummarySchema,
+    modelPool: queueSummarySchema.extend({ queued: queueSummarySchema.shape.queued.nullable() }),
     maintenance: queueSummarySchema,
   })
   .strict();

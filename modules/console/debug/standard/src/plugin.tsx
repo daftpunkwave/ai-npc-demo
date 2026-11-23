@@ -113,8 +113,14 @@ function DebugPage(): ReactNode {
       </header>
       {error === null ? null : <div className="console-error" role="alert">{error}</div>}
       <div className="console-stat-grid">
-        <article><span>调度队列</span><strong>{queues?.scheduler.queued ?? "-"}</strong></article>
-        <article><span>模型运行中</span><strong>{queues?.modelPool.running ?? "-"}</strong></article>
+        <article>
+          <span>调度队列</span><strong>{queues?.scheduler.queued ?? "-"}</strong>
+          <small>运行中 {queues?.scheduler.running ?? "—"}</small>
+        </article>
+        <article>
+          <span>模型运行中</span><strong>{queues?.modelPool.running ?? "-"}</strong>
+          <small>排队 {queues === null ? "—" : (queues.modelPool.queued ?? "未知")}</small>
+        </article>
         <article><span>维护队列</span><strong>{queues?.maintenance.queued ?? "-"}</strong></article>
         <article><span>最老活动</span><small>{queues?.modelPool.oldestAt ?? queues?.maintenance.oldestAt ?? "—"}</small></article>
       </div>

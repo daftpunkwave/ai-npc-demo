@@ -55,6 +55,16 @@ export function jsonColumn(value: unknown): Json {
   return parsed.data;
 }
 
+export function parseJsonText(value: unknown): Json {
+  if (typeof value !== "string") throw new DomainError("invalid-state", "观测 JSON 文本缺失");
+  try {
+    return jsonColumn(JSON.parse(value));
+  } catch (error) {
+    if (error instanceof DomainError) throw error;
+    throw new DomainError("invalid-state", "观测 JSON 文本无法解析", { cause: error });
+  }
+}
+
 /** 把存储的记忆行转换为对外记录；scope 由调用方从世界与分支上下文补齐。 */
 export function decodeMemoryRecord(
   row: Readonly<Record<string, unknown>>,

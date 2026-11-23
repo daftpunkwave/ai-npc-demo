@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startHost, type RunningHost } from "@ai-npc/app-server";
 import {
+  agentInspectorResponseSchema,
   artifactResponseSchema,
   debugQueuesResponseSchema,
   errorResponseSchema,
@@ -17,6 +18,8 @@ import {
   modelLayoutsResponseSchema,
 } from "@ai-npc/contracts";
 import { loadContentPack } from "@ai-npc/experiment";
+import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
+import { createFakeHost } from "./authority-support";
 
 const hosts: RunningHost[] = [];
 const roots: string[] = [];
@@ -52,6 +55,12 @@ async function login(host: RunningHost, token: string): Promise<string> {
 
 function modelHeader(token: string, role = "researcher") {
   return { Authorization: `Bearer ${token}`, "X-Active-Role": role };
+}
+
+function onlineRun(host: RunningHost) {
+  const run = host.storage.transact((tx) => tx.rows("runs").list({ branch_id: host.branchId })[0]);
+  if (run === undefined || typeof run["run_id"] !== "string") throw new Error("expected online run");
+  return { id: run["run_id"], row: run };
 }
 
 describe("控制台研究接口", () => {
@@ -425,21 +434,119 @@ describe("控制台研究接口", () => {
     expect(errorResponseSchema.parse(response.json()).error.code).toBe("invalid-state");
   });
 
+  it("检查器区分未知 Agent 和没有记忆的已知 Agent", async () => {
+    const host = await testHost();
+    const headers = modelHeader(await login(host, "research-console"));
+    const inspect = (agentId: string) => host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/${agentId}/inspector?branchId=${host.branchId}`,
+      headers,
+    });
+    const unknown = await inspect("unknown-agent");
+    expect(unknown.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(unknown.json()).error.code).toBe("not-found");
+
+    const known = await inspect("human-independent");
+    expect(known.statusCode).toBe(200);
+    expect(agentInspectorResponseSchema.parse(known.json())).toMatchObject({
+      agentId: "human-independent",
+      memoryRecords: [],
+    });
+  });
+
+  it("拒绝读取无 run 归属和跨世界 artifact，并且不写原文读取审计", async () => {
+    const host = await testHost();
+    const headers = modelHeader(await login(host, "research-console"));
+    const { row } = onlineRun(host);
+    const foreignRunId = "run-000000000099";
+    const createdAt = "2026-01-01T00:00:00.000Z";
+    host.storage.transact((tx) => {
+      tx.rows("worlds").put({
+        world_id: "wld-artifact-foreign",
+        pack_id: "earth-2964-v1",
+        content_version: "0.2.0",
+        created_at: createdAt,
+      });
+      tx.rows("branches").put({
+        branch_id: "br-artifact-foreign",
+        world_id: "wld-artifact-foreign",
+        kind: "experiment",
+        status: "paused",
+        parent_branch_id: null,
+        forked_at_world_seq: null,
+        run_id: foreignRunId,
+        profile_hash: null,
+        created_at: createdAt,
+      });
+      tx.rows("runs").put({
+        ...row,
+        run_id: foreignRunId,
+        world_id: "wld-artifact-foreign",
+        branch_id: "br-artifact-foreign",
+      });
+    });
+    const artifacts = new StoredAgentArtifactStore(host.storage, createFakeHost());
+    for (const runId of [null, foreignRunId]) {
+      const { artifactId } = await artifacts.put({ runId, kind: "model-request", value: "private fixture" });
+      for (const view of ["redacted", "raw"]) {
+        const response = await host.app.inject({
+          method: "GET",
+          url: `/api/v1/console/artifacts/${artifactId}?view=${view}`,
+          headers,
+        });
+        expect(response.statusCode).toBe(403);
+        expect(errorResponseSchema.parse(response.json()).error.code).toBe("forbidden");
+        expect(response.body).not.toContain("private fixture");
+      }
+    }
+    expect(host.storage.transact((tx) =>
+      tx.all("SELECT type FROM lifecycle_events WHERE type = 'ArtifactViewed'"))).toEqual([]);
+  });
+
+  it("读取实际写入端持久化的超过 64 KiB 的 artifact，并按所属 run 记审计", async () => {
+    const host = await testHost();
+    const headers = modelHeader(await login(host, "research-console"));
+    const runId = onlineRun(host).id;
+    const artifacts = new StoredAgentArtifactStore(host.storage, createFakeHost());
+    const value = { content: "证".repeat(25_000) };
+    const { artifactId, byteSize } = await artifacts.put({ runId, kind: "model-request", value });
+    expect(byteSize).toBeGreaterThan(65_536);
+    expect(host.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId })?.["storage"]))
+      .toBe("inline");
+    const response = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/artifacts/${artifactId}?view=raw`,
+      headers,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(artifactResponseSchema.parse(response.json()).body)).toEqual(value);
+    const audit = host.storage.transact((tx) => tx.all(
+      "SELECT run_id, payload_json FROM lifecycle_events WHERE type = 'ArtifactViewed'",
+    ));
+    expect(audit).toEqual([{
+      run_id: runId,
+      payload_json: expect.stringContaining(artifactId),
+    }]);
+  });
+
   it("脱敏 artifact 同时处理秘密键与值且不写原文审计", async () => {
     const host = await testHost();
     const consoleToken = await login(host, "research-console");
     const secret = [...loadContentPack("content", "earth-2964-v1").index.secrets.values()][0];
     if (secret === undefined) throw new Error("expected configured secret");
     const artifactId = "art-000000000099";
+    const runId = onlineRun(host).id;
+    const label = `[SECRET ${secret.secretId} len=${secret.content.length}]`;
     const body = JSON.stringify(Object.fromEntries([
       [secret.content, secret.content],
+      [label, "保留同名键的值"],
       ["nested", { [secret.content]: secret.content }],
       ["__proto__", { nested: secret.content }],
     ]));
     host.storage.transact((tx) => {
       tx.rows("artifacts").put({
         artifact_id: artifactId,
-        run_id: null,
+        run_id: runId,
         kind: "model-request",
         content_hash: "0".repeat(64),
         mime: "application/json",
@@ -460,8 +567,13 @@ describe("控制台研究接口", () => {
     expect(response.statusCode).toBe(200);
     const redacted = artifactResponseSchema.parse(response.json()).body;
     expect(redacted).not.toContain(secret.content);
-    expect(redacted).toContain(`[SECRET ${secret.secretId}`);
-    expect(Object.hasOwn(JSON.parse(redacted) as object, "__proto__")).toBe(true);
+    const parsed = JSON.parse(redacted) as object;
+    expect(parsed).toMatchObject({
+      [label]: label,
+      [`${label}#2`]: "保留同名键的值",
+      nested: { [label]: label },
+    });
+    expect(Object.hasOwn(parsed, "__proto__")).toBe(true);
     expect(host.storage.transact((tx) =>
       tx.all("SELECT type FROM lifecycle_events WHERE type = 'ArtifactViewed'"))).toEqual([]);
   });

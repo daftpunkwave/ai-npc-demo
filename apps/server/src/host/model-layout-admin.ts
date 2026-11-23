@@ -20,7 +20,7 @@ import {
   type ModelLayoutView,
   type ModelLayoutsResponse,
 } from "@ai-npc/contracts";
-import { loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@ai-npc/experiment";
+import { LoadingError, loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@ai-npc/experiment";
 
 const publicEndpointEnvironment = "NPC_OPENAI_COMPAT_BASE_URL";
 const publicModelEnvironment = "NPC_OPENAI_COMPAT_MODEL";
@@ -46,13 +46,16 @@ function hostOf(endpoint: string | undefined): string | null {
 
 function endpointRefOf(endpoint: string | undefined): string | null {
   if (endpoint === undefined) return null;
-  if (endpoint.startsWith("env:")) return endpoint;
+  if (endpoint.startsWith("env:")) {
+    return endpoint === `env:${publicEndpointEnvironment}` ? endpoint : null;
+  }
   try {
     const url = new URL(endpoint);
-    if (url.username.length > 0 || url.password.length > 0 || url.search.length > 0 || url.hash.length > 0) {
+    if ((url.protocol !== "https:" && url.protocol !== "http:") ||
+      url.username.length > 0 || url.password.length > 0 || url.search.length > 0 || url.hash.length > 0) {
       return null;
     }
-    return url.origin;
+    return `${url.origin}${url.pathname}`;
   } catch {
     return null;
   }
@@ -243,7 +246,13 @@ export class ModelLayoutAdminPort {
 
   private layoutIds(): readonly string[] {
     const directory = join(this.loadContext.configDir, "model-layouts");
-    return readdirSync(directory, { withFileTypes: true })
+    let entries;
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch (cause) {
+      throw new DomainError("not-ready", "无法读取模型布局配置目录", { cause });
+    }
+    return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(".yaml"))
       .map((entry) => entry.name.slice(0, -".yaml".length))
       .sort((left, right) => left.localeCompare(right));
@@ -251,6 +260,11 @@ export class ModelLayoutAdminPort {
 
   private load(layoutId: string): ModelLayout {
     if (!this.layoutIds().includes(layoutId)) throw new DomainError("not-found", `模型布局 ${layoutId} 不存在`);
-    return loadModelLayout(layoutId, this.loadContext);
+    try {
+      return loadModelLayout(layoutId, this.loadContext);
+    } catch (cause) {
+      if (!(cause instanceof LoadingError)) throw cause;
+      throw new DomainError("invalid-state", `无法加载模型布局 ${layoutId} 的配置`, { cause });
+    }
   }
 }

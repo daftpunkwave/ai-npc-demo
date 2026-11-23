@@ -166,15 +166,18 @@ export function createConsoleResearchPort(input: {
     }
   };
   const assertArtifactScope = (artifactId: string): void => {
-    const runId = runtime.storage.transact((tx) =>
-      tx.rows("artifacts").get({ artifact_id: artifactId })?.["run_id"]);
-    if (runId === undefined) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
-    if (runId === null) return;
-    if (typeof runId !== "string") throw new DomainError("invalid-state", `artifact ${artifactId} 的 run_id 不合法`);
-    const branchId = runtime.storage.transact((tx) =>
-      tx.rows("runs").get({ run_id: runId })?.["branch_id"]);
-    if (typeof branchId !== "string") throw new DomainError("forbidden", `artifact ${artifactId} 缺少可访问 run`);
-    assertBranchScope(branchId);
+    const worldId = currentWorldId();
+    runtime.storage.transact((tx) => {
+      const artifact = tx.rows("artifacts").get({ artifact_id: artifactId });
+      if (artifact === null) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
+      const runId = artifact["run_id"];
+      const run = typeof runId === "string" ? tx.rows("runs").get({ run_id: runId }) : null;
+      const branchId = run?.["branch_id"];
+      const branch = typeof branchId === "string" ? tx.rows("branches").get({ branch_id: branchId }) : null;
+      if (run?.["world_id"] !== worldId || branch?.["world_id"] !== worldId) {
+        throw new DomainError("forbidden", `artifact ${artifactId} 缺少当前世界可访问的 run`);
+      }
+    });
   };
 
   const inspector = (input: {
@@ -196,7 +199,8 @@ export function createConsoleResearchPort(input: {
       const character = world.character(agentId);
       const staticFaction = content.factions.get(agentId);
       const characterContent = content.characters.get(agentId);
-      const factionId = character?.factionId ?? staticFaction?.factionId ?? characterContent?.factionId ?? agentId;
+      const factionId = character?.factionId ?? staticFaction?.factionId ?? characterContent?.factionId;
+      if (factionId === undefined) throw new DomainError("not-found", `Agent ${agentId} 不存在`);
       const nodeId = character?.nodeId ?? staticFaction?.factionHomeNodeId ??
         staticFaction?.territoryNodeId ?? characterContent?.spawnNodeId ?? null;
       const perception = tx.branch(branchId).table("perception_state").get({ agent_id: agentId });

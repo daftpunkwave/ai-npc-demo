@@ -261,7 +261,7 @@ export const modelLayoutDraftSchema = z
 
 export type ModelLayoutDraft = z.infer<typeof modelLayoutDraftSchema>;
 
-/** 去密钥连接视图：只显示 adapter、endpoint 主机名与凭据引用名。 */
+/** 去密钥连接视图：端点保留公开路径或环境引用，凭据只显示引用名。 */
 export const modelConnectionViewSchema = z
   .object({
     adapterId: moduleIdSchema,
