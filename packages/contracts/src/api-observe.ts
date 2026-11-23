@@ -260,7 +260,7 @@ export const turnDetailSchema = turnSummarySchema
       })
       .strict()
       .nullable(),
-    traceId: idSchemas.trc,
+    traceId: idSchemas.trc.nullable(),
   })
   .strict();
 
@@ -269,6 +269,7 @@ export type TurnDetail = z.infer<typeof turnDetailSchema>;
 export const turnsQuerySchema = z
   .object({
     runId: idSchemas.run.optional(),
+    branchId: z.string().min(1).optional(),
     agentId: principalIdSchema.optional(),
     status: z.string().min(1).optional(),
     limit: z.number().int().min(1).optional(),
@@ -307,7 +308,7 @@ export interface TraceSpan {
   readonly parentSpanId: string | null;
   readonly name: string;
   readonly attrs: Json;
-  readonly startedAt: string;
+  readonly startedAt: string | null;
   readonly durationMs: number | null;
   readonly children: readonly TraceSpan[];
 }
@@ -320,7 +321,7 @@ export const traceSpanSchema: z.ZodType<TraceSpan> = z.lazy(() =>
       parentSpanId: idSchemas.spn.nullable(),
       name: z.string().min(1),
       attrs: jsonValueSchema,
-      startedAt: z.string().min(1),
+      startedAt: z.string().min(1).nullable(),
       durationMs: z.number().nonnegative().nullable(),
       children: z.array(traceSpanSchema),
     })

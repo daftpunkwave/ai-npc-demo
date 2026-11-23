@@ -53,4 +53,7 @@ realms:
     bindings:
       - { capability: console.health, moduleId: console.health.standard, configRef: null }
       - { capability: console.module-admin, moduleId: console.module-admin.standard, configRef: null }
+      - { capability: console.model-mounts, moduleId: console.model-mounts.standard, configRef: null }
+      - { capability: console.faction-ops, moduleId: console.faction-ops.standard, configRef: null }
       - { capability: console.observability, moduleId: console.observability.standard, configRef: null }
+      - { capability: console.debug, moduleId: console.debug.standard, configRef: null }

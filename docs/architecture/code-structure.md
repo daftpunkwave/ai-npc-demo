@@ -165,6 +165,8 @@ modules/server/agent/memory/ledger/
 
 `client-protocol` 只含类型化传输与投影 reducer 协议；场景/UI 模块只消费授权投影，不拼装第二份世界。
 
+控制台 HTTP 请求按模型布局、研究证据、调试和运营分文件实现。`ApiClient` 装配这些方法，统一处理会话令牌、角色请求头、响应校验与错误映射。
+
 ## 5. 显式装配与配置
 
 `config/assemblies` 只存数据：每个文件描述 server/client/console 三个 realm 的模块选择、能力绑定、配置块引用与可替换项。装配解析器由 `platform.module-admin` 与宿主共同提供，在启动或创建 run 时生成 resolved manifest。
@@ -227,6 +229,7 @@ modules/server/agent/memory/ledger/
 
 | 位置 | 覆盖行为 |
 |---|---|
+| `apps/*/tests` | 应用内部的宿主端口与界面行为 |
 | 模块自己的 tests | 算法、状态变更、错误、来源与参数边界；行为测试不绑定内部拆函数方式 |
 | `tests/contract` | 跨域 schema、port、生命周期、scope、迁移、effective 参数 |
 | `tests/integration` | 事务/outbox/inbox、模型池、工具绑定、fencing、恢复与取消竞态 |

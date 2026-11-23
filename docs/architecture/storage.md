@@ -472,6 +472,7 @@ CREATE TABLE trace_spans (
   status TEXT NOT NULL CHECK (status IN ('ok', 'error', 'skipped')),
   start_ms REAL NOT NULL,
   end_ms REAL,
+  started_at TEXT,                      -- 墙上时钟开始时间；start_ms 仅用于单调时长
   attrs_json TEXT NOT NULL
 );
 CREATE INDEX trace_spans_trace ON trace_spans (trace_id);

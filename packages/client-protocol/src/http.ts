@@ -1,17 +1,21 @@
 /**
- * 提供浏览器与服务端之间的类型化 HTTP 客户端，统一处理会话令牌、角色请求头、响应 schema 与错误映射。
+ * 提供浏览器 HTTP 客户端入口，装配控制台领域请求，共用会话、角色请求头、响应校验与错误映射。
  * 依赖公共 DTO 与浏览器 Fetch/Storage 接口；不访问数据库、服务端模块或模型凭据。
  * 禁止绕过认证头、信任未校验响应，或把内部错误细节直接展示给玩家。
  */
 import {
   DomainError,
+  assembliesResponseSchema,
+  assemblyDetailResponseSchema,
   campaignResponseSchema,
   clientContentViewSchema,
   clockResponseSchema,
   commandReceiptSchema,
+  consoleHealthResponseSchema,
   conversationResponseSchema,
   errorResponseSchema,
   loginResponseSchema,
+  modulesResponseSchema,
   presetsResponseSchema,
   resolvedModuleSetSchema,
   sessionDescriptorSchema,
@@ -30,13 +34,13 @@ import {
   type SnapshotRestoreRequest,
 } from "@ai-npc/contracts";
 import { z } from "zod";
-import {
-  assemblyDetailResponseSchema,
-  assembliesResponseSchema,
-  consoleHealthResponseSchema,
-  modulesResponseSchema,
-} from "@ai-npc/contracts";
-import { agentsResponseSchema, timelineResponseSchema } from "@ai-npc/contracts";
+import { createDebugHttp } from "./http/debug";
+import { createModelLayoutHttp } from "./http/model-layouts";
+import { createOperationsHttp } from "./http/operations";
+import { createResearchHttp } from "./http/research";
+import { queryString, type ConsoleRequest, type RequestOptions } from "./http/request";
+
+export type { RequestOptions } from "./http/request";
 
 const sessionStorageKey = "ai-npc.session-token";
 
@@ -44,13 +48,6 @@ export interface ApiClientOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
   readonly storage?: BrowserStorage | null;
-  readonly activeRole?: ConsoleActiveRole;
-}
-
-export interface RequestOptions {
-  readonly method?: "GET" | "POST";
-  readonly body?: unknown;
-  readonly authenticated?: boolean;
   readonly activeRole?: ConsoleActiveRole;
 }
 
@@ -88,17 +85,6 @@ function defaultStorage(): BrowserStorage | null {
   }
 }
 
-function queryString(values: Readonly<Record<string, string | number | undefined>>): string {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined) {
-      query.set(key, String(value));
-    }
-  }
-  const text = query.toString();
-  return text.length === 0 ? "" : `?${text}`;
-}
-
 /** 浏览器 API 客户端；每次响应都经对应 Zod schema 收窄。 */
 export class ApiClient {
   private readonly baseUrl: string;
@@ -106,6 +92,12 @@ export class ApiClient {
   private readonly storage: BrowserStorage | null;
   private sessionToken: string | null;
   private activeRole: ConsoleActiveRole | undefined;
+  private readonly requestConsole: ConsoleRequest = (schema, path, options) =>
+    this.request(schema, path, { ...options, activeRole: this.requireActiveRole() });
+  private readonly modelLayouts = createModelLayoutHttp(this.requestConsole);
+  private readonly research = createResearchHttp(this.requestConsole);
+  private readonly debug = createDebugHttp(this.requestConsole);
+  private readonly operations = createOperationsHttp(this.requestConsole);
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
@@ -239,65 +231,55 @@ export class ApiClient {
     return this.request(presetsResponseSchema, "/api/v1/presets");
   }
 
-  consoleHealth() {
-    return this.request(consoleHealthResponseSchema, "/api/v1/console/health", {
-      activeRole: this.requireActiveRole(),
-    });
+  consoleHealth(signal?: AbortSignal) {
+    return this.requestConsole(consoleHealthResponseSchema, "/api/v1/console/health", { signal });
   }
 
   consoleModules(realm?: "server" | "client" | "console") {
-    return this.request(
+    return this.requestConsole(
       modulesResponseSchema,
       `/api/v1/console/modules${queryString({ realm })}`,
-      { activeRole: this.requireActiveRole() },
     );
   }
 
   consoleAssemblies() {
-    return this.request(assembliesResponseSchema, "/api/v1/console/assemblies", {
-      activeRole: this.requireActiveRole(),
-    });
+    return this.requestConsole(assembliesResponseSchema, "/api/v1/console/assemblies");
   }
 
   consoleAssembly(assemblyId: string) {
-    return this.request(
+    return this.requestConsole(
       assemblyDetailResponseSchema,
       `/api/v1/console/assemblies/${encodeURIComponent(assemblyId)}`,
-      { activeRole: this.requireActiveRole() },
     );
   }
 
-  consoleTimeline(input: {
-    readonly branchId?: string;
-    readonly fromSeq?: number;
-    readonly limit?: number;
-    readonly order?: "asc" | "desc";
-    readonly types?: readonly string[];
-    readonly agentId?: string;
-    readonly nodeId?: string;
-  }) {
-    return this.request(
-      timelineResponseSchema,
-      `/api/v1/console/timeline${queryString({
-        branchId: input.branchId,
-        fromSeq: input.fromSeq ?? 0,
-        limit: input.limit ?? 100,
-        order: input.order,
-        types: input.types?.join(","),
-        agentId: input.agentId,
-        nodeId: input.nodeId,
-      })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
+  consoleModelLayouts = this.modelLayouts.consoleModelLayouts;
+  consoleModelLayout = this.modelLayouts.consoleModelLayout;
+  consoleModelRoutes = this.modelLayouts.consoleModelRoutes;
+  validateModelLayout = this.modelLayouts.validateModelLayout;
 
-  consoleAgents(branchId: string) {
-    return this.request(
-      agentsResponseSchema,
-      `/api/v1/console/agents${queryString({ branchId })}`,
-      { activeRole: this.requireActiveRole() },
-    );
-  }
+  consoleTimeline = this.research.consoleTimeline;
+  consoleAgents = this.research.consoleAgents;
+  consoleInspector = this.research.consoleInspector;
+  consoleMemory = this.research.consoleMemory;
+  consoleMemoryDiff = this.research.consoleMemoryDiff;
+  consoleObservations = this.research.consoleObservations;
+  consoleTurns = this.research.consoleTurns;
+  consoleTurn = this.research.consoleTurn;
+  consoleArtifact = this.research.consoleArtifact;
+  consoleTrace = this.research.consoleTrace;
+  consoleBranchCompare = this.research.consoleBranchCompare;
+
+  consoleDebugQueues = this.debug.consoleDebugQueues;
+  consoleReplayTurn = this.debug.consoleReplayTurn;
+  consoleWakeAgent = this.debug.consoleWakeAgent;
+
+  consolePauseCampaign = this.operations.consolePauseCampaign;
+  consoleResumeCampaign = this.operations.consoleResumeCampaign;
+  consoleStepCampaign = this.operations.consoleStepCampaign;
+  consoleSnapshots = this.operations.consoleSnapshots;
+  consoleCreateSnapshot = this.operations.consoleCreateSnapshot;
+  consoleRestoreSnapshot = this.operations.consoleRestoreSnapshot;
 
   webSocketUrl(ticket: string): string {
     const current = browserWindow();
@@ -343,8 +325,10 @@ export class ApiClient {
       method: options.method ?? "GET",
       headers,
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     const payload: unknown = await response.json().catch(() => null);
+    options.signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
         this.clearSession();

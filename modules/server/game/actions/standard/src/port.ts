@@ -4,13 +4,14 @@
  * 禁止在查询中改写任务、队伍或资源状态。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
+import { DomainError, type InvitationView } from "@ai-npc/contracts";
 import {
   gameModuleIds,
   type GameActionsPort,
   type ScopedWorldTxFactory,
   type TaskView,
 } from "@ai-npc/module-sdk";
-import { readTaskState, type TaskState } from "./state";
+import { readTaskState, type InvitationState, type TaskState } from "./state";
 
 function toView(state: TaskState): TaskView {
   return {
@@ -53,6 +54,28 @@ class StandardActionsPort implements GameActionsPort {
       .map((entry) => entry.state)
       .filter((state) => state.dispatcherId === principalId || state.participants.includes(principalId))
       .map(toView);
+  }
+
+  invitationsOf(inviteeId: string): readonly InvitationView[] {
+    return this.tx()
+      .list<InvitationState>("task-invitation")
+      .map((entry) => entry.state)
+      .filter((invitation) => invitation.inviteeId === inviteeId && invitation.response === "pending")
+      .map((invitation) => {
+        const task = readTaskState(this.tx(), invitation.taskId);
+        if (task === null) {
+          throw new DomainError("invalid-state", `邀请 ${invitation.invitationId} 引用了不存在的任务`);
+        }
+        return {
+          invitationId: invitation.invitationId,
+          taskId: invitation.taskId,
+          inviteeId: invitation.inviteeId,
+          taskType: task.taskType,
+          departTick: task.departTick,
+          response: null,
+        };
+      })
+      .sort((left, right) => left.departTick - right.departTick || left.invitationId.localeCompare(right.invitationId));
   }
 
   /** 已完成任务按完成 tick 升序给出；完成 tick 缺失的记录不是已提交的完成事实，直接跳过。 */

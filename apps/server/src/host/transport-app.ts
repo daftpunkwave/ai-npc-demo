@@ -17,6 +17,8 @@ import type { OperationsFactory, ServerApp, ServerIdentity, ServerRuntime } from
 import type { HostOptions } from "./options";
 import type { HostReadPorts } from "./reads";
 import type { SessionAssemblies } from "./startup";
+import type { ModelLayoutAdminPort } from "./model-layout-admin";
+import { createConsoleResearchPort } from "./console-research";
 
 export interface TransportAppInput {
   readonly host: HostServices;
@@ -33,6 +35,8 @@ export interface TransportAppInput {
   /** 客户端只读内容视图：章节名、时钟刻度与界面文字。 */
   readonly content: ClientContentView;
   readonly sessionAssembly: SessionAssemblies;
+  /** 仓库模型布局只读端口；未注入时控制台模型页返回 not-ready。 */
+  readonly modelLayouts?: ModelLayoutAdminPort;
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
@@ -141,6 +145,13 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
   try {
     // 开发宿主与控制台构建并行启动；目录先存在，路由在空目录上登记，构建完成后无需重启服务端。
     mkdirSync(consoleStaticDir, { recursive: true });
+    const research = createConsoleResearchPort({
+      runtime,
+      reads,
+      currentWorldId: () => active.worldId,
+      content: gameContent,
+    });
+    const modelLayouts = input.modelLayouts;
     return await runtime.transport.createApp({
       authority,
       accessPolicy: runtime.accessPolicy,
@@ -199,6 +210,24 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             branchId: query.branchId ?? active.branchId,
           }),
         agents: (branchId) => runtime.observability.agents(branchId),
+        ...(modelLayouts === undefined ? {} : {
+          modelLayouts: () => modelLayouts.list(),
+          modelLayout: (layoutId: string) => modelLayouts.layout(layoutId),
+          modelRoutes: (layoutId: string) => modelLayouts.routes(layoutId),
+          validateModelLayout: (layout: unknown) => modelLayouts.validate(layout),
+        }),
+        inspector: research.inspector,
+        memory: research.memory,
+        memoryDiff: research.memoryDiff,
+        observations: research.observations,
+        turns: research.turns,
+        turn: research.turn,
+        artifact: research.artifact,
+        trace: research.trace,
+        branchCompare: research.branchCompare,
+        debugQueues: research.debugQueues,
+        replayTurn: research.replayTurn,
+        debugWake: research.debugWake,
       },
       projection: () => reads.projection(),
       campaign: () => reads.campaign(),
@@ -221,6 +250,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             operationId: restoreInput.operationId,
             principalId: restoreInput.principalId,
           }),
+        validateRestore: (snapshotId) => operations.validateRestore(snapshotId),
       },
       reset: (operationId, principalId) => operations.reset({ operationId, principalId }),
       onBranchChanged: (nextBranchId) => switchLiveBranch(active, nextBranchId),

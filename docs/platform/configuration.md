@@ -210,7 +210,7 @@ realms:
 | 文件 | 与标准装配的差异 |
 |---|---|
 | `local-slg-test-v1.yaml` | model-transport 两行换成一行 `platform.model-transport.deterministic`；`client.scene-renderer` 换成 `client.scene-renderer.null`（模型布局与名册不属于装配：测试时由 RunSpec 或环境变量 `NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3` 选择） |
-| `local-slg-escalating-v1.yaml` | `game.scenario` 换成 `game.scenario.watergate-escalating` |
+| `local-slg-escalating-v1.yaml` | `game.scenario` 换成 `game.scenario.watergate-escalating`；该装配不启用 Agent 模型池，因此不装载 `console.model-mounts` |
 | `local-slg-compact-hud-v1.yaml` | `client.hud` 换成 `client.hud.compact` |
 | `local-slg-obs-lite-v1.yaml` | `console.observability` 换成 `console.observability.lite` |
 

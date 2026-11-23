@@ -272,7 +272,15 @@ describe("任务行动", () => {
       { kind: "principals", ids: ["npc-muzhi", "human-pacifist"] },
     ]);
     expect(gameEventsOf(value, "TaskInvitationIssued")).toHaveLength(1);
+    expect(withGamePorts(value, (ports) => ports["game.actions"].invitationsOf("npc-muzhi")))
+      .toEqual([expect.objectContaining({
+        taskId,
+        inviteeId: "npc-muzhi",
+        taskType: "rescue",
+        response: null,
+      })]);
     acceptTaskInvitation(value, "npc-muzhi", taskId);
+    expect(withGamePorts(value, (ports) => ports["game.actions"].invitationsOf("npc-muzhi"))).toEqual([]);
     expect(readGameEventAudience(value, "TaskInvitationAnswered")).toEqual([
       { kind: "principals", ids: ["human-pacifist", "npc-muzhi"] },
     ]);
