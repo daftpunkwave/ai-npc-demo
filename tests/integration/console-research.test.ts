@@ -135,6 +135,37 @@ describe("控制台研究接口", () => {
     });
     expect(valid.statusCode).toBe(200);
     expect(modelLayoutValidateResponseSchema.parse(valid.json())).toMatchObject({ ok: true, errors: [] });
+    const oversizedMount = {
+      ...validLayout,
+      mounts: [{
+        modelId: "fixture-model",
+        agentIds: Array.from({ length: 65 }, () => "human-independent"),
+        purposes: ["decision"],
+      }],
+    };
+    const oversized = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/model-layouts/validate",
+      headers: modelHeader(consoleToken, "operator"),
+      payload: { layout: oversizedMount },
+    });
+    expect(oversized.statusCode).toBe(400);
+    const cappedErrors = {
+      ...validLayout,
+      mounts: [{
+        modelId: "fixture-model",
+        agentIds: Array.from({ length: 64 }, () => "human-independent"),
+        purposes: Array.from({ length: 8 }, () => "decision"),
+      }],
+    };
+    const capped = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/model-layouts/validate",
+      headers: modelHeader(consoleToken, "operator"),
+      payload: { layout: cappedErrors },
+    });
+    expect(capped.statusCode).toBe(200);
+    expect(modelLayoutValidateResponseSchema.parse(capped.json()).errors).toHaveLength(100);
 
     const missingCapabilities = JSON.parse(JSON.stringify(layout)) as {
       models?: Record<string, Record<string, unknown>>;
@@ -259,6 +290,43 @@ describe("控制台研究接口", () => {
     });
     expect(detail.statusCode).toBe(200);
     expect(detail.json()).toMatchObject({ status: "queued", traceId: null });
+  });
+
+  it("turn 列表拒绝损坏的触发 ID JSON", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const runId = host.storage.transact((tx) =>
+      String(tx.rows("runs").list({ branch_id: host.branchId })[0]?.["run_id"]));
+    host.storage.transact((tx) => {
+      tx.rows("turn_runs").put({
+        turn_id: "turn-000000000098",
+        run_id: runId,
+        branch_id: host.branchId,
+        agent_id: "human-independent",
+        agent_turn_index: 98,
+        status: "queued",
+        trigger_ids_json: "not-json",
+        input_frontier_json: null,
+        memory_revision: null,
+        profile_hash: "broken-trigger",
+        controller_epoch: 1,
+        turn_lease_epoch: 0,
+        lease_expires_at: null,
+        terminal_reason: null,
+        effective_json: [],
+        created_at: new Date().toISOString(),
+        started_at: null,
+        ended_at: null,
+        created_tick: 0,
+      });
+    });
+    const response = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/turns?branchId=${host.branchId}&limit=1`,
+      headers: modelHeader(consoleToken),
+    });
+    expect(response.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(response.json()).error.code).toBe("invalid-state");
   });
 
   it("观察分页拒绝空或非整数的 limit，并先按分支筛选 turn", async () => {
@@ -439,6 +507,26 @@ describe("控制台研究接口", () => {
         retired_revision: null,
         source_observation_ids_json: ["obs-000000000002"],
       });
+      records.put({
+        ...base,
+        memory_id: "mem-000000000097",
+        row_version: 1,
+        status: "active",
+        created_revision: 1,
+        retired_revision: 2,
+        source_observation_ids_json: ["obs-000000000001"],
+      });
+      records.put({
+        ...base,
+        memory_id: "mem-000000000097",
+        row_version: 2,
+        status: "active",
+        created_revision: 2,
+        retired_revision: null,
+        strength: 0.5,
+        salience: 0.8,
+        source_observation_ids_json: ["obs-000000000001"],
+      });
     });
     const response = await host.app.inject({
       method: "GET",
@@ -447,7 +535,10 @@ describe("控制台研究接口", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      changed: [{ memoryId: "mem-000000000098", sourceObservationIds: ["obs-000000000002"] }],
+      changed: expect.arrayContaining([
+        { memoryId: "mem-000000000098", sourceObservationIds: ["obs-000000000002"] },
+        { memoryId: "mem-000000000097", sourceObservationIds: ["obs-000000000001"] },
+      ]),
     });
   });
 

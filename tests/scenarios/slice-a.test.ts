@@ -118,7 +118,10 @@ describe("slice A research path", () => {
       method: "GET", url: `/api/v1/console/turns?agentId=human-independent&limit=20`, headers,
     });
     expect(turnsResponse.statusCode).toBe(200);
-    expect(turnsResponseSchema.parse(turnsResponse.json()).turns.some((turn) => turn.turnId === turnId)).toBe(true);
+    const turnList = turnsResponseSchema.parse(turnsResponse.json()).turns;
+    const listedTurn = turnList.find((turn) => turn.turnId === turnId);
+    expect(listedTurn).toBeDefined();
+    expect(listedTurn?.triggerKinds.length).toBeGreaterThan(0);
 
     const detailResponse = await host.app.inject({
       method: "GET", url: `/api/v1/console/turns/${turnId}`, headers,
