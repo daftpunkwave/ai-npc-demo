@@ -5,7 +5,7 @@
  */
 /* eslint-disable no-unused-vars -- 本文件是模型传输端口契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import { z } from "zod";
-import { jsonValueSchema, type Json, type JsonSchema } from "./json";
+import { boundedJsonValueSchema, jsonValueSchema, type Json, type JsonSchema } from "./json";
 import { idSchemas, principalIdSchema } from "./ids";
 import type { ModelFixture } from "./model-fixtures";
 
@@ -32,12 +32,15 @@ export const normalizedToolSchema = z
 
 export type NormalizedTool = z.infer<typeof normalizedToolSchema>;
 
-/** 供应商返回的工具调用；参数解析失败时 arguments 为 null 并记录原因。 */
+/**
+ * 供应商返回的工具调用；参数解析失败时 arguments 为 null 并记录原因。
+ * arguments 来自模型输出，是外部不可信输入，因此使用带输入预算的 JSON schema。
+ */
 export const normalizedToolCallSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
-    arguments: jsonValueSchema.nullable(),
+    arguments: boundedJsonValueSchema.nullable(),
     argumentsRaw: z.string(),
     parseError: z.string().nullable(),
   })

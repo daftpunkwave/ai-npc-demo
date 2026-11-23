@@ -518,6 +518,40 @@ describe("Tool view and gateway", () => {
       argumentsRaw: JSON.stringify(args),
     })).rejects.toThrow("artifact");
   });
+  it("参数超出 JSON 输入预算时按参数非法结算，不让 turn 崩溃", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let calls = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => {
+        calls += 1;
+        return receipt(harness.host, envelope);
+      },
+    });
+    // 远超 JSON 深度预算的参数：模型可以产出，但不得让 canonicalJson 的 TypeError 打断 turn。
+    let deep: Json = null;
+    for (let index = 0; index < 5_000; index += 1) {
+      deep = [deep];
+    }
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-deep-args",
+      wireName: "asset_dispatch",
+      arguments: deep,
+      argumentsRaw: JSON.stringify(deep),
+    });
+    expect(outcome.result).toMatchObject({ executionStatus: "error", reasonCode: "invalid-params" });
+    expect(outcome.result.detail).toContain("JSON");
+    expect(calls).toBe(0);
+    // 拒绝被结算即可：调用方拿到可读原因，而不是异常。
+    expect(outcome.isError).toBe(true);
+  });
   it("三份工具集均可解析且战略集不提供 task.respond", () => {
     expect(toolset("character-default").tools).toHaveLength(12);
     expect(toolset("character-broadcaster").tools.find((entry) => entry.toolId === "message.send")?.permissionProfile)

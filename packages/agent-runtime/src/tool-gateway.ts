@@ -111,7 +111,17 @@ export class ToolGateway {
   async executeCall(input: ToolCallExecutionInput): Promise<ToolCallOutcome> {
     this.assertAuthenticatedTurn(input);
     const args = input.arguments ?? {};
-    const argsHash = await this.options.host.hash(canonicalJson(args));
+    const argsHash = await this.argsHashOf(args);
+    if (argsHash === null) {
+      // 参数超出 JSON 输入预算：模型输出不是事实，直接按参数非法结算，不让整个 turn 崩溃。
+      return this.settleError(
+        input,
+        null,
+        "invalid-json-budget",
+        "invalid-params",
+        "Tool arguments exceed the JSON depth or size budget.",
+      );
+    }
     const existing = this.store.findCall(input);
     if (existing !== null && existing["status"] === "settled") {
       const toolId = this.toolIdForWireName(input.wireName);
@@ -352,6 +362,24 @@ export class ToolGateway {
       partialResult: result,
       toolCall: current,
     });
+  }
+
+  /**
+   * 计算工具参数的幂等哈希；参数超出 JSON 输入预算时返回 null。
+   * 预算失败不是运行期异常而是拒绝理由：模型输出不充当事实，
+   * 超深参数按 invalid-params 结算，避免 canonicalJson 的 TypeError 打断整个 turn。
+   */
+  private async argsHashOf(args: Json): Promise<string | null> {
+    let canonical: string;
+    try {
+      canonical = canonicalJson(args);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        return null;
+      }
+      throw error;
+    }
+    return this.options.host.hash(canonical);
   }
 
   private async settleError(

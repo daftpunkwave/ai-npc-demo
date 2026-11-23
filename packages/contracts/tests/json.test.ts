@@ -1,10 +1,20 @@
 /**
- * 验证 JSON 值 schema 与规范化序列化。
+ * 验证 JSON 值 schema、输入预算与规范化序列化。
  * 依赖公共契约包的 json 主题导出。
  * 禁止依赖 Node/DOM 专有对象；断言只使用 JSON 原生值。
  */
 import { describe, expect, it } from "vitest";
-import { canonicalJson, jsonObjectSchema, jsonValueSchema } from "../src/index";
+import {
+  boundedJsonObjectSchema,
+  boundedJsonValueSchema,
+  canonicalJson,
+  checkJsonBudget,
+  commandEnvelopeSchema,
+  jsonInputBudget,
+  jsonObjectSchema,
+  jsonValueSchema,
+  type Json,
+} from "../src/index";
 import { expectInvalid, expectValid } from "./support";
 
 describe("jsonValueSchema", () => {
@@ -73,5 +83,99 @@ describe("canonicalJson", () => {
     expect(() => canonicalJson(Number.POSITIVE_INFINITY)).toThrow(TypeError);
     expect(() => canonicalJson((() => 1) as never)).toThrow(TypeError);
     expect(() => canonicalJson({ a: undefined } as never)).toThrow(TypeError);
+  });
+});
+
+/** 按层数构造嵌套数组：每层包一个单元素数组，叶子为 null。 */
+function nestedArray(depth: number): Json {
+  let value: Json = null;
+  for (let index = 0; index < depth; index += 1) {
+    value = [value];
+  }
+  return value;
+}
+
+/** 按层数构造嵌套对象：每层一个 `nested` 键，叶子为 null。 */
+function nestedObject(depth: number): Json {
+  let value: Json = null;
+  for (let index = 0; index < depth; index += 1) {
+    value = { nested: value };
+  }
+  return value;
+}
+
+describe("JSON 输入预算", () => {
+  it("不带预算的 jsonValueSchema 与带预算的 boundedJsonValueSchema 结构判定一致", () => {
+    // 结构判定必须完全等价：预算只是前置守卫，不能改变合法值的判定结果。
+    for (const value of [null, true, 0, "文本", [], [1, "a"], {}, { a: [1, null] }]) {
+      expect(jsonValueSchema.safeParse(value).success).toBe(boundedJsonValueSchema.safeParse(value).success);
+      expectValid(boundedJsonValueSchema, value);
+    }
+    for (const value of [undefined, Number.NaN, { a: undefined }, () => 1, new Date(0)]) {
+      expectInvalid(jsonValueSchema, value);
+      expectInvalid(boundedJsonValueSchema, value);
+    }
+  });
+
+  it("带预算的 JSON 对象 schema 同时拒绝非对象与超深对象", () => {
+    expectValid(boundedJsonObjectSchema, { a: [1, null] });
+    expectInvalid(boundedJsonObjectSchema, [1]);
+    expectInvalid(boundedJsonObjectSchema, "x");
+    expect(boundedJsonObjectSchema.safeParse(nestedObject(jsonInputBudget.maxDepth + 1)).success).toBe(false);
+    expect(jsonObjectSchema.safeParse(nestedObject(jsonInputBudget.maxDepth + 1)).success).toBe(true);
+  });
+
+  it("深度上限内的嵌套值通过校验并可按规范序列化", () => {
+    for (const value of [
+      nestedArray(jsonInputBudget.maxDepth),
+      nestedObject(jsonInputBudget.maxDepth),
+    ]) {
+      expectValid(boundedJsonValueSchema, value);
+      expect(() => canonicalJson(value)).not.toThrow();
+    }
+  });
+
+  it("超出深度上限的输入返回校验失败而不是 RangeError", () => {
+    const tooDeep = nestedArray(jsonInputBudget.maxDepth + 1);
+    const result = boundedJsonValueSchema.safeParse(tooDeep);
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("嵌套深度上限");
+
+    // 远超旧实现栈溢出阈值的深度也必须是确定的校验失败。
+    expect(boundedJsonValueSchema.safeParse(nestedArray(5_000)).success).toBe(false);
+    expect(boundedJsonValueSchema.safeParse(nestedObject(5_000)).success).toBe(false);
+  });
+
+  it("超出深度上限时 canonicalJson 抛 TypeError 并指明预算与路径", () => {
+    expect(() => canonicalJson(nestedArray(jsonInputBudget.maxDepth + 1))).toThrow(TypeError);
+    expect(() => canonicalJson(nestedArray(jsonInputBudget.maxDepth + 1))).toThrow(/嵌套深度上限/);
+    expect(() => canonicalJson(nestedArray(5_000))).toThrow(TypeError);
+    expect(() => canonicalJson(nestedObject(5_000))).toThrow(TypeError);
+  });
+
+  it("命令信封对深层 payload 给出校验失败而不是 500 级的栈溢出", () => {
+    const result = commandEnvelopeSchema.safeParse({
+      commandId: "cmd-000000000000",
+      type: "probe.ask",
+      schemaVersion: 1,
+      payload: nestedArray(5_000),
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("嵌套深度上限");
+  });
+
+  it("节点数超限时报告节点预算而不是深度预算", () => {
+    // 单层超宽数组：深度只有 1，必须由节点数预算拦下。
+    const wide = Array.from({ length: jsonInputBudget.maxNodes + 1 }, () => null as Json);
+    const result = boundedJsonValueSchema.safeParse(wide);
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain("节点数上限");
+    expect(() => canonicalJson(wide)).toThrow(/节点数上限/);
+  });
+
+  it("预算检查本身不因超深输入抛 RangeError", () => {
+    expect(() => checkJsonBudget(nestedArray(100_000))).not.toThrow();
+    expect(checkJsonBudget(nestedArray(100_000))?.kind).toBe("depth");
+    expect(checkJsonBudget(nestedArray(jsonInputBudget.maxDepth))).toBeNull();
   });
 });

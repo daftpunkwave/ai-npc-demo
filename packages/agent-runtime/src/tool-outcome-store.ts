@@ -3,6 +3,7 @@
  * 交互契约：依赖 storage、HostServices、artifact store 与 tool-view 端口，只处理已经校验的调用上下文。
  * 约束与禁忌：不得执行命令、改变结果状态或跨主体复用 unsettled/unknown 结果。
  */
+import { checkJsonBudget } from "@ai-npc/contracts";
 import type {
   HostServices,
   Json,
@@ -112,14 +113,17 @@ export class ToolOutcomeStore {
   async persistOutcome(input: PersistToolOutcomeInput): Promise<ToolCallOutcome> {
     const rawArtifactId = this.options.host.ids("art");
     const result: ToolExecutionResult = { ...input.partialResult, resultRef: rawArtifactId };
+    // 参数超出 JSON 输入预算时不再落库原始结构：它既无法规范化序列化，也不是有价值的审计内容。
+    // 改记预算拒绝标记，让 artifact 仍可定位「模型提交了超预算参数」这一事实。
+    const overBudget = checkJsonBudget(input.args) !== null;
     const rawValue: RawToolArtifactValue = {
       kind: "tool-call-raw",
       toolCallId: input.toolCall.toolCallId,
       providerCallId: input.input.providerCallId,
       toolId: input.binding.toolId,
       toolVersion: input.binding.version,
-      input: input.args,
-      argumentsRaw: input.input.argumentsRaw,
+      input: overBudget ? { rejected: "json-input-budget" } : input.args,
+      argumentsRaw: overBudget ? "" : input.input.argumentsRaw,
       scope: input.input.session,
       phase: input.input.phase,
       audience: [...input.input.audience],
