@@ -31,6 +31,8 @@ export function completeMemoryMaintenance(
     ...task,
     status: partial ? (quotaWait ? "queued" : "failed") : "completed",
     base_revision: revision,
+    // 重算会扩大任务范围；任务行与 task_json 必须同步，否则下次认领按旧范围重扫。
+    observation_seq_through: plan.observationSeqThrough,
     task_json: {
       ...stored,
       rulesApplied: stored.rulesApplied === true || partial,

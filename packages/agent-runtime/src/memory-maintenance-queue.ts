@@ -317,7 +317,13 @@ export class MemoryMaintenanceQueue {
         throw new Error(`maintenance lease ${maintenanceId} is no longer current`);
       }
       const stored = maintenanceTaskSchema.parse(current["task_json"]);
-      table.put({ ...current, task_json: { ...task, ...(stored.modelCallDays === undefined ? {} : { modelCallDays: stored.modelCallDays }) }, base_revision: task.baseRevision });
+      table.put({
+        ...current,
+        task_json: { ...task, ...(stored.modelCallDays === undefined ? {} : { modelCallDays: stored.modelCallDays }) },
+        base_revision: task.baseRevision,
+        // 重算可能扩大观察范围；任务行与 JSON 同步，避免下次认领回退到旧范围。
+        observation_seq_through: task.observationSeqThrough,
+      });
     });
   }
 }
