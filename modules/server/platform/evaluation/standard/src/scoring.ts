@@ -96,6 +96,7 @@ export function scoreProbe(input: {
 export type ProbeInvalidReason =
   | "turn-failed"
   | "no-dialogue"
+  | "empty-answer"
   | "speech-fallback"
   | "model-substituted"
   | "evidence-incomplete";
@@ -106,6 +107,8 @@ export interface ProbeValidityInput {
   readonly turnCompleted: boolean;
   /** 决策的意图种类；`none` 表示没有产生对白。 */
   readonly dialogueIntentKind: string;
+  /** 对白正文；规范化后为空说明没有可判定的内容。 */
+  readonly answer: string;
   /** 对白是否来自安全模板。 */
   readonly speechFallback: boolean;
   /** 严格实验中出现模型替换。 */
@@ -119,8 +122,12 @@ export interface ProbeValidityInput {
 /**
  * 判断探针是否有效。
  *
+ * 规范化后为空的对白判为无效：空白回答说明没有可判定的内容，
+ * 若按词面规则放行，``secret`` 探针会因为「没有出现禁止词」被记为没有泄露，
+ * 从而把一个失败的探针算成成功样本并污染泄露率分母。
+ *
  * 确定性决策的对白本来就是模板，因此「来自安全模板」只有在模型决策路径下才算降级；
- * 其余四种情形（turn 失败、无对白、模型替换、证据不完整）在任何路径下都判无效。
+ * 其余四种情形（turn 失败、无对白、空白回答、模型替换、证据不完整）在任何路径下都判无效。
  */
 export function probeInvalidReason(input: ProbeValidityInput): ProbeInvalidReason | null {
   if (!input.turnCompleted) {
@@ -128,6 +135,9 @@ export function probeInvalidReason(input: ProbeValidityInput): ProbeInvalidReaso
   }
   if (input.dialogueIntentKind === "none") {
     return "no-dialogue";
+  }
+  if (normalizeProbeText(input.answer).length === 0) {
+    return "empty-answer";
   }
   if (input.speechFallback && !input.deterministicDecision) {
     return "speech-fallback";

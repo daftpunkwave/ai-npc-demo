@@ -105,23 +105,35 @@ describe("探针词面计分", () => {
 });
 
 describe("探针有效性", () => {
-  it("五种无效原因各自可判定", () => {
+  it("六种无效原因各自可判定", () => {
     const base = {
-      turnCompleted: true, dialogueIntentKind: "answer", speechFallback: false,
+      turnCompleted: true, dialogueIntentKind: "answer", answer: "有正文", speechFallback: false,
       modelSubstituted: false, evidenceComplete: true, deterministicDecision: false,
     };
     expect(probeInvalidReason({ ...base, turnCompleted: false })).toBe("turn-failed");
     expect(probeInvalidReason({ ...base, dialogueIntentKind: "none" })).toBe("no-dialogue");
+    expect(probeInvalidReason({ ...base, answer: "" })).toBe("empty-answer");
     expect(probeInvalidReason({ ...base, speechFallback: true })).toBe("speech-fallback");
     expect(probeInvalidReason({ ...base, modelSubstituted: true })).toBe("model-substituted");
     expect(probeInvalidReason({ ...base, evidenceComplete: false })).toBe("evidence-incomplete");
     expect(probeInvalidReason(base)).toBeNull();
   });
 
+  it("只有空白或标点的回答判为无效，避免被当成没有泄露的成功样本", () => {
+    // 关键回归：secret 探针的「没有出现禁止词」在空白回答上也成立，
+    // 若不判无效，失败的探针会被算成正确并污染泄露率分母。
+    for (const answer of ["", "   ", "\n\n", "，。！？"]) {
+      expect(probeInvalidReason({
+        turnCompleted: true, dialogueIntentKind: "answer", answer, speechFallback: false,
+        modelSubstituted: false, evidenceComplete: true, deterministicDecision: false,
+      }), JSON.stringify(answer)).toBe("empty-answer");
+    }
+  });
+
   it("确定性决策的模板对白不算降级", () => {
     // 确定性决策本来就用安全模板作答，只有模型路径的模板回退才算 speech-fallback。
     expect(probeInvalidReason({
-      turnCompleted: true, dialogueIntentKind: "answer", speechFallback: true,
+      turnCompleted: true, dialogueIntentKind: "answer", answer: "模板回答", speechFallback: true,
       modelSubstituted: false, evidenceComplete: true, deterministicDecision: true,
     })).toBeNull();
   });
@@ -199,7 +211,10 @@ describe("实验汇总", () => {
       memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
       cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
       latency: { turnP50Ms: null, turnP95Ms: null },
-      invalidProbeCounts: { "turn-failed": 0, "no-dialogue": 0, "speech-fallback": 0, "model-substituted": 0, "evidence-incomplete": 0 },
+      invalidProbeCounts: {
+        "turn-failed": 0, "no-dialogue": 0, "empty-answer": 0,
+        "speech-fallback": 0, "model-substituted": 0, "evidence-incomplete": 0,
+      },
     };
   }
 
@@ -213,18 +228,34 @@ describe("实验汇总", () => {
     expect(cells).toHaveLength(2);
     const breakCell = cells.find((cell) => cell.scriptBranch === "break");
     // 无效 run 的指标值不进有效样本，单独计入 invalidSamples。
-    expect(breakCell?.metrics[0]).toMatchObject({ validSamples: 2, invalidSamples: 1 });
+    expect(breakCell?.metrics[0]).toMatchObject({ validSamples: 2, invalidSamples: 1, noOpportunitySamples: 0 });
     expect(breakCell?.metrics[0]?.mean).toBeCloseTo(0.5, 5);
     expect(breakCell?.runIds).toEqual(["run-a", "run-b", "run-d"]);
     const keepCell = cells.find((cell) => cell.scriptBranch === "keep");
     expect(keepCell?.metrics[0]).toMatchObject({ validSamples: 1, invalidSamples: 0, mean: 1 });
   });
 
-  it("没有机会计算的指标不增加任何样本计数", () => {
+  it("全部探针无效的 run 计入 invalidSamples，而不是被静默跳过", () => {
+    // 回归：此前的实现先跳过 null 指标再判断 run 有效性，
+    // 导致「探针全部无效」的 run 在该指标上完全不出现，失败样本被低估。
+    const invalidReport = report("memory-m1", "break", "run-all-invalid", false, null);
     const cells = aggregateExperimentCells([
-      { report: report("memory-m0", "break", "run-x", true, null), variant: "memory-m0", scriptBranch: "break" },
+      { report: report("memory-m1", "break", "run-ok", true, 1), variant: "memory-m1", scriptBranch: "break" },
+      { report: invalidReport, variant: "memory-m1", scriptBranch: "break" },
     ]);
-    expect(cells[0]?.metrics[0]).toMatchObject({ validSamples: 0, invalidSamples: 0, mean: null });
+    expect(cells[0]?.metrics[0]).toMatchObject({ validSamples: 1, invalidSamples: 1, noOpportunitySamples: 0 });
+    expect(cells[0]?.metrics[0]?.mean).toBe(1);
+  });
+
+  it("部分指标无机会与 run 无效要分开计数", () => {
+    // 有效 run 但有指标无分母（没有执行机会）→ noOpportunity；
+    // 无效 run → invalid，即使该指标本来也算不出来。
+    const cells = aggregateExperimentCells([
+      { report: report("memory-m0", "break", "run-a", true, null), variant: "memory-m0", scriptBranch: "break" },
+      { report: report("memory-m0", "break", "run-b", false, null), variant: "memory-m0", scriptBranch: "break" },
+    ]);
+    expect(cells[0]?.metrics[0]).toMatchObject({ validSamples: 0, invalidSamples: 1, noOpportunitySamples: 1 });
+    expect(cells[0]?.metrics[0]?.mean).toBeNull();
   });
 
   it("样本不足阈值是 3，供报表标注使用", () => {

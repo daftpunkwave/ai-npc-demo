@@ -84,7 +84,6 @@ export interface ProbeExecution {
     readonly deterministicDecision: boolean;
   };
 }
-
 /** 组装 run 报告所需的全部输入。 */
 export interface RunReportInput {
   readonly runId: string;
@@ -121,6 +120,7 @@ export interface RunReport {
 const invalidReasons: readonly ProbeInvalidReason[] = [
   "turn-failed",
   "no-dialogue",
+  "empty-answer",
   "speech-fallback",
   "model-substituted",
   "evidence-incomplete",
@@ -141,7 +141,8 @@ export function scoreProbeExecutions(
     scored: probes.map((probe) => ({
       probe,
       score: scoreProbe({ kind: probe.kind, answer: probe.answer, answerKey: probe.answerKey, lexicons }),
-      invalidReason: probeInvalidReason(probe.validity),
+      // 有效性判定需要正文：规范化后为空的回答没有可判定内容，判为无效而不是按词面放行。
+      invalidReason: probeInvalidReason({ ...probe.validity, answer: probe.answer }),
     })),
   };
 }
@@ -191,6 +192,8 @@ export interface ExperimentCell {
     readonly metric: MetricKey;
     readonly validSamples: number;
     readonly invalidSamples: number;
+    /** 指标分母为 0 的样本数：没有执行机会，既非有效也非无效。 */
+    readonly noOpportunitySamples: number;
     readonly mean: number | null;
   }[];
 }
@@ -198,13 +201,28 @@ export interface ExperimentCell {
 /** 汇总时每个格子的最少样本数；少于该数要标注「样本不足」。 */
 export const minimumSamplesForMean = 3;
 
+/** 一个指标在一个格子里的样本口径。 */
+interface MetricSamples {
+  /** 有值且 run 有效：进入均值。 */
+  readonly valid: number[];
+  /** 本应产生值但因为探针或 run 无效而没有进入均值的样本数。 */
+  invalid: number;
+  /** 探针没有执行机会（分母为 0）的样本数；既非有效也非无效。 */
+  noOpportunity: number;
+}
+
 /**
  * 按「变体 × 脚本分支」汇总各 run 的指标。
  *
- * 每格统计有效样本数、无效样本数与均值；无效样本来自探针级无效与 run 级无效两种情况，
- * 都计入 invalidSamples，避免把失败样本从分母里悄悄删掉。
- * 有效样本少于 `minimumSamplesForMean` 时仍给均值，但 `mean` 保持数值以便调用方标注，
- * 由控制台页面按 `validSamples` 判断是否显示「样本不足」。
+ * 三种样本口径必须分开，否则失败会被低估：
+ * - **有效样本**：run 有效且指标有值，进入均值；
+ * - **无效样本**：探针判定为无效（如无对白、turn 失败、模型替换）或 run 级无效，
+ *   该指标因此没有进入均值。这类样本要么值缺失（`value === null`），要么 run 本身已被判无效。
+ * - **无机会**：指标分母为 0，例如该 run 根本没有需要 ``secret`` 探针的检查点。
+ *   它既不是有效也不是无效，按规格记 `N/A`。
+ *
+ * 区分方式：指标 `value === null` 时看 run 是否有效——run 有效说明是「无机会」，
+ * run 无效说明这次执行没产出可用证据，计入无效。
  */
 export function aggregateExperimentCells(
   reports: readonly { readonly report: RunReport; readonly scriptBranch: string; readonly variant: string }[],
@@ -213,26 +231,25 @@ export function aggregateExperimentCells(
     variant: string;
     scriptBranch: string;
     runIds: string[];
-    samples: Map<MetricKey, { valid: number[]; invalid: number }>;
+    samples: Map<MetricKey, MetricSamples>;
   }>();
   for (const { report, scriptBranch, variant } of reports) {
     const key = `${variant}\u0000${scriptBranch}`;
     const cell = cells.get(key) ?? {
-      variant, scriptBranch, runIds: [], samples: new Map<MetricKey, { valid: number[]; invalid: number }>(),
+      variant, scriptBranch, runIds: [], samples: new Map<MetricKey, MetricSamples>(),
     };
     cell.runIds.push(report.runId);
-    const runInvalid = report.validity.valid ? 0 : 1;
     for (const metric of report.metrics) {
-      const entry = cell.samples.get(metric.metric) ?? { valid: [], invalid: 0 };
-      // 指标无法计算（分母为 0）时既不算有效也不算无效样本：它没有机会产生值。
-      if (metric.value === null) {
-        cell.samples.set(metric.metric, entry);
-        continue;
-      }
-      if (report.validity.valid) {
-        entry.valid.push(metric.value);
+      const entry = cell.samples.get(metric.metric) ?? { valid: [], invalid: 0, noOpportunity: 0 };
+      if (!report.validity.valid) {
+        // run 级无效：无论该指标有没有值都不进均值。有值说明执行过但结论不可采信，
+        // 无值说明连执行都没完成；两种都记为无效样本。
+        entry.invalid += 1;
+      } else if (metric.value === null) {
+        // run 有效但没有分母：该组探针没有执行机会，按 N/A 记录，不算失败。
+        entry.noOpportunity += 1;
       } else {
-        entry.invalid += runInvalid;
+        entry.valid.push(metric.value);
       }
       cell.samples.set(metric.metric, entry);
     }
@@ -246,6 +263,7 @@ export function aggregateExperimentCells(
       metric,
       validSamples: sample.valid.length,
       invalidSamples: sample.invalid,
+      noOpportunitySamples: sample.noOpportunity,
       mean: sample.valid.length === 0
         ? null
         : sample.valid.reduce((sum, value) => sum + value, 0) / sample.valid.length,
