@@ -183,17 +183,17 @@ function ObservabilityPage(): ReactNode {
   }, [host.api, host.session.branchId, selectedAgent]);
 
   useEffect(() => {
+    artifactRequestSeq.current += 1;
+    setSelectedArtifactId(null);
+    setArtifactBody(null);
+    setArtifactView("redacted");
     if (selectedTurn === null) {
       setTurnDetail(null);
       setTrace(null);
       return;
     }
-    artifactRequestSeq.current += 1;
     setTurnDetail(null);
     setTrace(null);
-    setSelectedArtifactId(null);
-    setArtifactBody(null);
-    setArtifactView("redacted");
     let cancelled = false;
     void host.api.consoleTurn(selectedTurn).then(async (detail) => {
       if (cancelled) return;

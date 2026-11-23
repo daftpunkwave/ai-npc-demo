@@ -38,6 +38,13 @@ export interface RestoreInput {
   readonly runId?: string;
 }
 
+export interface RestoreInspectionView {
+  readonly sourceRun: { readonly runId: string };
+  readonly worldId: string;
+  readonly worldTick: number;
+  readonly worldSeq: number;
+}
+
 /**
  * 幂等执行入口：宿主按认证主体、operationId 与请求内容哈希识别重试，并把首次结果与业务写入
  * 在同一事务内持久化。未提供时，运营服务退回原有的非幂等回调。
@@ -64,6 +71,7 @@ export interface OperationsDriver {
   readonly step: (expectedRunVersion: number, ticks: number) => ClockView;
   readonly snapshot: (input: SnapshotInput) => SnapshotView;
   readonly restore: (input: RestoreInput) => RestoreOutcome;
+  readonly validateRestore?: (snapshotId: string) => RestoreInspectionView;
   readonly reset: () => { readonly branchId: string; readonly clock: ClockView };
   /** 可选的幂等执行入口；提供后运营服务按 operationId 转发。 */
   readonly idempotent?: IdempotentOperationsDriver;
@@ -119,6 +127,13 @@ export class OperationsService {
       });
     }
     return this.driver.restore({ snapshotId, createdBy, ...(runId === undefined ? {} : { runId }) });
+  }
+
+  validateRestore(snapshotId: string): RestoreInspectionView {
+    if (this.driver.validateRestore === undefined) {
+      throw new Error("运营驱动未提供恢复预检");
+    }
+    return this.driver.validateRestore(snapshotId);
   }
 
   reset(operation?: OperationRequest): {

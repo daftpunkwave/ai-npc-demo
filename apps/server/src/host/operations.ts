@@ -32,6 +32,11 @@ export function createOperationsHost(input: OperationsHostInput): ReturnType<Ope
     snapshot: (snapshotInput) =>
       primitives.createDrainedSnapshot({ label: snapshotInput.label, createdBy: snapshotInput.createdBy }),
     restore: (restoreInput) => primitives.restoreOnlineRun(restoreInput),
+    validateRestore: (snapshotId) => {
+      const inspection = input.runtime.save.inspectRestore(snapshotId);
+      primitives.validateRestoreSource(inspection);
+      return inspection;
+    },
     reset: () => primitives.resetOnline(),
     idempotent,
   });

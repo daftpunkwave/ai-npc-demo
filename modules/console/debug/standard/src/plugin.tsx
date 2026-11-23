@@ -33,6 +33,7 @@ function DebugPage(): ReactNode {
   const [agentId, setAgentId] = useState("human-independent");
   const [reason, setReason] = useState("人工检查");
   const [error, setError] = useState<string | null>(null);
+  const [waking, setWaking] = useState(false);
   const replayRequest = useRef(0);
 
   useEffect(() => {
@@ -71,11 +72,15 @@ function DebugPage(): ReactNode {
   };
 
   const wake = async (): Promise<void> => {
+    if (waking) return;
+    setWaking(true);
     try {
       await host.api.consoleWakeAgent(agentId, reason, host.operationId());
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setWaking(false);
     }
   };
 
@@ -151,8 +156,13 @@ function DebugPage(): ReactNode {
                 }}
               />
             </label>
-            <button type="button" className="console-primary" disabled={agentId.trim().length === 0 || reason.trim().length === 0} onClick={() => void wake()}>
-              注入 debug trigger
+            <button
+              type="button"
+              className="console-primary"
+              disabled={waking || agentId.trim().length === 0 || reason.trim().length === 0}
+              onClick={() => void wake()}
+            >
+              {waking ? "提交中" : "注入 debug trigger"}
             </button>
           </div>
         </section>

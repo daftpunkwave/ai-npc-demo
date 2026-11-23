@@ -24,7 +24,7 @@ import { loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@ai-n
 
 const publicEndpointEnvironment = "NPC_OPENAI_COMPAT_BASE_URL";
 const publicModelEnvironment = "NPC_OPENAI_COMPAT_MODEL";
-const credentialEnvironment = /^[A-Z][A-Z0-9_]*$/u;
+const credentialEnvironment = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 function own<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
   if (!Object.hasOwn(record, key)) return undefined;
@@ -43,6 +43,20 @@ function hostOf(endpoint: string | undefined): string | null {
   }
 }
 
+function endpointRefOf(endpoint: string | undefined): string | null {
+  if (endpoint === undefined) return null;
+  if (endpoint.startsWith("env:")) return endpoint;
+  try {
+    const url = new URL(endpoint);
+    if (url.username.length > 0 || url.password.length > 0 || url.search.length > 0 || url.hash.length > 0) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 function credentialName(value: string | null): string | null {
   return value === null ? null : value.startsWith("env:") ? value.slice(4) : value;
 }
@@ -55,7 +69,7 @@ function viewOf(layout: ModelLayout): ModelLayoutView {
       connectionId,
       {
         adapterId: connection.adapterId,
-        endpointRef: connection.endpoint ?? null,
+        endpointRef: endpointRefOf(connection.endpoint),
         endpointHost: hostOf(connection.endpoint),
         credentialRef: credentialName(connection.credentialRef),
         rateLimitKey: connection.rateLimitKey ?? null,

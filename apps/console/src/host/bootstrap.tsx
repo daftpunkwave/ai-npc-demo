@@ -23,7 +23,7 @@ interface ConsoleReady {
 }
 
 function operationId(): string {
-  const alphabet = "abcdefghjkmnpqrstuvwxyz234567";
+  const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
   const bytes = crypto.getRandomValues(new Uint8Array(12));
   return `op-${Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("")}`;
 }
