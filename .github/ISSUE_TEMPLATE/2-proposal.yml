@@ -1,0 +1,146 @@
+name: 架构变更与设计提案 (Proposal / Refactor / RFC)
+description: 提交非缺陷类重大议题：架构重构、复杂特性设计、模块解耦、审查超纲技术债
+title: "<type>(<scope>): <动词开头，客观明确的变更目标>"
+labels: ["kind/proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 变更提案准则
+        1. **架构契约**：明确模块边界与单向依赖流向，契约变更必须显式声明。
+        2. **边界控制**：明确定义实施范围与非目标 (Non-Goals)，杜绝无节制重构。
+        3. **完成判据**：提供无歧义、可自动化验收的判据。
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 提案类别 (Proposal Kind)
+      options:
+        - "kind/refactor - 结构重构 / 消除循环依赖 / 模块解耦（不改变对外业务契约）"
+        - "kind/feature - 新功能 / 复杂特性实现方案 (RFC)"
+        - "kind/tech-debt - 长期技术债治理 / 审查中转出的超纲事项"
+        - "kind/performance - 性能调优 / 内存治理 / 降低算法复杂度"
+        - "kind/infra - 基础设施 / CI 门禁检查脚本演进"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级 (Priority)
+      options:
+        - "priority/P1 - 关键技术阻塞项 / 阻碍主干后续演进"
+        - "priority/P2 - 计划内核心重构 / 复杂模块独立推进"
+        - "priority/P3 - 局部的解耦治理 / 非阻塞性结构优化"
+        - "priority/P4 - 长期储备项 / 代码风格与轻量维护"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: realm
+    attributes:
+      label: 架构领域 (Realm)
+      options:
+        - "realm/server"
+        - "realm/client"
+        - "realm/console"
+        - "realm/contracts"
+        - "realm/shared"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 职能领域 (Area)
+      options:
+        - "area/agent (认知 / 记忆 / 决策)"
+        - "area/authority (命令网关 / 权限策略)"
+        - "area/platform (存储 / 运营 / 时钟 / 模型适配)"
+        - "area/transport (协议传输 / HTTP-WS)"
+        - "area/renderer (场景渲染 / 画布)"
+        - "area/kernel (宿主核心 / 装配调度)"
+        - "area/tooling (CI 门禁 / 检查脚本)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 目标概述 (Summary)
+      description: 一句话完成：现状瓶颈/诉求 → 核心设计方案 → 达成目标
+      placeholder: "命令网关内状态与校验强耦合 → 拆分为独立策略守卫与分发器 → 满足单一职责并消除循环依赖"
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 背景与现状 (Context & Motivation)
+      description: 客观阐述当前架构现状与存在的问题（附带具体代码文件路径或依赖拓扑，禁止主观空泛陈述）。
+      placeholder: |
+        - 现状代码：`packages/authority/src/gateway.ts`
+        - 客观事实：承担了权限校验与命令路由双重职责，单文件超 400 行，且阻碍单元测试独立执行。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_changes
+    attributes:
+      label: 目标方案与契约调整 (Proposed Changes & Contract Adjustments)
+      description: 阐明模块职责重构方案、新增/变更的公开接口、DTO 或数据流。
+      placeholder: |
+        1. 职责拆分：抽离 `PolicyGuard` 接口
+        2. 契约变更：`Gateway` 构造函数仅接受 `PolicyGuard` 注入
+        3. 依赖方向：严格保持 `gateway -> guard` 单向依赖
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: 兼容性与影响半径 (Compatibility & Blast Radius)
+      description: 是否涉及破坏性变更（Breaking Change）？是否影响既有数据/协议/其他模块？
+      placeholder: |
+        - 破坏性变更：无对外 API 破坏性变更
+        - 影响模块范围：仅限 authority 模块内部，上游无感
+        - 数据持久化影响：无存储或迁移结构变动
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope_and_non_goals
+    attributes:
+      label: 实施边界与非目标 (Scope & Non-Goals)
+      description: 明确本次改动的严格范围，以及明确排除的相关事项（杜绝范围无界扩散）。
+      placeholder: |
+        - 覆盖范围：拆分 gateway.ts 为两个独立文件并完成对应单元测试
+        - 非目标（明确不做）：
+          * 不修改现有授权规则算法
+          * 不引入新的鉴权中间件
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: 完成判据与验收基准 (Acceptance Criteria & Verification)
+      description: 客观、可执行、无争议的交付标准。
+      placeholder: |
+        - [ ] 单个文件代码行数 <= 300 行且符合单一职责
+        - [ ] 新增单元测试套件：`tests/authority/policy-guard.test.ts`
+        - [ ] 自动化验收命令：
+        ```bash
+        pnpm check
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: 来源与关联 (Provenance & References)
+      description: 触发来源（如 PR #xx 审查超纲转出、设计评审）及关联的公开 Issue / PR（选填）。
+      placeholder: "来源：PR #148 审查转出\n关联引用：Issue #120"
+    validations:
+      required: false

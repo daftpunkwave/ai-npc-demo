@@ -1,0 +1,112 @@
+name: 通用事务与综合议题 (General Issue)
+description: 当缺陷报告与设计提案均不匹配时使用：文档修订、工具链支持、环境配置、调研评估等
+title: "<type>(<scope>): <简要客观的目标描述>"
+labels: ["kind/general"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 通用议题准则
+        此模板用于不属于明确代码 Bug 或大型架构重构的通用任务。
+        请同样保持**客观陈述、边界明确、具备可判定的完成依据**。
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 议题类别 (Category)
+      options:
+        - "category/docs - 文档、开发规范与说明更新"
+        - "category/tooling - 本地脚本、构建配置与工具链维护"
+        - "category/workflow - CI/CD 流程、分支自动化与 GitHub Actions 调整"
+        - "category/research - 技术调研、基准对比与前瞻评估"
+        - "category/maintenance - 依赖版本常规演化与日常维护"
+        - "category/other - 其他综合协调事务"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级 (Priority)
+      options:
+        - "priority/P2 - 阻碍日常开发推进的工程/文档问题"
+        - "priority/P3 - 常规优化与周期性维护"
+        - "priority/P4 - 次要细节微调与参考记录"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: realm
+    attributes:
+      label: 关联架构领域 (Realm)
+      options:
+        - "realm/shared (跨端 / 通用基建)"
+        - "realm/server"
+        - "realm/client"
+        - "realm/console"
+        - "realm/contracts"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 议题概述 (Summary)
+      description: 现状诉求 → 预期交付 → 达成目的
+      placeholder: "补充文档内关于模块目录检查的说明 → 明确 realm/kind 白名单配置方式 → 降低新增模块时的认知成本"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景与现状 (Context)
+      description: 客观现状说明，为什么需要进行此项工作。
+      placeholder: "目前在新增模块时，开发者容易漏配 package.json 中的 dependencies 声明，需要完善文档指引。"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_deliverables
+    attributes:
+      label: 交付目标与具体内容 (Proposed Deliverables)
+      description: 列出具体的产出物（文档页面、配置文件、测试夹具等）及改动内容。
+      placeholder: |
+        - 更新 `docs/delivery/tech-stack.md` 的白名单配置指引
+        - 在 `docs/architecture/modules.md` 增加排错 FAQ
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope_and_non_goals
+    attributes:
+      label: 实施边界与非目标 (Scope & Non-Goals)
+      description: 明确本次改动的严格范围与排除项，杜绝发散。
+      placeholder: |
+        - 覆盖范围：仅修订相关技术文档
+        - 非目标（明确不做）：不修改任何自动化检查脚本或运行时逻辑
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: 完成判据与验收基准 (Acceptance Criteria & Verification)
+      description: 客观判定已完成的标准（如文档链接检查通过、配置文件校验通过等）。
+      placeholder: |
+        - [ ] 相关文档链接与 Markdown 语法校验通过
+        - [ ] 自动化验收命令：
+        ```bash
+        pnpm check:docs
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: 来源与关联 (Provenance & References)
+      description: 触发来源及关联的公开 Issue / PR（选填）。
+      placeholder: "来源：日常维护发现"
+    validations:
+      required: false
