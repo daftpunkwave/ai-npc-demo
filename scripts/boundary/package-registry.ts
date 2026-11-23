@@ -24,7 +24,8 @@ export function isVerificationPackage(pkg: BoundaryPackage): boolean {
 }
 
 export function isTestFile(filePath: string, pkg: BoundaryPackage): boolean {
-  const relativeToPackage = filePath.slice(pkg.directory.length + 1);
+  // 根包目录为空串，去掉前缀时不能再多截一个字符，否则相对路径会丢掉首字母。
+  const relativeToPackage = pkg.directory === "" ? filePath : filePath.slice(pkg.directory.length + 1);
   if (relativeToPackage === "tests" || relativeToPackage.startsWith("tests/")) {
     return true;
   }
@@ -61,8 +62,12 @@ export function findOwningPackage(
   filePath: string,
   packagesBySpecificity: readonly BoundaryPackage[],
 ): BoundaryPackage | undefined {
-  return packagesBySpecificity.find(
-    (pkg) => filePath === pkg.directory || filePath.startsWith(`${pkg.directory}/`),
+  // 根包目录是空串：它拥有仓库中所有未被更具体包目录匹配的文件，
+  // 直接拼 `${pkg.directory}/` 会得到 "/" 前缀，导致根目录文件被判为无归属而跳过全部检查。
+  return packagesBySpecificity.find((pkg) =>
+    pkg.directory === ""
+      ? true
+      : filePath === pkg.directory || filePath.startsWith(`${pkg.directory}/`),
   );
 }
 

@@ -172,6 +172,37 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
     expectRule(violations, 1);
   });
 
+  it("根包拥有仓库根目录下的文件并检查其依赖声明", () => {
+    // 根包目录是空串。若按空串拼 `/` 前缀匹配，根目录文件会被判为无归属，
+    // 于是根清单的未声明依赖（例如工具链配置里引用的库）全部逃过检查。
+    const rootPackage = packageManifest("ai-npc-demo", "", {
+      exports: { ".": "./index.ts" },
+      devDependencies: { vitest: "^5" },
+    });
+    const declared = checkBoundaries({
+      files: [
+        {
+          path: "vitest.config.ts",
+          content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { defineConfig } from \"vitest/config\";\nexport default defineConfig;\n",
+        },
+      ],
+      packages: [rootPackage],
+    });
+    expect(declared).toEqual([]);
+
+    const undeclared = checkBoundaries({
+      files: [
+        {
+          path: "vitest.config.ts",
+          content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { defineConfig } from \"vitest-not-declared/config\";\nexport default defineConfig;\n",
+        },
+      ],
+      packages: [rootPackage],
+    });
+    expectCode(undeclared, "undeclared-third-party-dependency");
+    expectRule(undeclared, 6);
+  });
+
   it("字符串字面量中的 import 文本不视为依赖", () => {
     const violations = checkFixture("packages/authority/src/help.ts", "string-literal-import.ts.txt");
     expect(violations).toEqual([]);
