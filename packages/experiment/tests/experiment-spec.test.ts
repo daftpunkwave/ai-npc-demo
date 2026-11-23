@@ -162,6 +162,39 @@ describe("实验规格加载与展开", () => {
       .toThrowError(/commonPatchRefs\.0.*no-such-patch/u);
   });
 
+  it("轮转在重复次数超过变体数时按模数回绕，且每次重复都含全部变体", () => {
+    // 轮转偏移超过数组长度时必须取模回绕，否则第一组会越界取到 undefined。
+    const spec = specWith((value) => {
+      value["variants"] = ["memory-m0-window", "memory-m1-structured-ledger"];
+      value["repetitions"] = 5;
+      value["runOrder"] = "rotate";
+    });
+    const runs = expandExperimentRuns(spec);
+    // 变体 2 × 分支 2 × 重复 5。
+    expect(runs).toHaveLength(2 * spec.scriptBranches.length * 5);
+    // 偏移 0..4 对长度 2 取模后起点在两组之间交替。
+    for (const repetition of [1, 2, 3, 4, 5]) {
+      const first = runs.find((run) => run.repetition === repetition)?.variantRef;
+      expect(first).toBe(repetition % 2 === 1 ? "memory-m0-window" : "memory-m1-structured-ledger");
+      const variants = new Set(runs.filter((run) => run.repetition === repetition).map((run) => run.variantRef));
+      expect(variants.size).toBe(2);
+    }
+    // 任何一次重复都不应产出 undefined 变体。
+    expect(runs.every((run) => typeof run.variantRef === "string" && run.variantRef.length > 0)).toBe(true);
+  });
+
+  it("只有一个变体时轮转不改变顺序", () => {
+    const spec = specWith((value) => {
+      value["variants"] = ["memory-m0-window"];
+      value["repetitions"] = 3;
+      value["runOrder"] = "rotate";
+    });
+    const runs = expandExperimentRuns(spec);
+    // 每个重复都产出「变体 × 分支」组合，且变体恒为唯一那一个。
+    expect(runs).toHaveLength(3 * spec.scriptBranches.length);
+    expect(new Set(runs.map((run) => run.variantRef))).toEqual(new Set(["memory-m0-window"]));
+  });
+
   it("变体补丁排在公共补丁之后", () => {
     const spec = specWith((value) => {
       value["commonPatchRefs"] = ["decision-deterministic"];
