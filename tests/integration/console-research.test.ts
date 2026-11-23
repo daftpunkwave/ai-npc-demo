@@ -9,12 +9,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startHost, type RunningHost } from "@ai-npc/app-server";
 import {
+  artifactResponseSchema,
   debugQueuesResponseSchema,
   errorResponseSchema,
   modelLayoutRoutesResponseSchema,
   modelLayoutValidateResponseSchema,
   modelLayoutsResponseSchema,
 } from "@ai-npc/contracts";
+import { loadContentPack } from "@ai-npc/experiment";
 
 const hosts: RunningHost[] = [];
 const roots: string[] = [];
@@ -117,6 +119,22 @@ describe("控制台研究接口", () => {
     const parsed = modelLayoutValidateResponseSchema.parse(validation.json());
     expect(parsed.ok).toBe(false);
     expect(parsed.errors.some((issue) => issue.code === "mount-duplicate")).toBe(true);
+    const validLayout = JSON.parse(JSON.stringify(layout)) as {
+      connections: Record<string, Record<string, unknown>>;
+      mounts: Record<string, unknown>[];
+    };
+    const fixtureConnection = validLayout.connections["fixtures"];
+    if (fixtureConnection === undefined) throw new Error("expected fixture connection");
+    fixtureConnection["credentialRef"] = "mixed_Case";
+    validLayout.mounts = [{ ...validLayout.mounts[0], purposes: ["decision"] }];
+    const valid = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/model-layouts/validate",
+      headers: modelHeader(consoleToken, "operator"),
+      payload: { layout: validLayout },
+    });
+    expect(valid.statusCode).toBe(200);
+    expect(modelLayoutValidateResponseSchema.parse(valid.json())).toMatchObject({ ok: true, errors: [] });
 
     const missingCapabilities = JSON.parse(JSON.stringify(layout)) as {
       models?: Record<string, Record<string, unknown>>;
@@ -254,6 +272,13 @@ describe("控制台研究接口", () => {
     });
     expect(invalidLimit.statusCode).toBe(400);
     expect(errorResponseSchema.parse(invalidLimit.json()).error.code).toBe("validation");
+    const invalidAgent = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/turns?branchId=${host.branchId}&agentId=`,
+      headers,
+    });
+    expect(invalidAgent.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(invalidAgent.json()).error.code).toBe("validation");
     const turns = await host.app.inject({
       method: "GET",
       url: `/api/v1/console/turns?branchId=${host.branchId}&agentId=human-independent&limit=1`,
@@ -330,5 +355,243 @@ describe("控制台研究接口", () => {
     });
     expect(response.statusCode).toBe(409);
     expect(errorResponseSchema.parse(response.json()).error.code).toBe("invalid-state");
+  });
+
+  it("脱敏 artifact 同时处理秘密键与值且不写原文审计", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const secret = [...loadContentPack("content", "earth-2964-v1").index.secrets.values()][0];
+    if (secret === undefined) throw new Error("expected configured secret");
+    const artifactId = "art-000000000099";
+    const body = JSON.stringify(Object.fromEntries([
+      [secret.content, secret.content],
+      ["nested", { [secret.content]: secret.content }],
+      ["__proto__", { nested: secret.content }],
+    ]));
+    host.storage.transact((tx) => {
+      tx.rows("artifacts").put({
+        artifact_id: artifactId,
+        run_id: null,
+        kind: "model-request",
+        content_hash: "0".repeat(64),
+        mime: "application/json",
+        byte_size: new TextEncoder().encode(body).byteLength,
+        storage: "inline",
+        body: new TextEncoder().encode(body),
+        file_path: null,
+        redaction: "raw",
+        redacted_from: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+    const response = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/artifacts/${artifactId}?view=redacted`,
+      headers: modelHeader(consoleToken),
+    });
+    expect(response.statusCode).toBe(200);
+    const redacted = artifactResponseSchema.parse(response.json()).body;
+    expect(redacted).not.toContain(secret.content);
+    expect(redacted).toContain(`[SECRET ${secret.secretId}`);
+    expect(Object.hasOwn(JSON.parse(redacted) as object, "__proto__")).toBe(true);
+    expect(host.storage.transact((tx) =>
+      tx.all("SELECT type FROM lifecycle_events WHERE type = 'ArtifactViewed'"))).toEqual([]);
+  });
+
+  it("记忆差异覆盖状态与来源观察变化", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    host.storage.transact((tx) => {
+      const branch = tx.branch(host.branchId);
+      const watermark = branch.table("memory_watermarks").get({ agent_id: "human-independent" });
+      if (watermark === null) throw new Error("missing memory watermark");
+      branch.table("memory_watermarks").put({ ...watermark, revision: 2 });
+      const records = branch.table("memory_records");
+      const base = {
+        agent_id: "human-independent",
+        memory_id: "mem-000000000098",
+        module_id: "agent.memory.ledger",
+        kind: "episodic",
+        tier: "short",
+        epistemic: "verified-event",
+        release_policy_id: "policy-1",
+        valid_from_tick: 0,
+        valid_until_tick: null,
+        strength: 1,
+        salience: 0,
+        recall_count: 0,
+        tags_json: [],
+        content_json: { summary: "相同内容" },
+      };
+      records.put({
+        ...base,
+        row_version: 1,
+        status: "active",
+        created_revision: 1,
+        retired_revision: 2,
+        source_observation_ids_json: ["obs-000000000001"],
+      });
+      records.put({
+        ...base,
+        row_version: 2,
+        status: "superseded",
+        created_revision: 2,
+        retired_revision: null,
+        source_observation_ids_json: ["obs-000000000002"],
+      });
+    });
+    const response = await host.app.inject({
+      method: "GET",
+      url: `/api/v1/console/agents/human-independent/memory/diff?branchId=${host.branchId}&from=1&to=2`,
+      headers: modelHeader(consoleToken),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      changed: [{ memoryId: "mem-000000000098", sourceObservationIds: ["obs-000000000002"] }],
+    });
+  });
+
+  it("调试队列区分排队与租约中的记忆整理", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const runId = host.storage.transact((tx) =>
+      String(tx.rows("runs").list({ branch_id: host.branchId })[0]?.["run_id"]));
+    host.storage.transact((tx) => {
+      const runs = tx.rows("maintenance_runs");
+      const base = {
+        branch_id: host.branchId,
+        run_id: runId,
+        agent_id: "human-independent",
+        module_id: "agent.memory.ledger",
+        trigger: "day-passed",
+        due_tick: 1,
+        observation_seq_through: 0,
+        task_json: {},
+        base_revision: 0,
+        lease_epoch: 0,
+        lease_expires_at: null,
+        error_json: null,
+        created_at: new Date().toISOString(),
+        ended_at: null,
+      };
+      runs.put({ ...base, maintenance_id: "mnt-000000000001", status: "queued" });
+      runs.put({ ...base, maintenance_id: "mnt-000000000002", status: "leased" });
+    });
+    const queues = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/debug/queues",
+      headers: modelHeader(consoleToken),
+    });
+    expect(queues.statusCode).toBe(200);
+    expect(debugQueuesResponseSchema.parse(queues.json()).maintenance)
+      .toMatchObject({ queued: 1, running: 1 });
+  });
+
+  it("turn 列表与回放先按当前世界限制范围", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    const createdAt = new Date().toISOString();
+    const runId = String(host.storage.transact((tx) =>
+      tx.rows("runs").list({ branch_id: host.branchId })[0]?.["run_id"]));
+    host.storage.transact((tx) => {
+      tx.rows("worlds").put({
+        world_id: "wld-turn-limit",
+        pack_id: "earth-2964-v1",
+        content_version: "0.2.0",
+        created_at: createdAt,
+      });
+      tx.rows("branches").put({
+        branch_id: "br-turn-limit",
+        world_id: "wld-turn-limit",
+        kind: "online",
+        status: "paused",
+        parent_branch_id: null,
+        forked_at_world_seq: null,
+        run_id: null,
+        profile_hash: null,
+        created_at: createdAt,
+      });
+      const turns = tx.rows("turn_runs");
+      for (let index = 0; index < 200; index += 1) {
+        turns.put({
+          turn_id: `turn-${String(index + 1000).padStart(12, "0")}`,
+          run_id: runId,
+          branch_id: "br-turn-limit",
+          agent_id: "human-independent",
+          agent_turn_index: index + 1,
+          status: "queued",
+          trigger_ids_json: [],
+          input_frontier_json: null,
+          memory_revision: null,
+          profile_hash: "cross-world",
+          controller_epoch: 1,
+          turn_lease_epoch: 0,
+          lease_expires_at: null,
+          terminal_reason: null,
+          effective_json: [],
+          created_at: new Date(Date.parse(createdAt) + index).toISOString(),
+          started_at: null,
+          ended_at: null,
+          created_tick: 0,
+        });
+      }
+      turns.put({
+        turn_id: "turn-000000000999",
+        run_id: runId,
+        branch_id: host.branchId,
+        agent_id: "human-independent",
+        agent_turn_index: 999,
+        status: "queued",
+        trigger_ids_json: [],
+        input_frontier_json: null,
+        memory_revision: null,
+        profile_hash: "current-world",
+        controller_epoch: 1,
+        turn_lease_epoch: 0,
+        lease_expires_at: null,
+        terminal_reason: null,
+        effective_json: [],
+        created_at: new Date(Date.parse(createdAt) - 1_000).toISOString(),
+        started_at: null,
+        ended_at: null,
+        created_tick: 0,
+      });
+      tx.rows("model_attempts").put({
+        attempt_id: "att-000000000099",
+        llm_call_id: "llm-000000000099",
+        run_id: runId,
+        work_ref: "turn-000000001000",
+        agent_id: "human-independent",
+        evaluator_id: null,
+        purpose: "decision",
+        model_id: "fixture-model",
+        connection_id: "fixtures",
+        adapter_id: "platform.model-transport.deterministic",
+        status: "succeeded",
+        is_effective: 1,
+        request_artifact_id: null,
+        response_artifact_id: null,
+        usage_json: null,
+        timings_json: null,
+        error_json: null,
+        created_at: createdAt,
+      });
+    });
+
+    const turns = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/console/turns?limit=1",
+      headers,
+    });
+    expect(turns.statusCode).toBe(200);
+    expect(turns.json()).toMatchObject({ turns: [{ turnId: "turn-000000000999" }] });
+    const replay = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/debug/turns/turn-000000001000/replay",
+      headers,
+      payload: {},
+    });
+    expect(replay.statusCode).toBe(403);
   });
 });

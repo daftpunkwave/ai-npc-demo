@@ -132,7 +132,10 @@ describe("slice A research path", () => {
       method: "GET", url: `/api/v1/console/traces/${detail.traceId}`, headers,
     });
     expect(traceResponse.statusCode).toBe(200);
-    expect(traceResponseSchema.parse(traceResponse.json()).root.children.length).toBeGreaterThan(0);
+    const trace = traceResponseSchema.parse(traceResponse.json());
+    expect(trace.root.children.length).toBeGreaterThan(0);
+    expect(trace.root.startedAt).not.toBeNull();
+    expect(Date.parse(trace.root.startedAt ?? "")).toBeGreaterThan(Date.now() - 120_000);
 
     const inspectorResponse = await host.app.inject({
       method: "GET", url: `/api/v1/console/agents/human-independent/inspector?branchId=${host.branchId}`, headers,
@@ -192,6 +195,29 @@ describe("slice A research path", () => {
     });
     expect(replayResponse.statusCode).toBe(200);
     expect(replayResponse.json()).toMatchObject({ requestHashMatch: true });
+    const canonicalArtifactId = host.storage.transact((tx) => {
+      const attempts = tx.rows("model_attempts").list({ work_ref: turnId });
+      const artifactId = attempts[0]?.["request_artifact_id"];
+      if (typeof artifactId !== "string") throw new Error("expected request artifact");
+      const artifact = tx.rows("artifacts").get({ artifact_id: artifactId });
+      if (artifact === null) throw new Error("expected stored artifact");
+      tx.rows("artifacts").put({ ...artifact, body: new TextEncoder().encode("1e400") });
+      return artifactId;
+    });
+    const canonicalFailure = await host.app.inject({
+      method: "POST",
+      url: `/api/v1/console/debug/turns/${turnId}/replay`,
+      headers,
+      payload: {},
+    });
+    expect(canonicalFailure.json()).toMatchObject({
+      requestHashMatch: false,
+      differences: expect.arrayContaining([{
+        path: canonicalArtifactId,
+        expected: "canonical JSON",
+        actual: null,
+      }]),
+    });
     host.storage.transact((tx) => {
       const attempts = tx.rows("model_attempts").list({ work_ref: turnId });
       const first = attempts[0];
@@ -253,6 +279,19 @@ describe("slice A research path", () => {
     });
     expect(conflictingAgentWake.statusCode).toBe(409);
     expect(errorResponseSchema.parse(conflictingAgentWake.json()).error.code).toBe("idempotency-conflict");
+    host.storage.transact((tx) => {
+      const activations = tx.branch(host.branchId).table("agent_activations");
+      const activation = activations.get({ agent_id: "human-independent" });
+      if (activation === null) throw new Error("missing Agent activation");
+      activations.put({ ...activation, status: "dormant" });
+    });
+    const replayAfterPause = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/debug/agents/human-independent/wake",
+      headers,
+      payload: { reason: "场景测试人工唤醒", operationId: "op-000000000009" },
+    });
+    expect(replayAfterPause.statusCode).toBe(200);
 
     const timelineResponse = await host.app.inject({
       method: "GET",

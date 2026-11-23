@@ -1441,6 +1441,16 @@ describe("服务端宿主", () => {
       });
     });
 
+    const consoleSession = await loginSession(host, "console-token");
+    const preview = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/campaign/restore",
+      headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" },
+      payload: { operationId: "op-000000000108", snapshotId, dryRun: true },
+    });
+    expect(preview.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(preview.json()).error.safeMessage).toContain("contentVersion");
+
     const restored = await host.app.inject({
       method: "POST",
       url: "/api/v1/campaign/restore",
