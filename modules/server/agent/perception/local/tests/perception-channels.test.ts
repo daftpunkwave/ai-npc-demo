@@ -244,7 +244,16 @@ describe("感知渠道表逐行断言", () => {
     }, config);
     expect(elsewhere.observations).toEqual([]);
 
-    const result = perceive(observed, config);
+    // 明细只放在 full 上：若实现误用 full，下面的断言会读到 roadId 而失败。
+    const detailedFacts = { roadId: "r-gh-wg", delayTicks: 6, cargo: { supply: 8 } };
+    const result = perceive({
+      ...observed,
+      rendered: {
+        ...observed.rendered,
+        full: { ...observed.rendered.full, facts: detailedFacts },
+        summary: { ...observed.rendered.summary, facts: {} },
+      },
+    }, config);
     expect(result.observations).toHaveLength(1);
     const [observation] = result.observations;
     expect(observation).toMatchObject({
@@ -254,6 +263,23 @@ describe("感知渠道表逐行断言", () => {
     expect(content?.detail).toBe("summary");
     // 细度为 summary 时宿主只提供摘要，明细不进观察内容。
     expect(content?.facts).toEqual({});
+    expect(content?.facts).not.toEqual(detailedFacts);
+  });
+
+  it("第 10 行：事件节点命中 selfNodeIds 中的非主位置时同样记为 on-site", () => {
+    // 主位置是 grayharbor，但队伍同时在 pass，因此 pass 上的 node 受众事件也算亲眼所见。
+    const input = request();
+    const observed = withEvent(input, {
+      type: "WorldFactRecorded",
+      audience: [{ kind: "node", nodeId: "pass" }],
+      payload: { factType: "ConvoyDelayed", nodeId: "pass" },
+    });
+    expect(channelOf({
+      ...observed,
+      observer: { ...observed.observer, nodeId: "grayharbor", selfNodeIds: ["grayharbor", "pass"] },
+    })).toEqual({
+      channel: "on-site", epistemic: "witnessed", confidence: 1, detail: "summary", knownAtTick: 10,
+    });
   });
 
   it("第 11 行：派系受众记为 witnessed，置信度 1，按 briefing 延迟", () => {
