@@ -33,7 +33,7 @@ export interface AgentRuntimeOptions {
   readonly worldId: string;
   readonly branchId: string;
   readonly runId: string;
-  readonly readWorld: (agentId: string) => AgentWorldRead;
+  readonly readWorlds: (agentIds: readonly string[]) => ReadonlyMap<string, AgentWorldRead>;
   readonly onStateChange?: () => void;
   readonly turnExecution?: TurnExecutionOptions;
 }
@@ -117,7 +117,7 @@ export class AgentRuntime {
         profiles: this.options.profiles,
         worldId: this.options.worldId,
         branchId: this.options.branchId,
-        readWorld: this.options.readWorld,
+        readWorlds: this.options.readWorlds,
       }, this.perception);
       this.scheduler = new TurnScheduler({
         storage: this.options.storage,

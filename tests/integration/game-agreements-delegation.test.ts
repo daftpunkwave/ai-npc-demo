@@ -125,10 +125,9 @@ function lastDelegationCreated(value: GameHarness): DelegationCreatedPayload | u
 describe("协议委托与授权", () => {
   it("战略 Agent 的库存与队伍委托生效时创建完整委托", async () => {
     const value = await harness();
-    const agreementId = proposeAndAccept(
+    const proposed = proposeAgreementCommand(
       value,
       strategicAuth(value, "human-neutral"),
-      playerAuth(value),
       ["human-neutral", "player-1"],
       [
         delegateTerm({
@@ -140,6 +139,11 @@ describe("协议委托与授权", () => {
         }),
       ],
     );
+    expect(proposed.commandStatus).toBe("accepted");
+    const agreementId = (proposed.result as { readonly agreementId: string }).agreementId;
+    const accepted = respondAgreement(value, playerAuth(value), agreementId, "accept");
+    expect(accepted.commandStatus).toBe("accepted");
+    expect(accepted.result).toEqual({ agreementId, agreementStatus: "fulfilled" });
     const created = lastDelegationCreated(value);
     expect(created).toMatchObject({
       grantorFactionId: "human-neutral",

@@ -181,6 +181,7 @@ describe("世界核心", () => {
       ),
     );
     expect(policy.commandStatus).toBe("accepted");
+    expect(policy.result).toEqual({ oldValue: "harbor-first", newValue: "rotation" });
     setGameClock(value, { worldTick: 24, mode: "running" });
     value.authority.clock.run(value.branchId);
     expect(readGameAggregate(value, "meters", "meters")).toMatchObject({
@@ -373,6 +374,7 @@ describe("世界核心", () => {
       ),
     );
     expect(receipt.commandStatus).toBe("accepted");
+    expect(receipt.result).toEqual({ oldValue: "open", newValue: "closed" });
     expect(readGameEventTypes(value)).toContain("PolicyChanged");
   });
 

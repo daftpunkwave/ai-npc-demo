@@ -24,14 +24,31 @@ export function agentWorldReaders(input: {
   readonly reads: HostReadPorts;
   readonly content: GameContent;
   readonly scope: Pick<LiveRunState, "branchId" | "worldId">;
-}): { readonly perception: (agentId: string) => AgentWorldRead; readonly decision: ReadTurnWorld } {
+}): {
+  readonly perception: (agentIds: readonly string[]) => ReadonlyMap<string, AgentWorldRead>;
+  readonly decision: ReadTurnWorld;
+} {
   const { storage, reads, content, scope } = input;
   const principalIds = [...new Set([content.playerPrincipalId, ...content.factions.keys(), ...content.characters.keys()])];
   return {
-    perception: (agentId) => storage.transact((tx) => {
-      const identity = readIdentity(content, reads.portsIn(tx, scope)["game.world"], agentId);
-      return { nodeId: identity.nodeId, factionId: identity.factionId, worldViewText: "", affairsText: "" };
-    }),
+    // 一次事务绑定全部端口后批量读身份，避免感知消费对每个（事件 × Agent）重建端口图。
+    perception: (agentIds) => {
+      const identities = new Map<string, AgentWorldRead>();
+      if (agentIds.length === 0) return identities;
+      return storage.transact((tx) => {
+        const world = reads.portsIn(tx, scope)["game.world"];
+        for (const agentId of agentIds) {
+          const identity = readIdentity(content, world, agentId);
+          identities.set(agentId, {
+            nodeId: identity.nodeId,
+            factionId: identity.factionId,
+            worldViewText: "",
+            affairsText: "",
+          });
+        }
+        return identities;
+      });
+    },
     decision: (tx, session, frontier, invitedTaskIds) => {
       const ports = reads.portsIn(tx, session);
       const world = ports["game.world"];

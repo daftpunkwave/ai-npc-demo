@@ -6,6 +6,7 @@ PR 标题建议遵循 Conventional Commits 格式，用动词开头的具体功�
 常见 type：feat | fix | docs | refactor | perf | test | style | build | ci | chore | revert。
 
 核心内容建议至少覆盖：改动概述 (What)、改动原因 (Why)、测试与验证以及兼容性说明（若涉及复杂实现建议补充改动方案 (How)），确保改动对外独立自解、聚焦代码与 Diff 视角。
+PR 侧边栏不做特定要求，善用 PR Labels 即可；建议最少配置一个标签以表达本次 PR 的主要任务（如关联的核心领域 realm/*、area/* 或变更性质）。
 -->
 
 ## 关联 Issue / PR / Discussions（选填，可多选）

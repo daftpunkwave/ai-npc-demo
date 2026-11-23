@@ -595,6 +595,42 @@ describe("服务端 API", () => {
     expect(view.json()).toMatchObject({ projection: { clock: { worldTick: 0 } } });
   });
 
+  it("幂等冲突返回 409 且不携带回执 ID，原回执仍按 commandId 查询", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const session = await login(app, "player-token");
+    const auth = { authorization: `Bearer ${session}` };
+    const commandId = value.host.ids("cmd");
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: auth,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, commandId),
+    });
+    expect(first.statusCode).toBe(200);
+    const firstReceipt = commandReceiptSchema.parse(first.json());
+    expect(firstReceipt).toMatchObject({ commandStatus: "accepted", commandId });
+
+    const conflict = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: auth,
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-pacifist" }, commandId),
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(errorResponseSchema.parse(conflict.json()).error.code).toBe("idempotency-conflict");
+    expect(Object.hasOwn(conflict.json(), "receiptId")).toBe(false);
+
+    const found = await app.inject({ method: "GET", url: `/api/v1/commands/${commandId}`, headers: auth });
+    expect(found.statusCode).toBe(200);
+    expect(commandReceiptSchema.parse(found.json())).toMatchObject({
+      receiptId: firstReceipt.receiptId,
+      commandId,
+      commandStatus: "accepted",
+    });
+  });
+
   it("命令回执经注入的只读端口返回，不依赖存储表", async () => {
     const value = await createTrackedGameHarness(active);
     const receipt: CommandReceipt = commandReceiptSchema.parse({

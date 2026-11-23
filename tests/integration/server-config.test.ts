@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -282,6 +282,31 @@ describe("登录凭据", () => {
     const config = parseDeploymentConfig({ env: {}, projectRoot: root });
     const resolved = resolveCredentials(config, { generate: (role) => `${role}-generated-token` });
     expect(statSync(resolved.filePath).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === "win32")("已存在的宽权限凭据目录在写入时被收紧为 0700", () => {
+    // Windows 不支持 POSIX 权限位，本用例只在类 Unix 平台验证；
+    // mkdir 的 mode 只作用于新建目录，预先以 0755 存在的目录必须被显式收紧。
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    mkdirSync(config.dataDir, { recursive: true });
+    chmodSync(config.dataDir, 0o755);
+    resolveCredentials(config, { generate: (role) => `${role}-generated-token` });
+    expect(statSync(config.dataDir).mode & 0o777).toBe(0o700);
+  });
+
+  it.skipIf(process.platform === "win32")("令牌未变化无需重写时，已存在的宽权限目录同样被收紧", () => {
+    // Windows 不支持 POSIX 权限位，本用例只在类 Unix 平台验证；
+    // 目录收紧发生在令牌未变化的提前返回之前，日常二次启动也会生效。
+    const root = tempRoot();
+    const config = parseDeploymentConfig({ env: {}, projectRoot: root });
+    mkdirSync(config.dataDir, { recursive: true });
+    chmodSync(config.dataDir, 0o755);
+    const first = resolveCredentials(config, { generate: (role) => `${role}-first-token` });
+    chmodSync(config.dataDir, 0o755);
+    const second = resolveCredentials(config);
+    expect(second.tokens).toEqual(first.tokens);
+    expect(statSync(config.dataDir).mode & 0o777).toBe(0o700);
   });
 });
 
