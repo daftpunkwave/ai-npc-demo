@@ -3,7 +3,9 @@
  * 依赖 storage port 与公开的 memory、observation、scope 契约。
  * 禁止调用模块与模型，或暴露跨 agent 读取。
  */
-import { maintenanceTaskSchema } from "@ai-npc/contracts";
+import { completeMemoryMaintenance } from "./memory-maintenance-publication";
+
+import { publicRevision, publicRows, publishPublicRecords, validateMemorySources } from "./memory-public-records";
 import {
   type AgentObservation,
   type HostServices,
@@ -78,6 +80,8 @@ export class MemoryStore {
         base_revision: 0,
         observation_seq_through: 0,
         world_seq_through: 0,
+        public_revision: publicRevision(tx, this.branchId),
+        derived_through_seq: 0,
         change_kind: "init",
         plan_hash: planHash,
         created_at: this.host.nowIso(),
@@ -164,16 +168,19 @@ export class MemoryStore {
           (row["retired_revision"] === null || numberColumn(row, "retired_revision") > revision) &&
           row["status"] === "active",
         )
-        .sort((left, right) =>
-          stringColumn(left, "memory_id").localeCompare(stringColumn(right, "memory_id")) ||
-          numberColumn(left, "row_version") - numberColumn(right, "row_version"),
-        )
         .map((row) => parseRecord(row));
+      const publicRecords = publicRows(tx, this.branchId, numberColumn(revisionRow, "public_revision"))
+        .map((row) => parseRecord(row));
+      records.push(...publicRecords);
+      records.sort((left, right) =>
+        left.memoryId.localeCompare(right.memoryId) || left.rowVersion - right.rowVersion,
+      );
       return {
         scope: this.scope(agentId),
         revision,
         identity,
         records,
+        derivedThroughSeq: numberColumn(revisionRow, "derived_through_seq"),
       };
     });
   }
@@ -221,27 +228,12 @@ export class MemoryStore {
       if (watermark.revision !== plan.baseRevision) {
         throw new Error(`memory CAS mismatch for ${agentId}: expected ${plan.baseRevision}, current ${watermark.revision}`);
       }
-      this.validatePlanSources(tx, agentId, plan);
+      const base = tx.branch(this.branchId).table("memory_revisions").get({ agent_id: agentId, revision: plan.baseRevision });
+      if (base === null) throw new Error("memory plan base revision is missing");
+      validateMemorySources(tx, this.branchId, agentId, plan, numberColumn(base, "public_revision"));
       const currentRows = this.currentRows(tx, agentId);
       const currentById = new Map(currentRows.map((record) => [record.memoryId, record]));
-      const retiredIds = new Set(plan.retires.map((entry) => entry.memoryId));
-      const insertedIds = new Set(plan.inserts.map((entry) => entry.memoryId));
-      if (insertedIds.size !== plan.inserts.length) {
-        throw new Error(`memory plan for ${agentId} contains duplicate inserted IDs`);
-      }
-      for (const retire of plan.retires) {
-        if (!currentById.has(retire.memoryId)) {
-          throw new Error(`memory retire target ${retire.memoryId} is not current`);
-        }
-      }
-      for (const insert of plan.inserts) {
-        if (insert.sourceObservationIds.length === 0) {
-          throw new Error(`memory insert ${insert.memoryId} has no source observation`);
-        }
-        if (currentById.has(insert.memoryId) && !retiredIds.has(insert.memoryId)) {
-          throw new Error(`memory update ${insert.memoryId} did not retire its current row version`);
-        }
-      }
+      const { retiredIds, insertedIds } = validateRowChanges(agentId, plan, currentById);
       const revision = watermark.revision + 1;
       const branch = tx.branch(this.branchId);
       const records = branch.table("memory_records");
@@ -252,11 +244,14 @@ export class MemoryStore {
           retired_revision: revision,
         });
       }
+      const sharedRevision = publishPublicRecords(tx, this.branchId, moduleId, plan.inserts);
       for (const insert of plan.inserts) {
+        if (insert.branchPublic === true) continue;
+        const storageAgentId = agentId;
         const current = currentById.get(insert.memoryId);
-        const nextRowVersion = (current?.rowVersion ?? this.maxRowVersion(tx, agentId, insert.memoryId)) + 1;
+        const nextRowVersion = (current?.rowVersion ?? this.maxRowVersion(tx, storageAgentId, insert.memoryId)) + 1;
         records.put(encodeMemoryRow({
-          agentId,
+          agentId: storageAgentId,
           moduleId,
           revision,
           rowVersion: nextRowVersion,
@@ -285,6 +280,8 @@ export class MemoryStore {
           plan.observationSeqThrough,
         ),
         world_seq_through: options.worldSeqThrough,
+        public_revision: sharedRevision,
+        derived_through_seq: Math.max(watermark.derivedThroughSeq, plan.derivedThroughSeq ?? 0),
         change_kind: plan.changeKind,
         plan_hash: options.planHash,
         created_at: this.host.nowIso(),
@@ -311,47 +308,10 @@ export class MemoryStore {
         ),
       });
       if (options.maintenance !== undefined) {
-        const task = tx.rows("maintenance_runs").get({
-          maintenance_id: options.maintenance.maintenanceId,
-        });
-        if (
-          task === null ||
-          task["status"] !== "leased" ||
-          numberColumn(task, "lease_epoch") !== options.maintenance.leaseEpoch
-        ) {
-          throw new Error(`maintenance lease ${options.maintenance.maintenanceId} is no longer current`);
-        }
-        tx.rows("maintenance_runs").put({
-          ...task,
-          status: "completed",
-          base_revision: revision,
-          task_json: {
-            ...maintenanceTaskSchema.parse(task["task_json"]),
-            baseRevision: plan.baseRevision,
-            observationSeqThrough: plan.observationSeqThrough,
-          },
-          lease_expires_at: null,
-          error_json: null,
-          ended_at: this.host.nowIso(),
-        });
+        completeMemoryMaintenance(tx, options.maintenance, plan, revision, this.host.nowIso());
       }
       return revision;
     });
-  }
-
-  private validatePlanSources(
-    tx: StorageTransaction,
-    agentId: string,
-    plan: MemoryChangePlan,
-  ): void {
-    const observations = tx.branch(this.branchId).table("observations");
-    for (const row of plan.inserts) {
-      for (const observationId of row.sourceObservationIds) {
-        if (observations.list({ agent_id: agentId, observation_id: observationId }, { limit: 1 }).length === 0) {
-          throw new Error(`memory source observation ${observationId} does not belong to agent ${agentId}`);
-        }
-      }
-    }
   }
 
   private currentRows(tx: StorageTransaction, agentId: string): readonly CurrentRecord[] {
@@ -395,4 +355,30 @@ export class MemoryStore {
   private scope(agentId: string): MemoryScope {
     return { worldId: this.worldId, branchId: this.branchId, agentId };
   }
+}
+
+function validateRowChanges(
+  agentId: string,
+  plan: MemoryChangePlan,
+  currentById: ReadonlyMap<string, CurrentRecord>,
+): { readonly retiredIds: ReadonlySet<string>; readonly insertedIds: ReadonlySet<string> } {
+  const retiredIds = new Set(plan.retires.map((entry) => entry.memoryId));
+  const insertedIds = new Set(plan.inserts.map((entry) => entry.memoryId));
+  if (insertedIds.size !== plan.inserts.length) {
+    throw new Error(`memory plan for ${agentId} contains duplicate inserted IDs`);
+  }
+  for (const retire of plan.retires) {
+    if (!currentById.has(retire.memoryId)) {
+      throw new Error(`memory retire target ${retire.memoryId} is not current`);
+    }
+  }
+  for (const insert of plan.inserts) {
+    if (insert.sourceObservationIds.length === 0) {
+      throw new Error(`memory insert ${insert.memoryId} has no source observation`);
+    }
+    if (currentById.has(insert.memoryId) && !retiredIds.has(insert.memoryId)) {
+      throw new Error(`memory update ${insert.memoryId} did not retire its current row version`);
+    }
+  }
+  return { retiredIds, insertedIds };
 }

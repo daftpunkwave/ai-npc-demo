@@ -352,6 +352,31 @@ describe("Agent memory host", () => {
     }
   });
 
+  it("persists the regenerated observation range into the task row", async () => {
+    const scripted = scriptedMemory();
+    const harness = await createMemoryHarness(scripted.definition);
+    const host = await startedHost(harness);
+    try {
+      insertObservation(harness, { sequence: 1, tick: 0, eventType: "CreateA", summary: "A0" });
+      insertObservation(harness, { sequence: 2, tick: 1, eventType: "DayPassed", summary: "day" });
+      await host.ingestAll(1);
+      const maintenance = host.runDueMaintenance(1);
+      await scripted.firstStarted;
+      insertObservation(harness, { sequence: 3, tick: 2, eventType: "CreateA", summary: "A-new" });
+      await host.ingestAll(2);
+      scripted.release();
+      await maintenance;
+
+      // 重算前版本：摄入扩大观察范围到 3；任务行与 task_json 必须同步，避免下次认领回退。
+      expect(scripted.calls()).toBe(2);
+      const [row] = maintenanceRows(harness);
+      expect(row).toMatchObject({ status: "completed", observation_seq_through: 3 });
+      expect((row?.["task_json"] as { observationSeqThrough?: number }).observationSeqThrough).toBe(3);
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
+
   it("regenerates recordUse after its target changes during plan publication", async () => {
     const scripted = scriptedMemory();
     const harness = await createMemoryHarness(scripted.definition);

@@ -150,6 +150,7 @@ interface CapabilityBinding {
 
 interface ModuleDefinition {
   readonly id: string;                 // <group>.<family>.<impl>；server 用 game/agent/platform/transport，浏览器用 client/console
+  readonly sourceModuleId?: string;    // 同一包承载多个实现时用于源码目录与能力对账
   readonly realm: Realm;
   readonly kind: ModuleKind;
   readonly version: string;

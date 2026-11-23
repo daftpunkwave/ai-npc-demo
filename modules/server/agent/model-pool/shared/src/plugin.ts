@@ -111,6 +111,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
       const attemptId = host.ids("att");
       let sent = false;
       let reserved = false;
+      let releaseAttemptQuota: (() => void) | void = undefined;
       let result: Awaited<ReturnType<typeof complete>>;
       let request: ModelRequest;
       let startedAt: number;
@@ -133,6 +134,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         });
         budget.reserve({ ...reservation, entryId: attemptId });
         reserved = true;
+        releaseAttemptQuota = scope.beforeAttempt?.();
         evidence.begin(scope, route, request, previous?.attemptId);
         if (previous !== undefined) attempts[attempts.length - 1] = { ...previous, status: "superseded" };
         sent = true;
@@ -140,7 +142,13 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         respondedAt = host.monotonicMs();
       } finally {
         release(sent);
-        if (reserved && !sent) budget.settle({ entryId: attemptId, actualInput: null, actualOutput: null, sent, price: route.price });
+        if (!sent) {
+          try {
+            if (reserved) budget.settle({ entryId: attemptId, actualInput: null, actualOutput: null, sent, price: route.price });
+          } finally {
+            releaseAttemptQuota?.();
+          }
+        }
       }
       const { response, error } = result;
       let status: Awaited<ReturnType<AttemptEvidence["finish"]>>;

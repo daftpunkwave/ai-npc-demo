@@ -17,6 +17,8 @@ import {
   dataOf,
 } from "./ledger-model";
 
+export type CapacityTier = "short" | "long" | "core";
+
 export function applyUsage(
   input: Parameters<MemoryPort["recordUse"]>[0],
   view: RevisionView,
@@ -63,10 +65,11 @@ export function capacityRetirements(
   view: RevisionView,
   config: LedgerConfig,
   worldTick: number,
+  tiers: readonly CapacityTier[] = ["short", "long", "core"],
 ): LedgerBuild {
   const retires = new Map(build.retires.map((entry) => [entry.memoryId, entry.status]));
   const inserts = [...build.inserts];
-  for (const tier of ["short", "long", "core"] as const) {
+  for (const tier of tiers) {
     const existing = view.records.filter((record) =>
       record.status === "active" &&
       record.tier === tier &&

@@ -64,13 +64,30 @@ async function copyMigrations(
 }
 
 describe("初始迁移", () => {
+  it("adds conservative immutable frontiers when upgrading existing memory revisions", async () => {
+    const root = createTempDataDir();
+    const migrationsDirectory = join(root, "migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    const database = openDatabase(join(root, "memory-frontiers.db"));
+    try {
+      await copyMigrations(migrationsDirectory, host, 13);
+      await applyMigrations(database, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      database.prepare("INSERT INTO memory_revisions (branch_id, agent_id, revision, base_revision, observation_seq_through, world_seq_through, change_kind, plan_hash, created_at) VALUES (?, ?, 1, 0, 2, 10, 'ingest', 'fixture', ?)")
+        .run("br-000000000001", "human-independent", host.nowIso());
+      await copyMigrations(migrationsDirectory, host);
+      await applyMigrations(database, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      expect(database.prepare("SELECT revision, observation_seq_through, public_revision, derived_through_seq FROM memory_revisions").get())
+        .toMatchObject({ revision: 1, observation_seq_through: 2, public_revision: 0, derived_through_seq: 0 });
+    } finally { closeDatabase(database); removeTempDataDir(root); }
+  });
   it("首次打开执行全部迁移并记录版本", async () => {
     const harness = await openStorageHarness();
     try {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -89,7 +106,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -292,7 +309,7 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
       closeDatabase(upgraded);
       upgraded = null;

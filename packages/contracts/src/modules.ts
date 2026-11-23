@@ -255,6 +255,8 @@ export interface ModuleInstance {
 /** 模块描述符：静态能力声明与工厂。 */
 export interface ModuleDefinition {
   readonly id: string;
+  /** 同一包承载多个实现时，指向该包的共享源码模块 ID；缺省时由模块 ID 自身定位。 */
+  readonly sourceModuleId?: string;
   readonly realm: Realm;
   readonly kind: ModuleKind;
   readonly version: string;

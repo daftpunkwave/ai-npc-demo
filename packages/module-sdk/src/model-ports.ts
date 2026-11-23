@@ -30,6 +30,8 @@ export interface ModelWorkScope extends MemoryScope {
   readonly deadlineMs: number;
   readonly signal: AbortSignal;
   readonly fence: () => boolean;
+  /** 宿主在每次实际尝试前预留附加配额，可返回未发送时的释放回调。 */
+  readonly beforeAttempt?: () => (() => void) | void;
 }
 
 export interface ModelRoute {

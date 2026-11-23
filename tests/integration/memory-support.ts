@@ -176,23 +176,27 @@ export function insertObservation(
   harness: MemoryHarness,
   input: {
     readonly sequence: number;
+    readonly agentId?: string;
+    readonly observationId?: AgentObservation["observationId"];
+    readonly sourceEventIds?: AgentObservation["sourceEventIds"];
     readonly tick: number;
     readonly eventType: string;
     readonly summary: string;
     readonly facts?: Json;
     readonly channel?: string;
     readonly subjectIds?: readonly string[];
+    readonly releasePolicyId?: string;
   },
 ): AgentObservation {
   const observation: AgentObservation = {
-    observationId: `obs-${String(input.sequence).padStart(12, "0")}` as AgentObservation["observationId"],
+    observationId: input.observationId ?? `obs-${String(input.sequence).padStart(12, "0")}` as AgentObservation["observationId"],
     scope: {
       worldId: memoryWorldId,
       branchId: memoryBranchId,
-      agentId: memoryAgentId,
+      agentId: input.agentId ?? memoryAgentId,
     },
     observationSeq: input.sequence,
-    sourceEventIds: [`evt-${String(input.sequence).padStart(12, "0")}` as AgentObservation["sourceEventIds"][number]],
+    sourceEventIds: input.sourceEventIds ?? [`evt-${String(input.sequence).padStart(12, "0")}` as AgentObservation["sourceEventIds"][number]],
     sourceObservationIds: [],
     occurredAtTick: input.tick,
     sensedAtTick: input.tick,
@@ -200,7 +204,7 @@ export function insertObservation(
     channel: input.channel ?? "party",
     epistemic: "witnessed",
     confidence: 1,
-    releasePolicyId: "parties:human-independent,player-1",
+    releasePolicyId: input.releasePolicyId ?? "parties:human-independent,player-1",
     content: {
       eventType: input.eventType,
       summaryZh: input.summary,
@@ -214,7 +218,7 @@ export function insertObservation(
   };
   harness.storage.transact((tx) => {
     tx.branch(memoryBranchId).table("observations").put({
-      agent_id: memoryAgentId,
+      agent_id: observation.scope.agentId,
       observation_seq: observation.observationSeq,
       observation_id: observation.observationId,
       source_event_ids_json: [...observation.sourceEventIds],
