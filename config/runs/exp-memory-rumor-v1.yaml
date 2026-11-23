@@ -1,0 +1,23 @@
+schemaVersion: 1
+experimentId: exp-memory-rumor-v1
+# 传闻与反证：先听到传闻，再收到可直接核对的证据，考察印象是否随反证修正。
+# s-rumor 没有命名分支，因此 scriptBranches 为空：每个变体在每次重复里只跑一次。
+base:
+  moduleAssemblyRef: local-slg-standard-v1
+  worldPackRef: earth-2964-v1
+  scenarioRef: watergate-v1
+  rosterRef: core-3
+  modelLayoutRef: shared-model-layout-v1
+  seed: exp-memory-rumor-v1
+  player: { principalId: player-1, factionId: human-neutral }
+  mode: closed-loop
+  initialState: { kind: cold-start }
+  clock: { kind: controlled }
+  budget: { maxTokens: 500000, maxCost: null }
+  failurePolicy: strict
+scriptRef: s-rumor
+scriptBranches: []
+commonPatchRefs: []
+variants: [memory-m0-window, memory-m1-structured-ledger, memory-m2-stream-reflection, memory-m3-layered-hybrid]
+repetitions: 3
+runOrder: rotate
