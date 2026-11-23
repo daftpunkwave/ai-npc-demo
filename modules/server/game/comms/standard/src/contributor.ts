@@ -19,7 +19,7 @@ import {
   type HandlerResult,
 } from "@ai-npc/module-sdk";
 import { messageDeliveryKey, type MessageState } from "./state";
-import { probeAsk } from "./probe";
+import { probeAsk, probeRequestAggregate } from "./probe";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -262,6 +262,7 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
       "share",
       "message",
       "message-delivery",
+      probeRequestAggregate,
     ],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },

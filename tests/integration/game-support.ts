@@ -370,8 +370,18 @@ export function readGameAggregate(
   aggregateType: string,
   aggregateId: string,
 ): Json | null {
+  return readAggregateOnBranch(harness, harness.branchId, aggregateType, aggregateId);
+}
+
+/** 读取指定分支上一个聚合的原始状态；沙盒与实验分支的断言用它，避免误读在线分支。 */
+export function readAggregateOnBranch(
+  harness: GameHarness,
+  branchId: string,
+  aggregateType: string,
+  aggregateId: string,
+): Json | null {
   return harness.storage.transact((tx) => {
-    const row = tx.branch(harness.branchId).table("aggregate_state").get({
+    const row = tx.branch(branchId).table("aggregate_state").get({
       aggregate_type: aggregateType,
       aggregate_id: aggregateId,
     });
@@ -403,9 +413,49 @@ export async function disposeTrackedGameHarnesses(active: GameHarness[]): Promis
   }
 }
 
+/**
+ * 从当前分支派生一个沙盒分支并返回其 ID：完整复制世界状态，时钟归位为 paused，
+ * 与实验探针的真实做法一致（每个探针各复制一个沙盒）。
+ */
+export function seedSandboxBranch(value: GameHarness, branchId = "br-000000000099"): string {
+  value.storage.transact((tx) => {
+    value.storage.forkBranch(tx, { srcBranchId: value.branchId, dstBranchId: branchId, kind: "sandbox" });
+  });
+  return branchId;
+}
+
+/**
+ * 在同一世界下登记一个只有时钟行的空沙盒分支。
+ * 用于不需要世界状态、只想验证分支种类或发行者边界的命令测试。
+ */
+export function seedEmptySandboxBranch(value: GameHarness, branchId = "br-000000000098"): string {
+  value.storage.transact((tx) => {
+    const createdAt = value.host.nowIso();
+    tx.rows("branches").put({
+      branch_id: branchId,
+      world_id: value.worldId,
+      kind: "sandbox",
+      status: "active",
+      parent_branch_id: value.branchId,
+      forked_at_world_seq: 0,
+      run_id: null,
+      profile_hash: null,
+      created_at: createdAt,
+    });
+    tx.branch(branchId).table("clock").put({
+      world_tick: 0,
+      mode: "running",
+      seconds_per_tick: 20,
+      run_version: 0,
+      step_target_tick: null,
+      updated_at: createdAt,
+    });
+  });
+  return branchId;
+}
+
 /** 以人类中立阵营开局，供各游戏模块测试复用。 */
-export function startNeutralCampaign(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {
-  return value.authority.commands.execute(
+export function startNeutralCampaign(value: GameHarness): ReturnType<GameHarness["authority"]["commands"]["execute"]> {  return value.authority.commands.execute(
     playerAuth(value),
     gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, value.host.ids("cmd")),
   );

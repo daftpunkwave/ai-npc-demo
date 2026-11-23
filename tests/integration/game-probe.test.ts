@@ -141,8 +141,73 @@ describe("探针命令", () => {
     });
 
     expect(receipt.commandStatus).toBe("rejected");
-    expect(receipt.reasonCode).toBe("paused");
+    expect(receipt.reasonCode).toBe("no-authority");
     expect(readGameEventTypes(harness)).not.toContain("ProbeAsked");
+  });
+
+  it("运行中的在线分支同样拒绝探针：分支种类限制不依赖暂停状态", async () => {
+    // 时钟为 running 时暂停豁免根本不会被求值，因此分支种类必须由网关独立裁决。
+    const harness = await harnessWithSandbox();
+    setGameClock(harness, { worldTick: 3, mode: "running" });
+
+    const receipt = askProbe(harness, harness.branchId, {
+      probeId: "prb-000000000009",
+      agentId: "human-independent",
+      askedBy: "player-1",
+      question: "运行中世界的探针",
+    });
+
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("no-authority");
+    expect(readGameEventTypes(harness)).not.toContain("ProbeAsked");
+  });
+
+  it("实验分支拒绝探针：探针只用于沙盒", async () => {
+    const harness = await harnessWithSandbox();
+    harness.storage.transact((tx) => {
+      const branch = tx.rows("branches").get({ branch_id: sandboxBranchId });
+      if (branch === null) throw new Error("缺少沙盒分支行");
+      tx.rows("branches").put({ ...branch, kind: "experiment" });
+    });
+
+    const receipt = askProbe(harness, sandboxBranchId, {
+      probeId: "prb-00000000000a",
+      agentId: "human-independent",
+      askedBy: "player-1",
+      question: "实验分支探针",
+    });
+
+    expect(receipt.commandStatus).toBe("rejected");
+    expect(receipt.reasonCode).toBe("no-authority");
+    expect(eventsOf(harness, sandboxBranchId)).toHaveLength(0);
+  });
+
+  it("探针不产生对白、批准索引，也不推进逻辑时间", async () => {
+    const harness = await harnessWithSandbox();
+    const tickBefore = harness.storage.transact(
+      (tx) => Number(tx.branch(sandboxBranchId).table("clock").get({})?.["world_tick"]),
+    );
+    // 对白以 conversation-line 聚合与 speech_commits 索引为准；两者都应是零。
+    const counts = (): { readonly speech: number; readonly lines: number } => harness.storage.transact((tx) => ({
+      speech: Number(tx.get("SELECT COUNT(*) AS n FROM speech_commits WHERE branch_id = ?", [sandboxBranchId])?.["n"]),
+      lines: tx.branch(sandboxBranchId).table("aggregate_state")
+        .list({ aggregate_type: "conversation-line" }).length,
+    }));
+    const before = counts();
+
+    askProbe(harness, sandboxBranchId, {
+      probeId: "prb-00000000000b",
+      agentId: "human-independent",
+      askedBy: "player-1",
+      question: "不产生对白的探针",
+    });
+
+    expect(counts()).toEqual(before);
+    const tickAfter = harness.storage.transact(
+      (tx) => Number(tx.branch(sandboxBranchId).table("clock").get({})?.["world_tick"]),
+    );
+    expect(tickAfter).toBe(tickBefore);
+    expect(eventsOf(harness, sandboxBranchId).filter((event) => event.type === "ProbeAsked")).toHaveLength(1);
   });
 
   it("非系统主体不能发行探针，且不写入回执以外的事件", async () => {
@@ -182,6 +247,21 @@ describe("探针命令", () => {
     expect(unknownAsker.commandStatus).toBe("rejected");
     expect(unknownAsker.reasonCode).toBe("unknown-target");
     expect(eventsOf(harness, sandboxBranchId)).toHaveLength(0);
+  });
+
+  it("同一 probeId 换命令 ID 重复提交只写一条事件", async () => {
+    // 幂等以 commandId 为准，因此换命令 ID 会重新执行处理器；探针语义要求同一 probeId 只留一条观察。
+    const harness = await harnessWithSandbox();
+    const payload = {
+      probeId: "prb-00000000000c", agentId: "human-independent", askedBy: "player-1", question: "不同命令 ID",
+    };
+    const first = askProbe(harness, sandboxBranchId, payload);
+    const second = askProbe(harness, sandboxBranchId, payload);
+
+    expect(first.commandStatus).toBe("accepted");
+    expect(second.commandStatus).toBe("accepted");
+    expect(second.receiptId).not.toBe(first.receiptId);
+    expect(eventsOf(harness, sandboxBranchId).filter((event) => event.type === "ProbeAsked")).toHaveLength(1);
   });
 
   it("同一 probeId 重放只写一条事件", async () => {

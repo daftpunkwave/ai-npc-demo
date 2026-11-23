@@ -19,9 +19,12 @@ import {
   createMemoryTx,
   gameCommandEnvelope,
   playerAuth,
+  readAggregateOnBranch,
   readGameAggregate,
   readGameEvents,
   readGameEventTypes,
+  seedEmptySandboxBranch,
+  seedSandboxBranch,
   setGameClock,
   strategicAuth,
   type GameHarness,
@@ -408,9 +411,11 @@ describe("世界核心", () => {
   });
 
   it("绑定端口写入的事件与版本进入命令回执", async () => {
-    // 通信贡献已注册真实 probe.ask；这里用无通信贡献的装配演示模块绑定器自身的写入路径。
+    // 通信贡献已注册真实 probe.ask，且该命令只允许沙盒分支；这里用无通信贡献的装配 +
+    // 沙盒分支演示模块绑定器自身的写入路径，命令处理器由本用例提供。
     const value = await harness({ withCommsContributor: false });
     expect(start(value).commandStatus).toBe("accepted");
+    const sandboxBranchId = seedSandboxBranch(value);
     value.authority.registerModule({
       moduleId: "test.binder-accept",
       ownsAggregates: [],
@@ -428,18 +433,19 @@ describe("世界核心", () => {
       ],
     });
     const receipt = value.authority.commands.execute(
-      createSystemAuth(value.worldId, value.branchId),
+      createSystemAuth(value.worldId, sandboxBranchId),
       gameCommandEnvelope("probe.ask", { probeId: "prb-000000000001", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("accepted");
     expect(receipt.acceptedEventIds.length).toBeGreaterThan(0);
     expect(receipt.resultingVersions["character:npc-wenzhao"]).toBeGreaterThan(0);
-    expect(readGameAggregate(value, "character", "npc-wenzhao")).toMatchObject({ nodeId: "pass" });
+    expect(readAggregateOnBranch(value, sandboxBranchId, "character", "npc-wenzhao")).toMatchObject({ nodeId: "pass" });
   });
 
   it("绑定端口在同一事务内写入，拒绝时整体回滚", async () => {
     const value = await harness({ withCommsContributor: false });
     expect(start(value).commandStatus).toBe("accepted");
+    const sandboxBranchId = seedSandboxBranch(value);
     value.authority.registerModule({
       moduleId: "test.binder",
       ownsAggregates: [],
@@ -458,7 +464,7 @@ describe("世界核心", () => {
     });
     const before = readGameAggregate(value, "character", "npc-wenzhao");
     const receipt = value.authority.commands.execute(
-      createSystemAuth(value.worldId, value.branchId),
+      createSystemAuth(value.worldId, sandboxBranchId),
       gameCommandEnvelope("probe.ask", { probeId: "prb-000000000002", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("rejected");
@@ -469,6 +475,7 @@ describe("世界核心", () => {
   it("模块越权写入未声明的聚合被拒绝，且不留下回执或部分状态", async () => {
     const value = await harness({ withCommsContributor: false });
     expect(start(value).commandStatus).toBe("accepted");
+    const sandboxBranchId = seedEmptySandboxBranch(value);
     value.authority.registerModule({
       moduleId: "test.scope",
       ownsAggregates: [],
@@ -485,11 +492,11 @@ describe("世界核心", () => {
     });
     const characterBefore = readGameAggregate(value, "character", "npc-wenzhao");
     const receiptCount = () =>
-      value.storage.transact((tx) => tx.branch(value.branchId).table("command_receipts").list()).length;
+      value.storage.transact((tx) => tx.branch(sandboxBranchId).table("command_receipts").list()).length;
     const receiptsBefore = receiptCount();
     expect(() =>
       value.authority.commands.execute(
-        createSystemAuth(value.worldId, value.branchId),
+        createSystemAuth(value.worldId, sandboxBranchId),
         gameCommandEnvelope(
           "probe.ask",
           { probeId: "prb-000000000003", agentId: "npc-wenzhao", askedBy: "player-1", question: "越权写入" },

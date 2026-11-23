@@ -157,7 +157,7 @@ authority 执行一条命令的固定流程：
 BEGIN IMMEDIATE
   1. idempotency: receipt for (branch, principal, commandId) exists?
        same payloadHash -> COMMIT, return the stored receipt; different -> return idempotency-conflict
-  2. auth checks: command allowed for this principal kind; fencing (controllerEpoch, turnLeaseEpoch) unless allowDirectAgentCommands
+  2. auth checks: command allowed for this principal kind; branch-kind restriction (probe.ask only in a sandbox branch) -> rejected "no-authority"; fencing (controllerEpoch, turnLeaseEpoch) unless allowDirectAgentCommands
   3. pause check: clock.mode != running/stepping -> rejected "paused" (campaign.start and system:world probe.ask in an active sandbox are exempt)
   4. payload schema (zod, strict) -> rejected "invalid-params"
   5. expectedVersions: every listed aggregate has that version -> else rejected "version-conflict"
