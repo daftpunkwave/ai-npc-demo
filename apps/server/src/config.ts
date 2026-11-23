@@ -5,7 +5,7 @@
  */
 /* eslint-disable security/detect-object-injection, security/detect-non-literal-fs-filename -- 只按约定的环境变量名与数据目录内固定文件名读取，路径已由配置解析与目录检查限制。 */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型与回调参数名用于表达调用契约。 */
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -288,18 +288,24 @@ function credentialsFileContents(tokens: Partial<Record<TokenRole, string>>): st
 
 /**
  * 把令牌写入数据目录内的暂存文件并刷新到磁盘，暂不在正式名称下可见。
- * 暂存文件以排他模式创建并显式请求 0600；Windows 只支持受限的权限位语义，目录权限同样只对新目录生效。
+ * 暂存文件以排他模式创建并显式请求 0600；数据目录无论新建还是已存在都收紧为 0700，
+ * Windows 的权限位语义受限，该收紧在其上只调整写位。
  */
 function stageCredentials(
   filePath: string,
   tokens: Partial<Record<TokenRole, string>>,
   existing: Partial<Record<TokenRole, string>>,
 ): StagedCredentialsFile | null {
+  const directory = dirname(filePath);
+  // mkdir 的 mode 只作用于本次新建的目录；数据目录可能由用户或旧版本预先创建，
+  // 这里对新建与已存在两种情况统一显式收紧为 0700，与备份暂存目录保持同一口径，
+  // 避免宽权限目录向本机其他用户暴露凭据文件名与轮换节奏。
+  // 收紧必须发生在令牌未变化的提前返回之前，保证每次启动都生效，而不只在令牌轮换时生效。
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
   if (sameStoredTokens(tokens, existing)) {
     return null;
   }
-  const directory = dirname(filePath);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
   const stagingPath = `${filePath}.${randomBytes(6).toString("hex")}.staging`;
   let handle: number | undefined;
   try {

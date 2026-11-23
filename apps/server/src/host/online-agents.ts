@@ -118,7 +118,7 @@ export class OnlineAgentHost {
         roster: agents.roster, profiles: agents.profiles, moduleDefinitions: agents.modules,
         scheduling, maxConcurrentTurns,
         ...(patrolHour === undefined ? {} : { patrolHour }),
-        readWorld: read.perception, onStateChange,
+        readWorlds: read.perception, onStateChange,
         turnExecution: {
           runSeed: core.active.runSpec.seed, profileHashes: agents.profileHashes, tools,
           approvals, readWorld: read.decision, ports, model,
