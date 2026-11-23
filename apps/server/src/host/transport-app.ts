@@ -4,8 +4,8 @@
  * 禁止在传输层内重算授权、把内部错误细节交给客户端，或在创建失败后留下已启动资源。
  */
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { Authority } from "@ai-npc/authority";
 import { listRuleFailures, type RuleFailureRecord } from "@ai-npc/authority";
 import type { AuthContext, ClientContentView, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
@@ -275,6 +275,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
           moduleVersion: "1.0.0",
         }),
       consoleStaticDir,
+      // 入口文件是否存在由宿主判定：传输层不读文件系统，只在确认可回退时才发送 index.html。
+      consoleEntryExists: () => existsSync(join(consoleStaticDir, "index.html")),
       onInternalError: (message, error) => {
         logInternalError(host.logger, message, error);
       },

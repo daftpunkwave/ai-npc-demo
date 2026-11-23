@@ -141,23 +141,44 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     app.get("/console", (_request, reply) => reply.redirect("/console/"));
   }
   /**
-   * 未匹配路由的兜底：
-   * - 控制台导航路径（`/console/` 下且末段无扩展名）回退 index.html，供前端路由使用；
-   * - 其余一律 404 统一错误。带扩展名的资产请求缺失时绝不能以 200 text/html 冒充，
-   *   否则浏览器会把 HTML 当 JS/CSS 执行并静默白屏。
-   * 注意 `@fastify/static` 在 wildcard 模式已占用 `/console/*`，因此只能用 not-found 分流。
+   * 未匹配路由的兜底：控制台导航路径回退 index.html，其余一律 404 统一错误。
+   *
+   * 回退必须同时满足四个条件，任何一个不满足都退回 404：
+   * - 方法是 GET 或 HEAD：其他方法不是导航请求，不能拿到 200 的 HTML；
+   * - 路径以 `/console/` 开头；
+   * - 末段不含扩展名：带扩展名的是资产请求，缺失时若以 200 text/html 冒充，
+   *   浏览器会把 HTML 当 JS/CSS 执行并静默白屏；
+   * - `index.html` 实际存在：入口文件缺失时（首次构建完成前、重建清空目录期间）
+   *   直接 404，避免 sendFile 的 404 再次触发同一回退。
+   *
+   * `@fastify/static` 在 wildcard 模式已占用 `/console/*`，因此只能用 not-found 分流。
    */
   const notFound = (request: FastifyRequest, reply: FastifyReply): unknown => {
-    const pathname = request.url.split("?")[0] ?? "";
-    const lastSegment = pathname.slice(pathname.lastIndexOf("/") + 1);
-    if (
-      options.consoleStaticDir !== undefined &&
-      pathname.startsWith("/console/") &&
-      !lastSegment.includes(".")
-    ) {
-      return reply.sendFile("index.html");
+    const notFoundError = (): unknown => sendHttpError(reply, "not-found", "资源不存在");
+    if (options.consoleStaticDir === undefined) {
+      return notFoundError();
     }
-    return sendHttpError(reply, "not-found", "资源不存在");
+    const method = request.method.toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+      return notFoundError();
+    }
+    // 只取路径部分，并在解码后判断扩展名：`assets/main%2Ejs` 这类编码形式同样是资产请求。
+    const pathname = request.url.split("?")[0] ?? "";
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(pathname);
+    } catch {
+      // 非法百分号编码不是导航路径，按资源不存在处理。
+      return notFoundError();
+    }
+    const lastSegment = decodedPath.slice(decodedPath.lastIndexOf("/") + 1);
+    if (!decodedPath.startsWith("/console/") || lastSegment.includes(".")) {
+      return notFoundError();
+    }
+    if (options.consoleEntryExists !== undefined && !options.consoleEntryExists()) {
+      return notFoundError();
+    }
+    return reply.sendFile("index.html");
   };
   const now = options.now ?? (() => Date.now());
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
