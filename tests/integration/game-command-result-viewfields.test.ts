@@ -10,7 +10,6 @@ import { gameToolsModuleDefinition, type GameToolsCatalogPort } from "@ai-npc/mo
 import {
   executeCommand,
   playerAuth,
-  proposeAgreement,
   respondAgreement,
   strategicAuth,
   useStartedGameHarnesses,
