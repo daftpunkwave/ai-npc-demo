@@ -326,24 +326,24 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
   app.post("/api/v1/console/runs", async (request, reply) => {
     // 创建 run 只允许研究员：评估员只读，操作员与玩家无此权限。
     if (requireEvaluationWriter(request, reply) === null) return;
-    if (options.console?.evaluation?.createRun === undefined) {
+    if (options.console?.evaluationWrites === undefined) {
       return sendHttpError(reply, "not-ready", "评估写入尚未就绪");
     }
     const body = runCreateRequestSchema.safeParse(request.body);
     if (!body.success) return sendHttpError(reply, "validation", "run 规格结构不合法");
-    return runCreateResponseSchema.parse(await options.console.evaluation.createRun(body.data.runSpec));
+    return runCreateResponseSchema.parse(await options.console.evaluationWrites.createRun(body.data.runSpec));
   });
 
   app.post("/api/v1/console/exports", async (request, reply) => {
     const session = requireEvaluationWriter(request, reply);
     if (session === null) return;
-    if (options.console?.evaluation?.exportRun === undefined) {
+    if (options.console?.evaluationWrites === undefined) {
       return sendHttpError(reply, "not-ready", "导出尚未就绪");
     }
     const body = exportRequestSchema.safeParse(request.body);
     if (!body.success) return sendHttpError(reply, "validation", "导出请求结构不合法");
     // run 不存在等业务失败由端口抛 DomainError，交给统一错误处理映射状态码。
-    return exportResponseSchema.parse(await options.console.evaluation.exportRun({
+    return exportResponseSchema.parse(await options.console.evaluationWrites.exportRun({
       runId: body.data.runId,
       redaction: body.data.redaction,
       principalId: session.auth.principalId,

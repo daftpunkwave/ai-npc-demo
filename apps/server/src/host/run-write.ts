@@ -38,8 +38,8 @@ export interface RunWriteInput {
   readonly definitions: readonly ModuleDefinition[];
   /** 内容包版本；与内容包一同冻结进 manifest。 */
   readonly contentVersion: string;
-  /** 默认名册；RunSpec 未指定时使用。validateRunSpec 与 manifest 都需要带来源信息的包装。 */
-  readonly roster: LoadedConfig<Roster> | undefined;
+  /** 按引用加载名册；创建 run 时按 RunSpec 自己的 rosterRef 加载，不用在线名册代替。 */
+  readonly loadRoster: (rosterRef: string) => LoadedConfig<Roster>;
   readonly worldId: string;
   /** 仓库根目录；loadAssembly 在其下定位 `config/assemblies`，不能再拼一层 config。 */
   readonly repoRoot: string;
@@ -80,8 +80,12 @@ function failureOf(code: string, path: string, error: unknown): RunValidationFai
  */
 export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise<RunCreateResult> {
   const failures: RunValidationFailure[] = [];
+  // 名册必须按请求的 `rosterRef` 加载：用在线名册代替会拒绝有效请求，
+  // 也会把与 RunSpec 不一致的名册冻结进 manifest。
+  let roster: LoadedConfig<Roster> | undefined;
   try {
-    validateRunSpec(runSpec, input.content, input.roster);
+    roster = input.loadRoster(runSpec.rosterRef);
+    validateRunSpec(runSpec, input.content, roster);
   } catch (error) {
     failures.push(failureOf("run-spec-invalid", "runSpec", error));
   }
@@ -95,11 +99,7 @@ export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise
   }
 
   const runId = input.host.ids("run");
-  if (failures.length > 0 || resolved === null || input.roster === undefined) {
-    // 名册缺失属于预检失败：manifest 必须冻结名册，缺了就无法复现同一次 run 的输入。
-    if (input.roster === undefined && failures.length === 0) {
-      failures.push({ code: "roster-missing", path: "rosterRef", message: "缺少可用的名册，无法冻结 run manifest" });
-    }
+  if (failures.length > 0 || resolved === null || roster === undefined) {
     return { runId, status: "preflight-failed", errors: failures };
   }
 
@@ -109,7 +109,7 @@ export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise
     sealed = await buildRunManifest({
       runSpec,
       content: { packId: input.content.pack.packId, contentVersion: input.contentVersion },
-      roster: input.roster.value,
+      roster: roster.value,
       resolved,
     });
   } catch (error) {

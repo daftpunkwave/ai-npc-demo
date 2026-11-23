@@ -15,7 +15,8 @@ export interface RunWritesInput {
   readonly content: ContentPack;
   readonly definitions: readonly ModuleDefinition[];
   readonly contentVersion: string;
-  readonly roster: LoadedConfig<Roster>;
+  /** 按引用加载名册；由宿主注入，使用与启动时相同的配置上下文。 */
+  readonly loadRoster: (rosterRef: string) => LoadedConfig<Roster>;
   readonly worldId: string;
   readonly repoRoot: string;
   /** artifact 存储；导出包的落盘目标。 */
@@ -43,7 +44,7 @@ export function createRunWrites(input: RunWritesInput): RunWrites {
       content: input.content,
       definitions: input.definitions,
       contentVersion: input.contentVersion,
-      roster: input.roster,
+      loadRoster: input.loadRoster,
       worldId: input.worldId,
       repoRoot: input.repoRoot,
     }, runSpec),

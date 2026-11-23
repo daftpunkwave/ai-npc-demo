@@ -518,6 +518,19 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     await disposeInReverse([{ label: "storage", dispose: () => storageStarted.dispose() }]);
     throw new Error("宿主运行时未初始化");
   }
+  // 按本次 active run 的名册引用重建：加载失败时已启动的存储与模块必须被释放，
+  // 因此不能把加载推迟到 return 表达式里执行。
+  let startupRoster: LoadedConfig<Roster>;
+  try {
+    startupRoster = loadRoster(active.runSpec.rosterRef, loadContext);
+  } catch (error) {
+    await disposeInReverse([
+      { label: "started modules", dispose: async () => { await activeStarted.dispose(); } },
+      { label: "run Agent modules", dispose: async () => { await initialAgentModules?.started.dispose(); } },
+      { label: "storage", dispose: () => storageStarted.dispose() },
+    ]);
+    throw error;
+  }
   return {
     host,
     storage,
@@ -531,7 +544,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     contentVersion,
     loadContext,
     // 按本次实际使用的名册引用重建：启动分支的两条路径各自加载名册，这里统一暴露其引用来源。
-    roster: loadRoster(active.runSpec.rosterRef, loadContext),
+    roster: startupRoster,
     active,
     activeStartup,
     sessionAssembly: sessionAssemblies,

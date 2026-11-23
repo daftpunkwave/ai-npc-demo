@@ -10,8 +10,6 @@ import type {
   RunSummary,
   StoragePort,
 } from "@ai-npc/contracts";
-import type { RunSpec } from "@ai-npc/experiment";
-import type { RunCreateResult } from "./run-write";
 import type {
   EvaluationPort,
   ProbeExecution,
@@ -34,10 +32,6 @@ export interface EvaluationReadPort {
   experiment(experimentId: string): ExperimentDetailResponse | null;
   /** 实验列表；从 run 的 RunSpec 反查已存在的实验标识。 */
   experiments(): readonly { readonly experimentId: string; readonly runCount: number }[];
-  /** 创建 run：预检通过返回 ready，失败返回 preflight-failed 与逐条原因。 */
-  createRun(runSpec: RunSpec): Promise<RunCreateResult>;
-  /** 导出 run 的清单、事件与 turn；返回 artifact 标识。 */
-  exportRun(request: { readonly runId: string; readonly redaction: "redacted" | "raw"; readonly principalId: string }): Promise<{ readonly artifactId: string }>;
 }
 
 /** 脚本检查点里一条探针声明的判定依据；kind 与 answerKey 只在声明处出现一次。 */
@@ -65,11 +59,6 @@ export interface EvaluationReadInput {
   readonly lexicons: { readonly unknownMarkers: readonly string[]; readonly forgetMarkers: readonly string[] };
   /** 价目版本；缺失时报告里如实写「unknown」而不是编造一个日期。 */
   readonly pricingVersion: string;
-  /** 写入能力：创建 run 与导出；由宿主注入，保持读写同源。 */
-  readonly writes: {
-    createRun(runSpec: RunSpec): Promise<RunCreateResult>;
-    exportRun(request: { readonly runId: string; readonly redaction: "redacted" | "raw"; readonly principalId: string }): Promise<{ readonly artifactId: string }>;
-  };
 }
 
 /** 从 run 行读取字符串列；缺失时返回 null，避免把 undefined 当成合法值。 */
@@ -449,9 +438,6 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([experimentId, runCount]) => ({ experimentId, runCount }));
     },
-    // 写入能力经同一端口暴露：读取与写入共用一份存储与内容视图，避免两套依赖。
-    createRun: (runSpec) => input.writes.createRun(runSpec),
-    exportRun: (request) => input.writes.exportRun(request),
   };
 }
 

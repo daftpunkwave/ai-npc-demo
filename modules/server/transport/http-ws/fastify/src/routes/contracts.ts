@@ -271,15 +271,29 @@ export interface ConsoleReadPort {
    */
   evaluation?: {
     runs(query: { readonly status?: string; readonly limit?: number }): readonly RunSummary[];
-    /** 创建 run：预检通过返回 ready，失败返回 preflight-failed 与逐条原因。 */
-    createRun(runSpec: Json): Promise<{ readonly runId: string; readonly status: "ready" | "preflight-failed"; readonly errors: readonly { readonly path: string; readonly message: string }[] }>;
-    /** 导出 run 的清单、事件与 turn；返回 artifact 标识。 */
-    exportRun(request: { readonly runId: string; readonly redaction: "redacted" | "raw"; readonly principalId: string }): Promise<{ readonly artifactId: string }>;
     run(runId: string): RunDetailResponse | null;
     /** run 报告；run 不存在时返回 null，路由据此返回 not-found。 */
     report(runId: string): RunReportResponse | null;
     experiment(experimentId: string): ExperimentDetailResponse | null;
     experiments(): readonly { readonly experimentId: string; readonly runCount: number }[];
+  };
+  /**
+   * 评估写入：创建 run 与导出。
+   * 与 `evaluation` 分开，因为写操作只依赖存储、内容与装配定义，
+   * 装配未绑定评估模块时写入仍应可用。
+   */
+  evaluationWrites?: {
+    /** run 规格已由路由层按契约 schema 校验，这里只接收已校验的结构。 */
+    createRun(runSpec: Json): Promise<{
+      readonly runId: string;
+      readonly status: "ready" | "preflight-failed";
+      readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
+    }>;
+    exportRun(request: {
+      readonly runId: string;
+      readonly redaction: "redacted" | "raw";
+      readonly principalId: string;
+    }): Promise<{ readonly artifactId: string }>;
   };
 }
 

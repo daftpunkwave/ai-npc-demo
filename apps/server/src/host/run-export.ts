@@ -54,6 +54,10 @@ function jsonCell(row: Readonly<Record<string, unknown>>, column: string): Json 
 /**
  * 脱敏：剔除凭据引用与密钥名，保留结构与计数。
  * 即使 `raw` 也不输出凭据解析值——导出包会离开服务端，密钥不进任何导出产物。
+ *
+ * 顶层字符串无法判断语义：它可能是一段对白正文，也可能是 ID、时间戳等无敏感内容。
+ * 因此只在明确位于正文类字段时才由调用方清空；这里对裸字符串原样返回，
+ * 由 `redactRows` 负责先按列语义解码，避免把整段正文当普通字符串带出。
  */
 function redactJson(value: Json, redaction: "redacted" | "raw"): Json {
   if (Array.isArray(value)) return value.map((item) => redactJson(item, redaction));
@@ -73,6 +77,42 @@ function redactJson(value: Json, redaction: "redacted" | "raw"): Json {
     result[key] = redactJson(item, redaction);
   }
   return result;
+}
+
+/**
+ * 把行内 JSON 列解码后再脱敏。
+ *
+ * 行来自存储层，JSON 列可能以字符串或已解析对象返回。若把字符串直接交给 `redactJson`，
+ * 它只是个字符串、不会被逐字段处理，`redacted` 就会保留完整正文，`raw` 也可能带出凭据。
+ * 因此按列的语义先尝试解析：解析成功的按对象脱敏，解析失败的按普通字符串脱敏（整段清空）。
+ */
+function redactRows(
+  rows: readonly Readonly<Record<string, unknown>>[],
+  redaction: "redacted" | "raw",
+): readonly Json[] {
+  return rows.map((row) => {
+    const decoded: Record<string, Json> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (typeof value !== "string") {
+        decoded[key] = redactJson((value ?? null) as Json, redaction);
+        continue;
+      }
+      // 只对看起来是 JSON 的字符串做解析；普通文本按正文类字段处理。
+      const trimmed = value.trimStart();
+      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        try {
+          decoded[key] = redactJson(JSON.parse(value) as Json, redaction);
+          continue;
+        } catch {
+          // 解析失败说明不是合法 JSON，退回按字符串处理。
+        }
+      }
+      // 无法解析的字符串可能是一段正文（例如对白原文）：redacted 下无法判断内容，
+      // 因此整段清空；raw 下保留原文。留空比泄露安全。
+      decoded[key] = redaction === "redacted" ? null : (value as Json);
+    }
+    return redactJson(decoded, redaction);
+  });
 }
 
 /**
@@ -104,19 +144,21 @@ export async function exportRun(
       redaction: request.redaction,
       manifest: redactJson(manifest, request.redaction),
       manifestHash,
-      events: events.map((row) => redactJson(row as unknown as Json, request.redaction)),
-      turns: turns.map((row) => redactJson(row as unknown as Json, request.redaction)),
-      artifacts: artifacts.map((row) => redactJson(row as unknown as Json, request.redaction)),
+      events: redactRows(events, request.redaction),
+      turns: redactRows(turns, request.redaction),
+      artifacts: redactRows(artifacts, request.redaction),
     };
     return exported;
   });
   if (bundle === null) {
     throw new DomainError("not-found", `run ${request.runId} 不存在`);
   }
+  // 导出主体写入 artifact，便于事后审计「谁导出了哪一次 run」；
+  // 权限范围已在路由层按角色裁决，这里是留痕而非替代鉴权。
   const record = await input.artifacts.put({
     runId: request.runId,
     kind: "export",
-    value: bundle as unknown as Json,
+    value: { ...bundle, exportedBy: input.principalId } as unknown as Json,
   });
   return { artifactId: record.artifactId };
 }

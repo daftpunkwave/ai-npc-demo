@@ -342,6 +342,53 @@ describe("控制台评估读取接口", () => {
     expect(exportResponseSchema.parse(exported.json()).artifactId.length).toBeGreaterThan(0);
   });
 
+  it("redacted 导出清空正文，raw 保留正文，两者都不含凭据值", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = String(host.storage.transact((tx) => tx.rows("runs").get({ run_id: runId })?.["branch_id"]));
+    // 写入一条含正文与凭据引用的事件：字符串形式的 JSON 列是真实存储形态。
+    host.storage.transact((tx) => {
+      tx.branch(branchId).table("domain_events").put({
+        event_id: "evt-aaaaaaaaaaaa", world_seq: 1, world_tick: 0, type: "dialogue.said",
+        schema_version: 1, principal_id: "human-independent",
+        causation_ids_json: "[]", correlation_id: "corr-1",
+        audience_json: JSON.stringify({ kind: "principals", principalIds: ["human-independent"] }),
+        payload_json: JSON.stringify({
+          text: "机密：星图只有一份", credentialRef: "secret/openai-key", apiKey: "sk-live-should-not-leak",
+        }),
+        committed_at: new Date().toISOString(),
+      });
+    });
+
+    const redacted = exportResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId, redaction: "redacted", operationId: "op-dddddddddddd" },
+    })).json());
+    const raw = exportResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId, redaction: "raw", operationId: "op-eeeeeeeeeeee" },
+    })).json());
+    expect(redacted.artifactId).not.toBe(raw.artifactId);
+
+    const readArtifact = (artifactId: string) => host.storage.transact((tx) => {
+      const row = tx.rows("artifacts").get({ artifact_id: artifactId });
+      const body = row?.["body"];
+      return typeof body === "string" ? body : Buffer.from(body as Uint8Array).toString("utf8");
+    });
+    const redactedBody = readArtifact(redacted.artifactId);
+    const rawBody = readArtifact(raw.artifactId);
+
+    // 两种模式都不能出现凭据解析值。
+    for (const body of [redactedBody, rawBody]) {
+      expect(body).not.toContain("sk-live-should-not-leak");
+      expect(body).toContain("[redacted]");
+    }
+    // redacted 清空正文；raw 保留正文。
+    expect(redactedBody).not.toContain("机密：星图只有一份");
+    expect(rawBody).toContain("机密：星图只有一份");
+  });
+
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
