@@ -11,8 +11,7 @@ import {
   clockControlRequestSchema,
   clockResponseSchema,
   clockStepRequestSchema,
-  consoleSnapshotRestoreRequestSchema,
-  consoleSnapshotRestoreResponseSchema,
+  restoreDryRunResponseSchema,
   snapshotCreateRequestSchema,
   snapshotCreateResponseSchema,
   snapshotListResponseSchema,
@@ -209,19 +208,17 @@ export function registerCampaignOperations(
     if (session === null) {
       return;
     }
-    const body = registration.includeDryRun === true
-      ? consoleSnapshotRestoreRequestSchema.safeParse(request.body)
-      : snapshotRestoreRequestSchema.safeParse(request.body);
+    // 权威请求契约只有一份：dryRun 可选，缺省即真正恢复。
+    const body = snapshotRestoreRequestSchema.safeParse(request.body);
     if (!body.success) {
       return sendHttpError(reply, "validation", "恢复请求结构不合法");
     }
-    if (registration.includeDryRun === true && "dryRun" in body.data && body.data.dryRun === true) {
+    // 预检能力只由控制台入口开放；玩家自助入口即使传 dryRun 也会被忽略并真正恢复。
+    if (registration.includeDryRun === true && body.data.dryRun === true) {
       if (options.save.validateRestore === undefined) {
         return sendHttpError(reply, "not-ready", "恢复预检尚未就绪");
       }
-      return consoleSnapshotRestoreResponseSchema.parse(
-        options.save.validateRestore(body.data.snapshotId),
-      );
+      return restoreDryRunResponseSchema.parse(options.save.validateRestore(body.data.snapshotId));
     }
     const restored = options.save.restoreSnapshot({
       snapshotId: body.data.snapshotId,

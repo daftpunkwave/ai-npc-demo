@@ -15,15 +15,15 @@ import {
   assemblyPreflightRequestSchema,
   assemblyPreflightResponseSchema,
   assemblySourceSchema,
-  campaignStepRequestSchema,
+  clockStepRequestSchema,
   consoleBudgetSummarySchema,
   consoleFailureSummarySchema,
   consoleHealthResponseSchema,
   consoleModuleStatusSchema,
   consoleQueueSummarySchema,
-  consoleSnapshotCreateRequestSchema,
-  consoleSnapshotRestoreRequestSchema,
-  consoleSnapshotRestoreResponseSchema,
+  snapshotCreateRequestSchema,
+  snapshotRestoreRequestSchema,
+  snapshotRestoreResponseSchema,
   modelConfigDraftSchema,
   modelConnectionDraftSchema,
   modelConnectionViewSchema,
@@ -73,7 +73,6 @@ import {
   seatViewSchema,
   seatWorldViewResponseSchema,
   seatsResponseSchema,
-  snapshotRestoreAppliedResponseSchema,
 } from "../src/index";
 import {
   agentWorldViewFixture,
@@ -242,14 +241,12 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
     { worldView: agentWorldViewFixture(), inbox: [] },
   ],
   ["席位命令", seatCommandRequestSchema, { commandId: "cmd-k3j9x0a1b2c3", type: "policy.set", schemaVersion: 1, payload: { key: "watergate.allocation", value: "rotation" } }, { commandId: "cmd-1", type: "policy.set", schemaVersion: 1, payload: {} }],
-  ["单步请求", campaignStepRequestSchema, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 1, ticks: 6 }, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 1, ticks: 25 }],
-  ["运营快照请求", consoleSnapshotCreateRequestSchema, { operationId: "op-k3j9x0a1b2c3", label: "检查点" }, { label: "检查点" }],
+  ["单步请求", clockStepRequestSchema, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 1, ticks: 6 }, { operationId: "op-k3j9x0a1b2c3", expectedRunVersion: 1, ticks: 25 }],
+  ["运营快照请求", snapshotCreateRequestSchema, { operationId: "op-k3j9x0a1b2c3", label: "检查点" }, { label: "检查点" }],
   ["恢复检查项", restoreCheckSchema, { name: "manifest", ok: true, message: null }, { name: "", ok: true, message: null }],
   ["恢复试运行响应", restoreDryRunResponseSchema, { ok: true, checks: [] }, { ok: true }],
-  ["恢复生效响应", snapshotRestoreAppliedResponseSchema, { branchId: "br-k3j9x0a1b2c3", clock: { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 1 } }, { branchId: "br-1", clock: {} }],
-  ["运营恢复请求", consoleSnapshotRestoreRequestSchema, { operationId: "op-k3j9x0a1b2c3", snapshotId: "snap-k3j9x0a1b2c3", dryRun: true }, { operationId: "op-k3j9x0a1b2c3" }],
-  ["运营恢复响应", consoleSnapshotRestoreResponseSchema, { ok: true, checks: [] }, { ok: true }],
-  ["run 申请视图", runRequestViewSchema, { requestId: "rr-k3j9x0a1b2c3", presetId: "s-promise", note: "", status: "pending", createdAt: "2026-11-18T00:00:00.000Z" }, { requestId: "rr-1", presetId: "s-promise", note: "", status: "pending", createdAt: "x" }],
+  ["恢复生效响应", snapshotRestoreResponseSchema, { branchId: "br-k3j9x0a1b2c3", clock: { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 1 } }, { branchId: "br-1", clock: {} }],
+      ["run 申请视图", runRequestViewSchema, { requestId: "rr-k3j9x0a1b2c3", presetId: "s-promise", note: "", status: "pending", createdAt: "2026-11-18T00:00:00.000Z" }, { requestId: "rr-1", presetId: "s-promise", note: "", status: "pending", createdAt: "x" }],
   ["run 申请列表", runRequestsResponseSchema, { requests: [] }, { requests: [{}] }],
   ["run 申请决定请求", runRequestDecisionRequestSchema, { note: "批准" }, { note: 1 }],
   ["run 申请批准响应", runRequestApproveResponseSchema, { runId: "run-k3j9x0a1b2c3" }, { runId: "run-1" }],
@@ -278,5 +275,27 @@ describe("控制台接口 DTO", () => {
       expect(schema.safeParse(valid).success, `${name} 应接受合法样例`).toBe(true);
       expect(schema.safeParse(invalid).success, `${name} 应拒绝非法样例`).toBe(false);
     }
+  });
+
+  it("恢复请求的 dryRun 可省略，显式给出时必须为布尔值", () => {
+    const base = { operationId: "op-k3j9x0a1b2c3", snapshotId: "snap-k3j9x0a1b2c3" };
+    // 省略 dryRun 表示真正恢复，与已实现路由的 `.strict()` 解析一致。
+    expect(snapshotRestoreRequestSchema.safeParse(base).success).toBe(true);
+    expect(snapshotRestoreRequestSchema.safeParse({ ...base, dryRun: true }).success).toBe(true);
+    expect(snapshotRestoreRequestSchema.safeParse({ ...base, dryRun: false }).success).toBe(true);
+    expect(snapshotRestoreRequestSchema.safeParse({ ...base, dryRun: "yes" }).success).toBe(false);
+    // 未知字段一律拒绝，避免客户端按旧契约多传字段时被静默忽略。
+    expect(snapshotRestoreRequestSchema.safeParse({ ...base, extra: 1 }).success).toBe(false);
+  });
+
+  it("恢复预检与生效是两份独立响应契约", () => {
+    const clock = { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 1 };
+    const preview = { ok: true, checks: [{ name: "manifest", ok: true, message: null }] };
+    const applied = { branchId: "br-k3j9x0a1b2c3", clock };
+    // 预检结果只满足预检契约，生效结果只满足生效契约，不存在可被互相误判的重叠形状。
+    expect(restoreDryRunResponseSchema.safeParse(preview).success).toBe(true);
+    expect(snapshotRestoreResponseSchema.safeParse(preview).success).toBe(false);
+    expect(snapshotRestoreResponseSchema.safeParse(applied).success).toBe(true);
+    expect(restoreDryRunResponseSchema.safeParse(applied).success).toBe(false);
   });
 });

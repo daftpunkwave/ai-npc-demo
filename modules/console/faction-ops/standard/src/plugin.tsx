@@ -130,20 +130,14 @@ function FactionOpsPage(): ReactNode {
   });
 
   const restore = (snapshotId: string): Promise<void> => run(async (signal) => {
-    const preview = await host.api.consoleRestoreSnapshot({
+    const preview = await host.api.consolePreviewSnapshotRestore({
       operationId: host.operationId(),
       snapshotId,
-      dryRun: true,
     }, signal);
     signal.throwIfAborted();
-    if (!("checks" in preview)) throw new Error("缺少恢复预检结果");
     if (!preview.ok) throw new Error(preview.checks.find((check) => !check.ok)?.message ?? "恢复预检未通过");
     if (!host.confirm("确认恢复该快照并切换在线分支？")) return;
-    await host.api.consoleRestoreSnapshot({
-      operationId: host.operationId(),
-      snapshotId,
-      dryRun: false,
-    });
+    await host.api.consoleRestoreSnapshot({ operationId: host.operationId(), snapshotId });
     signal.throwIfAborted();
     host.reload();
   });
