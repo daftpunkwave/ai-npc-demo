@@ -29,6 +29,7 @@ import {
 } from "./layered-hybrid-model";
 import {
   baseSalience,
+  compareStrings,
   dataOf,
   eventFromObservation,
   numberValue,
@@ -260,7 +261,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     const event = eventFromObservation(observation, view.scope.agentId);
     const salience = baseSalience(event);
     if (salience < 0.5) return [];
-    const key = [...new Set(observation.sourceEventIds)].sort().join(",") || observation.observationId;
+    const key = [...new Set(observation.sourceEventIds)].sort(compareStrings).join(",") || observation.observationId;
     if (view.records.some((record) =>
       record.kind === "public" && dataOf(record)["sourceEventKey"] === key,
     )) return [];

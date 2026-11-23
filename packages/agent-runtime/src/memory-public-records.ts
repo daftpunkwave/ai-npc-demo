@@ -40,7 +40,7 @@ export function validateMemorySources(tx: StorageTransaction, branchId: string, 
       throw new Error("branch-public memory requires active public records with public source observations");
     }
     const eventIds = sources.flatMap((source) => Array.isArray(source["source_event_ids_json"]) ? source["source_event_ids_json"].filter((id): id is string => typeof id === "string") : []);
-    const expectedKey = [...new Set(eventIds)].sort().join(",") || [...new Set(insert.sourceObservationIds)].sort().join(",");
+    const expectedKey = [...new Set(eventIds)].sort((left, right) => left.localeCompare(right)).join(",") || [...new Set(insert.sourceObservationIds)].sort((left, right) => left.localeCompare(right)).join(",");
     if (jsonObject(insert.content.data)["sourceEventKey"] !== expectedKey) throw new Error("branch-public memory source event key does not match its observations");
   }
 }
