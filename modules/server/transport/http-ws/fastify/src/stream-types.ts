@@ -57,6 +57,11 @@ export interface StreamState {
 /** 流中心的注入依赖与可调边界；测试可缩短清理/保留时间并调低推送阈值。 */
 export interface StreamHubOptions {
   readonly projection: () => PlayerProjection;
+  /**
+   * 当前世界 ID。快照帧用它和在线分支 ID 组成帧内分支身份，
+   * 让客户端在恢复/重开后按服务端返回的身份刷新本地会话，而不是沿用登录常量。
+   */
+  readonly worldId: string;
   /** 控制台频道的只读快照来源；未实现的频道返回 null。 */
   readonly channelSnapshot?: (channel: StreamChannel) => Json | null;
   /** 按会话角色计算可订阅频道；准入裁决由传输层的策略端口完成。 */

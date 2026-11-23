@@ -73,6 +73,8 @@ const snapshotMessage = {
   channel: "player",
   streamSeq: 1,
   projectionVersion: 1,
+  worldId: "wld-000000000001",
+  branchId: "br-000000000001",
   data: { campaign: null },
 };
 
@@ -267,6 +269,8 @@ describe("认证、会话与玩家接口 DTO", () => {
       channel: "console.timeline",
       streamSeq: 5,
       projectionVersion: 0,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
       data: { events: [] },
     };
     expect(streamSnapshotMessageSchema.safeParse(consoleSnapshot).success).toBe(true);
@@ -278,6 +282,21 @@ describe("认证、会话与玩家接口 DTO", () => {
     ).toBe(false);
     const { projectionVersion: _projectionVersion, ...playerWithoutVersion } = snapshotMessage;
     expect(streamSnapshotMessageSchema.safeParse(playerWithoutVersion).success).toBe(false);
+  });
+
+  it("快照必须携带分支身份，缺失或非法时拒绝", () => {
+    // 恢复/重开后在线分支会变，客户端要按帧内身份更新状态并据此判定跨分支迟到帧；
+    // 身份字段缺失的旧快照无法完成这件事，必须在契约层拒绝。
+    const { worldId: _worldId, ...withoutWorldId } = snapshotMessage;
+    expect(streamSnapshotMessageSchema.safeParse(withoutWorldId).success).toBe(false);
+    const { branchId: _branchId, ...withoutBranchId } = snapshotMessage;
+    expect(streamSnapshotMessageSchema.safeParse(withoutBranchId).success).toBe(false);
+    expect(streamSnapshotMessageSchema.safeParse({ ...snapshotMessage, worldId: "" }).success).toBe(false);
+    expect(streamSnapshotMessageSchema.safeParse({ ...snapshotMessage, branchId: "" }).success).toBe(false);
+    // 快照帧的身份随恢复切换而变化，两个分支 ID 都是合法值。
+    expect(
+      streamSnapshotMessageSchema.safeParse({ ...snapshotMessage, branchId: "br-000000000002" }).success,
+    ).toBe(true);
   });
 
   it("每类请求与响应 DTO 都有合法与非法样例", () => {

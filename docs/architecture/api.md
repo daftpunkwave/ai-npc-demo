@@ -107,7 +107,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | S→C | `hello` | `protocolVersion`、`principalId`、`channels`（本会话可订阅的频道） |
 | C→S | `subscribe` | `channel`、`fromStreamSeq`（首次为 `null`） |
-| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准 |
+| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`worldId`、`branchId`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准。`worldId` 与 `branchId` 是该快照所属的分支身份，客户端以帧内值为准更新本地世界与分支 |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
 | S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。已实现 `dialogue` 和 `notification`，`timeline` 为目标 |
 | C→S | `ack` | `channel`、`streamSeq` |
@@ -123,7 +123,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `console.timeline` | researcher | 订阅时和世界变化后推送时间线快照 | 已实现 |
 | `console.turns` | researcher | turn 状态变化（`append`） | 目标 |
 
-在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。
+在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。新分支的 `streamSeq` 从 0 重新计数，因此客户端对跨分支快照按「切换身份」处理，而不是用旧分支的序号判定迟到；只有同一分支内的旧快照才按 `streamSeq` 与 `projectionVersion` 丢弃。世界 ID 不同的快照仍被拒绝。
 
 重连规则：服务端为每个 `(session, channel)` 保留最近 200 条增量。`fromStreamSeq` 之后的增量都还在时补发增量；否则重新发一次 `snapshot`。重连只补投影，不重放任何命令。流式模型 token 不经过任何玩家频道。
 

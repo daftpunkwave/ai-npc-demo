@@ -126,6 +126,7 @@ function createHub(overrides: {
 } = {}): StreamHub {
   const hub = new StreamHub({
     projection: overrides.projection ?? (() => projection(0)),
+    worldId: "wld-000000000001",
     channelsFor: () => ["player"],
     ids: (prefix) => {
       idCounter += 1;

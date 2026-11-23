@@ -19,6 +19,8 @@ import type { ApiClient } from "@ai-npc/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
+  /** 当前在线分支；恢复/重开后由宿主按快照身份更新。 */
+  readonly branchId: string;
   operationId(): string;
   reload(): void;
   confirm(message: string): boolean;
@@ -178,7 +180,7 @@ function FactionOpsPage(): ReactNode {
           <div className="console-kv">
             <div><dt>游戏日</dt><dd>{clock?.day ?? "-"}</dd></div>
             <div><dt>小时</dt><dd>{clock?.hour ?? "-"}</dd></div>
-            <div><dt>在线分支</dt><dd>{host.session.branchId}</dd></div>
+            <div><dt>在线分支</dt><dd>{host.branchId}</dd></div>
           </div>
         </section>
         <section className="console-panel">
