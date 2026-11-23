@@ -11,7 +11,7 @@ import {
   type StartedBrowserModules,
 } from "@ai-npc/client-sdk";
 import { ApiClient, takeHashToken } from "@ai-npc/client-protocol";
-import type { ClockView, ConsoleActiveRole, SessionDescriptor } from "@ai-npc/contracts";
+import { DomainError, type ClockView, type ConsoleActiveRole, type SessionDescriptor } from "@ai-npc/contracts";
 import { consoleModuleDefinitions } from "./module-catalog";
 import { ConsoleShell } from "../ui/console-shell";
 
@@ -92,7 +92,16 @@ export function ConsoleBootstrap(): ReactNode {
         evaluation: {
           list: () => api.consoleExperiments().then((response) => response.experiments),
           experiment: (experimentId: string) => api.consoleExperiment(experimentId),
-          report: (runId: string) => api.consoleRunReport(runId).catch(() => null),
+          // 只有「run 不存在」（404）才转成 null；其它失败保留给页面显示，不静默吞掉。
+          report: async (runId: string) => {
+            try {
+              return await api.consoleRunReport(runId);
+            } catch (cause: unknown) {
+              // 只有 not-found 才表示「该 run 不存在」；其余错误保留给页面显示。
+              if (cause instanceof DomainError && cause.code === "not-found") return null;
+              throw cause;
+            }
+          },
         },
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;

@@ -4,22 +4,22 @@
  * 约束与禁忌：页面不改变实验状态；样本不足与不可计算指标必须如实呈现，不用 0 代替缺失值。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type { ExperimentDetailResponse, ModuleCreateInput, ModuleInstance, RunReportResponse } from "@ai-npc/contracts";
 
 /**
  * 控制台宿主端口：页面只读其中的评估数据读取能力。
  * 读取方法由宿主按真实 HTTP 客户端注入；页面不直接拼请求，也不假设服务端路由的名称。
- * 方法返回 null 表示「该数据当前不可读」，由页面显示空状态，不伪造示例数据。
+ * `report` 返回 null 仅表示「该 run 不存在」；其它失败必须以异常抛出，由页面显示，便于定位。
  */
 interface ConsoleHostPort {
   readonly evaluation: {
     /** 实验列表；没有实验时返回空数组。 */
-    list(): Promise<readonly { readonly experimentId: string }[]>;
+    list(): Promise<readonly { readonly experimentId: string; readonly runCount: number }[]>;
     /** 实验详情：各 run 摘要与「变体 × 脚本分支」汇总。 */
     experiment(experimentId: string): Promise<ExperimentDetailResponse>;
-    /** 单个 run 的报告。 */
+    /** 单个 run 的报告；run 不存在时返回 null，其它错误抛出。 */
     report(runId: string): Promise<RunReportResponse | null>;
   };
 }
@@ -81,76 +81,128 @@ function RunReportPanel({ report }: { readonly report: RunReportResponse }): Rea
   );
 }
 
-/** 评估页主体：拉取实验详情与首个 run 的报告，逐格展示汇总。 */
+/** 评估页主体：可选择实验与 run，逐格展示汇总并显示所选 run 的报告。 */
 function EvaluationPage(): ReactNode {
   const host = usePort<ConsoleHostPort>("host.console");
   const reader = host.evaluation;
+  const [experiments, setExperiments] = useState<readonly { readonly experimentId: string; readonly runCount: number }[]>([]);
+  const [experimentId, setExperimentId] = useState<string | null>(null);
   const [experiment, setExperiment] = useState<ExperimentDetailResponse | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const [report, setReport] = useState<RunReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
+  // 实验列表：只加载一次，之后由选择驱动详情。
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      try {
-        const experiments = await reader.list();
-        const first = experiments[0];
-        if (first === undefined) {
-          if (!cancelled) setLoaded(true);
-          return;
-        }
-        const detail = await reader.experiment(first.experimentId);
-        if (cancelled) return;
-        setExperiment(detail);
-        setLoaded(true);
-        const firstRun = detail.runs[0];
-        if (firstRun !== undefined) {
-          const runReport = await reader.report(firstRun.runId);
-          if (!cancelled) setReport(runReport);
-        }
-      } catch (cause: unknown) {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause));
-          setLoaded(true);
-        }
-      }
-    })();
+    void reader.list().then((list) => {
+      if (cancelled) return;
+      setExperiments(list);
+      setExperimentId((current) => current ?? list[0]?.experimentId ?? null);
+    }).catch((cause: unknown) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+    });
     return () => { cancelled = true; };
   }, [reader]);
+
+  // 所选实验的详情；切换实验时清空上一个 run 的选择与报告，避免显示错配的数据。
+  useEffect(() => {
+    if (experimentId === null) {
+      setExperiment(null);
+      setRunId(null);
+      setReport(null);
+      return;
+    }
+    let cancelled = false;
+    setError(null);
+    setReport(null);
+    setReportError(null);
+    void reader.experiment(experimentId).then((detail) => {
+      if (cancelled) return;
+      setExperiment(detail);
+      setRunId((current) => (current !== null && detail.runs.some((run) => run.runId === current)
+        ? current
+        : detail.runs[0]?.runId ?? null));
+    }).catch((cause: unknown) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => { cancelled = true; };
+  }, [reader, experimentId]);
+
+  // 所选 run 的报告；读取失败要显示出来，不能静默退回空状态。
+  useEffect(() => {
+    if (runId === null) {
+      setReport(null);
+      return;
+    }
+    let cancelled = false;
+    setReportError(null);
+    void reader.report(runId).then((next) => {
+      if (!cancelled) setReport(next);
+    }).catch((cause: unknown) => {
+      if (!cancelled) setReportError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => { cancelled = true; };
+  }, [reader, runId]);
 
   if (error !== null) {
     return <p role="alert">读取实验数据失败：{error}</p>;
   }
-  if (!loaded) {
-    return <p>正在读取实验数据…</p>;
-  }
   // 空状态如实呈现：页面只读，创建实验须经研究员角色与服务端预检。
-  if (experiment === null) {
+  if (experiments.length === 0) {
     return <p>还没有实验记录。创建实验需要研究员角色并经服务端预检。</p>;
   }
   return (
     <section>
-      <h2>实验 {experiment.experimentId}</h2>
-      <h3>分组汇总</h3>
-      <table>
-        <thead>
-          <tr><th>变体</th><th>脚本分支</th><th>指标</th><th>有效样本</th><th>无效样本</th><th>均值</th></tr>
-        </thead>
-        <tbody>
-          {experiment.cells.flatMap((cell) => cell.metrics.map((metric) => (
-            <tr key={`${cell.variant}/${cell.scriptBranch}/${metric.metric}`}>
-              <td>{cell.variant}</td>
-              <td>{cell.scriptBranch}</td>
-              <td>{metric.metric}</td>
-              <td>{metric.validSamples}{sampleNote(metric.validSamples, minimumSamplesForMean)}</td>
-              <td>{metric.invalidSamples}</td>
-              <td>{metricValue(metric.mean)}</td>
-            </tr>
-          )))}
-        </tbody>
-      </table>
-      {report === null ? null : <RunReportPanel report={report} />}
+      <h2>评估与对比</h2>
+      <label>
+        实验
+        <select
+          value={experimentId ?? ""}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) => setExperimentId((event.target as unknown as { value: string }).value)}
+        >
+          {experiments.map((entry) => (
+            <option key={entry.experimentId} value={entry.experimentId}>
+              {entry.experimentId}（{entry.runCount} 个 run）
+            </option>
+          ))}
+        </select>
+      </label>
+      {experiment === null ? <p>正在读取实验数据…</p> : (
+        <>
+          <label>
+            run
+            <select value={runId ?? ""} onChange={(event: ChangeEvent<HTMLSelectElement>) => setRunId((event.target as unknown as { value: string }).value)}>
+              {experiment.runs.map((run) => (
+                <option key={run.runId} value={run.runId}>
+                  {run.runId}（{run.variant ?? "无变体"} · {run.status}）
+                </option>
+              ))}
+            </select>
+          </label>
+          <h3>分组汇总</h3>
+          <table>
+            <thead>
+              <tr><th>变体</th><th>脚本分支</th><th>指标</th><th>有效样本</th><th>无效样本</th><th>均值</th></tr>
+            </thead>
+            <tbody>
+              {experiment.cells.flatMap((cell) => cell.metrics.map((metric) => (
+                <tr key={`${cell.variant}/${cell.scriptBranch}/${metric.metric}`}>
+                  <td>{cell.variant}</td>
+                  <td>{cell.scriptBranch}</td>
+                  <td>{metric.metric}</td>
+                  <td>{metric.validSamples}{sampleNote(metric.validSamples, minimumSamplesForMean)}</td>
+                  <td>{metric.invalidSamples}</td>
+                  <td>{metricValue(metric.mean)}</td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+          {reportError === null ? null : <p role="alert">读取 run 报告失败：{reportError}</p>}
+          {report === null ? <p>该 run 没有可用报告。</p> : <RunReportPanel report={report} />}
+        </>
+      )}
     </section>
   );
 }

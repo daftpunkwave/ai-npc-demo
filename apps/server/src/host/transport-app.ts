@@ -142,7 +142,7 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 
 /** 创建传输应用；调用方负责之后监听端口并在关闭时释放。 */
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
-  const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent } = input;
+  const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent, evaluation } = input;
   const consoleStaticDir = resolve(
     input.consoleStaticDir ?? resolve(process.cwd(), "apps/server/console-static"),
   );
@@ -232,13 +232,13 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         debugQueues: research.debugQueues,
         replayTurn: research.replayTurn,
         debugWake: research.debugWake,
-        ...(input.evaluation === undefined ? {} : {
+        ...(evaluation === undefined ? {} : {
           evaluation: {
-            runs: (query: { readonly status?: string; readonly limit?: number }) => input.evaluation!.runs(query),
-            run: (runId: string) => input.evaluation!.run(runId),
-            report: (runId: string) => input.evaluation!.report(runId),
-            experiment: (experimentId: string) => input.evaluation!.experiment(experimentId),
-            experiments: () => input.evaluation!.experiments(),
+            runs: (query: { readonly status?: string; readonly limit?: number }) => evaluation.runs(query),
+            run: (runId: string) => evaluation.run(runId),
+            report: (runId: string) => evaluation.report(runId),
+            experiment: (experimentId: string) => evaluation.experiment(experimentId),
+            experiments: () => evaluation.experiments(),
           },
         }),
       },

@@ -286,7 +286,9 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
     const path = parsePath(runParamsSchema, request.params);
     if (path === null) return sendHttpError(reply, "validation", "runId 不合法");
-    return runReportResponseSchema.parse(options.console.evaluation.report(path.runId));
+    const report = options.console.evaluation.report(path.runId);
+    if (report === null) return sendHttpError(reply, "not-found", "run 不存在");
+    return runReportResponseSchema.parse(report);
   });
 
   app.get("/api/v1/console/experiments", (request, reply) => {

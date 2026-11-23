@@ -272,7 +272,8 @@ export interface ConsoleReadPort {
   evaluation?: {
     runs(query: { readonly status?: string; readonly limit?: number }): readonly RunSummary[];
     run(runId: string): RunDetailResponse | null;
-    report(runId: string): RunReportResponse;
+    /** run 报告；run 不存在时返回 null，路由据此返回 not-found。 */
+    report(runId: string): RunReportResponse | null;
     experiment(experimentId: string): ExperimentDetailResponse | null;
     experiments(): readonly { readonly experimentId: string; readonly runCount: number }[];
   };

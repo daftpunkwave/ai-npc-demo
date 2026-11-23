@@ -102,13 +102,23 @@ describe("控制台评估读取接口", () => {
     expect(errorResponseSchema.parse(response.json()).error.code).toBe("not-found");
   });
 
+  it("未知 run 的报告返回 not-found", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const response = await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs/run-aaaaaaaaaaaa/report", headers,
+    });
+    expect(response.statusCode).toBe(404);
+    expect(errorResponseSchema.parse(response.json()).error.code).toBe("not-found");
+  });
+
   it("实验列表为空时返回空数组，未知实验返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
 
     const list = await host.app.inject({ method: "GET", url: "/api/v1/console/experiments", headers });
     expect(list.statusCode).toBe(200);
-    // 在线 run 的 seed 不含实验前缀，因此实验列表应为空。
+    // 在线 run 没有实验关联字段，因此实验列表应为空——不从 seed 推断。
     expect((list.json() as { readonly experiments: readonly unknown[] }).experiments).toEqual([]);
 
     const missing = await host.app.inject({
@@ -155,7 +165,93 @@ describe("控制台评估读取接口", () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it("实验详情按种子前缀归组并给出分组汇总", async () => {
+  it("延迟由归档的 turn 时长计算，无样本时为 null", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    // 在线 run 没有已完成的 turn，因此延迟样本为空，报告必须写 null 而不是 0。
+    const before = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(before.latency.turnP50Ms).toBeNull();
+    expect(before.latency.turnP95Ms).toBeNull();
+
+    // 登记三个已完成 turn，时长分别为 100/200/300ms，验证 p50 与 p95 真实取值。
+    host.storage.transact((tx) => {
+      const branchId = host.branchId;
+      for (const [index, duration] of [100, 200, 300].entries()) {
+        const startedAt = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+        const endedAt = new Date(Date.UTC(2026, 0, 1, 0, 0, index) + duration).toISOString();
+        tx.rows("turn_runs").put({
+          turn_id: `turn-aaaaaaaaaa${index}0`, run_id: runId, branch_id: branchId, agent_id: "human-independent",
+          agent_turn_index: index + 1, status: "completed", trigger_ids_json: [], profile_hash: "hash",
+          controller_epoch: 1, turn_lease_epoch: 0, created_at: startedAt, started_at: startedAt, ended_at: endedAt,
+        });
+      }
+    });
+    const after = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(after.latency.turnP50Ms).toBe(200);
+    // p95 落在最大值上（3 个样本时 ceil(0.95*3)-1 = 2）。
+    expect(after.latency.turnP95Ms).toBe(300);
+  });
+
+  it("缺脚本声明的探针计入证据不完整，非法 JSON 不使读取失败", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    host.storage.transact((tx) => {
+      // 探针记录的 probeId 不在任何脚本声明里：无法计分，必须体现为证据不完整。
+      tx.rows("probe_results").put({
+        probe_result_id: "probe-res-aaaaaaaaaaaa", run_id: runId, script_id: "s-promise",
+        probe_id: "undeclared-probe", agent_id: "human-independent", asked_at_tick: 0,
+        answer_text: "不知道", decision_json: null, score_json: null, valid: 1, invalid_reason: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    const response = await host.app.inject({ method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers });
+    expect(response.statusCode).toBe(200);
+    const report = runReportResponseSchema.parse(response.json());
+    expect(report.validity.evidenceComplete).toBe(false);
+    expect(report.validity.invalidReasons).toContain("undeclared-probes");
+    // 无法计分的探针不进入探针列表，也不进入任何指标分母。
+    expect(report.probes).toEqual([]);
+    expect(report.metrics.every((metric) => metric.value === null)).toBe(true);
+
+  });
+
+  it("run_spec 为非法 JSON 时读取退回空规格，不抛内部错误", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    host.storage.transact((tx) => {
+      const worldId = String(tx.rows("worlds").list()[0]?.["world_id"]);
+      tx.rows("branches").put({
+        branch_id: "br-bbbbbbbbbbbb", world_id: worldId, kind: "experiment", status: "active",
+        parent_branch_id: host.branchId, forked_at_world_seq: 0, run_id: "run-bbbbbbbbbbbb",
+        profile_hash: null, created_at: new Date().toISOString(),
+      });
+      tx.rows("runs").put({
+        run_id: "run-bbbbbbbbbbbb", world_id: worldId, branch_id: "br-bbbbbbbbbbbb",
+        mode: "closed-loop", status: "completed", run_spec_json: "{not valid json",
+        manifest_json: null, manifest_hash: null, contaminated: 0, evidence_complete: 1,
+        created_at: new Date().toISOString(),
+      });
+    });
+    const detail = await host.app.inject({ method: "GET", url: "/api/v1/console/runs/run-bbbbbbbbbbbb", headers });
+    expect(detail.statusCode).toBe(200);
+    // 缺冻结清单摘要的 run 如实标记为证据不完整，而不是返回空摘要。
+    const parsedDetail = runDetailResponseSchema.parse(detail.json());
+    expect(parsedDetail.manifestHash).toBe("missing-manifest");
+    expect(parsedDetail.evidenceComplete).toBe(false);
+    const report = await host.app.inject({ method: "GET", url: "/api/v1/console/runs/run-bbbbbbbbbbbb/report", headers });
+    expect(report.statusCode).toBe(200);
+    // 规格不可解析时不猜变体与脚本，如实写占位值而不是伪造。
+    expect(runReportResponseSchema.parse(report.json()).variant).toBe("unknown");
+  });
+
+  it("实验详情按显式实验标识归组并给出分组汇总", async () => {
     const host = await testHost();
     // 直接登记两个带实验种子前缀的 run，用于验证归组与汇总读取；不启动真实实验。
     const experimentId = "exp-memory-promise-v1";
@@ -174,7 +270,8 @@ describe("控制台评估读取接口", () => {
         tx.rows("runs").put({
           run_id: runId, world_id: worldId, branch_id: branchId, mode: "closed-loop", status: "completed",
           run_spec_json: {
-            id: `run-${index}`, seed: `${experimentId}:rep1`, variant: { id: variant, profilePatchRefs: [variant], agentIds: null },
+            id: `run-${index}`, experimentId, seed: `seed-without-experiment-hint:rep1`,
+            variant: { id: variant, profilePatchRefs: [variant], agentIds: null },
             script: { scriptRef: "s-promise", branch: index === 0 ? "keep" : "break" },
           },
           manifest_json: {}, manifest_hash: "hash", contaminated: 0, evidence_complete: 1,

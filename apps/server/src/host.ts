@@ -45,15 +45,19 @@ export interface RunningHost {
 
 /**
  * 从已启动实例中取出评估端口。
- * 装配未绑定 `platform.evaluation` 时返回 null，让评估路由按 not-ready 处理而不是启动失败。
+ * 装配未绑定 `platform.evaluation`（或绑定了替代实现而端口形状不同）时返回 null：
+ * 评估路由随后按 not-ready 返回，宿主照常启动，不因为一个可选读取能力缺失而整体失败。
  */
-function evaluationPortOf(core: HostStartup): EvaluationPort {
+function evaluationPortOf(core: HostStartup): EvaluationPort | null {
   const instance = [...core.storageStarted.instances, ...core.startedModules.instances]
     .find((running) => running.moduleId === "platform.evaluation.standard");
-  if (instance?.port === undefined) {
-    throw new Error("装配缺少 platform.evaluation.standard 的公开端口");
-  }
-  return instance.port as EvaluationPort;
+  const port = instance?.port;
+  if (port === undefined || port === null || typeof port !== "object") return null;
+  // 端口形状由模块自己声明；这里只确认三个读取入口都是函数，避免替代实现让路由在调用期崩溃。
+  const candidate = port as Partial<EvaluationPort>;
+  return typeof candidate.report === "function" && typeof candidate.experimentCells === "function"
+    ? (port as EvaluationPort)
+    : null;
 }
 
 /** 从冻结的模型配置里读出价目版本；未写时如实返回 unknown，不编造日期。 */
@@ -210,9 +214,11 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     () => core.active.manifest.selection.modelLayoutRef ?? null,
   );
 
-  const evaluation = createEvaluationReadPort({
+  // 评估端口是可选能力：装配未绑定或替代实现形状不符时保持 null，路由按 not-ready 返回。
+  const evaluationPort = evaluationPortOf(core);
+  const evaluation = evaluationPort === null ? undefined : createEvaluationReadPort({
     storage: core.storage,
-    evaluation: evaluationPortOf(core),
+    evaluation: evaluationPort,
     scripts: core.content.index.scripts,
     lexicons: core.content.locale.lexicons,
     pricingVersion: core.active.manifest.models === undefined ? "unknown" : pricingVersionOf(core.active.manifest.models),
