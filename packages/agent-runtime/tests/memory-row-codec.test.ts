@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Json, MemoryChangePlan } from "@ai-npc/contracts";
-import { encodeMemoryRow, parseRecord } from "../src/memory-row-codec";
+import { decodeObservationRow, encodeMemoryRow, parseObservation, parseRecord } from "../src/memory-row-codec";
 
 const inserts: readonly {
   readonly label: string;
@@ -55,4 +55,54 @@ describe("memory row codec", () => {
       expect(record.recallCount).toBe(2);
     });
   }
+});
+
+describe("observation raw row decode", () => {
+  const scope = {
+    worldId: "wld-000000000001",
+    branchId: "br-000000000001",
+    agentId: "human-independent",
+  };
+
+  const rawRow = {
+    observation_id: "obs-000000000007",
+    observation_seq: 7,
+    source_event_ids_json: '["evt-000000000007"]',
+    source_observation_ids_json: "[]",
+    occurred_at_tick: 3,
+    sensed_at_tick: 4,
+    known_at_tick: 5,
+    channel: "party",
+    epistemic: "witnessed",
+    confidence: 0.75,
+    release_policy_id: "parties:human-independent,player-1",
+    content_json: '{"eventType":"MetersChanged","summaryZh":"测试"}',
+  } as const;
+
+  it("decodes JSON text columns into values before parsing", () => {
+    const observation = parseObservation(decodeObservationRow(rawRow), scope);
+    expect(observation).toMatchObject({
+      observationId: "obs-000000000007",
+      observationSeq: 7,
+      sourceEventIds: ["evt-000000000007"],
+      sourceObservationIds: [],
+      occurredAtTick: 3,
+      sensedAtTick: 4,
+      knownAtTick: 5,
+      channel: "party",
+      epistemic: "witnessed",
+      confidence: 0.75,
+      content: { eventType: "MetersChanged", summaryZh: "测试" },
+    });
+  });
+
+  it("rejects a non-JSON text column instead of passing raw text through", () => {
+    expect(() => decodeObservationRow({ ...rawRow, content_json: "not-json" }))
+      .toThrow("content_json is not valid JSON");
+  });
+
+  it("rejects a numeric column that is not a number", () => {
+    expect(() => decodeObservationRow({ ...rawRow, confidence: "0.75" }))
+      .toThrow("confidence is not a number");
+  });
 });
