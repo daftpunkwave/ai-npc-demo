@@ -332,6 +332,13 @@ export interface ServerAppOptions {
   readonly maxSessions?: number;
   /** 已构建控制台静态资源目录；不存在时不注册 /console/* 页面。 */
   readonly consoleStaticDir?: string;
+  /**
+   * 判断控制台入口文件 `index.html` 当前是否存在。
+   * 传输层不直接读文件系统（适配器边界只允许框架与契约依赖），由宿主注入这一查询；
+   * 缺省时按「始终存在」处理，仅在控制台静态目录缺失时才有意义。
+   * 回退前必须确认入口存在：目录被重建清空期间直接 404，避免 sendFile 的 404 再触发同一回退。
+   */
+  readonly consoleEntryExists?: () => boolean;
   /** 观测写入口；失败不得改变已经确定的 HTTP 响应。 */
   readonly recordSpan?: (span: RecordSpanInput) => void;
 }

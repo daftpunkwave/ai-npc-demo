@@ -4,7 +4,7 @@
  * 禁止用静态回执替代命令网关，也不在用例间复用连接或服务器。
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -289,6 +289,8 @@ interface AppOverrides {
   /** 收集传输层上报的内部错误；缺省保持静默。 */
   readonly onInternalError?: (message: string, error: unknown) => void;
   readonly consoleStaticDir?: string;
+  /** 控制台入口文件是否存在；由测试按临时目录真实判定，模拟宿主注入。 */
+  readonly consoleEntryExists?: () => boolean;
   /** 覆盖会话容量上限；用于验证满容量时的拒绝语义。 */
   readonly maxSessions?: number;
 }
@@ -367,6 +369,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     ...(overrides.consoleStaticDir === undefined
       ? {}
       : { consoleStaticDir: overrides.consoleStaticDir }),
+    ...(overrides.consoleEntryExists === undefined ? {} : { consoleEntryExists: overrides.consoleEntryExists }),
     ...(overrides.maxSessions === undefined ? {} : { maxSessions: overrides.maxSessions }),
   });
   apps.push(app);
@@ -2382,7 +2385,10 @@ describe("服务端 API", () => {
     const staticDir = join(directory, "console-static");
     try {
       mkdirSync(staticDir);
-      const app = await appFor(value, { consoleStaticDir: staticDir });
+      const app = await appFor(value, {
+        consoleStaticDir: staticDir,
+        consoleEntryExists: () => existsSync(join(staticDir, "index.html")),
+      });
       const beforeBuild = await app.inject({ method: "GET", url: "/console/" });
       expect(beforeBuild.statusCode).toBe(404);
 
@@ -2390,6 +2396,65 @@ describe("服务端 API", () => {
       const afterBuild = await app.inject({ method: "GET", url: "/console/timeline" });
       expect(afterBuild.statusCode).toBe(200);
       expect(afterBuild.body).toContain("console built");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("控制台构建后新增的 hash 资产可正常返回，缺失资产返回 404 而不是 200 HTML", async () => {
+    const value = await createTrackedGameHarness(active);
+    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-assets-"));
+    const staticDir = join(directory, "console-static");
+    try {
+      mkdirSync(staticDir);
+      writeFileSync(join(staticDir, "index.html"), "<html>INDEX</html>");
+      // 路由在仅有 index 的状态下注册，模拟服务端先起、vite build --watch 后产出资产。
+      const app = await appFor(value, {
+        consoleStaticDir: staticDir,
+        consoleEntryExists: () => existsSync(join(staticDir, "index.html")),
+      });
+      expect((await app.inject({ method: "GET", url: "/console/assets/main.js" })).statusCode).toBe(404);
+
+      mkdirSync(join(staticDir, "assets"));
+      writeFileSync(join(staticDir, "assets", "main-abc123.js"), "console.log('built');");
+      const asset = await app.inject({ method: "GET", url: "/console/assets/main-abc123.js" });
+      expect(asset.statusCode).toBe(200);
+      expect(asset.headers["content-type"]).toContain("javascript");
+      expect(asset.body).toContain("console.log('built')");
+
+      // 缺失的资产路径必须是 404 统一错误，不能被回退成 index.html 的 200 text/html。
+      const missing = await app.inject({ method: "GET", url: "/console/assets/nope-999.js" });
+      expect(missing.statusCode).toBe(404);
+      expect(missing.headers["content-type"]).toContain("application/json");
+      expect(errorResponseSchema.parse(missing.json()).error.code).toBe("not-found");
+      expect(missing.body).not.toContain("INDEX");
+
+      // 导航路径（无扩展名）仍然回退 index.html，供前端路由使用。
+      const navigation = await app.inject({ method: "GET", url: "/console/researcher/timeline" });
+      expect(navigation.statusCode).toBe(200);
+      expect(navigation.body).toContain("INDEX");
+
+      // 编码形式的资产路径同样是资产请求：`main%2Ejs` 解码后含扩展名，必须 404。
+      const encodedAsset = await app.inject({ method: "GET", url: "/console/assets/main%2Ejs" });
+      expect(encodedAsset.statusCode).toBe(404);
+      expect(encodedAsset.body).not.toContain("INDEX");
+
+      // 非 GET/HEAD 的导航路径不是页面导航，不能拿到 200 的 HTML。
+      const postNavigation = await app.inject({ method: "POST", url: "/console/researcher/timeline" });
+      expect(postNavigation.statusCode).toBe(404);
+      expect(postNavigation.body).not.toContain("INDEX");
+
+      // 入口文件暂时缺失时（重建清空目录期间）直接 404，不重复回退。
+      rmSync(join(staticDir, "index.html"), { force: true });
+      const missingEntry = await app.inject({ method: "GET", url: "/console/researcher/timeline" });
+      expect(missingEntry.statusCode).toBe(404);
+      expect(errorResponseSchema.parse(missingEntry.json()).error.code).toBe("not-found");
+
+      // 入口恢复后同一导航路径立刻可用，无需重启服务端。
+      writeFileSync(join(staticDir, "index.html"), "<html>INDEX</html>");
+      const restored = await app.inject({ method: "GET", url: "/console/researcher/timeline" });
+      expect(restored.statusCode).toBe(200);
+      expect(restored.body).toContain("INDEX");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
