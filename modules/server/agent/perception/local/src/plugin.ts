@@ -74,6 +74,39 @@ function deliveryFor(event: PerceptionRequest["event"], agentId: string): number
   return null;
 }
 
+/**
+ * 观察者当时所在的节点集合。`selfNodeIds` 覆盖「自己」可站立的全部位置
+ * （例如队伍在途时的来源与目标节点）；`nodeId` 是主位置。
+ */
+function observerNodes(observer: PerceptionRequest["observer"]): ReadonlySet<string> {
+  const nodes = new Set<string>(observer.selfNodeIds);
+  if (observer.nodeId !== null) {
+    nodes.add(observer.nodeId);
+  }
+  return nodes;
+}
+
+/**
+ * 判断 node 受众事件是否发生在观察者当时所在的节点上。
+ * 返回命中的节点 ID；不在同一节点时返回 null，感知渠道表第 10 行据此不成立。
+ */
+function onSiteNodeOf(
+  event: PerceptionRequest["event"],
+  observer: PerceptionRequest["observer"],
+): string | null {
+  const nodes = observerNodes(observer);
+  for (const entry of event.audience) {
+    const value = record(entry);
+    if (value["kind"] !== "node" || typeof value["nodeId"] !== "string") {
+      continue;
+    }
+    if (nodes.has(value["nodeId"])) {
+      return value["nodeId"];
+    }
+  }
+  return null;
+}
+
 function isSelfSubject(event: PerceptionRequest["event"], agentId: string): boolean {
   const payload = record(event.payload);
   return (
@@ -123,7 +156,7 @@ function channelFor(input: PerceptionRequest): ChannelDecision | null {
   if (audience.includes("principals")) {
     return { channel: "party", epistemic: "witnessed", confidence: 1, detail: "full", delayKey: null };
   }
-  if (audience.includes("node") && observer.nodeId !== null) {
+  if (audience.includes("node") && onSiteNodeOf(event, observer) !== null) {
     return { channel: "on-site", epistemic: "witnessed", confidence: 1, detail: "summary", delayKey: null };
   }
   if (audience.includes("faction")) {

@@ -29,6 +29,7 @@
                          "@ai-npc/mod-game-world-slg-light":  "workspace:*",
                          "@ai-npc/mod-agent-memory-ledger":  "workspace:*",
                          "@ai-npc/mod-agent-memory-none":  "workspace:*",
+                        "@ai-npc/mod-agent-perception-local":  "workspace:*",
                          "@ai-npc/mod-platform-storage-sqlite":  "workspace:*",
                          "@ai-npc/mod-platform-observability-sqlite":  "workspace:*",
                          "@ai-npc/module-sdk":  "workspace:*",

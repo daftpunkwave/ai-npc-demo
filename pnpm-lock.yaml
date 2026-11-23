@@ -1273,6 +1273,9 @@ importers:
       '@ai-npc/mod-agent-memory-none':
         specifier: workspace:*
         version: link:../modules/server/agent/memory/none
+      '@ai-npc/mod-agent-perception-local':
+        specifier: workspace:*
+        version: link:../modules/server/agent/perception/local
       '@ai-npc/mod-agent-tool-view-structured':
         specifier: workspace:*
         version: link:../modules/server/agent/tool-view/structured
