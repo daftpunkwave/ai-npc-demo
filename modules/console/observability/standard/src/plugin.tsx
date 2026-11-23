@@ -58,6 +58,7 @@ function ObservabilityPage(): ReactNode {
   const [agentError, setAgentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,7 +181,7 @@ function ObservabilityPage(): ReactNode {
       if (!cancelled) setDetailError(String(cause));
     });
     return () => { cancelled = true; };
-  }, [host.api, host.session.branchId, selectedAgent]);
+  }, [host.api, host.session.branchId, selectedAgent, refreshVersion]);
 
   useEffect(() => {
     artifactRequestSeq.current += 1;
@@ -273,6 +274,15 @@ function ObservabilityPage(): ReactNode {
         </section>
         <section className="console-panel">
           <header><h2>Agent 状态</h2><span>{agents.length} 个激活</span></header>
+          <div className="console-action-row">
+            <button
+              type="button"
+              disabled={selectedAgent === null}
+              onClick={() => setRefreshVersion((current) => current + 1)}
+            >
+              刷新当前 Agent
+            </button>
+          </div>
           {agentError === null ? null : <div className="console-error" role="alert">Agent 状态读取失败：{agentError}</div>}
           <div className="agent-list">
             {agents.length === 0 ? <p className="console-empty">Agent 运行时尚未接入。</p> : agents.map((agent) => (

@@ -234,8 +234,8 @@ export const modelConfigDraftSchema = z
 export const modelMountDraftSchema = z
   .object({
     modelId: z.string().min(1),
-    agentIds: z.array(principalIdSchema).min(1),
-    purposes: z.array(modelPurposeSchema).min(1),
+    agentIds: z.array(principalIdSchema).min(1).max(64),
+    purposes: z.array(modelPurposeSchema).min(1).max(8),
   })
   .strict();
 
@@ -254,7 +254,7 @@ export const modelLayoutDraftSchema = z
     layoutId: z.string().min(1),
     connections: z.record(z.string().min(1), modelConnectionDraftSchema),
     models: z.record(z.string().min(1), modelConfigDraftSchema),
-    mounts: z.array(modelMountDraftSchema),
+    mounts: z.array(modelMountDraftSchema).max(128),
     evaluator: modelEvaluatorDraftSchema.optional(),
   })
   .strict();

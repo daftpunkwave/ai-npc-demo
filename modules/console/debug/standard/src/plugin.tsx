@@ -34,21 +34,38 @@ function DebugPage(): ReactNode {
   const [reason, setReason] = useState("人工检查");
   const [error, setError] = useState<string | null>(null);
   const [waking, setWaking] = useState(false);
+  const [loading, setLoading] = useState(false);
   const replayRequest = useRef(0);
+  const loadRequest = useRef(0);
+
+  const load = async (): Promise<void> => {
+    const request = loadRequest.current + 1;
+    loadRequest.current = request;
+    setLoading(true);
+    try {
+      const [nextQueues, nextTurns] = await Promise.all([
+        host.api.consoleDebugQueues(),
+        host.api.consoleTurns({ limit: 30 }),
+      ]);
+      if (request !== loadRequest.current) return;
+      setQueues(nextQueues);
+      setTurns(nextTurns.turns);
+      setSelectedTurn((current) =>
+        current !== null && nextTurns.turns.some((turn) => turn.turnId === current)
+          ? current
+          : nextTurns.turns[0]?.turnId ?? null);
+      setError(null);
+    } catch (cause) {
+      if (request !== loadRequest.current) return;
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (request === loadRequest.current) setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
-    void Promise.all([host.api.consoleDebugQueues(), host.api.consoleTurns({ limit: 30 })])
-      .then(([nextQueues, nextTurns]) => {
-        if (cancelled) return;
-        setQueues(nextQueues);
-        setTurns(nextTurns.turns);
-        setSelectedTurn((current) => current ?? nextTurns.turns[0]?.turnId ?? null);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => { cancelled = true; };
+    void load();
+    return () => { loadRequest.current += 1; };
   }, [host.api]);
 
   useEffect(() => {
@@ -77,6 +94,7 @@ function DebugPage(): ReactNode {
     try {
       await host.api.consoleWakeAgent(agentId, reason, host.operationId());
       setError(null);
+      await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -99,6 +117,11 @@ function DebugPage(): ReactNode {
         <article><span>模型运行中</span><strong>{queues?.modelPool.running ?? "-"}</strong></article>
         <article><span>维护队列</span><strong>{queues?.maintenance.queued ?? "-"}</strong></article>
         <article><span>最老活动</span><small>{queues?.modelPool.oldestAt ?? queues?.maintenance.oldestAt ?? "—"}</small></article>
+      </div>
+      <div className="console-action-row">
+        <button type="button" disabled={loading} onClick={() => void load()}>
+          {loading ? "刷新中" : "刷新队列"}
+        </button>
       </div>
       <div className="console-two-column">
         <section className="console-panel">

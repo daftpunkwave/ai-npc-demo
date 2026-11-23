@@ -25,6 +25,7 @@ import { loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@ai-n
 const publicEndpointEnvironment = "NPC_OPENAI_COMPAT_BASE_URL";
 const publicModelEnvironment = "NPC_OPENAI_COMPAT_MODEL";
 const credentialEnvironment = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const maxValidationErrors = 100;
 
 function own<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
   if (!Object.hasOwn(record, key)) return undefined;
@@ -120,13 +121,17 @@ function routesOf(layout: ModelLayout): ModelLayoutRoutesResponse {
 
 function validationErrors(layout: ModelLayoutDraft, knownAgentIds: ReadonlySet<string>) {
   const errors: { code: string; message: string }[] = [];
+  const fail = (code: string, message: string): boolean => {
+    if (errors.length < maxValidationErrors) errors.push({ code, message });
+    return errors.length >= maxValidationErrors;
+  };
   const rateLimits = new Map<string, string>();
   const routes = new Set<string>();
   for (const [connectionId, connection] of Object.entries(layout.connections)) {
     if (connection.endpoint?.startsWith("env:")) {
       const name = connection.endpoint.slice(4);
       if (name !== publicEndpointEnvironment) {
-        errors.push({ code: "endpoint-environment", message: `连接 ${connectionId} 的端点引用不受支持` });
+        if (fail("endpoint-environment", `连接 ${connectionId} 的端点引用不受支持`)) return errors;
       }
     } else if (connection.endpoint !== undefined) {
       try {
@@ -135,65 +140,65 @@ function validationErrors(layout: ModelLayoutDraft, knownAgentIds: ReadonlySet<s
         if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback) ||
           endpoint.username.length > 0 || endpoint.password.length > 0 ||
           endpoint.search.length > 0 || endpoint.hash.length > 0) {
-          errors.push({ code: "endpoint", message: `连接 ${connectionId} 的端点必须是无凭据的 HTTPS 或回环 HTTP` });
+          if (fail("endpoint", `连接 ${connectionId} 的端点必须是无凭据的 HTTPS 或回环 HTTP`)) return errors;
         }
       } catch {
-        errors.push({ code: "endpoint", message: `连接 ${connectionId} 的端点不是合法 URL` });
+        if (fail("endpoint", `连接 ${connectionId} 的端点不是合法 URL`)) return errors;
       }
     }
     const credentialRef = connection.credentialRef?.replace(/^env:/u, "");
     if (credentialRef !== undefined && !credentialEnvironment.test(credentialRef)) {
-      errors.push({ code: "credential-ref", message: `连接 ${connectionId} 的 credentialRef 必须是环境变量名` });
+      if (fail("credential-ref", `连接 ${connectionId} 的 credentialRef 必须是环境变量名`)) return errors;
     }
   }
   for (const [modelId, model] of Object.entries(layout.models)) {
     const connection = own(layout.connections, model.connectionId);
     if (connection === undefined) {
-      errors.push({ code: "model-connection", message: `模型 ${modelId} 引用了未知连接 ${model.connectionId}` });
+      if (fail("model-connection", `模型 ${modelId} 引用了未知连接 ${model.connectionId}`)) return errors;
       continue;
     }
     if (model.externalModel.startsWith("env:") && model.externalModel.slice(4) !== publicModelEnvironment) {
-      errors.push({ code: "external-model-environment", message: `模型 ${modelId} 的供应商模型引用不受支持` });
+      if (fail("external-model-environment", `模型 ${modelId} 的供应商模型引用不受支持`)) return errors;
     }
     const limitKey = `${model.limits.requestsPerMinute}:${model.limits.tokensPerMinute}`;
     const prior = rateLimits.get(connection.rateLimitKey ?? model.connectionId);
     if (prior !== undefined && prior !== limitKey) {
-      errors.push({ code: "rate-limit", message: `模型 ${modelId} 与同一限流账号的 RPM/TPM 不一致` });
+      if (fail("rate-limit", `模型 ${modelId} 与同一限流账号的 RPM/TPM 不一致`)) return errors;
     }
     rateLimits.set(connection.rateLimitKey ?? model.connectionId, limitKey);
     const capabilities = model.capabilities;
     if (capabilities !== undefined && (
       capabilities.maxOutputTokens >= capabilities.contextWindowTokens ||
       Object.values(model.maxOutputTokensByPurpose).some((limit) => limit > capabilities.maxOutputTokens))) {
-      errors.push({ code: "output-limit", message: `模型 ${modelId} 的输出上限超过能力声明` });
+      if (fail("output-limit", `模型 ${modelId} 的输出上限超过能力声明`)) return errors;
     }
   }
   for (const mount of layout.mounts) {
     const model = own(layout.models, mount.modelId);
     if (model === undefined) {
-      errors.push({ code: "mount-model", message: `挂载引用了未知模型 ${mount.modelId}` });
+      if (fail("mount-model", `挂载引用了未知模型 ${mount.modelId}`)) return errors;
       continue;
     }
     for (const agentId of mount.agentIds) {
       if (!knownAgentIds.has(agentId)) {
-        errors.push({ code: "mount-agent", message: `挂载引用了未知 Agent ${agentId}` });
+        if (fail("mount-agent", `挂载引用了未知 Agent ${agentId}`)) return errors;
       }
       for (const purpose of mount.purposes) {
         const key = `${agentId}:${purpose}`;
-        if (routes.has(key)) errors.push({ code: "mount-duplicate", message: `模型用途重复挂载 ${key}` });
+        if (routes.has(key) && fail("mount-duplicate", `模型用途重复挂载 ${key}`)) return errors;
         routes.add(key);
         if (model.capabilities !== undefined && (
           purpose === "decision" && !model.capabilities.toolCalling ||
           ["speech", "memory-maintenance", "compression"].includes(purpose) &&
           model.capabilities.structuredOutput === "none" ||
           purpose === "embedding" && !model.capabilities.embedding)) {
-          errors.push({ code: "mount-capability", message: `模型 ${mount.modelId} 不支持 ${purpose}` });
+          if (fail("mount-capability", `模型 ${mount.modelId} 不支持 ${purpose}`)) return errors;
         }
       }
     }
   }
   if (layout.evaluator?.enabled === true && !Object.hasOwn(layout.models, layout.evaluator.modelId)) {
-    errors.push({ code: "evaluator-model", message: "评估主体引用了未知模型" });
+    fail("evaluator-model", "评估主体引用了未知模型");
   }
   return errors;
 }
