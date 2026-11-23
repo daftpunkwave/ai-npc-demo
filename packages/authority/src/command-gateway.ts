@@ -21,7 +21,14 @@ import {
 } from "@ai-npc/contracts";
 import { isApprovedSpeechUsable, type HandlerResult } from "@ai-npc/module-sdk";
 import { readBranch, readClock, type ClockRecord } from "./branch-state";
-import { checkExpectedVersions, isPauseExempt, issuesOf, parseCommandType, requireJsonResult } from "./command-validation";
+import {
+  checkExpectedVersions,
+  isCommandBranchAllowed,
+  isPauseExempt,
+  issuesOf,
+  parseCommandType,
+  requireJsonResult,
+} from "./command-validation";
 import { readReceipt, writeReceipt, type ReceiptInput } from "./command-receipts";
 import { verifyFencing } from "./fencing";
 import { createHandlerContext } from "./handler-context";
@@ -137,6 +144,18 @@ export class CommandGateway {
         clock,
         "no-authority",
         "当前主体不能发行该命令",
+      );
+    }
+    // 分支种类限制独立于暂停状态：运行中的正式世界也不能接受沙盒专用命令。
+    if (!isCommandBranchAllowed(type, branch)) {
+      return this.rejectionReceipt(
+        branchStorage,
+        auth,
+        envelope,
+        payloadHash,
+        clock,
+        "no-authority",
+        "该命令只能在沙盒分支发行",
       );
     }
     const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso());

@@ -42,6 +42,7 @@ const commsDefinition: ModuleDefinition = {
     "share",
     "message",
     "message-delivery",
+    "probe-request",
   ],
   migrationPaths: [],
   create: async (input) => {

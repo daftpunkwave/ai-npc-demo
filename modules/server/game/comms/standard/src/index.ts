@@ -7,6 +7,7 @@ export const packageName = "@ai-npc/mod-game-comms-standard";
 
 export { commsModuleDefinition } from "./definition";
 export { createCommsContributor } from "./contributor";
+export { probeAsk } from "./probe";
 export { createCommsPort } from "./port";
 export type { CommsReasonCode } from "./port";
 export { conversationStateSchema, knowledgeGrantStateSchema, readCommsState } from "./state";
