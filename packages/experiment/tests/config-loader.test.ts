@@ -253,19 +253,42 @@ describe("配置加载", () => {
     }
   });
 
-  it("四个记忆对比变体均可解析并切到对应槽位", () => {
+  it("五个记忆对比变体均可解析并切到对应槽位", () => {
     const base = loadAgentProfile("agent-character-default", { configDir });
     const windowProfile = applyProfilePatch(base, "memory-m0-window", { configDir });
     const currentProfile = applyProfilePatch(base, "memory-m0-current", { configDir });
+    const m1Profile = applyProfilePatch(base, "memory-m1-structured-ledger", { configDir });
     const m2Profile = applyProfilePatch(base, "memory-m2-stream-reflection", { configDir });
     const m3Profile = applyProfilePatch(base, "memory-m3-layered-hybrid", { configDir });
     expect(windowProfile.slots.memory?.module).toBe("agent.memory.none");
     expect(windowProfile.slots.context?.config.historyTurns).toBe(8);
     expect(currentProfile.slots.context?.config.historyTurns).toBe(0);
+    expect(m1Profile.slots.memory?.module).toBe("agent.memory.ledger");
     expect(m2Profile.slots.memory?.module).toBe("agent.memory.stream-reflection");
     expect(m2Profile.slots.memory?.config).toMatchObject({ maintenanceTrigger: "importance-threshold" });
     expect(m3Profile.slots.memory?.module).toBe("agent.memory.layered-hybrid");
     expect(m3Profile.slots.memory?.config).toMatchObject({ coreBlockMaxTokens: 300 });
+  });
+
+  it("M0 两个变体保留了模型决策所需的上下文预算块", () => {
+    // context 槽位按整块替换，不继承父 profile；变体若只写 historyTurns，
+    // 模型决策会在预检时报「缺少 decision 预算块」。这里锁定基线预算块仍在。
+    const base = loadAgentProfile("agent-character-default", { configDir });
+    for (const variant of ["memory-m0-window", "memory-m0-current"]) {
+      const profile = applyProfilePatch(base, variant, { configDir });
+      const config = profile.slots.context?.config ?? {};
+      expect(config, variant).toMatchObject({
+        lendUnusedBudget: false,
+        decision: {
+          maxInputTokens: 8000,
+          safetyTokens: 300,
+          toolLoopReserveTokens: 1600,
+          segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 },
+        },
+        speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } },
+      });
+      expect(config.segmentOrder).toEqual(["world", "task", "memory", "history", "input"]);
+    }
   });
 
   it("未知键被严格拒绝", () => {
