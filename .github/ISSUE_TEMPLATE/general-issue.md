@@ -20,7 +20,7 @@ about: 按具体问题或任务灵活组织内容，明确类型、字段、标�
    - 置信度：统一采用带命名空间前缀的 confidence/high、confidence/medium、confidence/low 标明结论实证程度。
    - 领域分类：若跨越多个架构或职能领域，在正文「Issue 信息」中完整列出所有领域；右侧 Labels 只打一个关联度最大、最核心的领域标签。
    - 证据与特性标签：如 evidence/*、performance、security 等。
-   - 【严厉禁令】bug、feature、task 严禁出现在 Labels 中（统一由 Type 标记）；Priority 统一由 Fields.Priority 承载，不再混入 Labels。
+   - 【严厉禁令】bug、feature、task 严禁出现在 Labels 中（统一由 Type 标记）；Priority 统一由 Fields.Priority 承载，禁止作为 Labels 维护。
 4. Relationships（非必填/选填，关系追溯）：
    - 属于非必填项。若存在与其他 Issue / PR 的阻塞依赖（Blocks / Blocked by）、主任务与子任务（Parent / Sub-issue）或上下文关联（Relates to），建议在右侧 Relationships 中配置追溯关系；独立原子任务无前置依赖时直接留空即可。
 
@@ -40,7 +40,7 @@ about: 按具体问题或任务灵活组织内容，明确类型、字段、标�
 
 ## Issue 信息（建议填写）
 
-<!-- 注：Priority 与 Effort 通过右侧 Fields 标记；置信度（confidence/*）通过右侧 Labels 标记；类型通过右侧 Type 标记；Relationships 为选填。正文不再重复编写优先级与置信度。 -->
+<!-- 注：Priority 与 Effort 通过右侧 Fields 标记；置信度（confidence/*）通过右侧 Labels 标记；类型通过右侧 Type 标记；Relationships 为选填。正文聚焦事实证据与技术上下文，优先级与置信度由侧边栏承载。 -->
 1. **代码基线** <!-- 填写发现问题或拟开展任务时的 Git Commit SHA 或正式版本号；涉及性能或行为回归时，需补充对照基线（Commit SHA 或版本）。 -->
 2. **证据类型** <!-- 用 evidence/<类型> 标明实际依据，例如 evidence/reproduced（可稳定复现）、evidence/test-failure（测试用例失败）、evidence/ci-failure（CI 构建失败）、evidence/static-analysis（静态分析检出）。 -->
 3. **架构领域** <!-- 标明问题所在的架构边界；若跨越多个架构边界，在此处完整写全（例如 realm/server, realm/contracts），右侧 Labels 仅需打一个关联度最大的标签。常见参考：realm/server、realm/client、realm/console、realm/contracts、realm/shared。 -->

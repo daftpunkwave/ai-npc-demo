@@ -25,12 +25,12 @@
 - **Issue 规范与右侧配置项职责：** 提单时必须充分利用 Issue 页面右侧（Sidebar）配置栏，明确分工各司其职：
   1. **Type 必选（严格三选一）：** 必须指定其一，禁止留空。漏洞与缺陷统一指定为 `Bug`；建议的新功能与新特性提案统一指定为 `Feature`；其他特定工作项（架构重构、测试补充、文档维护、工程化与 CI/CD 优化等）统一指定为 `Task`。
   2. **Fields 结构化字段：**
-     - **Priority（必选）：** 统一通过右侧 `Fields` 中的 `Priority` 下拉属性指定，分为 `P0` ~ `P4` 共 5 个重要度等级，不再作为 Labels 维护。
+     - **Priority（必选）：** 统一通过右侧 `Fields` 中的 `Priority` 下拉属性指定，分为 `P0` ~ `P4` 共 5 个重要度等级。
      - **Effort（选填/推荐）：** 统一通过右侧 `Fields` 中的 `Effort` 属性评估完成该 Issue 所需的相对工作量与复杂度（Relative level of effort），辅助排期与评估。
   3. **Labels 必填且禁写类型：** 置信度统一采用 `confidence/high`、`confidence/medium`、`confidence/low` 标签；领域标签统一采用 `realm/*` 与 `area/*`。**严厉禁令：`bug`、`feature`、`task` 严禁出现在 Labels 中**，类型必须且仅能通过右侧原生的 `Type` 属性标记。
   4. **Relationships 选填（非必填）：** 若存在上下游依赖、阻塞（Blocks / Blocked by）、主子任务（Parent / Sub-issue）或上下文关联（Relates to），建议在右侧 Relationships 中配置追溯关系；独立原子任务无前置依赖时直接留空。
 - **Issue 与 PR 正文及侧边栏规范：**
-  - **Issue 正文不再冗余写优先级与置信度：** Issue 正文不再写优先级与置信度，优先级统一通过右侧 `Fields.Priority` 标记，置信度统一通过右侧 Labels（`confidence/*`）标记；若外部提交者无侧边栏编辑权限，可在正文末尾注明建议，由维护者在分诊（Triage）时代为同步。
+  - **优先级与置信度由侧边栏承载：** Issue 优先级统一通过右侧 `Fields.Priority` 标记，置信度统一通过右侧 Labels（`confidence/*`）标记，正文不设对应字段；若外部提交者无侧边栏编辑权限，可在正文末尾注明建议，由维护者在分诊（Triage）时代为同步。
   - **跨领域正文写全、Labels 取主关联：** 架构领域与职能领域在正文（Issue 信息）中必须完整保留；若存在跨领域情况，正文需写全所有涉及领域，但右侧 Labels 仅需打一个关联度最大的核心标签。
   - **PR 侧边栏与 Labels 规范：** PR 不包含原生 Fields 结构化字段，其侧边栏不做特定要求，善用 PR Labels 即可；建议最少打一个标签以表达本次 PR 的主要任务（如关联的核心领域 `realm/*`、`area/*` 或任务类别）。
 - **端到端负责制（End-to-End PR Ownership）：** 一旦创建或接管 PR，持续跟进直至其完全达到可合并标准：所有必需 CI 与质量门禁通过、所有 Review 评论合规处理。
