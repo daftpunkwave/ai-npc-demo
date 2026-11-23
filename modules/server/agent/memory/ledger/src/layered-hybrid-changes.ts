@@ -48,17 +48,10 @@ function beliefChanges(input: DailyReviewInput): DailyReviewChanges {
     const evidence = op.evidenceIds.map((id) => evidenceById.get(id))
       .filter((record): record is MemoryRecordView => record !== undefined && record.status === "active");
     if (op.op === "keep") continue;
-    if (evidence.length !== op.evidenceIds.length) {
-      discarded.push({ source: `belief-${index}`, reason: "evidence-not-visible" });
-      continue;
-    }
-    if (!namesKnown(op.statement, view.identity.knownPrincipalNames ?? {})) {
-      discarded.push({ source: `belief-${index}`, reason: "unknown-principal" });
-      continue;
-    }
     const existing = op.op === "add" || op.beliefId === null ? undefined : beliefById.get(op.beliefId);
-    if (op.op !== "add" && existing === undefined) {
-      discarded.push({ source: `belief-${index}`, reason: "belief-not-visible" });
+    const reason = beliefDiscardReason(op, evidence, existing, view);
+    if (reason !== null) {
+      discarded.push({ source: `belief-${index}`, reason });
       continue;
     }
     if (existing !== undefined && op.op !== "add") {
@@ -88,6 +81,18 @@ function beliefChanges(input: DailyReviewInput): DailyReviewChanges {
     });
   }
   return { inserts, retires, discarded };
+}
+
+function beliefDiscardReason(
+  op: DailyReviewOutput["beliefOps"][number],
+  evidence: readonly MemoryRecordView[],
+  existing: MemoryRecordView | undefined,
+  view: RevisionView,
+): string | null {
+  if (evidence.length !== op.evidenceIds.length) return "evidence-not-visible";
+  if (!namesKnown(op.statement, view.identity.knownPrincipalNames ?? {})) return "unknown-principal";
+  if (op.op !== "add" && existing === undefined) return "belief-not-visible";
+  return null;
 }
 
 function concernChanges(input: DailyReviewInput): DailyReviewChanges {
