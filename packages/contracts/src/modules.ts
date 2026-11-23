@@ -28,18 +28,20 @@ export const cardinalitySchema = z.enum(["exactly-one", "many", "optional"]);
 
 export type Cardinality = z.infer<typeof cardinalitySchema>;
 
-/** 能力 ID 的 group 白名单：server 四族加浏览器两族，与模块 ID 的 group 取值一致。 */
+/**
+ * 能力 ID 的 group 白名单：server 四族加浏览器两族，与模块 ID 的 group 取值一致。
+ * 它同时供静态能力对账判断「一个字符串是不是在尝试声明能力」，因此与下面的正则分开导出；
+ * 两者的一致性由契约测试约束，避免任何一侧单独修改后分叉。
+ */
 export const CAPABILITY_GROUPS = ["game", "agent", "platform", "transport", "client", "console"] as const;
 
 /**
  * 能力 ID 语法：`<group>.<family>`，恰好一个分隔点；family 只含小写字母、数字与连字符。
  * 模块描述符与静态能力对账共用这一条语法，避免两套规则对同一字符串给出不同判定。
  */
-export const CAPABILITY_ID_PATTERN = new RegExp(
-  `^(?:${CAPABILITY_GROUPS.join("|")})\\.[a-z][a-z0-9-]*$`,
-);
+export const CAPABILITY_ID_PATTERN = /^(?:game|agent|platform|transport|client|console)\.[a-z][a-z0-9-]*$/;
 
-/** 能力 ID 带品牌，避免与模块 ID 或普通字符串混用；不符合语法的 ID 在 describeModule 阶段即失败。 */
+/** 能力 ID 带品牌，避免与模块 ID 或普通字符串混用；不符合语法的 ID 在描述符校验阶段即失败。 */
 export const capabilityIdSchema = z
   .string()
   .regex(CAPABILITY_ID_PATTERN, "不是合法的能力 ID：能力 ID 形如 <group>.<family>，family 只含小写字母、数字与连字符")
