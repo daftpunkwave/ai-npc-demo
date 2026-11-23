@@ -187,10 +187,30 @@ export const experimentCreateRequestSchema = z.union([
   z.object({ experimentRef: z.string().min(1) }).strict(),
 ]);
 
+/**
+ * 实验创建响应：逐个 run 的创建状态与失败详情。
+ *
+ * 创建是部分可成功的——一个变体的配置问题不该掩盖其他变体已创建的事实，
+ * 也不该让调用方失去定位失败项的依据。因此响应保留全部 run 的身份与状态，
+ * 而不是只回一个整体失败码。
+ */
+export const experimentRunOutcomeSchema = z
+  .object({
+    runId: idSchemas.run,
+    status: z.enum(["ready", "preflight-failed"]),
+    errors: z.array(runValidationErrorSchema),
+  })
+  .strict();
+
 export const experimentCreateResponseSchema = z
   .object({
     experimentId: experimentIdSchema,
+    /** 本次请求创建的 run 标识，顺序与展开顺序一致。 */
     runIds: z.array(idSchemas.run),
+    /** 与 runIds 一一对应的逐个结果；失败项在 errors 里给出逐条原因。 */
+    runs: z.array(experimentRunOutcomeSchema),
+    /** 预检失败的 run 数量；为 0 表示全部就绪。 */
+    failedRunCount: z.number().int().nonnegative(),
   })
   .strict();
 

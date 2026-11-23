@@ -531,6 +531,81 @@ describe("控制台评估读取接口", () => {
     })).json()).runs.length;
     expect(after).toBe(before);
   });
+  it("重复创建同一实验返回既有 run，不产生重复数据", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const payload = { experimentSpec: {
+      schemaVersion: 1, experimentId: "exp-idempotent-v1",
+      base: {
+        moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+        scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: "idem-v1",
+        player: { principalId: "player-1", factionId: "human-neutral" },
+        mode: "closed-loop", initialState: { kind: "cold-start" },
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+        failurePolicy: "strict",
+      },
+      scriptRef: "s-promise", scriptBranches: ["keep"], commonPatchRefs: [],
+      variants: ["memory-m0-window"], repetitions: 1, runOrder: "sequential",
+    } };
+    const first = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers, payload,
+    })).json());
+    expect(first.runIds).toHaveLength(1);
+    expect(first.failedRunCount).toBe(0);
+
+    // 重试同一请求：返回同一批 run，不重复创建。
+    const second = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers, payload,
+    })).json());
+    expect(second.runIds).toEqual(first.runIds);
+    const total = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.filter((run) => run.variant === "memory-m0-window").length;
+    expect(total).toBe(1);
+  });
+
+  it("部分 run 预检失败时保留每个 run 的状态与逐条原因", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    // 变体用一个不存在的 patch 引用：该 run 预检失败，另一个变体仍应创建。
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: {
+        schemaVersion: 1, experimentId: "exp-partial-v1",
+        base: {
+          moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+          scenarioRef: "watergate-v1", rosterRef: "core-3",
+          modelLayoutRef: "deterministic-model-layout-v1", seed: "partial-v1",
+          player: { principalId: "player-1", factionId: "human-neutral" },
+          mode: "closed-loop", initialState: { kind: "cold-start" },
+          clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+          failurePolicy: "strict",
+        },
+        scriptRef: "s-promise", scriptBranches: [], commonPatchRefs: [],
+        variants: ["memory-m0-window", "no-such-variant"], repetitions: 1, runOrder: "sequential",
+      } },
+    });
+    // 变体引用不存在时在规格校验阶段就失败，不创建任何 run。
+    expect(response.statusCode).toBe(400);
+    const runs = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs;
+    expect(runs.filter((run) => run.variant === "memory-m0-window").length).toBe(0);
+  });
+
+  it("评估员与操作员不能创建实验", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "evaluation-console");
+    for (const role of ["evaluator", "operator"]) {
+      const response = await host.app.inject({
+        method: "POST", url: "/api/v1/console/experiments",
+        headers: consoleHeader(consoleToken, role),
+        payload: { experimentSpec: { schemaVersion: 1, experimentId: "exp-denied-v1" } },
+      });
+      expect(response.statusCode, role).toBe(403);
+    }
+  });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

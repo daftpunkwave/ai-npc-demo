@@ -298,7 +298,11 @@ export interface ConsoleReadPort {
     createExperiment(request: { readonly experimentSpec: unknown } | { readonly experimentRef: string }): Promise<{
       readonly experimentId: string;
       readonly runIds: readonly string[];
-      readonly errors: readonly { readonly runId: string; readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[] }[];
+      readonly runs: readonly {
+        readonly runId: string;
+        readonly status: "ready" | "preflight-failed";
+        readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
+      }[];
     }>;
   };
 }

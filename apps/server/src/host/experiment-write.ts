@@ -33,8 +33,10 @@ export interface ExperimentWriteInput {
 export interface ExperimentCreateResult {
   readonly experimentId: string;
   readonly runIds: readonly string[];
-  readonly errors: readonly {
+  /** 与 runIds 一一对应的逐个创建结果；失败项带逐条原因。 */
+  readonly runs: readonly {
     readonly runId: string;
+    readonly status: "ready" | "preflight-failed";
     readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
   }[];
 }
@@ -81,19 +83,65 @@ export async function createExperiment(
   const spec = resolveSpec(input, request);
   // 名册按规格自己的 `base.rosterRef` 加载：用在线名册会拒绝有效实验，
   // 也会让校验通过但 manifest 冻结的名册与规格不一致。
-  validateExperimentSpec(spec, input.content, input.loadRoster(spec.base.rosterRef).value, input.loadContext);
+  try {
+    validateExperimentSpec(spec, input.content, input.loadRoster(spec.base.rosterRef).value, input.loadContext);
+  } catch (error) {
+    // 规格交叉校验失败是调用方输入问题，映射为 validation；
+    // 否则会被当成内部故障，调用方拿不到可修正的信息。
+    throw new DomainError("validation", `实验规格校验失败：${error instanceof Error ? error.message : String(error)}`);
+  }
   const runSpecs = runsOfExperiment(spec);
 
-  const runIds: string[] = [];
-  const errors: ExperimentCreateResult["errors"][number][] = [];
+  // 幂等：同一实验标识已有 run 时直接返回既有结果，不重复创建。
+  // 没有这层检查时，重试同一请求会按相同规格再建一批 run，实验数据被污染成两份。
+  const existing = existingRunsOf(input, spec.experimentId);
+  if (existing.length > 0) {
+    return {
+      experimentId: spec.experimentId,
+      runIds: existing.map((run) => run.runId),
+      runs: existing,
+    };
+  }
+
+  const runs: ExperimentCreateResult["runs"][number][] = [];
   for (const runSpec of runSpecs) {
     const created: RunCreateResult = await createRun(input.runWrite, runSpec);
-    runIds.push(created.runId);
-    if (created.status === "preflight-failed") {
-      errors.push({ runId: created.runId, errors: created.errors });
-    }
+    runs.push({ runId: created.runId, status: created.status, errors: created.errors });
   }
-  return { experimentId: spec.experimentId, runIds, errors };
+  return {
+    experimentId: spec.experimentId,
+    runIds: runs.map((run) => run.runId),
+    runs,
+  };
+}
+
+/**
+ * 读出某实验已创建的 run。
+ *
+ * 归组依据是 RunSpec 上显式的 `experimentId`，与评估读取同一口径——
+ * 不解析 `seed`、不猜命名约定。返回项的状态按 run 的实际记录还原。
+ */
+function existingRunsOf(
+  input: ExperimentWriteInput,
+  experimentId: string,
+): readonly ExperimentCreateResult["runs"][number][] {
+  const rows = input.runWrite.storage.transact((tx) => tx.rows("runs").list({}));
+  return rows.flatMap((row) => {
+    const spec = row["run_spec_json"];
+    let parsed: unknown = spec;
+    if (typeof spec === "string") {
+      try {
+        parsed = JSON.parse(spec) as unknown;
+      } catch {
+        return [];
+      }
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
+    if ((parsed as Readonly<Record<string, unknown>>)["experimentId"] !== experimentId) return [];
+    const runId = row["run_id"];
+    if (typeof runId !== "string") return [];
+    return [{ runId, status: "ready" as const, errors: [] }];
+  });
 }
 
 /** 从请求里取实验规格：配置引用直接加载，内联对象经同一套 schema 校验。 */

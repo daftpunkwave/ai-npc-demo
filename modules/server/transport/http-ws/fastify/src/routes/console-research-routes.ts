@@ -344,11 +344,18 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     const body = experimentCreateRequestSchema.safeParse(request.body);
     if (!body.success) return sendHttpError(reply, "validation", "实验规格请求结构不合法");
     const created = await options.console.evaluationWrites.createExperiment(body.data);
-    // 有 run 预检失败时如实返回 422 与逐条原因，不把部分失败伪装成成功。
-    if (created.errors.length > 0) {
-      return sendHttpError(reply, "assembly-incompatible", `实验中有 ${created.errors.length} 个 run 预检失败`);
-    }
-    return experimentCreateResponseSchema.parse({ experimentId: created.experimentId, runIds: [...created.runIds] });
+    // 创建是部分可成功的：返回 200 并保留每个 run 的身份、状态与失败原因。
+    // 用整体错误码会把已经创建的 run 与需要修正的具体问题一起丢掉。
+    return experimentCreateResponseSchema.parse({
+      experimentId: created.experimentId,
+      runIds: [...created.runIds],
+      runs: created.runs.map((run) => ({
+        runId: run.runId,
+        status: run.status,
+        errors: run.errors.map((error) => ({ code: error.code, message: error.message, path: error.path })),
+      })),
+      failedRunCount: created.runs.filter((run) => run.status === "preflight-failed").length,
+    });
   });
 
   app.post("/api/v1/console/exports", async (request, reply) => {
