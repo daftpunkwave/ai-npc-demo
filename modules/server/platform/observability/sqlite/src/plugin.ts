@@ -13,6 +13,7 @@ import {
   type AgentsResponse,
   type BranchCompareResponse,
   type DebugQueuesResponse,
+  type DebugWakeInput,
   type DebugWakeResponse,
   type HostServices,
   type Json,
@@ -301,8 +302,8 @@ export class ObservabilityPort {
     return this.research().debugQueues(branchId);
   }
 
-  debugWake(branchId: string, agentId: string, reason: string, operationId: string): DebugWakeResponse {
-    return this.research().debugWake(branchId, agentId, reason, operationId);
+  debugWake(input: DebugWakeInput): DebugWakeResponse {
+    return this.research().debugWake(input);
   }
 
   inspector(input: {

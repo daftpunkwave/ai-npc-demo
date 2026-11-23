@@ -55,6 +55,7 @@ function ModelMountsPage(): ReactNode {
   const [draft, setDraft] = useState("");
   const [validation, setValidation] = useState<ModelLayoutValidateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const detailRequest = useRef<AbortController | null>(null);
   const validationRequest = useRef(0);
 
   useEffect(() => {
@@ -71,12 +72,13 @@ function ModelMountsPage(): ReactNode {
 
   useEffect(() => {
     if (selectedId === null) return;
-    let cancelled = false;
+    const controller = new AbortController();
+    detailRequest.current = controller;
     void Promise.all([
-      host.api.consoleModelLayout(selectedId),
-      host.api.consoleModelRoutes(selectedId),
+      host.api.consoleModelLayout(selectedId, controller.signal),
+      host.api.consoleModelRoutes(selectedId, controller.signal),
     ]).then(([nextLayout, nextRoutes]) => {
-      if (cancelled) return;
+      if (controller.signal.aborted) return;
       validationRequest.current += 1;
       setLayout(nextLayout);
       setRoutes(nextRoutes);
@@ -84,10 +86,28 @@ function ModelMountsPage(): ReactNode {
       setValidation(null);
       setError(null);
     }).catch((cause: unknown) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      if (!controller.signal.aborted) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setError(`读取布局 ${selectedId} 失败：${message}`);
+      }
     });
-    return () => { cancelled = true; };
+    return () => {
+      controller.abort();
+      validationRequest.current += 1;
+    };
   }, [host.api, selectedId]);
+
+  const selectLayout = (layoutId: string): void => {
+    if (layoutId === selectedId) return;
+    detailRequest.current?.abort();
+    validationRequest.current += 1;
+    setLayout(null);
+    setRoutes(null);
+    setDraft("");
+    setValidation(null);
+    setError(null);
+    setSelectedId(layoutId);
+  };
 
   const validate = async (): Promise<void> => {
     const request = validationRequest.current + 1;
@@ -125,9 +145,7 @@ function ModelMountsPage(): ReactNode {
                 type="button"
                 key={layoutId}
                 className={layoutId === selectedId ? "is-selected" : ""}
-                onClick={() => {
-                  setSelectedId(layoutId);
-                }}
+                onClick={() => selectLayout(layoutId)}
               >
                 <span>{layoutId}</span>
                 <small>{layoutId === selectedId ? "当前查看" : "打开详情"}</small>
@@ -137,7 +155,9 @@ function ModelMountsPage(): ReactNode {
         </section>
         <section className="console-panel">
           <header><h2>{layout?.layoutId ?? "布局详情"}</h2><span>{routes?.routes.length ?? 0} 条路由</span></header>
-          {layout === null ? <p className="console-empty">尚未选择布局。</p> : (
+          {layout === null ? (
+            <p className="console-empty">{selectedId === null ? "尚未选择布局。" : "暂无布局详情。"}</p>
+          ) : (
             <div className="model-layout-detail">
               <div className="console-kv">
                 <div><dt>连接</dt><dd>{Object.keys(layout.connections).length}</dd></div>
@@ -180,7 +200,7 @@ function ModelMountsPage(): ReactNode {
             }}
           />
           <div className="console-action-row">
-            <button type="button" className="console-primary" onClick={() => void validate()}>校验布局</button>
+            <button type="button" className="console-primary" disabled={draft.trim().length === 0} onClick={() => void validate()}>校验布局</button>
             {validation === null ? null : (
               <span className={validation.ok ? "console-ok" : "console-error-text"}>
                 {validation.ok ? "校验通过" : `${validation.errors.length} 个问题`}

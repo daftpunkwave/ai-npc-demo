@@ -24,6 +24,7 @@ import { LoadingError, loadModelLayout, type ConfigLoadContext, type ModelLayout
 
 const publicEndpointEnvironment = "NPC_OPENAI_COMPAT_BASE_URL";
 const publicModelEnvironment = "NPC_OPENAI_COMPAT_MODEL";
+const layoutEndpointPrefix = "layout:";
 const credentialEnvironment = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const maxValidationErrors = 100;
 
@@ -38,27 +39,15 @@ function hostOf(endpoint: string | undefined): string | null {
   if (endpoint === undefined || endpoint.startsWith("env:")) return null;
   try {
     const url = new URL(endpoint);
-    return url.hostname;
+    return url.hostname || null;
   } catch {
     return null;
   }
 }
 
-function endpointRefOf(endpoint: string | undefined): string | null {
+function endpointRefOf(layoutId: string, endpoint: string | undefined): string | null {
   if (endpoint === undefined) return null;
-  if (endpoint.startsWith("env:")) {
-    return endpoint === `env:${publicEndpointEnvironment}` ? endpoint : null;
-  }
-  try {
-    const url = new URL(endpoint);
-    if ((url.protocol !== "https:" && url.protocol !== "http:") ||
-      url.username.length > 0 || url.password.length > 0 || url.search.length > 0 || url.hash.length > 0) {
-      return null;
-    }
-    return `${url.origin}${url.pathname}`;
-  } catch {
-    return null;
-  }
+  return endpoint === `env:${publicEndpointEnvironment}` ? endpoint : `${layoutEndpointPrefix}${layoutId}`;
 }
 
 function credentialName(value: string | null): string | null {
@@ -73,7 +62,7 @@ function viewOf(layout: ModelLayout): ModelLayoutView {
       connectionId,
       {
         adapterId: connection.adapterId,
-        endpointRef: endpointRefOf(connection.endpoint),
+        endpointRef: endpointRefOf(layout.layoutId, connection.endpoint),
         endpointHost: hostOf(connection.endpoint),
         credentialRef: credentialName(connection.credentialRef),
         rateLimitKey: connection.rateLimitKey ?? null,
@@ -122,7 +111,31 @@ function routesOf(layout: ModelLayout): ModelLayoutRoutesResponse {
   return modelLayoutRoutesResponseSchema.parse({ routes });
 }
 
-function validationErrors(layout: ModelLayoutDraft, knownAgentIds: ReadonlySet<string>) {
+function endpointError(endpoint: string | undefined, connectionId: string): { code: string; message: string } | null {
+  if (endpoint === undefined) return null;
+  if (endpoint.startsWith("env:")) {
+    return endpoint === `env:${publicEndpointEnvironment}` ? null
+      : { code: "endpoint-environment", message: `连接 ${connectionId} 的端点引用不受支持` };
+  }
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return { code: "endpoint", message: `连接 ${connectionId} 的端点不是合法 URL` };
+  }
+  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]";
+  if ((url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) ||
+    url.username.length > 0 || url.password.length > 0 || url.search.length > 0 || url.hash.length > 0) {
+    return { code: "endpoint", message: `连接 ${connectionId} 的端点必须是无用户信息、查询或片段的 HTTPS 或回环 HTTP` };
+  }
+  return null;
+}
+
+function validationErrors(
+  layout: ModelLayoutDraft,
+  knownAgentIds: ReadonlySet<string>,
+  repositoryLayout: ModelLayout | null,
+) {
   const errors: { code: string; message: string }[] = [];
   const fail = (code: string, message: string): boolean => {
     if (errors.length < maxValidationErrors) errors.push({ code, message });
@@ -131,24 +144,19 @@ function validationErrors(layout: ModelLayoutDraft, knownAgentIds: ReadonlySet<s
   const rateLimits = new Map<string, string>();
   const routes = new Set<string>();
   for (const [connectionId, connection] of Object.entries(layout.connections)) {
-    if (connection.endpoint?.startsWith("env:")) {
-      const name = connection.endpoint.slice(4);
-      if (name !== publicEndpointEnvironment) {
-        if (fail("endpoint-environment", `连接 ${connectionId} 的端点引用不受支持`)) return errors;
-      }
-    } else if (connection.endpoint !== undefined) {
-      try {
-        const endpoint = new URL(connection.endpoint);
-        const loopback = endpoint.hostname === "127.0.0.1" || endpoint.hostname === "localhost" || endpoint.hostname === "[::1]";
-        if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback) ||
-          endpoint.username.length > 0 || endpoint.password.length > 0 ||
-          endpoint.search.length > 0 || endpoint.hash.length > 0) {
-          if (fail("endpoint", `连接 ${connectionId} 的端点必须是无凭据的 HTTPS 或回环 HTTP`)) return errors;
-        }
-      } catch {
-        if (fail("endpoint", `连接 ${connectionId} 的端点不是合法 URL`)) return errors;
+    let endpoint = connection.endpoint;
+    if (endpoint?.startsWith(layoutEndpointPrefix)) {
+      const configured = repositoryLayout === null ? undefined : own(repositoryLayout.connections, connectionId);
+      if (endpoint !== `${layoutEndpointPrefix}${layout.layoutId}` ||
+        configured?.endpoint === undefined || configured.adapterId !== connection.adapterId) {
+        if (fail("endpoint-reference", `连接 ${connectionId} 的仓库端点引用无法解析`)) return errors;
+        endpoint = undefined;
+      } else {
+        endpoint = configured.endpoint;
       }
     }
+    const issue = endpointError(endpoint, connectionId);
+    if (issue !== null && fail(issue.code, issue.message)) return errors;
     const credentialRef = connection.credentialRef?.replace(/^env:/u, "");
     if (credentialRef !== undefined && !credentialEnvironment.test(credentialRef)) {
       if (fail("credential-ref", `连接 ${connectionId} 的 credentialRef 必须是环境变量名`)) return errors;
@@ -240,8 +248,21 @@ export class ModelLayoutAdminPort {
         })),
       });
     }
-    const errors = validationErrors(parsed.data, this.knownAgentIds);
+    const layoutId = parsed.data.layoutId;
+    const sourceRef = `${layoutEndpointPrefix}${layoutId}`;
+    const repositoryLayout = Object.values(parsed.data.connections).some((connection) => connection.endpoint === sourceRef)
+      ? this.loadDraftSource(layoutId) : null;
+    const errors = validationErrors(parsed.data, this.knownAgentIds, repositoryLayout);
     return modelLayoutValidateResponseSchema.parse({ ok: errors.length === 0, errors });
+  }
+
+  private loadDraftSource(layoutId: string): ModelLayout | null {
+    try {
+      return this.load(layoutId);
+    } catch (error) {
+      if (error instanceof DomainError && (error.code === "not-found" || error.code === "invalid-state")) return null;
+      throw error;
+    }
   }
 
   private layoutIds(): readonly string[] {

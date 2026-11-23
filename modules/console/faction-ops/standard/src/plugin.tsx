@@ -5,7 +5,7 @@
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 /* eslint-disable no-unused-vars -- 宿主端口方法参数名只表达调用契约，Codacy 未能解析。 */
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type {
   ClockView,
@@ -22,7 +22,7 @@ interface ConsoleHostPort {
   operationId(): string;
   reload(): void;
   confirm(message: string): boolean;
-  waitForClockSettled(ticks: number): Promise<ClockView>;
+  waitForClockSettled(ticks: number, signal: AbortSignal): Promise<ClockView>;
 }
 
 interface ConsolePagePort extends BrowserViewPort {
@@ -42,71 +42,100 @@ function FactionOpsPage(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const activeRequest = useRef<AbortController | null>(null);
 
-  const refresh = async (isCurrent: () => boolean = () => true): Promise<void> => {
+  const refresh = async (signal: AbortSignal): Promise<ClockView> => {
     const [health, nextSnapshots] = await Promise.all([
-      host.api.consoleHealth(),
-      host.api.consoleSnapshots(),
+      host.api.consoleHealth(signal),
+      host.api.consoleSnapshots(signal),
     ]);
-    if (!isCurrent()) return;
+    signal.throwIfAborted();
     setClock(health.clock);
     setSnapshots(nextSnapshots.snapshots);
+    return health.clock;
   };
 
   useEffect(() => {
-    let cancelled = false;
-    void refresh(() => !cancelled).catch((cause: unknown) => {
-      if (!cancelled) setError(actionError(cause));
+    const initial = new AbortController();
+    activeRequest.current = initial;
+    void refresh(initial.signal).catch((cause: unknown) => {
+      if (!initial.signal.aborted) setError(`读取运营状态失败：${actionError(cause)}`);
     });
-    return () => { cancelled = true; };
+    return () => { activeRequest.current?.abort(); };
   }, [host.api]);
 
-  const run = async (work: () => Promise<void>): Promise<void> => {
+  const run = async (work: (signal: AbortSignal) => Promise<void>, stepTicks?: number): Promise<void> => {
+    activeRequest.current?.abort();
+    const current = new AbortController();
+    activeRequest.current = current;
+    const { signal } = current;
     setBusy(true);
     setError(null);
+    setMessage(null);
+    let operationFailure: string | null = null;
     try {
-      await work();
-      await refresh();
+      await work(signal);
     } catch (cause) {
-      setError(actionError(cause));
-      await refresh().catch(() => undefined);
+      operationFailure = actionError(cause);
+      if (!signal.aborted) setError(operationFailure);
+    }
+    if (signal.aborted) return;
+
+    try {
+      const latestClock = await refresh(signal);
+      if (operationFailure !== null && stepTicks !== undefined && latestClock.mode === "stepping") {
+        const settled = await host.waitForClockSettled(stepTicks, signal);
+        signal.throwIfAborted();
+        setClock(settled);
+      }
+    } catch (cause) {
+      if (signal.aborted) return;
+      const refreshFailure = `刷新运营状态失败：${actionError(cause)}`;
+      setError(operationFailure === null ? refreshFailure : `${operationFailure}。${refreshFailure}`);
     } finally {
-      setBusy(false);
+      if (!signal.aborted) setBusy(false);
     }
   };
 
-  const control = (mode: "pause" | "resume"): Promise<void> => run(async () => {
+  const control = (mode: "pause" | "resume"): Promise<void> => run(async (signal) => {
     if (clock === null) throw new Error("时钟尚未加载");
     const request = { operationId: host.operationId(), expectedRunVersion: clock.runVersion };
-    setClock(mode === "pause"
+    const nextClock = mode === "pause"
       ? await host.api.consolePauseCampaign(request)
-      : await host.api.consoleResumeCampaign(request));
+      : await host.api.consoleResumeCampaign(request);
+    signal.throwIfAborted();
+    setClock(nextClock);
     setMessage(mode === "pause" ? "时钟已暂停" : "时钟已继续");
   });
 
-  const step = (): Promise<void> => run(async () => {
+  const step = (): Promise<void> => run(async (signal) => {
     if (clock === null) throw new Error("时钟尚未加载");
     const next = await host.api.consoleStepCampaign({
       operationId: host.operationId(),
       expectedRunVersion: clock.runVersion,
       ticks,
     });
+    signal.throwIfAborted();
     setClock(next);
-    setClock(await host.waitForClockSettled(ticks));
+    const settled = await host.waitForClockSettled(ticks, signal);
+    signal.throwIfAborted();
+    setClock(settled);
     setMessage(`已请求推进 ${ticks} tick`);
-  });
+  }, ticks);
 
-  const snapshot = (): Promise<void> => run(async () => {
+  const snapshot = (): Promise<void> => run(async (signal) => {
     await host.api.consoleCreateSnapshot({ operationId: host.operationId(), label });
+    signal.throwIfAborted();
     setMessage("快照已创建");
   });
 
-  const restore = (snapshotId: string): Promise<void> => run(async () => {
+  const restore = (snapshotId: string): Promise<void> => run(async (signal) => {
     const preview = await host.api.consoleRestoreSnapshot({
       operationId: host.operationId(),
       snapshotId,
       dryRun: true,
-    });
+    }, signal);
+    signal.throwIfAborted();
     if (!("checks" in preview)) throw new Error("缺少恢复预检结果");
     if (!preview.ok) throw new Error(preview.checks.find((check) => !check.ok)?.message ?? "恢复预检未通过");
     if (!host.confirm("确认恢复该快照并切换在线分支？")) return;
@@ -115,6 +144,7 @@ function FactionOpsPage(): ReactNode {
       snapshotId,
       dryRun: false,
     });
+    signal.throwIfAborted();
     host.reload();
   });
 

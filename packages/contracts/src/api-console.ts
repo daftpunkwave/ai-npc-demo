@@ -261,7 +261,7 @@ export const modelLayoutDraftSchema = z
 
 export type ModelLayoutDraft = z.infer<typeof modelLayoutDraftSchema>;
 
-/** 去密钥连接视图：端点保留公开路径或环境引用，凭据只显示引用名。 */
+/** 去密钥连接视图：公开主机名和端点引用，凭据只显示引用名。 */
 export const modelConnectionViewSchema = z
   .object({
     adapterId: moduleIdSchema,
@@ -314,7 +314,7 @@ export type ModelLayoutRoutesResponse = z.infer<typeof modelLayoutRoutesResponse
 
 export const modelLayoutValidateRequestSchema = z
   .object({
-    layout: modelLayoutDraftSchema,
+    layout: jsonValueSchema,
   })
   .strict();
 

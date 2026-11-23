@@ -72,6 +72,7 @@ export interface RequestOptions {
   readonly body?: unknown;
   readonly authenticated?: boolean;
   readonly activeRole?: ConsoleActiveRole;
+  readonly signal?: AbortSignal | undefined;
 }
 
 interface BrowserStorage {
@@ -259,9 +260,10 @@ export class ApiClient {
     return this.request(presetsResponseSchema, "/api/v1/presets");
   }
 
-  consoleHealth() {
+  consoleHealth(signal?: AbortSignal) {
     return this.request(consoleHealthResponseSchema, "/api/v1/console/health", {
       activeRole: this.requireActiveRole(),
+      signal,
     });
   }
 
@@ -325,19 +327,19 @@ export class ApiClient {
     });
   }
 
-  consoleModelLayout(layoutId: string) {
+  consoleModelLayout(layoutId: string, signal?: AbortSignal) {
     return this.request(
       modelLayoutViewSchema,
       `/api/v1/console/model-layouts/${encodeURIComponent(layoutId)}`,
-      { activeRole: this.requireActiveRole() },
+      { activeRole: this.requireActiveRole(), signal },
     );
   }
 
-  consoleModelRoutes(layoutId: string) {
+  consoleModelRoutes(layoutId: string, signal?: AbortSignal) {
     return this.request(
       modelLayoutRoutesResponseSchema,
       `/api/v1/console/model-layouts/${encodeURIComponent(layoutId)}/routes`,
-      { activeRole: this.requireActiveRole() },
+      { activeRole: this.requireActiveRole(), signal },
     );
   }
 
@@ -491,9 +493,10 @@ export class ApiClient {
     });
   }
 
-  consoleSnapshots() {
+  consoleSnapshots(signal?: AbortSignal) {
     return this.request(snapshotListResponseSchema, "/api/v1/console/campaign/snapshots", {
       activeRole: this.requireActiveRole(),
+      signal,
     });
   }
 
@@ -509,7 +512,7 @@ export class ApiClient {
     readonly operationId: string;
     readonly snapshotId: string;
     readonly dryRun?: boolean;
-  }) {
+  }, signal?: AbortSignal) {
     return this.request(
       consoleSnapshotRestoreResponseSchema,
       "/api/v1/console/campaign/restore",
@@ -517,6 +520,7 @@ export class ApiClient {
         method: "POST",
         body: { ...input, dryRun: input.dryRun ?? false },
         activeRole: this.requireActiveRole(),
+        signal,
       },
     );
   }
@@ -565,8 +569,10 @@ export class ApiClient {
       method: options.method ?? "GET",
       headers,
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     const payload: unknown = await response.json().catch(() => null);
+    options.signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
         this.clearSession();

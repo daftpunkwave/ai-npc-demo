@@ -28,13 +28,23 @@ function operationId(): string {
   return `op-${Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("")}`;
 }
 
-async function waitForClockSettled(api: ApiClient, ticks: number): Promise<ClockView> {
+async function waitForClockSettled(api: ApiClient, ticks: number, signal: AbortSignal): Promise<ClockView> {
   // 单步按 20 秒/tick 推进；每 tick 预留 45 秒，避免页面在 24 tick 的单步中途误报超时。
   const attempts = Math.max(60, ticks * 90);
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const clock = (await api.consoleHealth()).clock;
+    const clock = (await api.consoleHealth(signal)).clock;
     if (clock.mode !== "stepping") return clock;
-    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(finish, 500);
+      function finish(): void {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", finish);
+        resolve();
+      }
+      signal.addEventListener("abort", finish, { once: true });
+      if (signal.aborted) finish();
+    });
+    signal.throwIfAborted();
   }
   throw new Error("单步推进超时，请重新读取时钟状态");
 }
@@ -78,7 +88,7 @@ export function ConsoleBootstrap(): ReactNode {
         operationId,
         reload: () => window.location.reload(),
         confirm: (message: string) => window.confirm(message),
-        waitForClockSettled: (ticks: number) => waitForClockSettled(api, ticks),
+        waitForClockSettled: (ticks: number, signal: AbortSignal) => waitForClockSettled(api, ticks, signal),
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
         },

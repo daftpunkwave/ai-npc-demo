@@ -13,6 +13,7 @@ import type {
   BranchCompareResponse,
   ConsoleHealthResponse,
   DebugQueuesResponse,
+  DebugWakeInput,
   DebugWakeResponse,
   MemoryDiffResponse,
   MemoryResponse,
@@ -259,12 +260,7 @@ export interface ConsoleReadPort {
   replayTurn?: (input: {
     readonly turnId: string;
   }) => Promise<TurnReplayResponse>;
-  debugWake?: (input: {
-    readonly agentId: string;
-    readonly reason: string;
-    readonly operationId: string;
-    readonly branchId: string;
-  }) => DebugWakeResponse;
+  debugWake?: (input: DebugWakeInput) => DebugWakeResponse;
 }
 
 /** HTTP 适配器写入观测存储的最小跨度视图。 */

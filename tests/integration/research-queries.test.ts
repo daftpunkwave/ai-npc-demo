@@ -6,8 +6,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Json, ModuleInstance, StoragePort, StorageTransaction } from "@ai-npc/contracts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { canonicalJson, type Json, type ModuleInstance, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
 import { ObservabilityPort } from "@ai-npc/mod-platform-observability-sqlite";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { createFakeHost } from "./authority-support";
@@ -18,6 +18,7 @@ const right = { branchId: "br-000000000002", runId: "run-000000000002" };
 const agentId = "human-independent";
 const createdAt = "2026-01-01T00:00:00.000Z";
 const operationId = "op-000000000001";
+const researcher = "researcher-fixture";
 
 function putEvent(tx: StorageTransaction, branchId: string, seq: number, payload: Json): void {
   tx.branch(branchId).table("domain_events").put({
@@ -40,6 +41,8 @@ describe("研究查询与审计端口", () => {
   let instance: ModuleInstance | undefined;
   let storage: StoragePort;
   let observability: ObservabilityPort;
+  const wake = (branchId: string, reason: string, principalId = researcher) =>
+    observability.debugWake({ branchId, agentId, reason, operationId, principalId });
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), "ai-npc-research-port-"));
@@ -127,11 +130,13 @@ describe("研究查询与审计端口", () => {
   });
 
   it("同一 operationId 可独立用于不同分支，重试保留各自的审计与污染标记", () => {
-    expect(observability.debugWake(left.branchId, agentId, "左侧检查", operationId)).toEqual({ ok: true });
+    expect(wake(left.branchId, "左侧检查")).toEqual({ ok: true });
     expect(storage.transact((tx) => tx.rows("runs").get({ run_id: right.runId })?.["contaminated"])).toBe(0);
-    expect(observability.debugWake(right.branchId, agentId, "右侧检查", operationId)).toEqual({ ok: true });
-    expect(observability.debugWake(left.branchId, agentId, "左侧检查", operationId)).toEqual({ ok: true });
-    expect(() => observability.debugWake(left.branchId, agentId, "右侧检查", operationId))
+    expect(wake(right.branchId, "右侧检查")).toEqual({ ok: true });
+    expect(wake(left.branchId, "左侧检查")).toEqual({ ok: true });
+    expect(() => wake(left.branchId, "右侧检查"))
+      .toThrow(expect.objectContaining({ code: "idempotency-conflict" }));
+    expect(() => wake(left.branchId, "左侧检查", "other-researcher"))
       .toThrow(expect.objectContaining({ code: "idempotency-conflict" }));
 
     for (const [scope, reason] of [[left, "左侧检查"], [right, "右侧检查"]] as const) {
@@ -146,28 +151,42 @@ describe("研究查询与审计端口", () => {
       expect(rows.run?.["contaminated"]).toBe(1);
       expect(rows.triggers).toEqual([expect.objectContaining({ agent_id: agentId, source_ref: operationId })]);
       expect(rows.audit).toEqual([{
-        run_id: scope.runId, payload_json: expect.stringContaining(reason),
+        run_id: scope.runId, payload_json: canonicalJson({ agentId, reason, operationId, principalId: researcher }),
       }]);
     }
   });
 
+  it("重放存量唤醒审计时保留原记录", () => {
+    wake(left.branchId, "存量请求");
+    const oldPayload = canonicalJson({ agentId, reason: "存量请求", operationId });
+    storage.transact((tx) => {
+      tx.run("UPDATE lifecycle_events SET payload_json = ? WHERE run_id = ? AND type = 'DebugWakeRequested'", [
+        oldPayload, left.runId,
+      ]);
+    });
+    expect(wake(left.branchId, "存量请求")).toEqual({ ok: true });
+    expect(storage.transact((tx) =>
+      tx.all("SELECT payload_json FROM lifecycle_events WHERE type = 'DebugWakeRequested'"),
+    )).toEqual([{ payload_json: oldPayload }]);
+  });
+
   it("存在调试触发但所属分支的审计缺失时拒绝幂等重放", () => {
-    observability.debugWake(left.branchId, agentId, "左侧检查", operationId);
-    observability.debugWake(right.branchId, agentId, "右侧检查", operationId);
+    wake(left.branchId, "左侧检查");
+    wake(right.branchId, "右侧检查");
     storage.transact((tx) => {
       tx.run("UPDATE lifecycle_events SET payload_json = ? WHERE run_id = ? AND type = 'DebugWakeRequested'", [
         '{"reason":"缺少 operationId"}', left.runId,
       ]);
     });
 
-    expect(() => observability.debugWake(left.branchId, agentId, "左侧检查", operationId))
+    expect(() => wake(left.branchId, "左侧检查"))
       .toThrow(expect.objectContaining({ code: "invalid-state", safeMessage: "调试唤醒缺少对应的审计记录" }));
-    expect(observability.debugWake(right.branchId, agentId, "右侧检查", operationId)).toEqual({ ok: true });
+    expect(wake(right.branchId, "右侧检查")).toEqual({ ok: true });
     expect(storage.transact((tx) => tx.branch(left.branchId).table("triggers").count())).toBe(1);
   });
 
   it("按分支区分调度中的任务、终态和实际模型尝试", () => {
-    observability.debugWake(left.branchId, agentId, "待调度", operationId);
+    wake(left.branchId, "待调度");
     storage.transact((tx) => {
       const statuses = ["queued", "deciding", "settling", "completed"];
       for (const [scope, offset] of [[left, 0], [right, statuses.length]] as const) {
@@ -195,5 +214,67 @@ describe("研究查询与审计端口", () => {
       scheduler: { queued: 1, running: 2 },
       modelPool: { queued: null, running: 0, oldestAt: null },
     });
+  });
+
+  it("在一次事务中批量读取 turn 统计，保留分支、run 与缺失用量的语义", () => {
+    const first = "turn-000000000010";
+    const second = "turn-000000000011";
+    const third = "turn-000000000012";
+    const triggers = ["trg-000000000010", "trg-000000000011"] as const;
+    storage.transact((tx) => {
+      const turns = tx.rows("turn_runs");
+      const base = {
+        run_id: left.runId, branch_id: left.branchId, agent_id: agentId, status: "queued",
+        effective_json: [], profile_hash: "fixture", controller_epoch: 1, turn_lease_epoch: 1, created_tick: 1,
+      };
+      turns.put({
+        ...base, turn_id: first, agent_turn_index: 1, created_at: createdAt,
+        trigger_ids_json: [...triggers, triggers[0]],
+      });
+      turns.put({
+        ...base, turn_id: second, agent_turn_index: 2, created_at: "2026-01-01T00:00:01.000Z", trigger_ids_json: [],
+      });
+      turns.put({
+        ...base, turn_id: third, agent_turn_index: 3, created_at: "2026-01-01T00:00:02.000Z", trigger_ids_json: [],
+      });
+      for (const branchId of [left.branchId, right.branchId]) {
+        for (const triggerId of triggers) {
+          tx.branch(branchId).table("triggers").put({
+            trigger_id: triggerId, agent_id: agentId, kind: branchId === left.branchId ? "debug" : "patrol",
+            priority: 100, source_ref: operationId, created_tick: 1, dedupe_key: triggerId, consumed_by_turn_id: null,
+          });
+        }
+      }
+      const attempts = tx.rows("model_attempts");
+      const attempt = {
+        llm_call_id: "call-000000000001", agent_id: agentId, purpose: "decision", model_id: "fixture",
+        connection_id: "fixture", adapter_id: "platform.model-transport.deterministic",
+        status: "succeeded", is_effective: 0, created_at: createdAt,
+      };
+      const usage = { inputTokens: 5, outputTokens: 2 };
+      attempts.put({ ...attempt, attempt_id: "att-000000000001", run_id: left.runId, work_ref: first, usage_json: usage });
+      attempts.put({ ...attempt, attempt_id: "att-000000000002", run_id: left.runId, work_ref: first, usage_json: usage });
+      attempts.put({ ...attempt, attempt_id: "att-000000000003", run_id: left.runId, work_ref: second, usage_json: null });
+      attempts.put({ ...attempt, attempt_id: "att-000000000004", run_id: right.runId, work_ref: first, usage_json: usage });
+      const toolCalls = tx.rows("tool_calls");
+      const tool = {
+        turn_id: first, agent_id: agentId, provider_call_id: "call-fixture", tool_id: "fixture",
+        tool_version: "1", binding_id: "fixture", status: "settled", args_hash: "fixture", created_at: createdAt,
+      };
+      toolCalls.put({ ...tool, tool_call_id: "tool-000000000001", run_id: left.runId, attempt_id: "att-000000000001" });
+      toolCalls.put({ ...tool, tool_call_id: "tool-000000000002", run_id: right.runId, attempt_id: "att-000000000004" });
+    });
+
+    const transactions = vi.spyOn(storage, "transact");
+    try {
+      expect(observability.turns({ branchId: left.branchId }).turns).toMatchObject([
+        { turnId: third, triggerKinds: [], modelCalls: 0, toolCalls: 0, tokens: { input: null, output: null } },
+        { turnId: second, triggerKinds: [], modelCalls: 1, toolCalls: 0, tokens: { input: null, output: null } },
+        { turnId: first, triggerKinds: ["debug", "debug"], modelCalls: 2, toolCalls: 1, tokens: { input: 10, output: 4 } },
+      ]);
+      expect(transactions).toHaveBeenCalledTimes(1);
+    } finally {
+      transactions.mockRestore();
+    }
   });
 });

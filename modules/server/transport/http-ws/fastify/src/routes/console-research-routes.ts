@@ -207,7 +207,8 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
   });
 
   app.post("/api/v1/console/debug/agents/:agentId/wake", (request, reply) => {
-    if (requireResearchSession(context, request, reply) === null) return;
+    const session = requireResearchSession(context, request, reply);
+    if (session === null) return;
     if (options.console?.debugWake === undefined) return sendHttpError(reply, "not-ready", "调试唤醒尚未就绪");
     const path = parsePath(agentParamsSchema, request.params);
     const body = debugWakeRequestSchema.safeParse(request.body);
@@ -217,6 +218,7 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
       reason: body.data.reason,
       operationId: body.data.operationId,
       branchId: branch.branchId,
+      principalId: session.auth.principalId,
     }));
   });
 }

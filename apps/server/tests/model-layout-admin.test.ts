@@ -68,16 +68,16 @@ describe("模型布局管理端口", () => {
     }
   });
 
-  it("让带路径前缀的端点从仓库布局往返到草稿预检", () => {
-    const endpoint = "https://models.example.test/gateway/openai/v1";
-    writeLayout(endpoint);
+  it("使用仓库引用预检原端点，详情和草稿均不暴露路径令牌", () => {
+    const privateSegment = "fixture-path-token";
+    writeLayout(`https://models.example.test/gateway/${privateSegment}/v1`);
     const layout = port.layout(layoutId);
     const proxy = layout.connections["proxy"];
     expect(proxy).toEqual({
-      adapterId: providerId, endpointRef: endpoint, endpointHost: "models.example.test",
+      adapterId: providerId, endpointRef: `layout:${layoutId}`, endpointHost: "models.example.test",
       credentialRef: "MODEL_TEST_KEY", rateLimitKey: null,
     });
-    expect(port.validate({
+    const draft = {
       schemaVersion: layout.schemaVersion,
       layoutId: layout.layoutId,
       connections: { proxy: {
@@ -87,24 +87,49 @@ describe("模型布局管理端口", () => {
       } },
       models: layout.models,
       mounts: layout.mounts,
-    })).toEqual({ ok: true, errors: [] });
+    };
+    expect(JSON.stringify({ layout, draft })).not.toContain(privateSegment);
+    expect(port.validate(draft)).toEqual({ ok: true, errors: [] });
+    expect(port.validate({ ...draft, layoutId: "different-layout" })).toMatchObject({
+      ok: false,
+      errors: [{ code: "endpoint-reference" }],
+    });
   });
 
   it.each([
     "https://fixture-user@models.example.test/gateway",
     "https://models.example.test/gateway?options=fixture",
     "https://models.example.test/gateway#fixture",
-  ])("从布局视图省去带凭据、查询或片段的端点 %s", (endpoint) => {
+  ])("使用仓库引用校验带用户信息、查询或片段的端点 %s", (endpoint) => {
     writeLayout(endpoint);
-    expect(port.layout(layoutId).connections["proxy"]).toMatchObject({
-      endpointRef: null, endpointHost: "models.example.test",
+    const layout = port.layout(layoutId);
+    expect(layout.connections["proxy"]).toMatchObject({
+      endpointRef: `layout:${layoutId}`, endpointHost: "models.example.test",
+    });
+    const result = port.validate({
+      schemaVersion: layout.schemaVersion, layoutId,
+      connections: { proxy: { adapterId: providerId, endpoint: layout.connections["proxy"]?.endpointRef } },
+      models: layout.models, mounts: layout.mounts,
+    });
+    expect(result).toMatchObject({ ok: false, errors: [{ code: "endpoint" }] });
+    expect(JSON.stringify(result)).not.toContain(endpoint);
+  });
+
+  it("报告不可用的仓库端点引用", () => {
+    mkdirSync(directory);
+    expect(port.validate({
+      schemaVersion: 1, layoutId,
+      connections: { proxy: { adapterId: providerId, endpoint: `layout:${layoutId}` } },
+      models: {}, mounts: [],
+    })).toMatchObject({
+      ok: false, errors: [{ code: "endpoint-reference" }],
     });
   });
 
   it.each([
     ["env:NPC_OPENAI_COMPAT_BASE_URL", "env:NPC_OPENAI_COMPAT_BASE_URL"],
-    ["env:MODEL_TEST_KEY", null],
-    ["env:NPC_OPENAI_COMPAT_BASE_URL?value=fixture", null],
+    ["env:MODEL_TEST_KEY", `layout:${layoutId}`],
+    ["env:NPC_OPENAI_COMPAT_BASE_URL?value=fixture", `layout:${layoutId}`],
   ])("仅公开允许的端点环境引用 %s", (endpoint, expected) => {
     writeLayout(endpoint);
     expect(port.layout(layoutId).connections["proxy"]).toMatchObject({

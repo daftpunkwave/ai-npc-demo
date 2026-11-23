@@ -10,11 +10,11 @@ import {
   traceResponseSchema,
   turnDetailSchema,
   turnStageViewSchema,
-  turnSummarySchema,
   turnsResponseSchema,
   type ArtifactResponse,
   type BranchCompareResponse,
   type DebugQueuesResponse,
+  type DebugWakeInput,
   type DebugWakeResponse,
   type HostServices,
   type Json,
@@ -22,14 +22,12 @@ import {
   type MemoryResponse,
   type ObservationsResponse,
   type StoragePort,
-  type StorageRawRow,
   type StorageRow,
   type StorageTransaction,
   type StorageValue,
   type TraceResponse,
   type TraceSpan,
   type TurnDetail,
-  type TurnSummary,
   type TurnsResponse,
 } from "@ai-npc/contracts";
 import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
@@ -38,11 +36,11 @@ import {
   numberColumn,
   parseJsonText,
   stringColumn,
-  summaryFromRow,
   detailFromSummary,
 } from "./research-codec";
 import { compareBranchEvents, readDebugQueues, wakeDebugAgent } from "./debug-research";
 import { readMemory, readMemoryDiff, readObservations } from "./memory-research";
+import { readTurnSummaries } from "./turn-summary-query";
 
 type TurnFilters = {
   readonly runId?: string;
@@ -62,95 +60,6 @@ function parseArtifactBody(row: StorageRow): string {
   if (body instanceof Uint8Array) return new TextDecoder().decode(body);
   if (typeof body === "string") return body;
   throw new DomainError("invalid-state", "artifact 正文缺失；当前首版只读取内联 artifact");
-}
-
-function triggerKinds(
-  storage: StoragePort,
-  branchId: string,
-  ids: readonly string[],
-): readonly string[] {
-  if (ids.length === 0) return [];
-  return storage.transact((tx) => {
-    const placeholders = ids.map(() => "?").join(", ");
-    return tx.all(
-      `SELECT kind FROM triggers
-        WHERE branch_id = ? AND trigger_id IN (${placeholders})`,
-      [branchId, ...ids],
-    ).map((row) => String(row["kind"]));
-  });
-}
-
-function attemptStats(
-  storage: StoragePort,
-  turnId: string,
-): { readonly calls: number; readonly tokens: TurnSummary["tokens"] } {
-  return storage.transact((tx) => {
-    const rows = tx.rows("model_attempts").list({ work_ref: turnId });
-    if (rows.length === 0) return { calls: 0, tokens: { input: null, output: null } };
-    let input = 0;
-    let output = 0;
-    for (const row of rows) {
-      const usage = row["usage_json"];
-      if (usage === null || Array.isArray(usage) || typeof usage !== "object" || usage instanceof Uint8Array) {
-        return { calls: rows.length, tokens: { input: null, output: null } };
-      }
-      const inputValue = usage["inputTokens"];
-      const outputValue = usage["outputTokens"];
-      if (typeof inputValue !== "number" || typeof outputValue !== "number" ||
-        !Number.isSafeInteger(inputValue) || !Number.isSafeInteger(outputValue) ||
-        inputValue < 0 || outputValue < 0) {
-        return { calls: rows.length, tokens: { input: null, output: null } };
-      }
-      input += inputValue;
-      output += outputValue;
-    }
-    return { calls: rows.length, tokens: { input, output } };
-  });
-}
-
-/** 把单行 turn、关联模型尝试与工具调用组装为摘要。 */
-function summaryOf(storage: StoragePort, row: StorageRow | StorageRawRow): TurnSummary {
-  const turnId = stringColumn(row, "turn_id");
-  const branchId = stringColumn(row, "branch_id");
-  const triggerIds = triggerIdsOf(row["trigger_ids_json"]);
-  const stats = attemptStats(storage, turnId);
-  const toolCalls = storage.transact((tx) => tx.rows("tool_calls").list({ turn_id: turnId }).length);
-  return turnSummarySchema.parse(summaryFromRow({
-    row,
-    triggerKinds: triggerKinds(storage, branchId, triggerIds),
-    modelCalls: stats.calls,
-    toolCalls,
-    tokens: stats.tokens,
-  }));
-}
-
-function triggerIdsOf(value: unknown): readonly string[] {
-  let parsed: Json;
-  if (typeof value === "string") {
-    try {
-      parsed = jsonColumn(JSON.parse(value));
-    } catch (error) {
-      if (error instanceof DomainError) throw error;
-      throw new DomainError("invalid-state", "turn trigger_ids_json 不是合法 JSON");
-    }
-  } else {
-    parsed = jsonColumn(value);
-  }
-  if (!Array.isArray(parsed)) {
-    throw new DomainError("invalid-state", "turn trigger_ids_json 不是文本 ID 数组");
-  }
-  const ids: string[] = [];
-  for (const entry of parsed) {
-    if (typeof entry !== "string") {
-      throw new DomainError("invalid-state", "turn trigger_ids_json 不是文本 ID 数组");
-    }
-    ids.push(entry);
-  }
-  return ids;
-}
-
-function decodeTurns(storage: StoragePort, rows: readonly StorageRawRow[]): readonly TurnSummary[] {
-  return rows.map((row) => summaryOf(storage, row));
 }
 
 function receiptStatus(
@@ -219,24 +128,31 @@ export class ResearchQueries {
       parameters.push(query.status);
     }
     parameters.push(clampLimit(query.limit));
-    const rows = this.storage.transact((tx) => tx.all(
-      `SELECT t.* FROM turn_runs t
-        JOIN branches b ON b.branch_id = t.branch_id
-        ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
-       ORDER BY t.created_at DESC LIMIT ?`,
-      parameters,
-    ));
-    return turnsResponseSchema.parse({ turns: decodeTurns(this.storage, rows) });
+    const turns = this.storage.transact((tx) => {
+      const rows = tx.all(
+        `SELECT t.* FROM turn_runs t
+          JOIN branches b ON b.branch_id = t.branch_id
+          ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
+         ORDER BY t.created_at DESC LIMIT ?`,
+        parameters,
+      );
+      return readTurnSummaries(tx, rows);
+    });
+    return turnsResponseSchema.parse({ turns });
   }
 
   turn(turnId: string): TurnDetail {
-    const row = this.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: turnId }));
-    if (row === null) throw new DomainError("not-found", `turn ${turnId} 不存在`);
-    const summary = summaryOf(this.storage, row);
+    const { row, summary } = this.storage.transact((tx) => {
+      const row = tx.rows("turn_runs").get({ turn_id: turnId });
+      if (row === null) throw new DomainError("not-found", `turn ${turnId} 不存在`);
+      const [summary] = readTurnSummaries(tx, [row]);
+      if (summary === undefined) throw new DomainError("invalid-state", `turn ${turnId} 缺少摘要`);
+      return { row, summary };
+    });
     const effective = Array.isArray(row["effective_json"]) ? row["effective_json"] : [];
     const stages = effective.map((entry) => turnStageViewSchema.parse(entry));
     const attempts = this.storage.transact((tx) => tx.rows("model_attempts")
-      .list({ work_ref: turnId }, { orderBy: [{ column: "created_at" }, { column: "attempt_id" }] }))
+      .list({ run_id: summary.runId, work_ref: turnId }, { orderBy: [{ column: "created_at" }, { column: "attempt_id" }] }))
       .map((attempt) => ({
       attemptId: String(attempt["attempt_id"]) as TurnDetail["attempts"][number]["attemptId"],
       purpose: String(attempt["purpose"]),
@@ -251,11 +167,9 @@ export class ResearchQueries {
       error: attempt["error_json"] === null ? null : jsonColumn(attempt["error_json"]),
     }));
     const toolCalls = this.storage.transact((tx) => {
-      const turn = tx.rows("turn_runs").get({ turn_id: turnId });
-      const branchId = turn === null ? "" : String(turn["branch_id"]);
-      const agentId = turn === null ? "" : String(turn["agent_id"]);
+      const { branchId, agentId } = summary;
       return tx.rows("tool_calls")
-        .list({ turn_id: turnId }, { orderBy: [{ column: "created_at" }, { column: "tool_call_id" }] })
+        .list({ run_id: summary.runId, turn_id: turnId }, { orderBy: [{ column: "created_at" }, { column: "tool_call_id" }] })
         .map((call) => {
           const commandId = call["command_id"] === null ? null : String(call["command_id"]);
           return {
@@ -391,7 +305,7 @@ export class ResearchQueries {
     return readDebugQueues(this.storage, branchId);
   }
 
-  debugWake(branchId: string, agentId: string, reason: string, operationId: string): DebugWakeResponse {
-    return wakeDebugAgent(this.storage, this.host, branchId, agentId, reason, operationId);
+  debugWake(input: DebugWakeInput): DebugWakeResponse {
+    return wakeDebugAgent(this.storage, this.host, input);
   }
 }

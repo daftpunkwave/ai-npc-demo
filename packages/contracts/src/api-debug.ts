@@ -81,6 +81,15 @@ export const debugWakeRequestSchema = z
   })
   .strict();
 
+/** 调试唤醒端口输入。分支与调用者取自已认证的服务端上下文。 */
+export interface DebugWakeInput {
+  readonly branchId: string;
+  readonly agentId: string;
+  readonly reason: string;
+  readonly operationId: string;
+  readonly principalId: string;
+}
+
 export const debugWakeResponseSchema = z
   .object({
     ok: z.literal(true),

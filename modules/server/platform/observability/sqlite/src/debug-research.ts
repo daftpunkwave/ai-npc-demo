@@ -11,6 +11,7 @@ import {
   debugWakeResponseSchema,
   type BranchCompareResponse,
   type DebugQueuesResponse,
+  type DebugWakeInput,
   type DebugWakeResponse,
   type HostServices,
   type StoragePort,
@@ -100,11 +101,9 @@ export function readDebugQueues(storage: StoragePort, branchId: string): DebugQu
 export function wakeDebugAgent(
   storage: StoragePort,
   host: HostServices,
-  branchId: string,
-  agentId: string,
-  reason: string,
-  operationId: string,
+  input: DebugWakeInput,
 ): DebugWakeResponse {
+  const { branchId, agentId, reason, operationId, principalId } = input;
   return storage.transact((tx) => {
     const run = tx.rows("runs").list({ branch_id: branchId })[0];
     if (run === undefined || run["run_id"] === undefined) {
@@ -137,8 +136,12 @@ export function wakeDebugAgent(
       } catch {
         throw new DomainError("invalid-state", "调试唤醒审计载荷不是合法 JSON");
       }
-      if (payload === null || Array.isArray(payload) || typeof payload !== "object" ||
-        (payload as { readonly reason?: unknown }).reason !== reason) {
+      if (payload === null || Array.isArray(payload) || typeof payload !== "object") {
+        throw new DomainError("invalid-state", "调试唤醒审计载荷不是对象");
+      }
+      const priorRequest = payload as { readonly reason?: unknown; readonly principalId?: unknown };
+      if (priorRequest.reason !== reason ||
+        (priorRequest.principalId !== undefined && priorRequest.principalId !== principalId)) {
         throw new DomainError("idempotency-conflict", "同一 operationId 的调试唤醒请求内容不一致");
       }
       return debugWakeResponseSchema.parse({ ok: true });
@@ -163,7 +166,7 @@ export function wakeDebugAgent(
       branchId,
       type: "DebugWakeRequested",
       subjectId: agentId,
-      payload: { agentId, reason, operationId },
+      payload: { agentId, reason, operationId, principalId },
       createdAt: host.nowIso(),
     });
     return debugWakeResponseSchema.parse({ ok: true });

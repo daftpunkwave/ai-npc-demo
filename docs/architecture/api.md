@@ -149,13 +149,15 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
 | `GET /model-layouts`（已实现） | operator、researcher | — | `{ layouts: { layoutId, source }[] }` |
-| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 显示 `adapterId`、保留安全 URL 路径的 `endpointRef`、endpoint 主机名与 `credentialRef` 名称） |
+| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 显示 `adapterId`、`endpointRef`、端点主机名与 `credentialRef` 名称） |
 | `GET /model-layouts/{layoutId}/routes`（已实现） | operator、researcher | — | `{ routes: { agentId, purpose, modelId, connectionId, adapterId, externalModel }[] }`：按角色看的已解析路由 |
-| `POST /model-layouts/validate`（已实现） | operator | `{ layout }` | `{ ok, errors }`：只做静态预检，不发网络请求 |
+| `POST /model-layouts/validate`（已实现） | operator | `{ layout }`，其中 `layout` 可以是任意 JSON 值 | `{ ok, errors }`。布局结构问题以 `schema` 错误项返回。请求缺少 `layout` 时返回 400 |
 | `POST /model-layouts/drafts` | operator | `{ layout }` | `{ layoutId, version }`：保存为草稿，只对新 run 生效 |
 | `POST /model-layouts/{layoutId}/probe` | operator | `{ modelId, operationId }` | `{ ok, latencyMs, servedModel, error? }`：一次计费的连通性测试，记录为 attempt |
 
 模型布局目录无法读取时返回 `not-ready`，指定布局不存在时返回 `not-found`，布局配置损坏时返回 `invalid-state`。
+
+`endpointRef` 公开允许的环境变量引用，其他已配置端点以 `layout:<layoutId>` 表示。控制台将仓库引用放回草稿的 `endpoint` 字段。服务端静态预检按同一布局、连接 ID 和适配器读取原端点，端点路径只在服务端使用。
 
 ### 5.3 三势力席位与世界运营
 
@@ -205,7 +207,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `GET /branches/compare`（事件差异已实现） | `left`、`right`、`atSeq` | 两个分支在相同检查点后的事件差异摘要；指标与协议差异仍待补齐 |
 | `GET /debug/queues`（已实现） | — | 调度队列、模型池队列、维护队列。模型池的排队数 `modelPool.queued` 为 `null` 表示存储无法提供该计数 |
 | `POST /debug/turns/{turnId}/replay`（hash 校验已实现） | — | 校验已归档 artifact 的规范 JSON hash；不调用模型，返回 `{ requestHashMatch, differences }` |
-| `POST /debug/agents/{agentId}/wake`（已实现） | `{ reason, operationId }` | 注入一个 `debug` trigger；当前 run 被标记 contaminated |
+| `POST /debug/agents/{agentId}/wake`（已实现） | `{ reason, operationId }` | 注入一个 `debug` trigger，当前 run 被标记 contaminated，审计记录包含认证会话的 `principalId` |
 
 ### 5.6 评估与导出
 

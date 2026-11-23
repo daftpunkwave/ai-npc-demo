@@ -158,7 +158,10 @@ describe("控制台研究接口", () => {
       headers: modelHeader(consoleToken, "operator"),
       payload: { layout: oversizedMount },
     });
-    expect(oversized.statusCode).toBe(400);
+    expect(oversized.statusCode).toBe(200);
+    expect(modelLayoutValidateResponseSchema.parse(oversized.json())).toMatchObject({
+      ok: false, errors: [{ code: "schema", message: expect.stringContaining("mounts.0.agentIds") }],
+    });
     const cappedErrors = {
       ...validLayout,
       mounts: [{
@@ -186,8 +189,10 @@ describe("控制台研究接口", () => {
       headers: modelHeader(consoleToken, "operator"),
       payload: { layout: missingCapabilities },
     });
-    expect(invalidCapabilities.statusCode).toBe(400);
-    expect(errorResponseSchema.parse(invalidCapabilities.json()).error.code).toBe("validation");
+    expect(invalidCapabilities.statusCode).toBe(200);
+    expect(modelLayoutValidateResponseSchema.parse(invalidCapabilities.json())).toMatchObject({
+      ok: false, errors: [{ code: "schema", message: expect.stringContaining("models.fixture-model.capabilities") }],
+    });
 
     const invalidVersion = await host.app.inject({
       method: "POST",
@@ -195,8 +200,24 @@ describe("控制台研究接口", () => {
       headers: modelHeader(consoleToken, "operator"),
       payload: { layout: { ...layout, schemaVersion: 2 } },
     });
-    expect(invalidVersion.statusCode).toBe(400);
-    expect(errorResponseSchema.parse(invalidVersion.json()).error.code).toBe("validation");
+    expect(invalidVersion.statusCode).toBe(200);
+    expect(modelLayoutValidateResponseSchema.parse(invalidVersion.json())).toMatchObject({
+      ok: false, errors: [{ code: "schema", message: expect.stringContaining("schemaVersion") }],
+    });
+  });
+
+  it("接受任意 JSON 布局供校验器检查，拒绝缺失 layout 的请求", async () => {
+    const host = await testHost();
+    const headers = modelHeader(await login(host, "research-console"), "operator");
+    const url = "/api/v1/console/model-layouts/validate";
+    const invalid = await host.app.inject({ method: "POST", url, headers, payload: { layout: null } });
+    expect(invalid.statusCode).toBe(200);
+    expect(modelLayoutValidateResponseSchema.parse(invalid.json())).toMatchObject({
+      ok: false, errors: [{ code: "schema" }],
+    });
+    const missing = await host.app.inject({ method: "POST", url, headers, payload: {} });
+    expect(missing.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(missing.json()).error.code).toBe("validation");
   });
 
   it("拒绝玩家读取研究接口，并返回有数据来源的调试队列", async () => {

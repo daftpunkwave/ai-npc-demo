@@ -289,6 +289,17 @@ describe("slice A research path", () => {
       contaminated: tx.rows("runs").list({ branch_id: host.branchId })[0]?.["contaminated"],
       trigger: tx.branch(host.branchId).table("triggers").list({ kind: "debug" })[0]?.["source_ref"],
     }))).toMatchObject({ contaminated: 1, trigger: "op-000000000009" });
+    const wakeAudit = host.storage.transact((tx) => tx.get(
+      "SELECT subject_id, payload_json FROM lifecycle_events WHERE branch_id = ? AND type = 'DebugWakeRequested'",
+      [host.branchId],
+    ));
+    expect(wakeAudit?.["subject_id"]).toBe("human-independent");
+    expect(JSON.parse(String(wakeAudit?.["payload_json"]))).toEqual({
+      agentId: "human-independent",
+      principalId: "console-admin",
+      reason: "场景测试人工唤醒",
+      operationId: "op-000000000009",
+    });
     const conflictingWake = await host.app.inject({
       method: "POST",
       url: "/api/v1/console/debug/agents/human-independent/wake",

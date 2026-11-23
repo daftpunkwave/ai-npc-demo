@@ -14,6 +14,7 @@ import {
   type AgentLastKnownView,
   type AgentWorldView,
   type ArtifactResponse,
+  type DebugWakeInput,
   type Json,
   type TurnReplayResponse,
 } from "@ai-npc/contracts";
@@ -144,12 +145,7 @@ export interface ConsoleResearchPort {
   readonly replayTurn: (input: {
     readonly turnId: string;
   }) => Promise<TurnReplayResponse>;
-  readonly debugWake: (input: {
-    readonly agentId: string;
-    readonly reason: string;
-    readonly operationId: string;
-    readonly branchId: string;
-  }) => ReturnType<ServerRuntime["observability"]["debugWake"]>;
+  readonly debugWake: (input: DebugWakeInput) => ReturnType<ServerRuntime["observability"]["debugWake"]>;
 }
 
 export function createConsoleResearchPort(input: {
@@ -441,9 +437,9 @@ export function createConsoleResearchPort(input: {
       return runtime.observability.debugQueues(branchId);
     },
     replayTurn,
-    debugWake: ({ agentId, reason, operationId, branchId }) => {
-      assertBranchScope(branchId);
-      return runtime.observability.debugWake(branchId, agentId, reason, operationId);
+    debugWake: (wake) => {
+      assertBranchScope(wake.branchId);
+      return runtime.observability.debugWake(wake);
     },
   };
 }
