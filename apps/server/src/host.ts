@@ -11,6 +11,7 @@ import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
 import { createHostStartup } from "./host/startup";
 import { disposeInReverse } from "./host/dispose";
+import { logInternalError } from "./host/internal-error-log";
 import { createLifecycle } from "./host/lifecycle";
 import type { LiveRunState } from "./host/live-state";
 import { clockConfigOf, worldChapterLengthOf, type ServerApp, type TransportPort } from "./host/module-catalog";
@@ -49,7 +50,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
   const clockConfig = clockConfigOf(core.activeStartup.plan);
   const journal = new OperationJournal(core.storage, () => core.host.nowIso(), (message, error) => {
-    core.host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
+    logInternalError(core.host.logger, message, error);
   });
 
   const approvals = new SpeechApprovalIndex();

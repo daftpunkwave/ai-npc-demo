@@ -11,6 +11,7 @@ import { listRuleFailures, type RuleFailureRecord } from "@ai-npc/authority";
 import type { AuthContext, ClientContentView, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
 import type { GameContent } from "@ai-npc/module-sdk";
 import { clockView } from "./clock-view";
+import { logInternalError } from "./internal-error-log";
 import type { HostLifecycle } from "./lifecycle";
 import { switchLiveBranch, type LiveRunState } from "./live-state";
 import type { OperationsFactory, ServerApp, ServerIdentity, ServerRuntime } from "./module-catalog";
@@ -275,7 +276,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         }),
       consoleStaticDir,
       onInternalError: (message, error) => {
-        host.logger.error(message, { message: error instanceof Error ? error.message : String(error) });
+        logInternalError(host.logger, message, error);
       },
     });
   } catch (error) {
