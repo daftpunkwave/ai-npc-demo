@@ -7,6 +7,7 @@ import {
   campaignResponseSchema,
   commandEnvelopeSchema,
   commandReceiptSchema,
+  commandTypeSchema,
   conversationResponseSchema,
 } from "@ai-npc/contracts";
 import {
@@ -34,6 +35,12 @@ export function registerPlayerRoutes(context: RouteContext): void {
     const envelope = commandEnvelopeSchema.safeParse(request.body);
     if (!envelope.success) {
       return sendHttpError(reply, "validation", "命令信封结构不合法");
+    }
+    // 未登记的命令类型是请求本身不合法，不是权限问题：先判登记再判权限，
+    // 否则拼写错误会被当成 403 forbidden，客户端无从区分两者。此判定在任何写操作之前，
+    // 因此不写回执、不产生事件、不推进世界状态。
+    if (!commandTypeSchema.safeParse(envelope.data.type).success) {
+      return sendHttpError(reply, "validation", "命令类型未登记");
     }
     if (!requireCommand(context, session, envelope.data.type, reply)) {
       return;
