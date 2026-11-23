@@ -21,7 +21,7 @@ import type {
 import { z } from "zod";
 import type { StreamReflectionConfig } from "./definition";
 import { retrieveStreamMemory } from "./stream-reflection-retrieval";
-import { compareStrings, dataOf, eventFromObservation, mergeReleasePolicies, numberValue } from "./ledger-model";
+import { compareStrings, dataOf, eventFromObservation, mergeReleasePolicies, numberValue, requireSameScope } from "./ledger-model";
 import { activeStreamRecords, capStream, importanceOf, namesKnown, partialPlan, reflectionSourceRecords, reinforceStreamRow, streamObservationRow } from "./stream-reflection-rules";
 
 type Ids = (prefix: IdPrefix) => string;
@@ -95,6 +95,7 @@ export class StreamReflectionMemoryPort implements MemoryPort {
     requireSameScope(input.scope, view);
     if (input.trigger !== "importance") return null;
     const lastReflectionSeq = Math.max(
+      view.derivedThroughSeq ?? 0,
       0,
       ...view.records
         .filter((record) => record.kind === "belief" && record.status === "active")
@@ -162,10 +163,9 @@ export class StreamReflectionMemoryPort implements MemoryPort {
     const seenStatements = new Set<string>();
     for (const [index, reflection] of parsed.reflections.slice(0, this.config.reflection.maxPerRun).entries()) {
       const evidence = reflection.evidenceIds.map((id) =>
-        recent.find((record) => record.memoryId === id) ??
-        view.records.find((record) => record.memoryId === id),
+        recent.find((record) => record.memoryId === id),
       ).filter((record): record is MemoryRecordView => record !== undefined && record.status === "active");
-      if (evidence.length < this.config.reflection.minEvidence) {
+      if (evidence.length !== reflection.evidenceIds.length || evidence.length < this.config.reflection.minEvidence) {
         discarded.push({ source: `reflection-${index}`, reason: "evidence-not-visible" });
         continue;
       }
@@ -237,7 +237,7 @@ export class StreamReflectionMemoryPort implements MemoryPort {
     const cited = new Set(input.citedMemoryIds);
     const inserts: MemoryChangePlan["inserts"] = view.records
       .filter((record) => record.status === "active" && cited.has(record.memoryId))
-      .map((record) => reinforceStreamRow(record as MemoryRecordView, input.worldTick));
+      .map((record) => reinforceStreamRow(record, input.worldTick));
     const observations = new Map(input.inputObservations.map((observation) => [observation.observationId, observation]));
     for (const observation of input.inputObservations) {
       for (const eventId of observation.sourceEventIds) observations.set(eventId, observation);
@@ -286,7 +286,9 @@ export class StreamReflectionMemoryPort implements MemoryPort {
       baseRevision: input.baseRevision,
       observationSeqThrough: maxObservationSeq(input.inputObservations),
       inserts,
-      retires: [],
+      retires: view.records
+        .filter((record) => cited.has(record.memoryId) && record.status === "active")
+        .map((record) => ({ memoryId: record.memoryId, status: "superseded" as const })),
       derivedThroughSeq: null,
       derivedThroughTick: null,
       changeKind: "use",
@@ -302,17 +304,6 @@ function maxObservationSeq(observations: readonly AgentObservation[]): number {
   return observations.reduce((highest, observation) => Math.max(highest, observation.observationSeq), 0);
 }
 
-function requireSameScope(
-  left: { readonly worldId: string; readonly branchId: string; readonly agentId: string },
-  view: RevisionView,
-): void {
-  if (left.worldId !== view.scope.worldId ||
-      left.branchId !== view.scope.branchId ||
-      left.agentId !== view.scope.agentId) {
-    throw new Error("memory scope does not match the frozen revision");
-  }
-}
-
 function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBundle {
   return {
     status,
@@ -323,10 +314,6 @@ function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBu
     candidates: 0,
     dropped: [],
   };
-}
-
-function estimateTokens(text: string): number {
-  return Array.from(text).length;
 }
 
 export function createStreamReflectionPort(config: StreamReflectionConfig, ids: Ids): StreamReflectionMemoryPort {

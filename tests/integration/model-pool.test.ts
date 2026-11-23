@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions } from "@ai-npc/app-server";
 import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
 import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type HostServices, type ModelFixture, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
-import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
@@ -51,6 +51,7 @@ async function poolHarness(
   credential: string | null = null,
   wrapStorage: (storage: StoragePort) => StoragePort = (storage) => storage,
   transport: ModelTransportPort | null = null,
+  wrapBudget: (budget: AgentBudgetPort) => AgentBudgetPort = (budget) => budget,
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-model-pool-"));
   const timers = new Set<{ at: number; resolve: () => void }>();
@@ -87,7 +88,7 @@ async function poolHarness(
   const budget = await create("platform.budget.standard", { "platform.storage": storage });
   const pool = await create("agent.model-pool.shared", {
     "platform.storage": wrapStorage(storage),
-    "platform.budget": budget.port,
+    "platform.budget": wrapBudget(budget.port as AgentBudgetPort),
     "platform.secrets": { resolve: () => credential },
     "platform.observability": { recordSpan: vi.fn() },
     "platform.model-transport": [transport ?? { adapterId: route.adapterId, capabilities: () => capabilities, complete }],
@@ -170,6 +171,59 @@ describe("Agent 路由视图注入契约", () => {
 });
 
 describe("共享模型池与预算", () => {
+  it.each(["budget", "evidence"])("在 %s 预留失败且未发送时释放全部名额", async (stage) => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const wrapStorage = (inner: StoragePort): StoragePort => ({
+      transact: (fn) => inner.transact((tx) => fn(new Proxy(tx, {
+        get(target, key) {
+          if (key === "rows") return (name: string) => {
+            const table = target.rows(name);
+            return name === "model_attempts" ? new Proxy(table, {
+              get(current, method) {
+                if (method === "put") return () => { throw new Error("attempt evidence unavailable"); };
+                const value: unknown = Reflect.get(current, method);
+                return typeof value === "function" ? value.bind(current) : value;
+              },
+            }) : table;
+          };
+          const value: unknown = Reflect.get(target, key);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }))),
+      forkBranch: (tx, input) => inner.forkBranch(tx, input), backup: (input) => inner.backup(input),
+    });
+    const harness = await poolHarness(complete, null, stage === "evidence" ? wrapStorage : undefined, null,
+      (budget) => stage === "budget" ? { ...budget, reserve: () => { throw new DomainError("budget-exhausted", "budget changed while queued"); } } : budget);
+    let used = 0;
+    const beforeAttempt = vi.fn(() => { used += 1; return () => { used -= 1; }; });
+    try {
+      const run = harness.pool.bindRun({ routes: [route], limits });
+      await expect(run.call(work({ beforeAttempt }), "decision", 100, request)).rejects.toThrow();
+      expect(complete).not.toHaveBeenCalled(); expect(used).toBe(0);
+      expect(beforeAttempt).toHaveBeenCalledTimes(stage === "budget" ? 0 : 1);
+      expect(harness.storage.transact((tx) => tx.rows("budget_ledger").list({}))).toEqual([]);
+    } finally { await harness.dispose(); }
+  });
+
+  it.each([1, 2])("在每次传输重试前执行宿主配额，限额为 %i", async (quota) => {
+    const complete = vi.fn<ModelTransportPort["complete"]>()
+      .mockRejectedValueOnce(networkError("network")).mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    let used = 0;
+    const beforeAttempt = () => {
+      if (used >= quota) throw new Error("memory maintenance daily model quota exhausted");
+      used += 1;
+    };
+    try {
+      const run = harness.pool.bindRun({ routes: [{ ...route, purpose: "memory-maintenance" }], limits });
+      const pending = run.call(work({ maxModelCalls: 2, beforeAttempt }), "memory-maintenance", 100, request);
+      if (quota === 1) await expect(pending).rejects.toThrow("daily model quota exhausted");
+      else await expect(pending).resolves.toMatchObject({ response });
+      expect(complete).toHaveBeenCalledTimes(quota);
+      expect(used).toBe(quota);
+      expect(harness.storage.transact((tx) => tx.rows("budget_ledger").list({ work_ref: work().workRef }))).toHaveLength(quota);
+    } finally { await harness.dispose(); }
+  });
   it("挂载引用未授权密钥时在装配入口显式失败", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);

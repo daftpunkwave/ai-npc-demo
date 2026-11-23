@@ -131,6 +131,78 @@ function query(revision: number, tick: number): AgentMemoryQuery {
   };
 }
 describe("memory comparison variants", () => {
+  it.each(["stream", "hybrid"])("preserves scope rejection for the %s provider", (kind) => {
+    const port = kind === "stream"
+      ? createStreamReflectionPort(streamReflectionConfigSchema.parse(streamReflectionDefaults), ids)
+      : createLayeredHybridPort(layeredHybridConfigSchema.parse(layeredHybridDefaults), ids, null);
+    const foreign = { ...scope, agentId: "human-pacifist" };
+    expect(() => port.prepareIngest({ scope: foreign, baseRevision: 0, observations: [], worldTick: 10 }, view())).toThrow("memory scope does not match the frozen revision");
+    expect(() => port.retrieve({ ...query(0, 10), scope: foreign }, view())).toThrow("memory scope does not match the frozen revision");
+    expect(() => port.planMaintenance({ scope: foreign, revision: 0, worldTick: 10, observationSeqThrough: 0, trigger: "day-passed" }, view())).toThrow("memory scope does not match the frozen revision");
+  });
+  it("M2 evicts low-importance pending rows and oversized batches", () => {
+    const port = createStreamReflectionPort(streamReflectionConfigSchema.parse({ ...streamReflectionDefaults, capacity: { stream: 2, reflections: 1 } }), ids);
+    const high = port.prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1 }), observation({ seq: 2 })], worldTick: 10 }, view());
+    const low = port.prepareIngest({ scope, baseRevision: 1, observations: [observation({ seq: 3, eventType: "TickAdvanced" })], worldTick: 10 }, view(views(high), 1));
+    expect(low.inserts).toEqual([]);
+    expect(low.retires).toEqual([]);
+    const oversized = port.prepareIngest({ scope, baseRevision: 0, observations: [1, 2, 3, 4].map((seq) => observation({ seq })), worldTick: 10 }, view());
+    expect(oversized.inserts).toHaveLength(2);
+  });
+
+  it("M2 rejects evidence outside the exact model window", async () => {
+    const port = createStreamReflectionPort(streamReflectionConfigSchema.parse({ ...streamReflectionDefaults, reflection: { ...streamReflectionDefaults.reflection, recentWindow: 2 } }), ids);
+    const ingest = port.prepareIngest({ scope, baseRevision: 0, observations: [1, 2, 3].map((seq) => observation({ seq })), worldTick: 10 }, view());
+    const records = views(ingest);
+    const task = { moduleId: "agent.memory.stream-reflection", trigger: "importance" as const, dueTick: 11, baseRevision: 1, observationSeqThrough: 3, day: null, needsModel: true };
+    const excluded = await port.runMaintenance(task, view(records, 1), model(response({ reflections: [{ statement: "outside evidence", evidenceIds: [records[0]?.memoryId ?? "", records[1]?.memoryId ?? ""], confidence: 0.7 }] })));
+    expect(excluded.inserts).toEqual([]);
+    expect(excluded.maintenanceResult?.discarded).toEqual([{ source: "reflection-0", reason: "evidence-not-visible" }]);
+    const accepted = await port.runMaintenance(task, view(records, 1), model(response({ reflections: [{ statement: "visible evidence", evidenceIds: records.slice(1).map((record) => record.memoryId), confidence: 0.7 }] })));
+    expect(accepted.inserts).toHaveLength(1);
+  });
+
+  it("M3 retires updated beliefs once and audits duplicate operations once", async () => {
+    const port = createLayeredHybridPort(layeredHybridConfigSchema.parse(layeredHybridDefaults), ids, null);
+    const ingest = port.prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1, tick: 24 })], worldTick: 24 }, view());
+    const evidence = views(ingest).find((row) => row.kind === "episodic");
+    if (evidence === undefined) throw new Error("missing evidence");
+    const belief: MemoryRecordView = { ...evidence, memoryId: "mem-000000000099", kind: "belief", tier: "long", salience: 0.1 };
+    const before = view([...views(ingest), belief], 1);
+    const task = port.planMaintenance({ scope, revision: 1, worldTick: 24, observationSeqThrough: 1, trigger: "day-passed" }, before);
+    if (task === null) throw new Error("missing daily task");
+    const update = { op: "update", beliefId: belief.memoryId, statement: "updated belief", evidenceIds: [evidence.memoryId], confidence: 0.7 };
+    const plan = await port.runMaintenance(task, before, model(response({ beliefOps: [update, update], currentConcerns: "player-9 is unknown", intents: [] })));
+    expect(plan.inserts.filter((row) => row.memoryId === belief.memoryId)).toHaveLength(1);
+    expect(plan.retires.filter((row) => row.memoryId === belief.memoryId)).toEqual([{ memoryId: belief.memoryId, status: "superseded" }]);
+    expect(plan.maintenanceResult?.discarded).toEqual([
+      { source: "belief-1", reason: "duplicate-belief-operation" },
+      { source: "concerns", reason: "unknown-principal" },
+    ]);
+    expect(plan.inserts.some((row) => row.kind === "core")).toBe(false);
+  });
+
+  it("M3 keeps belief capacity separate from ledger long capacity", async () => {
+    const config = layeredHybridConfigSchema.parse({ ...layeredHybridDefaults, capacity: { ...layeredHybridDefaults.capacity, long: 1, beliefs: 3 } });
+    const port = createLayeredHybridPort(config, ids, null);
+    const ingest = createLayeredHybridPort(layeredHybridConfigSchema.parse(layeredHybridDefaults), ids, null).prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1 })], worldTick: 10 }, view());
+    const sample = views(ingest).find((row) => row.kind === "episodic");
+    if (sample === undefined) throw new Error("missing sample");
+    const beliefs = ["mem-000000000097", "mem-000000000098"].map((memoryId) => ({ ...sample, memoryId, kind: "belief" as const, tier: "long" as const, salience: 0.1 }));
+    const before = view([...views(ingest), ...beliefs], 1);
+    const plan = await port.runMaintenance({ moduleId: "agent.memory.layered-hybrid", trigger: "day-passed", dueTick: 24, baseRevision: 1, observationSeqThrough: 1, day: 2, needsModel: false }, before, null);
+    expect(plan.retires.some((row) => beliefs.some((belief) => belief.memoryId === row.memoryId))).toBe(false);
+  });
+
+  it("M3 disables intent wakeups and rejects intents without reasons", async () => {
+    const port = createLayeredHybridPort(layeredHybridConfigSchema.parse({ ...layeredHybridDefaults, wakeups: "disabled" }), ids, null);
+    const ingest = port.prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1 })], worldTick: 10 }, view());
+    const intent = { ...views(ingest)[0], kind: "episodic", content: { summaryZh: "intent", counterpartIds: [], data: { intent: true, dueTick: 8, targetId: "player-1" } } } as MemoryRecordView;
+    expect(port.proposeWakeups({ scope, revision: 1, worldTick: 32 }, view([intent], 1))).toEqual([]);
+    const plan = await port.runMaintenance({ moduleId: "agent.memory.layered-hybrid", trigger: "day-passed", dueTick: 24, baseRevision: 1, observationSeqThrough: 1, day: 2, needsModel: true }, view(views(ingest), 1), model(response({ beliefOps: [], currentConcerns: null, intents: [{ kind: "remind", targetId: "player-1", reasonIds: [] }] })));
+    expect(plan.maintenanceResult?.status).toBe("partial");
+    expect(plan.inserts.some((row) => row.tags.includes("intent"))).toBe(false);
+  });
   it("M2 queues reflection only after the importance threshold", async () => {
     const port = createStreamReflectionPort(streamReflectionConfigSchema.parse(streamReflectionDefaults), ids);
     const observations = [observation({ seq: 1 }), observation({ seq: 2, summary: "第二次违约" })];
@@ -140,7 +212,7 @@ describe("memory comparison variants", () => {
       scope, revision: 1, worldTick: 10, observationSeqThrough: 2, trigger: "importance",
     }, afterIngest);
     expect(task).toMatchObject({ trigger: "importance", dueTick: 11, needsModel: true });
-    const evidence = ingest.inserts.map((row) => row.memoryId).slice(0, 2);
+    const evidence = ingest.inserts.filter((row) => row.kind !== "relation").map((row) => row.memoryId).slice(0, 2);
     const plan = await port.runMaintenance({
       moduleId: "agent.memory.stream-reflection", trigger: "importance", dueTick: 11,
       baseRevision: 1, observationSeqThrough: 2, day: null, needsModel: true,
@@ -184,13 +256,13 @@ describe("memory comparison variants", () => {
   it("M3 persists model beliefs and a bounded core block", async () => {
     const config = layeredHybridConfigSchema.parse(layeredHybridDefaults);
     const port = createLayeredHybridPort(config, ids, () => () => 0.5);
-    const ingest = port.prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1 })], worldTick: 20 }, view());
+    const ingest = port.prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1 })], worldTick: 24 }, view());
     const afterIngest = view(views(ingest), 1);
     const task = port.planMaintenance({
-      scope, revision: 1, worldTick: 20, observationSeqThrough: 1, trigger: "day-passed",
+      scope, revision: 1, worldTick: 24, observationSeqThrough: 1, trigger: "day-passed",
     }, afterIngest);
     if (task === null) throw new Error("expected a layered-hybrid maintenance task");
-    const evidence = ingest.inserts.map((row) => row.memoryId).slice(0, 2);
+    const evidence = ingest.inserts.filter((row) => row.kind !== "relation").map((row) => row.memoryId).slice(0, 2);
     const plan = await port.runMaintenance(task, afterIngest, model(response({
       beliefOps: [{ op: "add", beliefId: null, statement: "玩家需要被持续观察", evidenceIds: evidence, confidence: 0.7 }],
       currentConcerns: "先确认玩家是否会兑现承诺",
@@ -199,10 +271,11 @@ describe("memory comparison variants", () => {
     expect(plan.inserts.some((row) => row.kind === "belief")).toBe(true);
     expect(plan.inserts.some((row) => row.kind === "core")).toBe(true);
     const afterMaintenance = view(views(plan), 1);
-    const bundle = port.retrieve(query(1, 20), afterMaintenance);
+    const bundle = port.retrieve(query(1, 24), afterMaintenance);
     expect(bundle.coreBlock).toContain("先确认玩家是否会兑现承诺");
     expect(Array.from(bundle.coreBlock ?? "").length).toBeLessThanOrEqual(config.coreBlockMaxTokens);
     expect(port.proposeWakeups({ scope, revision: 1, worldTick: 32 }, afterMaintenance))
       .toEqual(expect.arrayContaining([expect.objectContaining({ reason: "intent", counterpartId: "player-1" })]));
+    expect(port.proposeWakeups({ scope, revision: 1, worldTick: 32 }, afterMaintenance).find((proposal) => proposal.reason === "intent")?.atTick).toBe(32);
   });
 });

@@ -254,6 +254,11 @@ export const maintenanceTaskSchema = z
     needsModel: z.boolean(),
     modelPriority: z.number().nonnegative().optional(),
     modelQuota: z.number().int().positive().optional(),
+    modelQuotaGranted: z.boolean().optional(),
+    modelCallDays: z.array(z.number().int().nonnegative()).optional(),
+    rulesApplied: z.boolean().optional(),
+    failureAttempts: z.number().int().nonnegative().optional(),
+    retryAfterTick: z.number().int().nonnegative().optional(),
   })
   .strict();
 

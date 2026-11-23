@@ -14,11 +14,11 @@ import type {
 } from "@ai-npc/contracts";
 import type {
   MemoryPort,
-  MemoryRecordView,
   RevisionView,
   ScopedModelPort,
 } from "@ai-npc/module-sdk";
 import { createLedgerPort } from "./ledger-port";
+import { applyUsage } from "./ledger-usage";
 import { ledgerConfigFromHybrid, type LayeredHybridConfig } from "./layered-hybrid-config";
 import { applyDailyReview } from "./layered-hybrid-changes";
 import {
@@ -29,12 +29,11 @@ import {
 } from "./layered-hybrid-model";
 import {
   baseSalience,
-  compareStrings,
   dataOf,
   eventFromObservation,
-  mergeReleasePolicies,
   numberValue,
   relationSummary,
+  requireSameScope,
 } from "./ledger-model";
 
 type Ids = (prefix: IdPrefix) => string;
@@ -56,14 +55,14 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     view: RevisionView,
   ): MemoryChangePlan {
     requireSameScope(input.scope, view);
-    const base = this.ledger.prepareIngest(input, view);
+    const base = this.ledger.prepareIngest(input, this.ruleView(view));
     const publicRows = input.observations.flatMap((observation) => this.publicRow(observation, view));
     return { ...base, inserts: [...base.inserts, ...publicRows] };
   }
 
   retrieve(query: AgentMemoryQuery, view: RevisionView): MemoryBundle {
     requireSameScope(query.scope, view);
-    const base = this.ledger.retrieve(query, view);
+    const base = this.ledger.retrieve(query, { ...view, records: view.records.filter((record) => record.kind !== "public") });
     if (base.status !== "ok") return base;
     const publicItems = this.config.chronicle.enabled
       ? view.records
@@ -91,7 +90,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
         }))
       : [];
     const seen = new Set(base.items.map((item) => item.memoryId));
-    const items = [
+    const ranked = [
       ...base.items.map((item) => ({
         ...item,
         score: item.score + this.jitter(query, item.memoryId),
@@ -101,11 +100,27 @@ export class LayeredHybridMemoryPort implements MemoryPort {
         left.memoryId.localeCompare(right.memoryId),
       ),
       ...publicItems.filter((item) => !seen.has(item.memoryId)),
-    ].slice(0, Math.min(query.maxItems, this.config.recall.topK + this.config.chronicle.maxPerRecall));
+    ];
+    const items: MemoryBundle["items"] = [];
+    const dropped = [...base.dropped];
+    let tokens = 0;
+    for (const item of ranked) {
+      const cost = Array.from(item.summaryZh).length;
+      if (tokens + cost > query.maxTokens) {
+        dropped.push({ memoryId: item.memoryId, reason: "budget" });
+      } else if (items.length < Math.min(query.maxItems, this.config.recall.topK + this.config.chronicle.maxPerRecall)) {
+        items.push(item);
+        tokens += cost;
+      } else {
+        dropped.push({ memoryId: item.memoryId, reason: "rank" });
+      }
+    }
     return {
       ...base,
       coreBlock: this.coreBlock(query, view),
       items,
+      dropped,
+      candidates: base.candidates + publicItems.length,
     };
   }
   planMaintenance(
@@ -131,7 +146,11 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     view: RevisionView,
     model: ScopedModelPort | null,
   ): Promise<MemoryChangePlan> {
-    const rulePlan = await this.ledger.runMaintenance({ ...task, moduleId: "agent.memory.ledger", needsModel: false }, view, null);
+    const rulePlan: MemoryChangePlan = task.rulesApplied === true ? {
+      baseRevision: task.baseRevision, observationSeqThrough: task.observationSeqThrough,
+      inserts: [], retires: [], changeKind: "maintenance",
+      derivedThroughSeq: task.observationSeqThrough, derivedThroughTick: task.dueTick,
+    } : await this.ledger.runMaintenance({ ...task, moduleId: "agent.memory.ledger", needsModel: false }, this.ruleView(view), null);
     if (task.trigger !== "day-passed" || !task.needsModel || !this.config.llmMaintenance.enabled) {
       return withResult(rulePlan, { status: "completed", failureReason: null, discarded: [] });
     }
@@ -205,13 +224,17 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     input: Parameters<MemoryPort["recordUse"]>[0],
     view: RevisionView,
   ): MemoryChangePlan {
-    return this.ledger.recordUse(input, view);
+    const rules = this.ledger.recordUse(input, this.ruleView(view));
+    const special = applyUsage(input, { ...view, records: view.records.filter((record) => record.kind === "belief" || record.kind === "core") });
+    return { ...rules, inserts: [...rules.inserts, ...special.inserts], retires: [...rules.retires, ...special.retires] };
   }
 
   proposeWakeups(
     input: Parameters<MemoryPort["proposeWakeups"]>[0],
     view: RevisionView,
   ): ReturnType<MemoryPort["proposeWakeups"]> {
+    requireSameScope(input.scope, view);
+    if (this.config.wakeups !== "enabled") return [];
     const intents: WakeupProposal[] = view.records
       .filter((record) =>
         record.status === "active" &&
@@ -237,7 +260,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     const event = eventFromObservation(observation, view.scope.agentId);
     const salience = baseSalience(event);
     if (salience < 0.5) return [];
-    const key = observation.sourceEventIds.join(",") || observation.observationId;
+    const key = [...new Set(observation.sourceEventIds)].sort().join(",") || observation.observationId;
     if (view.records.some((record) =>
       record.kind === "public" && dataOf(record)["sourceEventKey"] === key,
     )) return [];
@@ -267,7 +290,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
 
   private coreBlock(query: AgentMemoryQuery, view: RevisionView): string | null {
     const concernsRecord = view.records
-      .filter((record) => record.status === "active" && record.kind === "core")
+      .filter((record) => record.status === "active" && record.kind === "core" && record.validFromTick <= query.frontier.worldTick)
       .sort((left, right) => right.validFromTick - left.validFromTick || left.memoryId.localeCompare(right.memoryId))[0];
     const concerns = concernsRecord === undefined
       ? this.ruleConcerns(query, view)
@@ -298,6 +321,12 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     return [...promises, ...relations].join("；");
   }
 
+  private ruleView(view: RevisionView): RevisionView {
+    return { ...view, records: view.records.filter((record) =>
+      record.kind !== "belief" && record.kind !== "core" && record.kind !== "public",
+    ) };
+  }
+
   private changeScore(view: RevisionView, worldTick: number): number {
     return view.records.filter((record) => {
       if (record.status !== "active" || record.validFromTick < worldTick - 23) return false;
@@ -310,15 +339,6 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     const random = this.rng("recall-jitter", query.scope.agentId, String(query.frontier.worldTick), memoryId)();
     return random * this.config.recall.jitter;
   }
-}
-
-function requireSameScope(
-  left: { readonly worldId: string; readonly branchId: string; readonly agentId: string },
-  view: RevisionView,
-): void {
-  if (left.worldId !== view.scope.worldId ||
-      left.branchId !== view.scope.branchId ||
-      left.agentId !== view.scope.agentId) throw new Error("memory scope does not match the frozen revision");
 }
 
 function withResult(plan: MemoryChangePlan, result: MemoryChangePlan["maintenanceResult"]): MemoryChangePlan {
@@ -343,7 +363,7 @@ function mergePlans(
     ...rulePlan,
     inserts: [...rulePlan.inserts, ...extras.inserts],
     retires: dedupeRetires([...rulePlan.retires, ...extras.retires]),
-    maintenanceResult: { ...result, discarded: [...result.discarded, ...extras.discarded] },
+    maintenanceResult: result,
   };
 }
 

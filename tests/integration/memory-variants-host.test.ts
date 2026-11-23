@@ -28,7 +28,7 @@ function failedModel(): RunModelPort {
       },
       maxOutputTokens: 800,
     }),
-    call: async () => { throw new Error("provider timeout"); },
+    call: async (work) => { work.beforeAttempt?.(); throw new Error("provider timeout"); },
   };
 }
 
@@ -81,7 +81,15 @@ describe("MemoryHost layered-hybrid partial maintenance", () => {
       });
       insertObservation(harness, { sequence: 2, tick: 24, eventType: "DayPassed", summary: "第一天结束" });
       await host.ingestAll(24);
+      const before = harness.storage.transact((tx) => tx.branch(memoryBranchId).table("memory_records").list({ agent_id: memoryAgentId }));
+      const longRecord = before.find((row) => row["kind"] === "episodic" && row["tier"] === "long");
+      expect(longRecord).toBeDefined();
       await host.runDueMaintenance(24);
+      const after = harness.storage.transact((tx) => tx.branch(memoryBranchId).table("memory_records").list({ agent_id: memoryAgentId }));
+      expect(after).toEqual(expect.arrayContaining([
+        expect.objectContaining({ memory_id: longRecord?.["memory_id"], row_version: 1, retired_revision: 2 }),
+        expect.objectContaining({ memory_id: longRecord?.["memory_id"], row_version: 2, created_revision: 2, status: "active", tier: "core" }),
+      ]));
       expect(host.watermark(memoryAgentId)).toMatchObject({
         revision: 2,
         derivedThroughTick: 0,
@@ -89,7 +97,7 @@ describe("MemoryHost layered-hybrid partial maintenance", () => {
       const task = harness.storage.transact((tx) =>
         tx.rows("maintenance_runs").list({ branch_id: memoryBranchId })[0],
       );
-      expect(task).toMatchObject({ status: "completed" });
+      expect(task).toMatchObject({ status: "failed" });
       expect(task?.["error_json"]).toMatchObject({ status: "partial", failureReason: "provider timeout" });
     } finally {
       await close(host, harness);

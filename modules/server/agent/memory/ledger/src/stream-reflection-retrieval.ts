@@ -6,7 +6,7 @@
 import type { AgentMemoryQuery, MemoryBundle, MemoryChangePlan } from "@ai-npc/contracts";
 import type { MemoryRecordView, RevisionView } from "@ai-npc/module-sdk";
 import type { StreamReflectionConfig } from "./definition";
-import { compareStrings, dataOf, numberValue } from "./ledger-model";
+import { compareStrings, numberValue } from "./ledger-model";
 
 export function retrieveStreamMemory(
   query: AgentMemoryQuery,
@@ -16,7 +16,7 @@ export function retrieveStreamMemory(
   const tick = query.frontier.worldTick;
   const all = view.records.filter((record) =>
     record.status === "active" &&
-    record.kind !== "relation" &&
+    (record.kind === "episodic" || record.kind === "belief") &&
     record.validFromTick <= tick,
   );
   const recent = [...all]
@@ -40,9 +40,9 @@ export function retrieveStreamMemory(
   const scored = candidates.map((record, index) => ({
     record,
     score:
-      relevance[index]! * config.retrieval.weights.relevance +
-      recency[index]! * config.retrieval.weights.recency +
-      importance[index]! * config.retrieval.weights.importance,
+      (relevance[index] ?? 0) * config.retrieval.weights.relevance +
+      (recency[index] ?? 0) * config.retrieval.weights.recency +
+      (importance[index] ?? 0) * config.retrieval.weights.importance,
   })).sort((left, right) =>
     right.score - left.score ||
     right.record.validFromTick - left.record.validFromTick ||

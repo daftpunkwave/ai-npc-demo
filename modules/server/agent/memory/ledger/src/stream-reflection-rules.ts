@@ -33,20 +33,20 @@ export function streamObservationRow(observation: AgentObservation, view: Revisi
 }
 
 export function capStream(plan: MemoryChangePlan, view: RevisionView, config: StreamReflectionConfig): MemoryChangePlan {
+  const retiredIds = new Set(plan.retires.map((record) => record.memoryId));
   const activeById = new Map<string, CapRow>(view.records
-    .filter((record) => record.status === "active" && record.kind === "episodic")
+    .filter((record) => record.status === "active" && record.kind === "episodic" && !retiredIds.has(record.memoryId))
     .map((record) => [record.memoryId, record]));
   for (const record of plan.inserts.filter((record) => record.kind === "episodic")) {
     activeById.set(record.memoryId, record);
   }
   const active = [...activeById.values()];
   const excess = Math.max(0, active.length - config.capacity.stream);
-  const retire = active.sort((left, right) =>
+  const evicted = active.sort((left, right) =>
     importanceOf(left) - importanceOf(right) || left.validFromTick - right.validFromTick || left.memoryId.localeCompare(right.memoryId),
-  ).slice(0, excess).filter((record) => !plan.inserts.some((insert) => insert.memoryId === record.memoryId))
-    .map((record) => ({ memoryId: record.memoryId, status: "evicted" as const }));
+  ).slice(0, excess);
   const beliefById = new Map<string, CapRow>(view.records
-    .filter((record) => record.status === "active" && record.kind === "belief")
+    .filter((record) => record.status === "active" && record.kind === "belief" && !retiredIds.has(record.memoryId))
     .map((record) => [record.memoryId, record]));
   for (const record of plan.inserts.filter((record) => record.kind === "belief")) {
     beliefById.set(record.memoryId, record);
@@ -56,9 +56,19 @@ export function capStream(plan: MemoryChangePlan, view: RevisionView, config: St
   for (const record of beliefs.sort((left, right) =>
     left.recallCount - right.recallCount || left.validFromTick - right.validFromTick || left.memoryId.localeCompare(right.memoryId),
   ).slice(0, beliefExcess)) {
-    if (!plan.inserts.some((insert) => insert.memoryId === record.memoryId)) retire.push({ memoryId: record.memoryId, status: "evicted" });
+    evicted.push(record);
   }
-  return { ...plan, retires: dedupeRetires([...plan.retires, ...retire]) };
+  const evictedIds = new Set(evicted.map((record) => record.memoryId));
+  const existingIds = new Set(view.records.map((record) => record.memoryId));
+  return {
+    ...plan,
+    inserts: plan.inserts.filter((record) => !evictedIds.has(record.memoryId)),
+    retires: dedupeRetires([
+      ...plan.retires,
+      ...evicted.filter((record) => existingIds.has(record.memoryId))
+        .map((record) => ({ memoryId: record.memoryId, status: "evicted" as const })),
+    ]),
+  };
 }
 
 export function activeStreamRecords(records: readonly MemoryRecordView[]): readonly MemoryRecordView[] {

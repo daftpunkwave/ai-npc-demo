@@ -16,6 +16,15 @@ import type {
 } from "@ai-npc/module-sdk";
 import type { LedgerConfig } from "./definition";
 
+export function requireSameScope(
+  left: { readonly worldId: string; readonly branchId: string; readonly agentId: string },
+  view: RevisionView,
+): void {
+  if (left.worldId !== view.scope.worldId || left.branchId !== view.scope.branchId || left.agentId !== view.scope.agentId) {
+    throw new Error("memory scope does not match the frozen revision");
+  }
+}
+
 export type JsonObject = Readonly<Record<string, Json>>;
 export type LedgerRow = MemoryChangePlan["inserts"][number];
 

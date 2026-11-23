@@ -17,7 +17,7 @@ export interface DailyReviewChanges {
   readonly discarded: readonly { readonly source: string; readonly reason: string }[];
 }
 
-export function applyDailyReview(input: {
+interface DailyReviewInput {
   readonly response: DailyReviewOutput;
   readonly task: MaintenanceTask;
   readonly view: RevisionView;
@@ -25,14 +25,27 @@ export function applyDailyReview(input: {
   readonly beliefs: readonly MemoryRecordView[];
   readonly ids: Ids;
   readonly config: LayeredHybridConfig;
-}): DailyReviewChanges {
-  const { response, task, view, today, beliefs, ids, config } = input;
+}
+
+export function applyDailyReview(input: DailyReviewInput): DailyReviewChanges {
+  const changes = [beliefChanges(input), concernChanges(input), intentChanges(input)];
+  return limitBeliefs(input, {
+    inserts: changes.flatMap((change) => change.inserts),
+    retires: dedupeRetires(changes.flatMap((change) => change.retires)),
+    discarded: changes.flatMap((change) => change.discarded),
+  });
+}
+
+function beliefChanges(input: DailyReviewInput): DailyReviewChanges {
+  const { response, task, view, today, beliefs, ids } = input;
   const inserts: MemoryChangePlan["inserts"] = [];
   const retires: MemoryChangePlan["retires"] = [];
   const discarded: { source: string; reason: string }[] = [];
+  const evidenceById = new Map([...today, ...beliefs].map((record) => [record.memoryId, record]));
+  const handledBeliefs = new Set<string>();
   const beliefById = new Map(beliefs.map((record) => [record.memoryId, record]));
   for (const [index, op] of response.beliefOps.entries()) {
-    const evidence = op.evidenceIds.map((id) => view.records.find((record) => record.memoryId === id))
+    const evidence = op.evidenceIds.map((id) => evidenceById.get(id))
       .filter((record): record is MemoryRecordView => record !== undefined && record.status === "active");
     if (op.op === "keep") continue;
     if (evidence.length !== op.evidenceIds.length) {
@@ -43,32 +56,50 @@ export function applyDailyReview(input: {
       discarded.push({ source: `belief-${index}`, reason: "unknown-principal" });
       continue;
     }
-    const existing = op.beliefId === null ? undefined : beliefById.get(op.beliefId);
+    const existing = op.op === "add" || op.beliefId === null ? undefined : beliefById.get(op.beliefId);
     if (op.op !== "add" && existing === undefined) {
       discarded.push({ source: `belief-${index}`, reason: "belief-not-visible" });
       continue;
     }
-    if (op.op === "supersede" && existing !== undefined) {
+    if (existing !== undefined && op.op !== "add") {
+      if (handledBeliefs.has(existing.memoryId)) {
+        discarded.push({ source: `belief-${index}`, reason: "duplicate-belief-operation" });
+        continue;
+      }
+      handledBeliefs.add(existing.memoryId);
       retires.push({ memoryId: existing.memoryId, status: "superseded" });
     }
     const memoryId = op.op === "update" && existing !== undefined
       ? existing.memoryId
       : ids("mem") as MemoryChangePlan["inserts"][number]["memoryId"];
+    const sources = existing === undefined ? evidence : [...evidence, existing];
     inserts.push({
       memoryId, kind: "belief", tier: "long", status: "active", epistemic: "inference",
-      releasePolicyId: mergeReleasePolicies(evidence.map((record) => record.releasePolicyId)),
+      releasePolicyId: mergeReleasePolicies(sources.map((record) => record.releasePolicyId)),
       validFromTick: task.dueTick, validUntilTick: null, strength: op.confidence, salience: op.confidence,
       recallCount: existing?.recallCount ?? 0, lastReinforcedTick: task.dueTick,
       tags: ["belief", "daily-review"],
-      sourceObservationIds: [...new Set(evidence.flatMap((record) => record.sourceObservationIds))].sort(compareStrings),
+      sourceObservationIds: [...new Set(sources.flatMap((record) => record.sourceObservationIds))].sort(compareStrings),
       content: {
         summaryZh: op.statement,
-        counterpartIds: [...new Set(evidence.flatMap((record) => record.content.counterpartIds))].sort(compareStrings),
+        counterpartIds: [...new Set(sources.flatMap((record) => record.content.counterpartIds))].sort(compareStrings),
         data: { belief: true, confidence: op.confidence, evidenceIds: [...op.evidenceIds], reviewedThroughSeq: task.observationSeqThrough },
       },
     });
   }
-  if (response.currentConcerns !== null) {
+  return { inserts, retires, discarded };
+}
+
+function concernChanges(input: DailyReviewInput): DailyReviewChanges {
+  const { response, task, view, today, ids } = input;
+  const inserts: MemoryChangePlan["inserts"] = [];
+  const retires: MemoryChangePlan["retires"] = [];
+  const discarded: { source: string; reason: string }[] = [];
+  if (response.currentConcerns !== null && !namesKnown(response.currentConcerns, view.identity.knownPrincipalNames ?? {})) {
+    discarded.push({ source: "concerns", reason: "unknown-principal" });
+  } else if (response.currentConcerns !== null && today.length === 0) {
+    discarded.push({ source: "concerns", reason: "evidence-not-visible" });
+  } else if (response.currentConcerns !== null) {
     for (const record of view.records.filter((record) => record.status === "active" && record.kind === "core")) {
       retires.push({ memoryId: record.memoryId, status: "superseded" });
     }
@@ -81,10 +112,19 @@ export function applyDailyReview(input: {
       content: { summaryZh: response.currentConcerns, counterpartIds: [], data: { core: true, currentConcerns: response.currentConcerns } },
     });
   }
+  return { inserts, retires, discarded };
+}
+
+function intentChanges(input: DailyReviewInput): DailyReviewChanges {
+  const { response, task, view, today, beliefs, ids } = input;
+  const inserts: MemoryChangePlan["inserts"] = [];
+  const retires: MemoryChangePlan["retires"] = [];
+  const discarded: { source: string; reason: string }[] = [];
+  const evidenceById = new Map([...today, ...beliefs].map((record) => [record.memoryId, record]));
   for (const [index, intent] of response.intents.entries()) {
-    const reasons = intent.reasonIds.map((id) => view.records.find((record) => record.memoryId === id))
+    const reasons = intent.reasonIds.map((id) => evidenceById.get(id))
       .filter((record): record is MemoryRecordView => record !== undefined && record.status === "active");
-    if (reasons.length !== intent.reasonIds.length) {
+    if (reasons.length === 0 || reasons.length !== intent.reasonIds.length) {
       discarded.push({ source: `intent-${index}`, reason: "reason-not-visible" });
       continue;
     }
@@ -112,15 +152,26 @@ export function applyDailyReview(input: {
       },
     });
   }
-  const activeBeliefs = view.records.filter((record) => record.status === "active" && record.kind === "belief");
+  return { inserts, retires, discarded };
+}
+
+function limitBeliefs(input: DailyReviewInput, changes: DailyReviewChanges): DailyReviewChanges {
+  const { view, config } = input;
+  const inserts = [...changes.inserts];
+  const retires = [...changes.retires];
+  const discarded = changes.discarded;
   const replaceIds = new Set([...inserts.map((record) => record.memoryId), ...retires.map((record) => record.memoryId)]);
-  const excess = Math.max(0, activeBeliefs.filter((record) => !replaceIds.has(record.memoryId)).length +
-    inserts.filter((record) => record.kind === "belief").length - config.capacity.beliefs);
-  for (const record of activeBeliefs
-    .filter((record) => !replaceIds.has(record.memoryId))
-    .sort((left, right) => left.recallCount - right.recallCount || left.validFromTick - right.validFromTick)
-    .slice(0, excess)) {
+  const candidates = [
+    ...view.records.filter((record) => record.status === "active" && record.kind === "belief" && !replaceIds.has(record.memoryId)),
+    ...inserts.filter((record) => record.kind === "belief"),
+  ].sort((left, right) => left.recallCount - right.recallCount || left.validFromTick - right.validFromTick || left.memoryId.localeCompare(right.memoryId));
+  const evicted = new Set(candidates.slice(0, Math.max(0, candidates.length - config.capacity.beliefs)).map((record) => record.memoryId));
+  for (const record of view.records.filter((record) => record.kind === "belief" && evicted.has(record.memoryId))) {
     retires.push({ memoryId: record.memoryId, status: "evicted" });
+  }
+  for (let index = inserts.length - 1; index >= 0; index -= 1) {
+    const record = inserts[index];
+    if (record !== undefined && evicted.has(record.memoryId)) inserts.splice(index, 1);
   }
   return { inserts, retires: dedupeRetires(retires), discarded };
 }
@@ -131,7 +182,8 @@ function namesKnown(statement: string, names: Readonly<Record<string, string>>):
 }
 
 function intentWakeupTick(dueTick: number): number {
-  return Math.floor(dueTick / 24) * 24 + 24 + 8;
+  const morning = Math.floor(dueTick / 24) * 24 + 8;
+  return morning > dueTick ? morning : morning + 24;
 }
 
 function dedupeRetires(retires: MemoryChangePlan["retires"]): MemoryChangePlan["retires"] {

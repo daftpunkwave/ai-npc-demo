@@ -229,6 +229,11 @@ interface MaintenanceTask {        // 存入 maintenance_runs.task_json。
   needsModel: boolean;             // M0/M1 为 false；M2 importance 与 M3 当日 top-8 为 true。
   modelPriority?: number;          // M3 当日变化量；宿主按此排名。
   modelQuota?: number;             // M3 每日最多模型整理数，默认 8。
+  modelQuotaGranted?: boolean;     // 宿主持久保存的名额裁决。
+  modelCallDays?: number[];        // 宿主记录实际模型调用的游戏日。
+  rulesApplied?: boolean;          // 部分结果已经提交规则段，重试只运行模型段。
+  failureAttempts?: number;        // 实际失败次数，配额等待不计入。
+  retryAfterTick?: number;         // 配额等待最早可重试的逻辑时间。
 }
 
 interface MemoryBundle {
@@ -389,7 +394,7 @@ memory:
 
 - 每条观察都写入观察流，重要度 `importance = 1 + round(9 × salience)`（1–10）。
 - 检索：候选为与 queryTags 有交集或 `counterpartIds` 含对方的记录，再补最近 10 条；三个分量先在候选池内做 min-max 归一化（候选池所有值相同时该分量记为 0）再加权求和：`relevance = 0.6·tag Jaccard + 0.4·中文字符二元组 Dice 系数`（记录摘要对比查询文本），`recency = 0.995^(当前 tick − validFromTick)`，`importance = importance / 10`。
-- 反思：每次摄入提交后，宿主调用 `planMaintenance(trigger = "importance")`；自上次反思以来新记录的重要度之和 ≥ 15 时返回任务（`dueTick = 当前 tick + 1`，`needsModel = true`）。`runMaintenance` 用 [prompts](prompts.md) 第 6.1 节的请求生成最多 3 条看法，每条至少引用 2 条记录；校验通过的看法写为 `belief` 记录（证据地位 `inference`，来源为所引记录的来源观察之并集）。成功才推进 `derivedThroughSeq`/`derivedThroughTick`。
+- 反思：每次摄入提交后，宿主调用 `planMaintenance(trigger = "importance")`；自上次反思以来新记录的重要度之和 ≥ 15 时返回任务（`dueTick = 当前 tick + 1`，`needsModel = true`）。`runMaintenance` 用 [prompts](prompts.md) 第 6.1 节的请求生成最多 3 条看法，每条至少引用 2 条记录；校验通过的看法写为 `belief` 记录（证据地位 `inference`，来源为所引记录的来源观察之并集）。成功才推进 `derivedThroughSeq`/`derivedThroughTick`；宿主把成功水位保存在不可变 revision 中，反思为空、全部丢弃或看法被淘汰均不会重复处理同一批观察。
 - 超出容量时淘汰重要度最低、最旧的观察流记录；看法超出容量时淘汰被引用次数最少的。
 
 ### 11.8 M3：`agent.memory.layered-hybrid`

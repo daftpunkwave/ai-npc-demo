@@ -58,7 +58,7 @@ export class MemoryMaintenanceQueue {
         });
       }
       for (const row of table.list({ branch_id: this.branchId, status: "failed" })) {
-        if (numberColumn(row, "lease_epoch") >= maxMaintenanceAttempts) continue;
+        if ((maintenanceTaskSchema.parse(row["task_json"]).failureAttempts ?? numberColumn(row, "lease_epoch")) >= maxMaintenanceAttempts) continue;
         table.put({
           ...row,
           status: "queued",
@@ -89,7 +89,7 @@ export class MemoryMaintenanceQueue {
         trigger: task.trigger,
         due_tick: task.dueTick,
         observation_seq_through: task.observationSeqThrough,
-        task_json: task as unknown as Json,
+        task_json: { ...task, failureAttempts: 0 },
         base_revision: task.baseRevision,
         lease_epoch: 0,
         lease_expires_at: null,
@@ -128,12 +128,12 @@ export class MemoryMaintenanceQueue {
       const table = tx.rows("maintenance_runs");
       const groups = new Map<string, { tasks: Array<{ row: StorageRow; task: MaintenanceTask }>; quota: number }>();
       for (const row of table.list({ branch_id: this.branchId })) {
-        if (row["status"] !== "queued") continue;
+        if (row["status"] === "cancelled") continue;
         if (row["trigger"] !== "day-passed") continue;
         if (numberColumn(row, "due_tick") > worldTick) continue;
         const task = maintenanceTaskSchema.parse(row["task_json"]);
         if (task.modelQuota === undefined) continue;
-        const key = `${stringColumn(row, "module_id")}:${task.dueTick}`;
+        const key = `${stringColumn(row, "module_id")}:${task.day ?? Math.floor(task.dueTick / 24)}`;
         const group = groups.get(key) ?? { tasks: [], quota: task.modelQuota };
         group.tasks.push({ row, task });
         group.quota = Math.max(group.quota, task.modelQuota);
@@ -141,15 +141,53 @@ export class MemoryMaintenanceQueue {
       }
       for (const { tasks, quota } of groups.values()) {
         const candidates = tasks
-          .filter(({ task }) => task.needsModel)
+          .filter(({ row, task }) => row["status"] === "queued" && task.needsModel && task.modelQuotaGranted === undefined)
           .sort((left, right) =>
             (right.task.modelPriority ?? 0) - (left.task.modelPriority ?? 0) ||
             stringColumn(left.row, "agent_id").localeCompare(stringColumn(right.row, "agent_id")),
           );
-        for (const { row, task } of candidates.slice(quota)) {
-          table.put({ ...row, task_json: { ...task, needsModel: false } });
+        const reserved = tasks.filter(({ task, row }) => task.modelQuotaGranted === true || (row["status"] !== "queued" && task.needsModel)).length;
+        for (const [index, { row, task }] of candidates.entries()) {
+          const granted = index < Math.max(0, quota - reserved);
+          table.put({ ...row, task_json: { ...task, needsModel: granted, modelQuotaGranted: granted } });
         }
       }
+    });
+  }
+
+  /** 在实际模型调用前原子占用当天名额，失败和晚到结果同样计费。 */
+  reserveModelCall(maintenanceId: string, leaseEpoch: number, worldTick: number): (() => void) | void {
+    return this.storage.transact((tx) => {
+      const table = tx.rows("maintenance_runs");
+      const current = table.get({ maintenance_id: maintenanceId });
+      if (current === null || current["status"] !== "leased" || numberColumn(current, "lease_epoch") !== leaseEpoch) {
+        throw new Error("memory maintenance model lease is no longer current");
+      }
+      const task = maintenanceTaskSchema.parse(current["task_json"]);
+      if (task.modelQuota === undefined) return;
+      const day = Math.floor(worldTick / 24);
+      const used = table.list({ branch_id: this.branchId, module_id: task.moduleId }).reduce((sum, row) => {
+        const stored = maintenanceTaskSchema.parse(row["task_json"]);
+        return sum + (stored.modelCallDays ?? []).filter((value) => value === day).length;
+      }, 0);
+      if (used >= task.modelQuota) throw new Error("memory maintenance daily model quota exhausted");
+      const slot = task.modelCallDays?.length ?? 0;
+      table.put({ ...current, task_json: { ...task, modelCallDays: [...(task.modelCallDays ?? []), day] } });
+      let released = false;
+      return () => {
+        if (released) return;
+        this.storage.transact((releaseTx) => {
+          const releases = releaseTx.rows("maintenance_runs");
+          const row = releases.get({ maintenance_id: maintenanceId });
+          if (row === null) throw new Error("memory maintenance quota reservation is missing");
+          const stored = maintenanceTaskSchema.parse(row["task_json"]);
+          const days = [...(stored.modelCallDays ?? [])];
+          if (days[slot] !== day) throw new Error("memory maintenance quota reservation changed before release");
+          days.splice(slot, 1);
+          releases.put({ ...row, task_json: { ...stored, modelCallDays: days } });
+        });
+        released = true;
+      };
     });
   }
 
@@ -159,6 +197,12 @@ export class MemoryMaintenanceQueue {
     const claimed: ClaimedMaintenance[] = [];
     this.storage.transact((tx) => {
       const table = tx.rows("maintenance_runs");
+      const usedCalls = new Map<string, number>();
+      for (const row of table.list({ branch_id: this.branchId })) {
+        const task = maintenanceTaskSchema.parse(row["task_json"]);
+        const used = (task.modelCallDays ?? []).filter((day) => day === Math.floor(worldTick / 24)).length;
+        usedCalls.set(task.moduleId, (usedCalls.get(task.moduleId) ?? 0) + used);
+      }
       const candidates = table
         .list({ branch_id: this.branchId }, {
           orderBy: [
@@ -170,7 +214,11 @@ export class MemoryMaintenanceQueue {
         .filter((row) => {
           const dueTick = numberColumn(row, "due_tick");
           if (dueTick > worldTick) return false;
+          const task = maintenanceTaskSchema.parse(row["task_json"]);
+          if ((task.retryAfterTick ?? 0) > worldTick) return false;
+          if (task.needsModel && task.modelQuota !== undefined && (usedCalls.get(task.moduleId) ?? 0) >= task.modelQuota) return false;
           if (row["status"] === "queued") return true;
+          if (row["status"] === "failed") return (task.failureAttempts ?? numberColumn(row, "lease_epoch")) < maxMaintenanceAttempts;
           return row["status"] === "leased" &&
             typeof row["lease_expires_at"] === "string" &&
             new Date(row["lease_expires_at"]).getTime() <= nowMs;
@@ -228,6 +276,7 @@ export class MemoryMaintenanceQueue {
         status: "failed",
         lease_expires_at: null,
         error_json: error,
+        task_json: { ...maintenanceTaskSchema.parse(current["task_json"]), failureAttempts: (maintenanceTaskSchema.parse(current["task_json"]).failureAttempts ?? 0) + 1 },
         ended_at: this.host.nowIso(),
       });
     });
@@ -267,7 +316,8 @@ export class MemoryMaintenanceQueue {
       ) {
         throw new Error(`maintenance lease ${maintenanceId} is no longer current`);
       }
-      table.put({ ...current, task_json: task as unknown as Json, base_revision: task.baseRevision });
+      const stored = maintenanceTaskSchema.parse(current["task_json"]);
+      table.put({ ...current, task_json: { ...task, ...(stored.modelCallDays === undefined ? {} : { modelCallDays: stored.modelCallDays }) }, base_revision: task.baseRevision });
     });
   }
 }

@@ -137,6 +137,8 @@ export interface RevisionView {
   readonly revision: number;
   readonly identity: MemoryAgentIdentity;
   readonly records: readonly MemoryRecordView[];
+  /** 本 revision 已成功整理的观察水位，与仍保留的看法记录无关。 */
+  readonly derivedThroughSeq?: number;
 }
 
 export interface MemoryIngestInput {

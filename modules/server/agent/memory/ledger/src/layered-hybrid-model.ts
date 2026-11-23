@@ -32,7 +32,7 @@ export const dailyReviewOutputSchema = z
           .object({
             kind: z.enum(["seek-conversation", "remind", "avoid", "propose"]),
             targetId: z.string().min(1),
-            reasonIds: z.array(z.string().min(1)),
+            reasonIds: z.array(z.string().trim().min(1)).min(1),
           })
           .strict(),
       )

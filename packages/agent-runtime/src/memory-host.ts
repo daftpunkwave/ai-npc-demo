@@ -126,7 +126,7 @@ export class MemoryHost {
           this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch);
           return;
         }
-        await publishMaintenance(agentId, claim, this.publication(agentId, claim));
+        await publishMaintenance(agentId, claim, this.publication(agentId, claim, worldTick));
       } catch (error) {
         this.options.host.logger.error("Memory maintenance failed", {
           agentId,
@@ -318,7 +318,7 @@ export class MemoryHost {
     return result;
   }
 
-  private publication(agentId: string, claim?: ClaimedMaintenance) {
+  private publication(agentId: string, claim?: ClaimedMaintenance, worldTick = 0) {
     return {
       store: this.store,
       maintenance: this.maintenance,
@@ -330,6 +330,7 @@ export class MemoryHost {
       enqueueActor: this.enqueueActor.bind(this),
       ...(claim === undefined ? {} : {
         model: maintenanceModel({
+          worldTick,
           model: this.options.model,
           agentId,
           claim,
@@ -339,6 +340,7 @@ export class MemoryHost {
           host: this.options.host,
           signal: this.options.signal,
           isCurrent: () => this.maintenance.isCurrent(claim.maintenanceId, claim.leaseEpoch),
+          beforeCall: () => this.maintenance.reserveModelCall(claim.maintenanceId, claim.leaseEpoch, worldTick),
         }),
       }),
     };

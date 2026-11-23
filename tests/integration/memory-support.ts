@@ -176,6 +176,9 @@ export function insertObservation(
   harness: MemoryHarness,
   input: {
     readonly sequence: number;
+    readonly agentId?: string;
+    readonly observationId?: AgentObservation["observationId"];
+    readonly sourceEventIds?: AgentObservation["sourceEventIds"];
     readonly tick: number;
     readonly eventType: string;
     readonly summary: string;
@@ -186,14 +189,14 @@ export function insertObservation(
   },
 ): AgentObservation {
   const observation: AgentObservation = {
-    observationId: `obs-${String(input.sequence).padStart(12, "0")}` as AgentObservation["observationId"],
+    observationId: input.observationId ?? `obs-${String(input.sequence).padStart(12, "0")}` as AgentObservation["observationId"],
     scope: {
       worldId: memoryWorldId,
       branchId: memoryBranchId,
-      agentId: memoryAgentId,
+      agentId: input.agentId ?? memoryAgentId,
     },
     observationSeq: input.sequence,
-    sourceEventIds: [`evt-${String(input.sequence).padStart(12, "0")}` as AgentObservation["sourceEventIds"][number]],
+    sourceEventIds: input.sourceEventIds ?? [`evt-${String(input.sequence).padStart(12, "0")}` as AgentObservation["sourceEventIds"][number]],
     sourceObservationIds: [],
     occurredAtTick: input.tick,
     sensedAtTick: input.tick,
@@ -215,7 +218,7 @@ export function insertObservation(
   };
   harness.storage.transact((tx) => {
     tx.branch(memoryBranchId).table("observations").put({
-      agent_id: memoryAgentId,
+      agent_id: observation.scope.agentId,
       observation_seq: observation.observationSeq,
       observation_id: observation.observationId,
       source_event_ids_json: [...observation.sourceEventIds],

@@ -14,40 +14,48 @@ export function maintenanceModel(input: {
   readonly claim: ClaimedMaintenance;
   readonly scope: MemoryScope;
   readonly runId: string;
+  readonly worldTick: number;
   readonly profile: ResolvedAgentProfile;
   readonly host: HostServices;
   readonly signal: AbortSignal;
   readonly isCurrent: () => boolean;
+  readonly beforeCall: () => (() => void) | void;
 }): ScopedModelPort | null {
-  if (input.model == null) return null;
-  const route = input.model.route(input.agentId, "memory-maintenance");
+  const model = input.model;
+  if (model == null || !input.claim.task.needsModel) return null;
+  const route = model.route(input.agentId, "memory-maintenance");
+  const reserveOutputTokens = input.profile.budgets.reserveOutputTokens["memory-maintenance"];
   return {
     scope: { runId: input.runId, agentId: input.agentId, purpose: "memory-maintenance" },
     call: async (request) => {
       const work: ModelWorkScope = {
         ...input.scope,
         runId: input.runId,
-        workRef: request.workRef,
+        workRef: `${input.claim.maintenanceId}:${input.claim.leaseEpoch}`,
         traceId: input.host.ids("trc"),
-        worldTick: input.claim.task.dueTick,
+        worldTick: input.worldTick,
         triggerPrincipalIds: [],
-        maxModelCalls: 1,
+        /** 首次生成及一次 CAS 冲突重算共用同一个有界工作预算。 */
+        maxModelCalls: 2,
         maxDailyTokens: input.profile.budgets.maxTokensPerAgentPerDay,
         deadlineMs: input.host.monotonicMs() + 120_000,
         signal: input.signal,
         fence: () => request.fence() && input.isCurrent(),
+        beforeAttempt: input.beforeCall,
       };
-      return input.model!.call(
+      input.signal.throwIfAborted();
+      if (!work.fence()) throw new Error("memory maintenance model fence is no longer current");
+      return model.call(
         work,
         "memory-maintenance",
-        input.profile.budgets.reserveOutputTokens["memory-maintenance"],
+        reserveOutputTokens,
         {
           system: request.system,
           messages: request.messages,
           tools: request.tools,
           output: request.output,
           round: 1,
-          inputLimit: Math.max(1, route.capabilities.contextWindowTokens - request.reserveOutputTokens),
+          inputLimit: Math.max(1, route.capabilities.contextWindowTokens - reserveOutputTokens),
         },
       );
     },

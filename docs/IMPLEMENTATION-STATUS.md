@@ -47,7 +47,7 @@
 12. **受控单步推进**：operator 经 `/api/v1/console/campaign/step` 按 `operationId` 与 `expectedRunVersion` 从 `paused` 进入 `stepping`（`ticks` 1–24），宿主 tick worker 逐 tick 推进并在到达目标、推进失败或章节终点时收尾回 `paused`；单步同样纳入部署级幂等表（迁移 0008 扩展 `step` 种类），单步中的快照先受控暂停，重启把非暂停时钟归位为 `paused`。
 13. **模型决策与预算账本**。标准与测试装配按 Agent 和用途绑定模型，限流账号可跨模型 ID 共享。每次发出的尝试分别预留和结算预算，缺失 usage 按预留计入账本。工具历史逐轮追加，独立的对白请求经过披露、引用、泄密和状态检查。前版确定性运行可按原冻结摘要恢复。
 
-14. **记忆对比变体**：`config/profiles/variants` 提供 M0 window、M0 current、M1、M2 与 M3 的可解析补丁；M2 的反思和 M3 的每日整理均经 `memory-maintenance` 模型用途调用。模型失败时 M3 保留规则段变更、记录 `partial` 结果且不推进 derived 水位，后续 strict turn 按未就绪处理。
+14. **记忆对比变体**：`config/profiles/variants` 提供 M0 window、M0 current、M1、M2 与 M3 的可解析补丁；M2 的反思和 M3 的每日整理均经 `memory-maintenance` 模型用途调用。模型失败时 M3 保留规则段变更、记录 `partial` 结果且不推进 派生水位（`derivedThroughSeq`、`derivedThroughTick`），后续 严格模式轮次 按未就绪处理。
 
 ## 3. 剩余迁移项
 
