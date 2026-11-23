@@ -20,6 +20,7 @@ import type { HostReadPorts } from "./reads";
 import type { SessionAssemblies } from "./startup";
 import type { ModelLayoutAdminPort } from "./model-layout-admin";
 import { createConsoleResearchPort } from "./console-research";
+import type { EvaluationReadPort } from "./evaluation-read";
 
 export interface TransportAppInput {
   readonly host: HostServices;
@@ -38,6 +39,8 @@ export interface TransportAppInput {
   readonly sessionAssembly: SessionAssemblies;
   /** 仓库模型布局只读端口；未注入时控制台模型页返回 not-ready。 */
   readonly modelLayouts?: ModelLayoutAdminPort;
+  /** 评估只读端口；未注入时评估路由返回 not-ready。 */
+  readonly evaluation?: EvaluationReadPort;
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
@@ -229,6 +232,15 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         debugQueues: research.debugQueues,
         replayTurn: research.replayTurn,
         debugWake: research.debugWake,
+        ...(input.evaluation === undefined ? {} : {
+          evaluation: {
+            runs: (query: { readonly status?: string; readonly limit?: number }) => input.evaluation!.runs(query),
+            run: (runId: string) => input.evaluation!.run(runId),
+            report: (runId: string) => input.evaluation!.report(runId),
+            experiment: (experimentId: string) => input.evaluation!.experiment(experimentId),
+            experiments: () => input.evaluation!.experiments(),
+          },
+        }),
       },
       projection: () => reads.projection(),
       campaign: () => reads.campaign(),

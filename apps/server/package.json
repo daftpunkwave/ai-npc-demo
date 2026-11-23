@@ -53,6 +53,7 @@
                          "@ai-npc/mod-console-faction-ops-standard":  "workspace:*",
                          "@ai-npc/mod-console-debug-standard":  "workspace:*",
                          "@ai-npc/mod-console-observability-standard":  "workspace:*",
+                        "@ai-npc/mod-console-evaluation-standard":  "workspace:*",
                          "@ai-npc/mod-platform-storage-sqlite":  "workspace:*",
                          "@ai-npc/mod-platform-access-policy-roster":  "workspace:*",
                          "@ai-npc/mod-platform-budget-standard":  "workspace:*",

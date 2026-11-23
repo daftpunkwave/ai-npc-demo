@@ -29,14 +29,27 @@ import {
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticate, requireConsoleRole, sendHttpError } from "./context";
+import {
+  experimentDetailResponseSchema,
+  runDetailResponseSchema,
+  runReportResponseSchema,
+  runsQuerySchema,
+  runsResponseSchema,
+  experimentIdSchema,
+} from "@ai-npc/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
 
+
 const researchRoles = ["researcher"] as const;
+/** 评估读取角色：研究员与评估员都可读；写操作仍限研究员。 */
+const evaluationRoles = ["researcher", "evaluator"] as const;
 const agentParamsSchema = z.object({ agentId: principalIdSchema }).strict();
 const turnParamsSchema = z.object({ turnId: idSchemas.turn }).strict();
 const artifactParamsSchema = z.object({ artifactId: idSchemas.art }).strict();
 const traceParamsSchema = z.object({ traceId: idSchemas.trc }).strict();
+const runParamsSchema = z.object({ runId: idSchemas.run }).strict();
+const experimentParamsSchema = z.object({ experimentId: experimentIdSchema }).strict();
 
 function parsePath<T>(schema: z.ZodType<T>, params: unknown): T | null {
   const parsed = schema.safeParse(params);
@@ -220,5 +233,75 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
       branchId: branch.branchId,
       principalId: session.auth.principalId,
     }));
+  });
+}
+
+/**
+ * 评估读取路由：run 列表与详情、run 报告、实验列表与详情。
+ * 研究员可读写全部评估接口，评估员只能读；创建实验与导出不在本组路由内。
+ */
+export function registerConsoleEvaluationRoutes(context: RouteContext): void {
+  const { app, options } = context;
+
+  /** 评估读取角色：研究员与评估员都可读。 */
+  const requireEvaluationSession = (
+    request: Parameters<typeof requireConsoleRole>[1],
+    reply: Parameters<typeof requireConsoleRole>[3],
+  ) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, evaluationRoles)) return null;
+    return session;
+  };
+
+  app.get("/api/v1/console/runs", (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    // undefined 表示没传该参数，null 表示传了空值；两者都不应进入 schema。
+    const status = queryOptionalText(request.query, "status");
+    const limitText = queryOptionalText(request.query, "limit");
+    const limit = typeof limitText === "string" ? Number(limitText) : undefined;
+    if (limit !== undefined && !Number.isSafeInteger(limit)) {
+      return sendHttpError(reply, "validation", "limit 必须是整数");
+    }
+    const query = runsQuerySchema.safeParse({
+      ...(typeof status !== "string" ? {} : { status }),
+      ...(limit === undefined ? {} : { limit }),
+    });
+    if (!query.success) return sendHttpError(reply, "validation", "run 查询参数不合法");
+    return runsResponseSchema.parse({ runs: [...options.console.evaluation.runs(query.data)] });
+  });
+
+  app.get("/api/v1/console/runs/:runId", (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    const path = parsePath(runParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "runId 不合法");
+    const detail = options.console.evaluation.run(path.runId);
+    if (detail === null) return sendHttpError(reply, "not-found", "run 不存在");
+    return runDetailResponseSchema.parse(detail);
+  });
+
+  app.get("/api/v1/console/runs/:runId/report", (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    const path = parsePath(runParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "runId 不合法");
+    return runReportResponseSchema.parse(options.console.evaluation.report(path.runId));
+  });
+
+  app.get("/api/v1/console/experiments", (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    return { experiments: [...options.console.evaluation.experiments()] };
+  });
+
+  app.get("/api/v1/console/experiments/:experimentId", (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    const path = parsePath(experimentParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "experimentId 不合法");
+    const detail = options.console.evaluation.experiment(path.experimentId);
+    if (detail === null) return sendHttpError(reply, "not-found", "实验不存在");
+    return experimentDetailResponseSchema.parse(detail);
   });
 }

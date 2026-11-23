@@ -55,4 +55,5 @@ realms:
       - { capability: console.model-mounts, moduleId: console.model-mounts.standard, configRef: null }
       - { capability: console.faction-ops, moduleId: console.faction-ops.standard, configRef: null }
       - { capability: console.observability, moduleId: console.observability.standard, configRef: null }
+      - { capability: console.evaluation, moduleId: console.evaluation.standard, configRef: null }
       - { capability: console.debug, moduleId: console.debug.standard, configRef: null }

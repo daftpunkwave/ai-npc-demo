@@ -89,6 +89,11 @@ export function ConsoleBootstrap(): ReactNode {
         reload: () => window.location.reload(),
         confirm: (message: string) => window.confirm(message),
         waitForClockSettled: (ticks: number, signal: AbortSignal) => waitForClockSettled(api, ticks, signal),
+        evaluation: {
+          list: () => api.consoleExperiments().then((response) => response.experiments),
+          experiment: (experimentId: string) => api.consoleExperiment(experimentId),
+          report: (runId: string) => api.consoleRunReport(runId).catch(() => null),
+        },
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
         },

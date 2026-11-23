@@ -15,6 +15,7 @@ import type {
   DebugQueuesResponse,
   DebugWakeInput,
   DebugWakeResponse,
+  ExperimentDetailResponse,
   MemoryDiffResponse,
   MemoryResponse,
   ModelLayoutRoutesResponse,
@@ -23,6 +24,9 @@ import type {
   ModelLayoutsResponse,
   ModulesResponse,
   ObservationsResponse,
+  RunDetailResponse,
+  RunReportResponse,
+  RunSummary,
   AuthContext,
   CampaignView,
   ClockView,
@@ -261,6 +265,17 @@ export interface ConsoleReadPort {
     readonly turnId: string;
   }) => Promise<TurnReplayResponse>;
   debugWake?: (input: DebugWakeInput) => DebugWakeResponse;
+  /**
+   * 评估读取：run 列表、run 详情、run 报告、实验详情与实验列表。
+   * 未提供时对应路由返回 not-ready，与模型布局等可选能力的处理方式一致。
+   */
+  evaluation?: {
+    runs(query: { readonly status?: string; readonly limit?: number }): readonly RunSummary[];
+    run(runId: string): RunDetailResponse | null;
+    report(runId: string): RunReportResponse;
+    experiment(experimentId: string): ExperimentDetailResponse | null;
+    experiments(): readonly { readonly experimentId: string; readonly runCount: number }[];
+  };
 }
 
 /** HTTP 适配器写入观测存储的最小跨度视图。 */

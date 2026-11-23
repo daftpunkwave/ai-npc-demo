@@ -243,10 +243,10 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["报告延迟", reportLatencySchema, report.latency, { turnP50Ms: -1, turnP95Ms: null }],
   ["run 报告", runReportResponseSchema, report, { ...report, runId: "run-1" }],
   ["实验创建请求", experimentCreateRequestSchema, { experimentRef: "config/runs/exp-memory.yaml" }, { experimentRef: "" }],
-  ["实验创建响应", experimentCreateResponseSchema, { experimentId: "exp-k3j9x0a1b2c3", runIds: ["run-k3j9x0a1b2c3"] }, { experimentId: "exp-1", runIds: [] }],
+  ["实验创建响应", experimentCreateResponseSchema, { experimentId: "exp-memory-promise-v1", runIds: ["run-k3j9x0a1b2c3"] }, { experimentId: "exp bad/id", runIds: [] }],
   ["实验指标摘要", experimentMetricSummarySchema, { metric: "recall-accuracy", validSamples: 3, invalidSamples: 0, mean: 0.5 }, { metric: "", validSamples: 3, invalidSamples: 0, mean: null }],
   ["实验分组摘要", experimentCellSummarySchema, { variant: "m1", scriptBranch: "break", runIds: ["run-k3j9x0a1b2c3"], metrics: [] }, { variant: "m1", scriptBranch: "break", runIds: ["run-1"], metrics: [] }],
-  ["实验详情", experimentDetailResponseSchema, { experimentId: "exp-k3j9x0a1b2c3", runs: [runSummary], cells: [] }, { experimentId: "exp-1", runs: [], cells: [] }],
+  ["实验详情", experimentDetailResponseSchema, { experimentId: "exp-memory-promise-v1", runs: [runSummary], cells: [] }, { experimentId: "exp bad/id", runs: [], cells: [] }],
   ["导出请求", exportRequestSchema, { runId: "run-k3j9x0a1b2c3", redaction: "redacted", operationId: "op-k3j9x0a1b2c3" }, { runId: "run-k3j9x0a1b2c3", redaction: "full", operationId: "op-k3j9x0a1b2c3" }],
   ["导出响应", exportResponseSchema, { artifactId: "art-k3j9x0a1b2c3" }, { artifactId: "art-1" }],
 ];
