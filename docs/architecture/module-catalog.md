@@ -19,7 +19,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 - moduleId：`<group>.<family>.<impl>`。server 域使用职能族前缀 `game`/`agent`/`platform`/`transport`（realm 由描述符声明为 `server`），浏览器域使用 `client`/`console` 前缀；如 `game.clock.controlled`、`client.hud.standard`。
 - 包目录与 moduleId 不是一一映射：同一包可承载同一能力的多个替换实现，每个实现各自注册 moduleId。例如 `@ai-npc/mod-game-scenario-watergate` 同时提供 `game.scenario.watergate` 与升级节奏变体 `game.scenario.watergate-escalating`，两者共享实现与聚合，只在节奏与压力订阅上不同；装配按 moduleId 选择其一。多实现包在描述符中用 `sourceModuleId` 指向共享源码包，目录与 capability 对账据此识别。
-- capability：`<group>.<family>`，如 `game.clock`、`agent.memory`。一个能力由一个或多个模块提供，由装配决定。
+- capability：`<group>.<family>`，如 `game.clock`、`agent.memory`。恰好一个分隔点；group 取 `game`/`agent`/`platform`/`transport`/`client`/`console` 之一，family 只含小写字母、数字与连字符。该语法由公共契约的 `capabilityIdSchema` 唯一强制，`defineModule` 与 `pnpm check:catalog` 的源码对账共用同一条正则：描述符阶段直接拒绝非法 ID，源码里在端口取用位置写下带 group 前缀却不合语法的字符串会报 `capability-invalid`，不再被静默跳过。一个能力由一个或多个模块提供，由装配决定。
 - realm：`server`、`client`、`console`。跨域只能通过版本化 HTTP/WS 协议。
 - kind：
   - `service`：提供独占能力，返回计划/查询/决策，不自行提交世界。

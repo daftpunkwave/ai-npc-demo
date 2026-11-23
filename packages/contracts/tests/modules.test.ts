@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  CAPABILITY_ID_PATTERN,
   agentSlotSchema,
   agentSlotImplementationsSchema,
   assemblyDescriptorSchema,
@@ -22,7 +23,7 @@ import {
   resolvedModuleSetSchema,
   uiExtensionSchema,
 } from "../src/index";
-import { expectInvalid, expectSchema } from "./support";
+import { expectInvalid, expectSchema, expectValid } from "./support";
 
 /** 与标准装配同形的装配描述符：命名配置块、三 realm 绑定与六个 Agent 槽。 */
 const assembly = {
@@ -99,6 +100,43 @@ describe("模块枚举与标识", () => {
     }
     for (const invalid of ["game", "game.world", "other.foo.bar", "Game.world.slg", "game.world.slg-light.extra"]) {
       expect(moduleIdSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  it("能力 ID 只接受 <group>.<family> 语法", () => {
+    for (const capability of [
+      "game.world",
+      "agent.model-pool",
+      "platform.model-transport",
+      "transport.http-ws",
+      "client.world-view",
+      "console.model-mounts",
+    ]) {
+      expectValid(capabilityIdSchema, capability);
+    }
+    for (const invalid of [
+      "game.",
+      "game.WORLD",
+      "game.world.extra",
+      "game.world x",
+      "game",
+      "",
+      " Game.world",
+      "game.world ",
+      "other.world",
+      "game.world_extra",
+      "game.-world",
+      "game.9world",
+    ]) {
+      expectInvalid(capabilityIdSchema, invalid);
+    }
+  });
+
+  it("能力 ID 语法与静态扫描器的判定一致", () => {
+    const matches = (value: string): boolean => CAPABILITY_ID_PATTERN.test(value);
+    for (const value of ["game.world", "client.hud", "agent.memory", "game.world.extra", "game.", "game.WORLD"]) {
+      const accepted = capabilityIdSchema.safeParse(value).success;
+      expect(matches(value)).toBe(accepted);
     }
   });
 });
