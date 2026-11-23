@@ -54,4 +54,17 @@ describe("logInternalError", () => {
       data: { message: "模型输入超过本轮窗口", details: null },
     });
   });
+
+  it("logger 自身抛出异常时不向调用方传播", () => {
+    const broken: HostLogger = {
+      info: () => {},
+      warn: () => {},
+      error: () => {
+        throw new Error("注入的 logger 故障");
+      },
+    };
+    expect(() =>
+      logInternalError(broken, "请求处理失败", new DomainError("provider-failed", "模型调用未产生可用响应")),
+    ).not.toThrow();
+  });
 });

@@ -125,6 +125,28 @@ function isTokenLike(value: string): boolean {
 /** 哨兵值：子值因不在白名单内被剔除，用于区分「剔除」与 details 中合法的 null 值。 */
 const droppedSentinel: unique symbol = Symbol("dropped");
 
+/**
+ * details 对象键的敏感标记：命中任意子串（大小写不敏感）的键连同值整体剔除。
+ * 凭据类值（如 base64url 令牌）天然满足短标记白名单的字符形状，
+ * 仅按值过滤挡不住误放入 details 的凭据，必须按键名先行拒绝。
+ */
+const sensitiveKeyMarkers = [
+  "token",
+  "secret",
+  "password",
+  "passwd",
+  "credential",
+  "apikey",
+  "api-key",
+  "authorization",
+  "bearer",
+] as const;
+
+function isSensitiveKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return sensitiveKeyMarkers.some((marker) => normalized.includes(marker));
+}
+
 function filterLoggableValue(value: Json): Json | typeof droppedSentinel {
   if (value === null || typeof value === "number" || typeof value === "boolean") {
     return value;
@@ -139,6 +161,7 @@ function filterLoggableValue(value: Json): Json | typeof droppedSentinel {
     return items.length > 0 ? items : droppedSentinel;
   }
   const entries = Object.entries(value)
+    .filter(([key]) => !isSensitiveKey(key))
     .map(([key, inner]) => ({ key, kept: filterLoggableValue(inner) }))
     .filter((entry): entry is { key: string; kept: Json } => entry.kept !== droppedSentinel);
   return entries.length > 0 ? Object.fromEntries(entries.map(({ key, kept }) => [key, kept])) : droppedSentinel;
@@ -148,6 +171,7 @@ function filterLoggableValue(value: Json): Json | typeof droppedSentinel {
  * 按 details 的可记录白名单过滤领域错误详情，供 logger 边界安全消费。
  * 白名单只保留枚举型短标记字符串、数字、布尔与 null 及其嵌套结构；
  * 自由文本（供应商报文、内部路径、正文等）一律剔除，防止扩展 logger 时把敏感内容带出。
+ * 对象键命中敏感标记（token、secret、credential 等）时连同值整体剔除。
  * 全部内容被剔除或入参为 null 时返回 null。
  */
 export function loggableErrorDetails(details: Json | null): Json | null {

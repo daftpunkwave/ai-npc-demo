@@ -24,9 +24,9 @@ describe("loggableErrorDetails", () => {
         note: "供应商返回了完整报文正文",
         wire: "HTTP 503 with body",
         long: "a".repeat(65),
-        token: "still-kept",
+        marker: "still-kept",
       }),
-    ).toEqual({ token: "still-kept" });
+    ).toEqual({ marker: "still-kept" });
   });
 
   it("嵌套结构中被剔除的键整体移除，全部剔除或为空结构时返回 null", () => {
@@ -35,6 +35,22 @@ describe("loggableErrorDetails", () => {
     expect(loggableErrorDetails({ only: "自由文本" })).toBeNull();
     expect(loggableErrorDetails({ empty: {} })).toBeNull();
     expect(loggableErrorDetails(null)).toBeNull();
+  });
+
+  it("敏感键连同值整体剔除，凭据形状的值不因短标记白名单进入日志", () => {
+    // base64url 令牌形状（字母数字与 -_）恰好满足短标记白名单，必须按键名先行拒绝。
+    const credential = "a7F_9xKk2mNpQrStUvWxYz0123456789-abcDEFghiJKl";
+    expect(
+      loggableErrorDetails({
+        playerToken: credential,
+        apiKey: credential,
+        Authorization: credential,
+        clientSecret: credential,
+        nested: { credentialToken: credential, kind: "network-error" },
+        kind: "provider-failed",
+        branchId: "br-001",
+      }),
+    ).toEqual({ nested: { kind: "network-error" }, kind: "provider-failed", branchId: "br-001" });
   });
 
   it("顶层标量直接按白名单判定", () => {

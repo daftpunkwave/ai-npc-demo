@@ -10,8 +10,12 @@ import { DomainError, loggableErrorDetails, type HostLogger } from "@ai-npc/cont
  * 非 Error 值按字符串记录；自由文本与供应商报文不会进入日志。
  */
 export function logInternalError(logger: HostLogger, message: string, error: unknown): void {
-  logger.error(message, {
-    message: error instanceof Error ? error.message : String(error),
-    ...(error instanceof DomainError ? { details: loggableErrorDetails(error.details) } : {}),
-  });
+  try {
+    logger.error(message, {
+      message: error instanceof Error ? error.message : String(error),
+      ...(error instanceof DomainError ? { details: loggableErrorDetails(error.details) } : {}),
+    });
+  } catch {
+    // logger 失败没有备用输出通道，吞掉异常保护调用方主流程，与传输层 report 的口径一致。
+  }
 }
