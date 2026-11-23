@@ -762,6 +762,28 @@ describe("通信", () => {
     expect(down.deliverAt("message", "player-1", "species-fauna")).toBe("relay-down");
   });
 
+  it("分享端口返回公共结果类型中的稳定 shareId", async () => {
+    const value = await harness();
+    const world: CommsWorldFacts = {
+      meters: () => ({
+        "relay.stability": 45,
+        "orchard.water": 50,
+        "migration.safety": 50,
+        "watergate.allocation": "harbor-first",
+      }),
+      character: () => null,
+    };
+    const port = createCommsPort(() => createMemoryTx(10), value.gameContent, value.host.ids, world);
+    const share = port.postInformationShare({
+      fromId: "player-1",
+      evidenceId: "ev-water-ledger",
+      audience: ["species-fauna"],
+    });
+    expect(share.shareId).toMatch(/^shr-/);
+    expect(share.messageId).toBeNull();
+    expect(share.deliveries).toHaveLength(2);
+  });
+
   it("开局前缺少世界指标时中继按中断处理", async () => {
     const value = await harness();
     const port = createCommsPort(

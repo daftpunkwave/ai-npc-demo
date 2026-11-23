@@ -374,6 +374,7 @@ describe("世界核心", () => {
       ),
     );
     expect(receipt.commandStatus).toBe("accepted");
+    expect(receipt.result).toEqual({ oldValue: "open", newValue: "closed" });
     expect(readGameEventTypes(value)).toContain("PolicyChanged");
   });
 

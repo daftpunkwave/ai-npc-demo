@@ -45,13 +45,14 @@ describe("authority command gateway", () => {
         taskCancelEnvelope(harness, "task-000000000001", commandId),
       );
       expect(first.commandStatus).toBe("accepted");
-      const conflict = harness.authority.commands.execute(
-        playerAuth(harness),
-        taskCancelEnvelope(harness, "task-000000000002", commandId),
+      expectDomainCode(
+        () =>
+          harness.authority.commands.execute(
+            playerAuth(harness),
+            taskCancelEnvelope(harness, "task-000000000002", commandId),
+          ),
+        "idempotency-conflict",
       );
-      expect(conflict.commandStatus).toBe("rejected");
-      expect(conflict.reasonCode).toBe("idempotency-conflict");
-      expect(conflict.receiptId).toBe(first.receiptId);
       expect(readAggregate(harness, "counter", "counter")?.state).toEqual({ count: 1 });
       expect(countBranchRows(harness, "command_receipts")).toBe(1);
     });

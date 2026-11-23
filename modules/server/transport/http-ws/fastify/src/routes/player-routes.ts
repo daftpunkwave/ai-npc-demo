@@ -39,10 +39,6 @@ export function registerPlayerRoutes(context: RouteContext): void {
       return;
     }
     const receipt = commandReceiptSchema.parse(options.authority.commands.execute(session.auth, envelope.data));
-    // 同一 commandId 换 payload 是幂等冲突而不是业务拒绝：不返回 200 rejected receipt。
-    if (receipt.commandStatus === "rejected" && receipt.reasonCode === "idempotency-conflict") {
-      return sendHttpError(reply, "idempotency-conflict", receipt.safeMessage ?? "命令 ID 已被不同内容使用");
-    }
     hub.publishWithResync(context.reportInternalError);
     return receipt;
   });

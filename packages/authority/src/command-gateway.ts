@@ -20,9 +20,9 @@ import {
   type StorageTransaction,
 } from "@ai-npc/contracts";
 import { isApprovedSpeechUsable, type HandlerResult } from "@ai-npc/module-sdk";
-import { readBranch, readClock, tryReadClock, type ClockRecord } from "./branch-state";
+import { readBranch, readClock, type ClockRecord } from "./branch-state";
 import { checkExpectedVersions, isPauseExempt, issuesOf, parseCommandType, requireJsonResult } from "./command-validation";
-import { buildReceipt, readReceipt, writeReceipt, type ReceiptInput } from "./command-receipts";
+import { readReceipt, writeReceipt, type ReceiptInput } from "./command-receipts";
 import { verifyFencing } from "./fencing";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";
@@ -103,22 +103,8 @@ export class CommandGateway {
       if (storedHash === payloadHash) {
         return readReceipt(existing);
       }
-      const clock = tryReadClock(tx, auth.branchId);
-      const storedReceipt = readReceipt(existing);
-      // 幂等冲突不覆盖既有回执：只返回内存中的拒绝结果，并复用原回执 ID，
-      // 避免为同一命令键不断生成无法查询的新 ID。
-      return buildReceipt(this.host, {
-        receiptId: storedReceipt.receiptId,
-        auth,
-        envelope,
-        commandStatus: "rejected",
-        reasonCode: "idempotency-conflict",
-        safeMessage: "命令 ID 已被不同内容使用",
-        acceptedEventIds: [],
-        resultingVersions: {},
-        result: null,
-        worldTick: clock?.worldTick ?? 0,
-      });
+      // 冲突结果不是新的不可变回执：不生成 ID，交由传输层返回无回执 ID 的 409。
+      throw new DomainError("idempotency-conflict", "命令 ID 已被不同内容使用");
     }
 
     const branch = readBranch(tx, auth.branchId);
