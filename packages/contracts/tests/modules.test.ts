@@ -153,8 +153,9 @@ describe("能力引用与已解析模块集", () => {
         version: "1.0.0",
         apiVersion: "1",
         configHash: "abc123",
+        config: {},
       },
-      { moduleId: "game.clock.controlled", version: "", apiVersion: "1", configHash: "abc" },
+      { moduleId: "game.clock.controlled", version: "", apiVersion: "1", configHash: "abc", config: {} },
     );
   });
 
@@ -165,7 +166,7 @@ describe("能力引用与已解析模块集", () => {
         realm: "client",
         protocolVersion: "1",
         modules: [
-          { moduleId: "client.hud.standard", version: "1.0.0", apiVersion: "1", configHash: "abc" },
+          { moduleId: "client.hud.standard", version: "1.0.0", apiVersion: "1", configHash: "abc", config: {} },
         ],
         capabilities: [capabilityRef],
         assemblyHash: "hash-1",

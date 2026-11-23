@@ -429,6 +429,17 @@ describe("服务端宿主", () => {
       "client.world-view",
     );
     expect(clientAssembly.assemblyHash).toMatch(/^[0-9a-f]{64}$/);
+    // 浏览器没有装配解析器，只能靠握手下发的配置启动模块：
+    // 每个模块的 config 必须是装配按 configRef 解析后的值，且与 configHash 自证一致。
+    for (const module of clientAssembly.modules) {
+      expect(module, `${module.moduleId} 的握手配置不能为空`).toHaveProperty("config");
+      expect(typeof module.configHash).toBe("string");
+    }
+    const worldViewRef = clientAssembly.modules.find(
+      (module) => module.moduleId === "client.world-view.standard",
+    );
+    expect(worldViewRef).toBeDefined();
+    expect(worldViewRef?.config).not.toBeNull();
     expect((await host.app.inject({ method: "GET", url: "/api/v1/session/assembly?realm=console", headers })).statusCode).toBe(403);
     const sessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers });
     expect(sessionView.json()).toMatchObject({ clientAssembly: { realm: "client" } });

@@ -23,6 +23,7 @@ export function moduleRefFixture(): ResolvedModuleSet["modules"][number] {
     version: "1.0.0",
     apiVersion: "1",
     configHash: "config-hash",
+    config: {},
   };
 }
 

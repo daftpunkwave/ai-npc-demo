@@ -164,7 +164,11 @@ function boundCapabilities(
   return capabilities;
 }
 
-/** 构造一个 realm 的模块引用摘要列表；调用前实例计划已完成全部校验。 */
+/**
+ * 构造一个 realm 的模块引用摘要列表；调用前实例计划已完成全部校验。
+ * `config` 是装配解析并校验后的配置值本身，浏览器 realm 靠它启动模块；
+ * `configHash` 是同一份配置的规范摘要，供客户端自证与冻结配置一致。
+ */
 async function moduleRefs(
   plan: ResolvedRealmPlan,
   hash: CanonicalHasher,
@@ -176,6 +180,7 @@ async function moduleRefs(
       version: module.version,
       apiVersion: module.apiVersion,
       configHash: await computeConfigHash(module.config, hash),
+      config: module.config,
     });
   }
   return modules;

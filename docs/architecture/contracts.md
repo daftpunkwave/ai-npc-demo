@@ -116,7 +116,8 @@ interface ModuleRef {
   readonly moduleId: string;
   readonly version: string;
   readonly apiVersion: string;
-  readonly configHash: string;
+  readonly configHash: string;   // 配置的规范化摘要
+  readonly config: Json;         // 装配按 configRef 解析并校验后的配置值
 }
 
 interface ResolvedModuleSet {
@@ -211,7 +212,7 @@ interface UiExtension {
 }
 ```
 
-其余受控类型的首版定义：`StrictConfigSchema` 是一个调用过 `.strict()` 的 Zod object schema（未知键报错），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本与装配 hash。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
+其余受控类型的首版定义：`StrictConfigSchema` 是一个调用过 `.strict()` 的 Zod object schema（未知键报错），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本、装配 hash 与每个模块的已解析配置 `config`。浏览器 realm 没有装配解析器，模块必须用握手下发的 `config` 启动而不是自带的 `defaults`，否则实际行为与装配声明不符且无法用 `configHash` 自证一致；`config` 缺失或未通过模块 `configSchema` 校验时按 `assembly-incompatible` 拒绝启动。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
 
 ## 4. 跨端会话与协议
 
