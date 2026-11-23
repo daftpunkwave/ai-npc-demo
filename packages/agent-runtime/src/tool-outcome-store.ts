@@ -34,6 +34,9 @@ export interface ToolOutcomeStoreOptions {
   readonly toolView: AgentToolViewPort;
 }
 
+/** 参数被预算拒绝时写入 artifact 的标记值；短字面量，可安全序列化与检索。 */
+const OVER_BUDGET_INPUT_MARKER = "json-input-budget";
+
 export interface PersistToolOutcomeInput {
   readonly input: ToolCallExecutionInput;
   readonly binding: ToolBinding;
@@ -122,7 +125,7 @@ export class ToolOutcomeStore {
       providerCallId: input.input.providerCallId,
       toolId: input.binding.toolId,
       toolVersion: input.binding.version,
-      input: overBudget ? { rejected: "json-input-budget" } : input.args,
+      input: overBudget ? { rejected: OVER_BUDGET_INPUT_MARKER } : input.args,
       argumentsRaw: overBudget ? "" : input.input.argumentsRaw,
       scope: input.input.session,
       phase: input.input.phase,
@@ -137,6 +140,12 @@ export class ToolOutcomeStore {
       result,
       argsHash: input.argsHash,
     };
+    // 整体预算校验：替换掉 input 后，其余字段（output、result、binding 等）叠加仍可能超预算，
+    // 因此按最终写入值再检查一次，避免把无法序列化的结构交给 artifact store。
+    const rawBudget = checkJsonBudget(rawValue);
+    if (rawBudget !== null) {
+      throw new TypeError(`工具调用 artifact 超出 JSON 输入预算：${rawBudget.message}`);
+    }
     const rawArtifact = await this.options.artifacts.put({
       artifactId: rawArtifactId,
       runId: input.input.runId,

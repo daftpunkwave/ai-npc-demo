@@ -178,4 +178,46 @@ describe("JSON 输入预算", () => {
     expect(checkJsonBudget(nestedArray(100_000))?.kind).toBe("depth");
     expect(checkJsonBudget(nestedArray(jsonInputBudget.maxDepth))).toBeNull();
   });
+
+  it("循环引用由深度预算拦下，不会无限展开", () => {
+    const cyclic: Record<string, unknown> = { label: "self" };
+    cyclic["self"] = cyclic;
+    const budget = checkJsonBudget(cyclic);
+    expect(budget?.kind).toBe("depth");
+    // 带预算的边界 schema 必然拒绝；不带预算的 jsonValueSchema 只做结构判定，不承担循环检测。
+    expect(boundedJsonValueSchema.safeParse(cyclic).success).toBe(false);
+    expect(() => canonicalJson(cyclic as unknown as Json)).toThrow(TypeError);
+    expect(() => canonicalJson(cyclic as unknown as Json)).toThrow(/嵌套深度上限/);
+  });
+
+  it("预算检查与规范化序列化对非 JSON 对象给出一致判定", () => {
+    for (const value of [new Date(0), new Map(), new Set(), () => 1]) {
+      const budget = checkJsonBudget(value);
+      if (value instanceof Function) {
+        // 函数不是对象分支：结构判定拒绝，预算不拦。
+        expect(budget).toBeNull();
+        expect(jsonValueSchema.safeParse(value).success).toBe(false);
+        expect(() => canonicalJson(value as unknown as Json)).toThrow(TypeError);
+        continue;
+      }
+      expect(budget).not.toBeNull();
+      expect(boundedJsonValueSchema.safeParse(value).success).toBe(false);
+      expect(() => canonicalJson(value as unknown as Json)).toThrow(TypeError);
+      expect(() => canonicalJson(value as unknown as Json)).toThrow(/非 JSON 对象/);
+    }
+    // 嵌套位置的非 JSON 对象同样被拒绝，不会在序列化时被悄悄写成 {}。
+    expect(checkJsonBudget({ when: new Date(0) })?.kind).toBe("type");
+    expect(() => canonicalJson({ when: new Date(0) } as unknown as Json)).toThrow(/非 JSON 对象/);
+  });
+
+  it("节点预算预留计入已入队但未处理的帧", () => {
+    // 单层超宽数组：子节点在展开时一次性入队，必须按「已入队 + 新增」提前拒绝，
+    // 否则会先分配远超上限的帧再逐层拒绝。
+    const wide = Array.from({ length: jsonInputBudget.maxNodes + 1 }, () => null as Json);
+    const budget = checkJsonBudget(wide);
+    expect(budget?.kind).toBe("nodes");
+    // 每层都挂一个接近上限的宽数组时，第二层展开就应被总量拦下。
+    const nested = [wide.slice(0, 1_000), Array.from({ length: 1_000 }, () => null as Json)];
+    expect(checkJsonBudget(nested)).toBeNull();
+  });
 });

@@ -27,17 +27,36 @@ export const jsonInputBudget = {
   maxNodes: 200_000,
 } as const;
 
-/** 一条预算违规：kind 区分深度与节点数两种超限，path 给出可定位的容器路径。 */
+/** 预算违规类型：深度、节点数与「不是 JSON 对象」三类。 */
+export type JsonBudgetViolationKind = "depth" | "nodes" | "type";
+
+/** 一条预算违规：kind 区分超限类型，segments 给出可定位的容器路径段。 */
 export interface JsonBudgetViolation {
-  readonly kind: "depth" | "nodes";
+  readonly kind: JsonBudgetViolationKind;
   readonly message: string;
   readonly path: string;
   /** 违规所在的路径段；可直接用作 zod issue 的 path。 */
   readonly segments: readonly string[];
 }
 
+/** 诊断文本里路径段的显示上限：深路径只保留尾部，避免错误信息本身被超长路径淹没。 */
+const maxRenderedSegments = 8;
+
+/** 把路径段渲染成诊断文本；超过显示上限时保留尾部并标出被省略的层数。 */
+function formatPath(segments: readonly string[]): string {
+  if (segments.length === 0) {
+    return "$";
+  }
+  const omitted = Math.max(0, segments.length - maxRenderedSegments);
+  const shown = omitted === 0 ? segments : segments.slice(omitted);
+  const head = omitted === 0 ? "$" : `$…(${omitted})`;
+  return `${head}${shown
+    .map((segment) => (/^\d+$/u.test(segment) ? `[${segment}]` : `[${JSON.stringify(segment)}]`))
+    .join("")}`;
+}
+
 /**
- * 显式栈帧：只保存父帧下标与在本层的键，避免为每个节点复制一份路径数组。
+ * 显式栈帧：只保存父帧下标与本层键，避免为每个节点复制一份路径数组。
  * 路径在命中违规时沿父链回溯生成，因此正常情况下不做额外分配。
  */
 interface BudgetFrame {
@@ -64,36 +83,31 @@ function pathSegments(frames: readonly BudgetFrame[], index: number): string[] {
   return segments.reverse();
 }
 
-/** 把路径段渲染成诊断文本。 */
-function formatPath(segments: readonly string[]): string {
-  if (segments.length === 0) {
-    return "$";
-  }
-  return `$${segments
-    .map((segment) => (/^\d+$/u.test(segment) ? `[${segment}]` : `[${JSON.stringify(segment)}]`))
-    .join("")}`;
-}
-
-function violation(
-  kind: JsonBudgetViolation["kind"],
+function budgetViolation(
+  kind: JsonBudgetViolationKind,
   frames: readonly BudgetFrame[],
   index: number,
+  reason: string,
 ): JsonBudgetViolation {
   const segments = pathSegments(frames, index);
-  const limit = kind === "depth" ? `嵌套深度上限 ${jsonInputBudget.maxDepth}` : `节点数上限 ${jsonInputBudget.maxNodes}`;
-  return {
-    kind,
-    segments,
-    path: formatPath(segments),
-    message: `JSON 输入超过${limit}（路径 ${formatPath(segments)}）`,
-  };
+  const path = formatPath(segments);
+  return { kind, segments, path, message: `${reason}（路径 ${path}）` };
 }
 
 /**
- * 以显式栈迭代遍历待校验值，检查深度与节点预算；返回第一条违规，全部通过时返回 null。
- * 只做结构与预算判断，不判断「是不是合法 JSON 值」——非普通对象（Date、Map、类实例等）
- * 留给 schema 报类型错误，避免两处重复维护类型规则。
- * 展开容器前先按子节点数预留预算，因此超宽数组不会先把整个子节点表压进栈。
+ * 判断值是否为 JSON 对象形态：普通对象字面量或 null 原型对象。
+ * Date、Map、类实例等不是 JSON 值；预算检查与规范化序列化必须对它们给出一致判定，
+ * 否则序列化会把它们悄悄写成 `{}`。
+ */
+function isJsonObjectShape(value: object): value is { readonly [key: string]: unknown } {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * 以显式栈迭代遍历待校验值，检查深度、节点与对象类型预算；返回第一条违规，全部通过时返回 null。
+ * 只做结构与预算判断，不判断标量是否为合法 JSON 值（NaN、Infinity 由 schema 拒绝）。
+ * 循环引用最终由深度上限拦下，因此不会无限展开。
  */
 export function checkJsonBudget(value: unknown): JsonBudgetViolation | null {
   const frames: BudgetFrame[] = [{ value, depth: 0, parent: -1, key: null }];
@@ -107,32 +121,31 @@ export function checkJsonBudget(value: unknown): JsonBudgetViolation | null {
     }
     nodes += 1;
     if (nodes > jsonInputBudget.maxNodes) {
-      return violation("nodes", frames, cursor);
+      return budgetViolation("nodes", frames, cursor, `JSON 输入超过节点数上限 ${jsonInputBudget.maxNodes}`);
     }
     const item = frame.value;
+    const frameIndex = cursor;
     cursor += 1;
     if (item === null || typeof item !== "object") {
       continue;
     }
     const nextDepth = frame.depth + 1;
     if (nextDepth > jsonInputBudget.maxDepth) {
-      return violation("depth", frames, cursor - 1);
+      return budgetViolation("depth", frames, frameIndex, `JSON 输入超过嵌套深度上限 ${jsonInputBudget.maxDepth}`);
     }
     const isArray = Array.isArray(item);
+    if (!isArray && !isJsonObjectShape(item)) {
+      return budgetViolation("type", frames, frameIndex, "JSON 输入包含非 JSON 对象（Date、Map、类实例等）");
+    }
     const keys = isArray ? null : Object.keys(item);
-    if (keys !== null) {
-      const prototype = Object.getPrototypeOf(item);
-      if (prototype !== Object.prototype && prototype !== null) {
-        // 非普通对象不是 JSON 值：跳过展开，由 schema 的类型判定给出错误。
-        continue;
-      }
-    }
     const childCount = isArray ? (item as readonly unknown[]).length : (keys ?? []).length;
-    if (nodes + childCount > jsonInputBudget.maxNodes) {
-      // 子节点本身就必然超预算：直接报告，避免把超大子节点表压进栈。
-      return { ...violation("nodes", frames, cursor - 1), message: "JSON 输入超过节点数上限 " + jsonInputBudget.maxNodes };
+    // 预算预留必须覆盖「尚未处理但已入队」的帧：否则超宽数组可以先入队再逐层拒绝，
+    // 期间的帧分配会远超上限。已入队 + 本次子节点合计超限时直接拒绝。
+    const queued = frames.length - cursor;
+    if (nodes + queued + childCount > jsonInputBudget.maxNodes) {
+      return budgetViolation("nodes", frames, frameIndex, `JSON 输入超过节点数上限 ${jsonInputBudget.maxNodes}`);
     }
-    const parentIndex = cursor - 1;
+    const parentIndex = frameIndex;
     if (isArray) {
       const array = item as readonly unknown[];
       for (let index = 0; index < array.length; index += 1) {
@@ -149,12 +162,8 @@ export function checkJsonBudget(value: unknown): JsonBudgetViolation | null {
 }
 
 /** 把预算违规转成 zod issue，让调用方与 schema 失败走同一套错误处理。 */
-function budgetIssue(budgetViolation: JsonBudgetViolation): { code: "custom"; message: string; path: string[] } {
-  return {
-    code: "custom",
-    message: budgetViolation.message,
-    path: [...budgetViolation.segments],
-  };
+function budgetIssue(violation: JsonBudgetViolation): { code: "custom"; message: string; path: string[] } {
+  return { code: "custom", message: violation.message, path: [...violation.segments] };
 }
 
 /** 递归校验 JSON 值；zod 4 的 number schema 本身拒绝 NaN 与 Infinity。 */
@@ -171,15 +180,15 @@ export const jsonValueSchema: z.ZodType<Json> = z.lazy(() =>
 
 /**
  * 带输入预算的 JSON 值 schema：先以迭代方式检查预算，再做递归结构判定。
- * 用于不可信输入边界（命令 payload、事件 payload、模型工具参数），
+ * 用于不可信输入边界（命令 payload、事件 payload、模型工具参数、回执 result），
  * 因此超深输入返回确定的校验失败而不是依赖调用栈深度。
  */
 export const boundedJsonValueSchema: z.ZodType<Json> = z
   .unknown()
   .superRefine((input, context) => {
-    const budgetViolation = checkJsonBudget(input);
-    if (budgetViolation !== null) {
-      context.addIssue(budgetIssue(budgetViolation));
+    const violation = checkJsonBudget(input);
+    if (violation !== null) {
+      context.addIssue(budgetIssue(violation));
     }
   })
   .pipe(jsonValueSchema) as unknown as z.ZodType<Json>;
@@ -191,9 +200,9 @@ export const jsonObjectSchema: z.ZodType<{ [key: string]: Json }> = z.record(z.s
 export const boundedJsonObjectSchema: z.ZodType<{ [key: string]: Json }> = z
   .unknown()
   .superRefine((input, context) => {
-    const budgetViolation = checkJsonBudget(input);
-    if (budgetViolation !== null) {
-      context.addIssue(budgetIssue(budgetViolation));
+    const violation = checkJsonBudget(input);
+    if (violation !== null) {
+      context.addIssue(budgetIssue(violation));
     }
   })
   .pipe(jsonObjectSchema) as unknown as z.ZodType<{ [key: string]: Json }>;
@@ -204,9 +213,9 @@ export const boundedJsonObjectSchema: z.ZodType<{ [key: string]: Json }> = z
  * 因此在递归途中不会再出现 RangeError。非有限数字或非 JSON 值同样抛 TypeError，不做隐式转换。
  */
 export function canonicalJson(value: Json): string {
-  const budgetViolation = checkJsonBudget(value);
-  if (budgetViolation !== null) {
-    throw new TypeError(budgetViolation.message);
+  const violation = checkJsonBudget(value);
+  if (violation !== null) {
+    throw new TypeError(violation.message);
   }
   return serializeCanonical(value);
 }
