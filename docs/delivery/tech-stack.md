@@ -212,7 +212,7 @@ export default defineConfig({
 - 领域错误统一抛 `DomainError(code, safeMessage, details?)`，`code` 只能取 [公共契约](../architecture/contracts.md) 第 6 节的错误码。
 - 日志为 JSON 行，经宿主 logger 输出；模块内不写 `console.log`。
 - 面向玩家的中文文本放在 `content/` 内容包或模板里；代码注释默认中文并保留英文专有名词，标识符遵循语言与生态命名惯例。
-- 单个源文件建议不超过 400 行；超过时按职责拆文件，不拆模块边界。
+- 单个源文件建议不超过 500 行；超过时按职责拆文件，不拆模块边界。
 
 ### 7.1 手写源码文件头
 
