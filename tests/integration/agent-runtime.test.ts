@@ -311,6 +311,115 @@ describe("Agent runtime 持久状态", () => {
     expect(local?.rendered.full.summaryZh).not.toContain("private adjustment");
   });
 
+  it("flush 只发布存在到期条目的感知状态：未到期 Agent 的行保持原样", async () => {
+    const value = await fixture();
+    const roster: Roster = {
+      ...value.roster,
+      agents: [
+        ...value.roster.agents,
+        {
+          agentId: "human-earth-alliance",
+          kind: "strategic",
+          profileRef: "agent-strategic-default",
+          toolsetRef: "strategic-default",
+        },
+      ],
+    };
+    const pendingEntryFor = (observationId: string, knownAtTick: number) => ({
+      observation: {
+        observationId,
+        scope: {
+          worldId: "wld-000000000001",
+          branchId: "br-000000000001",
+          agentId: "human-independent",
+        },
+        observationSeq: 0,
+        sourceEventIds: ["evt-000000000001"],
+        sourceObservationIds: [],
+        occurredAtTick: 0,
+        sensedAtTick: 0,
+        knownAtTick,
+        channel: "relay",
+        epistemic: "reported",
+        confidence: 0.6,
+        releasePolicyId: "parties:human-independent,player-1",
+        content: { summaryZh: "延迟消息", detail: "full" },
+      },
+      triggers: [{
+        triggerId: "trg-000000000001",
+        agentId: "human-independent",
+        kind: "message",
+        priority: 60,
+        sourceRef: "evt-000000000001",
+        createdTick: 0,
+        dedupeKey: `message:human-independent:${observationId}`,
+        consumedByTurnId: null,
+      }],
+    });
+    value.storage.transact((tx) => {
+      const stateTable = tx.branch("br-000000000001").table("perception_state");
+      stateTable.put({
+        agent_id: "human-independent",
+        module_id: "agent.perception.test",
+        revision: 3,
+        scanned_through_seq: 10,
+        state_json: { pending: [pendingEntryFor("obs-000000000001", 5)] },
+      });
+      stateTable.put({
+        agent_id: "human-earth-alliance",
+        module_id: "agent.perception.test",
+        revision: 7,
+        scanned_through_seq: 10,
+        state_json: { pending: [pendingEntryFor("obs-000000000002", 9)] },
+      });
+      const table = tx.branch("br-000000000001").table("clock");
+      const row = table.get({});
+      table.put({ ...row, world_tick: 5 });
+    });
+    const scheduling: SchedulingPort = { plan: () => [] };
+    const runtime = new AgentRuntime({
+      storage: value.storage,
+      host: value.host,
+      content: loadContentPack("content", "earth-2964-v1"),
+      roster,
+      profiles: new Map([
+        ["human-independent", value.profile],
+        ["human-earth-alliance", value.profile],
+      ]),
+      moduleDefinitions: new Map([
+        [value.definition.id, value.definition],
+        [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+      ]),
+      scheduling,
+      maxConcurrentTurns: 1,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      runId: "run-000000000001",
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
+        nodeId: "grayharbor",
+        factionId: "human-independent",
+        worldViewText: "",
+        affairsText: "",
+      }])),
+    });
+    await runtime.start();
+    resources.push({ dispose: () => runtime.dispose() });
+    await runtime.pump();
+    const state = (agentId: string) => value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("perception_state").get({ agent_id: agentId }));
+    expect(state("human-independent")).toMatchObject({ revision: 4, state_json: { pending: [] } });
+    expect(state("human-earth-alliance")).toMatchObject({
+      revision: 7,
+      state_json: { pending: [pendingEntryFor("obs-000000000002", 9)] },
+    });
+    const observations = value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("observations").list());
+    expect(observations.map((row) => row["agent_id"])).toEqual(["human-independent"]);
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("triggers").list().map((row) => row["agent_id"]),
+    )).toEqual(["human-independent"]);
+  });
+
   it("启动时取消遗留非终态 turn 并释放 trigger", async () => {
     const value = await fixture();
     value.storage.transact((tx) => {
