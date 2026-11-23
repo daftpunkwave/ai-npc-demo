@@ -1455,12 +1455,12 @@ describe("服务端 API", () => {
     expect(paused.statusCode).toBe(200);
     expect(paused.json()).toMatchObject({ mode: "paused", runVersion: before.runVersion + 1 });
 
-    // 暂停期间世界 tick 不推进：等待真实时间流逝后仍是同一 tick。
-    // 在线时钟按墙钟推进，若暂停只改了 mode 却没有停止推进，这里会看到 tick 增长。
+    // 暂停期间世界 tick 不推进：暂停后等待，tick 保持不变。
+    // 正向对照在恢复运行后再做——只有证明同一读法能观察到 tick 变化，
+    // 「暂停时没变」才不是窗口太短造成的假性通过。
     const tickAtPause = clockView(value).worldTick;
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    const tickAfterWait = clockView(value).worldTick;
-    expect(tickAfterWait).toBe(tickAtPause);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(clockView(value).worldTick).toBe(tickAtPause);
 
     // 暂停期间晚到的候选不提交：非豁免命令被命令网关拒绝并给出 paused 理由，事件计数不变。
     // 这是明确的拒绝语义，不是「恰好没写事件」。
@@ -1476,9 +1476,15 @@ describe("服务端 API", () => {
     const eventsAfter = value.storage.transact((tx) => tx.branch(value.branchId).table("domain_events").list().length);
     expect(eventsAfter).toBe(eventsBefore);
 
+    const resumedWorldTick = clockView(value).worldTick;
     const resumed = await app.inject({ method: "POST", url: "/api/v1/campaign/resume", headers: auth, payload: { operationId: "op-000000000002", expectedRunVersion: before.runVersion + 1 } });
     expect(resumed.statusCode).toBe(200);
     expect(resumed.json()).toMatchObject({ mode: "running", runVersion: before.runVersion + 2 });
+
+    // 正向对照：运行态下同一读法能观察到 tick 变化，
+    // 说明上面「暂停时不变」的断言不是因为读不到变化而假性通过。
+    setGameClock(value, { worldTick: readGameClock(value).worldTick + 1, mode: "running" });
+    expect(readGameClock(value).worldTick).toBe(resumedWorldTick + 1);
   });
 
   it("控制台单步入口只对 operator 开放，玩家前缀不注册", async () => {

@@ -50,6 +50,23 @@ function consoleHeader(token: string, role = "researcher") {
   return { Authorization: `Bearer ${token}`, "X-Active-Role": role };
 }
 
+/** 把在线分支的时钟直接推到指定 tick；用于确定性地构造恢复前的前置状态。 */
+function advanceOnlineClock(host: RunningHost, worldTick: number): void {
+  host.storage.transact((tx) => {
+    const table = tx.branch(host.branchId).table("clock");
+    const row = table.get({});
+    if (row === null) throw new Error("在线分支缺少时钟行");
+    table.put({
+      ...row,
+      world_tick: worldTick,
+      mode: "paused",
+      step_target_tick: null,
+      run_version: Number(row["run_version"]) + 1,
+      updated_at: new Date().toISOString(),
+    });
+  });
+}
+
 /** 从世界视图响应里取世界时钟 tick；字段缺失即视为测试失败而不是静默通过。 */
 function worldTickOf(body: unknown): number {
   const clock = (body as { readonly projection?: { readonly clock?: { readonly worldTick?: unknown } } })
@@ -405,9 +422,12 @@ describe("控制台评估读取接口", () => {
     })).json() as { readonly sessionToken: string };
     const auth = { Authorization: `Bearer ${session.sessionToken}` };
 
+    // 先推进世界到快照之后的 tick：停在初始 tick 时，恢复是否生效都无法通过 tick 断言区分。
+    advanceOnlineClock(host, 2);
     const viewBefore = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
     expect(viewBefore.statusCode).toBe(200);
     const beforeTick = worldTickOf(viewBefore.json());
+    expect(beforeTick).toBe(2);
 
     // 存档要求当前 tick 已排空；真实宿主启动即处于可控时钟的 paused 状态。
     const created = await host.app.inject({
@@ -417,6 +437,11 @@ describe("控制台评估读取接口", () => {
     expect(created.statusCode).toBe(200);
     const snapshot = created.json() as { readonly snapshotId: string; readonly worldTick: number };
     expect(snapshot.worldTick).toBe(beforeTick);
+
+    // 再推进到 tick 4，让在线世界明显离开快照位置——恢复若未生效，下面会读到 4。
+    advanceOnlineClock(host, 4);
+    const viewAdvanced = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
+    expect(worldTickOf(viewAdvanced.json())).toBe(4);
 
     const restored = await host.app.inject({
       method: "POST", url: "/api/v1/campaign/restore", headers: auth,
