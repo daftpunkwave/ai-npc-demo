@@ -175,11 +175,12 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
     if (!allocation.success) {
       return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未知的水闸分配值" };
     }
+    const oldValue = ports["game.world"].meters()?.["watergate.allocation"] ?? allocation.data;
     const result = ports["game.world"].setAllocation(allocation.data, principalId);
     if (!result.ok) {
       return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "水闸分配未改变" };
     }
-    return { kind: "accepted" };
+    return { kind: "accepted", result: { oldValue, newValue: allocation.data } };
   }
   const roadId = roadIdFromPolicyKey(input.key);
   if (roadId !== null) {
@@ -190,11 +191,12 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
     if (!status.success) {
       return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未知的道路状态" };
     }
+    const oldValue = ports["game.map"].roadStatus(roadId) ?? "open";
     const result = ports["game.map"].setRoadStatus(roadId, status.data, principalId);
     if (!result.ok) {
       return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "道路状态未改变" };
     }
-    return { kind: "accepted" };
+    return { kind: "accepted", result: { oldValue, newValue: status.data } };
   }
   return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未登记的政策键" };
 }

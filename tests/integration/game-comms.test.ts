@@ -687,6 +687,10 @@ describe("通信", () => {
       ),
     );
     expect(share.commandStatus).toBe("accepted");
+    expect(share.result as { readonly shareId: string; readonly deliverAtTick: number }).toEqual({
+      shareId: expect.any(String),
+      deliverAtTick: 3,
+    });
     const frozen = deliveriesOf(payloadOf(readGameEvents(value), "InformationShared"));
     expect(deliveryTick(frozen, "species-fauna")).toBe(3);
     expect(knowledgeJobs(value)).toHaveLength(1);

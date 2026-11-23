@@ -21,6 +21,11 @@ export interface CommsPostResult {
   readonly deliveries: readonly { readonly principalId: string; readonly deliverAtTick: number }[];
 }
 
+/** 证据分享的提交结果；shareId 供回执与工具视图引用本次分享事实。 */
+export interface CommsSharePostResult extends CommsPostResult {
+  readonly shareId: string;
+}
+
 /** 证据分享的一次查询；分享必须落在 [sinceTick, byTick] 内，早于协议生效的分享不构成履约。 */
 export interface ShareQuery {
   readonly fromId: string;
@@ -113,5 +118,5 @@ export interface GameCommsPort {
     readonly fromId: string;
     readonly evidenceId: string;
     readonly audience: readonly string[];
-  }): CommsPostResult;
+  }): CommsSharePostResult;
 }
