@@ -1,6 +1,5 @@
 name: 通用事务与综合议题 (General Issue)
 description: 当缺陷报告与设计提案均不匹配时使用：文档修订、工具链支持、环境配置、调研评估等
-title: "<type>(<scope>): <简要客观的目标描述>"
 labels: ["kind/general"]
 body:
   - type: markdown
@@ -8,7 +7,8 @@ body:
       value: |
         ### 通用议题准则
         此模板用于不属于明确代码 Bug 或大型架构重构的通用任务。
-        请同样保持**客观陈述、边界明确、具备可判定的完成依据**。
+        - **标题规范**：`<type>(<scope>): <简要客观的目标描述>`（例：`docs(modules): 补充模块白名单与依赖检查配置说明`）
+        - 保持**客观陈述、边界明确、具备可判定的完成依据**。
 
   - type: dropdown
     id: category
