@@ -83,7 +83,24 @@ packages:
 
 源码依赖包括静态 import、re-export、字面量动态 import 及相对路径跨包引用；生产模块禁止非字面量动态加载；检查脚本仅可从显式、已校验的 catalog 路径加载定义，不得扫描执行任意模块。包依赖图同时检查 `dependencies` 与实际引用，不允许借未使用的依赖声明或 devDependencies 藏入生产依赖。运行时 `requires` 是能力 port 的依赖图，浏览器 `requiresRemote` 经握手校验，不授权源码 import provider 的实现；三种检查不能互相替代。
 - 每个模块包除了 `"."` 还导出 `"./definition": "./src/definition.ts"`。`definition.ts` 只含描述符数据，**不得静态 import 实现文件、React、PixiJS、Fastify 或模型 SDK**；`create` 用动态 `import("./plugin")` 加载实现。这样三个组合根的 `module-catalog.ts` 都能在 Node 中导入，供 `check-catalog` 使用。
-- `tests` 与 `scripts` 两个包可为验证依赖任意 workspace 的公开入口（包括模块包），但不豁免深层导入、循环依赖或生产源码边界；两者生产源码 import 的第三方库仍须写进自身 `dependencies`，测试夹具不作为生产模块加载。
+- `tests` 与 `scripts` 两个包可为验证依赖任意 workspace 的公开入口（包括模块包），但不豁免深层导入、循环依赖或生产源码边界。这两个包的源码同样必须声明依赖：其验证用途的 workspace 与第三方依赖可写在 `devDependencies`，其余包仍要求写在 `dependencies`。测试夹具不作为生产模块加载。
+
+### 依赖供应链与构建批准
+
+`pnpm-workspace.yaml` 固化下述策略，使供应链约束由仓库决定，而不是由贡献者本机的 pnpm 配置决定：
+
+| 设置 | 取值 | 约束 |
+|---|---|---|
+| `minimumReleaseAge` | `1440` 分钟 | 新发布版本经过 24 小时等待期后才可安装，覆盖传递依赖 |
+| `minimumReleaseAgeStrict` | `true` | 请求范围内没有满足等待期的版本时安装失败，不回退到未满期版本 |
+| `trustPolicy` | `no-downgrade` | 包的可信级别相对历史版本下降即拒绝安装；合法降级用 `trustPolicyExclude` 逐条豁免并注明理由 |
+| `blockExoticSubdeps` | `true` | 传递依赖只能来自 registry、workspace 包或受信任的托管仓库 |
+| `strictDepBuilds` | `true` | 未经裁决的构建脚本使安装失败，而不是留在待审批队列 |
+| `allowBuilds` | `esbuild: true` | 仅 esbuild 可运行安装脚本；其余依赖的构建脚本保持拒绝 |
+| `permissions.<pkg>.skills` | 逐包裁决 | 依赖随包发布的 agent skill 默认不链接；批准或拒绝都记录在此，不留待审批状态 |
+
+新增依赖时按同一清单评审：是否携带安装脚本、是否携带 agent skill、是否引入非标准来源。任一项命中都必须在上表对应位置显式裁决并写明理由。
+
 
 ## 3. TypeScript 配置
 
@@ -160,6 +177,13 @@ packages:
 `dev` 启动 server/client 与控制台 watch 构建，`build` 构建 client/console，服务端挂载控制台静态资源。`check:catalog` 扫描 `config/assemblies/*.yaml` 并加载三 realm 组合根登记的模块；主装配的 client/console 绑定均已非空。
 
 每个脚本在实现它的那一步加入 `package.json`（见 [构建计划](build-plan.md) 第 0.2 节），不提前写占位脚本。`pnpm check` 的组成随步骤增长：S00 为 `pnpm typecheck && pnpm test && pnpm check:docs`；S03 起加入 `pnpm check:boundaries`；S09 起加入 `pnpm check:catalog`；资产包入仓后加入 `pnpm check:assets`。它始终不包含 `test:e2e` 与 `check:ports`（这两项在要求它们的步骤里单独运行）。
+
+### 远端质量门禁
+
+`.github/workflows/check.yml` 在 `main` 的每次 push 与每个 pull request 上以 `pnpm install --frozen-lockfile` 安装依赖并运行 `pnpm check`，因此上表的检查在远端强制执行，而不只依赖本地执行。工作流固定 Node 24（`engines.node` 的运行时下限），由 `pnpm/action-setup` 读取 `packageManager` 字段确定 pnpm 版本，并对同一分支的新推送取消上一轮未完成的运行。
+
+`.codacy.yml` 只声明分析范围（排除测试、夹具、锁文件与已发布迁移），与工作流不重复；工作流负责仓库自有的六项检查，Codacy 负责外部静态分析。新增检查项时加入 `pnpm check` 脚本链即可同时进入本地与远端门禁，无需改工作流。
+
 
 ## 5. 环境变量
 

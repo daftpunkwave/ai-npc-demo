@@ -103,6 +103,106 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
     expect(violations).toEqual([]);
   });
 
+  it("验证包的生产性脚本代码同样要求声明 workspace 依赖", () => {
+    // scripts/ 承载质量门禁自身的基础设施：它引用 workspace 包却漏声明时，门禁会在
+    // 更换链接策略或裁剪根依赖后以「模块找不到」崩溃，而崩溃点与门禁职责无关。
+    const files: readonly BoundarySourceFile[] = [
+      {
+        path: "scripts/check-docs.ts",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { readRepository } from \"@ai-npc/kernel\";\nexport const run = (): unknown => readRepository;\n",
+      },
+    ];
+    const violations = checkBoundaries({
+      files,
+      packages: packagesWith([packageManifest("@ai-npc/scripts", "scripts", {})]),
+    });
+    expectCode(violations, "workspace-dependency-not-declared");
+    expectRule(violations, 1);
+  });
+
+  it("验证包的生产性脚本代码同样要求声明第三方依赖", () => {
+    const files: readonly BoundarySourceFile[] = [
+      {
+        path: "scripts/check-assets.ts",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { XMLParser } from \"fast-xml-parser-not-declared\";\nexport const parser = XMLParser;\n",
+      },
+    ];
+    const violations = checkBoundaries({
+      files,
+      packages: packagesWith([packageManifest("@ai-npc/scripts", "scripts", {})]),
+    });
+    expectCode(violations, "undeclared-third-party-dependency");
+    expectRule(violations, 6);
+  });
+
+  it("验证包允许把验证用途的依赖写在 devDependencies", () => {
+    const files: readonly BoundarySourceFile[] = [
+      {
+        path: "scripts/check-catalog.ts",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { readRepository } from \"@ai-npc/kernel\";\nimport { parse } from \"yaml\";\nexport const run = (): unknown => [readRepository, parse];\n",
+      },
+    ];
+    const violations = checkBoundaries({
+      files,
+      packages: packagesWith([
+        packageManifest("@ai-npc/scripts", "scripts", {
+          devDependencies: { "@ai-npc/kernel": "workspace:*", yaml: "^2.9.1" },
+        }),
+      ]),
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("生产模块写在 devDependencies 依旧拒绝", () => {
+    const files: readonly BoundarySourceFile[] = [
+      {
+        path: "packages/authority/src/gateway.ts",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { Kernel } from \"@ai-npc/kernel\";\nexport const kernel = Kernel;\n",
+      },
+    ];
+    const violations = checkBoundaries({
+      files,
+      packages: packagesWith([
+        packageManifest("@ai-npc/authority", "packages/authority", {
+          devDependencies: { "@ai-npc/kernel": "workspace:*" },
+        }),
+      ]),
+    });
+    expectCode(violations, "workspace-dependency-dev-only");
+    expectRule(violations, 1);
+  });
+
+  it("根包拥有仓库根目录下的文件并检查其依赖声明", () => {
+    // 根包目录是空串。若按空串拼 `/` 前缀匹配，根目录文件会被判为无归属，
+    // 于是根清单的未声明依赖（例如工具链配置里引用的库）全部逃过检查。
+    const rootPackage = packageManifest("ai-npc-demo", "", {
+      exports: { ".": "./index.ts" },
+      devDependencies: { vitest: "^5" },
+    });
+    const declared = checkBoundaries({
+      files: [
+        {
+          path: "vitest.config.ts",
+          content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { defineConfig } from \"vitest/config\";\nexport default defineConfig;\n",
+        },
+      ],
+      packages: [rootPackage],
+    });
+    expect(declared).toEqual([]);
+
+    const undeclared = checkBoundaries({
+      files: [
+        {
+          path: "vitest.config.ts",
+          content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { defineConfig } from \"vitest-not-declared/config\";\nexport default defineConfig;\n",
+        },
+      ],
+      packages: [rootPackage],
+    });
+    expectCode(undeclared, "undeclared-third-party-dependency");
+    expectRule(undeclared, 6);
+  });
+
   it("字符串字面量中的 import 文本不视为依赖", () => {
     const violations = checkFixture("packages/authority/src/help.ts", "string-literal-import.ts.txt");
     expect(violations).toEqual([]);

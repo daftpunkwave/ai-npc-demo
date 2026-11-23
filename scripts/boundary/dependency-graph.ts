@@ -5,7 +5,7 @@
  */
 import { RULE_DEPENDENCY_GRAPH } from "./constants";
 import { violation } from "./finding";
-import { isVerificationPackage } from "./package-registry";
+import { isRootPackage, isVerificationPackage } from "./package-registry";
 import type { BoundaryPackage, BoundaryViolation } from "./types";
 
 export function checkDependencyGraph(
@@ -38,8 +38,7 @@ export function checkDependencyGraph(
   // 第三方声明对其照常检查（生产与测试源码的导入都计入使用）。
   // 根包没有生产源码，任何 dependencies 声明都无使用方，运行时职责应落在应用与模块包。
   for (const pkg of packages) {
-    const isRootPackage = pkg.directory === "";
-    const verificationWorkspaceExempt = isVerificationPackage(pkg) && !isRootPackage;
+    const verificationWorkspaceExempt = isVerificationPackage(pkg) && !isRootPackage(pkg);
     const imported = productionImports.get(pkg.name) ?? new Set<string>();
     for (const dependencyName of Object.keys(pkg.dependencies)) {
       const isWorkspaceDependency = dependencyName.startsWith("@ai-npc/");

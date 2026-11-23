@@ -14,6 +14,7 @@ import {
 import { violation } from "./finding";
 import { dependencyAllowlist, isAllowedNodeBuiltin } from "./modules";
 import {
+  allowsDevDependencyDeclaration,
   canCheckDependencyDeclaration,
   canCheckThirdPartyDeclaration,
   findOwningPackage,
@@ -152,7 +153,7 @@ function inspectWorkspaceImport(
           `workspace 包深层路径导入 ${record.specifier}。`,
         ),
       );
-    } else if (importer !== undefined && canCheckDependencyDeclaration(importer, testFile)) {
+    } else if (importer !== undefined && canCheckDependencyDeclaration(testFile)) {
       violations.push(
         violation(
           RULE_IMPORT_BOUNDARY,
@@ -178,16 +179,21 @@ function inspectWorkspaceImport(
     );
   }
 
-  if (importer !== undefined && canCheckDependencyDeclaration(importer, testFile)) {
-    if (!Object.prototype.hasOwnProperty.call(importer.dependencies, target.name)) {
-      const devOnly = Object.prototype.hasOwnProperty.call(importer.devDependencies, target.name);
+  // 验证包（tests、scripts）只为验证用途引用依赖，允许写在 devDependencies；
+  // 其余源码（含根包）要求写入 dependencies。豁免的是依赖分组，不是声明本身。
+  const devDependencyAccepted = allowsDevDependencyDeclaration(importer);
+  if (importer !== undefined && canCheckDependencyDeclaration(testFile)) {
+    const declaredInDependencies = Object.prototype.hasOwnProperty.call(importer.dependencies, target.name);
+    const declaredInDev = Object.prototype.hasOwnProperty.call(importer.devDependencies, target.name);
+    const satisfied = declaredInDependencies || (devDependencyAccepted && declaredInDev);
+    if (!satisfied) {
       violations.push(
         violation(
           RULE_IMPORT_BOUNDARY,
-          devOnly ? "workspace-dependency-dev-only" : "workspace-dependency-not-declared",
+          declaredInDev ? "workspace-dependency-dev-only" : "workspace-dependency-not-declared",
           file.path,
           record.line,
-          devOnly
+          declaredInDev
             ? `${target.name} 只写在 devDependencies，生产源码依赖必须写入 dependencies。`
             : `引用了 ${target.name}，但它不在本包 dependencies 中。`,
         ),
@@ -341,13 +347,15 @@ function inspectExternalImport(
     const declaredInDependencies = Object.prototype.hasOwnProperty.call(importer.dependencies, packageBase);
     const declaredInDev = Object.prototype.hasOwnProperty.call(importer.devDependencies, packageBase);
     // 工具入口（*.config.ts）不是生产实现，导入构建/测试工具写进 devDependencies 即可；
-    // 但两段都没声明的导入仍然报违规，防止借配置文件名绕过依赖声明。
+    // 验证包（tests、scripts）的源码只为验证用途引用依赖，对 devDependencies 同样成立；
+    // 但两段都没声明的导入仍然报违规，防止借配置文件名或验证包身份绕过依赖声明。
     const toolConfigEntry = isToolConfigFile(file.path);
-    if (!declaredInDependencies && !(toolConfigEntry && declaredInDev)) {
+    const devAccepted = toolConfigEntry || allowsDevDependencyDeclaration(importer);
+    if (!declaredInDependencies && !(devAccepted && declaredInDev)) {
       violations.push(
         violation(
           RULE_DEPENDENCY_GRAPH,
-          !toolConfigEntry && declaredInDev ? "dependency-declared-in-dev-dependencies" : "undeclared-third-party-dependency",
+          !devAccepted && declaredInDev ? "dependency-declared-in-dev-dependencies" : "undeclared-third-party-dependency",
           file.path,
           record.line,
           declaredInDev

@@ -7,6 +7,33 @@ packages:
   - "tests"
   - "scripts"
 
+# 依赖供应链策略。下列取值是仓库契约的一部分，不依赖使用者本机的 pnpm 配置；
+# 修改前须评估对 `pnpm install --frozen-lockfile` 与既有锁文件的影响。
+#
+# 24 小时等待期：新发布的版本在被发现并下架的时间窗口内不进入本仓库。
+# 显式声明使该口径由仓库决定，而不是由贡献者本机的 minimumReleaseAge 决定。
+minimumReleaseAge: 1440
+# 显式配置 minimumReleaseAge 后 pnpm 默认转为 strict；这里写明以固定该语义：
+# 请求范围内没有满足等待期的版本时安装失败，而不是回退到未满期版本。
+minimumReleaseAgeStrict: true
+# 包的可信级别（是否有可信发布者或 provenance 证明）相对历史版本下降即拒绝安装，
+# 这是账号劫持后重新发版的典型特征。合法的架构性降级用 trustPolicyExclude 逐条豁免。
+trustPolicy: no-downgrade
+# 传递依赖只能来自受信任源（registry、workspace 包或受信任的托管仓库），
+# 阻止依赖树把 git 仓库或任意 URL 压缩包引入构建。
+blockExoticSubdeps: true
+# 未被 allowBuilds 或 permissions 裁决的构建脚本直接让安装失败，
+# 而不是留在待审批队列里被忽略。
+strictDepBuilds: true
+
 # 仅允许 esbuild 运行安装脚本；其余依赖的构建脚本保持拒绝。
 allowBuilds:
   esbuild: true
+
+# 依赖携带的 agent skill 与构建脚本同等对待：只有显式批准的包才会把 skill
+# 链接进 agent skill 目录。pixi.js 随包发布 skills/ 目录，内容是 PixiJS v8
+# 官方文档镜像（纯 Markdown，无可执行文件）；本仓库不使用它，显式拒绝，
+# 以免每次安装重复提示，也为后续新增依赖留下同一处置入口。
+permissions:
+  pixi.js:
+    skills: false
