@@ -232,6 +232,7 @@ export interface ConsoleReadPort {
   turns?: (query: {
     readonly runId?: string;
     readonly branchId?: string;
+    readonly worldId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;

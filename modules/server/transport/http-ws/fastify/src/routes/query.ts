@@ -13,6 +13,13 @@ export function queryText(query: unknown, key: string): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+/** 区分缺省文本筛选与已提供但非法的文本筛选。 */
+export function queryOptionalText(query: unknown, key: string): string | null | undefined {
+  if (typeof query !== "object" || query === null || Array.isArray(query)) return undefined;
+  if (!Object.hasOwn(query, key)) return undefined;
+  return queryText(query, key) ?? null;
+}
+
 export function queryInteger(query: unknown, key: string, fallback: number): number | null {
   if (typeof query !== "object" || query === null || Array.isArray(query)) return fallback;
   const record = query as Readonly<Record<string, unknown>>;

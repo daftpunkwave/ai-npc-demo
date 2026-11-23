@@ -22,8 +22,10 @@ import {
   type MemoryResponse,
   type ObservationsResponse,
   type StoragePort,
+  type StorageRawRow,
   type StorageRow,
   type StorageTransaction,
+  type StorageValue,
   type TraceResponse,
   type TraceSpan,
   type TurnDetail,
@@ -44,6 +46,7 @@ import { readMemory, readMemoryDiff, readObservations } from "./memory-research"
 type TurnFilters = {
   readonly runId?: string;
   readonly branchId?: string;
+  readonly worldId?: string;
   readonly agentId?: string;
   readonly status?: string;
   readonly limit?: number;
@@ -115,7 +118,7 @@ function attemptStats(
 }
 
 /** 把单行 turn、关联模型尝试与工具调用组装为摘要。 */
-function summaryOf(storage: StoragePort, row: StorageRow): TurnSummary {
+function summaryOf(storage: StoragePort, row: StorageRow | StorageRawRow): TurnSummary {
   const turnId = stringColumn(row, "turn_id");
   const branchId = stringColumn(row, "branch_id");
   const triggers = row["trigger_ids_json"];
@@ -133,7 +136,7 @@ function summaryOf(storage: StoragePort, row: StorageRow): TurnSummary {
   }));
 }
 
-function decodeTurns(storage: StoragePort, rows: readonly StorageRow[]): readonly TurnSummary[] {
+function decodeTurns(storage: StoragePort, rows: readonly StorageRawRow[]): readonly TurnSummary[] {
   return rows.map((row) => summaryOf(storage, row));
 }
 
@@ -180,17 +183,35 @@ export class ResearchQueries {
   }
 
   turns(query: TurnFilters): TurnsResponse {
-    const filter: Record<string, string> = {};
-    if (query.runId !== undefined) filter["run_id"] = query.runId;
-    if (query.branchId !== undefined) filter["branch_id"] = query.branchId;
-    if (query.agentId !== undefined) filter["agent_id"] = query.agentId;
-    if (query.status !== undefined) filter["status"] = query.status;
-    const rows = this.storage.transact((tx) => tx.rows("turn_runs").list(
-      filter,
-      {
-        orderBy: [{ column: "created_at", direction: "desc" }],
-        limit: clampLimit(query.limit),
-      },
+    const conditions: string[] = [];
+    const parameters: StorageValue[] = [];
+    if (query.worldId !== undefined) {
+      conditions.push("b.world_id = ?");
+      parameters.push(query.worldId);
+    }
+    if (query.runId !== undefined) {
+      conditions.push("t.run_id = ?");
+      parameters.push(query.runId);
+    }
+    if (query.branchId !== undefined) {
+      conditions.push("t.branch_id = ?");
+      parameters.push(query.branchId);
+    }
+    if (query.agentId !== undefined) {
+      conditions.push("t.agent_id = ?");
+      parameters.push(query.agentId);
+    }
+    if (query.status !== undefined) {
+      conditions.push("t.status = ?");
+      parameters.push(query.status);
+    }
+    parameters.push(clampLimit(query.limit));
+    const rows = this.storage.transact((tx) => tx.all(
+      `SELECT t.* FROM turn_runs t
+        JOIN branches b ON b.branch_id = t.branch_id
+        ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
+       ORDER BY t.created_at DESC LIMIT ?`,
+      parameters,
     ));
     return turnsResponseSchema.parse({ turns: decodeTurns(this.storage, rows) });
   }
@@ -317,7 +338,7 @@ export class ResearchQueries {
 
   trace(traceId: string): TraceResponse {
     const rows = this.storage.transact((tx) => tx.all(
-      `SELECT span_id, trace_id, parent_span_id, name, attrs_json, start_ms, end_ms
+      `SELECT span_id, trace_id, parent_span_id, name, attrs_json, start_ms, end_ms, started_at
          FROM trace_spans WHERE trace_id = ? ORDER BY start_ms, span_id`,
       [traceId],
     ));
@@ -328,7 +349,7 @@ export class ResearchQueries {
       parentSpanId: row["parent_span_id"] === null ? null : String(row["parent_span_id"]),
       name: String(row["name"]),
       attrs: jsonColumn(parseJsonText(row["attrs_json"])),
-      startedAt: new Date(Number(row["start_ms"])).toISOString(),
+      startedAt: row["started_at"] === null ? null : stringColumn(row, "started_at"),
       durationMs: row["end_ms"] === null ? null : Math.max(0, Number(row["end_ms"]) - Number(row["start_ms"])),
       children: [],
     }));

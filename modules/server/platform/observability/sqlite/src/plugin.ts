@@ -96,9 +96,20 @@ export class ObservabilityPort {
         status: span.status,
         start_ms: span.startMs,
         end_ms: span.endMs,
+        started_at: this.wallClockStart(span.startMs),
         attrs_json: span.attrs,
       });
     });
+  }
+
+  private wallClockStart(startMs: number): string | null {
+    if (startMs >= 1_000_000_000_000) return new Date(startMs).toISOString();
+    if (this.host === undefined) return null;
+    const wallNow = Date.parse(this.host.nowIso());
+    const monotonicNow = this.host.monotonicMs();
+    const elapsed = Math.max(0, monotonicNow - startMs);
+    const startedAt = wallNow - elapsed;
+    return Number.isFinite(startedAt) && startedAt >= 0 ? new Date(startedAt).toISOString() : null;
   }
 
   timeline(query: TimelineQuery): TimelineResponse {
@@ -262,6 +273,7 @@ export class ObservabilityPort {
   turns(query: {
     readonly runId?: string;
     readonly branchId?: string;
+    readonly worldId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;

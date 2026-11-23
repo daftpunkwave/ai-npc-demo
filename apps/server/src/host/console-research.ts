@@ -53,17 +53,17 @@ function secretRedactor(content: GameContent): (value: Json) => Json {
     if (typeof value === "string") return replaceText(value);
     if (Array.isArray(value)) return value.map(redact);
     if (value !== null && typeof value === "object") {
-      const result: Record<string, Json> = {};
+      const entries: [string, Json][] = [];
+      const keys = new Set<string>();
       for (const [key, nested] of Object.entries(value)) {
         const base = replaceText(key);
         let redactedKey = base;
         let suffix = 2;
-        while (Object.hasOwn(result, redactedKey)) redactedKey = `${base}#${suffix++}`;
-        // redactedKey 由本地脱敏后的 JSON 键生成，且已处理同键冲突。
-        // eslint-disable-next-line security/detect-object-injection
-        result[redactedKey] = redact(nested);
+        while (keys.has(redactedKey)) redactedKey = `${base}#${suffix++}`;
+        keys.add(redactedKey);
+        entries.push([redactedKey, redact(nested)]);
       }
-      return result;
+      return Object.fromEntries(entries);
     }
     return value;
   };
@@ -117,6 +117,7 @@ export interface ConsoleResearchPort {
   readonly turns: (query: {
     readonly runId?: string;
     readonly branchId?: string;
+    readonly worldId?: string;
     readonly agentId?: string;
     readonly status?: string;
     readonly limit?: number;
@@ -154,13 +155,13 @@ export interface ConsoleResearchPort {
 export function createConsoleResearchPort(input: {
   readonly runtime: ServerRuntime;
   readonly reads: HostReadPorts;
-  readonly worldId: string;
+  readonly currentWorldId: () => string;
   readonly content: GameContent;
 }): ConsoleResearchPort {
-  const { runtime, reads, worldId, content } = input;
+  const { runtime, reads, currentWorldId, content } = input;
   const redact = secretRedactor(content);
   const assertBranchScope = (branchId: string): void => {
-    if (worldIdOf(runtime.storage, branchId) !== worldId) {
+    if (worldIdOf(runtime.storage, branchId) !== currentWorldId()) {
       throw new DomainError("forbidden", `分支 ${branchId} 不属于当前世界`);
     }
   };
@@ -325,6 +326,10 @@ export function createConsoleResearchPort(input: {
 
   const replayTurn = (input: { readonly turnId: string }): Promise<TurnReplayResponse> => {
     const { turnId } = input;
+    const branch = runtime.storage.transact((tx) =>
+      tx.rows("turn_runs").get({ turn_id: turnId })?.["branch_id"]);
+    if (typeof branch !== "string") throw new DomainError("not-found", `turn ${turnId} 不存在`);
+    assertBranchScope(branch);
     const attempts = runtime.storage.transact((tx) =>
       tx.rows("model_attempts").list({ work_ref: turnId }));
     if (attempts.length === 0) {
@@ -393,9 +398,10 @@ export function createConsoleResearchPort(input: {
       return runtime.observability.observations(branchId, agentId, fromSeq, limit);
     },
     turns: (query) => {
+      const worldId = currentWorldId();
       if (query.branchId !== undefined) {
         assertBranchScope(query.branchId);
-        return runtime.observability.turns(query);
+        return runtime.observability.turns({ ...query, worldId });
       }
       const runId = query.runId;
       if (runId !== undefined) {
@@ -403,11 +409,7 @@ export function createConsoleResearchPort(input: {
           tx.rows("runs").get({ run_id: runId })?.["world_id"]);
         if (runWorld !== worldId) throw new DomainError("forbidden", "run 不属于当前世界");
       }
-      const visibleBranches = runtime.storage.transact((tx) => new Set(
-        tx.rows("branches").list({ world_id: worldId }).map((row) => String(row["branch_id"])),
-      ));
-      const response = runtime.observability.turns({ ...query, limit: 200 });
-      return { turns: response.turns.filter((turn) => visibleBranches.has(turn.branchId)).slice(0, query.limit ?? 50) };
+      return runtime.observability.turns({ ...query, worldId });
     },
     turn: ({ turnId }) => {
       const branch = runtime.storage.transact((tx) =>

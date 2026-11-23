@@ -148,7 +148,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
     const research = createConsoleResearchPort({
       runtime,
       reads,
-      worldId: active.worldId,
+      currentWorldId: () => active.worldId,
       content: gameContent,
     });
     const modelLayouts = input.modelLayouts;
@@ -251,7 +251,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             principalId: restoreInput.principalId,
           }),
         validateRestore: (snapshotId) => {
-          const inspection = runtime.save.inspectRestore(snapshotId);
+          const inspection = operations.validateRestore(snapshotId);
           return {
             ok: true,
             checks: [

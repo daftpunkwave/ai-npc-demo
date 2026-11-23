@@ -30,7 +30,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticate, requireConsoleRole, sendHttpError } from "./context";
 import type { RouteContext } from "./context";
-import { queryInteger, queryText } from "./query";
+import { queryInteger, queryOptionalText, queryText } from "./query";
 
 const researchRoles = ["researcher"] as const;
 const agentParamsSchema = z.object({ agentId: principalIdSchema }).strict();
@@ -123,11 +123,14 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
   app.get("/api/v1/console/turns", (request, reply) => {
     if (requireResearchSession(context, request, reply) === null) return;
     if (options.console?.turns === undefined) return sendHttpError(reply, "not-ready", "turn 查询尚未就绪");
-    const runId = queryText(request.query, "runId");
-    const branchId = queryText(request.query, "branchId");
-    const agentId = queryText(request.query, "agentId");
-    const status = queryText(request.query, "status");
+    const runId = queryOptionalText(request.query, "runId");
+    const branchId = queryOptionalText(request.query, "branchId");
+    const agentId = queryOptionalText(request.query, "agentId");
+    const status = queryOptionalText(request.query, "status");
     const limit = queryInteger(request.query, "limit", 50);
+    if (runId === null || branchId === null || agentId === null || status === null) {
+      return sendHttpError(reply, "validation", "turn 查询参数不合法");
+    }
     const parsedRunId = runId === undefined ? null : idSchemas.run.safeParse(runId);
     const parsedAgentId = agentId === undefined ? null : principalIdSchema.safeParse(agentId);
     const parsed = turnsQuerySchema.safeParse({

@@ -12,13 +12,12 @@ import {
   type AgentObservation,
   type Json,
   type MemoryRecord,
-  type StorageRow,
   type TurnDetail,
   type TurnSummary,
 } from "@ai-npc/contracts";
 
 /** 读取非负整数列；存储层返回不合法时拒绝继续，而不是静默归零。 */
-export function numberColumn(row: StorageRow, key: string): number {
+export function numberColumn(row: Readonly<Record<string, unknown>>, key: string): number {
   // key 只由本文件转换为固定字段名，不接受请求输入。
   // eslint-disable-next-line security/detect-object-injection
   const value = row[key];
@@ -29,7 +28,7 @@ export function numberColumn(row: StorageRow, key: string): number {
 }
 
 /** 读取非空文本列。 */
-export function stringColumn(row: StorageRow, key: string): string {
+export function stringColumn(row: Readonly<Record<string, unknown>>, key: string): string {
   // key 只由本文件转换为固定字段名，不接受请求输入。
   // eslint-disable-next-line security/detect-object-injection
   const value = row[key];
@@ -40,7 +39,7 @@ export function stringColumn(row: StorageRow, key: string): string {
 }
 
 /** 读取可空文本列。 */
-export function nullableStringColumn(row: StorageRow, key: string): string | null {
+export function nullableStringColumn(row: Readonly<Record<string, unknown>>, key: string): string | null {
   // key 只由本文件转换为固定字段名，不接受请求输入。
   // eslint-disable-next-line security/detect-object-injection
   const value = row[key];
@@ -58,7 +57,7 @@ export function jsonColumn(value: unknown): Json {
 
 /** 把存储的记忆行转换为对外记录；scope 由调用方从世界与分支上下文补齐。 */
 export function decodeMemoryRecord(
-  row: StorageRow,
+  row: Readonly<Record<string, unknown>>,
   input: { readonly worldId: string; readonly branchId: string; readonly agentId: string; readonly revision: number },
 ): MemoryRecord {
   return memoryRecordSchema.parse({
@@ -83,7 +82,7 @@ export function decodeMemoryRecord(
 
 /** 把存储的观察行转换为契约对象。 */
 export function decodeObservation(
-  row: StorageRow,
+  row: Readonly<Record<string, unknown>>,
   input: { readonly worldId: string; readonly branchId: string; readonly agentId: string },
 ): AgentObservation {
   return agentObservationSchema.parse({
@@ -105,7 +104,7 @@ export function decodeObservation(
 
 /** 生成与 turn 行结构一致的摘要；触发类型与 token 由调用方补齐。 */
 export function summaryFromRow(input: {
-  readonly row: StorageRow;
+  readonly row: Readonly<Record<string, unknown>>;
   readonly triggerKinds: readonly string[];
   readonly modelCalls: number;
   readonly toolCalls: number;

@@ -77,11 +77,15 @@ export function readDebugQueues(storage: StoragePort, branchId: string): DebugQu
   });
   const maintenance = storage.transact((tx) => {
     const rows = tx.all(
-      `SELECT created_at FROM maintenance_runs
+      `SELECT status, created_at FROM maintenance_runs
         WHERE branch_id = ? AND status IN ('queued', 'leased')`,
       [branchId],
     );
-    return { queued: rows.length, running: 0, oldestAt: oldest(rows.map((row) => String(row["created_at"]))) };
+    return {
+      queued: rows.filter((row) => row["status"] === "queued").length,
+      running: rows.filter((row) => row["status"] === "leased").length,
+      oldestAt: oldest(rows.map((row) => String(row["created_at"]))),
+    };
   });
   return debugQueuesResponseSchema.parse({ scheduler, modelPool, maintenance });
 }
@@ -100,17 +104,26 @@ export function wakeDebugAgent(
       throw new DomainError("not-found", `分支 ${branchId} 没有可调试的 run`);
     }
     const branch = tx.branch(branchId);
-    const activation = branch.table("agent_activations").get({ agent_id: agentId });
-    if (activation?.["status"] !== "active") throw new DomainError("not-found", `Agent ${agentId} 未激活`);
     const key = `debug:${operationId}`;
-    const priorPayloads = tx.all(
-      `SELECT payload_json FROM lifecycle_events
-        WHERE run_id = ? AND branch_id = ? AND type = 'DebugWakeRequested'`,
-      [String(run["run_id"]), branchId],
+    const existingTrigger = tx.get(
+      `SELECT agent_id FROM triggers WHERE branch_id = ? AND dedupe_key = ?`,
+      [branchId, key],
     );
-    for (const prior of priorPayloads) {
-      const raw = prior["payload_json"];
-      if (typeof raw !== "string") continue;
+    if (existingTrigger !== null) {
+      if (existingTrigger["agent_id"] !== agentId) {
+        throw new DomainError("idempotency-conflict", "同一 operationId 的调试唤醒请求内容不一致");
+      }
+      const prior = tx.get(
+        `SELECT payload_json FROM lifecycle_events
+          WHERE run_id = ? AND branch_id = ? AND type = 'DebugWakeRequested'
+            AND json_extract(payload_json, '$.operationId') = ?
+          ORDER BY seq DESC LIMIT 1`,
+        [String(run["run_id"]), branchId, operationId],
+      );
+      const raw = prior?.["payload_json"];
+      if (typeof raw !== "string") {
+        throw new DomainError("invalid-state", "调试唤醒缺少对应的审计记录");
+      }
       let payload: unknown;
       try {
         payload = JSON.parse(raw);
@@ -118,15 +131,13 @@ export function wakeDebugAgent(
         throw new DomainError("invalid-state", "调试唤醒审计载荷不是合法 JSON");
       }
       if (payload === null || Array.isArray(payload) || typeof payload !== "object" ||
-        (payload as { readonly operationId?: unknown }).operationId !== operationId) continue;
-      const priorAgentId = (payload as { readonly agentId?: unknown }).agentId;
-      const priorReason = (payload as { readonly reason?: unknown }).reason;
-      if ((priorAgentId !== undefined && priorAgentId !== agentId) ||
-        (priorReason !== undefined && priorReason !== reason)) {
+        (payload as { readonly reason?: unknown }).reason !== reason) {
         throw new DomainError("idempotency-conflict", "同一 operationId 的调试唤醒请求内容不一致");
       }
       return debugWakeResponseSchema.parse({ ok: true });
     }
+    const activation = branch.table("agent_activations").get({ agent_id: agentId });
+    if (activation?.["status"] !== "active") throw new DomainError("not-found", `Agent ${agentId} 未激活`);
     const clock = branch.table("clock").get({});
     if (clock === null) throw new DomainError("not-ready", "当前分支没有时钟");
     branch.table("triggers").put({

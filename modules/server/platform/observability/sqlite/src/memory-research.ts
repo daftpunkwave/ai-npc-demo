@@ -112,9 +112,15 @@ export function readMemoryDiff(
   const after = new Map(readMemory(storage, branchId, agentId, to).records.map((record) => [record.memoryId, record]));
   const added = [...after.keys()].filter((memoryId) => !before.has(memoryId));
   const retired = [...before.keys()].filter((memoryId) => !after.has(memoryId));
-  const changed = [...after.keys()].filter((memoryId) =>
-    before.has(memoryId) &&
-    JSON.stringify(before.get(memoryId)?.content) !== JSON.stringify(after.get(memoryId)?.content));
+  const changed = [...after.keys()].filter((memoryId) => {
+    const previous = before.get(memoryId);
+    const next = after.get(memoryId);
+    return previous !== undefined && next !== undefined && (
+      previous.status !== next.status ||
+      JSON.stringify(previous.content) !== JSON.stringify(next.content) ||
+      JSON.stringify(previous.sourceObservationIds) !== JSON.stringify(next.sourceObservationIds)
+    );
+  });
   const entry = (memoryId: string) => {
     const record = after.get(memoryId) ?? before.get(memoryId);
     return {

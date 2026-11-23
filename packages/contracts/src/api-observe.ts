@@ -308,7 +308,7 @@ export interface TraceSpan {
   readonly parentSpanId: string | null;
   readonly name: string;
   readonly attrs: Json;
-  readonly startedAt: string;
+  readonly startedAt: string | null;
   readonly durationMs: number | null;
   readonly children: readonly TraceSpan[];
 }
@@ -321,7 +321,7 @@ export const traceSpanSchema: z.ZodType<TraceSpan> = z.lazy(() =>
       parentSpanId: idSchemas.spn.nullable(),
       name: z.string().min(1),
       attrs: jsonValueSchema,
-      startedAt: z.string().min(1),
+      startedAt: z.string().min(1).nullable(),
       durationMs: z.number().nonnegative().nullable(),
       children: z.array(traceSpanSchema),
     })
