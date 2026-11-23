@@ -178,6 +178,8 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 已实现的运营入口位于 `/api/v1/console/campaign/*`，与第 3 节玩家自助入口路径独立。查询参数 `branchId` 可省略，省略时作用于在线分支；当前版本只支持在线分支，显式传入与在线分支不同的值返回 400 `validation`。快照列表与玩家入口一致，只列当前 campaign 的存档。
 
+时钟单步、快照创建与快照恢复的请求/响应 DTO 在 `packages/contracts/src/api.ts` 中各只有一份定义，`packages/contracts/src/api-operations.ts` 只做再导出。恢复端点按请求是否带 `dryRun: true` 返回两种互斥形状：预检返回 `{ ok, checks }`，实际恢复返回 `{ branchId, clock }`；两者没有共享的判别字段，因此客户端按自己发出的请求选择校验哪一份 schema，而不是对响应做形状推断。预检能力只由控制台运营入口（`/api/v1/console/campaign/restore`）提供；玩家自助入口（`/api/v1/campaign/restore`）收到 `dryRun: true` 返回 400 `validation`，不会退化成真正执行恢复。以旧契约（恢复请求必填 `dryRun`）构造的调用会被 `.strict()` 拒绝，这正是不允许多份端点契约并存的原因。
+
 ### 5.4 剧情卡
 
 | 方法与路径 | 角色 | 请求 | 响应 |

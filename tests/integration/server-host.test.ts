@@ -19,6 +19,7 @@ import {
   errorResponseSchema,
   restoreDryRunResponseSchema,
   sessionAssemblyResponseSchema,
+  snapshotRestoreRequestSchema,
 } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { clockConfigSchema } from "@ai-npc/mod-game-clock-controlled";
@@ -950,11 +951,18 @@ describe("服务端宿主", () => {
     // 把旧在线分支推到 tick 5 后恢复：后继分支应回到快照的 tick 3，并切换在线别名。
     const sourceBranchId = host.branchId;
     setBranchClock(host, sourceBranchId, 5);
+
+    // 用公共契约导出的请求 schema 构造请求体：契约与已实现路由必须是同一份权威定义，
+    // 否则按公共契约生成的客户端会在真实端点上被 400 拒绝。
+    const restoreRequest = snapshotRestoreRequestSchema.parse({
+      operationId: "op-000000000609",
+      snapshotId: snapshotId.snapshotId,
+    });
     const restored = await host.app.inject({
       method: "POST",
       url: "/api/v1/console/campaign/restore",
       headers: operatorHeaders,
-      payload: { operationId: "op-000000000609", snapshotId: snapshotId.snapshotId },
+      payload: restoreRequest,
     });
     expect(restored.statusCode).toBe(200);
     const restoredBody = restored.json<{

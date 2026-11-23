@@ -91,60 +91,19 @@ export type SeatWorldViewResponse = z.infer<typeof seatWorldViewResponseSchema>;
 /** 运营席位提交命令直接复用命令信封；回执行使与玩家接口相同。 */
 export const seatCommandRequestSchema = commandEnvelopeSchema;
 
-/** 控制台时钟单步请求：ticks 为 1–24。 */
-export const campaignStepRequestSchema = z
-  .object({
-    operationId: idSchemas.op,
-    expectedRunVersion: z.number().int().nonnegative(),
-    ticks: z.number().int().min(1).max(24),
-  })
-  .strict();
-
-export const consoleSnapshotCreateRequestSchema = z
-  .object({
-    operationId: idSchemas.op,
-    label: z.string().min(1),
-  })
-  .strict();
-
-export const restoreCheckSchema = z
-  .object({
-    name: z.string().min(1),
-    ok: z.boolean(),
-    message: z.string().nullable(),
-  })
-  .strict();
-
-export const restoreDryRunResponseSchema = z
-  .object({
-    ok: z.boolean(),
-    checks: z.array(restoreCheckSchema),
-  })
-  .strict();
-
-export type RestoreDryRunResponse = z.infer<typeof restoreDryRunResponseSchema>;
-
-export const snapshotRestoreAppliedResponseSchema = z
-  .object({
-    branchId: idSchemas.br,
-    clock: clockViewSchema,
-  })
-  .strict();
-
-export const consoleSnapshotRestoreRequestSchema = z
-  .object({
-    operationId: idSchemas.op,
-    snapshotId: idSchemas.snap,
-    dryRun: z.boolean().default(false),
-  })
-  .strict();
-
-export const consoleSnapshotRestoreResponseSchema = z.union([
+/**
+ * 时钟单步、快照创建与快照恢复的请求/响应契约只在 `./api` 定义一份。
+ * 这里改为再导出，避免同一端点出现两套形状：此前本地重复定义让
+ * 恢复请求多出一个必填 `dryRun`，与实际路由的 `.strict()` 解析直接冲突。
+ */
+export {
+  clockStepRequestSchema,
+  snapshotCreateRequestSchema,
+  snapshotRestoreRequestSchema,
+  snapshotRestoreResponseSchema,
+  restoreCheckSchema,
   restoreDryRunResponseSchema,
-  snapshotRestoreAppliedResponseSchema,
-]);
-
-export type ConsoleSnapshotRestoreResponse = z.infer<typeof consoleSnapshotRestoreResponseSchema>;
+} from "./api";
 
 /** 玩家的 run 申请视图。 */
 export const runRequestViewSchema = z

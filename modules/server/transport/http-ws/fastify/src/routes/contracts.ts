@@ -29,11 +29,11 @@ import type {
   ClientContentView,
   CommandEnvelope,
   CommandReceipt,
-  ConsoleSnapshotRestoreResponse,
   IdPrefix,
   Json,
   PlayerProjection,
   ResolvedModuleSet,
+  RestoreDryRunResponse,
   StartOption,
   TimelineQuery,
   TimelineResponse,
@@ -310,7 +310,7 @@ export interface ServerAppOptions {
     listSnapshots: () => readonly SnapshotRecordView[];
     restoreSnapshot: SnapshotRestoreHook;
     /** 只读恢复预检；返回检查项，不切换在线分支。 */
-    validateRestore?: (snapshotId: string) => ConsoleSnapshotRestoreResponse;
+    validateRestore?: (snapshotId: string) => RestoreDryRunResponse;
   };
   readonly reset: ResetHook;
   readonly identities: readonly ServerIdentity[];
