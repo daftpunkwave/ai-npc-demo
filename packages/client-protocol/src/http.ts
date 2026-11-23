@@ -85,18 +85,6 @@ function defaultStorage(): BrowserStorage | null {
   }
 }
 
-function createConsoleHttp(request: ConsoleRequest) {
-  return {
-    ...createModelLayoutHttp(request),
-    ...createResearchHttp(request),
-    ...createDebugHttp(request),
-    ...createOperationsHttp(request),
-  };
-}
-
-/** 将领域方法装配到原有的 ApiClient 调用入口。 */
-export interface ApiClient extends ReturnType<typeof createConsoleHttp> {}
-
 /** 浏览器 API 客户端；每次响应都经对应 Zod schema 收窄。 */
 export class ApiClient {
   private readonly baseUrl: string;
@@ -106,6 +94,10 @@ export class ApiClient {
   private activeRole: ConsoleActiveRole | undefined;
   private readonly requestConsole: ConsoleRequest = (schema, path, options) =>
     this.request(schema, path, { ...options, activeRole: this.requireActiveRole() });
+  private readonly modelLayouts = createModelLayoutHttp(this.requestConsole);
+  private readonly research = createResearchHttp(this.requestConsole);
+  private readonly debug = createDebugHttp(this.requestConsole);
+  private readonly operations = createOperationsHttp(this.requestConsole);
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
@@ -113,7 +105,6 @@ export class ApiClient {
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
     this.activeRole = options.activeRole;
     this.sessionToken = this.storage?.getItem(sessionStorageKey) ?? null;
-    Object.assign(this, createConsoleHttp(this.requestConsole));
   }
 
   get token(): string | null {
@@ -261,6 +252,34 @@ export class ApiClient {
       `/api/v1/console/assemblies/${encodeURIComponent(assemblyId)}`,
     );
   }
+
+  consoleModelLayouts = this.modelLayouts.consoleModelLayouts;
+  consoleModelLayout = this.modelLayouts.consoleModelLayout;
+  consoleModelRoutes = this.modelLayouts.consoleModelRoutes;
+  validateModelLayout = this.modelLayouts.validateModelLayout;
+
+  consoleTimeline = this.research.consoleTimeline;
+  consoleAgents = this.research.consoleAgents;
+  consoleInspector = this.research.consoleInspector;
+  consoleMemory = this.research.consoleMemory;
+  consoleMemoryDiff = this.research.consoleMemoryDiff;
+  consoleObservations = this.research.consoleObservations;
+  consoleTurns = this.research.consoleTurns;
+  consoleTurn = this.research.consoleTurn;
+  consoleArtifact = this.research.consoleArtifact;
+  consoleTrace = this.research.consoleTrace;
+  consoleBranchCompare = this.research.consoleBranchCompare;
+
+  consoleDebugQueues = this.debug.consoleDebugQueues;
+  consoleReplayTurn = this.debug.consoleReplayTurn;
+  consoleWakeAgent = this.debug.consoleWakeAgent;
+
+  consolePauseCampaign = this.operations.consolePauseCampaign;
+  consoleResumeCampaign = this.operations.consoleResumeCampaign;
+  consoleStepCampaign = this.operations.consoleStepCampaign;
+  consoleSnapshots = this.operations.consoleSnapshots;
+  consoleCreateSnapshot = this.operations.consoleCreateSnapshot;
+  consoleRestoreSnapshot = this.operations.consoleRestoreSnapshot;
 
   webSocketUrl(ticket: string): string {
     const current = browserWindow();
