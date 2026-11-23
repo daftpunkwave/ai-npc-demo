@@ -1,5 +1,5 @@
 /**
- * 定义统一错误码、领域错误类型与错误响应 DTO。
+ * 定义统一错误码、领域错误类型、错误响应 DTO 与 details 可记录白名单。
  * 依赖 zod 与 JSON 值类型；错误码只用于 HTTP/运行期失败，业务拒绝使用原因码。
  * 禁止在此吞掉错误、暴露内部细节或把业务拒绝伪装成错误码。
  */
@@ -98,3 +98,59 @@ export const errorDetailSchema = z
 
 /** 校验错误响应中的内联 details 仍必须是 JSON 值。 */
 export const domainErrorDetailsSchema = jsonValueSchema;
+
+/** details 可记录白名单的字符串上限：枚举型短标记足够，超长一律按自由文本剔除。 */
+const maxLoggableTokenLength = 64;
+
+/**
+ * 判断字符串是否为枚举型短标记：仅 ASCII 字母数字与少量分隔符，不含空白、控制字符与非 ASCII 文本。
+ * 逐字符判定而非正则，避免字符集量词触发静态扫描误报。
+ */
+function isTokenLike(value: string): boolean {
+  if (value.length === 0 || value.length > maxLoggableTokenLength) {
+    return false;
+  }
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    const isAlnum =
+      (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    const isSeparator = char === "-" || char === "_" || char === "." || char === ":" || char === "/";
+    if (!isAlnum && !isSeparator) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 哨兵值：子值因不在白名单内被剔除，用于区分「剔除」与 details 中合法的 null 值。 */
+const droppedSentinel: unique symbol = Symbol("dropped");
+
+function filterLoggableValue(value: Json): Json | typeof droppedSentinel {
+  if (value === null || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return isTokenLike(value) ? value : droppedSentinel;
+  }
+  if (Array.isArray(value)) {
+    const items = value
+      .map(filterLoggableValue)
+      .filter((item): item is Json => item !== droppedSentinel);
+    return items.length > 0 ? items : droppedSentinel;
+  }
+  const entries = Object.entries(value)
+    .map(([key, inner]) => ({ key, kept: filterLoggableValue(inner) }))
+    .filter((entry): entry is { key: string; kept: Json } => entry.kept !== droppedSentinel);
+  return entries.length > 0 ? Object.fromEntries(entries.map(({ key, kept }) => [key, kept])) : droppedSentinel;
+}
+
+/**
+ * 按 details 的可记录白名单过滤领域错误详情，供 logger 边界安全消费。
+ * 白名单只保留枚举型短标记字符串、数字、布尔与 null 及其嵌套结构；
+ * 自由文本（供应商报文、内部路径、正文等）一律剔除，防止扩展 logger 时把敏感内容带出。
+ * 全部内容被剔除或入参为 null 时返回 null。
+ */
+export function loggableErrorDetails(details: Json | null): Json | null {
+  const filtered = details === null ? droppedSentinel : filterLoggableValue(details);
+  return filtered === droppedSentinel ? null : filtered;
+}
