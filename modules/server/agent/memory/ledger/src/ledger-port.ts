@@ -73,29 +73,34 @@ export class LedgerMemoryPort implements MemoryPort {
     const scored = candidates.map((record) => ({
       record,
       score: this.score(record, query),
+      sourceKey: sourceKeyOf(record),
     })).sort((left, right) =>
       right.score - left.score ||
       right.record.validFromTick - left.record.validFromTick ||
       left.record.memoryId.localeCompare(right.record.memoryId),
     );
-    const picked = new Map<string, { record: MemoryRecordView; score: number; mustInclude: boolean }>();
+    type ScoredItem = (typeof scored)[number];
+    const picked = new Map<string, ScoredItem & { mustInclude: boolean }>();
     const dropped: MemoryBundle["dropped"] = [];
     const droppedIds = new Set<string>();
+    // dropped 是解释性明细而非完整清单：上限取候选窗口容量，使对象分配不随历史记忆总量增长。
+    // 总数由 candidates 给出，超出上限的落选只保留在计数里。
+    const droppedLimit = this.config.recall.candidateLimit;
+    const markDropped = (memoryId: string, reason: MemoryBundle["dropped"][number]["reason"]): void => {
+      droppedIds.add(memoryId);
+      if (dropped.length < droppedLimit) dropped.push({ memoryId, reason });
+    };
     const seenSources = new Set<string>();
     let tokenEstimate = 0;
-    const sourceKeyOf = (record: MemoryRecordView): string =>
-      record.sourceObservationIds.slice().sort(compareStrings).join(",");
-    const pickMandatory = (item: { record: MemoryRecordView; score: number }): boolean => {
+    const pickMandatory = (item: ScoredItem): boolean => {
       if (picked.has(item.record.memoryId) || picked.size >= query.maxItems) return false;
-      const sourceKey = sourceKeyOf(item.record);
-      if (sourceKey.length > 0 && seenSources.has(sourceKey)) return false;
+      if (item.sourceKey.length > 0 && seenSources.has(item.sourceKey)) return false;
       const itemTokens = estimateTokens(item.record.content.summaryZh);
       if (tokenEstimate + itemTokens > query.maxTokens) {
-        dropped.push({ memoryId: item.record.memoryId, reason: "budget" });
-        droppedIds.add(item.record.memoryId);
+        markDropped(item.record.memoryId, "budget");
         return false;
       }
-      if (sourceKey.length > 0) seenSources.add(sourceKey);
+      if (item.sourceKey.length > 0) seenSources.add(item.sourceKey);
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: true });
       return true;
@@ -131,25 +136,22 @@ export class LedgerMemoryPort implements MemoryPort {
     for (const item of candidatePool) {
       if (picked.size >= Math.min(this.config.recall.topK, query.maxItems)) break;
       if (picked.has(item.record.memoryId)) continue;
-      const sourceKey = sourceKeyOf(item.record);
-      if (sourceKey.length > 0 && seenSources.has(sourceKey)) {
-        dropped.push({ memoryId: item.record.memoryId, reason: "dedupe" });
-        droppedIds.add(item.record.memoryId);
+      if (item.sourceKey.length > 0 && seenSources.has(item.sourceKey)) {
+        markDropped(item.record.memoryId, "dedupe");
         continue;
       }
       const itemTokens = estimateTokens(item.record.content.summaryZh);
       if (tokenEstimate + itemTokens > query.maxTokens) {
-        dropped.push({ memoryId: item.record.memoryId, reason: "budget" });
-        droppedIds.add(item.record.memoryId);
+        markDropped(item.record.memoryId, "budget");
         continue;
       }
-      seenSources.add(sourceKey);
+      seenSources.add(item.sourceKey);
       tokenEstimate += itemTokens;
       picked.set(item.record.memoryId, { ...item, mustInclude: false });
     }
     for (const item of scored) {
       if (!picked.has(item.record.memoryId) && !droppedIds.has(item.record.memoryId)) {
-        dropped.push({ memoryId: item.record.memoryId, reason: "rank" });
+        markDropped(item.record.memoryId, "rank");
       }
     }
     const items = [...picked.values()].map(({ record, score, mustInclude }) => ({
@@ -405,6 +407,14 @@ function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBu
     candidates: 0,
     dropped: [],
   };
+}
+
+/**
+ * 去重键：同一批来源观察的排序拼接。
+ * 在候选打分时预计算一次，避免同一条记录在必选与候选池两处重复排序拼接。
+ */
+function sourceKeyOf(record: MemoryRecordView): string {
+  return record.sourceObservationIds.slice().sort(compareStrings).join(",");
 }
 
 function estimateTokens(text: string): number {

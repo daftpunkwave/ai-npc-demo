@@ -318,6 +318,31 @@ describe("structured ledger", () => {
     });
   });
 
+  it("bounds dropped detail while keeping the candidate count complete", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.candidateLimit = 2;
+    config.recall.topK = 1;
+    config.recall.mustIncludeProspective = 0;
+    config.recall.mustIncludeAboutCounterpart = 0;
+    const memory = createLedgerPort(config, ids);
+    const records = Array.from({ length: 12 }, (_, index) => memoryRow({
+      memoryId: `mem-${String(300 + index).padStart(12, "0")}`,
+      kind: "episodic",
+      tier: "short",
+      validFromTick: 1,
+      salience: 0.5 - index * 0.01,
+      data: { eventType: "MetersChanged" },
+      tags: ["unrelated"],
+      sourceObservationIds: [`obs-${String(300 + index).padStart(12, "0")}`],
+    }));
+    const bundle = memory.retrieve(query(), view(records, 1));
+    expect(bundle.candidates).toBe(12);
+    expect(bundle.items).toHaveLength(1);
+    // 落选明细不超过候选窗口容量，避免随历史记忆总量线性增长。
+    expect(bundle.dropped.length).toBeLessThanOrEqual(config.recall.candidateLimit);
+    expect(bundle.dropped.every((entry) => entry.reason === "rank")).toBe(true);
+  });
+
   it("does not retire a relation row that was only created in the same plan", () => {
     const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
     config.relationModifiersPerTarget = 1;
