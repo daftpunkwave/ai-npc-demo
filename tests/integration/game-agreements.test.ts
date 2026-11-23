@@ -145,6 +145,25 @@ describe("协议", () => {
     expectAgreement(value, agreementId, { status: "rejected" });
   });
 
+  it("部分当事人接受时 result 仍为 proposed，收齐接受后才生效", async () => {
+    const value = await harness();
+    const agreementId = proposeAgreement(
+      value,
+      playerAuth(value),
+      ["player-1", "human-neutral", "human-independent"],
+      [deliveryTerm(30)],
+    );
+    const partial = respondAgreement(value, strategicAuth(value, "human-neutral"), agreementId, "accept");
+    expect(partial.commandStatus).toBe("accepted");
+    expect(partial.result).toEqual({ agreementId, agreementStatus: "proposed" });
+    expectAgreement(value, agreementId, { status: "proposed" });
+    expect(gameEventTypes(value)).not.toContain("AgreementActivated");
+    const final = respondAgreement(value, strategicAuth(value, "human-independent"), agreementId, "accept");
+    expect(final.commandStatus).toBe("accepted");
+    expect(final.result).toEqual({ agreementId, agreementStatus: "active" });
+    expectAgreement(value, agreementId, { status: "active" });
+  });
+
   it("未知当事人被拒绝，且不写入协议或 job", async () => {
     const value = await harness();
     const jobsBefore = jobRows(value).length;
