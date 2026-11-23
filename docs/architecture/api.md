@@ -252,7 +252,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | 400 | `validation` | JSON 或 schema 不合法、未知命令类型、未知字段 |
 | 401 | `unauthenticated` | 缺少或无效的会话、令牌错误 |
-| 403 | `forbidden` / `realm-violation` | 角色不允许、Origin 不允许、玩家访问控制台接口 |
+| 403 | `forbidden` / `realm-violation` | 角色不允许、Origin 不允许、玩家访问控制台接口、命令类型已登记但当前角色无权 |
 | 404 | `not-found` | 资源不存在 |
 | 409 | `idempotency-conflict` / `version-conflict` / `stale-controller` / `stale-turn` / `cancelled` / `invalid-state` | 同 ID 不同 payload、版本不符、控制权或 turn 已失效、操作已取消、当前状态不允许操作 |
 | 422 | `assembly-incompatible` / `module-missing` / `capability-conflict` | 装配或 run 预检失败 |

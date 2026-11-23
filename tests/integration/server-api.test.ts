@@ -1311,6 +1311,56 @@ describe("服务端 API", () => {
     expect(allowedResearcher.statusCode).toBe(503);
   });
 
+  it("未登记的命令类型返回 400 validation，已登记但无权仍返回 403", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const session = await login(app, "player-token");
+    const auth = { authorization: `Bearer ${session}` };
+    const before = persistenceRows(value);
+
+    // 拼写错误不是权限问题：未登记类型必须是 400 validation，而不是 403 forbidden。
+    for (const unknownType of ["campaign.strat", "dialogue.sayy", "not-a-command"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/commands",
+        headers: auth,
+        payload: {
+          commandId: value.host.ids("cmd"),
+          type: unknownType,
+          schemaVersion: 1,
+          payload: {},
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(errorResponseSchema.parse(response.json()).error).toMatchObject({
+        code: "validation",
+        safeMessage: "命令类型未登记",
+      });
+    }
+    // 空字符串连信封的非空约束都不过，落在外层结构校验上，同样是 400 且不写数据。
+    const emptyType = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: auth,
+      payload: { commandId: value.host.ids("cmd"), type: "", schemaVersion: 1, payload: {} },
+    });
+    expect(emptyType.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(emptyType.json()).error.code).toBe("validation");
+    // 请求在任何写操作之前被拒：不写回执、不产生事件、不推进世界状态。
+    expect(persistenceRows(value)).toEqual(before);
+
+    // 已登记但当前角色无权的类型保持 403，语义与未登记类型分开。
+    const registeredButForbidden = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: auth,
+      payload: gameCommandEnvelope("scenario.draft", {}, value.host.ids("cmd")),
+    });
+    expect(registeredButForbidden.statusCode).toBe(403);
+    expect(errorResponseSchema.parse(registeredButForbidden.json()).error.code).toBe("forbidden");
+    expect(persistenceRows(value)).toEqual(before);
+  });
+
   it("装配中的 playerCommands 改变命令裁决", async () => {
     const value = await createTrackedGameHarness(active);
     const restricted = await appFor(value, { accessPolicyConfig: { playerCommands: ["dialogue.say"] } });
