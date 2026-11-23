@@ -18,7 +18,7 @@ about: 按具体问题或任务灵活组织内容，明确类型、字段、标�
    - Start / Target date（选填）：按需规划工作起止时间。
 3. Labels（必填，维度补充）：
    - 置信度：统一采用带命名空间前缀的 confidence/high、confidence/medium、confidence/low 标明结论实证程度。
-   - 领域分类：若跨越多个架构或职能领域，在正文「Issue 信息」中完整列出所有领域；右侧 Labels 只打一个关联度最大、最核心的领域标签。
+   - 领域分类：若跨越多个架构或职能领域，在正文「Issue 信息」中完整列出所有领域；右侧 Labels 至少打一个关联度最大、最核心的领域标签。
    - 证据与特性标签：如 evidence/*、performance、security 等。
    - 【严厉禁令】bug、feature、task 严禁出现在 Labels 中（统一由 Type 标记）；Priority 统一由 Fields.Priority 承载，禁止作为 Labels 维护。
 4. Relationships（非必填/选填，关系追溯）：
