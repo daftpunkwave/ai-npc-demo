@@ -271,6 +271,10 @@ export interface ConsoleReadPort {
    */
   evaluation?: {
     runs(query: { readonly status?: string; readonly limit?: number }): readonly RunSummary[];
+    /** 创建 run：预检通过返回 ready，失败返回 preflight-failed 与逐条原因。 */
+    createRun(runSpec: Json): Promise<{ readonly runId: string; readonly status: "ready" | "preflight-failed"; readonly errors: readonly { readonly path: string; readonly message: string }[] }>;
+    /** 导出 run 的清单、事件与 turn；返回 artifact 标识。 */
+    exportRun(request: { readonly runId: string; readonly redaction: "redacted" | "raw"; readonly principalId: string }): Promise<{ readonly artifactId: string }>;
     run(runId: string): RunDetailResponse | null;
     /** run 报告；run 不存在时返回 null，路由据此返回 not-found。 */
     report(runId: string): RunReportResponse | null;

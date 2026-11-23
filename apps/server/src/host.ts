@@ -14,7 +14,7 @@ import { disposeInReverse } from "./host/dispose";
 import { logInternalError } from "./host/internal-error-log";
 import { createLifecycle } from "./host/lifecycle";
 import type { LiveRunState } from "./host/live-state";
-import { clockConfigOf, worldChapterLengthOf, type ServerApp, type TransportPort } from "./host/module-catalog";
+import { clockConfigOf, serverModuleDefinitions, worldChapterLengthOf, type ServerApp, type TransportPort } from "./host/module-catalog";
 import type { HostOptions } from "./host/options";
 import { OperationJournal } from "./host/operation-journal";
 import { OnlineAgentHost } from "./host/online-agents";
@@ -23,6 +23,9 @@ import { createReadPorts } from "./host/reads";
 import { createTransportApp } from "./host/transport-app";
 import { ModelLayoutAdminPort } from "./host/model-layout-admin";
 import { createEvaluationReadPort } from "./host/evaluation-read";
+import { resolve } from "node:path";
+import { createRunWrites } from "./host/run-writes";
+import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
 import type { EvaluationPort } from "./host/module-catalog";
 
 import type { HostStartup } from "./host/startup";
@@ -216,12 +219,28 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
 
   // 评估端口是可选能力：装配未绑定或替代实现形状不符时保持 null，路由按 not-ready 返回。
   const evaluationPort = evaluationPortOf(core);
+  // 写入能力（创建 run、导出）只依赖存储、内容与装配定义，不依赖评估模块；
+  // 计分与报告才需要评估端口，因此两者分开注入，评估模块缺失时写入仍然可用。
+  const writes = createRunWrites({
+    host: core.host,
+    storage: core.storage,
+    content: core.content,
+    definitions: options.moduleDefinitions ?? serverModuleDefinitions,
+    contentVersion: core.contentVersion,
+    roster: core.roster,
+    worldId: core.active.worldId,
+    // loadAssembly 期望仓库根目录并在其下拼接 `config/assemblies`；
+    // 宿主的 configRoot 指向配置目录本身，因此取其父目录作为仓库根。
+    repoRoot: resolve(resolve(options.configRoot ?? "config"), ".."),
+    artifacts: new StoredAgentArtifactStore(core.storage, core.host),
+  });
   const evaluation = evaluationPort === null ? undefined : createEvaluationReadPort({
     storage: core.storage,
     evaluation: evaluationPort,
     scripts: core.content.index.scripts,
     lexicons: core.content.locale.lexicons,
     pricingVersion: core.active.manifest.models === undefined ? "unknown" : pricingVersionOf(core.active.manifest.models),
+    writes,
   });
 
   const transportApp = await createTransportApp({

@@ -239,6 +239,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             report: (runId: string) => evaluation.report(runId),
             experiment: (experimentId: string) => evaluation.experiment(experimentId),
             experiments: () => evaluation.experiments(),
+            createRun: (runSpec: unknown) => evaluation.createRun(runSpec as never),
+            exportRun: (request: { readonly runId: string; readonly redaction: "redacted" | "raw"; readonly principalId: string }) => evaluation.exportRun(request),
           },
         }),
       },

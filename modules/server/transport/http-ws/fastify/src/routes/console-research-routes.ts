@@ -36,6 +36,10 @@ import {
   runsQuerySchema,
   runsResponseSchema,
   experimentIdSchema,
+  runCreateRequestSchema,
+  runCreateResponseSchema,
+  exportRequestSchema,
+  exportResponseSchema,
 } from "@ai-npc/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
@@ -44,6 +48,8 @@ import { queryInteger, queryOptionalText, queryText } from "./query";
 const researchRoles = ["researcher"] as const;
 /** 评估读取角色：研究员与评估员都可读；写操作仍限研究员。 */
 const evaluationRoles = ["researcher", "evaluator"] as const;
+/** 评估写入角色：创建 run 与导出仅限研究员。 */
+const evaluationWriteRoles = ["researcher"] as const;
 const agentParamsSchema = z.object({ agentId: principalIdSchema }).strict();
 const turnParamsSchema = z.object({ turnId: idSchemas.turn }).strict();
 const artifactParamsSchema = z.object({ artifactId: idSchemas.art }).strict();
@@ -253,6 +259,16 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     return session;
   };
 
+  /** 评估写入角色：只有研究员可写，评估员只读。 */
+  const requireEvaluationWriter = (
+    request: Parameters<typeof requireConsoleRole>[1],
+    reply: Parameters<typeof requireConsoleRole>[3],
+  ) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, evaluationWriteRoles)) return null;
+    return session;
+  };
+
   app.get("/api/v1/console/runs", (request, reply) => {
     if (requireEvaluationSession(request, reply) === null) return;
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
@@ -305,5 +321,32 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     const detail = options.console.evaluation.experiment(path.experimentId);
     if (detail === null) return sendHttpError(reply, "not-found", "实验不存在");
     return experimentDetailResponseSchema.parse(detail);
+  });
+
+  app.post("/api/v1/console/runs", async (request, reply) => {
+    // 创建 run 只允许研究员：评估员只读，操作员与玩家无此权限。
+    if (requireEvaluationWriter(request, reply) === null) return;
+    if (options.console?.evaluation?.createRun === undefined) {
+      return sendHttpError(reply, "not-ready", "评估写入尚未就绪");
+    }
+    const body = runCreateRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "run 规格结构不合法");
+    return runCreateResponseSchema.parse(await options.console.evaluation.createRun(body.data.runSpec));
+  });
+
+  app.post("/api/v1/console/exports", async (request, reply) => {
+    const session = requireEvaluationWriter(request, reply);
+    if (session === null) return;
+    if (options.console?.evaluation?.exportRun === undefined) {
+      return sendHttpError(reply, "not-ready", "导出尚未就绪");
+    }
+    const body = exportRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "导出请求结构不合法");
+    // run 不存在等业务失败由端口抛 DomainError，交给统一错误处理映射状态码。
+    return exportResponseSchema.parse(await options.console.evaluation.exportRun({
+      runId: body.data.runId,
+      redaction: body.data.redaction,
+      principalId: session.auth.principalId,
+    }));
   });
 }
