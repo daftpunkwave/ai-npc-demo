@@ -217,12 +217,12 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
         nodeId: "grayharbor",
         factionId: "human-independent",
         worldViewText: "",
         affairsText: "",
-      }),
+      }])),
     });
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
@@ -311,6 +311,168 @@ describe("Agent runtime 持久状态", () => {
     expect(local?.rendered.full.summaryZh).not.toContain("private adjustment");
   });
 
+  it("flush 只发布存在到期条目的感知状态：未到期 Agent 的行保持原样", async () => {
+    const value = await fixture();
+    const roster: Roster = {
+      ...value.roster,
+      agents: [
+        ...value.roster.agents,
+        {
+          agentId: "human-earth-alliance",
+          kind: "strategic",
+          profileRef: "agent-strategic-default",
+          toolsetRef: "strategic-default",
+        },
+      ],
+    };
+    const pendingEntryFor = (observationId: string, knownAtTick: number) => ({
+      observation: {
+        observationId,
+        scope: {
+          worldId: "wld-000000000001",
+          branchId: "br-000000000001",
+          agentId: "human-independent",
+        },
+        observationSeq: 0,
+        sourceEventIds: ["evt-000000000001"],
+        sourceObservationIds: [],
+        occurredAtTick: 0,
+        sensedAtTick: 0,
+        knownAtTick,
+        channel: "relay",
+        epistemic: "reported",
+        confidence: 0.6,
+        releasePolicyId: "parties:human-independent,player-1",
+        content: { summaryZh: "延迟消息", detail: "full" },
+      },
+      triggers: [{
+        triggerId: "trg-000000000001",
+        agentId: "human-independent",
+        kind: "message",
+        priority: 60,
+        sourceRef: "evt-000000000001",
+        createdTick: 0,
+        dedupeKey: `message:human-independent:${observationId}`,
+        consumedByTurnId: null,
+      }],
+    });
+    value.storage.transact((tx) => {
+      const stateTable = tx.branch("br-000000000001").table("perception_state");
+      stateTable.put({
+        agent_id: "human-independent",
+        module_id: "agent.perception.test",
+        revision: 3,
+        scanned_through_seq: 10,
+        state_json: { pending: [pendingEntryFor("obs-000000000001", 5)] },
+      });
+      stateTable.put({
+        agent_id: "human-earth-alliance",
+        module_id: "agent.perception.test",
+        revision: 7,
+        scanned_through_seq: 10,
+        state_json: { pending: [pendingEntryFor("obs-000000000002", 9)] },
+      });
+      const table = tx.branch("br-000000000001").table("clock");
+      const row = table.get({});
+      table.put({ ...row, world_tick: 5 });
+    });
+    const scheduling: SchedulingPort = { plan: () => [] };
+    const runtime = new AgentRuntime({
+      storage: value.storage,
+      host: value.host,
+      content: loadContentPack("content", "earth-2964-v1"),
+      roster,
+      profiles: new Map([
+        ["human-independent", value.profile],
+        ["human-earth-alliance", value.profile],
+      ]),
+      moduleDefinitions: new Map([
+        [value.definition.id, value.definition],
+        [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+      ]),
+      scheduling,
+      maxConcurrentTurns: 1,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      runId: "run-000000000001",
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
+        nodeId: "grayharbor",
+        factionId: "human-independent",
+        worldViewText: "",
+        affairsText: "",
+      }])),
+    });
+    await runtime.start();
+    resources.push({ dispose: () => runtime.dispose() });
+    await runtime.pump();
+    const state = (agentId: string) => value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("perception_state").get({ agent_id: agentId }));
+    expect(state("human-independent")).toMatchObject({ revision: 4, state_json: { pending: [] } });
+    expect(state("human-earth-alliance")).toMatchObject({
+      revision: 7,
+      state_json: { pending: [pendingEntryFor("obs-000000000002", 9)] },
+    });
+    const observations = value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("observations").list());
+    expect(observations.map((row) => row["agent_id"])).toEqual(["human-independent"]);
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("triggers").list().map((row) => row["agent_id"]),
+    )).toEqual(["human-independent"]);
+  });
+
+  it("批量世界读取缺失名册身份结果时感知消费失败，不静默跳过该 Agent", async () => {
+    const value = await fixture();
+    const scheduling: SchedulingPort = { plan: () => [] };
+    const runtime = new AgentRuntime({
+      storage: value.storage,
+      host: value.host,
+      content: loadContentPack("content", "earth-2964-v1"),
+      roster: value.roster,
+      profiles: new Map([["human-independent", value.profile]]),
+      moduleDefinitions: new Map([
+        [value.definition.id, value.definition],
+        [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+      ]),
+      scheduling,
+      maxConcurrentTurns: 1,
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      runId: "run-000000000001",
+      readWorlds: () => new Map(),
+    });
+    await runtime.start();
+    resources.push({ dispose: () => runtime.dispose() });
+    value.storage.transact((tx) => {
+      tx.branch("br-000000000001").table("domain_events").put({
+        world_seq: 1,
+        event_id: "evt-000000000001",
+        world_tick: 0,
+        type: "MessageSent",
+        schema_version: 1,
+        principal_id: "player-1",
+        causation_ids_json: [],
+        correlation_id: "corr-000000000001",
+        audience_json: [{ kind: "principals", ids: ["player-1", "human-independent"] }],
+        payload_json: {
+          messageId: "msg-000000000001",
+          fromId: "player-1",
+          to: ["human-independent"],
+          channel: "message",
+          text: "延迟消息",
+          deliveries: [{ principalId: "human-independent", deliverAtTick: 2 }],
+          intentKind: "inform",
+          speechArtifactRef: null,
+        },
+        committed_at: "2026-01-01T00:00:00.000Z",
+      });
+    });
+    await expect(runtime.pump()).rejects.toThrow("批量世界读取缺少名册身份 human-independent");
+    // 感知事务未提交：事件游标不推进，同一事件在读取恢复后仍会被再次消费。
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("consumer_offsets").get({ consumer_id: "agent.perception.local" }),
+    )).toBeNull();
+  });
+
   it("启动时取消遗留非终态 turn 并释放 trigger", async () => {
     const value = await fixture();
     value.storage.transact((tx) => {
@@ -361,7 +523,9 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({ nodeId: "grayharbor", factionId: "human-independent", worldViewText: "", affairsText: "" }),
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
+        nodeId: "grayharbor", factionId: "human-independent", worldViewText: "", affairsText: "",
+      }])),
     });
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
@@ -395,12 +559,12 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
         nodeId: "grayharbor",
         factionId: "human-independent",
         worldViewText: "",
         affairsText: "",
-      }),
+      }])),
     });
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
@@ -454,12 +618,12 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
         nodeId: "grayharbor",
         factionId: "human-independent",
         worldViewText: "",
         affairsText: "",
-      }),
+      }])),
     });
     await expect(runtime.start()).resolves.toBeUndefined();
     resources.push({ dispose: () => runtime.dispose() });

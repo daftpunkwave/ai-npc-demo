@@ -18,6 +18,7 @@ import { renderObservation } from "./observation-renderer";
 import {
   arrayValue,
   asRecord,
+  jsonValue,
   numberValue,
   parseEvent,
   pendingEntry,
@@ -32,12 +33,12 @@ export interface EventConsumerInput {
   readonly profiles: ReadonlyMap<string, ResolvedAgentProfile>;
   readonly worldId: string;
   readonly branchId: string;
-  readonly readWorld: (agentId: string) => {
+  readonly readWorlds: (agentIds: readonly string[]) => ReadonlyMap<string, {
     readonly nodeId: string | null;
     readonly factionId: string;
     readonly worldViewText: string;
     readonly affairsText: string;
-  };
+  }>;
 }
 
 function visibleAudience(
@@ -88,10 +89,16 @@ export class PerceptionEventConsumer {
       readonly triggers: readonly NewAgentTrigger[];
       readonly scannedThroughSeq: number;
     }[] = [];
+    const worlds = this.input.readWorlds(this.input.roster.agents
+      .filter((agent) => this.perception.has(agent.agentId))
+      .map((agent) => agent.agentId));
     for (const agent of this.input.roster.agents) {
       const perception = this.perception.get(agent.agentId);
       if (perception === undefined) continue;
-      const world = this.input.readWorld(agent.agentId);
+      const world = worlds.get(agent.agentId);
+      if (world === undefined) {
+        throw new Error(`批量世界读取缺少名册身份 ${agent.agentId} 的结果`);
+      }
       const audience = visibleAudience(event, agent.agentId, world.factionId, world.nodeId);
       if (audience.length === 0) {
         plans.push({ agentId: agent.agentId, observations: [], triggers: [], scannedThroughSeq: event.worldSeq });
@@ -190,13 +197,26 @@ export class PerceptionEventConsumer {
     });
   }
 
+  /**
+   * 只挑出存在到期条目的 perception_state 行再解码：
+   * 空队列与尚未到期的行在 SQLite 内用 json_each 过滤，避免每个轮询周期解码全部 state_json。
+   */
   flush(tick: number): void {
     this.input.storage.transact((tx) => {
       const stateTable = tx.branch(this.input.branchId).table("perception_state");
-      for (const state of stateTable.list()) {
-        const stateJson = asRecord(state["state_json"]);
+      const dueRows = tx.all(
+        `SELECT agent_id, module_id, revision, scanned_through_seq, state_json
+           FROM perception_state
+          WHERE branch_id = ?
+            AND EXISTS (
+              SELECT 1 FROM json_each(perception_state.state_json, '$.pending') AS entry
+               WHERE json_extract(entry.value, '$.observation.knownAtTick') <= ?
+            )`,
+        [this.input.branchId, tick],
+      );
+      for (const state of dueRows) {
+        const stateJson = asRecord(jsonValue(state["state_json"]));
         const pending = arrayValue(stateJson["pending"]);
-        if (pending.length === 0) continue;
         const due: { observation: AgentObservation; triggers: readonly AgentTrigger[] }[] = [];
         const remaining: Json[] = [];
         for (const item of pending) {
@@ -218,8 +238,10 @@ export class PerceptionEventConsumer {
           for (const trigger of entry.triggers) this.writeTrigger(tx, agentId, trigger);
         }
         stateTable.put({
-          ...state,
+          agent_id: agentId,
+          module_id: stringValue(state, "module_id"),
           revision: numberValue(state, "revision") + 1,
+          scanned_through_seq: numberValue(state, "scanned_through_seq"),
           state_json: { ...stateJson, pending: remaining },
         });
       }
