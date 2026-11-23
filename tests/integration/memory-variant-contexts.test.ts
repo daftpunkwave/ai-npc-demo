@@ -109,24 +109,51 @@ function playerAuth(host: RunningHost): AuthContext {
   };
 }
 
-/** 开局、让时钟进入 running，随后由玩家对目标 Agent 说一句话。 */
+/** 开局、让时钟进入 running，随后由玩家对目标 Agent 说一句话；返回该对白事件的 ID。 */
 function startAndSpeak(host: RunningHost, text: string): string {
-  let sequence = 0;
-  const execute = (type: "campaign.start" | "dialogue.say", payload: Json) => {
-    const receipt = host.authority.commands.execute(playerAuth(host), gameCommandEnvelope(
-      type, payload, `cmd-${String(++sequence).padStart(12, "0")}`,
-    ));
+  const execute = (type: "campaign.start" | "dialogue.say", payload: Json, commandId: string) => {
+    const receipt = host.authority.commands.execute(playerAuth(host), gameCommandEnvelope(type, payload, commandId));
     expect(receipt, JSON.stringify(receipt)).toMatchObject({ commandStatus: "accepted" });
     return receipt;
   };
-  execute("campaign.start", { factionId: "human-neutral" });
+  execute("campaign.start", { factionId: "human-neutral" }, "cmd-000000000001");
   host.storage.transact((tx) => {
     const table = tx.branch(host.branchId).table("clock");
     const row = table.get({});
     if (row === null) throw new Error("测试分支缺少时钟行");
     table.put({ ...row, mode: "running", run_version: Number(row["run_version"]) + 1 });
   });
-  return execute("dialogue.say", { targetAgentId: target, text }).acceptedEventIds[0]!;
+  return dialogueEventId(execute("dialogue.say", { targetAgentId: target, text }, "cmd-000000000002"));
+}
+
+/**
+ * 开局后连续说三句话，返回第三句对应的事件 ID。
+ * 前两句依次各自触发一轮 turn，它们的对白成为第三轮冻结观察中的非触发对白，
+ * 因此历史段会包含可识别文本；只靠一句无法让历史段非空。
+ */
+function startAndSpeakThrice(host: RunningHost, lines: readonly [string, string, string]): string {
+  const execute = (type: "campaign.start" | "dialogue.say", payload: Json, commandId: string) => {
+    const receipt = host.authority.commands.execute(playerAuth(host), gameCommandEnvelope(type, payload, commandId));
+    expect(receipt, JSON.stringify(receipt)).toMatchObject({ commandStatus: "accepted" });
+    return receipt;
+  };
+  execute("campaign.start", { factionId: "human-neutral" }, "cmd-000000000001");
+  host.storage.transact((tx) => {
+    const table = tx.branch(host.branchId).table("clock");
+    const row = table.get({});
+    if (row === null) throw new Error("测试分支缺少时钟行");
+    table.put({ ...row, mode: "running", run_version: Number(row["run_version"]) + 1 });
+  });
+  dialogueEventId(execute("dialogue.say", { targetAgentId: target, text: lines[0] }, "cmd-000000000002"));
+  dialogueEventId(execute("dialogue.say", { targetAgentId: target, text: lines[1] }, "cmd-000000000003"));
+  return dialogueEventId(execute("dialogue.say", { targetAgentId: target, text: lines[2] }, "cmd-000000000004"));
+}
+
+/** 取出回执里唯一的事件 ID；缺失说明命令没有被接受，直接失败而不是用非空断言。 */
+function dialogueEventId(receipt: { readonly acceptedEventIds: readonly string[] }): string {
+  const [eventId] = receipt.acceptedEventIds;
+  if (eventId === undefined) throw new Error(`对白命令没有产生事件：${JSON.stringify(receipt)}`);
+  return eventId;
 }
 
 /** 等待该事件触发的 turn 结束并返回 turn 行。 */
@@ -190,22 +217,52 @@ describe("记忆主组入模差异", () => {
     }
   });
 
-  it("M3 的记忆段以核心块开头，且不超过 300 token", async () => {
+  it("M3 的记忆段以完整核心块开头，且核心块不超过配置上限", async () => {
     const host = await variantHost("memory-m3-layered-hybrid");
     const turn = await terminalTurn(host, startAndSpeak(host, "请确认水闸轮换的方案。"));
     const memory = memorySegmentText(contextArtifact(host, turn));
     expect(memory.length).toBeGreaterThan(0);
-    // 核心块是记忆段第一行；coreBlockMaxTokens 为 300，按字符保守折算约 1200 字符。
-    const [firstLine] = memory.split("\n");
-    expect(firstLine?.length ?? 0).toBeLessThanOrEqual(1200);
+
+    // 核心块是固定模板的多行文本，首行以「【核心记忆：」开头，其后依次是职责、价值、目标、当前关注。
+    // 断言整块前缀而不是首行长度：核心块本来就是多行，单看首行无法证明它完整且受预算约束。
+    expect(memory.startsWith("【核心记忆：")).toBe(true);
+    const coreLines = memory.split("\n").slice(0, 5);
+    expect(coreLines).toHaveLength(5);
+    expect(coreLines[1]).toMatch(/^职责：/u);
+    expect(coreLines[2]).toMatch(/^价值：/u);
+    expect(coreLines[3]).toMatch(/^目标：/u);
+    expect(coreLines[4]).toMatch(/^当前关注：/u);
+
+    // 核心块全文（含被截断的情形）是记忆段的前缀，且长度受 coreBlockMaxTokens 约束；
+    // 该配置为 300，实现按字符截断，因此整块字符数不得超过 300。
+    const coreBlock = coreLines.join("\n");
+    expect(memory.startsWith(coreBlock)).toBe(true);
+    expect(coreBlock.length).toBeLessThanOrEqual(300);
   });
 
-  it("M0 current 的会话窗口为 0，历史段为空", async () => {
-    const host = await variantHost("memory-m0-current");
-    const artifact = contextArtifact(host, await terminalTurn(host, startAndSpeak(host, "请确认水闸轮换的方案。")));
-    const history = artifact.segments?.find((segment) => segment.kind === "history");
-    expect(history?.text ?? "").toBe("");
+  it("M0 current 的会话窗口为 0，确实丢弃可识别的历史，而 M0 window 保留它", async () => {
+    const lines = [
+      "第一轮：请确认水闸轮换。",
+      "第二轮：那隘口那条路呢？",
+      "第三轮：这么说定了。",
+    ] as const;
+    const currentHost = await variantHost("memory-m0-current");
+    const currentArtifact = contextArtifact(currentHost, await terminalTurn(
+      currentHost, startAndSpeakThrice(currentHost, lines),
+    ));
+    const currentHistory = currentArtifact.segments?.find((segment) => segment.kind === "history")?.text ?? "";
+    expect(currentHistory).toBe("");
     // M0 没有长期记忆，记忆段不应出现账本条目。
-    expect(memorySegmentText(artifact)).toBe("");
+    expect(memorySegmentText(currentArtifact)).toBe("");
+
+    // 同一输入下窗口组必须看得到历史，否则上一条断言无法区分「窗口为 0」与「历史本就不存在」。
+    const windowHost = await variantHost("memory-m0-window");
+    const windowArtifact = contextArtifact(windowHost, await terminalTurn(
+      windowHost, startAndSpeakThrice(windowHost, lines),
+    ));
+    const windowHistory = windowArtifact.segments?.find((segment) => segment.kind === "history")?.text ?? "";
+    expect(windowHistory.length).toBeGreaterThan(0);
+    // 窗口组至少看到此前的对白轮次；内容可以是任一侧的发言，因此只断言历史非空且带对白序号。
+    expect(windowHistory).toContain("dlg-");
   });
 });
