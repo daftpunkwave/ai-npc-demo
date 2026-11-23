@@ -14,6 +14,8 @@ import {
   runDetailResponseSchema,
   runReportResponseSchema,
   runsResponseSchema,
+  runCreateResponseSchema,
+  exportResponseSchema,
 } from "@ai-npc/contracts";
 
 const hosts: RunningHost[] = [];
@@ -249,6 +251,152 @@ describe("控制台评估读取接口", () => {
     expect(report.statusCode).toBe(200);
     // 规格不可解析时不猜变体与脚本，如实写占位值而不是伪造。
     expect(runReportResponseSchema.parse(report.json()).variant).toBe("unknown");
+  });
+
+  it("研究员可创建 run，预检通过后落库为 ready", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runSpec = {
+      schemaVersion: 1,
+      id: "created-by-console",
+      moduleAssemblyRef: "local-slg-test-v1",
+      worldPackRef: "earth-2964-v1",
+      scenarioRef: "watergate-v1",
+      rosterRef: "core-3",
+      modelLayoutRef: "deterministic-model-layout-v1",
+      seed: "created-by-console:rep1",
+      player: { principalId: "player-1", factionId: null },
+      mode: "closed-loop",
+      initialState: { kind: "cold-start" },
+      variant: null,
+      script: null,
+      clock: { kind: "controlled" },
+      budget: { maxTokens: null, maxCost: null },
+      failurePolicy: "strict",
+    };
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers, payload: { runSpec },
+    });
+    expect(response.statusCode).toBe(200);
+    const created = runCreateResponseSchema.parse(response.json());
+    expect(created.status).toBe("ready");
+    expect(created.errors).toEqual([]);
+    // 落库后应能被列表读到，并带冻结的 manifest 摘要。
+    const detail = await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${created.runId}`, headers,
+    });
+    expect(detail.statusCode).toBe(200);
+    const parsed = runDetailResponseSchema.parse(detail.json());
+    expect(parsed.status).toBe("ready");
+    expect(parsed.manifestHash.length).toBeGreaterThan(0);
+  });
+
+  it("非法 run 规格返回 preflight-failed 且不落库", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const before = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    const response = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/console/runs",
+      headers,
+      payload: { runSpec: {
+        schemaVersion: 1, id: "bad", moduleAssemblyRef: "no-such-assembly",
+        worldPackRef: "earth-2964-v1", scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: "bad:rep1",
+        player: { principalId: "player-1", factionId: null },
+        mode: "closed-loop", initialState: { kind: "cold-start" }, variant: null, script: null,
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null }, failurePolicy: "strict",
+      } },
+    });
+    expect(response.statusCode).toBe(200);
+    const created = runCreateResponseSchema.parse(response.json());
+    expect(created.status).toBe("preflight-failed");
+    expect(created.errors.length).toBeGreaterThan(0);
+    // 预检失败不落库：列表数量不变。
+    const after = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    expect(after).toBe(before);
+  });
+
+  it("评估员不能创建 run 或导出，研究员可以导出", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "evaluation-console");
+    const runId = onlineRunId(host);
+    const evaluatorHeaders = consoleHeader(consoleToken, "evaluator");
+
+    const evaluatorExport = await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers: evaluatorHeaders,
+      payload: { runId, redaction: "redacted", operationId: "op-aaaaaaaaaaaa" },
+    });
+    expect(evaluatorExport.statusCode).toBe(403);
+
+    const researcherHeaders = consoleHeader(consoleToken, "researcher");
+    const exported = await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers: researcherHeaders,
+      payload: { runId, redaction: "redacted", operationId: "op-bbbbbbbbbbbb" },
+    });
+    expect(exported.statusCode).toBe(200);
+    expect(exportResponseSchema.parse(exported.json()).artifactId.length).toBeGreaterThan(0);
+  });
+
+  it("redacted 导出清空正文，raw 保留正文，两者都不含凭据值", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = String(host.storage.transact((tx) => tx.rows("runs").get({ run_id: runId })?.["branch_id"]));
+    // 写入一条含正文与凭据引用的事件：字符串形式的 JSON 列是真实存储形态。
+    host.storage.transact((tx) => {
+      tx.branch(branchId).table("domain_events").put({
+        event_id: "evt-aaaaaaaaaaaa", world_seq: 1, world_tick: 0, type: "dialogue.said",
+        schema_version: 1, principal_id: "human-independent",
+        causation_ids_json: "[]", correlation_id: "corr-1",
+        audience_json: JSON.stringify({ kind: "principals", principalIds: ["human-independent"] }),
+        payload_json: JSON.stringify({
+          text: "机密：星图只有一份", credentialRef: "secret/openai-key", apiKey: "sk-live-should-not-leak",
+        }),
+        committed_at: new Date().toISOString(),
+      });
+    });
+
+    const redacted = exportResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId, redaction: "redacted", operationId: "op-dddddddddddd" },
+    })).json());
+    const raw = exportResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId, redaction: "raw", operationId: "op-eeeeeeeeeeee" },
+    })).json());
+    expect(redacted.artifactId).not.toBe(raw.artifactId);
+
+    const readArtifact = (artifactId: string) => host.storage.transact((tx) => {
+      const row = tx.rows("artifacts").get({ artifact_id: artifactId });
+      const body = row?.["body"];
+      return typeof body === "string" ? body : Buffer.from(body as Uint8Array).toString("utf8");
+    });
+    const redactedBody = readArtifact(redacted.artifactId);
+    const rawBody = readArtifact(raw.artifactId);
+
+    // 两种模式都不能出现凭据解析值。
+    for (const body of [redactedBody, rawBody]) {
+      expect(body).not.toContain("sk-live-should-not-leak");
+      expect(body).toContain("[redacted]");
+    }
+    // redacted 清空正文；raw 保留正文。
+    expect(redactedBody).not.toContain("机密：星图只有一份");
+    expect(rawBody).toContain("机密：星图只有一份");
+  });
+
+  it("导出未知 run 返回 not-found", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId: "run-aaaaaaaaaaaa", redaction: "redacted", operationId: "op-cccccccccccc" },
+    });
+    expect(response.statusCode).toBe(404);
   });
 
   it("实验详情按显式实验标识归组并给出分组汇总", async () => {

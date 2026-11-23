@@ -52,6 +52,7 @@
 16. **实验规格与 run 展开**：`config/runs/exp-*.yaml` 声明 RunSpec 模板、脚本章节、变体、重复次数与 run 顺序；`expandExperimentRuns` 按「变体 × 脚本分支 × 重复次数」确定展开，同一次重复的各变体共享 `seed:rep<n>`（便于配对比较），`runOrder: rotate` 让每次重复的变体起点后移。加载时交叉校验脚本分支、变体补丁可叠加性、名册与内容引用，任一不可解析都在创建分支之前失败。没有命名分支的脚本按每个变体每重复一次展开。
 17. **探针计分与报告组装**：`platform.evaluation.standard` 提供四种探针 kind 的词面计分（匹配前去空白与标点）、六种无效样本判定、带分子分母的指标聚合与「变体 × 脚本分支」实验汇总。指标无法计算时写 `null` 并标注 `n/a`；无效探针不进正确率分母但按原因单列计数；确定性决策的模板对白不算降级。该模块无状态、部署级单例，输入端由宿主注入，自身不读存储。
 18. **评估读取接口与控制台页面**：`/api/v1/console/runs`（列表、详情、报告）与 `/api/v1/console/experiments`（列表、详情）按角色鉴权，研究员与评估员可读，玩家与操作员返回 403；`console.evaluation.standard` 页面可选实验与 run、展示分组汇总与逐格样本数，不可计算指标显示 `n/a`，样本少于 3 例标注「样本不足」。实验标识按配置引用格式校验（如 `exp-memory-promise-v1`），与运行期生成的 12 位 base32 ID 区分开。读取一律以归档结论为准：探针有效性沿用 `probe_results` 执行时写入的判定，延迟由 turn 的 `started_at`/`ended_at` 计算，缺脚本声明的探针标记为证据不完整；不按 `seed` 文本推断实验归属。
+19. **评估写入接口（创建 run 与导出）**：研究者可 `POST /api/v1/console/runs` 创建 run，预检覆盖规格交叉校验、装配可加载性与 manifest 冻结，失败返回 `preflight-failed` 与逐条原因且不落库；`POST /api/v1/console/exports` 导出 run 的 manifest、事件与 turn 的 artifact，`redacted` 清空正文、`raw` 保留正文，两者都不输出凭据解析值。评估员对这两个接口返回 403。实验执行器（驱动受控时钟、写 `probe_results` 与 `experiment_results`）尚未实现，创建后的 run 处于 `ready` 等待启动。
 
 ## 3. 剩余迁移项
 
