@@ -84,6 +84,9 @@ import { settingsModuleDefinition } from "@ai-npc/mod-client-settings-standard/d
 import { worldViewModuleDefinition } from "@ai-npc/mod-client-world-view-standard/definition";
 import { healthPageModuleDefinition } from "@ai-npc/mod-console-health-standard/definition";
 import { moduleAdminPageModuleDefinition } from "@ai-npc/mod-console-module-admin-standard/definition";
+import { modelMountsPageModuleDefinition } from "@ai-npc/mod-console-model-mounts-standard/definition";
+import { factionOpsPageModuleDefinition } from "@ai-npc/mod-console-faction-ops-standard/definition";
+import { debugPageModuleDefinition } from "@ai-npc/mod-console-debug-standard/definition";
 import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
 
 export { toGameContent } from "./content-adapter";
@@ -181,7 +184,10 @@ export const browserModuleDefinitions = [
   notificationsModuleDefinition,
   healthPageModuleDefinition,
   moduleAdminPageModuleDefinition,
+  modelMountsPageModuleDefinition,
+  factionOpsPageModuleDefinition,
   observabilityPageModuleDefinition,
+  debugPageModuleDefinition,
 ] as const;
 
 /** 完整三 realm 目录，供浏览器握手与控制台模块管理查询。 */

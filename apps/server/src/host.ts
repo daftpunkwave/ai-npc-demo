@@ -6,7 +6,7 @@
  */
 import { Authority } from "@ai-npc/authority";
 import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@ai-npc/agent-runtime";
-import { DomainError, type StoragePort } from "@ai-npc/contracts";
+import { DomainError, modelLayoutRoutesResponseSchema, type StoragePort } from "@ai-npc/contracts";
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
 import { createHostStartup } from "./host/startup";
@@ -20,6 +20,7 @@ import { OnlineAgentHost } from "./host/online-agents";
 import { createOperationsHost } from "./host/operations";
 import { createReadPorts } from "./host/reads";
 import { createTransportApp } from "./host/transport-app";
+import { ModelLayoutAdminPort } from "./host/model-layout-admin";
 
 export type { HostOptions } from "./host/options";
 export type { DisposalStep } from "./host/dispose";
@@ -159,6 +160,31 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     secondsPerTick: clockConfig.secondsPerTick,
     evaluationTick: worldChapterLengthOf(core.activeStartup.plan),
   });
+  const knownAgentIds = new Set([
+    ...core.gameContent.characters.keys(),
+    ...core.gameContent.factions.keys(),
+  ]);
+  const modelLayouts = new ModelLayoutAdminPort(
+    core.loadContext,
+    knownAgentIds,
+    () => {
+      const models = core.active.manifest.models;
+      const routes = models !== null && !Array.isArray(models) && typeof models === "object"
+        ? models["routes"] : undefined;
+      const resolved = Array.isArray(routes)
+        ? routes.flatMap((route) => {
+          if (route === null || Array.isArray(route) || typeof route !== "object") return [];
+          const { agentId, purpose, modelId, connectionId, adapterId, externalModel } = route;
+          return [agentId, purpose, modelId, connectionId, adapterId, externalModel].every((value) =>
+            typeof value === "string" && value.length > 0)
+            ? [{ agentId, purpose, modelId, connectionId, adapterId, externalModel }]
+            : [];
+        })
+        : [];
+      return modelLayoutRoutesResponseSchema.parse({ routes: resolved });
+    },
+    () => core.active.manifest.selection.modelLayoutRef ?? null,
+  );
 
   const transportApp = await createTransportApp({
     host: core.host,
@@ -173,6 +199,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     gameContent: core.gameContent,
     content,
     sessionAssembly: core.sessionAssembly,
+    modelLayouts,
     disposeOnFailure: () => disposeResources(null),
   });
 

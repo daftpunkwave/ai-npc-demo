@@ -5,18 +5,34 @@
  */
 import {
   DomainError,
+  agentInspectorResponseSchema,
   jsonValueSchema,
+  type AgentInspectorResponse,
+  type AgentWorldView,
+  type ArtifactResponse,
   type AgentsResponse,
+  type BranchCompareResponse,
+  type DebugQueuesResponse,
+  type DebugWakeInput,
+  type DebugWakeResponse,
+  type HostServices,
   type Json,
+  type MemoryDiffResponse,
+  type MemoryResponse,
   type ModuleCreateInput,
   type ModuleInstance,
+  type ObservationsResponse,
   type StorageValue,
   type StoragePort,
   type TimelineItem,
   type TimelineResponse,
+  type TraceResponse,
+  type TurnDetail,
+  type TurnsResponse,
 } from "@ai-npc/contracts";
 import { createStatelessModule } from "@ai-npc/module-sdk";
 import { z } from "zod";
+import { ResearchQueries } from "./research-queries";
 
 const configSchema = z.object({
   timelineLimit: z.number().int().min(1).max(1_000),
@@ -53,10 +69,16 @@ export interface TimelineQuery {
 export class ObservabilityPort {
   private readonly storage: StoragePort;
   private readonly maxTimelineLimit: number;
+  private readonly host: HostServices | undefined;
 
-  constructor(storage: StoragePort, config: { readonly timelineLimit: number }) {
+  constructor(
+    storage: StoragePort,
+    config: { readonly timelineLimit: number },
+    host?: HostServices,
+  ) {
     this.storage = storage;
     this.maxTimelineLimit = config.timelineLimit;
+    this.host = host;
   }
 
   recordSpan(span: SpanRecord): void {
@@ -75,9 +97,20 @@ export class ObservabilityPort {
         status: span.status,
         start_ms: span.startMs,
         end_ms: span.endMs,
+        started_at: this.wallClockStart(span.startMs),
         attrs_json: span.attrs,
       });
     });
+  }
+
+  private wallClockStart(startMs: number): string | null {
+    if (startMs >= 1_000_000_000_000) return new Date(startMs).toISOString();
+    if (this.host === undefined) return null;
+    const wallNow = Date.parse(this.host.nowIso());
+    const monotonicNow = this.host.monotonicMs();
+    const elapsed = Math.max(0, monotonicNow - startMs);
+    const startedAt = wallNow - elapsed;
+    return Number.isFinite(startedAt) && startedAt >= 0 ? new Date(startedAt).toISOString() : null;
   }
 
   timeline(query: TimelineQuery): TimelineResponse {
@@ -225,6 +258,135 @@ export class ObservabilityPort {
       })),
     };
   }
+
+  memory(branchId: string, agentId: string, revision: number): MemoryResponse {
+    return this.research().memory(branchId, agentId, revision);
+  }
+
+  memoryDiff(branchId: string, agentId: string, from: number, to: number): MemoryDiffResponse {
+    return this.research().memoryDiff(branchId, agentId, from, to);
+  }
+
+  observations(branchId: string, agentId: string, fromSeq: number, limit: number): ObservationsResponse {
+    return this.research().observations(branchId, agentId, fromSeq, limit);
+  }
+
+  turns(query: {
+    readonly runId?: string;
+    readonly branchId?: string;
+    readonly worldId?: string;
+    readonly agentId?: string;
+    readonly status?: string;
+    readonly limit?: number;
+  }): TurnsResponse {
+    return this.research().turns(query);
+  }
+
+  turn(turnId: string): TurnDetail {
+    return this.research().turn(turnId);
+  }
+
+  artifact(artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse {
+    return this.research().artifact(artifactId, view, principalId);
+  }
+
+  trace(traceId: string): TraceResponse {
+    return this.research().trace(traceId);
+  }
+
+  branchCompare(left: string, right: string, atSeq: number): BranchCompareResponse {
+    return this.research().branchCompare(left, right, atSeq);
+  }
+
+  debugQueues(branchId: string): DebugQueuesResponse {
+    return this.research().debugQueues(branchId);
+  }
+
+  debugWake(input: DebugWakeInput): DebugWakeResponse {
+    return this.research().debugWake(input);
+  }
+
+  inspector(input: {
+    readonly branchId: string;
+    readonly agentId: string;
+    readonly persona: Json;
+    readonly location: string | null;
+    readonly worldView: AgentWorldView;
+  }): AgentInspectorResponse {
+    const state = this.storage.transact((tx) => {
+      const branch = tx.branch(input.branchId);
+      return {
+        watermark: branch.table("memory_watermarks").get({ agent_id: input.agentId }),
+        perception: branch.table("perception_state").get({ agent_id: input.agentId }),
+      };
+    });
+    const revision = typeof state.watermark?.["revision"] === "number"
+      ? state.watermark["revision"]
+      : 0;
+    const records = this.memory(input.branchId, input.agentId, revision).records;
+    const relations = records.flatMap((record) => {
+      if (record.kind !== "relation" || Array.isArray(record.content) ||
+        record.content === null || typeof record.content !== "object") return [];
+      const counterparts = record.content["counterpartIds"];
+      const data = record.content["data"];
+      if (!Array.isArray(counterparts) || typeof counterparts[0] !== "string" ||
+        data === null || Array.isArray(data) || typeof data !== "object") return [];
+      const trust = data["trust"];
+      if (typeof trust !== "number" || !Number.isInteger(trust) || trust < -2 || trust > 2) return [];
+      return [{
+        targetId: counterparts[0] as AgentInspectorResponse["relations"][number]["targetId"],
+        label: typeof record.content["summaryZh"] === "string" && record.content["summaryZh"].length > 0
+          ? record.content["summaryZh"]
+          : record.kind,
+        trust,
+      }];
+    });
+    const commitments = records.flatMap((record) => {
+      if (record.kind !== "prospective" || Array.isArray(record.content) ||
+        record.content === null || typeof record.content !== "object") return [];
+      const summary = record.content["summaryZh"];
+      const data = record.content["data"];
+      if (typeof summary !== "string" || summary.length === 0) return [];
+      const dueTick = data !== null && !Array.isArray(data) && typeof data === "object" &&
+        typeof data["dueTick"] === "number" && Number.isSafeInteger(data["dueTick"])
+        ? data["dueTick"] : null;
+      return [{
+        kind: "promise" as const,
+        refId: record.memoryId,
+        summary,
+        dueTick,
+        state: record.status,
+      }];
+    });
+    const observationSeq = typeof state.watermark?.["observation_seq_consumed"] === "number"
+      ? state.watermark["observation_seq_consumed"] : 0;
+    const derivedThroughTick = typeof state.watermark?.["derived_through_tick"] === "number"
+      ? state.watermark["derived_through_tick"] : 0;
+    const perceptionRevision = typeof state.perception?.["revision"] === "number"
+      ? state.perception["revision"] : 0;
+    return agentInspectorResponseSchema.parse({
+      agentId: input.agentId,
+      persona: input.persona,
+      location: input.location,
+      worldView: input.worldView,
+      memoryRevision: revision,
+      memoryRecords: records,
+      relations,
+      commitments,
+      watermarks: {
+        observationSeq,
+        perceptionRevision,
+        memoryRevision: revision,
+        derivedThroughTick,
+      },
+      recentTurns: this.turns({ agentId: input.agentId, branchId: input.branchId, limit: 20 }).turns,
+    });
+  }
+
+  private research(): ResearchQueries {
+    if (this.host === undefined) throw new DomainError("not-ready", "观测研究查询缺少宿主依赖");
+    return new ResearchQueries(this.storage, this.host);
+  }
 }
 
 function parseJson(value: unknown): Json {
@@ -240,5 +402,5 @@ export async function createObservabilityModule(input: ModuleCreateInput): Promi
     throw new DomainError("assembly-incompatible", "观测模块缺少平台存储端口");
   }
   const config = configSchema.parse(input.config);
-  return createStatelessModule(input, new ObservabilityPort(storage as StoragePort, config));
+  return createStatelessModule(input, new ObservabilityPort(storage as StoragePort, config, input.host));
 }

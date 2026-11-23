@@ -5,17 +5,31 @@
  */
 /* eslint-disable no-unused-vars -- 本文件是传输层类型契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
 import type {
+  AgentInspectorResponse,
   AgentsResponse,
+  ArtifactResponse,
   AssemblyDetailResponse,
   AssemblySource,
+  BranchCompareResponse,
   ConsoleHealthResponse,
+  DebugQueuesResponse,
+  DebugWakeInput,
+  DebugWakeResponse,
+  MemoryDiffResponse,
+  MemoryResponse,
+  ModelLayoutRoutesResponse,
+  ModelLayoutValidateResponse,
+  ModelLayoutView,
+  ModelLayoutsResponse,
   ModulesResponse,
+  ObservationsResponse,
   AuthContext,
   CampaignView,
   ClockView,
   ClientContentView,
   CommandEnvelope,
   CommandReceipt,
+  ConsoleSnapshotRestoreResponse,
   IdPrefix,
   Json,
   PlayerProjection,
@@ -23,6 +37,10 @@ import type {
   StartOption,
   TimelineQuery,
   TimelineResponse,
+  TraceResponse,
+  TurnDetail,
+  TurnReplayResponse,
+  TurnsResponse,
 } from "@ai-npc/contracts";
 import type { StreamSession, StreamStats } from "../stream-hub";
 
@@ -185,6 +203,64 @@ export interface ConsoleReadPort {
   assembly(assemblyId: string): AssemblyDetailResponse;
   timeline(query: TimelineQuery): TimelineResponse;
   agents(branchId: string): AgentsResponse;
+  /** 模型布局只读与静态校验；未提供时对应路由返回 not-ready。 */
+  modelLayouts?: () => ModelLayoutsResponse;
+  modelLayout?: (layoutId: string) => ModelLayoutView;
+  modelRoutes?: (layoutId: string) => ModelLayoutRoutesResponse;
+  validateModelLayout?: (layout: unknown) => ModelLayoutValidateResponse;
+  /** 研究检查器与证据查询；原始 artifact 的审计由观测 provider 负责。 */
+  inspector?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+  }) => AgentInspectorResponse;
+  memory?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly revision: number;
+  }) => MemoryResponse;
+  memoryDiff?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly fromRevision: number;
+    readonly toRevision: number;
+  }) => MemoryDiffResponse;
+  observations?: (input: {
+    readonly agentId: string;
+    readonly branchId: string;
+    readonly fromSeq: number;
+    readonly limit: number;
+  }) => ObservationsResponse;
+  turns?: (query: {
+    readonly runId?: string;
+    readonly branchId?: string;
+    readonly worldId?: string;
+    readonly agentId?: string;
+    readonly status?: string;
+    readonly limit?: number;
+  }) => TurnsResponse;
+  turn?: (input: {
+    readonly turnId: string;
+  }) => TurnDetail;
+  artifact?: (input: {
+    readonly artifactId: string;
+    readonly view: "redacted" | "raw";
+    readonly principalId: string;
+  }) => ArtifactResponse;
+  trace?: (input: {
+    readonly traceId: string;
+  }) => TraceResponse;
+  branchCompare?: (input: {
+    readonly leftBranchId: string;
+    readonly rightBranchId: string;
+    readonly atSeq: number;
+  }) => BranchCompareResponse;
+  debugQueues?: (input: {
+    readonly branchId: string;
+  }) => DebugQueuesResponse;
+  replayTurn?: (input: {
+    readonly turnId: string;
+  }) => Promise<TurnReplayResponse>;
+  debugWake?: (input: DebugWakeInput) => DebugWakeResponse;
 }
 
 /** HTTP 适配器写入观测存储的最小跨度视图。 */
@@ -233,6 +309,8 @@ export interface ServerAppOptions {
     createSnapshot: SnapshotCreateHook;
     listSnapshots: () => readonly SnapshotRecordView[];
     restoreSnapshot: SnapshotRestoreHook;
+    /** 只读恢复预检；返回检查项，不切换在线分支。 */
+    validateRestore?: (snapshotId: string) => ConsoleSnapshotRestoreResponse;
   };
   readonly reset: ResetHook;
   readonly identities: readonly ServerIdentity[];

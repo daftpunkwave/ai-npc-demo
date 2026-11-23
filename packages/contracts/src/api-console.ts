@@ -225,7 +225,7 @@ export const modelConfigDraftSchema = z
     connectionId: z.string().min(1),
     externalModel: z.string().min(1),
     parameters: jsonValueSchema,
-    capabilities: modelCapabilitiesSchema.optional(),
+    capabilities: modelCapabilitiesSchema,
     limits: modelLimitsSchema,
     maxOutputTokensByPurpose: z.record(z.string().min(1), z.number().int().positive()),
   })
@@ -234,8 +234,8 @@ export const modelConfigDraftSchema = z
 export const modelMountDraftSchema = z
   .object({
     modelId: z.string().min(1),
-    agentIds: z.array(principalIdSchema).min(1),
-    purposes: z.array(modelPurposeSchema).min(1),
+    agentIds: z.array(principalIdSchema).min(1).max(64),
+    purposes: z.array(modelPurposeSchema).min(1).max(8),
   })
   .strict();
 
@@ -250,21 +250,22 @@ export const modelEvaluatorDraftSchema = z
 /** 模型布局草稿：连接、模型、挂载与 evaluator。 */
 export const modelLayoutDraftSchema = z
   .object({
-    schemaVersion: z.number().int().positive(),
+    schemaVersion: z.literal(1),
     layoutId: z.string().min(1),
     connections: z.record(z.string().min(1), modelConnectionDraftSchema),
     models: z.record(z.string().min(1), modelConfigDraftSchema),
-    mounts: z.array(modelMountDraftSchema),
+    mounts: z.array(modelMountDraftSchema).max(128),
     evaluator: modelEvaluatorDraftSchema.optional(),
   })
   .strict();
 
 export type ModelLayoutDraft = z.infer<typeof modelLayoutDraftSchema>;
 
-/** 去密钥连接视图：只显示 adapter、endpoint 主机名与凭据引用名。 */
+/** 去密钥连接视图：公开主机名和端点引用，凭据只显示引用名。 */
 export const modelConnectionViewSchema = z
   .object({
     adapterId: moduleIdSchema,
+    endpointRef: z.string().min(1).nullable(),
     endpointHost: z.string().min(1).nullable(),
     credentialRef: z.string().min(1).nullable(),
     rateLimitKey: z.string().min(1).nullable(),
@@ -273,7 +274,7 @@ export const modelConnectionViewSchema = z
 
 export const modelLayoutViewSchema = z
   .object({
-    schemaVersion: z.number().int().positive(),
+    schemaVersion: z.literal(1),
     layoutId: z.string().min(1),
     connections: z.record(z.string().min(1), modelConnectionViewSchema),
     models: z.record(z.string().min(1), modelConfigDraftSchema),
@@ -289,6 +290,8 @@ export const modelLayoutsResponseSchema = z
     layouts: z.array(z.object({ layoutId: z.string().min(1), source: assemblySourceSchema }).strict()),
   })
   .strict();
+
+export type ModelLayoutsResponse = z.infer<typeof modelLayoutsResponseSchema>;
 
 export const modelLayoutRoutesResponseSchema = z
   .object({
@@ -307,9 +310,11 @@ export const modelLayoutRoutesResponseSchema = z
   })
   .strict();
 
+export type ModelLayoutRoutesResponse = z.infer<typeof modelLayoutRoutesResponseSchema>;
+
 export const modelLayoutValidateRequestSchema = z
   .object({
-    layout: modelLayoutDraftSchema,
+    layout: jsonValueSchema,
   })
   .strict();
 
@@ -326,6 +331,8 @@ export const modelLayoutValidateResponseSchema = z
     errors: z.array(modelLayoutValidationErrorSchema),
   })
   .strict();
+
+export type ModelLayoutValidateResponse = z.infer<typeof modelLayoutValidateResponseSchema>;
 
 export const modelLayoutDraftRequestSchema = z
   .object({

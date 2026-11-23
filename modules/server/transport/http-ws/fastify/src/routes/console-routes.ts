@@ -18,49 +18,12 @@ import {
   sendHttpError,
 } from "./context";
 import type { RouteContext } from "./context";
+import { queryCsv, queryInteger, queryText } from "./query";
 
 const dashboardRoles = ["operator", "researcher"] as const;
 const researchRoles = ["researcher"] as const;
 const maxTimelineTypesLength = 512;
 const maxTimelineTypesCount = 20;
-
-function queryText(query: unknown, key: string): string | undefined {
-  if (typeof query !== "object" || query === null || Array.isArray(query)) {
-    return undefined;
-  }
-  const value = (query as Readonly<Record<string, unknown>>)[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function queryInteger(query: unknown, key: string, fallback: number): number | null {
-  const raw = queryText(query, key);
-  if (raw === undefined) {
-    return fallback;
-  }
-  const value = Number(raw);
-  return Number.isInteger(value) ? value : null;
-}
-
-function queryCsv(
-  query: unknown,
-  key: string,
-  maxLength: number,
-  maxItems: number,
-): string[] | null | undefined {
-  const raw = queryText(query, key);
-  if (raw === undefined) {
-    return undefined;
-  }
-  if (raw.length > maxLength) {
-    return null;
-  }
-  // 长度上界保证拆分结果有界，扫描器仍可能把规范化步骤误判为无界循环。
-  // nosemgrep
-  const values = raw.split(",");
-  return values.length <= maxItems && values.every((value) => value.length > 0)
-    ? values
-    : null;
-}
 
 export function registerConsoleRoutes(context: RouteContext): void {
   const { app, branch, options } = context;

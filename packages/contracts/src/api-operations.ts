@@ -122,6 +122,8 @@ export const restoreDryRunResponseSchema = z
   })
   .strict();
 
+export type RestoreDryRunResponse = z.infer<typeof restoreDryRunResponseSchema>;
+
 export const snapshotRestoreAppliedResponseSchema = z
   .object({
     branchId: idSchemas.br,
@@ -133,7 +135,7 @@ export const consoleSnapshotRestoreRequestSchema = z
   .object({
     operationId: idSchemas.op,
     snapshotId: idSchemas.snap,
-    dryRun: z.boolean(),
+    dryRun: z.boolean().default(false),
   })
   .strict();
 

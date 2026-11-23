@@ -20,5 +20,6 @@ export function registerConsoleOperationsRoutes(context: RouteContext): void {
       requireConsoleRole(ctx, request, session, reply, snapshotReadRoles),
     restrictToOnlineBranch: true,
     includeStep: true,
+    includeDryRun: true,
   });
 }

@@ -3,13 +3,14 @@
  * 依赖已启动浏览器模块、会话与 API 客户端；不绕过服务端角色校验。
  * 禁止在页面无权时隐藏失败原因，或把禁用按钮代替服务端授权。
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ContributionBoundary,
   type StartedBrowserModules,
 } from "@ai-npc/client-sdk";
 import type { ApiClient } from "@ai-npc/client-protocol";
 import type { ConsoleActiveRole, SessionDescriptor } from "@ai-npc/contracts";
+import { consoleNavigation } from "./console-navigation";
 
 interface ConsolePortWithTitle {
   readonly title: string;
@@ -36,20 +37,14 @@ export function ConsoleShell(input: {
       role === "operator" || role === "researcher" || role === "evaluator",
   );
   const [role, setRole] = useState<ConsoleActiveRole>(input.initialRole);
-  const pages = input.runtime.contributions.filter((item) => item.slot === "console.page");
-  const firstAllowed = pages.find((page) => page.allowedRoles?.includes(role));
-  const [active, setActive] = useState<string | null>(firstAllowed?.extensionId ?? null);
-  const selected = useMemo(
-    () => pages.find((page) => page.extensionId === active && page.allowedRoles?.includes(role)) ?? null,
-    [active, pages, role],
-  );
+  const [active, setActive] = useState<string | null>(null);
+  const { pages, selected } = consoleNavigation(input.runtime.contributions, role, active);
 
   const switchRole = (next: ConsoleActiveRole): void => {
     const host = input.runtime.ports["host.console"] as ConsoleHostPort;
     host.setActiveRole(next);
     setRole(next);
-    const nextAllowed = pages.find((page) => page.allowedRoles?.includes(next));
-    setActive(nextAllowed?.extensionId ?? null);
+    setActive(null);
   };
 
   return (
@@ -61,8 +56,7 @@ export function ConsoleShell(input: {
           <small>{input.session.branchId}</small>
         </div>
         <nav aria-label="控制台页面">
-          {pages.map((page) => {
-            const allowed = page.allowedRoles?.includes(role) ?? false;
+          {pages.map(({ page, allowed }) => {
             const capability = page.extensionId.split(".").slice(0, 2).join(".");
             const port = input.runtime.ports[capability] as ConsolePortWithTitle | undefined;
             const title =
@@ -71,14 +65,20 @@ export function ConsoleShell(input: {
                 ? "运行总览"
                 : page.extensionId.includes("module-admin")
                   ? "模块装配"
-                  : "可观测");
+                  : page.extensionId.includes("model-mounts")
+                    ? "模型挂载"
+                    : page.extensionId.includes("faction-ops")
+                      ? "势力运营"
+                      : page.extensionId.includes("debug")
+                        ? "调试"
+                        : "可观测");
             return (
               <button
                 type="button"
                 key={page.extensionId}
                 data-testid={`console-nav-${page.extensionId.split(".")[1] ?? "page"}`}
                 disabled={!allowed}
-                className={page.extensionId === active ? "is-active" : ""}
+                className={page.extensionId === selected?.extensionId ? "is-active" : ""}
                 title={allowed ? title : `${title}：当前角色无权访问`}
                 onClick={() => setActive(page.extensionId)}
               >

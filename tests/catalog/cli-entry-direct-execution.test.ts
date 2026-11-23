@@ -44,34 +44,35 @@ function runTsx(scriptPath: string): Promise<CliRunResult> {
 }
 
 describe("CLI 入口直接执行与导入行为", () => {
-  it("直接执行 check-boundaries 时运行扫描并报告结果", async () => {
+  it("直接执行 check-boundaries 时运行扫描并报告结果", { timeout: subprocessTestTimeoutMs }, async () => {
     const run = await runTsx("scripts/check-boundaries.ts");
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
     expect(run.stdout).toContain("边界检查：扫描");
     expect(run.stdout).toContain("未发现边界违规");
-  }, subprocessTestTimeoutMs);
+  });
 
-  it("直接执行 check-catalog 时运行装配预检并报告结果", async () => {
+  // 全量 Vitest 并行时 tsx 冷启动会与其他 138 个 worker 竞争 CPU；保留真实子进程断言并给予有界等待。
+  it("直接执行 check-catalog 时运行装配预检并报告结果", { timeout: subprocessTestTimeoutMs }, async () => {
     const run = await runTsx("scripts/check-catalog.ts");
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
     expect(run.stdout).toContain("catalog ok:");
-  }, subprocessTestTimeoutMs);
+  });
 
-  it("直接执行 check-assets 时运行资产校验并报告结果", async () => {
+  it("直接执行 check-assets 时运行资产校验并报告结果", { timeout: subprocessTestTimeoutMs }, async () => {
     const run = await runTsx("scripts/check-assets.ts");
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
     expect(run.stdout).toContain("资产校验通过");
-  }, subprocessTestTimeoutMs);
+  });
 
-  it("作为模块导入三个入口时不产生任何输出且正常退出", async () => {
+  it("作为模块导入三个入口时不产生任何输出且正常退出", { timeout: subprocessTestTimeoutMs }, async () => {
     const run = await runTsx(importFixturePath);
     expect(run.code).toBe(0);
     expect(run.stdout).toBe("");
     expect(run.stderr).toBe("");
-  }, subprocessTestTimeoutMs);
+  });
 
   it("check-assets 公开入口不再暴露 isDirectExecution，共享工具保持可用", async () => {
     const checkAssetsEntry = await import("@ai-npc/scripts/check-assets");

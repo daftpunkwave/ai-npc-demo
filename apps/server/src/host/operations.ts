@@ -3,6 +3,7 @@
  * 依赖运营模块的服务工厂、基础操作与幂等执行；不直接操作传输、路由或存储表。
  * 禁止改写幂等语义、跳过暂停排空或绕过 operationId 重放首次结果。
  */
+import { DomainError, type RestoreDryRunResponse } from "@ai-npc/contracts";
 import type { OperationsFactory } from "./module-catalog";
 import type { OperationJournal } from "./operation-journal";
 import { createIdempotentOperations } from "./operations-idempotent";
@@ -32,6 +33,35 @@ export function createOperationsHost(input: OperationsHostInput): ReturnType<Ope
     snapshot: (snapshotInput) =>
       primitives.createDrainedSnapshot({ label: snapshotInput.label, createdBy: snapshotInput.createdBy }),
     restore: (restoreInput) => primitives.restoreOnlineRun(restoreInput),
+    validateRestore: (snapshotId): RestoreDryRunResponse => {
+      let inspection;
+      try {
+        inspection = input.runtime.save.inspectRestore(snapshotId);
+      } catch (error) {
+        if (!(error instanceof DomainError) || error.code !== "invalid-state") throw error;
+        return { ok: false, checks: [{ name: "snapshot-integrity", ok: false, message: error.safeMessage }] };
+      }
+      if (inspection.worldId !== input.active.worldId) {
+        return { ok: false, checks: [{ name: "world", ok: false, message: "快照不属于当前在线世界" }] };
+      }
+      let sourceError: string | null = null;
+      try {
+        primitives.validateRestoreSource(inspection);
+      } catch (error) {
+        if (!(error instanceof DomainError) || error.code !== "invalid-state") throw error;
+        sourceError = error.safeMessage;
+      }
+      const ok = sourceError === null;
+      return {
+        ok,
+        checks: [
+          { name: "snapshot-integrity", ok: true, message: null },
+          { name: "source-run", ok, message: sourceError ?? inspection.sourceRun.runId },
+          { name: "world", ok: true, message: inspection.worldId },
+          { name: "checkpoint", ok: true, message: `t${inspection.worldTick} / seq ${inspection.worldSeq}` },
+        ],
+      };
+    },
     reset: () => primitives.resetOnline(),
     idempotent,
   });

@@ -13,6 +13,9 @@
     "@ai-npc/contracts": "workspace:*",
     "@ai-npc/mod-console-health-standard": "workspace:*",
     "@ai-npc/mod-console-module-admin-standard": "workspace:*",
+    "@ai-npc/mod-console-model-mounts-standard": "workspace:*",
+    "@ai-npc/mod-console-faction-ops-standard": "workspace:*",
+    "@ai-npc/mod-console-debug-standard": "workspace:*",
     "@ai-npc/mod-console-observability-standard": "workspace:*",
     "react": "^19",
     "react-dom": "^19"
