@@ -50,6 +50,31 @@ function consoleHeader(token: string, role = "researcher") {
   return { Authorization: `Bearer ${token}`, "X-Active-Role": role };
 }
 
+/** 把在线分支的时钟直接推到指定 tick；用于确定性地构造恢复前的前置状态。 */
+function advanceOnlineClock(host: RunningHost, worldTick: number): void {
+  host.storage.transact((tx) => {
+    const table = tx.branch(host.branchId).table("clock");
+    const row = table.get({});
+    if (row === null) throw new Error("在线分支缺少时钟行");
+    table.put({
+      ...row,
+      world_tick: worldTick,
+      mode: "paused",
+      step_target_tick: null,
+      run_version: Number(row["run_version"]) + 1,
+      updated_at: new Date().toISOString(),
+    });
+  });
+}
+
+/** 从世界视图响应里取世界时钟 tick；字段缺失即视为测试失败而不是静默通过。 */
+function worldTickOf(body: unknown): number {
+  const clock = (body as { readonly projection?: { readonly clock?: { readonly worldTick?: unknown } } })
+    .projection?.clock?.worldTick;
+  if (typeof clock !== "number") throw new Error("世界视图缺少 projection.clock.worldTick");
+  return clock;
+}
+
 /** 在线 run 的标识；测试装配启动时必然创建。 */
 function onlineRunId(host: RunningHost): string {
   const run = host.storage.transact((tx) => tx.rows("runs").list({ branch_id: host.branchId })[0]);
@@ -387,6 +412,54 @@ describe("控制台评估读取接口", () => {
     // redacted 清空正文；raw 保留正文。
     expect(redactedBody).not.toContain("机密：星图只有一份");
     expect(rawBody).toContain("机密：星图只有一份");
+  });
+
+  it("存档后恢复同一快照回到相同世界位置，且不重复结算", async () => {
+    const host = await testHost();
+    await host.app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { token: "evaluation-console" } });
+    const session = (await host.app.inject({
+      method: "POST", url: "/api/v1/auth/login", payload: { token: "evaluation-player" },
+    })).json() as { readonly sessionToken: string };
+    const auth = { Authorization: `Bearer ${session.sessionToken}` };
+
+    // 先推进世界到快照之后的 tick：停在初始 tick 时，恢复是否生效都无法通过 tick 断言区分。
+    advanceOnlineClock(host, 2);
+    const viewBefore = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
+    expect(viewBefore.statusCode).toBe(200);
+    const beforeTick = worldTickOf(viewBefore.json());
+    expect(beforeTick).toBe(2);
+
+    // 存档要求当前 tick 已排空；真实宿主启动即处于可控时钟的 paused 状态。
+    const created = await host.app.inject({
+      method: "POST", url: "/api/v1/campaign/snapshots", headers: auth,
+      payload: { operationId: "op-000000000931", label: "恢复验证" },
+    });
+    expect(created.statusCode).toBe(200);
+    const snapshot = created.json() as { readonly snapshotId: string; readonly worldTick: number };
+    expect(snapshot.worldTick).toBe(beforeTick);
+
+    // 再推进到 tick 4，让在线世界明显离开快照位置——恢复若未生效，下面会读到 4。
+    advanceOnlineClock(host, 4);
+    const viewAdvanced = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
+    expect(worldTickOf(viewAdvanced.json())).toBe(4);
+
+    const restored = await host.app.inject({
+      method: "POST", url: "/api/v1/campaign/restore", headers: auth,
+      payload: { operationId: "op-000000000932", snapshotId: snapshot.snapshotId },
+    });
+    expect(restored.statusCode).toBe(200);
+
+    const viewAfter = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
+    expect(viewAfter.statusCode).toBe(200);
+    // 恢复回到快照的世界位置。恢复会新建分支并把在线入口指过去，因此 streamSeq 会推进，
+    // 但世界时钟必须回到快照的 tick——这才是「不重复结算」的可核对判据。
+    expect(worldTickOf(viewAfter.json())).toBe(snapshot.worldTick);
+    const tickAfterRestore = worldTickOf(viewAfter.json());
+
+    // 再次读取仍停在同一 tick：恢复没有留下会继续推进的自动结算。
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const viewStable = await host.app.inject({ method: "GET", url: "/api/v1/world/view", headers: auth });
+    expect(worldTickOf(viewStable.json())).toBe(tickAfterRestore);
   });
 
   it("导出未知 run 返回 not-found", async () => {
