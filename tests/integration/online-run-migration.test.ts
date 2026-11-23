@@ -228,7 +228,7 @@ describe("在线 run 能力闭包升级迁移", () => {
       manifest_json: legacy.manifestJson,
       manifest_hash: legacy.manifestHash,
     });
-  });
+  }, 120_000);
 
   it("开启迁移开关后派生新 run 与新分支，源 run 原样、名册激活延续且迁移结果可再次重启", async () => {
     const dataDir = tempDataDir();

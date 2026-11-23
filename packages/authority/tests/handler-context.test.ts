@@ -59,3 +59,42 @@ describe("规则随机源的 runSeed 注入", () => {
     expect(recorded).toEqual([["risk", "team-star", "4", "r-gh-or"]]);
   });
 });
+
+describe("handler 上下文的模块与内容传递", () => {
+  it("把 modules 与 content 原样交给处理器，不复制或改写", () => {
+    const host = recordingHost([]);
+    const modules = { "game.world": { evaluateChapter: () => undefined } };
+    const content = { rules: { watergateSeatId: "seat.commune" } };
+    const context = createHandlerContext({
+      auth,
+      tx: {} as never,
+      modules,
+      content,
+      approvedSpeech,
+      host,
+    });
+    // 引用相等：处理器读到的就是宿主装配出的那一份模块端口与内容索引。
+    expect(context.modules).toBe(modules);
+    expect(context.content).toBe(content);
+    expect(context.auth).toBe(auth);
+    expect(context.approvedSpeech).toBe(approvedSpeech);
+  });
+
+  it("两个属性取值不同也不会互相覆盖", () => {
+    const host = recordingHost([]);
+    const modules = { "game.map": { roadStatus: () => "open" } };
+    const content = { playerNodeId: "grayharbor" };
+    const context = createHandlerContext({
+      auth,
+      tx: {} as never,
+      modules,
+      content,
+      approvedSpeech,
+      host,
+    });
+    // 命令网关在同一对象字面量里同时传入这两个字段；任一被另一覆盖都会在此暴露。
+    expect(context.modules).toBe(modules);
+    expect(context.content).toBe(content);
+    expect(context.modules).not.toBe(context.content);
+  });
+});
