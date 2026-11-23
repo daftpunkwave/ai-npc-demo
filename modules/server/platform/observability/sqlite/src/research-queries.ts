@@ -121,10 +121,7 @@ function attemptStats(
 function summaryOf(storage: StoragePort, row: StorageRow | StorageRawRow): TurnSummary {
   const turnId = stringColumn(row, "turn_id");
   const branchId = stringColumn(row, "branch_id");
-  const triggers = row["trigger_ids_json"];
-  const triggerIds = Array.isArray(triggers)
-    ? triggers.filter((value): value is string => typeof value === "string")
-    : [];
+  const triggerIds = triggerIdsOf(row["trigger_ids_json"]);
   const stats = attemptStats(storage, turnId);
   const toolCalls = storage.transact((tx) => tx.rows("tool_calls").list({ turn_id: turnId }).length);
   return turnSummarySchema.parse(summaryFromRow({
@@ -134,6 +131,31 @@ function summaryOf(storage: StoragePort, row: StorageRow | StorageRawRow): TurnS
     toolCalls,
     tokens: stats.tokens,
   }));
+}
+
+function triggerIdsOf(value: unknown): readonly string[] {
+  let parsed: Json;
+  if (typeof value === "string") {
+    try {
+      parsed = jsonColumn(JSON.parse(value));
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
+      throw new DomainError("invalid-state", "turn trigger_ids_json 不是合法 JSON");
+    }
+  } else {
+    parsed = jsonColumn(value);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new DomainError("invalid-state", "turn trigger_ids_json 不是文本 ID 数组");
+  }
+  const ids: string[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "string") {
+      throw new DomainError("invalid-state", "turn trigger_ids_json 不是文本 ID 数组");
+    }
+    ids.push(entry);
+  }
+  return ids;
 }
 
 function decodeTurns(storage: StoragePort, rows: readonly StorageRawRow[]): readonly TurnSummary[] {

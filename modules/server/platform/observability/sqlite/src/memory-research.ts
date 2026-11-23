@@ -78,6 +78,18 @@ export function readMemory(
   agentId: string,
   revision: number,
 ): MemoryResponse {
+  return readMemorySnapshot(storage, branchId, agentId, revision).response;
+}
+
+function readMemorySnapshot(
+  storage: StoragePort,
+  branchId: string,
+  agentId: string,
+  revision: number,
+): {
+  readonly response: MemoryResponse;
+  readonly rows: ReadonlyMap<string, StorageRow>;
+} {
   const worldId = readWorldId(storage, branchId);
   const watermark = storage.transact((tx) =>
     tx.branch(branchId).table("memory_watermarks").get({ agent_id: agentId }));
@@ -95,10 +107,13 @@ export function readMemory(
       if (numberColumn(row, "created_revision") > revision) return false;
       return row["retired_revision"] === null || numberColumn(row, "retired_revision") > revision;
     }));
-  return memoryResponseSchema.parse({
-    revision,
-    records: rows.map((row) => decodeMemoryRecord(row, { worldId, branchId, agentId, revision })),
-  });
+  return {
+    response: memoryResponseSchema.parse({
+      revision,
+      records: rows.map((row) => decodeMemoryRecord(row, { worldId, branchId, agentId, revision })),
+    }),
+    rows: new Map(rows.map((row) => [String(row["memory_id"]), row])),
+  };
 }
 
 export function readMemoryDiff(
@@ -108,18 +123,17 @@ export function readMemoryDiff(
   from: number,
   to: number,
 ): MemoryDiffResponse {
-  const before = new Map(readMemory(storage, branchId, agentId, from).records.map((record) => [record.memoryId, record]));
-  const after = new Map(readMemory(storage, branchId, agentId, to).records.map((record) => [record.memoryId, record]));
+  const beforeSnapshot = readMemorySnapshot(storage, branchId, agentId, from);
+  const afterSnapshot = readMemorySnapshot(storage, branchId, agentId, to);
+  const before = new Map(beforeSnapshot.response.records.map((record) => [record.memoryId, record]));
+  const after = new Map(afterSnapshot.response.records.map((record) => [record.memoryId, record]));
   const added = [...after.keys()].filter((memoryId) => !before.has(memoryId));
   const retired = [...before.keys()].filter((memoryId) => !after.has(memoryId));
   const changed = [...after.keys()].filter((memoryId) => {
-    const previous = before.get(memoryId);
-    const next = after.get(memoryId);
-    return previous !== undefined && next !== undefined && (
-      previous.status !== next.status ||
-      JSON.stringify(previous.content) !== JSON.stringify(next.content) ||
-      JSON.stringify(previous.sourceObservationIds) !== JSON.stringify(next.sourceObservationIds)
-    );
+    const previous = beforeSnapshot.rows.get(memoryId);
+    const next = afterSnapshot.rows.get(memoryId);
+    return previous !== undefined && next !== undefined &&
+      JSON.stringify(previous) !== JSON.stringify(next);
   });
   const entry = (memoryId: string) => {
     const record = after.get(memoryId) ?? before.get(memoryId);
