@@ -2421,6 +2421,39 @@ describe("服务端 API", () => {
     );
   });
 
+  it("框架请求超时映射为可重试失败并记录超时诊断", async () => {
+    // Fastify 在 handlerTimeout 触发时抛出 FST_ERR_HANDLER_TIMEOUT（自身状态码 503）。
+    // 它表示「本次请求未在期限内完成」，不是服务端缺陷：若落进未预期错误分支，
+    // 客户端会收到不可重试的 plugin-failed 并放弃重试。这里用真实应用验证该映射。
+    const value = await createTrackedGameHarness(active);
+    const internalErrors: string[] = [];
+    const app = await appFor(value, {
+      onInternalError: (message) => {
+        internalErrors.push(message);
+      },
+      // 让读取端口抛出与 Fastify 超时同码的错误，覆盖错误处理器的分类分支。
+      campaign: () => {
+        throw Object.assign(new Error("Request timed out after 30 ms"), {
+          code: "FST_ERR_HANDLER_TIMEOUT",
+          statusCode: 503,
+        });
+      },
+    });
+    const session = await login(app, "player-token");
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaign",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(response.statusCode).toBe(500);
+    const payload = response.json() as {
+      error: { code: string; retryable: boolean; safeMessage: string };
+    };
+    expect(payload.error.code).toBe("plugin-failed");
+    expect(payload.error.retryable).toBe(true);
+    expect(internalErrors).toContain("请求处理超时");
+  });
+
   it("传输端口只经最小应用接口监听与关闭", async () => {
     const calls: string[] = [];
     const app: ServerApp = {

@@ -112,9 +112,28 @@ function isWebSocketPayloadTooLarge(error: unknown): boolean {
 }
 
 /**
+ * 框架级请求超时错误码。Fastify 在 handlerTimeout 触发时抛出该错误，
+ * 语义是「本次请求未在期限内完成」，不是服务端缺陷，因此按可重试处理。
+ */
+const fastifyHandlerTimeoutCode = "FST_ERR_HANDLER_TIMEOUT";
+
+/**
+ * 判定框架请求超时错误。只按稳定错误码判断，不匹配错误文案，
+ * 以免框架调整措辞后分类失效。
+ */
+function isHandlerTimeoutError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { readonly code?: unknown }).code === fastifyHandlerTimeoutCode
+  );
+}
+
+/**
  * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
+ * 框架请求超时按可重试失败返回，并在诊断中保留超时事实；
  * 其余未预期错误一律 500 plugin-failed，safeMessage 不携带内部细节。
- * 4xx 属于预期拒绝，不写内部错误；5xx 交宿主记录，避免静默失败。
+ * 4xx 属于预期拒绝，不写内部错误；5xx 与超时交宿主记录，避免静默失败。
  */
 function registerErrorHandling(
   app: FastifyInstance,
@@ -126,6 +145,12 @@ function registerErrorHandling(
         report("请求处理失败", error);
       }
       return sendHttpError(reply, error.code, error.safeMessage, error.retryable);
+    }
+    if (isHandlerTimeoutError(error)) {
+      // 超时只中止了本次请求的响应等待，无法取消 handler 内部已发起的异步工作；
+      // 这里记录超时事实，并按可重试失败返回，避免客户端把它当成永久性错误。
+      report("请求处理超时", error);
+      return sendHttpError(reply, "plugin-failed", "请求处理超时", true);
     }
     const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
     if (statusCode === 400 || statusCode === 413 || statusCode === 415) {
