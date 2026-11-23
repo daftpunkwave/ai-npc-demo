@@ -55,18 +55,20 @@ export class ProjectionStore {
     };
   };
 
-  applySnapshot(
-    message: StreamSnapshotMessage,
-    worldId: string,
-    branchId: string,
-  ): ProjectionApplyResult {
+  /**
+   * 应用玩家投影快照。
+   * 分支身份取自快照帧本身：恢复或重开后在线分支会变，服务端重发的快照携带新身份，
+   * 客户端据此更新本地世界与分支，而不是沿用登录时写入的常量。
+   * 跨分支快照不受「序号必须前进」约束——新分支的流序号从 0 重新计数。
+   */
+  applySnapshot(message: StreamSnapshotMessage): ProjectionApplyResult {
     if (message.channel !== "player" || !("projectionVersion" in message)) {
       throw new DomainError("validation", "玩家投影不能应用非 player 频道快照");
     }
     const projection = playerProjectionSchema.parse(message.data);
     const next: ProjectionState = {
-      worldId,
-      branchId,
+      worldId: message.worldId,
+      branchId: message.branchId,
       streamSeq: message.streamSeq,
       projectionVersion: message.projectionVersion,
       projection,
@@ -158,11 +160,18 @@ export class ProjectionStore {
 
   private commitSnapshot(next: ProjectionState): ProjectionApplyResult {
     const current = this.state;
+    if (current === null) {
+      return this.commit(next);
+    }
+    const sameBranch = current.worldId === next.worldId && current.branchId === next.branchId;
+    // 跨分支快照（恢复或重开后的新在线分支）直接接受：新分支的流序号重新计数，
+    // 用旧分支的序号比较会把权威快照误判成迟到帧。世界 ID 不同则是另一个世界，仍拒绝。
+    if (current.worldId !== next.worldId) {
+      return { state: current, needsSnapshot: this.snapshotRequired, changed: false };
+    }
     if (
-      current !== null &&
-      (current.worldId !== next.worldId ||
-        current.branchId !== next.branchId ||
-        next.streamSeq < current.streamSeq ||
+      sameBranch &&
+      (next.streamSeq < current.streamSeq ||
         (next.streamSeq === current.streamSeq &&
           next.projectionVersion < current.projectionVersion))
     ) {

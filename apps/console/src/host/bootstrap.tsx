@@ -82,6 +82,12 @@ export function ConsoleBootstrap(): ReactNode {
       api.setActiveRole(role);
       const assembly = await api.assembly("console");
       const roleState = { activeRole: role };
+      // 在线分支以服务端为准：恢复/重开会切换分支，页面查询必须跟随新分支。
+      // 会话描述符里的 branchId 是登录时的快照，因此单独维护可变的当前分支身份。
+      const branchState = {
+        branchId: session.branchId,
+        listeners: new Set<(branchId: string) => void>(),
+      };
       const hostPort = {
         api,
         session,
@@ -89,6 +95,23 @@ export function ConsoleBootstrap(): ReactNode {
         reload: () => window.location.reload(),
         confirm: (message: string) => window.confirm(message),
         waitForClockSettled: (ticks: number, signal: AbortSignal) => waitForClockSettled(api, ticks, signal),
+        get branchId(): string {
+          return branchState.branchId;
+        },
+        subscribeBranch(listener: (branchId: string) => void): () => void {
+          branchState.listeners.add(listener);
+          return () => {
+            branchState.listeners.delete(listener);
+          };
+        },
+        /** 快照帧带来的身份校对；世界或分支变化时通知订阅者。 */
+        applyBranchIdentity(_worldId: string, branchId: string): void {
+          if (branchState.branchId === branchId) return;
+          branchState.branchId = branchId;
+          for (const listener of [...branchState.listeners]) {
+            listener(branchId);
+          }
+        },
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
         },

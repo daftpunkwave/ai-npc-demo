@@ -202,6 +202,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   };
   const hub = new StreamHub({
     projection: () => options.projection(),
+    worldId: options.worldId,
     channelSnapshot: consoleSnapshot,
     channelsFor: (auth) => channelsFor(options.accessPolicy, auth),
     ids: (prefix) => options.ids(prefix),

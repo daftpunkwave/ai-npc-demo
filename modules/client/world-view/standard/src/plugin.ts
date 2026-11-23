@@ -70,7 +70,13 @@ function errorMessage(error: unknown): string {
 class WorldViewController implements WorldViewPort {
   private readonly api: ApiClient;
   private readonly command: CommandClient;
+  /** 登录时与会话返回的静态身份；分支与世界的权威值另由 currentScope 跟踪。 */
   private readonly session: SessionDescriptor;
+  /**
+   * 当前世界与分支身份：以服务端返回的权威值为准。
+   * 恢复或重开后在线分支会变，快照帧与 `/session` 都会带回新身份，这里随之更新。
+   */
+  private currentScope: { readonly worldId: string; readonly branchId: string };
   private readonly newOperationId: () => string;
   private readonly random: () => number;
   private readonly store = new ProjectionStore();
@@ -103,6 +109,7 @@ class WorldViewController implements WorldViewPort {
     this.api = input.api;
     this.command = input.command;
     this.session = input.session;
+    this.currentScope = { worldId: input.session.worldId, branchId: input.session.branchId };
     this.newOperationId = input.newOperationId;
     this.random = input.random;
     this.unsubscribeStore = this.store.subscribe((state) => {
@@ -158,11 +165,26 @@ class WorldViewController implements WorldViewPort {
     }
   }
 
+  /**
+   * 用服务端权威身份同步本地 scope；分支变化时清掉旧分支的 campaign 与内容视图，
+   * 让依赖它们的界面重新读取，而不是继续展示已归档分支的数据。
+   */
+  private applySnapshotIdentity(worldId: string, branchId: string): void {
+    if (this.currentScope.worldId === worldId && this.currentScope.branchId === branchId) {
+      return;
+    }
+    const branchChanged = this.currentScope.branchId !== branchId;
+    this.currentScope = { worldId, branchId };
+    if (branchChanged) {
+      this.campaign = null;
+    }
+  }
+
   async refresh(): Promise<void> {
     const response = await this.api.worldView();
     this.store.replaceSnapshot({
-      worldId: this.session.worldId,
-      branchId: this.session.branchId,
+      worldId: this.currentScope.worldId,
+      branchId: this.currentScope.branchId,
       streamSeq: response.streamSeq,
       projectionVersion: response.projectionVersion,
       projection: response.projection,
@@ -314,7 +336,10 @@ class WorldViewController implements WorldViewPort {
         onMessage: (message) => {
           this.confirmStreamUsable();
           if (message.type === "snapshot" && message.channel === "player") {
-            this.store.applySnapshot(message, this.session.worldId, this.session.branchId);
+            // 快照携带服务端权威的分支身份：恢复或重开后在线分支会变，
+            // 这里同步本地会话，让 HUD 与控制台查询跟随新的在线分支。
+            this.applySnapshotIdentity(message.worldId, message.branchId);
+            this.store.applySnapshot(message);
           } else if (message.type === "delta") {
             const result = this.store.applyDelta(message);
             if (result.needsSnapshot) {

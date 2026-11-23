@@ -1315,11 +1315,14 @@ describe("服务端宿主", () => {
       try {
         expect(await client.next()).toMatchObject({ type: "hello", channels: ["player"] });
         client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
-        expect(await client.next()).toMatchObject({
+        const initial = await client.next();
+        expect(initial).toMatchObject({
           type: "snapshot",
           channel: "player",
           data: { clock: { worldTick: 7, mode: "paused" } },
         });
+        // 快照携带源分支身份：客户端据此知道自己当前停留在哪个分支。
+        expect(initial).toMatchObject({ worldId: host.worldId, branchId: sourceBranchId });
 
         const restored = await host.app.inject({
           method: "POST",
@@ -1335,12 +1338,16 @@ describe("服务端宿主", () => {
         // 宿主内存中的在线分支随提交结果更新。
         expect(host.branchId).toBe(successorBranchId);
 
-        // 传输层在切换后立即推送后继分支的完整投影快照。
-        expect(await client.next()).toMatchObject({
+        // 传输层在切换后立即推送后继分支的完整投影快照，且快照身份必须是新分支。
+        // 客户端只有拿到这个身份，才能把 HUD 与后续控制台查询切到新的在线分支。
+        const resynced = await client.next();
+        expect(resynced).toMatchObject({
           type: "snapshot",
           channel: "player",
           data: { clock: { worldTick: 5, mode: "paused" } },
         });
+        expect(resynced).toMatchObject({ worldId: host.worldId, branchId: successorBranchId });
+        expect((resynced as { readonly branchId: string }).branchId).not.toBe(sourceBranchId);
       } finally {
         client.close();
       }
