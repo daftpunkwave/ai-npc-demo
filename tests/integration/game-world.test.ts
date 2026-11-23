@@ -33,8 +33,8 @@ afterEach(async () => {
   await Promise.all(active.splice(0).map(async (harness) => harness.dispose()));
 });
 
-async function harness(): Promise<GameHarness> {
-  const created = await createGameHarness();
+async function harness(options: Parameters<typeof createGameHarness>[0] = {}): Promise<GameHarness> {
+  const created = await createGameHarness(options);
   active.push(created);
   return created;
 }
@@ -408,7 +408,8 @@ describe("世界核心", () => {
   });
 
   it("绑定端口写入的事件与版本进入命令回执", async () => {
-    const value = await harness();
+    // 通信贡献已注册真实 probe.ask；这里用无通信贡献的装配演示模块绑定器自身的写入路径。
+    const value = await harness({ withCommsContributor: false });
     expect(start(value).commandStatus).toBe("accepted");
     value.authority.registerModule({
       moduleId: "test.binder-accept",
@@ -437,7 +438,7 @@ describe("世界核心", () => {
   });
 
   it("绑定端口在同一事务内写入，拒绝时整体回滚", async () => {
-    const value = await harness();
+    const value = await harness({ withCommsContributor: false });
     expect(start(value).commandStatus).toBe("accepted");
     value.authority.registerModule({
       moduleId: "test.binder",
@@ -466,7 +467,7 @@ describe("世界核心", () => {
   });
 
   it("模块越权写入未声明的聚合被拒绝，且不留下回执或部分状态", async () => {
-    const value = await harness();
+    const value = await harness({ withCommsContributor: false });
     expect(start(value).commandStatus).toBe("accepted");
     value.authority.registerModule({
       moduleId: "test.scope",

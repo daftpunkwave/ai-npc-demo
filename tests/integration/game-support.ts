@@ -194,6 +194,11 @@ export async function createGameHarness(options: {
   readonly storageWrapper?: (storage: StoragePort) => StoragePort;
   /** 可选的 world 端口包装：用于验证旧 provider 结果兼容路径。 */
   readonly worldPortWrapper?: (port: GameWorldPort) => GameWorldPort;
+  /**
+   * 是否装配通信模块贡献。模块绑定器测试会自建 `probe.ask` 处理器演示端口写入，
+   * 而真实通信贡献已注册该命令；关掉通信贡献可避免命令重复注册，同时不影响端口绑定本身。
+   */
+  readonly withCommsContributor?: boolean;
 } = {}): Promise<GameHarness> {
   const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
   const baseHost = createFakeHost();
@@ -249,7 +254,9 @@ export async function createGameHarness(options: {
     authority.registerModule(createMapContributor());
     authority.registerModule(createResourcesContributor());
     authority.registerModule(createWorldContributor());
-    authority.registerModule(createCommsContributor());
+    if (options.withCommsContributor !== false) {
+      authority.registerModule(createCommsContributor());
+    }
     authority.registerModule(createActionsContributor());
     authority.registerModule(createAgreementsContributor());
     authority.registerModule(createScenarioContributor({ escalating: options.scenarioEscalating === true }));
