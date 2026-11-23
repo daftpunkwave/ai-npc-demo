@@ -34,6 +34,7 @@ import {
   numberValue,
   objectValue,
   relationSummary,
+  requireSameScope,
 } from "./ledger-model";
 
 type Ids = (prefix: IdPrefix) => string;
@@ -49,6 +50,7 @@ export class LedgerMemoryPort implements MemoryPort {
     view: RevisionView,
   ): MemoryChangePlan {
     requireSameScope(input.scope, view);
+    view = withoutPublicRecords(view);
     const capped = capacityRetirements(
       buildIngestion(input.observations, view, this.config, this.ids),
       view,
@@ -60,6 +62,7 @@ export class LedgerMemoryPort implements MemoryPort {
 
   retrieve(query: AgentMemoryQuery, view: RevisionView): MemoryBundle {
     requireSameScope(query.scope, view);
+    view = withoutPublicRecords(view);
     if (query.revision !== view.revision) {
       return emptyBundle("not-ready", query.revision);
     }
@@ -174,7 +177,7 @@ export class LedgerMemoryPort implements MemoryPort {
     };
   }
 
-  planMaintenance(input: Parameters<MemoryPort["planMaintenance"]>[0]) {
+  planMaintenance(input: Parameters<MemoryPort["planMaintenance"]>[0], _view?: RevisionView) {
     if (input.trigger !== "day-passed") return null;
     return {
       moduleId: "agent.memory.ledger",
@@ -191,6 +194,7 @@ export class LedgerMemoryPort implements MemoryPort {
     task: Parameters<MemoryPort["runMaintenance"]>[0],
     view: RevisionView,
   ): Promise<MemoryChangePlan> {
+    view = withoutPublicRecords(view);
     const build = buildMaintenance(task, view, this.config, this.ids);
     return {
       baseRevision: task.baseRevision,
@@ -208,6 +212,7 @@ export class LedgerMemoryPort implements MemoryPort {
     view: RevisionView,
   ): MemoryChangePlan {
     requireSameScope(input.scope, view);
+    view = withoutPublicRecords(view);
     const usage = applyUsage(input, view);
     const noteworthy = this.noteworthyRows(input, view);
     const combined = capacityRetirements(
@@ -238,6 +243,7 @@ export class LedgerMemoryPort implements MemoryPort {
     view: RevisionView,
   ): ReturnType<MemoryPort["proposeWakeups"]> {
     requireSameScope(input.scope, view);
+    view = withoutPublicRecords(view);
     if (this.config.wakeups === "disabled") return [];
     return view.records
       .filter((record) =>
@@ -382,19 +388,6 @@ export function createLedgerPort(config: LedgerConfig, ids: Ids): LedgerMemoryPo
   return new LedgerMemoryPort(config, ids);
 }
 
-function requireSameScope(
-  left: { readonly worldId: string; readonly branchId: string; readonly agentId: string },
-  view: RevisionView,
-): void {
-  if (
-    left.worldId !== view.scope.worldId ||
-    left.branchId !== view.scope.branchId ||
-    left.agentId !== view.scope.agentId
-  ) {
-    throw new Error("memory scope does not match the frozen revision");
-  }
-}
-
 function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBundle {
   return {
     status,
@@ -430,4 +423,8 @@ function objectRecord(observation: AgentObservation): Readonly<Record<string, un
   return typeof observation.content === "object" && observation.content !== null && !Array.isArray(observation.content)
     ? observation.content as Readonly<Record<string, unknown>>
     : {};
+}
+
+function withoutPublicRecords(view: RevisionView): RevisionView {
+  return { ...view, records: view.records.filter((record) => record.kind !== "public") };
 }

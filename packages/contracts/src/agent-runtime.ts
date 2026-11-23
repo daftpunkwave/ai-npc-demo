@@ -172,6 +172,25 @@ export const memoryBundleSchema = z
 
 export type MemoryBundle = z.infer<typeof memoryBundleSchema>;
 
+/** 整理条目被丢弃的原因；由模块产生并随任务记录保存，供审计与实验解释。 */
+export const memoryMaintenanceDiscardSchema = z
+  .object({
+    source: z.string().min(1),
+    reason: z.string().min(1),
+  })
+  .strict();
+
+/** 整理结果；partial 表示规则段已提交但模型段失败，水位不得推进。 */
+export const memoryMaintenanceResultSchema = z
+  .object({
+    status: z.enum(["completed", "partial"]),
+    failureReason: z.string().min(1).nullable(),
+    discarded: z.array(memoryMaintenanceDiscardSchema),
+  })
+  .strict();
+
+export type MemoryMaintenanceResult = z.infer<typeof memoryMaintenanceResultSchema>;
+
 export const memoryChangePlanSchema = z
   .object({
     baseRevision: z.number().int().nonnegative(),
@@ -195,6 +214,8 @@ export const memoryChangePlanSchema = z
           sourceObservationIds: z.array(idSchemas.obs),
           // recordUse 新建记录时必填，声明产生该记录的 turn；其他变更计划省略。
           sourceTurnId: z.string().min(1).optional(),
+          /** 标记分支级公共记录；存储宿主按 ~public 单份保存。 */
+          branchPublic: z.boolean().optional(),
           content: z
             .object({
               summaryZh: z.string(),
@@ -216,6 +237,7 @@ export const memoryChangePlanSchema = z
     derivedThroughSeq: z.number().int().nonnegative().nullable(),
     derivedThroughTick: z.number().int().nonnegative().nullable(),
     changeKind: z.enum(["ingest", "maintenance", "use", "import"]),
+    maintenanceResult: memoryMaintenanceResultSchema.optional(),
   })
   .strict();
 
@@ -230,6 +252,13 @@ export const maintenanceTaskSchema = z
     observationSeqThrough: z.number().int().nonnegative(),
     day: z.number().int().positive().nullable(),
     needsModel: z.boolean(),
+    modelPriority: z.number().nonnegative().optional(),
+    modelQuota: z.number().int().positive().optional(),
+    modelQuotaGranted: z.boolean().optional(),
+    modelCallDays: z.array(z.number().int().nonnegative()).optional(),
+    rulesApplied: z.boolean().optional(),
+    failureAttempts: z.number().int().nonnegative().optional(),
+    retryAfterTick: z.number().int().nonnegative().optional(),
   })
   .strict();
 

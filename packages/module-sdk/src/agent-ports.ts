@@ -124,6 +124,12 @@ export interface MemoryAgentIdentity {
     "agreement" | "rescue" | "resource" | "road" | "evidence",
     readonly string[]
   >>;
+  /** 供需要模型维护的模块构建立场提示；旧测试或最小宿主允许省略。 */
+  readonly name?: string;
+  readonly role?: string;
+  readonly goals?: readonly string[];
+  /** 主体 ID 到显示名的只读快照；用于过滤模型输出中的未知角色名。 */
+  readonly knownPrincipalNames?: Readonly<Record<string, string>>;
 }
 
 export interface RevisionView {
@@ -131,6 +137,8 @@ export interface RevisionView {
   readonly revision: number;
   readonly identity: MemoryAgentIdentity;
   readonly records: readonly MemoryRecordView[];
+  /** 本 revision 已成功整理的观察水位，与仍保留的看法记录无关。 */
+  readonly derivedThroughSeq?: number;
 }
 
 export interface MemoryIngestInput {
@@ -166,7 +174,7 @@ export interface MemoryPort {
     readonly worldTick: number;
     readonly observationSeqThrough: number;
     readonly trigger: "day-passed" | "importance";
-  }): MaintenanceTask | null;
+  }, view?: RevisionView): MaintenanceTask | null;
   runMaintenance(task: MaintenanceTask, view: RevisionView, model: ScopedModelPort | null): Promise<MemoryChangePlan>;
   recordUse(input: MemoryRecordUseInput, view: RevisionView): MemoryChangePlan;
   proposeWakeups(input: {

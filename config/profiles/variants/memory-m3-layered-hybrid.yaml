@@ -1,0 +1,28 @@
+schemaVersion: 1
+profileId: memory-m3-layered-hybrid
+kind: variant
+parent: null
+patch:
+  slots:
+    memory:
+      module: agent.memory.layered-hybrid
+      config:
+        capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 }
+        salienceThresholds: { long: 0.5, short: 0.2 }
+        decayBaseTicks: { short: 48, long: 480 }
+        relationModifiersPerTarget: 20
+        coreBlockMaxTokens: 300
+        chronicle: { enabled: true, maxPerRecall: 3 }
+        llmMaintenance: { enabled: true, maxAgentsPerDay: 8 }
+        recall:
+          mustIncludeProspective: 5
+          mustIncludeAboutCounterpart: 2
+          topK: 8
+          candidateLimit: 40
+          weights: { strength: 0.35, salience: 0.25, relevance: 0.30, recency: 0.10 }
+          jitter: 0.02
+        relationInput: enabled
+        prospectiveInput: enabled
+        wakeups: enabled
+        reinforcement: validated-reference
+        maintenanceTrigger: world-period

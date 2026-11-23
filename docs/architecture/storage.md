@@ -544,6 +544,8 @@ CREATE TABLE probe_results (
 );
 ```
 
+L6 公共编年史以 `agent_id = '~public'` 在分支内保存单份记录。公共行使用分支公共版本，不能与某个 Agent 的局部 `revision` 比较。每个记忆 revision 持久保存当时的 `public_revision`；读取时只合并该边界可见的活动公共版本，检索同时按查询 `worldTick` 过滤有效时间。之后发布的公共行不会改变旧视图。公共行提交在同一事务内校验记录种类、公开策略、所有来源观察及来源事件键，并按分支和规范化事件键去重。引用其他 Agent 的公共来源时，只接受冻结公共视图中已绑定且确实为公开观察的来源。
+
 ### 2.1 后续迁移
 
 ```sql
@@ -574,6 +576,10 @@ CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHER
 ```
 
 模型预算迁移在 `budget_ledger` 中增加 `world_day`，让角色的每日额度与尝试归属关联。迁移为运行、角色与日期、工作引用建立账本索引，并按工作或状态索引尝试记录。已有记录保留原键。
+
+记忆版本边界迁移 `0014_memory-revision-frontiers.sql` 为 `memory_revisions` 增加非负整数 `public_revision` 和 `derived_through_seq`，默认均为 0。前者固定公共行的可见范围，后者保存该 revision 已完成整理的观察水位；反思返回空数组、结果全部丢弃或看法被淘汰均不会丢失水位。旧 revision 使用零公共边界，不反推不同 Agent 的历史发布顺序。
+
+维护任务的 `task_json` 保存模型名额裁决 `modelQuotaGranted` 和实际调用日期 `modelCallDays`。配额裁决计入已租用、失败和已完成任务；模型池每次实际尝试发送前通过宿主注入的 `beforeAttempt` 在事务中占用执行日的名额（包括内部重试），失败和晚到结果仍计入。部分整理保留已提交规则变更，任务记为 `failed` 并绑定已提交 revision；重启或后续领取可重试；`rulesApplied` 保证已提交规则段不会重复执行，`failureAttempts` 最多允许三次实际失败。配额等待通过 `retryAfterTick` 延期，不消耗失败次数。模型工作预算按维护任务 ID 与租约代次隔离，单租约最多两次实际模型尝试，内部重试和冲突重算共享同一工作预算。纯规则任务不解析模型挂载。成功前不推进派生水位。
 
 ## 3. 分支复制 `forkBranch`
 
