@@ -481,7 +481,12 @@ class StandardCommsPort implements GameCommsPort {
     readonly fromId: string;
     readonly evidenceId: string;
     readonly audience: readonly string[];
-  }): { readonly eventId: string; readonly messageId: null; readonly deliveries: readonly Delivery[] } {
+  }): {
+    readonly eventId: string;
+    readonly shareId: string;
+    readonly messageId: null;
+    readonly deliveries: readonly Delivery[];
+  } {
     const deliveries = this.deliveries("message", input.fromId, input.audience);
     if (deliveries === null) {
       throw new DomainError("invalid-state", "中继中断时不能分享证据");
@@ -508,7 +513,7 @@ class StandardCommsPort implements GameCommsPort {
       },
       [...principalsAudience([input.fromId, ...input.audience])],
     );
-    return { eventId, messageId: null, deliveries };
+    return { eventId, shareId, messageId: null, deliveries };
   }
 }
 

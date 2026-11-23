@@ -4,6 +4,7 @@
  * 约束与禁忌：不得信任模型 scope、绕过 authority、复用其他主体的结果或让调用缺少配对结果。
  */
 import {
+  DomainError,
   canonicalJson,
   commandReceiptSchema,
   type AuthContext,
@@ -267,6 +268,9 @@ export class ToolGateway {
         operationId,
       });
     } catch (error) {
+      if (error instanceof DomainError && error.code === "idempotency-conflict") {
+        return this.settleError(input, binding, argsHash, "idempotency-conflict", error.safeMessage, current, operationId);
+      }
       return this.settleError(input, binding, argsHash, "execution-unknown", errorMessage(error), current, operationId, "unknown");
     }
   }

@@ -201,7 +201,11 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
       );
     }
   }
-  return { kind: "accepted" };
+  const deliverAtTick = share.deliveries.reduce(
+    (latest, delivery) => Math.max(latest, delivery.deliverAtTick),
+    context.tx.worldTick,
+  );
+  return { kind: "accepted", result: { shareId: share.shareId, deliverAtTick } };
 }
 
 /**
