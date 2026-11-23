@@ -32,6 +32,7 @@ import {
 import {
   dropNullFields,
   errorMessage,
+  isToolCallIdentity,
   resultWithoutRef,
   taskStatusFrom,
   type MessageExecutionInput,
@@ -53,6 +54,13 @@ export type {
   ToolCatalogPort,
   ToolGatewayTurn,
 } from "./tool-gateway-types";
+
+/**
+ * 参数无法规范化序列化时写入 tool_calls.args_hash 的稳定标记。
+ * 取值带前缀，不会与真实哈希碰撞；同一 provider call 的重复超预算调用因此判定为同一参数，
+ * 而不是被当成「重试改了参数」的幂等冲突。
+ */
+const OVER_BUDGET_ARGS_HASH = "invalid-json-budget";
 
 export interface ToolGatewayOptions {
   readonly storage: StoragePort;
@@ -111,8 +119,24 @@ export class ToolGateway {
   async executeCall(input: ToolCallExecutionInput): Promise<ToolCallOutcome> {
     this.assertAuthenticatedTurn(input);
     const args = input.arguments ?? {};
-    const argsHash = await this.options.host.hash(canonicalJson(args));
+    const argsHash = await this.argsHashOf(args);
     const existing = this.store.findCall(input);
+    if (argsHash === null) {
+      // 参数超出 JSON 输入预算：模型输出不是事实，按参数非法结算，不让整个 turn 崩溃。
+      // 幂等检查仍然先跑：同一 provider call 重试时，沿用既有结算结果而不是重复结算，
+      // 既有成功结算也不会被这条与它无关的参数错误覆盖。
+      if (existing !== null && existing["status"] === "settled") {
+        return await this.store.loadSettled(existing);
+      }
+      return this.settleError(
+        input,
+        null,
+        OVER_BUDGET_ARGS_HASH,
+        "invalid-params",
+        "Tool arguments exceed the JSON depth, node or type budget.",
+        existing,
+      );
+    }
     if (existing !== null && existing["status"] === "settled") {
       const toolId = this.toolIdForWireName(input.wireName);
       if (toolId === existing["tool_id"] && argsHash === existing["args_hash"]) {
@@ -354,6 +378,26 @@ export class ToolGateway {
     });
   }
 
+  /**
+   * 计算工具参数的幂等哈希；参数无法规范化序列化（超出预算或含非 JSON 值）时返回 null。
+   * 预算失败不是运行期异常而是拒绝理由：模型输出不充当事实，
+   * 超预算参数按 invalid-params 结算，避免 canonicalJson 的 TypeError 打断整个 turn。
+   * 只把 TypeError 当作「参数不可序列化」；host.hash 的其他异常照常向上抛，
+   * 避免把真实故障误判成参数非法。
+   */
+  private async argsHashOf(args: Json): Promise<string | null> {
+    let canonical: string;
+    try {
+      canonical = canonicalJson(args);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        return null;
+      }
+      throw error;
+    }
+    return this.options.host.hash(canonical);
+  }
+
   private async settleError(
     input: ToolCallExecutionInput,
     binding: ToolBinding | null,
@@ -388,6 +432,10 @@ export class ToolGateway {
       } satisfies ToolDefinition
       : this.options.tools.definition(binding.toolId, binding.version);
     if (definition === null) throw new Error("tool definition disappeared during error settlement");
+    // 既有已结算调用不被后续错误覆盖：幂等语义要求同一 provider call 的首次结算结果保持权威。
+    if (!isToolCallIdentity(existing) && existing !== null && existing["status"] === "settled") {
+      return await this.store.loadSettled(existing);
+    }
     const current = this.store.identityFromExisting(existing) ??
       this.store.ensureToolCall(input, effectiveBinding, argsHash, operationId, null, null);
     const result = resultWithoutRef({
@@ -398,6 +446,7 @@ export class ToolGateway {
       receiptId: null,
       operationId,
       detail,
+      // data 只放可枚举的短标记：超出预算的参数本身不可序列化，不能进入结算结果。
       data: { error: reasonCode },
     });
     return await this.store.persistOutcome({

@@ -37,14 +37,30 @@ export interface AgentArtifactStore {
   get(artifactId: string): AgentArtifactRecord | null;
 }
 
+/**
+ * 校验 artifact 值里没有 undefined 属性值。
+ * 用显式栈迭代遍历：artifact 值可能是模型产出的深层结构，
+ * 递归实现会在超深输入上抛 RangeError，而这里应当给出明确的 TypeError。
+ */
 function assertDefinedJson(value: unknown, path: string): void {
-  if (value === undefined) throw new TypeError(`artifact ${path} is undefined`);
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertDefinedJson(item, `${path}[${index}]`));
-    return;
-  }
-  if (typeof value === "object" && value !== null) {
-    for (const [key, item] of Object.entries(value)) assertDefinedJson(item, `${path}.${key}`);
+  const stack: { readonly value: unknown; readonly path: string }[] = [{ value, path }];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined) {
+      break;
+    }
+    if (current.value === undefined) throw new TypeError(`artifact ${current.path} is undefined`);
+    if (Array.isArray(current.value)) {
+      current.value.forEach((item, index) => {
+        stack.push({ value: item, path: `${current.path}[${index}]` });
+      });
+      continue;
+    }
+    if (typeof current.value === "object" && current.value !== null) {
+      for (const [key, item] of Object.entries(current.value)) {
+        stack.push({ value: item, path: `${current.path}.${key}` });
+      }
+    }
   }
 }
 

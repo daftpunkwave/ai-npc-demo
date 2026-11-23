@@ -85,6 +85,8 @@ InputFrontier 由 scope 绑定，是每个 Agent 的冻结边界；多主体快�
 
 命令载荷的文本与数组边界由公共 schema 统一约束：对白正文 1–300 字，席位发言 1–200 字，侦察问题与剧情卡说明不超过 300 字，政策键不超过 120 字；主体名单（协议当事人、通信受众、席位收件人）不超过 20 个，协议提案与还价的条款各不超过 20 条。超出上限的载荷在 schema 层被拒绝，返回 `invalid-params`，不进入处理器，也不产生状态、事件或 job。
 
+JSON 载荷另有结构性输入预算：容器嵌套深度上限 200 层，节点总数上限 200000。预算由 `@ai-npc/contracts` 的 `jsonInputBudget` 定义，并以显式栈迭代检查，不依赖调用栈深度；预留计数覆盖已入队但未处理的帧，因此超宽容器在分配前即被拒绝。预算同时拒绝 Date、Map、类实例等非 JSON 对象，避免它们被序列化成 `{}`；循环引用由深度上限拦下。命令 payload、事件 payload、模型工具参数与命令回执 result 使用带预算的 `boundedJsonValueSchema`，超限输入得到确定的 `validation` 校验失败（HTTP 层返回 400），不会因递归过深抛 `RangeError` 落到 500；`canonicalJson` 在序列化前检查同一份预算，超限时抛 `TypeError` 并指明超出的预算与路径。工具网关把超预算的模型参数按 `invalid-params` 结算，原始参数不写入 artifact，只记录预算拒绝标记；同一 provider call 的重试沿用既有结算，不会产生幂等冲突或覆盖既有结果。
+
 ## 2. 命令与 receipt
 
 CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文或宿主附加。模型不能靠自报 author 取得权限。

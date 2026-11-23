@@ -518,6 +518,147 @@ describe("Tool view and gateway", () => {
       argumentsRaw: JSON.stringify(args),
     })).rejects.toThrow("artifact");
   });
+  it("参数超出 JSON 输入预算时按参数非法结算，不让 turn 崩溃", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let calls = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => {
+        calls += 1;
+        return receipt(harness.host, envelope);
+      },
+    });
+    // 远超 JSON 深度预算的参数：模型可以产出，但不得让 canonicalJson 的 TypeError 打断 turn。
+    let deep: Json = null;
+    for (let index = 0; index < 5_000; index += 1) {
+      deep = [deep];
+    }
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-deep-args",
+      wireName: "asset_dispatch",
+      arguments: deep,
+      argumentsRaw: JSON.stringify(deep),
+    });
+    expect(outcome.result).toMatchObject({ executionStatus: "error", reasonCode: "invalid-params" });
+    expect(outcome.result.detail).toContain("JSON");
+    expect(calls).toBe(0);
+    // 拒绝被结算即可：调用方拿到可读原因，而不是异常。
+    expect(outcome.isError).toBe(true);
+  });
+
+  it("超预算参数的重试沿用既有结算，不重复结算也不产生幂等冲突", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+    });
+    let deep: Json = null;
+    for (let index = 0; index < 5_000; index += 1) {
+      deep = [deep];
+    }
+    const retryInput = {
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-deep-retry",
+      wireName: "asset_dispatch",
+      arguments: deep,
+      argumentsRaw: "[]",
+    };
+    const first = await gateway.executeCall(retryInput);
+    const second = await gateway.executeCall(retryInput);
+    // 两次都返回同一条已结算结果：不是 idempotency-conflict，也没有第二条 tool_calls 行。
+    expect(second.toolCallId).toBe(first.toolCallId);
+    expect(second.result.reasonCode).toBe("invalid-params");
+    const rows = harness.storage.transact((tx) => tx.rows("tool_calls").list({
+      run_id: testRunId,
+      turn_id: testTurnId,
+      attempt_id: testAttemptId,
+      provider_call_id: "provider-call-deep-retry",
+    }));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("超预算参数不写入原始参数，artifact 只保留预算拒绝标记", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+    });
+    let deep: Json = null;
+    for (let index = 0; index < 5_000; index += 1) {
+      deep = [deep];
+    }
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-deep-artifact",
+      wireName: "asset_dispatch",
+      arguments: deep,
+      argumentsRaw: "[]",
+    });
+    const stored = JSON.parse(JSON.stringify(outcome.rawArtifact.value)) as { readonly [key: string]: Json };
+    // 原始参数无法规范化序列化，也不值得审计；artifact 只留可检索的拒绝标记。
+    expect(stored["input"]).toEqual({ rejected: "json-input-budget" });
+    expect(stored["argumentsRaw"]).toBe("");
+    expect(outcome.rawArtifact.byteSize).toBeLessThan(4_096);
+  });
+
+  it("已结算调用不会被后续超预算参数覆盖", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+    });
+    const args = dispatchArguments("team-allowed");
+    const settled = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-settled-then-deep",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    });
+    expect(settled.result.executionStatus).toBe("ok");
+
+    let deep: Json = null;
+    for (let index = 0; index < 5_000; index += 1) {
+      deep = [deep];
+    }
+    const afterDeep = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-settled-then-deep",
+      wireName: "asset_dispatch",
+      arguments: deep,
+      argumentsRaw: "[]",
+    });
+    // 首次结算保持权威：不会因为后续超预算参数被改写成 invalid-params。
+    expect(afterDeep.toolCallId).toBe(settled.toolCallId);
+    expect(afterDeep.result.executionStatus).toBe("ok");
+    expect(afterDeep.result.reasonCode).toBeNull();
+  });
+
   it("三份工具集均可解析且战略集不提供 task.respond", () => {
     expect(toolset("character-default").tools).toHaveLength(12);
     expect(toolset("character-broadcaster").tools.find((entry) => entry.toolId === "message.send")?.permissionProfile)

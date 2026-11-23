@@ -567,6 +567,32 @@ function rawUpgradeStatus(port: number, origin: string, ticket: string): Promise
 }
 
 describe("服务端 API", () => {
+  it("命令 payload 超出 JSON 深度预算时返回 400 validation 而不是 500", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const session = await login(app, "player-token");
+    const auth = { authorization: `Bearer ${session}` };
+    const before = persistenceRows(value);
+
+    // 以原始 JSON 文本注入：约 10 KB 的深层数组可穿过请求体积限制，
+    // 且 JSON.parse 本身能处理这种深度，因此请求必然到达契约校验。
+    const depth = 5_000;
+    const deepText = `${"[".repeat(depth)}null${"]".repeat(depth)}`;
+    const body =
+      `{"commandId":"${value.host.ids("cmd")}","type":"campaign.start","schemaVersion":1,` +
+      `"payload":${deepText}}`;
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: body,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(response.json()).error.code).toBe("validation");
+    // 结构非法的请求不进入网关，因此不写回执、不产生事件。
+    expect(persistenceRows(value)).toEqual(before);
+  });
+
   it("登录、会话、命令、回执与世界视图", async () => {
 
     const value = await createTrackedGameHarness(active);

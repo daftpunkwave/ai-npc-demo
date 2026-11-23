@@ -3,6 +3,7 @@
  * 交互契约：依赖 storage、HostServices、artifact store 与 tool-view 端口，只处理已经校验的调用上下文。
  * 约束与禁忌：不得执行命令、改变结果状态或跨主体复用 unsettled/unknown 结果。
  */
+import { checkJsonBudget } from "@ai-npc/contracts";
 import type {
   HostServices,
   Json,
@@ -32,6 +33,9 @@ export interface ToolOutcomeStoreOptions {
   readonly artifacts: AgentArtifactStore;
   readonly toolView: AgentToolViewPort;
 }
+
+/** 参数被预算拒绝时写入 artifact 的标记值；短字面量，可安全序列化与检索。 */
+const OVER_BUDGET_INPUT_MARKER = "json-input-budget";
 
 export interface PersistToolOutcomeInput {
   readonly input: ToolCallExecutionInput;
@@ -112,14 +116,17 @@ export class ToolOutcomeStore {
   async persistOutcome(input: PersistToolOutcomeInput): Promise<ToolCallOutcome> {
     const rawArtifactId = this.options.host.ids("art");
     const result: ToolExecutionResult = { ...input.partialResult, resultRef: rawArtifactId };
+    // 参数超出 JSON 输入预算时不再落库原始结构：它既无法规范化序列化，也不是有价值的审计内容。
+    // 改记预算拒绝标记，让 artifact 仍可定位「模型提交了超预算参数」这一事实。
+    const overBudget = checkJsonBudget(input.args) !== null;
     const rawValue: RawToolArtifactValue = {
       kind: "tool-call-raw",
       toolCallId: input.toolCall.toolCallId,
       providerCallId: input.input.providerCallId,
       toolId: input.binding.toolId,
       toolVersion: input.binding.version,
-      input: input.args,
-      argumentsRaw: input.input.argumentsRaw,
+      input: overBudget ? { rejected: OVER_BUDGET_INPUT_MARKER } : input.args,
+      argumentsRaw: overBudget ? "" : input.input.argumentsRaw,
       scope: input.input.session,
       phase: input.input.phase,
       audience: [...input.input.audience],
@@ -133,6 +140,12 @@ export class ToolOutcomeStore {
       result,
       argsHash: input.argsHash,
     };
+    // 整体预算校验：替换掉 input 后，其余字段（output、result、binding 等）叠加仍可能超预算，
+    // 因此按最终写入值再检查一次，避免把无法序列化的结构交给 artifact store。
+    const rawBudget = checkJsonBudget(rawValue);
+    if (rawBudget !== null) {
+      throw new TypeError(`工具调用 artifact 超出 JSON 输入预算：${rawBudget.message}`);
+    }
     const rawArtifact = await this.options.artifacts.put({
       artifactId: rawArtifactId,
       runId: input.input.runId,
