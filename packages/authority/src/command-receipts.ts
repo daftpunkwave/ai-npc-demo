@@ -20,6 +20,8 @@ import { issuesOf } from "./command-validation";
 export interface ReceiptInput {
   readonly auth: AuthContext;
   readonly envelope: CommandEnvelope;
+  /** 已有回执的重放结果复用原 ID；缺省才生成新 ID。 */
+  readonly receiptId?: string;
   readonly commandStatus: "accepted" | "rejected";
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   readonly reasonCode: ReasonCode | null;
@@ -37,7 +39,7 @@ export type ReceiptHost = Pick<HostServices, "ids" | "nowIso">;
 /** 按执行结果构造并校验回执；非法结构在写入前失败。 */
 export function buildReceipt(host: ReceiptHost, input: ReceiptInput): CommandReceipt {
   const receipt = {
-    receiptId: host.ids("rcp"),
+    receiptId: input.receiptId ?? host.ids("rcp"),
     commandId: input.envelope.commandId,
     commandStatus: input.commandStatus,
     reasonCode: input.reasonCode,

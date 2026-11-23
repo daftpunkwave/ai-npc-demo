@@ -104,8 +104,11 @@ export class CommandGateway {
         return readReceipt(existing);
       }
       const clock = tryReadClock(tx, auth.branchId);
-      // 幂等冲突不覆盖既有回执：只返回一条拒绝回执，让调用方看到冲突原因。
+      const storedReceipt = readReceipt(existing);
+      // 幂等冲突不覆盖既有回执：只返回内存中的拒绝结果，并复用原回执 ID，
+      // 避免为同一命令键不断生成无法查询的新 ID。
       return buildReceipt(this.host, {
+        receiptId: storedReceipt.receiptId,
         auth,
         envelope,
         commandStatus: "rejected",

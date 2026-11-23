@@ -51,6 +51,7 @@ describe("authority command gateway", () => {
       );
       expect(conflict.commandStatus).toBe("rejected");
       expect(conflict.reasonCode).toBe("idempotency-conflict");
+      expect(conflict.receiptId).toBe(first.receiptId);
       expect(readAggregate(harness, "counter", "counter")?.state).toEqual({ count: 1 });
       expect(countBranchRows(harness, "command_receipts")).toBe(1);
     });
