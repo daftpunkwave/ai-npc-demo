@@ -32,12 +32,12 @@ export interface EventConsumerInput {
   readonly profiles: ReadonlyMap<string, ResolvedAgentProfile>;
   readonly worldId: string;
   readonly branchId: string;
-  readonly readWorld: (agentId: string) => {
+  readonly readWorlds: (agentIds: readonly string[]) => ReadonlyMap<string, {
     readonly nodeId: string | null;
     readonly factionId: string;
     readonly worldViewText: string;
     readonly affairsText: string;
-  };
+  }>;
 }
 
 function visibleAudience(
@@ -88,10 +88,16 @@ export class PerceptionEventConsumer {
       readonly triggers: readonly NewAgentTrigger[];
       readonly scannedThroughSeq: number;
     }[] = [];
+    const worlds = this.input.readWorlds(this.input.roster.agents
+      .filter((agent) => this.perception.has(agent.agentId))
+      .map((agent) => agent.agentId));
     for (const agent of this.input.roster.agents) {
       const perception = this.perception.get(agent.agentId);
       if (perception === undefined) continue;
-      const world = this.input.readWorld(agent.agentId);
+      const world = worlds.get(agent.agentId);
+      if (world === undefined) {
+        throw new Error(`批量世界读取缺少名册身份 ${agent.agentId} 的结果`);
+      }
       const audience = visibleAudience(event, agent.agentId, world.factionId, world.nodeId);
       if (audience.length === 0) {
         plans.push({ agentId: agent.agentId, observations: [], triggers: [], scannedThroughSeq: event.worldSeq });

@@ -217,12 +217,12 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
         nodeId: "grayharbor",
         factionId: "human-independent",
         worldViewText: "",
         affairsText: "",
-      }),
+      }])),
     });
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
@@ -361,7 +361,9 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({ nodeId: "grayharbor", factionId: "human-independent", worldViewText: "", affairsText: "" }),
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
+        nodeId: "grayharbor", factionId: "human-independent", worldViewText: "", affairsText: "",
+      }])),
     });
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
@@ -395,12 +397,12 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
         nodeId: "grayharbor",
         factionId: "human-independent",
         worldViewText: "",
         affairsText: "",
-      }),
+      }])),
     });
     await runtime.start();
     resources.push({ dispose: () => runtime.dispose() });
@@ -454,12 +456,12 @@ describe("Agent runtime 持久状态", () => {
       worldId: "wld-000000000001",
       branchId: "br-000000000001",
       runId: "run-000000000001",
-      readWorld: () => ({
+      readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
         nodeId: "grayharbor",
         factionId: "human-independent",
         worldViewText: "",
         affairsText: "",
-      }),
+      }])),
     });
     await expect(runtime.start()).resolves.toBeUndefined();
     resources.push({ dispose: () => runtime.dispose() });
