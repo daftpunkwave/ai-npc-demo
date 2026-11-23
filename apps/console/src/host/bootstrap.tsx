@@ -83,10 +83,17 @@ export function ConsoleBootstrap(): ReactNode {
       const assembly = await api.assembly("console");
       const roleState = { activeRole: role };
       // 在线分支以服务端为准：恢复/重开会切换分支，页面查询必须跟随新分支。
-      // 会话描述符里的 branchId 是登录时的快照，因此单独维护可变的当前分支身份。
-      const branchState = {
+      // 会话描述符里的 branchId 是登录时的快照，因此单独维护可变的当前身份。
+      // 世界与分支任一变化都要通知订阅者：跨 worldId 的重开同样会让页面数据失效。
+      const identityState = {
+        worldId: session.worldId,
         branchId: session.branchId,
-        listeners: new Set<(branchId: string) => void>(),
+        listeners: new Set<() => void>(),
+      };
+      const notifyIdentity = (): void => {
+        for (const listener of [...identityState.listeners]) {
+          listener();
+        }
       };
       const hostPort = {
         api,
@@ -95,22 +102,24 @@ export function ConsoleBootstrap(): ReactNode {
         reload: () => window.location.reload(),
         confirm: (message: string) => window.confirm(message),
         waitForClockSettled: (ticks: number, signal: AbortSignal) => waitForClockSettled(api, ticks, signal),
-        get branchId(): string {
-          return branchState.branchId;
+        get worldId(): string {
+          return identityState.worldId;
         },
-        subscribeBranch(listener: (branchId: string) => void): () => void {
-          branchState.listeners.add(listener);
+        get branchId(): string {
+          return identityState.branchId;
+        },
+        subscribeBranch(listener: () => void): () => void {
+          identityState.listeners.add(listener);
           return () => {
-            branchState.listeners.delete(listener);
+            identityState.listeners.delete(listener);
           };
         },
-        /** 快照帧带来的身份校对；世界或分支变化时通知订阅者。 */
-        applyBranchIdentity(_worldId: string, branchId: string): void {
-          if (branchState.branchId === branchId) return;
-          branchState.branchId = branchId;
-          for (const listener of [...branchState.listeners]) {
-            listener(branchId);
-          }
+        /** 快照帧带来的身份校对；世界或分支任一变化都通知订阅者。 */
+        applyBranchIdentity(worldId: string, branchId: string): void {
+          if (identityState.worldId === worldId && identityState.branchId === branchId) return;
+          identityState.worldId = worldId;
+          identityState.branchId = branchId;
+          notifyIdentity();
         },
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;

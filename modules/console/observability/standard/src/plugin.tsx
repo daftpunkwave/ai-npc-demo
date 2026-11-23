@@ -29,7 +29,7 @@ interface ConsoleHostPort {
    */
   readonly branchId: string;
   /** 订阅在线分支变化；返回取消订阅函数。 */
-  readonly subscribeBranch: (listener: (branchId: string) => void) => () => void;
+  readonly subscribeBranch: (listener: () => void) => () => void;
   /** 按快照帧内的身份校对在线分支；身份未变时不做任何事。 */
   applyBranchIdentity(worldId: string, branchId: string): void;
 }
@@ -71,7 +71,10 @@ function ObservabilityPage(): ReactNode {
   const [refreshVersion, setRefreshVersion] = useState(0);
   // 在线分支以宿主端口为准：恢复/重开后会变，查询必须跟随。
   const [branchId, setBranchId] = useState(host.branchId);
-  useEffect(() => host.subscribeBranch(setBranchId), [host]);
+  useEffect(() => {
+    setBranchId(host.branchId);
+    return host.subscribeBranch(() => setBranchId(host.branchId));
+  }, [host]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +108,8 @@ function ObservabilityPage(): ReactNode {
           fromStreamSeq: null,
           onMessage: (message) => {
             if (message.type !== "snapshot") return;
+            // 旧连接的迟到快照不能改写当前身份：先确认未取消且连接代次仍然有效。
+            if (cancelled || generation !== connectionGeneration) return;
             // 快照携带服务端权威的在线分支：恢复/重开切换分支后，控制台查询必须跟随，
             // 否则会继续用旧 branchId 命中已归档分支并静默展示过期数据。
             host.applyBranchIdentity(message.worldId, message.branchId);

@@ -166,22 +166,37 @@ class WorldViewController implements WorldViewPort {
   }
 
   /**
-   * 用服务端权威身份同步本地 scope；分支变化时清掉旧分支的 campaign 与内容视图，
-   * 让依赖它们的界面重新读取，而不是继续展示已归档分支的数据。
+   * 快照被接受后同步本地身份。
+   * 调用点必须在 `applySnapshot` 返回 `changed: true` 之后：被拒绝的快照（不同世界、
+   * 同分支旧帧）不能改写本地 scope，否则界面会跳到一条并未生效的分支上。
+   * 分支或世界变化时清掉旧 campaign 并异步重新获取，让依赖它的界面读到新分支数据。
    */
   private applySnapshotIdentity(worldId: string, branchId: string): void {
     if (this.currentScope.worldId === worldId && this.currentScope.branchId === branchId) {
       return;
     }
-    const branchChanged = this.currentScope.branchId !== branchId;
     this.currentScope = { worldId, branchId };
-    if (branchChanged) {
-      this.campaign = null;
-    }
+    this.campaign = null;
+    // 重新获取失败只记录，不阻断投影更新：界面会显示“未开局”而不是旧分支的战役。
+    void this.refreshCampaign().catch((error: unknown) => {
+      this.lastRefreshError = errorMessage(error);
+    });
   }
 
+  /**
+   * 从服务端重新读取投影。
+   * 请求发出时捕获当前身份，返回时若身份已变（期间收到新分支快照）就丢弃这次响应：
+   * 否则旧分支的数据会被标成新分支，新分支序号重置后还可能覆盖更新的投影。
+   */
   async refresh(): Promise<void> {
+    const requestedScope = this.currentScope;
     const response = await this.api.worldView();
+    if (
+      requestedScope.worldId !== this.currentScope.worldId ||
+      requestedScope.branchId !== this.currentScope.branchId
+    ) {
+      return;
+    }
     this.store.replaceSnapshot({
       worldId: this.currentScope.worldId,
       branchId: this.currentScope.branchId,
@@ -336,10 +351,12 @@ class WorldViewController implements WorldViewPort {
         onMessage: (message) => {
           this.confirmStreamUsable();
           if (message.type === "snapshot" && message.channel === "player") {
-            // 快照携带服务端权威的分支身份：恢复或重开后在线分支会变，
-            // 这里同步本地会话，让 HUD 与控制台查询跟随新的在线分支。
-            this.applySnapshotIdentity(message.worldId, message.branchId);
-            this.store.applySnapshot(message);
+            const result = this.store.applySnapshot(message);
+            // 只有被接受的快照才能改写本地身份：被拒绝的帧（不同世界、同分支旧帧）
+            // 一旦同步身份，界面就会跳到一条并未生效的分支上。
+            if (result.changed) {
+              this.applySnapshotIdentity(message.worldId, message.branchId);
+            }
           } else if (message.type === "delta") {
             const result = this.store.applyDelta(message);
             if (result.needsSnapshot) {
