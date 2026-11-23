@@ -182,6 +182,42 @@ describe("memory comparison variants", () => {
     expect(plan.inserts.some((row) => row.kind === "core")).toBe(false);
   });
 
+  it("M3 caps short records after merging the daily review intents", async () => {
+    const config = layeredHybridConfigSchema.parse({ ...layeredHybridDefaults, capacity: { ...layeredHybridDefaults.capacity, short: 3 } });
+    const port = createLayeredHybridPort(config, ids, null);
+    const ingest = port.prepareIngest({ scope, baseRevision: 0, observations: [observation({ seq: 1, tick: 24 })], worldTick: 24 }, view());
+    const sample = views(ingest).find((row) => row.kind === "episodic");
+    if (sample === undefined) throw new Error("missing sample");
+    const shorts = ["AgreementBreached", "RelayDown", "OrchardCrisis"].map((eventType, index) => ({
+      ...sample,
+      memoryId: `mem-00000000008${index + 1}`,
+      tier: "short" as const,
+      salience: 0.3,
+      validFromTick: 24,
+      lastReinforcedTick: 24,
+      content: { ...sample.content, data: { ...(sample.content.data as Record<string, unknown>), eventType } },
+    }));
+    const before = view([...views(ingest), ...shorts], 1);
+    // 规则段已占满 short 容量；模型段追加的意向记录必须被同一裁剪收敛。
+    const plan = await port.runMaintenance({
+      moduleId: "agent.memory.layered-hybrid", trigger: "day-passed", dueTick: 24,
+      baseRevision: 1, observationSeqThrough: 1, day: 2, needsModel: true,
+    }, before, model(response({
+      beliefOps: [],
+      currentConcerns: null,
+      intents: [
+        { kind: "remind", targetId: "player-1", reasonIds: [sample.memoryId] },
+        { kind: "propose", targetId: "player-1", reasonIds: [sample.memoryId] },
+      ],
+    })));
+    expect(plan.inserts.some((row) => row.tags.includes("intent"))).toBe(true);
+    const shortInserts = plan.inserts.filter((row) => row.tier === "short" && row.status === "active");
+    const shortSurvivors = before.records.filter((record) =>
+      record.tier === "short" && record.status === "active" &&
+      !plan.retires.some((retire) => retire.memoryId === record.memoryId));
+    expect(shortInserts.length + shortSurvivors.length).toBeLessThanOrEqual(config.capacity.short);
+  });
+
   it("M3 keeps belief capacity separate from ledger long capacity", async () => {
     const config = layeredHybridConfigSchema.parse({ ...layeredHybridDefaults, capacity: { ...layeredHybridDefaults.capacity, long: 1, beliefs: 3 } });
     const port = createLayeredHybridPort(config, ids, null);

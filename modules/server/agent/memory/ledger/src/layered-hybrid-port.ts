@@ -18,8 +18,9 @@ import type {
   ScopedModelPort,
 } from "@ai-npc/module-sdk";
 import { createLedgerPort } from "./ledger-port";
-import { applyUsage } from "./ledger-usage";
+import { applyUsage, capacityRetirements } from "./ledger-usage";
 import { ledgerConfigFromHybrid, type LayeredHybridConfig } from "./layered-hybrid-config";
+import type { LedgerConfig } from "./definition";
 import { applyDailyReview } from "./layered-hybrid-changes";
 import {
   dailyReviewOutputContract,
@@ -42,13 +43,15 @@ type Rng = (...parts: string[]) => (() => number);
 
 export class LayeredHybridMemoryPort implements MemoryPort {
   private readonly ledger: MemoryPort;
+  private readonly ledgerConfig: LedgerConfig;
 
   constructor(
     private readonly config: LayeredHybridConfig,
     private readonly ids: Ids,
     private readonly rng: Rng | null,
   ) {
-    this.ledger = createLedgerPort(ledgerConfigFromHybrid(config), ids);
+    this.ledgerConfig = ledgerConfigFromHybrid(config);
+    this.ledger = createLedgerPort(this.ledgerConfig, ids);
   }
 
   prepareIngest(
@@ -214,11 +217,27 @@ export class LayeredHybridMemoryPort implements MemoryPort {
       return partial(rulePlan, error instanceof Error ? error.message : String(error));
     }
     const extras = applyDailyReview({ response, task, view, today, beliefs, ids: this.ids, config: this.config });
-    return mergePlans(rulePlan, extras, {
-      status: "completed",
-      failureReason: null,
-      discarded: [...extras.discarded],
-    });
+    // 规则段已裁剪过短期层；模型段直接追加意向记录，合并后必须再按 capacity.short 统一裁剪。
+    const capped = capacityRetirements(
+      {
+        inserts: [...rulePlan.inserts, ...extras.inserts],
+        retires: dedupeRetires([...rulePlan.retires, ...extras.retires]),
+      },
+      view,
+      this.ledgerConfig,
+      task.dueTick,
+      ["short"],
+    );
+    return {
+      ...rulePlan,
+      inserts: capped.inserts,
+      retires: capped.retires,
+      maintenanceResult: {
+        status: "completed",
+        failureReason: null,
+        discarded: [...extras.discarded],
+      },
+    };
   }
 
   recordUse(
@@ -352,19 +371,6 @@ function partial(rulePlan: MemoryChangePlan, reason: string): MemoryChangePlan {
     derivedThroughSeq: null,
     derivedThroughTick: null,
     maintenanceResult: { status: "partial", failureReason: reason, discarded: [] },
-  };
-}
-
-function mergePlans(
-  rulePlan: MemoryChangePlan,
-  extras: { readonly inserts: MemoryChangePlan["inserts"]; readonly retires: MemoryChangePlan["retires"]; readonly discarded: readonly { source: string; reason: string }[] },
-  result: NonNullable<MemoryChangePlan["maintenanceResult"]>,
-): MemoryChangePlan {
-  return {
-    ...rulePlan,
-    inserts: [...rulePlan.inserts, ...extras.inserts],
-    retires: dedupeRetires([...rulePlan.retires, ...extras.retires]),
-    maintenanceResult: result,
   };
 }
 
