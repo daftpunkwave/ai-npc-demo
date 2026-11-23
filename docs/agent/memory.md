@@ -245,7 +245,7 @@ interface MemoryBundle {
   items: { memoryId: string; kind: MemoryRecord["kind"]; epistemic: MemoryRecord["epistemic"]; summaryZh: string;
            validFromTick: number; score: number; mustInclude: boolean; releasePolicyId: string; sourceObservationIds: string[] }[];
   candidates: number;              // 候选池大小，用于观测。
-  dropped: { memoryId: string; reason: "budget" | "dedupe" | "rank" }[];
+  dropped: { memoryId: string; reason: "budget" | "dedupe" | "rank" }[];  // 解释性明细，条数受候选窗口容量限制且按 memoryId 只记首次原因；落选总量由 candidates 与 items 之差得出。
 }
 
 interface WakeupProposal { atTick: number; dedupeKey: string; reason: "self-due" | "other-due" | "intent"; memoryId: string; counterpartId: string | null }

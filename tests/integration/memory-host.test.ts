@@ -435,6 +435,24 @@ describe("Agent memory host", () => {
       await closeHosts([host], [harness]);
     }
   });
+
+  it("ingests every pending observation in sequence order in a single pass", async () => {
+    const harness = await createMemoryHarness(memoryLedgerModuleDefinition);
+    const host = await startedHost(harness);
+    try {
+      insertObservation(harness, { sequence: 1, tick: 1, eventType: "CreateA", summary: "A0" });
+      insertObservation(harness, { sequence: 2, tick: 2, eventType: "MetersChanged", summary: "B0" });
+      insertObservation(harness, { sequence: 3, tick: 3, eventType: "CreateB", summary: "C0" });
+      await host.ingestAll(3);
+      // 一次 ingestAll 覆盖水位之后的全部观察：缺一条都会让水位停在中间。
+      expect(host.watermark(memoryAgentId)).toMatchObject({
+        revision: 1,
+        observationSeqConsumed: 3,
+      });
+    } finally {
+      await closeHosts([host], [harness]);
+    }
+  });
 });
 
 describe("Memory use publication", () => {

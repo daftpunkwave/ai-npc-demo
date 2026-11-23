@@ -21,6 +21,7 @@ import type {
   RevisionView,
 } from "@ai-npc/module-sdk";
 import {
+  decodeObservationRow,
   encodeMemoryRow,
   jsonObject,
   numberColumn,
@@ -116,19 +117,18 @@ export class MemoryStore {
   readObservations(agentId: string, afterSeq: number): readonly AgentObservation[] {
     return this.storage.transact((tx) => {
       const scope = this.scope(agentId);
-      const table = tx.branch(this.branchId).table("observations");
+      // 单条范围查询直接取回待摄入的全部列：先取主键列表再逐行点查会把一次游标扫描
+      // 拆成 N 次语句执行，而 ingestion 每 tick 对每个 Agent 都会走这条路径。
       return tx.all(
-        `SELECT observation_seq FROM observations
-         WHERE branch_id = ? AND agent_id = ? AND observation_seq > ?
-         ORDER BY observation_seq ASC`,
+        `SELECT observation_id, observation_seq, source_event_ids_json, source_observation_ids_json,
+                occurred_at_tick, sensed_at_tick, known_at_tick, channel, epistemic,
+                confidence, release_policy_id, content_json
+           FROM observations
+          WHERE branch_id = ? AND agent_id = ? AND observation_seq > ?
+          ORDER BY observation_seq ASC`,
         [this.branchId, agentId, afterSeq],
       )
-        .map((row) => table.get({
-          agent_id: agentId,
-          observation_seq: numberColumn(row, "observation_seq"),
-        }))
-        .filter((row): row is StorageRow => row !== null)
-        .map((row) => parseObservation(row, scope));
+        .map((row) => parseObservation(decodeObservationRow(row), scope));
     });
   }
 

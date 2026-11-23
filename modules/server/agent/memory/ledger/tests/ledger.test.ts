@@ -318,6 +318,148 @@ describe("structured ledger", () => {
     });
   });
 
+  it("bounds dropped detail while keeping the candidate count complete", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.candidateLimit = 2;
+    config.recall.topK = 1;
+    config.recall.mustIncludeProspective = 0;
+    config.recall.mustIncludeAboutCounterpart = 0;
+    const memory = createLedgerPort(config, ids);
+    const records = Array.from({ length: 12 }, (_, index) => memoryRow({
+      memoryId: `mem-${String(300 + index).padStart(12, "0")}`,
+      kind: "episodic",
+      tier: "short",
+      validFromTick: 1,
+      salience: 0.5 - index * 0.01,
+      data: { eventType: "MetersChanged" },
+      tags: ["unrelated"],
+      sourceObservationIds: [`obs-${String(300 + index).padStart(12, "0")}`],
+    }));
+    const bundle = memory.retrieve(query(), view(records, 1));
+    expect(bundle.candidates).toBe(12);
+    expect(bundle.items).toHaveLength(1);
+    // 落选明细不超过候选窗口容量，避免随历史记忆总量线性增长。
+    expect(bundle.dropped.length).toBeLessThanOrEqual(config.recall.candidateLimit);
+    expect(bundle.dropped.every((entry) => entry.reason === "rank")).toBe(true);
+  });
+
+  it("records a memory dropped in both mandatory and candidate selection only once", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.mustIncludeProspective = 1;
+    config.recall.mustIncludeAboutCounterpart = 0;
+    const memory = createLedgerPort(config, ids);
+    const records = [
+      memoryRow({
+        memoryId: "mem-000000000221",
+        kind: "prospective",
+        tier: "long",
+        validFromTick: 1,
+        salience: 0.5,
+        data: {
+          sourceKind: "agreement",
+          obligorId: "human-independent",
+          dueTick: 30,
+          state: "open",
+        },
+        sourceObservationIds: ["obs-000000000221"],
+      }),
+    ];
+    // 必选阶段与候选池都会因 token 预算判同一条落选；明细按 memoryId 幂等，只保留首次原因。
+    const bundle = memory.retrieve(query({ maxTokens: 0 }), view(records, 1));
+    expect(bundle.items).toEqual([]);
+    expect(bundle.dropped).toEqual([{ memoryId: "mem-000000000221", reason: "budget" }]);
+  });
+
+  it("keeps dedupe behavior and selection order when the source key is computed lazily", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.mustIncludeProspective = 0;
+    config.recall.mustIncludeAboutCounterpart = 0;
+    const memory = createLedgerPort(config, ids);
+    const records = [
+      memoryRow({
+        memoryId: "mem-000000000231",
+        kind: "episodic",
+        tier: "short",
+        validFromTick: 5,
+        salience: 0.9,
+        data: { eventType: "MetersChanged" },
+        tags: ["agreement"],
+        sourceObservationIds: ["obs-000000000231", "obs-000000000232"],
+      }),
+      memoryRow({
+        memoryId: "mem-000000000232",
+        kind: "episodic",
+        tier: "short",
+        validFromTick: 1,
+        salience: 0.2,
+        data: { eventType: "MetersChanged" },
+        tags: ["unrelated"],
+        sourceObservationIds: ["obs-000000000232", "obs-000000000231"],
+      }),
+      memoryRow({
+        memoryId: "mem-000000000233",
+        kind: "episodic",
+        tier: "short",
+        validFromTick: 3,
+        salience: 0.4,
+        data: { eventType: "MetersChanged" },
+        tags: ["agreement"],
+        sourceObservationIds: ["obs-000000000233"],
+      }),
+    ];
+    const bundle = memory.retrieve(query(), view(records, 1));
+    // 来源集合相同（顺序不同）的两条记录只保留得分更高者，另一条记为去重落选。
+    expect(bundle.items.map((item) => item.memoryId)).toEqual([
+      "mem-000000000231",
+      "mem-000000000233",
+    ]);
+    expect(bundle.dropped).toEqual([{ memoryId: "mem-000000000232", reason: "dedupe" }]);
+  });
+
+  it("does not read the source key of records outside the candidate window", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.candidateLimit = 1;
+    config.recall.topK = 1;
+    config.recall.mustIncludeProspective = 0;
+    config.recall.mustIncludeAboutCounterpart = 0;
+    const memory = createLedgerPort(config, ids);
+    let tailKeyReads = 0;
+    const countedRow = memoryRow({
+      memoryId: "mem-000000000242",
+      kind: "episodic",
+      tier: "short",
+      validFromTick: 1,
+      salience: 0.1,
+      data: { eventType: "MetersChanged" },
+      tags: ["unrelated"],
+      sourceObservationIds: ["obs-000000000242"],
+    });
+    const tail = Object.defineProperty({ ...countedRow }, "sourceObservationIds", {
+      get: () => {
+        tailKeyReads += 1;
+        return countedRow.sourceObservationIds;
+      },
+    });
+    const records = [
+      memoryRow({
+        memoryId: "mem-000000000241",
+        kind: "episodic",
+        tier: "short",
+        validFromTick: 1,
+        salience: 0.9,
+        data: { eventType: "MetersChanged" },
+        tags: ["agreement"],
+        sourceObservationIds: ["obs-000000000241"],
+      }),
+      tail,
+    ];
+    const bundle = memory.retrieve(query(), view(records, 1));
+    expect(bundle.items.map((item) => item.memoryId)).toEqual(["mem-000000000241"]);
+    expect(bundle.dropped).toEqual([{ memoryId: "mem-000000000242", reason: "rank" }]);
+    // 未进入必选与候选窗口的记录不承担去重键的 slice/sort/join 开销。
+    expect(tailKeyReads).toBe(0);
+  });
+
   it("does not retire a relation row that was only created in the same plan", () => {
     const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
     config.relationModifiersPerTarget = 1;

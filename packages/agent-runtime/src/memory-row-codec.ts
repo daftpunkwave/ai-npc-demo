@@ -9,6 +9,7 @@ import {
   type Json,
   type MemoryChangePlan,
   type MemoryScope,
+  type StorageRawRow,
   type StorageRow,
 } from "@ai-npc/contracts";
 import type { MemoryRecordView } from "@ai-npc/module-sdk";
@@ -69,6 +70,47 @@ export function parseObservation(row: StorageRow, scope: MemoryScope): AgentObse
     releasePolicyId: stringColumn(row, "release_policy_id"),
     content: row["content_json"],
   });
+}
+
+/**
+ * 把原始观察查询行转换为表级行：JSON 列由文本解析为值，其余列原样交给 parseObservation 校验。
+ * 原始查询绕开了表级接口的 JSON 解码，因此这里必须补齐，否则解析器会收到未解析的 TEXT。
+ */
+export function decodeObservationRow(row: StorageRawRow): StorageRow {
+  const text = (key: string): string => {
+    const value = row[key];
+    if (typeof value !== "string") throw new Error(`observation raw column ${key} is not text`);
+    return value;
+  };
+  const json = (key: string): Json => {
+    try {
+      return JSON.parse(text(key)) as Json;
+    } catch (error) {
+      throw new Error(`observation raw column ${key} is not valid JSON`, { cause: error });
+    }
+  };
+  return {
+    observation_id: text("observation_id"),
+    observation_seq: rawNumber(row, "observation_seq"),
+    source_event_ids_json: json("source_event_ids_json"),
+    source_observation_ids_json: json("source_observation_ids_json"),
+    occurred_at_tick: rawNumber(row, "occurred_at_tick"),
+    sensed_at_tick: rawNumber(row, "sensed_at_tick"),
+    known_at_tick: rawNumber(row, "known_at_tick"),
+    channel: text("channel"),
+    epistemic: text("epistemic"),
+    confidence: rawNumber(row, "confidence"),
+    release_policy_id: text("release_policy_id"),
+    content_json: json("content_json"),
+  };
+}
+
+function rawNumber(row: StorageRawRow, key: string): number {
+  const value = row[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`observation raw column ${key} is not a number`);
+  }
+  return value;
 }
 
 export function parseRecord(row: StorageRow): MemoryRecordView {
