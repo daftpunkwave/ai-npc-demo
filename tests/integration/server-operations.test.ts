@@ -251,10 +251,12 @@ describe("运营操作幂等", () => {
     expect(ledger(host)).toEqual(afterReset);
 
     // 结构非法：400 validation，且零写入。
+    // 玩家自助入口不提供恢复预检，`dryRun: true` 必须被显式拒绝而不是真正执行恢复。
     for (const request of [
       { url: "/api/v1/campaign/pause", payload: { expectedRunVersion: 0 } },
       { url: "/api/v1/campaign/snapshots", payload: { operationId: "op-000000000017", label: "" } },
       { url: "/api/v1/campaign/restore", payload: { operationId: "op-000000000018", snapshotId: firstSnapshotBody.snapshotId, extra: true } },
+      { url: "/api/v1/campaign/restore", payload: { operationId: "op-000000000019", snapshotId: firstSnapshotBody.snapshotId, dryRun: true } },
       { url: "/api/v1/campaign/reset", payload: {} },
     ]) {
       const response = await post(host, session, request.url, request.payload as Record<string, Json>);

@@ -213,8 +213,12 @@ export function registerCampaignOperations(
     if (!body.success) {
       return sendHttpError(reply, "validation", "恢复请求结构不合法");
     }
-    // 预检能力只由控制台入口开放；玩家自助入口即使传 dryRun 也会被忽略并真正恢复。
-    if (registration.includeDryRun === true && body.data.dryRun === true) {
+    if (body.data.dryRun === true) {
+      // 预检只由开放该能力的入口提供。未开放时显式拒绝，不能把 dryRun: true
+      // 当成真正恢复执行——那会让「只想看校验结果」的调用直接切换在线分支。
+      if (registration.includeDryRun !== true) {
+        return sendHttpError(reply, "validation", "该入口不提供恢复预检");
+      }
       if (options.save.validateRestore === undefined) {
         return sendHttpError(reply, "not-ready", "恢复预检尚未就绪");
       }
