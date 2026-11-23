@@ -67,6 +67,8 @@ export const runDetailResponseSchema = z
   })
   .strict();
 
+export type RunDetailResponse = z.infer<typeof runDetailResponseSchema>;
+
 export const runStatusChangeRequestSchema = z
   .object({
     operationId: idSchemas.op,
@@ -172,6 +174,14 @@ export const runReportResponseSchema = z
 
 export type RunReportResponse = z.infer<typeof runReportResponseSchema>;
 
+/**
+ * 实验标识：来自实验规格的 `experimentId`，是配置引用（如 `exp-memory-promise-v1`），
+ * 不是运行期生成的 `<前缀>-<12 位 base32>` ID，因此不能复用 `idSchemas.exp`。
+ */
+export const experimentIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "实验标识只能由字母、数字、点、下划线与连字符组成");
+
 export const experimentCreateRequestSchema = z.union([
   z.object({ experimentSpec: z.record(z.string().min(1), jsonValueSchema) }).strict(),
   z.object({ experimentRef: z.string().min(1) }).strict(),
@@ -179,7 +189,7 @@ export const experimentCreateRequestSchema = z.union([
 
 export const experimentCreateResponseSchema = z
   .object({
-    experimentId: idSchemas.exp,
+    experimentId: experimentIdSchema,
     runIds: z.array(idSchemas.run),
   })
   .strict();
@@ -204,13 +214,29 @@ export const experimentCellSummarySchema = z
 
 export const experimentDetailResponseSchema = z
   .object({
-    experimentId: idSchemas.exp,
+    experimentId: experimentIdSchema,
     runs: z.array(runSummarySchema),
     cells: z.array(experimentCellSummarySchema),
   })
   .strict();
 
 export type ExperimentDetailResponse = z.infer<typeof experimentDetailResponseSchema>;
+
+/** 实验列表的一项：标识与已创建的 run 数量。 */
+export const experimentListEntrySchema = z
+  .object({
+    experimentId: experimentIdSchema,
+    runCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const experimentsListResponseSchema = z
+  .object({
+    experiments: z.array(experimentListEntrySchema),
+  })
+  .strict();
+
+export type ExperimentsListResponse = z.infer<typeof experimentsListResponseSchema>;
 
 export const exportRequestSchema = z
   .object({

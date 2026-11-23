@@ -17,6 +17,7 @@
     "@ai-npc/mod-console-faction-ops-standard": "workspace:*",
     "@ai-npc/mod-console-debug-standard": "workspace:*",
     "@ai-npc/mod-console-observability-standard": "workspace:*",
+    "@ai-npc/mod-console-evaluation-standard": "workspace:*",
     "react": "^19",
     "react-dom": "^19"
   },

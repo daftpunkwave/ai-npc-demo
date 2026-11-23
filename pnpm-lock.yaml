@@ -287,6 +287,9 @@ importers:
       '@ai-npc/mod-console-debug-standard':
         specifier: workspace:*
         version: link:../../modules/console/debug/standard
+      '@ai-npc/mod-console-evaluation-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/evaluation/standard
       '@ai-npc/mod-console-faction-ops-standard':
         specifier: workspace:*
         version: link:../../modules/console/faction-ops/standard
@@ -414,6 +417,9 @@ importers:
       '@ai-npc/mod-console-debug-standard':
         specifier: workspace:*
         version: link:../../modules/console/debug/standard
+      '@ai-npc/mod-console-evaluation-standard':
+        specifier: workspace:*
+        version: link:../../modules/console/evaluation/standard
       '@ai-npc/mod-console-faction-ops-standard':
         specifier: workspace:*
         version: link:../../modules/console/faction-ops/standard
@@ -660,6 +666,18 @@ importers:
       '@ai-npc/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
+      '@ai-npc/client-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/client-sdk
+      '@ai-npc/contracts':
+        specifier: workspace:*
+        version: link:../../../../packages/contracts
+      react:
+        specifier: ^19
+        version: 19.3.1
+
+  modules/console/evaluation/standard:
+    dependencies:
       '@ai-npc/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk

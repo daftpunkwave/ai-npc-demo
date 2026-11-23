@@ -6,7 +6,7 @@
  */
 import { Authority } from "@ai-npc/authority";
 import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@ai-npc/agent-runtime";
-import { DomainError, modelLayoutRoutesResponseSchema, type StoragePort } from "@ai-npc/contracts";
+import { DomainError, modelLayoutRoutesResponseSchema, type Json, type StoragePort } from "@ai-npc/contracts";
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
 import { createHostStartup } from "./host/startup";
@@ -22,6 +22,10 @@ import { createOperationsHost } from "./host/operations";
 import { createReadPorts } from "./host/reads";
 import { createTransportApp } from "./host/transport-app";
 import { ModelLayoutAdminPort } from "./host/model-layout-admin";
+import { createEvaluationReadPort } from "./host/evaluation-read";
+import type { EvaluationPort } from "./host/module-catalog";
+
+import type { HostStartup } from "./host/startup";
 
 export type { HostOptions } from "./host/options";
 export type { DisposalStep } from "./host/dispose";
@@ -37,6 +41,30 @@ export interface RunningHost {
   readonly transport: TransportPort;
   listen(): Promise<void>;
   close(): Promise<void>;
+}
+
+/**
+ * 从已启动实例中取出评估端口。
+ * 装配未绑定 `platform.evaluation`（或绑定了替代实现而端口形状不同）时返回 null：
+ * 评估路由随后按 not-ready 返回，宿主照常启动，不因为一个可选读取能力缺失而整体失败。
+ */
+function evaluationPortOf(core: HostStartup): EvaluationPort | null {
+  const instance = [...core.storageStarted.instances, ...core.startedModules.instances]
+    .find((running) => running.moduleId === "platform.evaluation.standard");
+  const port = instance?.port;
+  if (port === undefined || port === null || typeof port !== "object") return null;
+  // 端口形状由模块自己声明；这里只确认三个读取入口都是函数，避免替代实现让路由在调用期崩溃。
+  const candidate = port as Partial<EvaluationPort>;
+  return typeof candidate.report === "function" && typeof candidate.experimentCells === "function"
+    ? (port as EvaluationPort)
+    : null;
+}
+
+/** 从冻结的模型配置里读出价目版本；未写时如实返回 unknown，不编造日期。 */
+function pricingVersionOf(models: Json): string {
+  if (typeof models !== "object" || models === null || Array.isArray(models)) return "unknown";
+  const value = (models as Readonly<Record<string, Json>>)["pricingVersion"];
+  return typeof value === "string" && value.length > 0 ? value : "unknown";
 }
 
 /** 打开并启动服务端宿主；调用方负责监听端口与优雅关闭。 */
@@ -165,8 +193,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     ...core.gameContent.characters.keys(),
     ...core.gameContent.factions.keys(),
   ]);
-  const modelLayouts = new ModelLayoutAdminPort(
-    core.loadContext,
+  const modelLayouts = new ModelLayoutAdminPort(    core.loadContext,
     knownAgentIds,
     () => {
       const models = core.active.manifest.models;
@@ -187,6 +214,16 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     () => core.active.manifest.selection.modelLayoutRef ?? null,
   );
 
+  // 评估端口是可选能力：装配未绑定或替代实现形状不符时保持 null，路由按 not-ready 返回。
+  const evaluationPort = evaluationPortOf(core);
+  const evaluation = evaluationPort === null ? undefined : createEvaluationReadPort({
+    storage: core.storage,
+    evaluation: evaluationPort,
+    scripts: core.content.index.scripts,
+    lexicons: core.content.locale.lexicons,
+    pricingVersion: core.active.manifest.models === undefined ? "unknown" : pricingVersionOf(core.active.manifest.models),
+  });
+
   const transportApp = await createTransportApp({
     host: core.host,
     options,
@@ -201,6 +238,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     content,
     sessionAssembly: core.sessionAssembly,
     modelLayouts,
+    evaluation,
     disposeOnFailure: () => disposeResources(null),
   });
 

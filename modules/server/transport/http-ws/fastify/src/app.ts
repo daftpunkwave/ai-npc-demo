@@ -16,7 +16,7 @@ import { registerAuthRoutes } from "./routes/auth-routes";
 import { registerConsoleOperationsRoutes } from "./routes/console-operations-routes";
 import { registerConsoleRoutes } from "./routes/console-routes";
 import { registerConsoleModelRoutes } from "./routes/console-model-routes";
-import { registerConsoleResearchRoutes } from "./routes/console-research-routes";
+import { registerConsoleEvaluationRoutes, registerConsoleResearchRoutes } from "./routes/console-research-routes";
 import { registerContentRoutes } from "./routes/content-routes";
 import { registerOperationsRoutes } from "./routes/operations-routes";
 import { registerPlayerRoutes } from "./routes/player-routes";
@@ -235,6 +235,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerConsoleRoutes(context);
   registerConsoleModelRoutes(context);
   registerConsoleResearchRoutes(context);
+  registerConsoleEvaluationRoutes(context);
   registerConsoleOperationsRoutes(context);
   registerErrorHandling(app, report);
 
