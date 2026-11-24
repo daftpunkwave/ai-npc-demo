@@ -50,14 +50,33 @@ describe("visibleNotifications", () => {
     expect(visibleNotifications([notification("协议即将到期", 30)], dismissed)).toHaveLength(0);
   });
 
-  it("同一稳定键在一次投影里只展示一次，并取最后一次的 tick", () => {
-    const visible = visibleNotifications(
-      [notification("公共广播", 3, "public"), notification("公共广播", 9, "public")],
-      new Set(),
-    );
+  it("同一稳定键的多条提醒都保留，且共享关闭状态", () => {
+    const duplicates = [notification("公共广播", 3, "public"), notification("公共广播", 9, "public")];
 
-    expect(visible).toHaveLength(1);
-    expect(visible[0]?.worldTick).toBe(9);
+    const visible = visibleNotifications(duplicates, new Set());
+    expect(visible).toHaveLength(2);
+    expect(visible.map((item) => item.occurrenceKey)).toEqual([
+      `${visible[0]?.key}\u0000${1}`,
+      `${visible[0]?.key}\u0000${0}`,
+    ]);
+
+    const dismissed = dismissNotification(new Set(), visible[0]?.key ?? "");
+    expect(visibleNotifications(duplicates, dismissed)).toHaveLength(0);
+  });
+
+  it("按最后一次出现的位置取最近三条，交错重复不会挤掉最新提醒", () => {
+    const notifications = [
+      notification("甲", 1),
+      notification("乙", 2),
+      notification("丙", 3),
+      notification("丁", 4),
+      notification("甲", 5),
+    ];
+
+    const visible = visibleNotifications(notifications, new Set());
+
+    expect(visible.map((item) => item.text)).toEqual(["甲", "丁", "丙"]);
+    expect(visible[0]?.worldTick).toBe(5);
   });
 });
 

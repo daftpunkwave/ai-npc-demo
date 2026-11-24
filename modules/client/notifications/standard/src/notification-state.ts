@@ -8,32 +8,36 @@ import { playerNotificationKey, type PlayerNotificationView } from "@ai-npc/cont
 export const visibleNotificationLimit = 3;
 
 export interface DisplayNotification {
+  /** 关闭状态与服务端增量比对共用的稳定键；同一键的多条提醒共享关闭状态。 */
   readonly key: string;
+  /** 仅用于列表渲染的唯一键；同一稳定键的多条提醒不合并显示。 */
+  readonly occurrenceKey: string;
   readonly kind: PlayerNotificationView["kind"];
   readonly text: string;
   readonly worldTick: number;
 }
 
 /**
- * 只展示最近的若干条提醒，同一稳定键只保留最后一次出现的值。
- * 键不含 worldTick，因此同一提醒在下一 tick 重新派生时仍然沿用用户的关闭状态。
+ * 只展示最近的若干条提醒，按数组顺序保留同一稳定键的多条实例。
+ * `key` 不含 worldTick，因此同一提醒在下一 tick 重新派生时仍然沿用用户的关闭状态；
+ * `occurrenceKey` 只承担渲染身份，不参与关闭语义。
  */
 export function visibleNotifications(
   notifications: readonly PlayerNotificationView[],
   dismissed: ReadonlySet<string>,
   limit: number = visibleNotificationLimit,
 ): DisplayNotification[] {
-  const byKey = new Map<string, DisplayNotification>();
-  for (const notification of notifications) {
-    const key = playerNotificationKey(notification);
-    byKey.set(key, {
-      key,
-      kind: notification.kind,
-      text: notification.text,
-      worldTick: notification.worldTick,
-    });
-  }
-  return [...byKey.values()]
+  return notifications
+    .map((notification, index) => {
+      const key = playerNotificationKey(notification);
+      return {
+        key,
+        occurrenceKey: `${key}\u0000${index}`,
+        kind: notification.kind,
+        text: notification.text,
+        worldTick: notification.worldTick,
+      };
+    })
     .filter((notification) => !dismissed.has(notification.key))
     .slice(-limit)
     .reverse();

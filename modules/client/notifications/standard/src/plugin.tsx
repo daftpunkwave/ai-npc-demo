@@ -23,7 +23,7 @@ function NotificationsView(): ReactNode {
   return (
     <div className="notification-stack" aria-live="polite">
       {visible.map((notification) => (
-        <article className={`notification notification-${notification.kind}`} key={notification.key}>
+        <article className={`notification notification-${notification.kind}`} key={notification.occurrenceKey}>
           <span>{notification.kind === "urgent" ? "紧急" : notification.kind === "deadline" ? "期限" : "提醒"}</span>
           <p>{notification.text}</p>
           <button
