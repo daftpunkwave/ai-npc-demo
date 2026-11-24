@@ -42,6 +42,8 @@ export type ExperimentSpec = z.infer<typeof experimentSpecSchema>;
 
 /** 展开后的单个 run：变体、脚本分支、重复序号与派生 seed。 */
 export interface ExpandedRun {
+  /** 归属的实验标识；写入 RunSpec 供评估读取归组，不靠 seed 推断。 */
+  readonly experimentId: string;
   readonly variantRef: string;
   /** 脚本分支名；脚本没有命名分支时为 null，调用方据此省略 RunSpec 的 `script.branch`。 */
   readonly scriptBranch: string | null;
@@ -72,6 +74,7 @@ export function expandExperimentRuns(spec: ExperimentSpec): readonly ExpandedRun
     for (const variantRef of variants) {
       for (const scriptBranch of branches) {
         runs.push({
+          experimentId: spec.experimentId,
           variantRef,
           scriptBranch,
           repetition,

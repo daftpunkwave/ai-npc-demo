@@ -4,9 +4,10 @@
  * 约束与禁忌：不启动 Agent 运行时、不推进时钟、不写世界状态；失败时不留下半个 run 或半个 artifact。
  */
 import type { HostServices, Json, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
-import type { ContentPack, LoadedConfig, Roster, RunSpec } from "@ai-npc/experiment";
+import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster, RunSpec } from "@ai-npc/experiment";
 import { createRun, type RunCreateResult } from "./run-write";
 import { exportRun } from "./run-export";
+import { createExperiment, type ExperimentCreateResult } from "./experiment-write";
 
 /** 写入端口的输入；与读取端口共用同一份存储与内容视图。 */
 export interface RunWritesInput {
@@ -19,6 +20,8 @@ export interface RunWritesInput {
   readonly loadRoster: (rosterRef: string) => LoadedConfig<Roster>;
   readonly worldId: string;
   readonly repoRoot: string;
+  /** 配置加载上下文；实验规格解析与名册加载共用。 */
+  readonly loadContext: ConfigLoadContext;
   /** artifact 存储；导出包的落盘目标。 */
   readonly artifacts: {
     put(input: { readonly runId: string | null; readonly kind: "export"; readonly value: Json }): Promise<{ readonly artifactId: string }>;
@@ -28,6 +31,12 @@ export interface RunWritesInput {
 /** 写入端口：控制台评估接口的写操作入口。 */
 export interface RunWrites {
   createRun(runSpec: RunSpec): Promise<RunCreateResult>;
+  /** 按实验规格展开并逐个创建 run；规格不合法时在创建前失败。 */
+  createExperiment(request: {
+    readonly experimentSpec: unknown;
+  } | {
+    readonly experimentRef: string;
+  }): Promise<ExperimentCreateResult>;
   exportRun(request: {
     readonly runId: string;
     readonly redaction: "redacted" | "raw";
@@ -48,6 +57,21 @@ export function createRunWrites(input: RunWritesInput): RunWrites {
       worldId: input.worldId,
       repoRoot: input.repoRoot,
     }, runSpec),
+    createExperiment: (request) => createExperiment({
+      content: input.content,
+      loadRoster: input.loadRoster,
+      loadContext: input.loadContext,
+      runWrite: {
+        host: input.host,
+        storage: input.storage,
+        content: input.content,
+        definitions: input.definitions,
+        contentVersion: input.contentVersion,
+        loadRoster: input.loadRoster,
+        worldId: input.worldId,
+        repoRoot: input.repoRoot,
+      },
+    }, request),
     exportRun: (request) => exportRun({
       host: input.host,
       storage: input.storage,

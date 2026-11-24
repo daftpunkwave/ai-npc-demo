@@ -16,6 +16,7 @@ import {
   runsResponseSchema,
   runCreateResponseSchema,
   exportResponseSchema,
+  experimentCreateResponseSchema,
 } from "@ai-npc/contracts";
 
 const hosts: RunningHost[] = [];
@@ -462,6 +463,180 @@ describe("控制台评估读取接口", () => {
     expect(worldTickOf(viewStable.json())).toBe(tickAfterRestore);
   });
 
+  it("按实验规格展开并逐个创建 run，实验标识写入每个 run", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    // 内联规格指向测试装配：变体 × 脚本分支 × 重复次数都要体现在创建结果里。
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: {
+        schemaVersion: 1,
+        experimentId: "exp-inline-check-v1",
+        base: {
+          moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+          scenarioRef: "watergate-v1", rosterRef: "core-3",
+          modelLayoutRef: "deterministic-model-layout-v1",
+          seed: "inline-check-v1",
+          player: { principalId: "player-1", factionId: "human-neutral" },
+          mode: "closed-loop", initialState: { kind: "cold-start" },
+          clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+          failurePolicy: "strict",
+        },
+        scriptRef: "s-promise",
+        scriptBranches: ["keep", "break"],
+        commonPatchRefs: [],
+        variants: ["memory-m0-window", "memory-m1-structured-ledger"],
+        repetitions: 2,
+        runOrder: "sequential",
+      } },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const created = experimentCreateResponseSchema.parse(response.json());
+    expect(created.experimentId).toBe("exp-inline-check-v1");
+    // 2 变体 × 2 分支 × 2 重复 = 8 个 run。
+    expect(created.runIds).toHaveLength(8);
+
+    // 每个 run 都能被实验接口归组：归组依据是写入的 experimentId，不是 seed。
+    const detail = await host.app.inject({
+      method: "GET", url: "/api/v1/console/experiments/exp-inline-check-v1", headers,
+    });
+    expect(detail.statusCode).toBe(200);
+    const parsed = experimentDetailResponseSchema.parse(detail.json());
+    expect(parsed.runs).toHaveLength(8);
+    // 变体 × 脚本分支应分成 4 个格子。
+    expect(parsed.cells).toHaveLength(4);
+    expect(parsed.cells.map((cell) => `${cell.variant}/${cell.scriptBranch}`).sort())
+      .toEqual([
+        "memory-m0-window/break", "memory-m0-window/keep",
+        "memory-m1-structured-ledger/break", "memory-m1-structured-ledger/keep",
+      ]);
+  });
+
+  it("实验规格不合法时在创建任何 run 之前失败", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const before = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: { schemaVersion: 1, experimentId: "bad" } },
+    });
+    // 结构不合法由路由层拒绝。
+    expect(response.statusCode).toBe(400);
+
+    const after = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    expect(after).toBe(before);
+  });
+  it("重复创建同一实验返回既有 run，不产生重复数据", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const payload = { experimentSpec: {
+      schemaVersion: 1, experimentId: "exp-idempotent-v1",
+      base: {
+        moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+        scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: "idem-v1",
+        player: { principalId: "player-1", factionId: "human-neutral" },
+        mode: "closed-loop", initialState: { kind: "cold-start" },
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+        failurePolicy: "strict",
+      },
+      scriptRef: "s-promise", scriptBranches: ["keep"], commonPatchRefs: [],
+      variants: ["memory-m0-window"], repetitions: 1, runOrder: "sequential",
+    } };
+    const first = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers, payload,
+    })).json());
+    expect(first.runIds).toHaveLength(1);
+    expect(first.failedRunCount).toBe(0);
+
+    // 重试同一请求：返回同一批 run，不重复创建。
+    const second = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers, payload,
+    })).json());
+    expect(second.runIds).toEqual(first.runIds);
+    const total = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.filter((run) => run.variant === "memory-m0-window").length;
+    expect(total).toBe(1);
+  });
+
+  it("部分 run 预检失败时保留每个 run 的状态与逐条原因", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    // 变体用一个不存在的 patch 引用：该 run 预检失败，另一个变体仍应创建。
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: {
+        schemaVersion: 1, experimentId: "exp-partial-v1",
+        base: {
+          moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+          scenarioRef: "watergate-v1", rosterRef: "core-3",
+          modelLayoutRef: "deterministic-model-layout-v1", seed: "partial-v1",
+          player: { principalId: "player-1", factionId: "human-neutral" },
+          mode: "closed-loop", initialState: { kind: "cold-start" },
+          clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+          failurePolicy: "strict",
+        },
+        scriptRef: "s-promise", scriptBranches: [], commonPatchRefs: [],
+        variants: ["memory-m0-window", "no-such-variant"], repetitions: 1, runOrder: "sequential",
+      } },
+    });
+    // 变体引用不存在时在规格校验阶段就失败，不创建任何 run。
+    expect(response.statusCode).toBe(400);
+    const runs = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs;
+    expect(runs.filter((run) => run.variant === "memory-m0-window").length).toBe(0);
+  });
+
+  it("超出单次展开上限的实验被拒绝且不创建 run", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const before = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    // 变体 × 分支 × 重复次数超过上限：拒绝而不是创建任意多份 run。
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: {
+        schemaVersion: 1, experimentId: "exp-too-large-v1",
+        base: {
+          moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+          scenarioRef: "watergate-v1", rosterRef: "core-3",
+          modelLayoutRef: "deterministic-model-layout-v1", seed: "too-large-v1",
+          player: { principalId: "player-1", factionId: "human-neutral" },
+          mode: "closed-loop", initialState: { kind: "cold-start" },
+          clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+          failurePolicy: "strict",
+        },
+        scriptRef: "s-promise", scriptBranches: ["keep", "break"], commonPatchRefs: [],
+        variants: ["memory-m0-window"], repetitions: 200, runOrder: "sequential",
+      } },
+    });
+    expect(response.statusCode).toBe(400);
+    const after = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    expect(after).toBe(before);
+  });
+
+  it("评估员与操作员不能创建实验", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "evaluation-console");
+    for (const role of ["evaluator", "operator"]) {
+      const response = await host.app.inject({
+        method: "POST", url: "/api/v1/console/experiments",
+        headers: consoleHeader(consoleToken, role),
+        payload: { experimentSpec: { schemaVersion: 1, experimentId: "exp-denied-v1" } },
+      });
+      expect(response.statusCode, role).toBe(403);
+    }
+  });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

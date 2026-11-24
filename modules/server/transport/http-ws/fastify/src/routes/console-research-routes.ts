@@ -40,6 +40,8 @@ import {
   runCreateResponseSchema,
   exportRequestSchema,
   exportResponseSchema,
+  experimentCreateRequestSchema,
+  experimentCreateResponseSchema,
 } from "@ai-npc/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
@@ -332,6 +334,21 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     const body = runCreateRequestSchema.safeParse(request.body);
     if (!body.success) return sendHttpError(reply, "validation", "run 规格结构不合法");
     return runCreateResponseSchema.parse(await options.console.evaluationWrites.createRun(body.data.runSpec));
+  });
+
+  app.post("/api/v1/console/experiments", async (request, reply) => {
+    if (requireEvaluationWriter(request, reply) === null) return;
+    if (options.console?.evaluationWrites?.createExperiment === undefined) {
+      return sendHttpError(reply, "not-ready", "实验创建尚未就绪");
+    }
+    const body = experimentCreateRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "实验规格请求结构不合法");
+    // 创建是部分可成功的：返回 200 并保留每个 run 的身份、状态与失败原因。
+    // 用整体错误码会把已经创建的 run 与需要修正的具体问题一起丢掉。
+    // 展开规模由端口层按上限约束，响应因此有界。
+    return experimentCreateResponseSchema.parse(
+      await options.console.evaluationWrites.createExperiment(body.data),
+    );
   });
 
   app.post("/api/v1/console/exports", async (request, reply) => {
