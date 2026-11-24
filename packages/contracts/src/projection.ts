@@ -371,6 +371,14 @@ export const playerNotificationViewSchema = z
 
 export type PlayerNotificationView = z.infer<typeof playerNotificationViewSchema>;
 
+/**
+ * 提醒的稳定键：派生提醒的 worldTick 会随 tick 重算，因此不参与同一提醒的身份识别。
+ * 服务端增量比对与客户端关闭状态都依赖该键，两端只能使用这一份定义。
+ */
+export function playerNotificationKey(item: Pick<PlayerNotificationView, "kind" | "text">): string {
+  return `${item.kind}\u0000${item.text}`;
+}
+
 /** 玩家可见状态：字段按玩家受众裁剪，不含任何 Agent 的记忆与私有内容。 */
 export const playerProjectionSchema = z
   .object({
