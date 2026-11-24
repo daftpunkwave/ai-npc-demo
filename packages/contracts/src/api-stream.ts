@@ -8,6 +8,7 @@ import { z } from "zod";
 import { errorCodeSchema } from "./errors";
 import { principalIdSchema } from "./ids";
 import { jsonValueSchema } from "./json";
+import { conversationLineSchema, playerNotificationViewSchema } from "./projection";
 /** WS 频道：玩家投影、控制台健康、时间线与 turn 状态。 */
 export const streamChannelSchema = z.enum(["player", "console.health", "console.timeline", "console.turns"]);
 
@@ -91,15 +92,31 @@ export const streamDeltaMessageSchema = z
 
 export type StreamDeltaMessage = z.infer<typeof streamDeltaMessageSchema>;
 
-export const streamAppendMessageSchema = z
-  .object({
-    type: z.literal("append"),
-    channel: streamChannelSchema,
-    streamSeq: z.number().int().nonnegative(),
-    kind: z.enum(["dialogue", "notification", "timeline"]),
-    item: jsonValueSchema,
-  })
-  .strict();
+/**
+ * 追加帧：按 `kind` 判别，`item` 的类型由对应视图契约固定。
+ * 只声明已有生产者的两种追加（对白与提醒）；未实现的追加种类不得进入公开 schema，
+ * 否则消费者无法区分「未实现」与「暂无数据」。
+ */
+export const streamAppendMessageSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      type: z.literal("append"),
+      channel: z.literal("player"),
+      streamSeq: z.number().int().nonnegative(),
+      kind: z.literal("dialogue"),
+      item: conversationLineSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("append"),
+      channel: z.literal("player"),
+      streamSeq: z.number().int().nonnegative(),
+      kind: z.literal("notification"),
+      item: playerNotificationViewSchema,
+    })
+    .strict(),
+]);
 
 export type StreamAppendMessage = z.infer<typeof streamAppendMessageSchema>;
 

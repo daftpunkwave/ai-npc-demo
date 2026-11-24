@@ -113,7 +113,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | C→S | `subscribe` | `channel`、`fromStreamSeq`（首次为 `null`） |
 | S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`worldId`、`branchId`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准。`worldId` 与 `branchId` 是该快照所属的分支身份，客户端以帧内值为准更新本地世界与分支 |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
-| S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。已实现 `dialogue` 和 `notification`，`timeline` 为目标 |
+| S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。`kind` 与 `item` 按判别联合绑定：`dialogue` 的 `item` 必须满足 `ConversationLine`，`notification` 的 `item` 必须满足 `PlayerNotificationView`，且 `channel` 固定为 `player`。未实现的追加种类不在公开 schema 内，消费方无需区分“未实现”与“暂无数据” |
 | C→S | `ack` | `channel`、`streamSeq` |
 | C→S / S→C | `ping` / `pong` | — |
 | S→C | `error` | `code`、`safeMessage` |
