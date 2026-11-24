@@ -17,6 +17,8 @@ class FakeWebSocket {
 
   readyState = 0;
   readonly sent: string[] = [];
+  /** 置位后 send 抛错，用于模拟底层 socket 写入失败。 */
+  failSend = false;
   private readonly listeners = new Map<string, Set<Listener>>();
 
   constructor() {
@@ -30,6 +32,9 @@ class FakeWebSocket {
   }
 
   send(payload: string): void {
+    if (this.failSend) {
+      throw new Error("socket 写入失败");
+    }
     this.sent.push(payload);
   }
 
@@ -120,6 +125,38 @@ describe("StreamClient 游标确认", () => {
 
     expect(applied).toEqual([1, 2]);
     expect(acknowledgedSeqs(socket)).toEqual([1, 2]);
+    client.close();
+  });
+
+  it("ack 发送失败时已应用的帧不被当作未应用，也不需要重取快照", () => {
+    const errors: unknown[] = [];
+    const rejected: unknown[] = [];
+    const applied: number[] = [];
+    const { client, socket } = connect({
+      onMessage: (message) => {
+        if (message.type === "delta") {
+          applied.push(message.streamSeq);
+        }
+      },
+      onError: (error) => errors.push(error),
+      onFrameRejected: (error) => rejected.push(error),
+    });
+    // 模拟底层 socket 在确认帧时写入失败（对端已不可写）。
+    // ack 失败只影响「通知服务端」，不改变「本帧已被应用」这一事实。
+    socket.failSend = true;
+
+    socket.serverMessage(delta(2, {}));
+
+    expect(applied).toEqual([2]);
+    expect(errors).toHaveLength(1);
+    // 关键断言：应用成功的帧不能因为 ack 失败而被当成拒帧。
+    expect(rejected).toHaveLength(0);
+
+    // 也不应进入等待快照状态：后续帧照常应用并确认。
+    socket.failSend = false;
+    socket.serverMessage(delta(3, {}));
+    expect(applied).toEqual([2, 3]);
+    expect(acknowledgedSeqs(socket)).toEqual([3]);
     client.close();
   });
 
