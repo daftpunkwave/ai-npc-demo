@@ -41,8 +41,11 @@ export class StreamHub {
   private readonly replay: ReplayStore;
   private readonly sender: SocketSender;
   private readonly connections = new Map<StreamSocket, Connection>();
-  /** 每个会话的活动连接数；用于判断重放缓冲是否仍绑定在线连接。 */
+  /** 每个会话的活动连接数；用于判断重放缓冲是否仍绑定在线连接，并限制单会话连接数。 */
   private readonly sessionConnections = new Map<string, number>();
+  /** 全局连接上限与单会话连接上限；与其它 hubLimits 同源，不在此另设默认。 */
+  private readonly maxConnections: number;
+  private readonly maxConnectionsPerSession: number;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   private lastSweepAt: number;
   private playerConnections = 0;
@@ -63,6 +66,8 @@ export class StreamHub {
     this.now = options.now ?? (() => Date.now());
     const limits = hubLimits(options);
     this.sweepIntervalMs = limits.sweepIntervalMs;
+    this.maxConnections = limits.maxConnections;
+    this.maxConnectionsPerSession = limits.maxConnectionsPerSession;
     this.branchId = "";
     this.lastSweepAt = this.now();
     this.sessions = new SessionRegistry({
@@ -143,6 +148,16 @@ export class StreamHub {
     const session = this.sessions.activeSession(ticket.sessionId);
     if (session === null) {
       this.sender.close(socket, 4401, "invalid ticket");
+      return;
+    }
+    // 容量检查必须在注册监听与计入计数之前：超限连接既不能占 Map 记录，
+    // 也不能让 sessionConnections 与 playerConnections 留下无对应连接的计数。
+    if (this.connections.size >= this.maxConnections) {
+      this.sender.close(socket, 1013, "too many connections");
+      return;
+    }
+    if ((this.sessionConnections.get(session.sessionId) ?? 0) >= this.maxConnectionsPerSession) {
+      this.sender.close(socket, 1013, "too many session connections");
       return;
     }
     const channels = this.options.channelsFor(session.auth);
@@ -383,14 +398,18 @@ export class StreamHub {
         continue;
       }
       for (const channel of [...connection.subscriptions]) {
-        if (channel !== playerChannel) {
+        if (channel === playerChannel) {
+          if (projection === null) {
+            this.sender.close(connection.socket, 1012, "projection unavailable");
+            continue;
+          }
+          this.sender.sendSnapshotPayload(connection, channel, projection);
           continue;
         }
-        if (projection === null) {
-          this.sender.close(connection.socket, 1012, "projection unavailable");
-          continue;
-        }
-        this.sender.sendSnapshotPayload(connection, channel, projection);
+        // 分支切换后非玩家频道的快照同样失效：它们的内容按分支查询，
+        // 旧快照描述的是已归档分支。交给 sendSnapshot 统一取快照来源，
+        // 该频道未实现或未接线时它自行跳过，取快照抛错时按频道不可用关闭连接。
+        this.sender.sendSnapshot(connection, channel);
       }
     }
     if (projection !== null) {
