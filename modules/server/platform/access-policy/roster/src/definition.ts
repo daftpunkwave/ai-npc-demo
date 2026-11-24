@@ -12,6 +12,7 @@ export const accessPolicyConfigSchema = z
     playerCommands: z.array(z.string().min(1)).default([
       "campaign.start",
       "dialogue.say",
+      "broadcast.say",
       "information.share",
       "agreement.propose",
       "agreement.respond",

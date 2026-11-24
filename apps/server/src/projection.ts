@@ -103,6 +103,7 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
     clock,
     map: { nodes: nodeViews, roads: roadViews },
     meters: meterView,
+    cityResources: campaign?.cityResources ?? null,
     stockpiles,
     teams,
     characters,

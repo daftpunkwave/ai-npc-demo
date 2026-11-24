@@ -1213,6 +1213,17 @@ describe("服务端 API", () => {
     expect(assembly.protocolVersion).toBe(protocolVersion);
   });
 
+  it("未注入 span 记录端口时错误响应不返回无法关联的 traceId", async () => {
+    // appFor 不注入 recordSpan，请求 span 不会落库；此时返回 traceId 等于给出查不到的伪标识。
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    // 未认证的玩家读接口稳定走 401 错误出口，不依赖控制台端口是否注入。
+    const response = await app.inject({ method: "GET", url: "/api/v1/campaign" });
+    expect(response.statusCode).toBe(401);
+    expect(errorResponseSchema.parse(response.json()).error.traceId).toBeNull();
+    expect(value.storage.transact((tx) => tx.rows("trace_spans").count())).toBe(0);
+  });
+
   it("玩家读接口统一 401 与 403：未登录拒绝，控制台角色不能访问", async () => {
     const value = await createTrackedGameHarness(active);
     const app = await appFor(value);

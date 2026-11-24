@@ -294,7 +294,7 @@ describe("控制台研究接口", () => {
       tx.rows("worlds").put({
         world_id: "wld-otherworld",
         pack_id: "earth-2964-v1",
-        content_version: "0.2.0",
+        content_version: "0.3.0",
         created_at: createdAt,
       });
       tx.rows("branches").put({
@@ -529,7 +529,7 @@ describe("控制台研究接口", () => {
       tx.rows("worlds").put({
         world_id: "wld-artifact-foreign",
         pack_id: "earth-2964-v1",
-        content_version: "0.2.0",
+        content_version: "0.3.0",
         created_at: createdAt,
       });
       tx.rows("branches").put({
@@ -766,7 +766,7 @@ describe("控制台研究接口", () => {
       tx.rows("worlds").put({
         world_id: "wld-turn-limit",
         pack_id: "earth-2964-v1",
-        content_version: "0.2.0",
+        content_version: "0.3.0",
         created_at: createdAt,
       });
       tx.rows("branches").put({

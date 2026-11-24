@@ -24,6 +24,24 @@ export const resourceAmountsSchema = z
 
 export type ResourceAmounts = z.infer<typeof resourceAmountsSchema>;
 
+/**
+ * 城市六种资源的完整数量：序章只结算供给、能源、医疗三种库存，
+ * 材料、食物、水在 t168 按设计初值纳入城市总量，因此单独成组，
+ * 不与序章库存及任务用量共用 ResourceAmounts。
+ */
+export const cityResourceAmountsSchema = z
+  .object({
+    energy: z.number().int().nonnegative(),
+    materials: z.number().int().nonnegative(),
+    food: z.number().int().nonnegative(),
+    supply: z.number().int().nonnegative(),
+    medical: z.number().int().nonnegative(),
+    water: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type CityResourceAmounts = z.infer<typeof cityResourceAmountsSchema>;
+
 /** 资源增减量：三个字段可省略，出现时允许负数，但至少给出一项。 */
 export const resourceDeltaSchema = z
   .object({

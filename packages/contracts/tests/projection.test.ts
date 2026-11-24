@@ -279,6 +279,18 @@ describe("PlayerProjection", () => {
     expectValid(playerProjectionSchema, { ...playerProjection, meters: null });
   });
 
+  it("旧投影缺少 cityResources 时按 null 解析，完整快照可读取", () => {
+    const legacy = playerProjectionSchema.parse(playerProjection);
+    expect(legacy.cityResources).toBeNull();
+    const cityResources = { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 };
+    const parsed = playerProjectionSchema.parse({ ...playerProjection, cityResources });
+    expect(parsed.cityResources).toEqual(cityResources);
+    expectInvalid(playerProjectionSchema, {
+      ...playerProjection,
+      cityResources: { ...cityResources, supply: -1 },
+    });
+  });
+
   it("库存等级使用资源等级而不是指标展示等级", () => {
     expectInvalid(playerProjectionSchema, {
       ...playerProjection,

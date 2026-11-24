@@ -3,7 +3,7 @@
  * 依赖 zod 与公共契约的领域值；所有状态只允许世界模块写入。
  * 禁止在这里执行 campaign 初始化、每日结算或任务规则。
  */
-import { numericMeterIdSchema, resourceAmountsSchema, taskTypeSchema, watergateAllocationSchema } from "@ai-npc/contracts";
+import { cityResourceAmountsSchema, numericMeterIdSchema, resourceAmountsSchema, taskTypeSchema, watergateAllocationSchema } from "@ai-npc/contracts";
 import { DomainError } from "@ai-npc/contracts";
 import type { WorldTx } from "@ai-npc/module-sdk";
 import { z } from "zod";
@@ -17,6 +17,8 @@ export const campaignStateSchema = z
     startTick: z.number().int().nonnegative(),
     status: z.enum(["running", "evaluated"]),
     outcome: z.enum(["equilibrium", "strained"]).nullable(),
+    /** t168 评估时写入的六种城市资源；序章未结束时为 null，旧存档缺该键按 null 读取。 */
+    cityResources: cityResourceAmountsSchema.nullable().default(null),
   })
   .strict();
 

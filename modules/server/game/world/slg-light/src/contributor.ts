@@ -63,6 +63,7 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
     startTick: context.tx.worldTick,
     status: "running",
     outcome: null,
+    cityResources: null,
   };
   context.tx.put("campaign", campaignAggregateId, campaign);
   context.tx.put("meters", metersAggregateId, {

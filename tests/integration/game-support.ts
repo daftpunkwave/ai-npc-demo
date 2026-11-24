@@ -576,15 +576,19 @@ export function readGameClock(harness: GameHarness): ClockView {
  * 在单个只读事务内绑定全部游戏端口，供投影与后续读接口复用。
  * 事务作用域覆盖全部聚合类型，但调用方只能经端口读取；helper 本身不写聚合。
  */
-export function withGamePorts<T>(harness: GameHarness, run: (ports: GameModulePorts) => T): T {
+export function withGamePorts<T>(
+  harness: GameHarness,
+  run: (ports: GameModulePorts) => T,
+  branchId: string = harness.branchId,
+): T {
   return harness.storage.transact((storageTx) => {
-    const clockRow = storageTx.all("SELECT world_tick FROM clock WHERE branch_id = ?", [harness.branchId])[0];
+    const clockRow = storageTx.all("SELECT world_tick FROM clock WHERE branch_id = ?", [branchId])[0];
     const worldTick = clockRow === undefined ? 0 : Number(clockRow["world_tick"]);
     const txFor: ScopedWorldTxFactory = (moduleId) =>
       new TransactionWorldTx({
         storageTx,
         worldId: harness.worldId,
-        branchId: harness.branchId,
+        branchId,
         worldTick,
         principalId: "player-1",
         correlationId: `test:projection-read:${moduleId}`,

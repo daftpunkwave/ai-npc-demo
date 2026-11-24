@@ -4,7 +4,7 @@
  * 禁止在这里引入 Fastify、读写会话存储或按连接做 I/O。
  */
 /* eslint-disable no-unused-vars -- 本文件的未使用参数只出现在 StreamSocket/StreamHubOptions 等接口签名中，名称用于表达调用契约。 */
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError, playerNotificationKey } from "@ai-npc/contracts";
 import type {
   AuthContext,
   ConversationLine,
@@ -155,9 +155,7 @@ export const defaultMaxConnections = 256;
 export const defaultMaxConnectionsPerSession = 8;
 
 /** 提醒的稳定键；派生提醒的 worldTick 会随 tick 重算，不参与同一提醒的识别。 */
-export function notificationKey(item: PlayerNotificationView): string {
-  return `${item.kind}\u0000${item.text}`;
-}
+export const notificationKey = playerNotificationKey;
 
 /** 上次发布后新增的对白与提醒；对白按 dialogueId 去重，提醒按稳定键做多重集差。 */
 export interface AppendedItem {

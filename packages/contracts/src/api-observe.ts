@@ -12,14 +12,26 @@ import { memoryRecordSchema } from "./memory";
 import { agentObservationSchema } from "./observation";
 import { inputFrontierSchema } from "./frontier";
 
+/**
+ * 时间线类型筛选上限：schema 是唯一基准，路由只把查询字符串规范化为它的输入类型，
+ * 避免「schema 放行、路由 400 拒绝」两套边界各自漂移。
+ */
+export const timelineTypesLimits = {
+  maxTypes: 20,
+  maxTypeLength: 64,
+} as const;
+
 /** 时间线查询：按分支、序号、类型与主体筛选，limit 上限 200。 */
 export const timelineQuerySchema = z
   .object({
     branchId: z.string().min(1).optional(),
-    fromSeq: z.number().int().nonnegative(),
-    limit: z.number().int().min(1).max(200),
+    fromSeq: z.number().int().nonnegative().default(0),
+    limit: z.number().int().min(1).max(200).default(100),
     order: z.enum(["asc", "desc"]).optional(),
-    types: z.array(z.string().min(1)).optional(),
+    types: z
+      .array(z.string().min(1).max(timelineTypesLimits.maxTypeLength))
+      .max(timelineTypesLimits.maxTypes)
+      .optional(),
     agentId: principalIdSchema.optional(),
     nodeId: z.string().min(1).optional(),
   })
