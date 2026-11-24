@@ -45,12 +45,29 @@ export interface AgentRuntimeOptions {
   readonly turnExecution?: TurnExecutionOptions;
 }
 
+/**
+ * 阶段失败的聚合错误：message 保留每个阶段的原因原文，供调用方断言与排查；
+ * 另带 phases 供日志记录受控字段——日志只写阶段名，不写可能含自由文本的原文。
+ */
+class CycleFailure extends Error {
+  readonly phases: readonly string[];
+
+  constructor(message: string, phases: readonly string[]) {
+    super(message);
+    this.name = "CycleFailure";
+    this.phases = phases;
+  }
+}
+
 /** 把本轮阶段失败聚合为一个错误；没有失败则返回 null，保留每个原因原文供断言与排查。 */
 function cycleFailure(failures: readonly CycleStageFailure[]): Error | null {
   if (failures.length === 0) return null;
-  return new Error(failures
-    .map(({ phase, message }) => `agent runtime stage ${phase} failed: ${message}`)
-    .join("; "));
+  return new CycleFailure(
+    failures
+      .map(({ phase, message }) => `agent runtime stage ${phase} failed: ${message}`)
+      .join("; "),
+    failures.map(({ phase }) => phase),
+  );
 }
 
 /**
@@ -152,8 +169,9 @@ export class AgentRuntime {
       try {
         await this.runTrackedCycle();
       } catch (error) {
+        // 与 recordCycleFailure 同一口径：只记阶段名，不写错误原文。
         this.options.host.logger.error("Agent runtime first cycle failed", {
-          message: error instanceof Error ? error.message : String(error),
+          phases: error instanceof CycleFailure ? [...error.phases] : [],
         });
       }
       this.schedule();
@@ -242,7 +260,8 @@ export class AgentRuntime {
     const cycle = this.runCycle()
       .then(() => this.recordCycleSuccess())
       .catch((error: unknown) => {
-        this.recordCycleFailure(error instanceof Error ? error.message : String(error));
+        // 只把阶段名交给日志；聚合错误里的原因原文可能含观察正文或对话原文。
+        this.recordCycleFailure(error instanceof CycleFailure ? error.phases : []);
         throw error;
       })
       .finally(() => {
@@ -259,13 +278,17 @@ export class AgentRuntime {
     this.options.host.logger.info("Agent runtime recovered", { consecutiveFailures: 0 });
   }
 
-  /** 进入 degraded 的第一轮用 error 级，持续失败降为 warn 级，避免退避期间刷屏。 */
-  private recordCycleFailure(message: string): void {
+  /**
+   * 进入 degraded 的第一轮用 error 级，持续失败降为 warn 级，避免退避期间刷屏。
+   * 只记录受控字段（连续失败次数、下次退避、失败的阶段名），不记录错误原文：
+   * 阶段错误的原文可能含观察正文或对话原文，属于不受信任自由文本。
+   */
+  private recordCycleFailure(phases: readonly string[]): void {
     this.consecutiveFailures += 1;
     const data = {
       consecutiveFailures: this.consecutiveFailures,
       nextDelayMs: cycleBackoffMs(this.consecutiveFailures),
-      message,
+      phases: [...phases],
     };
     if (this.consecutiveFailures === 1) this.options.host.logger.error("Agent runtime degraded", data);
     else this.options.host.logger.warn("Agent runtime cycle failed", data);

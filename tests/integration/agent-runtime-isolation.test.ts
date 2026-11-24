@@ -333,10 +333,10 @@ describe("Agent runtime 单主体故障隔离", () => {
     const value = await startWithFailingFirstCycle();
 
     expect(value.runtime.degraded).toBe(true);
-    expect(value.host.logs).toContainEqual(expect.objectContaining({
-      level: "error",
-      message: "Agent runtime first cycle failed",
-    }));
+    const firstCycle = value.host.logs.find((entry) => entry.message === "Agent runtime first cycle failed");
+    expect(firstCycle?.data).toEqual({ phases: ["memory.ingestAll"] });
+    // 日志只记阶段名，不写错误原文：错误原文可能含观察正文或对话原文。
+    expect(JSON.stringify(firstCycle?.data)).not.toContain("替身按用例要求失败");
     // runtime 仍可继续服务：关掉故障后下一轮成功并清除降级。
     value.control.failing = false;
     await expect(value.runtime.pump()).resolves.toBeUndefined();
