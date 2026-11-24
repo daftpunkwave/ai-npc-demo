@@ -39,9 +39,9 @@ interface DocsCliOptions {
 
 const scriptPath = fileURLToPath(import.meta.url);
 const rootDocuments = ["README.md", "AGENTS.md", "apps/server/README.md"];
-const documentationDirectory = "docs";
+const documentationDirectories = ["docs", ".agents/rules"];
 
-/** 列出需要检查的 Markdown 文档：仓库入口文档与 docs 目录全量。 */
+/** 列出需要检查的 Markdown 文档：仓库入口文档与 docs、.agents/rules 目录全量。 */
 function collectMarkdownDocuments(repositoryRoot: string): MarkdownDocument[] {
   const absolutePaths = new Set<string>();
 
@@ -63,9 +63,11 @@ function collectMarkdownDocuments(repositoryRoot: string): MarkdownDocument[] {
     }
   };
 
-  const docsPath = join(repositoryRoot, documentationDirectory);
-  if (existsSync(docsPath) && statSync(docsPath).isDirectory()) {
-    walk(docsPath);
+  for (const documentationDirectory of documentationDirectories) {
+    const directoryPath = join(repositoryRoot, documentationDirectory);
+    if (existsSync(directoryPath) && statSync(directoryPath).isDirectory()) {
+      walk(directoryPath);
+    }
   }
 
   return [...absolutePaths]
