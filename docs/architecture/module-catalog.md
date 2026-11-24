@@ -223,14 +223,14 @@ M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `
 - fallback 声明完整；slot ID 与排序冲突可检测；
 - realm 边界：client/console 模块不得 import 服务端实现或读取密钥；只有 transport 端口可跨域；
 - 状态所有权：每个有状态模块声明 scope、schemaVersion、导出/迁移路径；
-- 目录快照 hash 进入 assembly 与 run manifest，注册顺序不影响解析结果（解析与摘要已实现，替换验收仍须展示）。
+- 服务端目录与装配的 hash 进入 run manifest。验证注册顺序不改变解析结果。
 
 验收时必须展示：
 
 - 替换矩阵中游戏规则、客户端 UI、Agent 认知、控制台页面四类各换一次，只改模块、装配与配置；
 - 缺必需模块时启动被拒绝；
 - 卸载可选模块后无残余订阅；
-- 按 [部署规格](two-endpoints.md) 核对本应用监听范围
-- 从冻结 manifest 能重建同一组合。
+- 按 [部署规格](two-endpoints.md) 核对本应用监听范围。
+- 服务端组合使用冻结 manifest 复算。TypeScript 浏览器模块集与 Godot provider 各按会话装配记录核对。 [冻结清单与实际生效](../platform/configuration.md#7-冻结清单与实际生效)
 
 具体装配语义见 [积木组合](composition.md)，交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)。

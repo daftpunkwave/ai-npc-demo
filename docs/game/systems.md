@@ -83,7 +83,7 @@ game.scenario 接收策划发布内容，事件卡声明 ID/版本、条件、�
 
 ## 8. 安装、替换与卸载
 
-RunSpec.moduleAssemblyRef 冻结整个游戏/Agent/平台/UI 组合，Agent profile 只是其中子配方。安装先校验依赖、接口版本与权限，再注册 handler、timer 和 UI 贡献；缺必需能力拒绝启动。
+`RunSpec.moduleAssemblyRef` 选择 TypeScript 装配，Agent profile 选择其中的主体策略。服务端模块按冻结清单复算，TypeScript 界面和 Godot 各按其会话装配核验。安装先校验依赖、接口版本与权限，再登记 handler、timer 和 UI 贡献。缺必需能力时拒绝启动。 [冻结清单与实际生效](../platform/configuration.md#7-冻结清单与实际生效)
 
 可选模块卸载时撤销它贡献的工具绑定、订阅、任务入口与 UI 槽；依赖它的消费者必须停用或显式降级，不得保留能点击却不会工作的操作。必需 provider 不能在活动组合中拔空：先停止组合或准备兼容替代，实现 drain/fence 和状态迁移后切换。
 
