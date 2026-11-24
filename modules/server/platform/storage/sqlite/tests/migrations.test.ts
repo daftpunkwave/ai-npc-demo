@@ -22,7 +22,7 @@ import {
   startStorage,
 } from "./support";
 
-/** 迁移中的表总数：部署级 10 + 分支级 19 + 运行级 12（含运营操作幂等表）。 */
+/** 迁移中的表总数：部署级 11 + 分支级 19 + 运行级 12（含运营操作幂等表）。 */
 const EXPECTED_TABLE_COUNT = 42;
 
 function readTableNames(port: StoragePort): readonly string[] {

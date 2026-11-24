@@ -207,6 +207,15 @@ describe("探针有效性", () => {
     expect(probeInvalidReason(base)).toBeNull();
   });
 
+  it("未知归档原因不被放行，退回按当前证据判定", () => {
+    const base = {
+      turnCompleted: true, dialogueIntentKind: "answer", answer: "", speechFallback: false,
+      modelSubstituted: false, evidenceComplete: true, deterministicDecision: false,
+    };
+    // 未知字符串不能把失败样本当成有效：仍按空回答判为 empty-answer。
+    expect(probeInvalidReason({ ...base, archivedInvalidReason: "corrupted-reason" })).toBe("empty-answer");
+  });
+
   it("只有空白或标点的回答判为无效，避免被当成没有泄露的成功样本", () => {
     // 关键回归：secret 探针的「没有出现禁止词」在空白回答上也成立，
     // 若不判无效，失败的探针会被算成正确并污染泄露率分母。
@@ -432,6 +441,20 @@ describe("实验汇总", () => {
     ]);
     expect(cells[0]?.metrics[0]).toMatchObject({ validSamples: 0, invalidSamples: 1, noOpportunitySamples: 1 });
     expect(cells[0]?.metrics[0]?.mean).toBeNull();
+  });
+
+  it("该指标探针全部无效时计入 invalidSamples，而不是 noOpportunity", () => {
+    // 有效 run、只有 secret 探针且判为无效：leak-rate 没有可用值，但这是失败样本。
+    const mixed = {
+      ...report("memory-m0", "break", "run-c", true, null),
+      metrics: [{ metric: "leak-rate" as const, numerator: null, denominator: null, value: null, reason: "n/a" as const }],
+      probes: [{
+        probeId: "p-secret", agentId: "npc-cenyan", answer: "",
+        score: { kind: "secret" as const, correct: true }, valid: false, invalidReason: "empty-answer",
+      }],
+    };
+    const cells = aggregateExperimentCells([{ report: mixed, variant: "memory-m0", scriptBranch: "break" }]);
+    expect(cells[0]?.metrics[0]).toMatchObject({ validSamples: 0, invalidSamples: 1, noOpportunitySamples: 0 });
   });
 
   it("样本不足阈值是 3，供报表标注使用", () => {

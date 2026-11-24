@@ -33,4 +33,3 @@ export const evaluationModuleDefinition: ModuleDefinition = defineModule({
   migrationPaths: [],
   create: async (input) => (await import("./plugin")).createEvaluationModule(input),
 });
-

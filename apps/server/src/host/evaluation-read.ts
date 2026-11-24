@@ -9,6 +9,7 @@ import type {
   RunReportResponse,
   RunSummary,
   StoragePort,
+  StorageTransaction,
 } from "@ai-npc/contracts";
 import type {
   EvaluationPort,
@@ -187,7 +188,7 @@ function probeExecutionsOf(input: {
   return { probes, undeclaredProbeCount };
 }
 
-/** 成本快照：从预算账本聚合；未知 usage 的尝试数一并给出。 */
+/** 成本快照：从预算账本聚合；未结算的尝试按预留值计入，未知 usage 的尝试数一并给出。 */
 function costOf(input: {
   readonly rows: readonly Readonly<Record<string, unknown>>[];
   readonly pricingVersion: string;
@@ -196,13 +197,17 @@ function costOf(input: {
   let outputTokens = 0;
   let unknownUsageAttempts = 0;
   let costEstimate = 0;
+  let currency = "USD";
   for (const row of input.rows) {
-    inputTokens += numberCell(row, "input_tokens", 0);
-    outputTokens += numberCell(row, "output_tokens", 0);
-    if (row["usage_known"] !== undefined && numberCell(row, "usage_known", 1) === 0) unknownUsageAttempts += 1;
+    // 未结算的行用预留值兜底；结算后 actual_* 才是真实 usage。
+    inputTokens += numberCell(row, "actual_input", numberCell(row, "reserved_input", 0));
+    outputTokens += numberCell(row, "actual_output", numberCell(row, "reserved_output", 0));
+    if (numberCell(row, "usage_unknown", 0) !== 0) unknownUsageAttempts += 1;
     costEstimate += numberCell(row, "cost_estimate", 0);
+    const rowCurrency = stringCell(row, "currency");
+    if (rowCurrency !== null) currency = rowCurrency;
   }
-  return { inputTokens, outputTokens, unknownUsageAttempts, costEstimate, currency: "USD", pricingVersion: input.pricingVersion };
+  return { inputTokens, outputTokens, unknownUsageAttempts, costEstimate, currency, pricingVersion: input.pricingVersion };
 }
 
 /**
@@ -240,6 +245,8 @@ function memoryOf(input: {
 }): ReportMemory {
   const recordsByTier: Record<string, number> = {};
   for (const row of input.records) {
+    // memory_records 是 append-only 行版本表；只有 active 行代表当前仍可见的记忆。
+    if (stringCell(row, "status") !== "active") continue;
     const tier = stringCell(row, "tier");
     if (tier === null) continue;
     recordsByTier[tier] = (recordsByTier[tier] ?? 0) + 1;
@@ -254,15 +261,16 @@ function memoryOf(input: {
 }
 
 /**
- * 行为记录：只从 turn 归档的决策产物与其真实触发器提取立场、理由类别与提交的命令。
+ * 行为记录：从 turn 归档的 decision artifact 与其真实触发器提取立场、理由类别与提交的命令。
  *
- * 三个字段都不允许填默认值：
- * - `trigger` 取 `trigger_ids_json` 中第一条触发器 ID 的前缀（如 `dialogue`、`summon`）；
- * - `stance` 与 `reasonCode` 取 decision 阶段产物里归档的字段；
- * - `commands` 取 decision 阶段产出的命令类型列表。
- * 任一必需字段缺失就整条跳过：编造一个 `player-dialogue` 触发器会让报告声称发生过没发生的事情。
+ * 字段都不允许填默认值：
+ * - `trigger` 按 `trigger_ids_json` 的第一条 ID 查 `triggers.kind`；
+ * - `stance` 与 `reasonCode` 从 decision artifact 的 `decision`/`dialogueIntent` 读取；
+ * - `commands` 从 `turn.tool` 阶段归档的回执 ID 反查 `command_receipts.command_type`。
+ * 任一必需字段缺失就整条跳过：编造一个触发器或立场会让报告声称发生过没发生的事情。
  */
 function behaviorOf(input: {
+  readonly tx: StorageTransaction;
   readonly turns: readonly Readonly<Record<string, unknown>>[];
 }): readonly ReportBehavior[] {
   const behavior: ReportBehavior[] = [];
@@ -274,21 +282,56 @@ function behaviorOf(input: {
       (stage as Readonly<Record<string, Json>>)["stage"] === "turn.decision");
     if (decisionStage === undefined) continue;
     const stage = decisionStage as Readonly<Record<string, Json>>;
-    // 只在归档产物里确有该字段时取值，不从 turn 的通用状态代替决策结果。
-    const stance = typeof stage["stance"] === "string" ? stage["stance"] : null;
-    const reasonCode = typeof stage["reasonCode"] === "string" ? stage["reasonCode"] : null;
+    const effective = stage["effective"];
+    const artifactId = typeof effective === "object" && effective !== null && !Array.isArray(effective)
+      ? (effective as Readonly<Record<string, Json>>)["artifactId"]
+      : null;
+    if (typeof artifactId !== "string") continue;
+    const archived = artifactValue(input.tx, artifactId);
+    if (archived === null || typeof archived !== "object" || Array.isArray(archived)) continue;
+    const decision = (archived as Readonly<Record<string, Json>>)["decision"];
+    if (typeof decision !== "object" || decision === null || Array.isArray(decision)) continue;
+    const decisionRecord = decision as Readonly<Record<string, Json>>;
+    const intent = decisionRecord["dialogueIntent"];
+    const reasonCode = typeof intent === "object" && intent !== null && !Array.isArray(intent)
+      ? (intent as Readonly<Record<string, Json>>)["reasonCode"]
+      : null;
+    const stance = decisionRecord["stance"];
     const triggerId = firstTriggerId(turn);
-    if (stance === null || reasonCode === null || triggerId === null) continue;
+    if (typeof stance !== "string" || typeof reasonCode !== "string" || triggerId === null) continue;
+    const branchId = stringCell(turn, "branch_id");
+    const agentId = stringCell(turn, "agent_id");
+    if (branchId === null || agentId === null) continue;
+    const trigger = triggerKindOf(input.tx, branchId, triggerId);
+    if (trigger === null) continue;
     behavior.push({
       atTick: numberCell(turn, "created_tick", 0),
-      agentId: stringCell(turn, "agent_id") ?? "",
-      trigger: triggerId,
+      agentId,
+      trigger,
       stance,
       reasonCode,
-      commands: commandTypesOf(stage),
+      commands: commandTypesOf({ tx: input.tx, branchId, agentId, stages }),
     });
   }
   return behavior;
+}
+
+/** 读取 decision artifact 的解码后正文；引用失效或内容不是 JSON 时返回 null。 */
+function artifactValue(tx: StorageTransaction, artifactId: string): Json | null {
+  const row = tx.rows("artifacts").get({ artifact_id: artifactId });
+  if (row === null) return null;
+  const body = row["body"];
+  const text = typeof body === "string"
+    ? body
+    : body instanceof Uint8Array
+      ? new TextDecoder().decode(body)
+      : null;
+  if (text === null) return null;
+  try {
+    return JSON.parse(text) as Json;
+  } catch {
+    return null;
+  }
 }
 
 /** 取 turn 的第一条触发器 ID；没有触发器时返回 null。 */
@@ -299,16 +342,40 @@ function firstTriggerId(turn: Readonly<Record<string, unknown>>): string | null 
   return typeof first === "string" && first.length > 0 ? first : null;
 }
 
-/** 取 decision 阶段归档的命令类型列表；没有命令时返回空数组。 */
-function commandTypesOf(stage: Readonly<Record<string, Json>>): readonly string[] {
-  const commands = stage["commands"];
-  if (!Array.isArray(commands)) return [];
-  return commands.flatMap((command) => {
-    if (typeof command === "string" && command.length > 0) return [command];
-    if (typeof command !== "object" || command === null || Array.isArray(command)) return [];
-    const type = (command as Readonly<Record<string, Json>>)["type"];
-    return typeof type === "string" && type.length > 0 ? [type] : [];
-  });
+/** 按触发器 ID 读取 `triggers.kind`；记录缺失时返回 null，调用方跳过该行为样本。 */
+function triggerKindOf(tx: StorageTransaction, branchId: string, triggerId: string): string | null {
+  const row = tx.branch(branchId).table("triggers").get({ trigger_id: triggerId });
+  return row === null ? null : stringCell(row, "kind");
+}
+
+/** 从 `turn.tool` 阶段归档的回执 ID 反查命令类型；同一 turn 内去重。 */
+function commandTypesOf(input: {
+  readonly tx: StorageTransaction;
+  readonly branchId: string;
+  readonly agentId: string;
+  readonly stages: readonly Json[];
+}): readonly string[] {
+  const receiptIds = new Set<string>();
+  for (const stage of input.stages) {
+    if (typeof stage !== "object" || stage === null || Array.isArray(stage)) continue;
+    if ((stage as Readonly<Record<string, Json>>)["stage"] !== "turn.tool") continue;
+    const effective = (stage as Readonly<Record<string, Json>>)["effective"];
+    if (typeof effective !== "object" || effective === null || Array.isArray(effective)) continue;
+    const receiptId = (effective as Readonly<Record<string, Json>>)["receiptId"];
+    if (typeof receiptId === "string") receiptIds.add(receiptId);
+  }
+  if (receiptIds.size === 0) return [];
+  const rows = input.tx.branch(input.branchId).table("command_receipts").list({ principal_id: input.agentId });
+  const types = new Set<string>();
+  for (const row of rows) {
+    const type = stringCell(row, "command_type");
+    const receipt = jsonCell(row, "receipt_json");
+    const receiptId = typeof receipt === "object" && receipt !== null && !Array.isArray(receipt)
+      ? (receipt as Readonly<Record<string, Json>>)["receiptId"]
+      : null;
+    if (type !== null && typeof receiptId === "string" && receiptIds.has(receiptId)) types.add(type);
+  }
+  return [...types];
 }
 
 /** 构造评估只读端口。 */
@@ -368,13 +435,13 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
         invalidReasons,
       },
       probes: probeResult.probes,
-      behavior: behaviorOf({ turns: tx.rows("turn_runs").list({ run_id: runId }) }),
+      behavior: behaviorOf({ tx, turns: tx.rows("turn_runs").list({ run_id: runId }) }),
       memory: memoryOf({
         records: branchId.length === 0 ? [] : tx.branch(branchId).table("memory_records").list(),
         // maintenance_runs 是部署级表（主键为 maintenance_id），只能经非分支接口按 run 读取。
         maintenance: tx.rows("maintenance_runs").list({ run_id: runId }),
       }),
-      cost: costOf({ rows: tx.rows("model_attempts").list({ work_ref: runId }), pricingVersion: input.pricingVersion }),
+      cost: costOf({ rows: tx.rows("budget_ledger").list({ run_id: runId }), pricingVersion: input.pricingVersion }),
       latency: latencyOf(turnDurationsOf(tx.rows("turn_runs").list({ run_id: runId }))),
       lexicons: input.lexicons,
     });
@@ -495,6 +562,7 @@ function toReportResponse(report: RunReport): RunReportResponse {
       valid: probe.valid,
       ...(probe.invalidReason === undefined ? {} : { invalidReason: probe.invalidReason }),
     })),
+    invalidProbeCounts: { ...report.invalidProbeCounts },
     behavior: report.behavior.map((entry) => ({ ...entry, commands: [...entry.commands] })),
     memory: report.memory,
     cost: report.cost,

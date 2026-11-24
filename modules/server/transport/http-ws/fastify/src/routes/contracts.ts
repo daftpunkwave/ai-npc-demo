@@ -304,9 +304,10 @@ export interface ConsoleReadPort {
       readonly runIds: readonly string[];
       readonly runs: readonly {
         readonly runId: string;
-        readonly status: "ready" | "preflight-failed";
+        readonly status: "created" | "preflight-failed" | "ready" | "running" | "paused" | "completed" | "failed" | "invalid";
         readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
       }[];
+      readonly failedRunCount: number;
     }>;
   };
 }

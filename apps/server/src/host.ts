@@ -197,7 +197,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     ...core.gameContent.characters.keys(),
     ...core.gameContent.factions.keys(),
   ]);
-  const modelLayouts = new ModelLayoutAdminPort(    core.loadContext,
+  const modelLayouts = new ModelLayoutAdminPort(
+    core.loadContext,
     knownAgentIds,
     () => {
       const models = core.active.manifest.models;

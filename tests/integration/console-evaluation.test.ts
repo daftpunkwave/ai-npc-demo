@@ -287,6 +287,84 @@ describe("控制台评估读取接口", () => {
     expect(after.latency.turnP95Ms).toBe(300);
   });
 
+  it("报告从归档 decision、预算账本与活动记忆行读取行为、成本与记忆", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = host.branchId;
+    const now = new Date().toISOString();
+    host.storage.transact((tx) => {
+      tx.rows("artifacts").put({
+        artifact_id: "art-reportdecision", run_id: runId, kind: "decision",
+        content_hash: "sha256-reportdecision", mime: "application/json", byte_size: 64,
+        storage: "inline",
+        body: JSON.stringify({ turnId: "turn-report000001", decision: { stance: "decline", dialogueIntent: { reasonCode: "past-breach" } } }),
+        file_path: null, redaction: "raw", redacted_from: null, created_at: now,
+      });
+      tx.rows("turn_runs").put({
+        turn_id: "turn-report000001", run_id: runId, branch_id: branchId,
+        agent_id: "human-independent", agent_turn_index: 1, status: "completed",
+        trigger_ids_json: ["trg-report000001"], profile_hash: "hash",
+        controller_epoch: 1, turn_lease_epoch: 0, created_tick: 5,
+        effective_json: [
+          {
+            stage: "turn.decision", status: "applied", reason: null, requested: null, resolved: null,
+            effective: { artifactId: "art-reportdecision" }, spanId: "spn-report000001",
+          },
+          {
+            stage: "turn.tool", status: "applied", reason: null, requested: null, resolved: null,
+            effective: { receiptId: "rcp-report000001" }, spanId: "spn-report000002",
+          },
+        ],
+        created_at: now, started_at: now, ended_at: now,
+      });
+      tx.branch(branchId).table("triggers").put({
+        trigger_id: "trg-report000001", agent_id: "human-independent", kind: "dialogue",
+        priority: 100, source_ref: "evt-report000001", created_tick: 5,
+        dedupe_key: "report-trigger", consumed_by_turn_id: "turn-report000001",
+      });
+      tx.branch(branchId).table("command_receipts").put({
+        principal_id: "human-independent", command_id: "cmd-report000001",
+        command_type: "task.cancel", payload_hash: "hash",
+        receipt_json: { receiptId: "rcp-report000001" }, created_at: now,
+      });
+      tx.rows("budget_ledger").put({
+        entry_id: "bgl-report000001", run_id: runId, agent_id: "human-independent",
+        work_ref: "turn-report000001", purpose: "decision", model_id: "model-report",
+        reserved_input: 200, reserved_output: 100, actual_input: 120, actual_output: 30,
+        usage_unknown: 0, cost_estimate: 0.02, currency: "USD", created_at: now, settled_at: now,
+      });
+      const memoryBase = {
+        agent_id: "human-independent", memory_id: "mem-report000001", module_id: "agent.memory.ledger",
+        kind: "episodic", tier: "short", epistemic: "verified-event", release_policy_id: "policy-1",
+        valid_from_tick: 0, valid_until_tick: null, strength: 1, salience: 0, recall_count: 0,
+        tags_json: [], source_observation_ids_json: [], content_json: {},
+      };
+      tx.branch(branchId).table("memory_records").put({
+        ...memoryBase, row_version: 1, status: "superseded", created_revision: 1,
+        retired_revision: 2,
+      });
+      tx.branch(branchId).table("memory_records").put({
+        ...memoryBase, row_version: 2, status: "active", created_revision: 2,
+        retired_revision: null,
+      });
+    });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.behavior).toEqual([{
+      atTick: 5,
+      agentId: "human-independent",
+      trigger: "dialogue",
+      stance: "decline",
+      reasonCode: "past-breach",
+      commands: ["task.cancel"],
+    }]);
+    expect(report.cost).toMatchObject({ inputTokens: 120, outputTokens: 30, costEstimate: 0.02, unknownUsageAttempts: 0 });
+    expect(report.memory.recordsByTier["short"]).toBe(1);
+  });
+
   it("缺脚本声明的探针计入证据不完整，非法 JSON 不使读取失败", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
@@ -394,14 +472,14 @@ describe("控制台评估读取接口", () => {
 
     const evaluatorExport = await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers: evaluatorHeaders,
-      payload: { runId, redaction: "redacted", operationId: "op-aaaaaaaaaaaa" },
+      payload: { runId, redaction: "redacted" },
     });
     expect(evaluatorExport.statusCode).toBe(403);
 
     const researcherHeaders = consoleHeader(consoleToken, "researcher");
     const exported = await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers: researcherHeaders,
-      payload: { runId, redaction: "redacted", operationId: "op-bbbbbbbbbbbb" },
+      payload: { runId, redaction: "redacted" },
     });
     expect(exported.statusCode).toBe(200);
     expect(exportResponseSchema.parse(exported.json()).artifactId.length).toBeGreaterThan(0);
@@ -421,6 +499,7 @@ describe("控制台评估读取接口", () => {
         audience_json: JSON.stringify({ kind: "principals", principalIds: ["human-independent"] }),
         payload_json: JSON.stringify({
           text: "机密：星图只有一份", credentialRef: "secret/openai-key", apiKey: "sk-live-should-not-leak",
+          sessionToken: "tok-live-should-not-leak",
         }),
         committed_at: new Date().toISOString(),
       });
@@ -428,11 +507,11 @@ describe("控制台评估读取接口", () => {
 
     const redacted = exportResponseSchema.parse((await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers,
-      payload: { runId, redaction: "redacted", operationId: "op-dddddddddddd" },
+      payload: { runId, redaction: "redacted" },
     })).json());
     const raw = exportResponseSchema.parse((await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers,
-      payload: { runId, redaction: "raw", operationId: "op-eeeeeeeeeeee" },
+      payload: { runId, redaction: "raw" },
     })).json());
     expect(redacted.artifactId).not.toBe(raw.artifactId);
 
@@ -447,11 +526,15 @@ describe("控制台评估读取接口", () => {
     // 两种模式都不能出现凭据解析值。
     for (const body of [redactedBody, rawBody]) {
       expect(body).not.toContain("sk-live-should-not-leak");
+      expect(body).not.toContain("tok-live-should-not-leak");
       expect(body).toContain("[redacted]");
     }
     // redacted 清空正文；raw 保留正文。
     expect(redactedBody).not.toContain("机密：星图只有一份");
     expect(rawBody).toContain("机密：星图只有一份");
+    // redacted 只清正文，事件标识、类型与时间戳等元数据必须保留，否则导出无法追溯。
+    const redactedBundle = JSON.parse(redactedBody) as { readonly events: readonly Record<string, unknown>[] };
+    expect(redactedBundle.events[0]).toMatchObject({ event_id: "evt-aaaaaaaaaaaa", type: "dialogue.said" });
   });
 
   it("存档后恢复同一快照回到相同世界位置，且不重复结算", async () => {
@@ -551,6 +634,17 @@ describe("控制台评估读取接口", () => {
     })).json()).runs.length;
     expect(after).toBe(before);
   });
+  it("不存在的 experimentRef 返回 400 而不是内部错误", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentRef: "no-such-experiment" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(errorResponseSchema.parse(response.json()).error.code).toBe("validation");
+  });
+
   it("重复创建同一实验返回既有 run，不产生重复数据", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
@@ -574,6 +668,73 @@ describe("控制台评估读取接口", () => {
       method: "GET", url: "/api/v1/console/runs", headers,
     })).json()).runs.filter((run) => run.variant === "memory-m0-window").length;
     expect(total).toBe(1);
+  });
+
+  it("实验幂等只认当前世界，并返回 run 的真实状态", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const now = new Date().toISOString();
+    host.storage.transact((tx) => {
+      tx.rows("worlds").put({
+        world_id: "wld-foreign-experiment", pack_id: "earth-2964-v1",
+        content_version: "1.0.0", created_at: now,
+      });
+      tx.rows("branches").put({
+        branch_id: "br-foreignexperiment", world_id: "wld-foreign-experiment",
+        kind: "experiment", status: "active", parent_branch_id: null,
+        forked_at_world_seq: 0, run_id: "run-fffffffffff1",
+        profile_hash: null, created_at: now,
+      });
+      tx.rows("runs").put({
+        run_id: "run-fffffffffff1", world_id: "wld-foreign-experiment",
+        branch_id: "br-foreignexperiment", mode: "closed-loop", status: "completed",
+        run_spec_json: { experimentId: "exp-cross-world-v1" },
+        manifest_json: {}, manifest_hash: "hash", contaminated: 0,
+        evidence_complete: 1, created_at: now, started_at: now, ended_at: now,
+      });
+    });
+    const payload = {
+      experimentSpec: testExperimentSpec({
+        experimentId: "exp-cross-world-v1", variants: ["memory-m0-window"], scriptBranches: ["keep"],
+      }),
+    };
+    const first = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers, payload,
+    })).json());
+    expect(first.runIds).toHaveLength(1);
+    expect(first.runIds).not.toContain("run-fffffffffff1");
+    const runId = first.runIds[0] as string;
+    await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${runId}/start`, headers,
+      payload: { operationId: "op-666666666666" },
+    });
+    const replay = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers, payload,
+    })).json());
+    expect(replay.runs[0]).toMatchObject({ runId, status: "running" });
+  });
+
+  it("并发创建同一实验只落一批 run", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const payload = {
+      experimentSpec: testExperimentSpec({
+        experimentId: "exp-concurrent-v1", variants: ["memory-m0-window"], scriptBranches: ["keep"],
+      }),
+    };
+    const [left, right] = await Promise.all([
+      host.app.inject({ method: "POST", url: "/api/v1/console/experiments", headers, payload }),
+      host.app.inject({ method: "POST", url: "/api/v1/console/experiments", headers, payload }),
+    ]);
+    expect(left.statusCode).toBe(200);
+    expect(right.statusCode).toBe(200);
+    const first = experimentCreateResponseSchema.parse(left.json());
+    const second = experimentCreateResponseSchema.parse(right.json());
+    expect(second.runIds).toEqual(first.runIds);
+    const detail = experimentDetailResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/experiments/exp-concurrent-v1", headers,
+    })).json());
+    expect(detail.runs).toHaveLength(1);
   });
 
   it("部分 run 预检失败时保留每个 run 的状态与逐条原因", async () => {
@@ -681,6 +842,35 @@ describe("控制台评估读取接口", () => {
       payload: { operationId: "op-111111111111" },
     });
     expect(conflicting.statusCode).toBe(409);
+  });
+
+  it("其他世界的 run 控制幂等记录不会被当作本世界重放", async () => {
+    const host = await testHost();
+    const token = await login(host, "evaluation-console");
+    const headers = consoleHeader(token);
+    const principalId = (await host.app.inject({
+      method: "GET", url: "/api/v1/session", headers,
+    })).json() as { readonly principalId?: string };
+    expect(principalId.principalId).toBeTruthy();
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: testRunSpec({ id: "cross-world-control" }) },
+    })).json());
+    const now = new Date().toISOString();
+    host.storage.transact((tx) => {
+      // 外部世界使用同一 operationId；主键包含 world_id 后，本世界必须按新操作执行。
+      tx.rows("run_control_idempotency").put({
+        world_id: "wld-foreign-control", principal_id: String(principalId.principalId),
+        operation_id: "op-555555555555", operation_kind: "start",
+        run_id: "run-ffffffffffff", status: "running", created_at: now,
+      });
+    });
+    const started = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/start`, headers,
+      payload: { operationId: "op-555555555555" },
+    });
+    expect(started.statusCode).toBe(200);
+    expect(runControlResponseSchema.parse(started.json())).toEqual({ runId: created.runId, status: "running" });
   });
 
   it("停止后可从 paused 恢复，且保留已推进的 tick", async () => {
@@ -800,7 +990,7 @@ describe("控制台评估读取接口", () => {
     // 导出也拒绝。
     const exported = await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers,
-      payload: { runId: "run-ffffffffffff", redaction: "redacted", operationId: "op-888888888888" },
+      payload: { runId: "run-ffffffffffff", redaction: "redacted" },
     });
     expect(exported.statusCode).toBe(404);
   });
@@ -833,7 +1023,7 @@ describe("控制台评估读取接口", () => {
 
     const exported = await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers,
-      payload: { runId: created.runId, redaction: "redacted", operationId: "op-777777777777" },
+      payload: { runId: created.runId, redaction: "redacted" },
     });
     expect(exported.statusCode).toBe(200);
     const body = exported.body;
@@ -848,7 +1038,7 @@ describe("控制台评估读取接口", () => {
     const headers = consoleHeader(await login(host, "evaluation-console"));
     const response = await host.app.inject({
       method: "POST", url: "/api/v1/console/exports", headers,
-      payload: { runId: "run-aaaaaaaaaaaa", redaction: "redacted", operationId: "op-cccccccccccc" },
+      payload: { runId: "run-aaaaaaaaaaaa", redaction: "redacted" },
     });
     expect(response.statusCode).toBe(404);
   });

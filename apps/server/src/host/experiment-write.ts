@@ -29,19 +29,37 @@ export interface ExperimentWriteInput {
   readonly runWrite: RunWriteInput;
 }
 
+/** run 生命周期状态；实验重放必须回传记录里的真实状态，不能统一改写为 ready。 */
+export type ExperimentRunStatus =
+  | "created"
+  | "preflight-failed"
+  | "ready"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "invalid";
+
+const experimentRunStatuses = new Set<ExperimentRunStatus>([
+  "created", "preflight-failed", "ready", "running", "paused", "completed", "failed", "invalid",
+]);
+
 /** 实验创建结果：实验标识、创建出的 run 与逐条预检失败原因。 */
 export interface ExperimentCreateResult {
   readonly experimentId: string;
   readonly runIds: readonly string[];
-  /** 与 runIds 一一对应的逐个创建结果；失败项带逐条原因。 */
+  /** 与 runIds 一一对应的逐个创建/重放结果；失败项带逐条原因。 */
   readonly runs: readonly {
     readonly runId: string;
-    readonly status: "ready" | "preflight-failed";
+    readonly status: ExperimentRunStatus;
     readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
   }[];
   /** 预检失败的 run 数量；为 0 表示全部就绪。 */
   readonly failedRunCount: number;
 }
+
+/** 同一进程内按实验串行化创建，避免并发请求在幂等检查与落库之间重复建 run。 */
+const pendingExperiments = new Map<string, Promise<ExperimentCreateResult>>();
 
 /**
  * 把实验规格展开为具体的 RunSpec 列表。
@@ -110,24 +128,54 @@ export async function createExperiment(
     );
   }
   const runSpecs = runsOfExperiment(spec);
+  // 同一进程内的并发创建按实验串行化：两个请求都在对方落库前看到空集时，
+  // 只有先进入者会创建，后来者等待并复用同一结果。
+  const key = `${input.runWrite.worldId}:${spec.experimentId}`;
+  const pending = pendingExperiments.get(key);
+  if (pending !== undefined) return pending;
+  const task = createExperimentOnce(input, spec, runSpecs);
+  pendingExperiments.set(key, task);
+  try {
+    return await task;
+  } finally {
+    pendingExperiments.delete(key);
+  }
+}
 
-  // 幂等：同一实验标识已有 run 时直接返回既有结果，不重复创建。
-  // 没有这层检查时，重试同一请求会按相同规格再建一批 run，实验数据被污染成两份。
+/** 幂等与创建的实际执行体；调用方已按实验串行化。 */
+async function createExperimentOnce(
+  input: ExperimentWriteInput,
+  spec: ExperimentSpec,
+  runSpecs: readonly RunSpec[],
+): Promise<ExperimentCreateResult> {
   const existing = existingRunsOf(input, spec.experimentId);
-  if (existing.length > 0) {
+  const bySpecId = new Map<string, ExistingRun>();
+  const legacy: ExistingRun[] = [];
+  for (const run of existing) {
+    if (run.specId === null) legacy.push(run);
+    else bySpecId.set(run.specId, run);
+  }
+  // 旧记录的 RunSpec 没有 id 时无法按展开结果对账，保持“已有即重放”的旧行为。
+  if (existing.length > 0 && bySpecId.size === 0) {
     return {
       experimentId: spec.experimentId,
       runIds: existing.map((run) => run.runId),
-      runs: existing,
+      runs: existing.map(outcomeOf),
       failedRunCount: 0,
     };
   }
-
   const runs: ExperimentCreateResult["runs"][number][] = [];
   for (const runSpec of runSpecs) {
+    const found = bySpecId.get(runSpec.id);
+    if (found !== undefined) {
+      runs.push(outcomeOf(found));
+      continue;
+    }
+    // 部分失败后重试时补建缺失的 run，而不是只返回已存在的那部分。
     const created: RunCreateResult = await createRun(input.runWrite, runSpec);
     runs.push({ runId: created.runId, status: created.status, errors: created.errors });
   }
+  for (const run of legacy) runs.push(outcomeOf(run));
   return {
     experimentId: spec.experimentId,
     runIds: runs.map((run) => run.runId),
@@ -136,30 +184,39 @@ export async function createExperiment(
   };
 }
 
+interface ExistingRun {
+  readonly runId: string;
+  readonly specId: string | null;
+  readonly status: ExperimentRunStatus;
+}
+
+function outcomeOf(run: ExistingRun): ExperimentCreateResult["runs"][number] {
+  // 预检失败的历史原因没有单独持久化，如实留空而不是编造一条。
+  return { runId: run.runId, status: run.status, errors: [] };
+}
+
 /**
  * 读出某实验已创建的 run。
  *
  * 归组依据是 RunSpec 上显式的 `experimentId`，与评估读取同一口径——
- * 不解析 `seed`、不猜命名约定。
+ * 不解析 `seed`、不猜命名约定。`runs` 是部署级表，必须按当前世界过滤，
+ * 否则其他世界的同名实验会被当成“已有实验”。
  */
 function existingRunsOf(
   input: ExperimentWriteInput,
   experimentId: string,
-): readonly ExperimentCreateResult["runs"][number][] {
-  const rows = input.runWrite.storage.transact((tx) => tx.rows("runs").list({}));
-  const found: ExperimentCreateResult["runs"][number][] = [];
+): readonly ExistingRun[] {
+  const rows = input.runWrite.storage.transact((tx) =>
+    tx.rows("runs").list({ world_id: input.runWrite.worldId }));
+  const found: ExistingRun[] = [];
   for (const row of rows) {
     if (experimentIdOfRow(row) !== experimentId) continue;
     const runId = runIdOfRow(row);
     if (runId === null) continue;
-    // 返回真实状态而不是统一写 ready：已有 run 可能已经预检失败或已跑完，
-    // 统一报 ready 会让调用方误判可以启动。
-    const status = row["status"];
     found.push({
       runId,
-      status: status === "preflight-failed" ? "preflight-failed" : "ready",
-      // 预检失败的历史原因没有单独持久化，如实留空而不是编造一条。
-      errors: [],
+      specId: runSpecIdOfRow(row),
+      status: runStatusOfRow(row),
     });
   }
   return found;
@@ -172,12 +229,12 @@ function runIdOfRow(row: Readonly<Record<string, unknown>>): string | null {
 }
 
 /**
- * 取 run 行归属的实验标识。
+ * 取 run 行里的 RunSpec。
  *
  * `run_spec_json` 可能以对象或 JSON 字符串返回，两种都要处理；
  * 解析失败时返回 null 而不是抛错——单条记录损坏不该让整个幂等检查失败。
  */
-function experimentIdOfRow(row: Readonly<Record<string, unknown>>): string | null {
+function runSpecOfRow(row: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> | null {
   const raw = row["run_spec_json"];
   let spec: unknown = raw;
   if (typeof raw === "string") {
@@ -188,8 +245,27 @@ function experimentIdOfRow(row: Readonly<Record<string, unknown>>): string | nul
     }
   }
   if (typeof spec !== "object" || spec === null || Array.isArray(spec)) return null;
-  const value = (spec as { readonly experimentId?: unknown }).experimentId;
+  return spec as Readonly<Record<string, unknown>>;
+}
+
+/** 取 run 行归属的实验标识；没有显式字段时返回 null，不从 seed 推断。 */
+function experimentIdOfRow(row: Readonly<Record<string, unknown>>): string | null {
+  const value = runSpecOfRow(row)?.["experimentId"];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** 取 RunSpec.id；实验展开写入的确定性标识用于与本次展开结果对账。 */
+function runSpecIdOfRow(row: Readonly<Record<string, unknown>>): string | null {
+  const value = runSpecOfRow(row)?.["id"];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** 取 run 行真实生命周期状态；未知值按 invalid 处理而不是伪装成 ready。 */
+function runStatusOfRow(row: Readonly<Record<string, unknown>>): ExperimentRunStatus {
+  const value = row["status"];
+  return typeof value === "string" && experimentRunStatuses.has(value as ExperimentRunStatus)
+    ? value as ExperimentRunStatus
+    : "invalid";
 }
 
 /** 从请求里取实验规格：配置引用直接加载，内联对象经同一套 schema 校验。 */
@@ -198,7 +274,12 @@ function resolveSpec(
   request: { readonly experimentSpec: unknown } | { readonly experimentRef: string },
 ): ExperimentSpec {
   if ("experimentRef" in request) {
-    return loadExperimentSpec(request.experimentRef, input.loadContext).value;
+    try {
+      return loadExperimentSpec(request.experimentRef, input.loadContext).value;
+    } catch (error) {
+      // 配置引用不存在或不可解析属于调用方输入问题，不能落到 500。
+      throw new DomainError("validation", `实验规格加载失败：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   // 内联规格同样不能绕过 schema：请求体来自外部，必须按配置契约校验后才可使用。
   const parsed = experimentSpecSchema.safeParse(request.experimentSpec);

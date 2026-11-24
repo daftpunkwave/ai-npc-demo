@@ -102,6 +102,15 @@ export const reportMetricSchema = z
   })
   .strict();
 
+export const reportProbeInvalidReasonSchema = z.enum([
+  "turn-failed",
+  "no-dialogue",
+  "empty-answer",
+  "speech-fallback",
+  "model-substituted",
+  "evidence-incomplete",
+]);
+
 export const reportProbeSchema = z
   .object({
     probeId: z.string().min(1),
@@ -165,6 +174,8 @@ export const runReportResponseSchema = z
     validity: runValiditySchema,
     metrics: z.array(reportMetricSchema),
     probes: z.array(reportProbeSchema),
+    /** 无效样本按原因汇总的数量；无效样本不进入正确率分母。 */
+    invalidProbeCounts: z.record(reportProbeInvalidReasonSchema, z.number().int().nonnegative()),
     behavior: z.array(reportBehaviorSchema),
     memory: reportMemorySchema,
     cost: reportCostSchema,
@@ -197,7 +208,8 @@ export const experimentCreateRequestSchema = z.union([
 export const experimentRunOutcomeSchema = z
   .object({
     runId: idSchemas.run,
-    status: z.enum(["ready", "preflight-failed"]),
+    /** 真实 run 生命周期状态；重放既有实验时不能统一改写为 ready。 */
+    status: z.enum(["created", "preflight-failed", "ready", "running", "paused", "completed", "failed", "invalid"]),
     errors: z.array(runValidationErrorSchema),
   })
   .strict();
@@ -279,7 +291,6 @@ export const exportRequestSchema = z
   .object({
     runId: idSchemas.run,
     redaction: z.enum(["redacted", "raw"]),
-    operationId: idSchemas.op,
   })
   .strict();
 

@@ -29,7 +29,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-async function testHost(): Promise<RunningHost> {
+async function testHost(rateLimits?: { readonly read?: number; readonly write?: number }): Promise<RunningHost> {
   const root = mkdtempSync(join(tmpdir(), "ai-npc-console-research-"));
   roots.push(root);
   const host = await startHost({
@@ -38,6 +38,7 @@ async function testHost(): Promise<RunningHost> {
     consoleToken: "research-console",
     assemblyRef: "local-slg-test-v1",
     rosterRef: "core-3",
+    ...(rateLimits === undefined ? {} : { rateLimits }),
   });
   hosts.push(host);
   return host;
@@ -84,6 +85,16 @@ describe("控制台研究接口", () => {
     expect(rejected).toBe(1);
     // Retry-After 必须给出可用的等待秒数，便于调用方退避。
     expect(Number(retryAfter)).toBeGreaterThan(0);
+  });
+
+  it("rateLimits 覆盖阈值实际生效", async () => {
+    const host = await testHost({ read: 1, write: 1 });
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    const first = await host.app.inject({ method: "GET", url: "/api/v1/console/runs", headers });
+    const second = await host.app.inject({ method: "GET", url: "/api/v1/console/runs", headers });
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(429);
   });
 
   it("内容接口不受限流影响", async () => {

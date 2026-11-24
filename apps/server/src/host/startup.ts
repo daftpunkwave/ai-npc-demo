@@ -15,7 +15,6 @@ import {
   type ResolvedModuleSet,
   type StoragePort,
 } from "@ai-npc/contracts";
-import type { LoadedConfig, Roster } from "@ai-npc/experiment";
 import {
   loadContentPack,
   loadRoster,
@@ -112,8 +111,6 @@ export interface HostStartup {
   readonly packId: string;
   readonly contentVersion: string;
   readonly loadContext: ConfigLoadContext;
-  /** 已加载的默认名册；创建 run 时用于冻结 manifest。 */
-  readonly roster: LoadedConfig<Roster>;
   readonly active: ActiveRunState;
   readonly activeStartup: ResolvedServerAssembly;
   readonly sessionAssembly: SessionAssemblies;
@@ -518,21 +515,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     await disposeInReverse([{ label: "storage", dispose: () => storageStarted.dispose() }]);
     throw new Error("宿主运行时未初始化");
   }
-  // 按本次 active run 的名册引用重建：加载失败时已启动的存储与模块必须被释放，
-  // 因此不能把加载推迟到 return 表达式里执行。
-  let startupRoster: LoadedConfig<Roster>;
-  try {
-    startupRoster = loadRoster(active.runSpec.rosterRef, loadContext);
-  } catch (error) {
-    await disposeInReverse([
-      { label: "started modules", dispose: async () => { await activeStarted.dispose(); } },
-      { label: "run Agent modules", dispose: async () => { await initialAgentModules?.started.dispose(); } },
-      { label: "storage", dispose: () => storageStarted.dispose() },
-    ]);
-    throw error;
-  }
-  return {
-    host,
+  return {    host,
     storage,
     storageStarted,
     startedModules: activeStarted,
@@ -543,8 +526,6 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     packId,
     contentVersion,
     loadContext,
-    // 按本次实际使用的名册引用重建：启动分支的两条路径各自加载名册，这里统一暴露其引用来源。
-    roster: startupRoster,
     active,
     activeStartup,
     sessionAssembly: sessionAssemblies,

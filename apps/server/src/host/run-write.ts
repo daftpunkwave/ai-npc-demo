@@ -54,18 +54,6 @@ function canonicalJsonValue(value: unknown): Json {
   return JSON.parse(JSON.stringify(value)) as Json;
 }
 
-function assertNoUndefined(value: unknown, path: string): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertNoUndefined(item, `${path}[${index}]`));
-    return;
-  }
-  if (value === null || typeof value !== "object") {
-    if (value === undefined) throw new Error(`${path} 为 undefined`);
-    return;
-  }
-  for (const [key, item] of Object.entries(value)) assertNoUndefined(item, `${path}.${key}`);
-}
-
 function failureOf(code: string, path: string, error: unknown): RunValidationFailure {
   if (error instanceof DomainError) return { code, path, message: error.safeMessage };
   return { code, path, message: error instanceof Error ? error.message : String(error) };
@@ -123,8 +111,6 @@ export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise
 
   const createdAt = input.host.nowIso();
   const runBranchId = input.host.ids("br");
-  // 落库前先自检：存储层拒绝 undefined，这里提前失败并指出是哪个字段。
-  assertNoUndefined({ runSpec: canonicalJsonValue(runSpec), manifest: canonicalJsonValue(sealed.manifest) }, "run");
   input.storage.transact((tx) => {
     // 每个 run 有自己的分支：实验 run 之间互不影响，也不污染在线分支。
     tx.rows("branches").put({

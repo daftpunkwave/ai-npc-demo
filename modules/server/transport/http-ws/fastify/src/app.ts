@@ -161,10 +161,14 @@ function registerErrorHandling(
       return sendHttpError(reply, "plugin-failed", "请求处理超时", true);
     }
     const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
-    // 限流插件以 429 抛出：按统一错误格式返回，并保留插件给出的等待秒数。
+    // 限流插件以 429 抛出：按统一错误格式返回。插件已在抛错前写入正确的 retry-after，
+    // 这里不覆盖它；只把插件计算好的等待说明带进 safeMessage。
     if (statusCode === 429) {
-      void reply.header("Retry-After", "10");
-      return sendHttpError(reply, "budget-exhausted", "请求过于频繁，请稍后重试", true);
+      const pluginError = (error as { readonly error?: { readonly safeMessage?: unknown } }).error;
+      const safeMessage = typeof pluginError?.safeMessage === "string"
+        ? pluginError.safeMessage
+        : "请求过于频繁，请稍后重试";
+      return sendHttpError(reply, "budget-exhausted", safeMessage, true);
     }
     if (statusCode === 400 || statusCode === 413 || statusCode === 415) {
       return sendHttpError(reply, "validation", "请求结构不合法");
@@ -220,7 +224,23 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     return payload;
   });
-  // 只对 /api/v1/ 生效——静态控制台资源与健康检查是廉价读，限流只会妨碍正常加载。
+  // 控制台研究/评估接口与登录入口按路由声明配额：读接口 60 次/10 秒、写接口 10 次/10 秒。
+  // 阈值可经 options.rateLimits 覆盖；其他既有路由的限流治理另见跟踪 Issue。
+  const rateLimitFor = (method: string): number =>
+    method === "GET" || method === "HEAD"
+      ? (options.rateLimits?.read ?? 60)
+      : (options.rateLimits?.write ?? 10);
+  app.addHook("onRoute", (route) => {
+    const url = route.url;
+    const limited = url.startsWith("/api/v1/console") || url === "/api/v1/auth/login";
+    if (!limited) return;
+    const methods = Array.isArray(route.method) ? route.method : [route.method];
+    const write = methods.some((method) => method !== "GET" && method !== "HEAD");
+    route.config = {
+      ...(route.config ?? {}),
+      rateLimit: { max: rateLimitFor(write ? "POST" : "GET"), timeWindow: "10 seconds" },
+    };
+  });
   await app.register(rateLimit, {
     global: false,
     max: options.rateLimits?.read ?? 60,
@@ -231,7 +251,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       if (typeof authorization === "string" && authorization.length > 0) return `cred:${authorization.slice(-24)}`;
       return `ip:${request.ip}`;
     },
-    errorResponseBuilder: (request, context) => ({
+    errorResponseBuilder: (_request, context) => ({
       // 与项目统一错误格式一致：429 走 budget-exhausted，并带 retryAfter 秒数。
       statusCode: 429,
       error: {

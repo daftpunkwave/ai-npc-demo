@@ -145,9 +145,9 @@ export function probeInvalidReason(input: ProbeValidityInput): ProbeInvalidReaso
   // 归档原因优先：写入时已经判定过，重读时再推导会把 `empty-answer` 之类
   // 抹成「有效」，让失败样本混进正确率分母。
   if (input.archivedInvalidReason !== undefined) {
-    // 只接受已知原因：未知字符串说明记录被外部改写，退回按布尔位推导更安全。
+    // 只接受已知原因；未知字符串说明记录被外部改写，退回按布尔位推导更安全。
     const archived = probeInvalidReasons.find((reason) => reason === input.archivedInvalidReason);
-    return archived ?? null;
+    if (archived !== undefined) return archived;
   }
   if (!input.turnCompleted) {
     return "turn-failed";

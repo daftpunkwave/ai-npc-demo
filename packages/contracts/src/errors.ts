@@ -142,7 +142,7 @@ const sensitiveKeyMarkers = [
   "bearer",
 ] as const;
 
-function isSensitiveKey(key: string): boolean {
+export function isSensitiveKey(key: string): boolean {
   const normalized = key.toLowerCase();
   return sensitiveKeyMarkers.some((marker) => normalized.includes(marker));
 }

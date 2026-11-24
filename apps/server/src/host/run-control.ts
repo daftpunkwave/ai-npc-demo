@@ -6,7 +6,7 @@
  * 约束与禁忌：不写世界状态、不推进 tick、不创建分支；
  * 状态不符或缺时钟时返回领域错误而不是静默跳过，避免持久化出不一致状态。
  */
-import { DomainError, type HostServices, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type HostServices, type Json, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
 
 /** run 控制所需的依赖。 */
 export interface RunControlInput {
@@ -50,15 +50,18 @@ interface ControlContext {
 }
 
 /**
- * 读书已提交的幂等记录；键为 (主体, operationId, 操作类型)。
- * run_control_idempotency 是部署级表，经 rows() 访问而不经分支作用域。
+ * 读书已提交的幂等记录；键为 (世界, 主体, operationId, 操作类型)。
+ * run_control_idempotency 是部署级表，经 rows() 访问而不经分支作用域；
+ * 必须先按 world_id 过滤，否则同一 operationId 在其他世界重放会串到本世界。
  */
 function replayOf(
   tx: StorageTransaction,
   request: RunControlRequest,
   kind: RunControlKind,
+  worldId: string,
 ): { readonly runId: string; readonly status: string } | null {
   const row = tx.rows(idempotencyTable).get({
+    world_id: worldId,
     principal_id: request.principalId,
     operation_id: request.operationId,
     operation_kind: kind,
@@ -85,7 +88,7 @@ function prepare(
   allowed: ReadonlySet<string>,
   worldId: string,
 ): { readonly replay: RunControlResult } | { readonly context: ControlContext } {
-  const replay = replayOf(tx, request, kind);
+  const replay = replayOf(tx, request, kind, worldId);
   if (replay !== null) {
     // 同一 operationId 用于其他 run 属于调用方错误，不能当成新操作静默执行。
     if (replay.runId !== runId) {
@@ -128,6 +131,41 @@ function recordControl(
   });
 }
 
+/** 迁移与测试里的历史默认值；只有冻结 manifest 缺时钟配置时才使用。 */
+const fallbackSecondsPerTick = 20;
+
+/**
+ * 从 run 冻结的 manifest 读取时钟模块的 `secondsPerTick`。
+ * 实验 run 的装配可能覆盖全局默认值，不能直接把 20 写进时钟行。
+ */
+function secondsPerTickOf(run: Readonly<Record<string, unknown>>): number {
+  const raw = run["manifest_json"];
+  let manifest: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      manifest = JSON.parse(raw) as unknown;
+    } catch {
+      return fallbackSecondsPerTick;
+    }
+  }
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) return fallbackSecondsPerTick;
+  const assembly = (manifest as Readonly<Record<string, Json>>)["assembly"];
+  if (typeof assembly !== "object" || assembly === null || Array.isArray(assembly)) return fallbackSecondsPerTick;
+  const modules = (assembly as Readonly<Record<string, Json>>)["modules"];
+  if (!Array.isArray(modules)) return fallbackSecondsPerTick;
+  for (const module of modules) {
+    if (typeof module !== "object" || module === null || Array.isArray(module)) continue;
+    const record = module as Readonly<Record<string, Json>>;
+    if (record["moduleId"] !== "game.clock.controlled") continue;
+    const config = record["config"];
+    const value = typeof config === "object" && config !== null && !Array.isArray(config)
+      ? (config as Readonly<Record<string, Json>>)["secondsPerTick"]
+      : null;
+    if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  }
+  return fallbackSecondsPerTick;
+}
+
 /**
  * 启动或恢复 run。
  *
@@ -143,7 +181,10 @@ export function startRun(input: RunControlInput, runId: string, request: RunCont
     const clockTable = tx.branch(branchId).table("clock");
     clockTable.put(clock === null
       // 首次启动：实验分支的时钟从 tick 0 开始，处于运行态。
-      ? { world_tick: 0, mode: "running", seconds_per_tick: 20, run_version: 0, step_target_tick: null, updated_at: now }
+      ? {
+          world_tick: 0, mode: "running", seconds_per_tick: secondsPerTickOf(run),
+          run_version: 0, step_target_tick: null, updated_at: now,
+        }
       // 恢复：只切模式，保留 world_tick 与 step 目标。
       : { ...clock, mode: "running", run_version: Number(clock["run_version"]) + 1, updated_at: now });
     const startedAt = run["started_at"];

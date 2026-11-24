@@ -49,6 +49,15 @@ function RunReportPanel({ report }: { readonly report: RunReportResponse }): Rea
         {report.validity.evidenceComplete ? "" : "（证据不完整）"}
         {report.validity.invalidReasons.length === 0 ? "" : `：${report.validity.invalidReasons.join("、")}`}
       </p>
+      {Object.entries(report.invalidProbeCounts).some(([, count]) => count > 0) ? (
+        <p>
+          无效探针：
+          {Object.entries(report.invalidProbeCounts)
+            .filter(([, count]) => count > 0)
+            .map(([reason, count]) => `${reason} ${count}`)
+            .join(" · ")}
+        </p>
+      ) : null}
       <table>
         <thead>
           <tr><th>指标</th><th>分子</th><th>分母</th><th>值</th></tr>

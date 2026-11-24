@@ -6,6 +6,7 @@
  */
 import {
   DomainError,
+  isSensitiveKey,
   type HostServices,
   type Json,
   type StoragePort,
@@ -66,8 +67,9 @@ function redactJson(value: Json, redaction: "redacted" | "raw"): Json {
   if (value === null || typeof value !== "object") return value;
   const result: Record<string, Json> = {};
   for (const [key, item] of Object.entries(value)) {
-    // 凭据引用统一替换为占位符：字段是否存在本身有价值，具体值不能外流。
-    if (key === "credentialRef" || key === "apiKey" || key === "authorization") {
+    // 凭据引用与密钥类键统一替换为占位符：字段是否存在本身有价值，具体值不能外流。
+    // 复用契约层的敏感键判定，覆盖大小写变体与 token/secret/password/api_key 等命名。
+    if (isSensitiveKey(key)) {
       result[key] = "[redacted]";
       continue;
     }
@@ -86,12 +88,14 @@ function redactJson(value: Json, redaction: "redacted" | "raw"): Json {
  *
  * 行来自存储层，JSON 列可能以字符串或已解析对象返回。若把字符串直接交给 `redactJson`，
  * 它只是个字符串、不会被逐字段处理，`redacted` 就会保留完整正文，`raw` 也可能带出凭据。
- * 因此按列的语义先尝试解析：解析成功的按对象脱敏，解析失败的按普通字符串脱敏（整段清空）。
+ * 因此按列的语义先尝试解析：解析成功的按对象脱敏；解析失败的只有正文类列才清空，
+ * 标识、类型、时间戳等标量列保持原值——否则导出包会失去可追溯性。
  */
 function redactRows(
   rows: readonly Readonly<Record<string, unknown>>[],
   redaction: "redacted" | "raw",
 ): readonly Json[] {
+  const textColumns = new Set(["answer_text", "body", "content", "question", "note", "summary", "message", "text"]);
   return rows.map((row) => {
     const decoded: Record<string, Json> = {};
     for (const [key, value] of Object.entries(row)) {
@@ -99,7 +103,7 @@ function redactRows(
         decoded[key] = redactJson((value ?? null) as Json, redaction);
         continue;
       }
-      // 只对看起来是 JSON 的字符串做解析；普通文本按正文类字段处理。
+      // 只对看起来是 JSON 的字符串做解析；普通文本按列语义处理。
       const trimmed = value.trimStart();
       if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
         try {
@@ -109,9 +113,8 @@ function redactRows(
           // 解析失败说明不是合法 JSON，退回按字符串处理。
         }
       }
-      // 无法解析的字符串可能是一段正文（例如对白原文）：redacted 下无法判断内容，
-      // 因此整段清空；raw 下保留原文。留空比泄露安全。
-      decoded[key] = redaction === "redacted" ? null : (value as Json);
+      // 无法解析的正文类字符串在 redacted 下整段清空；ID、类型、时间戳等标量保留。
+      decoded[key] = redaction === "redacted" && textColumns.has(key) ? null : (value as Json);
     }
     return redactJson(decoded, redaction);
   });

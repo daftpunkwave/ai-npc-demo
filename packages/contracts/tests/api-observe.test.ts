@@ -137,6 +137,14 @@ const report = {
       valid: true,
     },
   ],
+  invalidProbeCounts: {
+    "turn-failed": 0,
+    "no-dialogue": 0,
+    "empty-answer": 0,
+    "speech-fallback": 0,
+    "model-substituted": 0,
+    "evidence-incomplete": 0,
+  },
   behavior: [
     {
       atTick: 60,
@@ -247,7 +255,7 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["实验指标摘要", experimentMetricSummarySchema, { metric: "recall-accuracy", validSamples: 3, invalidSamples: 0, mean: 0.5 }, { metric: "", validSamples: 3, invalidSamples: 0, mean: null }],
   ["实验分组摘要", experimentCellSummarySchema, { variant: "m1", scriptBranch: "break", runIds: ["run-k3j9x0a1b2c3"], metrics: [] }, { variant: "m1", scriptBranch: "break", runIds: ["run-1"], metrics: [] }],
   ["实验详情", experimentDetailResponseSchema, { experimentId: "exp-memory-promise-v1", runs: [runSummary], cells: [] }, { experimentId: "exp bad/id", runs: [], cells: [] }],
-  ["导出请求", exportRequestSchema, { runId: "run-k3j9x0a1b2c3", redaction: "redacted", operationId: "op-k3j9x0a1b2c3" }, { runId: "run-k3j9x0a1b2c3", redaction: "full", operationId: "op-k3j9x0a1b2c3" }],
+  ["导出请求", exportRequestSchema, { runId: "run-k3j9x0a1b2c3", redaction: "redacted" }, { runId: "run-k3j9x0a1b2c3", redaction: "full" }],
   ["导出响应", exportResponseSchema, { artifactId: "art-k3j9x0a1b2c3" }, { artifactId: "art-1" }],
 ];
 

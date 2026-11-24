@@ -213,6 +213,15 @@ interface MetricSamples {
   noOpportunity: number;
 }
 
+/** 一个指标对应的探针 kind；用于区分「没有该 kind 的探针」与「该 kind 的探针全部无效」。 */
+const metricKind: Readonly<Partial<Record<MetricKey, ProbeKind>>> = {
+  "recall-accuracy": "recall",
+  "omission-rate": "recall",
+  "belief-accuracy": "belief",
+  "fabrication-rate": "unknown",
+  "leak-rate": "secret",
+};
+
 /**
  * 按「变体 × 脚本分支」汇总各 run 的指标。
  *
@@ -223,8 +232,9 @@ interface MetricSamples {
  * - **无机会**：指标分母为 0，例如该 run 根本没有需要 ``secret`` 探针的检查点。
  *   它既不是有效也不是无效，按规格记 `N/A`。
  *
- * 区分方式：指标 `value === null` 时看 run 是否有效——run 有效说明是「无机会」，
- * run 无效说明这次执行没产出可用证据，计入无效。
+ * 区分方式：指标 `value === null` 时，先看该 kind 是否有无效探针——有则说明执行过但不可采信，
+ * 计入无效；否则才是没有执行机会。不能只按 run 有效性判断，否则「部分指标探针无效」会被
+ * 误记成 noOpportunity。
  */
 export function aggregateExperimentCells(
   reports: readonly { readonly report: RunReport; readonly scriptBranch: string; readonly variant: string }[],
@@ -248,8 +258,12 @@ export function aggregateExperimentCells(
         // 无值说明连执行都没完成；两种都记为无效样本。
         entry.invalid += 1;
       } else if (metric.value === null) {
-        // run 有效但没有分母：该组探针没有执行机会，按 N/A 记录，不算失败。
-        entry.noOpportunity += 1;
+        // run 有效但没有分母：若该 kind 的探针执行过且全部无效，属于失败样本；
+        // 只有该 kind 根本没有探针时才是「没有执行机会」。
+        const kind = metricKind[metric.metric];
+        const invalidProbe = kind !== undefined && report.probes.some((probe) => probe.score.kind === kind && !probe.valid);
+        if (invalidProbe) entry.invalid += 1;
+        else entry.noOpportunity += 1;
       } else {
         entry.valid.push(metric.value);
       }

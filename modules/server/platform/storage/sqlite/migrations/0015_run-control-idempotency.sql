@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS run_control_idempotency (
   run_id TEXT NOT NULL,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  PRIMARY KEY (principal_id, operation_id, operation_kind)
+  PRIMARY KEY (world_id, principal_id, operation_id, operation_kind)
 );
