@@ -166,21 +166,25 @@ function boundCapabilities(
 
 /**
  * 构造一个 realm 的模块引用摘要列表；调用前实例计划已完成全部校验。
- * `config` 是装配解析并校验后的配置值本身，浏览器 realm 靠它启动模块；
- * `configHash` 是同一份配置的规范摘要，供客户端自证与冻结配置一致。
+ * `configHash` 始终给出同一份配置的规范摘要。
+ * `config` 只对浏览器 realm（client / console）下发：它们没有装配解析器，必须靠这一份启动。
+ * 服务端 realm 的实例由宿主自己创建，其配置含内容包下发的提示词与工具描述、部署期覆盖，
+ * 属服务端内部参数，不能经 `/api/v1/session` 的 `serverAssembly` 暴露给玩家会话。
  */
 async function moduleRefs(
   plan: ResolvedRealmPlan,
   hash: CanonicalHasher,
+  includeConfig: boolean,
 ): Promise<ModuleRef[]> {
   const modules: ModuleRef[] = [];
   for (const module of plan.modules) {
+    const configHash = await computeConfigHash(module.config, hash);
     modules.push({
       moduleId: module.moduleId,
       version: module.version,
       apiVersion: module.apiVersion,
-      configHash: await computeConfigHash(module.config, hash),
-      config: module.config,
+      configHash,
+      ...(includeConfig ? { config: module.config } : {}),
     });
   }
   return modules;
@@ -209,7 +213,8 @@ export async function resolveServerAssembly(
     catalog,
     ...serverAssemblyInputs(assembly, serverRequiredCapabilities, normalized),
   });
-  const modules = await moduleRefs(plan, hash);
+  // server 装配摘要只带 configHash，不下发配置本身。
+  const modules = await moduleRefs(plan, hash, false);
   const assemblyHash = await computeAssemblyHash({ assembly, realm: "server", plan, hash });
   return {
     plan,
@@ -244,7 +249,7 @@ export async function resolveSessionAssemblies(
       catalog,
       ...(realm === "client" ? { requiredCapabilities: clientRequiredCapabilities } : {}),
     });
-    const modules = await moduleRefs(plan, hash);
+    const modules = await moduleRefs(plan, hash, true);
     return {
       realm,
       protocolVersion,

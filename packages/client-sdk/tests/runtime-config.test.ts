@@ -100,3 +100,26 @@ describe("浏览器模块按装配配置启动", () => {
     }
   });
 });
+describe("配置的 transform 不重复生效", () => {
+  it("模块拿到的是服务端已转换的值，不是客户端再转换一次的结果", async () => {
+    const received: Json[] = [];
+    const definition: ModuleDefinition = {
+      ...cameraModule(received),
+      // 服务端已执行过一次 transform 并把结果下发（delivered 为 2）；
+      // 若客户端把再次解析的输出交给模块，模块会收到 3，与服务端冻结结果不一致。
+      configSchema: z.strictObject({
+        zoom: z.number().min(0.5).max(4),
+        delivered: z.number().int().transform((value) => value + 1),
+      }),
+    };
+    const started = await startBrowserModules({
+      definitions: [definition],
+      resolved: resolvedWith({ zoom: 2, delivered: 2 }),
+    });
+    try {
+      expect(received).toEqual([{ zoom: 2, delivered: 2 }]);
+    } finally {
+      await started.dispose();
+    }
+  });
+});
