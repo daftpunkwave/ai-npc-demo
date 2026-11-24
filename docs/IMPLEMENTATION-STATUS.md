@@ -1,7 +1,7 @@
 # 实现状态与迁移清单
 
 > 本页集中记录已交付能力，以及代码和内容相对 [00-scope-and-invariants.md — 序章范围](00-scope-and-invariants.md) 与 [rules.md — 序章规则](game/rules.md) 的差距。交付范围变化时更新本页。实施顺序与步骤完成判据由 [build-plan.md — 构建计划](delivery/build-plan.md) 规定。
-> Demo 版本为 `0.1.0`，运行内容版本为 `0.2.0`。
+> Demo 版本为 `0.1.0`，运行内容版本为 `0.3.0`。
 
 ## 1. 总览
 
@@ -32,10 +32,28 @@
 | 模块替换 | 分别验证剧情规则、HUD、观测页和记忆替换 | 已验证服务端剧情替换，其他替换证据仍需补齐 | **部分实现** |
 | 交付验收 | 三核心角色场景、完整序章场景与交付包 | 已有世界规则场景与玩家、控制台基础 e2e；t144 程序案、控制台运营 e2e 与完整交付包仍未完成 | **部分验证** |
 
+### 1.1 构建计划步骤进度
+
+下表按 [build-plan.md — 构建计划](delivery/build-plan.md) 的步骤顺序汇总当前进度。状态以代码、可执行测试与本页第 2 节的能力记录为准；未完成的步骤不因局部实现而标为完成。
+
+| 步骤 | 范围 | 状态 | 依据与剩余 |
+|---|---|---|---|
+| S00–S03 | 仓库骨架、contracts、kernel、module-sdk 与边界检查 | 已交付 | `pnpm check` 的 `typecheck`、`test`、`check:boundaries` 持续覆盖 |
+| S04–S09 | SQLite 存储、内容加载、authority、游戏模块、服务端宿主与 API | 已交付 | 服务端集成测试与宿主测试覆盖；席位契约与时钟操作原子性另列于第 3 节 |
+| S10–S12 | 玩家客户端、控制台宿主、双端端口检查 | 已交付 | `player-start`、`console-basic` 等 e2e 通过 |
+| S13–S18 | 感知与调度、M0/M1 记忆、上下文与工具、turn 主循环、模型池与两种真实传输 | 已交付 | 记忆、运行时、模型池与传输契约测试覆盖 |
+| S19 | 三核心角色端到端验证 | 已交付 | `tests/scenarios/slice-a.test.ts`、玩家与控制台 e2e |
+| S20 | M2/M3 与记忆整理任务 | 已交付 | 五个记忆 variant 与整理模型路径均有测试 |
+| S21 | 实验、探针与评估页面 | 部分交付 | 实验展开、创建/启动/停止、计分、报告与控制台评估页已实现；实验执行器缺失，见 3.1 与 Issue #313 |
+| S22 | 十五个身份、t144 程序案、运营与剧情页面、t168 交接、公开广播 | 部分交付 | 15 身份与配额、t168 六资源交接、玩家公开广播已交付；t144 程序案（3.3）、控制台运营页面、席位契约（3.5）未完成 |
+| S23 | 切片 C 验收 | 未完成（受阻） | `slice-c` 场景、故障注入逐行覆盖、`console-ops` e2e、真实模型单游戏日运行均未完成；t144 是直接前置 |
+| S24 | 第二实现与替换证据 | 未开始 | `client.hud.compact`、`console.observability.lite`、替换装配与 `swap.test.ts` 尚未创建 |
+| S25 | 交付包 | 未开始 | `docs/delivery/report-v1.md` 尚未创建 |
+
 ## 2. 已交付能力说明
 
 1. **名册与身份**：新增 `config/rosters/standard-15.yaml`，同步 `core-3`、`.env.example`、`config/runs/online-default.yaml` 与服务端默认 `rosterRef`。单人正式名册的 schema 上限改为 15。
-2. **内容包 0.2.0**：`factions.yaml` 拆分为 `factionHomeNodeId`、`outpostNodeId`、`territoryNodeId`，并补上党魁、秘密与关系；`characters.yaml` 对齐 8 名公社支持者和 3 名外域 Agent，新增 `characterId` 与 `secret`；`starts.yaml` 只启用公社席，并补上闻昭的第三条开局消息；`world-init.yaml` 的职责委托改用党魁运行身份；`evidence.yaml` 清理旧身份持有者；`locale/zh-CN.yaml` 的玩家称呼改为“党魁”并补齐材料、食物、水词条。
+2. **内容包结构**：`factions.yaml` 拆分为 `factionHomeNodeId`、`outpostNodeId`、`territoryNodeId`，并补上党魁、秘密与关系；`characters.yaml` 对齐 8 名公社支持者和 3 名外域 Agent，新增 `characterId` 与 `secret`；`starts.yaml` 只启用公社席，并补上闻昭的第三条开局消息；`world-init.yaml` 的职责委托改用党魁运行身份；`evidence.yaml` 清理旧身份持有者；`locale/zh-CN.yaml` 的玩家称呼改为“党魁”并补齐材料、食物、水词条。
 3. **剧情卡署名**：把青枝、洛、追风、唐箴的署名改为 `species-flora`、`species-extraterrestrial`、`species-fauna`、`human-pacifist`；沈砾、苏回、谷寻保留为 signature-only 署名，不实例化。内容加载器、剧情模块与剧情卡校验共用同一份名单。
 4. **时钟与章节终点**：20 秒/tick 写入时钟模块默认值与三份装配。章节评估步骤在 t168 把停止请求与评估结果同事务写入持久停止点，tick 收尾后暂停时钟；崩溃后重启或补完会补做幂等暂停并拒绝 t169，存档保留。
 5. **公社玩家权限**：玩家会话可以提交 `watergate.allocation` 的 `policy.set`，处理器按 campaign 的 `playerId` 与 `factionId` 裁决；其他派系党魁返回 `no-authority`。`water-allocation` 条款允许玩家 `player-1` 作为义务人，改策违约按 `PolicyChanged.byId` 记到协议。
