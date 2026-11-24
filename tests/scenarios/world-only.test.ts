@@ -99,6 +99,14 @@ describe("168 tick 世界脚本", () => {
       unmet: ["relay.stability", "orchard.water", "migration.safety"],
       fulfilledCount: 1,
       breachedCount: 1,
+      cityResources: {
+        energy: 140,
+        materials: 160,
+        food: 120,
+        supply: 60,
+        medical: 40,
+        water: 72,
+      },
     });
 
     // 运输：tick 0 派遣、tick 1 出发、tick 7 到达；货物从灰港转入果园。
