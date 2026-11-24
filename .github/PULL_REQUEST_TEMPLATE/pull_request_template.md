@@ -14,9 +14,9 @@ PR 标题建议遵循 Conventional Commits 格式，用动词开头的具体功�
 PR 侧边栏不做特定要求，善用 PR Labels 即可；建议最少配置一个标签以表达本次 PR 的主要任务（如关联的核心领域 realm/*、area/* 或变更性质）。
 -->
 
-## 关联 Issue / PR / Discussions
+## 关联Issue
 
-<!-- 【选填，可多选】关联本次 PR 解决或相关的 Issue、前置 PR 或 Discussions（例如：Fixes #123, Relates to #100, #200）。如果没有关联项，可以不写本节标题（直接省略）。 -->
+<!-- 【选填，可多选】本节标题按实际关联项命名：关联什么内容，标题就写什么——仅关联 Issue 时标题写「关联Issue」；同时关联 Issue 和 PR 时标题写「关联Issue/PR」。关联本次 PR 解决或相关的 Issue、前置 PR 或 Discussions（例如：Fixes #123, Relates to #100, #200）。如果没有关联项，可以不写本节标题（直接省略）。 -->
 
 ## 改动概述
 
