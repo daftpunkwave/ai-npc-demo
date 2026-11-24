@@ -208,7 +208,7 @@ describe("装配解析成功路径", () => {
       realm: "client",
       instanceScope: "session",
       provides: [capability("client.hud", "exactly-one", "session")],
-      requiresRemote: ["server.world"],
+      requiresRemote: ["game.world"],
       port: { capability: "client.hud" },
     });
     const assembly = makeAssembly({ client: { bindings: [binding("client.hud", "client.hud.standard")] } });

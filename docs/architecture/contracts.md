@@ -85,6 +85,8 @@ InputFrontier 由 scope 绑定，是每个 Agent 的冻结边界；多主体快�
 
 命令载荷的文本与数组边界由公共 schema 统一约束：对白正文 1–300 字，席位发言 1–200 字，侦察问题与剧情卡说明不超过 300 字，政策键不超过 120 字；主体名单（协议当事人、通信受众、席位收件人）不超过 20 个，协议提案与还价的条款各不超过 20 条。超出上限的载荷在 schema 层被拒绝，返回 `invalid-params`，不进入处理器，也不产生状态、事件或 job。
 
+JSON 载荷另有结构性输入预算：容器嵌套深度上限 200 层，节点总数上限 200000。预算由 `@ai-npc/contracts` 的 `jsonInputBudget` 定义，并以显式栈迭代检查，不依赖调用栈深度；预留计数覆盖已入队但未处理的帧，因此超宽容器在分配前即被拒绝。预算同时拒绝 Date、Map、类实例等非 JSON 对象，避免它们被序列化成 `{}`；循环引用由深度上限拦下。命令 payload、事件 payload、模型工具参数与命令回执 result 使用带预算的 `boundedJsonValueSchema`，超限输入得到确定的 `validation` 校验失败（HTTP 层返回 400），不会因递归过深抛 `RangeError` 落到 500；`canonicalJson` 在序列化前检查同一份预算，超限时抛 `TypeError` 并指明超出的预算与路径。工具网关把超预算的模型参数按 `invalid-params` 结算，原始参数不写入 artifact，只记录预算拒绝标记；同一 provider call 的重试沿用既有结算，不会产生幂等冲突或覆盖既有结果。
+
 ## 2. 命令与 receipt
 
 CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文或宿主附加。模型不能靠自报 author 取得权限。
@@ -114,7 +116,8 @@ interface ModuleRef {
   readonly moduleId: string;
   readonly version: string;
   readonly apiVersion: string;
-  readonly configHash: string;
+  readonly configHash: string;   // 配置的规范化摘要
+  readonly config?: Json;     // 仅浏览器 realm 下发：装配解析后的配置值
 }
 
 interface ResolvedModuleSet {
@@ -209,7 +212,7 @@ interface UiExtension {
 }
 ```
 
-其余受控类型的首版定义：`StrictConfigSchema` 是一个调用过 `.strict()` 的 Zod object schema（未知键报错），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本与装配 hash。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
+其余受控类型的首版定义：`StrictConfigSchema` 是一个调用过 `.strict()` 的 Zod object schema（未知键报错），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本、装配 hash，以及每个模块的已解析配置 `config`。浏览器 realm 没有装配解析器，模块必须用握手下发的 `config` 启动而不是自带的 `defaults`，否则实际行为与装配声明不符且无法用 `configHash` 自证一致；`config` 缺失或未通过模块 `configSchema` 校验时按 `assembly-incompatible` 拒绝启动。`config` 只对 client 与 console 两个 realm 下发：服务端 realm 的实例由宿主自己创建，其配置含内容包下发的提示词、工具描述与部署期覆盖，属服务端内部参数，而 `serverAssembly` 会经 `/api/v1/session` 返回给玩家会话，因此只带 `configHash`。客户端以在下发值基础上补齐 `configSchema` 默认字段的方式构造最终配置，不重新执行 `transform`，保证浏览器实际使用的值与服务端冻结结果一致。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
 
 ## 4. 跨端会话与协议
 

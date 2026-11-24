@@ -330,7 +330,7 @@ describe("装配解析错误路径", () => {
       id: "game.comms.standard",
       instanceScope: "run",
       provides: [capability("game.comms", "exactly-one", "run")],
-      requiresRemote: ["server.world"],
+      requiresRemote: ["game.world"],
     });
     const assembly = makeAssembly({
       server: { bindings: [binding("game.comms", "game.comms.standard")] },

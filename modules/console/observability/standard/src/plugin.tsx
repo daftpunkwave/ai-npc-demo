@@ -22,6 +22,16 @@ import { StreamClient, type ApiClient } from "@ai-npc/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
+  /**
+   * 当前在线分支 ID。
+   * 恢复或重开会切换在线分支，控制台查询必须跟随新分支，否则会静默读到已归档分支的数据。
+   * 该值由宿主在收到带分支身份的快照后更新。
+   */
+  readonly branchId: string;
+  /** 订阅在线分支变化；返回取消订阅函数。 */
+  readonly subscribeBranch: (listener: () => void) => () => void;
+  /** 按快照帧内的身份校对在线分支；身份未变时不做任何事。 */
+  applyBranchIdentity(worldId: string, branchId: string): void;
 }
 
 function TraceNode({ node }: { readonly node: TraceResponse["root"] }): ReactNode {
@@ -59,6 +69,12 @@ function ObservabilityPage(): ReactNode {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  // 在线分支以宿主端口为准：恢复/重开后会变，查询必须跟随。
+  const [branchId, setBranchId] = useState(host.branchId);
+  useEffect(() => {
+    setBranchId(host.branchId);
+    return host.subscribeBranch(() => setBranchId(host.branchId));
+  }, [host]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +107,13 @@ function ObservabilityPage(): ReactNode {
           channel: "console.timeline",
           fromStreamSeq: null,
           onMessage: (message) => {
-            if (message.type !== "snapshot" || message.channel !== "console.timeline") return;
+            if (message.type !== "snapshot") return;
+            // 旧连接的迟到快照不能改写当前身份：先确认未取消且连接代次仍然有效。
+            if (cancelled || generation !== connectionGeneration) return;
+            // 快照携带服务端权威的在线分支：恢复/重开切换分支后，控制台查询必须跟随，
+            // 否则会继续用旧 branchId 命中已归档分支并静默展示过期数据。
+            host.applyBranchIdentity(message.worldId, message.branchId);
+            if (message.channel !== "console.timeline") return;
             try {
               const timeline = timelineResponseSchema.parse(message.data);
               if (!cancelled && generation === connectionGeneration) {
@@ -120,7 +142,7 @@ function ObservabilityPage(): ReactNode {
     const start = async (): Promise<void> => {
       try {
         const timeline = await host.api.consoleTimeline({
-          branchId: host.session.branchId,
+          branchId,
           fromSeq: 0,
           limit: 100,
           order: "desc",
@@ -141,11 +163,11 @@ function ObservabilityPage(): ReactNode {
       clearReconnect();
       stream?.close();
     };
-  }, [host.api, host.session.branchId]);
+  }, [host.api, branchId]);
 
   useEffect(() => {
     let cancelled = false;
-    void host.api.consoleAgents(host.session.branchId).then((response) => {
+    void host.api.consoleAgents(branchId).then((response) => {
       if (cancelled) return;
       setAgents(response.agents);
       setSelectedAgent((current) => current ?? response.agents[0]?.agentId ?? null);
@@ -154,7 +176,7 @@ function ObservabilityPage(): ReactNode {
       if (!cancelled) setAgentError(String(cause));
     });
     return () => { cancelled = true; };
-  }, [host.api, host.session.branchId]);
+  }, [host.api, branchId]);
 
   useEffect(() => {
     if (selectedAgent === null) return;
@@ -165,12 +187,12 @@ function ObservabilityPage(): ReactNode {
     setTurnDetail(null);
     setTrace(null);
     void Promise.all([
-      host.api.consoleInspector(selectedAgent, host.session.branchId),
-      host.api.consoleTurns({ agentId: selectedAgent, branchId: host.session.branchId, limit: 20 }),
+      host.api.consoleInspector(selectedAgent, branchId),
+      host.api.consoleTurns({ agentId: selectedAgent, branchId, limit: 20 }),
     ]).then(([nextInspector, nextTurns]) => {
       if (cancelled) return;
       setInspector(nextInspector);
-      const branchTurns = nextTurns.turns.filter((turn) => turn.branchId === host.session.branchId);
+      const branchTurns = nextTurns.turns.filter((turn) => turn.branchId === branchId);
       setTurns(branchTurns);
       setSelectedTurn((current) =>
         current !== null && branchTurns.some((turn) => turn.turnId === current)
@@ -181,7 +203,7 @@ function ObservabilityPage(): ReactNode {
       if (!cancelled) setDetailError(String(cause));
     });
     return () => { cancelled = true; };
-  }, [host.api, host.session.branchId, selectedAgent, refreshVersion]);
+  }, [host.api, branchId, selectedAgent, refreshVersion]);
 
   useEffect(() => {
     artifactRequestSeq.current += 1;
@@ -244,7 +266,7 @@ function ObservabilityPage(): ReactNode {
           <span className="console-eyebrow">研究视图</span>
           <h1>事件、身份与证据</h1>
         </div>
-        <span className="branch-chip">{host.session.branchId}</span>
+        <span className="branch-chip">{branchId}</span>
       </header>
       {detailError === null ? null : <div className="console-error" role="alert">{detailError}</div>}
       <div className="console-split observability-split">

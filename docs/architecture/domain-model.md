@@ -168,6 +168,8 @@ BEGIN IMMEDIATE
 COMMIT
 ```
 
+命令类型本身在进入网关之前判定：HTTP 入口用 `commandTypeSchema` 校验 `type`，未登记的类型直接返回 400 `validation`，不进入网关，因此不写回执、不产生事件、不推进世界状态。这一步与权限裁决分离——已登记但当前角色无权的类型仍返回 403 `forbidden`，让客户端能区分「命令不存在」与「无权使用」。网关内部对未登记类型仍保留 200 + `invalid-params` 拒绝回执，供不经 HTTP 的 `execute` 调用方使用。
+
 处理器抛出非 `DomainError` 的异常时整个事务回滚、不写 receipt，HTTP 返回 `plugin-failed`；调用方可以用同一 `commandId` 重试。规则 job、时钟步骤与事件订阅使用同样的事务与 `HandlerContext`，只是没有 receipt。
 
 ## 5. 命令目录

@@ -12,6 +12,7 @@ import type { StreamHubOptions } from "../src/stream-types";
 function hubOptions(projection: () => PlayerProjection): StreamHubOptions {
   return {
     projection,
+    worldId: "wld-000000000001",
     channelsFor: () => [],
     ids: (prefix) => `${prefix}-000000000001`,
     tokens: (kind) => `${kind}-token`,
