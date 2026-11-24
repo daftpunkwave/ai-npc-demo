@@ -2550,6 +2550,9 @@ describe("服务端 API", () => {
   it("传输层时间与连接维度上限显式声明，不依赖框架默认的不限", async () => {
     // Fastify 把这些选项默认设为 0（不限）。这里锁定取值：任一项被删回默认，
     // 慢请求或卡死的 handler 就会永久占用连接，且不会有人工可读的配置意图。
+    // 选项到 server 属性的落点由构造处注释说明（connectionTimeout 落到
+    // server.setTimeout 的空闲超时，而非收齐请求头的期限），此处不重复断言：
+    // ServerApp 有意不对外暴露内部 Fastify 实例。
     expect(httpTransportLimits.requestTimeoutMs).toBeGreaterThan(0);
     expect(httpTransportLimits.connectionTimeoutMs).toBeGreaterThan(0);
     expect(httpTransportLimits.handlerTimeoutMs).toBeGreaterThan(0);

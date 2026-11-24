@@ -79,7 +79,12 @@ export const httpTransportLimits = {
    * 30 秒给慢磁盘与高负载留出余量，同时让慢速发送请求体与卡死的 handler 被打断。
    */
   requestTimeoutMs: 30_000,
-  /** 连接建立上限：接受连接后必须在该时间内收到完整请求头，避免连接被长期占住。 */
+  /**
+   * socket 空闲上限：底层落到 `server.setTimeout()`（Node 的 socket 空闲超时），
+   * 连接在该时长内没有任何读写活动即被关闭。它不约束「收齐请求头」——
+   * 那由 Node 的 `headersTimeout` 管辖且 Fastify 未暴露为选项，本服务沿用其默认值。
+   * 此处取值目的是让停在半开状态上的连接最终被回收。
+   */
   connectionTimeoutMs: 30_000,
   /** handler 执行上限：与请求上限对齐，超时交错误处理器返回 plugin-failed。 */
   handlerTimeoutMs: 30_000,
