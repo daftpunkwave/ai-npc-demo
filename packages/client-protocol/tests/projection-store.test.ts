@@ -350,4 +350,71 @@ describe("ProjectionStore", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("applySnapshot 对完整投影校验，非法基线不写入状态", () => {
+    const store = new ProjectionStore();
+
+    // 缺必填字段：快照必须在写入前被完整 schema 拒绝。
+    expect(() =>
+      store.applySnapshot({
+        ...snapshot(1),
+        data: { clock: { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 0 } } as unknown as PlayerProjection,
+      }),
+    ).toThrow();
+    expect(store.getSnapshot()).toBeNull();
+
+    // 未知顶层字段同样被 strict 拒绝。
+    expect(() =>
+      store.applySnapshot({
+        ...snapshot(1),
+        data: { ...projection(), unexpected: true } as unknown as PlayerProjection,
+      }),
+    ).toThrow();
+    expect(store.getSnapshot()).toBeNull();
+
+    // 合法快照才成为基线。
+    expect(store.applySnapshot(snapshot(1)).changed).toBe(true);
+    expect(playerProjectionSchema.safeParse(store.getSnapshot()?.projection).success).toBe(true);
+  });
+
+  it("applySnapshot 的基线足以承接后续增量，无需求助合并结果复验", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(snapshot(1));
+
+    // 基线合法是 applyDelta 省略合并复验的前提：连续多条增量后仍满足完整契约。
+    for (let seq = 2; seq <= 5; seq += 1) {
+      expect(store.applyDelta(delta(seq, seq)).changed).toBe(true);
+      expect(playerProjectionSchema.safeParse(store.getSnapshot()?.projection).success).toBe(true);
+    }
+    expect(store.streamSeq).toBe(5);
+  });
+
+  it("replaceSnapshot 对完整投影校验，非法 REST 响应不覆盖已有基线", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(snapshot(4));
+
+    // REST 响应缺必填字段时不得替换掉已合法的投影。
+    expect(() =>
+      store.replaceSnapshot({
+        worldId: "wld-000000000001",
+        branchId: "br-000000000001",
+        streamSeq: 9,
+        projectionVersion: 9,
+        projection: { campaign: null } as unknown as PlayerProjection,
+      }),
+    ).toThrow();
+    expect(store.streamSeq).toBe(4);
+    expect(playerProjectionSchema.safeParse(store.getSnapshot()?.projection).success).toBe(true);
+
+    // 合法但更旧的响应仍按序保护丢弃；合法且更新的才被接受。
+    const stale = store.replaceSnapshot({
+      worldId: "wld-000000000001",
+      branchId: "br-000000000001",
+      streamSeq: 3,
+      projectionVersion: 3,
+      projection: projectionAtTick(3),
+    });
+    expect(stale).toMatchObject({ changed: false });
+    expect(store.streamSeq).toBe(4);
+  });
 });

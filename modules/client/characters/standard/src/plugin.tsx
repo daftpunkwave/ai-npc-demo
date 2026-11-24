@@ -7,7 +7,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type { ClientContentView, ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
 import type { ProjectionState } from "@ai-npc/client-protocol";
-import { groupByNodeId } from "./node-index";
+import { placeRows } from "./place-rows";
 
 type Tab = "characters" | "places" | "tasks" | "agreements" | "notebook";
 
@@ -74,37 +74,31 @@ function placesTab(
   selection: Selection | null,
   select: SelectionLike,
 ): ReactNode {
-  // 先按节点分组一次，把逐节点重扫全量库存与角色的平方级扫描降回线性。
-  const stockpilesByNode = groupByNodeId(projection.stockpiles);
-  const peopleByNode = groupByNodeId(projection.characters);
+  // 取数已按节点建索引，这里只负责渲染；分组与计数规则由 placeRows 单独测试。
   return (
     <div className="place-list">
-      {projection.map.nodes.map((node) => {
-        const stockpiles = stockpilesByNode.get(node.nodeId) ?? [];
-        const people = peopleByNode.get(node.nodeId) ?? [];
-        return (
-          <button
-            type="button"
-            key={node.nodeId}
-            data-testid={`list-node-${node.nodeId}`}
-            className={selection?.kind === "node" && selection.id === node.nodeId ? "place-row is-selected" : "place-row"}
-            onClick={() => select.select({ kind: "node", id: node.nodeId })}
-          >
-            <span>
-              <strong>{node.name}</strong>
-              <small>{node.facilities.join(" · ") || "开放地点"}</small>
-            </span>
-            <span>
-              <b>{people.length}</b> 人在场
-            </span>
-            {stockpiles.map((stockpile) => (
-              <em key={stockpile.stockpileId}>
-                供给 {stockpile.supplyLevel} / 能源 {stockpile.energyLevel} / 医疗 {stockpile.medicalLevel}
-              </em>
-            ))}
-          </button>
-        );
-      })}
+      {placeRows(projection).map((row) => (
+        <button
+          type="button"
+          key={row.nodeId}
+          data-testid={`list-node-${row.nodeId}`}
+          className={selection?.kind === "node" && selection.id === row.nodeId ? "place-row is-selected" : "place-row"}
+          onClick={() => select.select({ kind: "node", id: row.nodeId })}
+        >
+          <span>
+            <strong>{row.name}</strong>
+            <small>{row.facilities.join(" · ") || "开放地点"}</small>
+          </span>
+          <span>
+            <b>{row.people.length}</b> 人在场
+          </span>
+          {row.stockpiles.map((stockpile) => (
+            <em key={stockpile.stockpileId}>
+              供给 {stockpile.supplyLevel} / 能源 {stockpile.energyLevel} / 医疗 {stockpile.medicalLevel}
+            </em>
+          ))}
+        </button>
+      ))}
     </div>
   );
 }
