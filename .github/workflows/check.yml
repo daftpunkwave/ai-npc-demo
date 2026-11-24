@@ -37,8 +37,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # engines.node 声明运行时下限 >=24；CI 与开发环境一致按 24 执行。
-          node-version: 24
+          # 与开发环境保持同一运行时版本。engines.node 只声明下限 >=24，
+          # 但不同主版本间的默认栈大小与内置模块行为存在差异（Node 24 的栈更小，
+          # 深层递归输入会先溢出），门禁必须与本地验证环境一致才有意义。
+          node-version: 26.13.1
           cache: pnpm
 
       - name: Install dependencies
