@@ -3,12 +3,14 @@
  * 依赖真实 StreamHub 与假 socket；不监听端口，也不依赖 Fastify 或浏览器 WebSocket。
  * 禁止用等待真实网络缓冲的方式制造慢连接，也不在用例间复用流中心。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DomainError,
   playerProjectionSchema,
   type AuthContext,
+  type Json,
   type PlayerProjection,
+  type StreamChannel,
 } from "@ai-npc/contracts";
 import { StreamHub, type StreamSocket } from "@ai-npc/mod-transport-http-ws-fastify";
 
@@ -17,6 +19,8 @@ class FakeSocket implements StreamSocket {
   bufferedAmount = 0;
   readonly sent: string[] = [];
   closed: { readonly code: number; readonly reason: string } | null = null;
+  /** 底层连接被强制终止的次数；用于区分「只发关闭帧」与「确保释放」。 */
+  terminateCount = 0;
   private readonly listeners = new Map<string, ((data?: unknown) => void)[]>();
 
   send(payload: string): void {
@@ -29,6 +33,7 @@ class FakeSocket implements StreamSocket {
   }
 
   terminate(): void {
+    this.terminateCount += 1;
     this.closed ??= { code: 1006, reason: "terminated" };
     this.emit("close");
   }
@@ -123,11 +128,16 @@ function createHub(overrides: {
   readonly maxSessions?: number;
   readonly maxTickets?: number;
   readonly maxReplayBuffers?: number;
+  readonly maxConnections?: number;
+  readonly maxConnectionsPerSession?: number;
+  readonly channelsFor?: (auth: AuthContext) => readonly StreamChannel[];
+  readonly channelSnapshot?: (channel: StreamChannel) => Json | null;
 } = {}): StreamHub {
   const hub = new StreamHub({
     projection: overrides.projection ?? (() => projection(0)),
     worldId: "wld-000000000001",
-    channelsFor: () => ["player"],
+    channelsFor: overrides.channelsFor ?? (() => ["player"]),
+    ...(overrides.channelSnapshot === undefined ? {} : { channelSnapshot: overrides.channelSnapshot }),
     ids: (prefix) => {
       idCounter += 1;
       return `${prefix}-${String(idCounter).padStart(4, "0")}`;
@@ -145,6 +155,10 @@ function createHub(overrides: {
     ...(overrides.maxSessions === undefined ? {} : { maxSessions: overrides.maxSessions }),
     ...(overrides.maxTickets === undefined ? {} : { maxTickets: overrides.maxTickets }),
     ...(overrides.maxReplayBuffers === undefined ? {} : { maxReplayBuffers: overrides.maxReplayBuffers }),
+    ...(overrides.maxConnections === undefined ? {} : { maxConnections: overrides.maxConnections }),
+    ...(overrides.maxConnectionsPerSession === undefined
+      ? {}
+      : { maxConnectionsPerSession: overrides.maxConnectionsPerSession }),
   });
   hub.setBranch("br-test");
   return hub;
@@ -375,8 +389,132 @@ describe("WS 流中心", () => {
     }
   });
 
-  it("会话满容量时保留活跃连接并以明确错误拒绝新会话", () => {
-    const hub = createHub({ maxSessions: 1 });
+  it("连接上限必须是正整数，非法配置显式失败而不是静默取消上限", () => {
+    // NaN 参与比较恒为 false，等于静默取消上限；负数与 Infinity 同样让容量检查失效。
+    // 这些配置错误必须在构造时就暴露，不能回退默认值掩盖调用方意图。
+    const invalid: readonly (readonly [string, number])[] = [
+      ["maxConnections", Number.NaN],
+      ["maxConnections", Number.POSITIVE_INFINITY],
+      ["maxConnections", 0],
+      ["maxConnections", -1],
+      ["maxConnections", 1.5],
+      ["maxConnectionsPerSession", Number.NaN],
+      ["maxConnectionsPerSession", Number.POSITIVE_INFINITY],
+      ["maxConnectionsPerSession", 0],
+      ["maxConnectionsPerSession", -3],
+    ];
+    for (const [field, value] of invalid) {
+      expect(
+        () => createHub(field === "maxConnections" ? { maxConnections: value } : { maxConnectionsPerSession: value }),
+      ).toThrow(DomainError);
+    }
+  });
+
+  it("分支切换后非玩家频道的订阅者也收到当前分支的新快照", () => {
+    // console.timeline 的内容按分支查询：旧快照描述的是切换前的分支。
+    // 只重发玩家快照会让控制台时间线停留在已归档分支，直到下一次世界变化。
+    let branchLabel = "br-test";
+    const hub = createHub({
+      channelsFor: () => ["player", "console.timeline"],
+      channelSnapshot: (channel) => (channel === "console.timeline" ? { branch: branchLabel } : null),
+    });
+    try {
+      const session = hub.login({ token: "player-login-token", auth: playerAuth });
+      const socket = new FakeSocket();
+      hub.accept(socket, hub.issueTicket(session.sessionId).ticket);
+      socket.receive({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null });
+      expect(lastFrame(socket, "snapshot")).toMatchObject({ data: { branch: "br-test" } });
+
+      branchLabel = "br-restored";
+      hub.applyBranchChange("br-restored");
+      // 该连接只订阅了 console.timeline，因此收到一份带新分支内容的时间线快照；
+      // 修复前这里不会有任何帧，订阅者会一直停留在旧分支。
+      const snapshots = socket.drain().filter((frame) => frame["type"] === "snapshot");
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0]).toMatchObject({ channel: "console.timeline", data: { branch: "br-restored" } });
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("容量拒绝先发关闭帧，兜底定时器到期后强制终止连接", () => {
+    // 只用 close 会让未注册连接在半开状态下无人回收；只 terminate 则关闭帧
+    // 可能来不及发出，对端看不到拒绝原因。因此先发帧、再在窗口后强制终止。
+    const hub = createHub({ maxConnections: 1 });
+    try {
+      const first = hub.login({ token: "player-login-token", auth: playerAuth });
+      openStream(hub, first.sessionId).drain();
+
+      const rejected = new FakeSocket();
+      vi.useFakeTimers();
+      try {
+        hub.accept(rejected, hub.issueTicket(first.sessionId).ticket);
+        // 关闭帧已发出，对端能读到拒绝码。
+        expect(rejected.closed?.code).toBe(1013);
+        // 刷出窗口内尚未强制终止。
+        expect(rejected.terminateCount).toBe(0);
+        vi.advanceTimersByTime(2_000);
+        // 到期后强制终止，未注册连接不会一直占着底层 socket。
+        expect(rejected.terminateCount).toBeGreaterThan(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("单会话连接数超限时拒绝新连接且不留下计数泄漏", () => {
+    // 同一会话可反复换取票据建立连接：每次都是一次性票据，但签发不设频率限制。
+    // 没有上限时每条连接都既占内存又抬高推送扇出，且会话计数只增不减。
+    const hub = createHub({ maxConnectionsPerSession: 2 });
+    try {
+      const session = hub.login({ token: "player-login-token", auth: playerAuth });
+      const first = openStream(hub, session.sessionId);
+      const second = openStream(hub, session.sessionId);
+      first.drain();
+      second.drain();
+      expect(hub.stats().connections).toBe(2);
+
+      const rejected = new FakeSocket();
+      hub.accept(rejected, hub.issueTicket(session.sessionId).ticket);
+      // 超限连接在注册监听与计数之前就被关闭，因此既没有 hello 也没有订阅。
+      expect(rejected.drain()).toEqual([]);
+      expect(rejected.closed?.code).toBe(1013);
+      // 强制终止由兜底定时器完成，不在拒绝当次同步发生。
+      expect(hub.stats().connections).toBe(2);
+
+      // 关闭一条后腾出名额，新连接可以建立，说明计数没有泄漏成永久占位。
+      first.close(1000, "normal closure");
+      expect(hub.stats().connections).toBe(1);
+      const replacement = openStream(hub, session.sessionId);
+      expect(lastFrame(replacement, "snapshot")).toMatchObject({ type: "snapshot" });
+      expect(hub.stats().connections).toBe(2);
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("全局连接数超限时拒绝新连接，跨会话同样生效", () => {
+    const hub = createHub({ maxConnections: 2 });
+    try {
+      const first = hub.login({ token: "player-login-token", auth: playerAuth });
+      const second = hub.login({ token: "player-login-token", auth: playerAuth });
+      const third = hub.login({ token: "player-login-token", auth: playerAuth });
+      openStream(hub, first.sessionId).drain();
+      openStream(hub, second.sessionId).drain();
+      expect(hub.stats().connections).toBe(2);
+
+      const rejected = new FakeSocket();
+      hub.accept(rejected, hub.issueTicket(third.sessionId).ticket);
+      expect(rejected.closed?.code).toBe(1013);
+      expect(hub.stats().connections).toBe(2);
+    } finally {
+      hub.close();
+    }
+  });
+
+  it("会话满容量时保留活跃连接并以明确错误拒绝新会话", () => {    const hub = createHub({ maxSessions: 1 });
     try {
       const active = hub.login({ token: "player-login-token", auth: playerAuth });
       const socket = openStream(hub, active.sessionId);

@@ -4,6 +4,7 @@
  * 禁止在这里引入 Fastify、读写会话存储或按连接做 I/O。
  */
 /* eslint-disable no-unused-vars -- 本文件的未使用参数只出现在 StreamSocket/StreamHubOptions 等接口签名中，名称用于表达调用契约。 */
+import { DomainError } from "@ai-npc/contracts";
 import type {
   AuthContext,
   ConversationLine,
@@ -83,6 +84,10 @@ export interface StreamHubOptions {
   readonly maxSessions?: number;
   readonly maxTickets?: number;
   readonly maxReplayBuffers?: number;
+  /** 全局连接上限；默认 256。超限时新连接以 1013 关闭。 */
+  readonly maxConnections?: number;
+  /** 单会话连接上限；默认 8。超限时新连接以 1013 关闭。 */
+  readonly maxConnectionsPerSession?: number;
 }
 
 /** 一条玩家投影增量；set 只含发生变化的顶层字段。 */
@@ -130,6 +135,14 @@ export const defaultTicketTtlMs = 30_000;
 export const defaultMaxSessions = 1024;
 export const defaultMaxTickets = 1024;
 export const defaultMaxReplayBuffers = 512;
+/**
+ * 全局连接上限与会话连接上限。会话数、票据数、重放缓冲都有上限，
+ * 连接数此前没有任何上限：同一会话可反复换取票据建立任意多连接，
+ * 每条连接既占内存，又会让每次发布多一份推送扇出。
+ * 本地单玩家场景只需个位数连接，上限按「单会话数条、全局留余量」取。
+ */
+export const defaultMaxConnections = 256;
+export const defaultMaxConnectionsPerSession = 8;
 
 /** 提醒的稳定键；派生提醒的 worldTick 会随 tick 重算，不参与同一提醒的识别。 */
 export function notificationKey(item: PlayerNotificationView): string {
@@ -235,6 +248,20 @@ export interface HubLimits {
   readonly maxSessions: number;
   readonly maxTickets: number;
   readonly maxReplayBuffers: number;
+  readonly maxConnections: number;
+  readonly maxConnectionsPerSession: number;
+}
+
+/**
+ * 容量上限必须是有限正整数。`NaN` 参与比较恒为 false，等于静默取消上限；
+ * 负数与 `Infinity` 同样让容量检查失去意义，因此显式拒绝配置错误，
+ * 而不是回退到默认值——静默回退会掩盖调用方的真实意图。
+ */
+function capacityLimit(value: number, name: string): number {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new DomainError("validation", `${name} 必须是正整数，收到 ${String(value)}`);
+  }
+  return value;
 }
 
 /** 合并调用方覆盖与缺省边界；不读取配置或环境变量。 */
@@ -248,5 +275,10 @@ export function hubLimits(options: StreamHubOptions): HubLimits {
     maxSessions: options.maxSessions ?? defaultMaxSessions,
     maxTickets: options.maxTickets ?? defaultMaxTickets,
     maxReplayBuffers: options.maxReplayBuffers ?? defaultMaxReplayBuffers,
+    maxConnections: capacityLimit(options.maxConnections ?? defaultMaxConnections, "maxConnections"),
+    maxConnectionsPerSession: capacityLimit(
+      options.maxConnectionsPerSession ?? defaultMaxConnectionsPerSession,
+      "maxConnectionsPerSession",
+    ),
   };
 }

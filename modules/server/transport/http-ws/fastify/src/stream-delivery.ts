@@ -6,6 +6,12 @@
 import type { Json, PlayerProjection, StreamChannel } from "@ai-npc/contracts";
 import { playerChannel, type Connection, type StreamSocket } from "./stream-types";
 
+/**
+ * 拒绝连接时给关闭帧的刷出窗口。取值只需覆盖一次本地回环写入，
+ * 不等待对端回应握手；到期后强制终止，保证未注册连接一定被释放。
+ */
+const rejectionFlushGraceMs = 1_000;
+
 export interface SocketSenderOptions {
   readonly projection: () => PlayerProjection;
   /**
@@ -104,6 +110,11 @@ export class SocketSender {
     }
   }
 
+  /**
+   * 发送关闭帧；对端不响应关闭握手时终止底层连接。
+   * 关闭帧只是请求，socket 仍会保留到握手完成或超时；容量拒绝场景下
+   * 这类未注册的连接不在本中心的计数内，必须先确保它真的会被释放。
+   */
   close(socket: StreamSocket, code: number, reason: string): void {
     try {
       socket.close(code, reason);
@@ -114,6 +125,24 @@ export class SocketSender {
         // 连接已不可用；没有额外清理动作。
       }
     }
+  }
+
+  /**
+   * 因容量拒绝连接时使用：发出关闭帧后给帧一个有界刷出机会，到期强制终止。
+   * 只用 close 会让未注册的连接在半开状态下无人回收；只 terminate 则关闭帧
+   * 可能来不及发出，对端看不到拒绝原因。因此两者之间留一个短窗口。
+   */
+  reject(socket: StreamSocket, code: number, reason: string): void {
+    this.close(socket, code, reason);
+    const timer = setTimeout(() => {
+      try {
+        socket.terminate();
+      } catch {
+        // 已经终止或不可用；拒绝动作本身已经完成。
+      }
+    }, rejectionFlushGraceMs);
+    // 定时器只为兜底释放，不应阻止进程退出。
+    timer.unref?.();
   }
 
   /** 用调用方已读取的投影发送快照；分支切换时避免重复读取投影。 */

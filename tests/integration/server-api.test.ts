@@ -46,6 +46,7 @@ import {
 import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
 import {
   TransportPort,
+  httpTransportLimits,
   type ConversationReadPort,
   type ConversationSourceLine,
 } from "@ai-npc/mod-transport-http-ws-fastify";
@@ -2410,6 +2411,72 @@ describe("服务端 API", () => {
     expect(preflight.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
   });
 
+  it("跨域允许面显式声明方法与会话所需头部", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    const allowed = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/commands",
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "authorization,content-type,x-active-role",
+      },
+    });
+    expect(allowed.statusCode).toBe(204);
+    const allowedHeaders = String(allowed.headers["access-control-allow-headers"]).toLowerCase();
+    expect(allowedHeaders).toContain("authorization");
+    expect(allowedHeaders).toContain("content-type");
+    expect(allowedHeaders).toContain("x-active-role");
+    const allowedMethods = String(allowed.headers["access-control-allow-methods"]).toUpperCase();
+    expect(allowedMethods).toContain("GET");
+    expect(allowedMethods).toContain("POST");
+    // 令牌走 Authorization 头而非 Cookie，跨域不带凭据。
+    expect(allowed.headers["access-control-allow-credentials"]).toBeUndefined();
+
+    // 未声明的自定义头不在显式白名单内，不应被回显为可发送头。
+    const disallowed = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/commands",
+      headers: {
+        origin: "http://127.0.0.1:5173",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "x-not-declared",
+      },
+    });
+    const disallowedHeaders = String(disallowed.headers["access-control-allow-headers"] ?? "").toLowerCase();
+    expect(disallowedHeaders).not.toContain("x-not-declared");
+  });
+
+  it("HTTP 响应带安全头且 HTML 文档附带收窄的 CSP", async () => {    const value = await createTrackedGameHarness(active);
+    const directory = mkdtempSync(join(tmpdir(), "ai-npc-secure-headers-"));
+    const staticDir = join(directory, "console-static");
+    try {
+      mkdirSync(staticDir);
+      writeFileSync(join(staticDir, "index.html"), "<div>console built</div>");
+      const app = await appFor(value, { consoleStaticDir: staticDir });
+
+      const document = await app.inject({ method: "GET", url: "/console/" });
+      expect(document.statusCode).toBe(200);
+      expect(document.headers["x-content-type-options"]).toBe("nosniff");
+      expect(document.headers["x-frame-options"]).toBe("DENY");
+      expect(document.headers["referrer-policy"]).toBe("same-origin");
+      const csp = String(document.headers["content-security-policy"]);
+      expect(csp).toContain("frame-ancestors 'none'");
+      expect(csp).toContain("script-src 'self'");
+      // 产物只从同源加载脚本与样式，不为放宽误配而允许内联执行。
+      expect(csp).not.toContain("unsafe-inline");
+
+      // JSON 接口同样禁止嗅探与嵌入，但不附带对文档才有效的 CSP。
+      const api = await app.inject({ method: "GET", url: "/api/v1/health" });
+      expect(api.headers["x-content-type-options"]).toBe("nosniff");
+      expect(api.headers["x-frame-options"]).toBe("DENY");
+      expect(api.headers["content-security-policy"]).toBeUndefined();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("控制台构建前注册静态路由，产物出现后无需重启即可提供页面", async () => {
     const value = await createTrackedGameHarness(active);
     const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-"));
@@ -2509,6 +2576,57 @@ describe("服务端 API", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it("传输层时间与连接维度上限显式声明，不依赖框架默认的不限", async () => {
+    // Fastify 把这些选项默认设为 0（不限）。这里锁定取值：任一项被删回默认，
+    // 慢请求或卡死的 handler 就会永久占用连接，且不会有人工可读的配置意图。
+    // 选项到 server 属性的落点由构造处注释说明（connectionTimeout 落到
+    // server.setTimeout 的空闲超时，而非收齐请求头的期限），此处不重复断言：
+    // ServerApp 有意不对外暴露内部 Fastify 实例。
+    expect(httpTransportLimits.requestTimeoutMs).toBeGreaterThan(0);
+    expect(httpTransportLimits.connectionTimeoutMs).toBeGreaterThan(0);
+    expect(httpTransportLimits.handlerTimeoutMs).toBeGreaterThan(0);
+    expect(httpTransportLimits.maxRequestsPerSocket).toBeGreaterThan(0);
+    expect(httpTransportLimits.bodyLimitBytes).toBeGreaterThan(0);
+    // 请求与 handler 上限保持同一量级：前者负责整段请求，后者负责执行阶段，
+    // handler 不应比请求更宽松。
+    expect(httpTransportLimits.handlerTimeoutMs).toBeLessThanOrEqual(
+      httpTransportLimits.requestTimeoutMs,
+    );
+  });
+
+  it("框架请求超时映射为可重试失败并记录超时诊断", async () => {
+    // Fastify 在 handlerTimeout 触发时抛出 FST_ERR_HANDLER_TIMEOUT（自身状态码 503）。
+    // 它表示「本次请求未在期限内完成」，不是服务端缺陷：若落进未预期错误分支，
+    // 客户端会收到不可重试的 plugin-failed 并放弃重试。这里用真实应用验证该映射。
+    const value = await createTrackedGameHarness(active);
+    const internalErrors: string[] = [];
+    const app = await appFor(value, {
+      onInternalError: (message) => {
+        internalErrors.push(message);
+      },
+      // 让读取端口抛出与 Fastify 超时同码的错误，覆盖错误处理器的分类分支。
+      campaign: () => {
+        throw Object.assign(new Error("Request timed out after 30 ms"), {
+          code: "FST_ERR_HANDLER_TIMEOUT",
+          statusCode: 503,
+        });
+      },
+    });
+    const session = await login(app, "player-token");
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaign",
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(response.statusCode).toBe(500);
+    const payload = response.json() as {
+      error: { code: string; retryable: boolean; safeMessage: string };
+    };
+    expect(payload.error.code).toBe("plugin-failed");
+    expect(payload.error.retryable).toBe(true);
+    expect(internalErrors).toContain("请求处理超时");
   });
 
   it("传输端口只经最小应用接口监听与关闭", async () => {
