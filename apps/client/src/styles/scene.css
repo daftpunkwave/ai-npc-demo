@@ -171,6 +171,21 @@
   height: 100%;
 }
 
+.scene-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: 80%;
+  padding: 10px 14px;
+  color: #e7c9a8;
+  border: 1px solid #a94d45;
+  border-radius: 4px;
+  background: rgba(27, 41, 38, 0.92);
+  font-size: 0.8rem;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
 .scene-caption {
   position: absolute;
   right: 18px;
