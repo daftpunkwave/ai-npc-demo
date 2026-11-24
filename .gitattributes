@@ -13,3 +13,8 @@
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+# 语言统计只反映项目生产代码
+# .agents/skills 是随仓库分发的 Agent 技能包，内含的示例页面、构建脚本与工具脚本
+# 属于外部引入的参考资料，不是本项目实现；标记为 vendored 后不参与 GitHub 语言统计。
+.agents/skills/** linguist-vendored
