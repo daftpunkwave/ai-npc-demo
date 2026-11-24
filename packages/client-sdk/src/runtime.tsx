@@ -232,6 +232,69 @@ function isViewPort(value: unknown): value is BrowserViewPort {
   );
 }
 
+/** 把握手下发的模块列表按 moduleId 索引为已解析配置。 */
+function configsByModuleId(resolved: ResolvedModuleSet): ReadonlyMap<string, Json> {
+  const configs = new Map<string, Json>();
+  for (const module of resolved.modules) {
+    // 服务端 realm 不下发 config；此处只收浏览器 realm 的已解析配置。
+    if (module.config !== undefined) {
+      configs.set(module.moduleId, module.config);
+    }
+  }
+  return configs;
+}
+
+/**
+ * 校验并应用握手下发的配置。
+ * schema 失败包装为 `assembly-incompatible` 域错误：这是装配与服务端不一致，
+ * 不是模块运行期故障，必须给出可定位的模块 ID 而不是抛原始 ZodError。
+ */
+function parseResolvedConfig(definition: ModuleDefinition, config: Json): Json {
+  // 下发值已在服务端经过同一 schema 解析（含 transform）。这里只用 safeParse 校验：
+  // 再取 parsed.data 会二次执行 transform，浏览器实际用的配置就与服务端冻结结果不一致。
+  const parsed = definition.configSchema.safeParse(config);
+  if (!parsed.success) {
+    throw new DomainError(
+      "assembly-incompatible",
+      `模块 ${definition.id} 的装配配置未通过 configSchema 校验`,
+      {
+        details: {
+          moduleId: definition.id,
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.map((segment) => String(segment)).join("."),
+            message: issue.message,
+          })),
+        },
+      },
+    );
+  }
+  // 校验通过后以「服务端下发值」为准，只用解析结果补齐下发值缺失的可选字段（schema 默认值）：
+  // 直接返回 parsed.data 会二次执行 transform，直接返回 config 又丢默认值。
+  return mergeResolvedDefaults(config, parsed.data as Json);
+}
+
+/**
+ * 合并已解析结果：下发值已有的键一律保留，只补下发值缺失的键。
+ * 这样 schema 默认值仍能生效，而 transform 的输出不会被客户端二次转换的结果覆盖。
+ */
+function mergeResolvedDefaults(delivered: Json, parsed: Json): Json {
+  if (
+    typeof delivered !== "object" ||
+    delivered === null ||
+    Array.isArray(delivered) ||
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed)
+  ) {
+    return delivered;
+  }
+  const merged: { [key: string]: Json } = { ...parsed };
+  for (const [key, value] of Object.entries(delivered)) {
+    merged[key] = value as Json;
+  }
+  return merged;
+}
+
 /** 创建并启动本 realm 全部模块；失败时释放此前已启动实例。 */
 export async function startBrowserModules(
   input: BrowserModuleRuntimeInput,
@@ -241,9 +304,19 @@ export async function startBrowserModules(
   const signal = input.signal ?? new AbortController().signal;
   const instances: ModuleInstance[] = [];
   const providedPorts: Record<string, unknown> = { ...input.fixedPorts };
+  const resolvedConfigs = configsByModuleId(input.resolved);
   try {
     for (const definition of definitions) {
-      const config = definition.configSchema.parse(definition.defaults ?? {}) as Json;
+      // 用装配解析出的配置启动，而不是模块自带的 defaults：
+      // 浏览器没有装配解析器，握手下发的 config 才是服务端冻结并计入 configHash 的那份。
+      // 选中的定义必然来自 resolved.modules，因此配置一定存在；缺失说明契约被绕过，直接拒绝。
+      const resolvedConfig = resolvedConfigs.get(definition.id);
+      if (resolvedConfig === undefined) {
+        throw new DomainError("assembly-incompatible", `模块 ${definition.id} 缺少装配下发的配置`, {
+          details: { moduleId: definition.id },
+        });
+      }
+      const config = parseResolvedConfig(definition, resolvedConfig);
       const instance = await definition.create({
         moduleId: definition.id,
         realm: definition.realm,

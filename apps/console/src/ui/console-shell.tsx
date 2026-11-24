@@ -3,7 +3,7 @@
  * 依赖已启动浏览器模块、会话与 API 客户端；不绕过服务端角色校验。
  * 禁止在页面无权时隐藏失败原因，或把禁用按钮代替服务端授权。
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ContributionBoundary,
   type StartedBrowserModules,
@@ -18,6 +18,9 @@ interface ConsolePortWithTitle {
 
 interface ConsoleHostPort {
   setActiveRole(role: ConsoleActiveRole): void;
+  readonly branchId: string;
+  /** 订阅在线分支变化；返回取消订阅函数。 */
+  subscribeBranch(listener: () => void): () => void;
 }
 
 const roleLabels: Readonly<Record<ConsoleActiveRole, string>> = {
@@ -38,10 +41,19 @@ export function ConsoleShell(input: {
   );
   const [role, setRole] = useState<ConsoleActiveRole>(input.initialRole);
   const [active, setActive] = useState<string | null>(null);
+  const host = input.runtime.ports["host.console"] as ConsoleHostPort;
+  // 外壳自己订阅在线分支：恢复/重开切换分支后，标题栏的分支标识与页面树都要跟着更新，
+  // 不能只依赖观测页那条 WS 连接——只有 operator 权限的会话收不到 console.timeline。
+  const [branchId, setBranchId] = useState(host.branchId);
+  useEffect(() => {
+    setBranchId(host.branchId);
+    return host.subscribeBranch(() => {
+      setBranchId(host.branchId);
+    });
+  }, [host]);
   const { pages, selected } = consoleNavigation(input.runtime.contributions, role, active);
 
   const switchRole = (next: ConsoleActiveRole): void => {
-    const host = input.runtime.ports["host.console"] as ConsoleHostPort;
     host.setActiveRole(next);
     setRole(next);
     setActive(null);
@@ -53,7 +65,7 @@ export function ConsoleShell(input: {
         <div className="console-brand">
           <span>GRAY HARBOR</span>
           <strong>研究控制台</strong>
-          <small>{input.session.branchId}</small>
+          <small>{branchId}</small>
         </div>
         <nav aria-label="控制台页面">
           {pages.map(({ page, allowed }) => {

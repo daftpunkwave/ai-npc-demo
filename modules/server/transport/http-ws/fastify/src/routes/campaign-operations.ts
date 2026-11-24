@@ -11,8 +11,7 @@ import {
   clockControlRequestSchema,
   clockResponseSchema,
   clockStepRequestSchema,
-  consoleSnapshotRestoreRequestSchema,
-  consoleSnapshotRestoreResponseSchema,
+  restoreDryRunResponseSchema,
   snapshotCreateRequestSchema,
   snapshotCreateResponseSchema,
   snapshotListResponseSchema,
@@ -209,19 +208,21 @@ export function registerCampaignOperations(
     if (session === null) {
       return;
     }
-    const body = registration.includeDryRun === true
-      ? consoleSnapshotRestoreRequestSchema.safeParse(request.body)
-      : snapshotRestoreRequestSchema.safeParse(request.body);
+    // 权威请求契约只有一份：dryRun 可选，缺省即真正恢复。
+    const body = snapshotRestoreRequestSchema.safeParse(request.body);
     if (!body.success) {
       return sendHttpError(reply, "validation", "恢复请求结构不合法");
     }
-    if (registration.includeDryRun === true && "dryRun" in body.data && body.data.dryRun === true) {
+    if (body.data.dryRun === true) {
+      // 预检只由开放该能力的入口提供。未开放时显式拒绝，不能把 dryRun: true
+      // 当成真正恢复执行——那会让「只想看校验结果」的调用直接切换在线分支。
+      if (registration.includeDryRun !== true) {
+        return sendHttpError(reply, "validation", "该入口不提供恢复预检");
+      }
       if (options.save.validateRestore === undefined) {
         return sendHttpError(reply, "not-ready", "恢复预检尚未就绪");
       }
-      return consoleSnapshotRestoreResponseSchema.parse(
-        options.save.validateRestore(body.data.snapshotId),
-      );
+      return restoreDryRunResponseSchema.parse(options.save.validateRestore(body.data.snapshotId));
     }
     const restored = options.save.restoreSnapshot({
       snapshotId: body.data.snapshotId,

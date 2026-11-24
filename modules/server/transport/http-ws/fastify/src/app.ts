@@ -5,7 +5,7 @@
  * 禁止信任页面自报角色、在传输层内置角色白名单、绕过 Origin 校验或把内部错误细节返回给客户端。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名与回调参数名用于表达调用契约。 */
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
@@ -81,10 +81,12 @@ function isWebSocketPayloadTooLarge(error: unknown): boolean {
  * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
  * 其余未预期错误一律 500 plugin-failed，safeMessage 不携带内部细节。
  * 4xx 属于预期拒绝，不写内部错误；5xx 交宿主记录，避免静默失败。
+ * 未匹配路由交给调用方传入的 notFound 处理器，控制台据此区分静态资源与前端导航。
  */
 function registerErrorHandling(
   app: FastifyInstance,
   report: (message: string, error: unknown) => void,
+  notFound: (request: FastifyRequest, reply: FastifyReply) => unknown,
 ): void {
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof DomainError) {
@@ -100,7 +102,7 @@ function registerErrorHandling(
     report("请求处理失败", error);
     return sendHttpError(reply, "plugin-failed", "服务器内部错误");
   });
-  app.setNotFoundHandler((_request, reply) => sendHttpError(reply, "not-found", "资源不存在"));
+  app.setNotFoundHandler((request, reply) => notFound(request, reply));
 }
 
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
@@ -129,14 +131,55 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   });
   if (options.consoleStaticDir !== undefined) {
     await app.register(fastifyStatic, {
+      // wildcard 模式让每个请求按请求路径直接读盘，而不是依赖注册瞬间的文件清单：
+      // 控制台由 vite build --watch 并行构建，首次构建与每次热重建都会产生新的 hash 文件名。
       root: options.consoleStaticDir,
       prefix: "/console/",
-      wildcard: false,
+      wildcard: true,
       decorateReply: true,
     });
     app.get("/console", (_request, reply) => reply.redirect("/console/"));
-    app.get("/console/*", (_request, reply) => reply.sendFile("index.html"));
   }
+  /**
+   * 未匹配路由的兜底：控制台导航路径回退 index.html，其余一律 404 统一错误。
+   *
+   * 回退必须同时满足四个条件，任何一个不满足都退回 404：
+   * - 方法是 GET 或 HEAD：其他方法不是导航请求，不能拿到 200 的 HTML；
+   * - 路径以 `/console/` 开头；
+   * - 末段不含扩展名：带扩展名的是资产请求，缺失时若以 200 text/html 冒充，
+   *   浏览器会把 HTML 当 JS/CSS 执行并静默白屏；
+   * - `index.html` 实际存在：入口文件缺失时（首次构建完成前、重建清空目录期间）
+   *   直接 404，避免 sendFile 的 404 再次触发同一回退。
+   *
+   * `@fastify/static` 在 wildcard 模式已占用 `/console/*`，因此只能用 not-found 分流。
+   */
+  const notFound = (request: FastifyRequest, reply: FastifyReply): unknown => {
+    const notFoundError = (): unknown => sendHttpError(reply, "not-found", "资源不存在");
+    if (options.consoleStaticDir === undefined) {
+      return notFoundError();
+    }
+    const method = request.method.toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+      return notFoundError();
+    }
+    // 只取路径部分，并在解码后判断扩展名：`assets/main%2Ejs` 这类编码形式同样是资产请求。
+    const pathname = request.url.split("?")[0] ?? "";
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(pathname);
+    } catch {
+      // 非法百分号编码不是导航路径，按资源不存在处理。
+      return notFoundError();
+    }
+    const lastSegment = decodedPath.slice(decodedPath.lastIndexOf("/") + 1);
+    if (!decodedPath.startsWith("/console/") || lastSegment.includes(".")) {
+      return notFoundError();
+    }
+    if (options.consoleEntryExists !== undefined && !options.consoleEntryExists()) {
+      return notFoundError();
+    }
+    return reply.sendFile("index.html");
+  };
   const now = options.now ?? (() => Date.now());
   const identityByToken = new Map(options.identities.map((identity) => [identity.token, identity]));
   const branch: OnlineBranch = { branchId: options.branchId };
@@ -159,6 +202,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   };
   const hub = new StreamHub({
     projection: () => options.projection(),
+    worldId: options.worldId,
     channelSnapshot: consoleSnapshot,
     channelsFor: (auth) => channelsFor(options.accessPolicy, auth),
     ids: (prefix) => options.ids(prefix),
@@ -237,7 +281,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerConsoleResearchRoutes(context);
   registerConsoleEvaluationRoutes(context);
   registerConsoleOperationsRoutes(context);
-  registerErrorHandling(app, report);
+  registerErrorHandling(app, report, notFound);
 
   /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */
   const listen = async (listenOptions: { readonly host: string; readonly port: number }): Promise<void> => {

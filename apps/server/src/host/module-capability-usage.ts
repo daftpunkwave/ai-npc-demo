@@ -7,7 +7,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import type { ModuleDefinition } from "@ai-npc/contracts";
+import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN, type ModuleDefinition } from "@ai-npc/contracts";
 
 /** 一条源码能力访问与声明不一致的违规。 */
 export interface CapabilityUsageViolation {
@@ -22,37 +22,31 @@ export interface CapabilityUsageViolation {
  * - 声明解构：`const { "game.world": world } = context.modules`。
  * 扫描器跳过注释与普通字符串，避免把注释文字或频道名等对象键误判为能力使用；
  * 浏览器 realm 通过 client-sdk 的 `usePort` 取端口，不走索引访问，因此只对 server 模块做源码对账。
+ * 能力 ID 的语法只由公共契约提供，扫描与描述符校验共用同一判定。
  */
-const capabilityGroups: ReadonlySet<string> = new Set([
-  "game",
-  "platform",
-  "client",
-  "console",
-  "agent",
-  "transport",
-]);
-
-/** 判断字符串是否为契约能力 ID：`<group>.<family>`，family 只含小写字母、数字与连字符。 */
 function isCapabilityId(value: string): boolean {
+  return CAPABILITY_ID_PATTERN.test(value);
+}
+
+/**
+ * 判断字符串是否「明显在写能力 ID」：以能力 group 开头并跟一个分隔点。
+ * 这类字符串出现在能力取用位置却不是合法能力 ID，说明作者写错了语法，
+ * 必须显式报违规而不是静默跳过，否则描述符与扫描器会再次分叉。
+ */
+function looksLikeCapabilityId(value: string): boolean {
   const separator = value.indexOf(".");
-  if (separator <= 0 || separator !== value.lastIndexOf(".")) {
+  if (separator <= 0) {
     return false;
   }
-  if (!capabilityGroups.has(value.slice(0, separator))) {
-    return false;
-  }
-  const family = value.slice(separator + 1);
-  if (family.length === 0) {
-    return false;
-  }
-  for (const character of family) {
-    const isLowercase = character >= "a" && character <= "z";
-    const isDigit = character >= "0" && character <= "9";
-    if (!isLowercase && !isDigit && character !== "-") {
-      return false;
-    }
-  }
-  return true;
+  // eslint-disable-next-line no-restricted-syntax -- 白名单是契约导出的只读字面量数组。
+  return CAPABILITY_GROUPS.includes(value.slice(0, separator) as (typeof CAPABILITY_GROUPS)[number]);
+}
+
+/** 一条源码能力访问：语法合法的进入对账集合，语法非法但明显是能力 ID 的单独报告。 */
+interface CapabilityAccess {
+  readonly value: string;
+  readonly line: number;
+  readonly valid: boolean;
 }
 
 const whitespaceCharacters: ReadonlySet<string> = new Set([" ", "\t", "\n", "\r"]);
@@ -81,11 +75,15 @@ function countNewlines(text: string, from: number, to: number): number {
   return count;
 }
 
-/** 读取从 quoteIndex 开始的引号字符串；不是合法能力 ID 时返回 null。 */
+/**
+ * 读取从 quoteIndex 开始的引号字符串。
+ * 语法合法的能力 ID 返回 `valid: true`；明显在写能力 ID 但语法非法时返回 `valid: false`，
+ * 由调用方报告；其余普通字符串返回 null，不参与对账。
+ */
 function readCapabilityString(
   text: string,
   quoteIndex: number,
-): { readonly capability: string; readonly end: number } | null {
+): { readonly capability: string; readonly end: number; readonly valid: boolean } | null {
   const quote = text[quoteIndex];
   if (quote !== '"' && quote !== "'") {
     return null;
@@ -103,10 +101,16 @@ function readCapabilityString(
     value += current;
     end += 1;
   }
-  if (end >= text.length || !isCapabilityId(value)) {
+  if (end >= text.length) {
     return null;
   }
-  return { capability: value, end: end + 1 };
+  if (isCapabilityId(value)) {
+    return { capability: value, end: end + 1, valid: true };
+  }
+  if (looksLikeCapabilityId(value)) {
+    return { capability: value, end: end + 1, valid: false };
+  }
+  return null;
 }
 
 /** 跳过空白字符，返回下一个有效位置与经过的换行数。 */
@@ -169,12 +173,13 @@ const declarationKeywords: ReadonlySet<string> = new Set(["const", "let", "var"]
 /**
  * 扫描一个对象解构模式里作为键的能力 ID。
  * 只在模式第 1 层识别字符串键，嵌套默认值里的表达式由主扫描继续处理。
+ * 语法非法但明显在写能力 ID 的键同样收集，由上层报告为语法违规。
  */
 function destructuringKeys(
   text: string,
   braceIndex: number,
-): readonly { readonly capability: string; readonly newlines: number }[] {
-  const hits: { capability: string; newlines: number }[] = [];
+): readonly { readonly capability: string; readonly newlines: number; readonly valid: boolean }[] {
+  const hits: { capability: string; newlines: number; valid: boolean }[] = [];
   let depth = 0;
   let newlines = 0;
   let index = braceIndex;
@@ -203,7 +208,7 @@ function destructuringKeys(
         if (literal !== null) {
           const after = skipTrivia(text, literal.end);
           if (text[after.index] === ":") {
-            hits.push({ capability: literal.capability, newlines });
+            hits.push({ capability: literal.capability, newlines, valid: literal.valid });
           }
         }
       }
@@ -302,9 +307,9 @@ function previousSignificantChar(text: string, index: number): string {
 }
 
 /** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */
-function capabilityAccesses(file: string): readonly { readonly capability: string; readonly line: number }[] {
+function capabilityAccesses(file: string): readonly CapabilityAccess[] {
   const text = readFileSync(file, "utf8");
-  const accesses: { capability: string; line: number }[] = [];
+  const accesses: CapabilityAccess[] = [];
   let line = 1;
   let index = 0;
   while (index < text.length) {
@@ -335,7 +340,7 @@ function capabilityAccesses(file: string): readonly { readonly capability: strin
     if (current === "{") {
       if (declarationKeywords.has(previousWord(text, index))) {
         for (const key of destructuringKeys(text, index)) {
-          accesses.push({ capability: key.capability, line: line + key.newlines });
+          accesses.push({ value: key.capability, line: line + key.newlines, valid: key.valid });
         }
       }
       index += 1;
@@ -351,7 +356,7 @@ function capabilityAccesses(file: string): readonly { readonly capability: strin
           text[after.index] === "]" &&
           (isIdentifierCharacter(receiver) || receiver === ")" || receiver === "]" || receiver === "?");
         if (isIndexAccess) {
-          accesses.push({ capability: literal.capability, line: line + inner.newlines });
+          accesses.push({ value: literal.capability, line: line + inner.newlines, valid: literal.valid });
           line += inner.newlines + after.newlines;
           index = after.index + 1;
           continue;
@@ -372,6 +377,7 @@ function displayPath(root: string, file: string): string {
 /**
  * 对账全部模块源码访问的能力与其描述符声明。
  * - 访问了未在 provides/requires 中声明的能力：漏声明或拼写错误；
+ * - 访问处写了能力 group 前缀但语法不符合契约：能力 ID 语法错误，描述符阶段同样会拒绝；
  * - requires 声明了但源码从未访问：多余声明；
  * - 模块目录没有对应登记定义，或定义没有对应源码目录：目录与 catalog 脱节。
  */
@@ -449,28 +455,40 @@ export function checkModuleCapabilityUsage(input: {
     const accessed = new Set<string>();
     for (const file of module.files) {
       for (const access of capabilityAccesses(file)) {
-        accessed.add(access.capability);
-        if (!knownCapabilities.has(access.capability)) {
+        const relativeFile = displayPath(root, file);
+        if (!access.valid) {
+          const owners = module.definitions.map((definition) => definition.id).join("、");
           violations.push({
-            file: displayPath(root, file),
+            file: relativeFile,
+            code: "capability-invalid",
+            message:
+              `模块 ${owners} 在 ${relativeFile}:${access.line} 写下的能力 ID ${access.value} 不符合语法 ` +
+              "<group>.<family>；family 只含小写字母、数字与连字符",
+          });
+          continue;
+        }
+        accessed.add(access.value);
+        if (!knownCapabilities.has(access.value)) {
+          violations.push({
+            file: relativeFile,
             code: "capability-unknown",
-            message: `模块 ${module.identifier} 访问了目录中不存在的能力 ${access.capability}`,
+            message: `模块 ${module.identifier} 访问了目录中不存在的能力 ${access.value}`,
           });
           continue;
         }
         const allowedBySome = module.definitions.some((definition) =>
           [...definition.provides, ...definition.requires].some(
-            (reference) => reference.capability === access.capability,
+            (reference) => reference.capability === access.value,
           ),
         );
         if (!allowedBySome) {
           const owners = module.definitions.map((definition) => definition.id).join("、");
           violations.push({
-            file: displayPath(root, file),
+            file: relativeFile,
             code: "capability-undeclared",
             message:
-              `模块 ${owners} 在 ${displayPath(root, file)}:${access.line} 访问了未声明的能力 ` +
-              `${access.capability}；请补进 requires 或移除该访问`,
+              `模块 ${owners} 在 ${relativeFile}:${access.line} 访问了未声明的能力 ` +
+              `${access.value}；请补进 requires 或移除该访问`,
           });
         }
       }

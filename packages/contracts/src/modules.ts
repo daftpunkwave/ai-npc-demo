@@ -28,8 +28,24 @@ export const cardinalitySchema = z.enum(["exactly-one", "many", "optional"]);
 
 export type Cardinality = z.infer<typeof cardinalitySchema>;
 
-/** 能力 ID 带品牌，避免与模块 ID 或普通字符串混用。 */
-export const capabilityIdSchema = z.string().min(1).brand<"CapabilityId">();
+/**
+ * 能力 ID 的 group 白名单：server 四族加浏览器两族，与模块 ID 的 group 取值一致。
+ * 它同时供静态能力对账判断「一个字符串是不是在尝试声明能力」，因此与下面的正则分开导出；
+ * 两者的一致性由契约测试约束，避免任何一侧单独修改后分叉。
+ */
+export const CAPABILITY_GROUPS = ["game", "agent", "platform", "transport", "client", "console"] as const;
+
+/**
+ * 能力 ID 语法：`<group>.<family>`，恰好一个分隔点；family 只含小写字母、数字与连字符。
+ * 模块描述符与静态能力对账共用这一条语法，避免两套规则对同一字符串给出不同判定。
+ */
+export const CAPABILITY_ID_PATTERN = /^(?:game|agent|platform|transport|client|console)\.[a-z][a-z0-9-]*$/;
+
+/** 能力 ID 带品牌，避免与模块 ID 或普通字符串混用；不符合语法的 ID 在描述符校验阶段即失败。 */
+export const capabilityIdSchema = z
+  .string()
+  .regex(CAPABILITY_ID_PATTERN, "不是合法的能力 ID：能力 ID 形如 <group>.<family>，family 只含小写字母、数字与连字符")
+  .brand<"CapabilityId">();
 
 export type CapabilityId = z.infer<typeof capabilityIdSchema>;
 
@@ -54,19 +70,28 @@ export const capabilityRefSchema = z
 
 export type CapabilityRef = z.infer<typeof capabilityRefSchema>;
 
-/** 已解析模块的身份与配置摘要。 */
+/**
+ * 已解析模块的身份与配置摘要；`config` 只在浏览器 realm 的模块集里出现。
+ * `configHash` 是配置的规范化摘要，任何 realm 都给出。
+ * `config` 是装配按 `configRef` 解析并经 `configSchema` 校验（含默认值）后的值：
+ * 浏览器 realm（client / console）没有装配解析器，必须靠握手下发的这一份启动模块，
+ * 否则只能用 `defaults`，行为与装配声明不符且无法用 `configHash` 自证一致。
+ * 服务端 realm 不下发该字段：它的实例由宿主自己创建，配置属于服务端内部参数，
+ * 不应经 `/api/v1/session` 的 `serverAssembly` 暴露给玩家会话。
+ */
 export const moduleRefSchema = z
   .object({
     moduleId: moduleIdSchema,
     version: z.string().min(1),
     apiVersion: z.string().min(1),
     configHash: z.string().min(1),
+    config: jsonValueSchema.optional(),
   })
   .strict();
 
 export type ModuleRef = z.infer<typeof moduleRefSchema>;
 
-/** 浏览器握手时能拿到的模块集：只含 ID、版本、能力与装配 hash。 */
+/** 会话握手返回的模块集：ID、版本、能力、装配 hash；浏览器 realm 另带已解析配置。 */
 export const resolvedModuleSetSchema = z
   .object({
     realm: realmSchema,

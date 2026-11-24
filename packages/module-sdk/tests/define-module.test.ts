@@ -133,6 +133,21 @@ describe("defineModule", () => {
     );
   });
 
+  it("能力 ID 不符合 <group>.<family> 语法时报错", () => {
+    for (const invalid of ["game.", "game.WORLD", "game.world.extra", "game.world x"]) {
+      const error = expectDomainError(
+        () =>
+          defineModule(
+            moduleDefinition({
+              provides: [{ capability: invalid, cardinality: "exactly-one", instanceScope: "run" }],
+            }),
+          ),
+        "assembly-incompatible",
+      );
+      expect(error.details).toMatchObject({ field: "provides" });
+    }
+  });
+
   it("configSchema 非严格对象时报错", () => {
     const error = expectDomainError(
       () => defineModule(moduleDefinition({ configSchema: z.object({ enabled: z.boolean() }) })),
