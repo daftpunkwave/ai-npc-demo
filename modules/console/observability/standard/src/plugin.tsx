@@ -80,7 +80,21 @@ function ObservabilityPage(): ReactNode {
     let cancelled = false;
     let stream: StreamClient | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackRequested = false;
     let connectionGeneration = 0;
+    const requestFallback = (): void => {
+      if (fallbackRequested || cancelled) return;
+      fallbackRequested = true;
+      void host.api.consoleTimeline({ branchId, fromSeq: 0, limit: 100, order: "desc" })
+        .then((timeline) => {
+          if (cancelled) return;
+          setEvents(timeline.events);
+          setTimelineError(null);
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) setTimelineError(String(cause));
+        });
+    };
     const clearReconnect = (): void => {
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer);
@@ -89,6 +103,7 @@ function ObservabilityPage(): ReactNode {
     };
     const scheduleReconnect = (): void => {
       if (cancelled || reconnectTimer !== null) return;
+      requestFallback();
       setStreamError("时间线实时连接已断开，正在重连");
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
@@ -116,13 +131,17 @@ function ObservabilityPage(): ReactNode {
             if (message.channel !== "console.timeline") return;
             try {
               const timeline = timelineResponseSchema.parse(message.data);
+              fallbackRequested = false;
               if (!cancelled && generation === connectionGeneration) {
                 setEvents(timeline.events);
                 setTimelineError(null);
                 setStreamError(null);
               }
             } catch (cause) {
-              if (!cancelled && generation === connectionGeneration) setTimelineError(String(cause));
+              if (!cancelled && generation === connectionGeneration) {
+                setTimelineError(String(cause));
+                requestFallback();
+              }
             }
           },
           onClose: () => {
@@ -135,28 +154,12 @@ function ObservabilityPage(): ReactNode {
       } catch (cause) {
         if (!cancelled && generation === connectionGeneration) {
           setStreamError(String(cause));
+          requestFallback();
           scheduleReconnect();
         }
       }
     }
-    const start = async (): Promise<void> => {
-      try {
-        const timeline = await host.api.consoleTimeline({
-          branchId,
-          fromSeq: 0,
-          limit: 100,
-          order: "desc",
-        });
-        if (!cancelled) {
-          setEvents(timeline.events);
-          setTimelineError(null);
-        }
-      } catch (cause) {
-        if (!cancelled) setTimelineError(String(cause));
-      }
-      if (!cancelled) await connectStream();
-    };
-    void start();
+    void connectStream();
     return () => {
       cancelled = true;
       connectionGeneration += 1;
