@@ -176,6 +176,14 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
   "probes": [
     { "probeId": "p-recall-promise", "agentId": "human-independent", "answer": "……", "score": { "kind": "recall", "correct": true }, "valid": true }
   ],
+  "invalidProbeCounts": {
+    "turn-failed": 0,
+    "no-dialogue": 0,
+    "empty-answer": 0,
+    "speech-fallback": 0,
+    "model-substituted": 0,
+    "evidence-incomplete": 0
+  },
   "behavior": [
     { "atTick": 60, "agentId": "human-independent", "trigger": "player-dialogue", "stance": "decline", "reasonCode": "past-breach", "commands": [] }
   ],
