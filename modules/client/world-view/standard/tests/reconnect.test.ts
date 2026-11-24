@@ -347,3 +347,104 @@ describe("世界视图流连接", () => {
     await dispose();
   });
 });
+
+describe("在线分支切换", () => {
+  /** 分支切换快照：携带新分支身份，流序号从 0 重新计数。 */
+  function branchSnapshot(branchId: string, worldTick: number): unknown {
+    return {
+      type: "snapshot",
+      channel: "player",
+      streamSeq: 0,
+      projectionVersion: 0,
+      worldId: session.worldId,
+      branchId,
+      data: { ...projection, clock: { ...projection.clock, worldTick } },
+    };
+  }
+
+  it("新分支快照被接受并切换本地身份", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+    FakeWebSocket.instances[0]?.open();
+    FakeWebSocket.instances[0]?.serverMessage(hello);
+    FakeWebSocket.instances[0]?.serverMessage(branchSnapshot(session.branchId, 3));
+
+    FakeWebSocket.instances[0]?.serverMessage(branchSnapshot("br-000000000002", 0));
+    expect(port.getSnapshot()).toMatchObject({ branchId: "br-000000000002", streamSeq: 0 });
+    await dispose();
+  });
+
+  it("被拒绝的快照不改写本地分支身份", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+    FakeWebSocket.instances[0]?.open();
+    FakeWebSocket.instances[0]?.serverMessage(hello);
+    FakeWebSocket.instances[0]?.serverMessage(branchSnapshot(session.branchId, 3));
+
+    // 另一个世界的快照会被 store 拒绝，本地身份必须保持原值。
+    FakeWebSocket.instances[0]?.serverMessage({
+      ...(branchSnapshot("br-000000000002", 0) as Record<string, unknown>),
+      worldId: "wld-000000000099",
+    });
+    expect(port.getSnapshot()).toMatchObject({ worldId: session.worldId, branchId: session.branchId });
+    await dispose();
+  });
+});
+describe("分支切换期间的投影请求竞态", () => {
+  it("切换分支后旧的 worldView 响应被丢弃", async () => {
+    let release: (() => void) | null = null;
+    const pending = new Promise<void>((resolve) => {
+      release = () => resolve();
+    });
+    const resume = (): void => {
+      const releaseNow = release;
+      release = null;
+      releaseNow?.();
+    };
+    const ticket = vi.fn(async () => ({ ticket: "ticket-1" }));
+    let calls = 0;
+    const api = {
+      content: async () => content,
+      campaign: async () => ({ campaign: projection.campaign, starts: [] }),
+      // bootstrap 内部的首次读取立即返回；其后的一次被挂起，模拟慢请求。
+      worldView: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return { streamSeq: 1, projectionVersion: 1, projection };
+        }
+        await pending;
+        return { streamSeq: 9, projectionVersion: 9, projection };
+      },
+      streamTicket: ticket,
+      webSocketUrl: (value: string) => `ws://test/${value}`,
+      clearSession: vi.fn(),
+    } as unknown as ApiClient;
+    const instance = await createWorldViewModule(moduleInput(api));
+    const port = instance.port as WorldViewPort;
+    try {
+      await port.bootstrap();
+      const refreshing = port.refresh();
+      // 慢响应返回前先收到新分支快照。
+      FakeWebSocket.instances[0]?.open();
+      FakeWebSocket.instances[0]?.serverMessage(hello);
+      FakeWebSocket.instances[0]?.serverMessage({
+        type: "snapshot",
+        channel: "player",
+        streamSeq: 0,
+        projectionVersion: 0,
+        worldId: session.worldId,
+        branchId: "br-000000000002",
+        data: { ...projection, clock: { ...projection.clock, worldTick: 1 } },
+      });
+      resume();
+      await refreshing;
+      // 旧分支的响应不能覆盖新分支状态。
+      expect(port.getSnapshot()).toMatchObject({ branchId: "br-000000000002", streamSeq: 0 });
+      expect(port.getSnapshot()?.projection.clock.worldTick).toBe(1);
+    } finally {
+      await instance.dispose();
+    }
+  });
+});

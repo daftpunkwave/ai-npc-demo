@@ -14,6 +14,12 @@ const rejectionFlushGraceMs = 1_000;
 
 export interface SocketSenderOptions {
   readonly projection: () => PlayerProjection;
+  /**
+   * 快照帧要携带的分支身份。
+   * 恢复或重开会切换在线分支，因此每次发快照时现取，不能缓存启动时的值；
+   * 客户端据此更新本地会话身份并拒绝跨分支迟到帧。
+   */
+  readonly snapshotIdentity: () => { readonly worldId: string; readonly branchId: string };
   /** 控制台频道的按需快照；玩家频道仍由授权投影生成。 */
   readonly channelSnapshot?: (channel: StreamChannel) => Json | null;
   /** 非玩家频道的独立序号，避免控制台推送扰动玩家增量游标。 */
@@ -144,11 +150,14 @@ export class SocketSender {
     const sequence = this.options.sequence();
     let payload: string;
     try {
+      const identity = this.options.snapshotIdentity();
       payload = JSON.stringify({
         type: "snapshot",
         channel,
         streamSeq: sequence.streamSeq,
         projectionVersion: sequence.projectionVersion,
+        worldId: identity.worldId,
+        branchId: identity.branchId,
         data: projection,
       });
     } catch {
@@ -169,7 +178,7 @@ export class SocketSender {
     connection.needsSnapshot = false;
   }
 
-  /** 发送控制台频道的完整快照；序号由该频道独立维护。 */
+  /** 发送控制台频道的完整快照；序号由该频道独立维护，分支身份同样取当前值。 */
   sendChannelSnapshot(
     connection: Connection,
     channel: StreamChannel,
@@ -178,11 +187,14 @@ export class SocketSender {
   ): void {
     let payload: string;
     try {
+      const identity = this.options.snapshotIdentity();
       payload = JSON.stringify({
         type: "snapshot",
         channel,
         streamSeq,
         projectionVersion: 0,
+        worldId: identity.worldId,
+        branchId: identity.branchId,
         data,
       });
     } catch {

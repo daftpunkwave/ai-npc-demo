@@ -93,6 +93,8 @@ export class StreamHub {
     });
     this.sender = new SocketSender({
       projection: options.projection,
+      // 分支身份每次现取：恢复或重开会切换在线分支，快照必须携带当时的身份。
+      snapshotIdentity: () => ({ worldId: options.worldId, branchId: this.branchId }),
       sequence: () => ({ streamSeq: this.streamSeq, projectionVersion: this.projectionVersion }),
       ...(options.channelSnapshot === undefined
         ? {}
@@ -352,6 +354,9 @@ export class StreamHub {
         channel: playerChannel,
         streamSeq: this.streamSeq,
         projectionVersion: this.projectionVersion,
+        // 一份投影复用到多个连接，但身份仍按当前在线分支现取。
+        worldId: this.options.worldId,
+        branchId: this.branchId,
         data: projection,
       });
     } catch (error) {

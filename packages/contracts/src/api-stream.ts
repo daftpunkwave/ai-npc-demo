@@ -34,11 +34,18 @@ export const streamSubscribeMessageSchema = z
 
 export type StreamSubscribeMessage = z.infer<typeof streamSubscribeMessageSchema>;
 
+/**
+ * 快照帧的公共字段。
+ * `worldId` / `branchId` 是快照自身携带的分支身份：恢复或重开后在线分支会变，
+ * 客户端必须按帧内身份更新状态并据此拒绝跨分支迟到帧，不能沿用登录时写入的常量。
+ */
 const streamSnapshotBaseSchema = z
   .object({
     type: z.literal("snapshot"),
     channel: streamChannelSchema,
     streamSeq: z.number().int().nonnegative(),
+    worldId: z.string().min(1),
+    branchId: z.string().min(1),
     data: jsonValueSchema,
   });
 

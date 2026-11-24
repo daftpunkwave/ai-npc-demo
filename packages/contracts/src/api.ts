@@ -226,15 +226,21 @@ export const snapshotListResponseSchema = z
 
 export type SnapshotListResponse = z.infer<typeof snapshotListResponseSchema>;
 
+/**
+ * 快照恢复请求：`dryRun` 可省略，缺省为 false（真正恢复）。
+ * `dryRun: true` 时只做只读预检，不切换在线分支、不写世界状态。
+ */
 export const snapshotRestoreRequestSchema = z
   .object({
     operationId: idSchemas.op,
     snapshotId: idSchemas.snap,
+    dryRun: z.boolean().optional(),
   })
   .strict();
 
 export type SnapshotRestoreRequest = z.infer<typeof snapshotRestoreRequestSchema>;
 
+/** 实际恢复成功的响应：新的在线分支与恢复后的时钟。 */
 export const snapshotRestoreResponseSchema = z
   .object({
     branchId: idSchemas.br,
@@ -243,6 +249,36 @@ export const snapshotRestoreResponseSchema = z
   .strict();
 
 export type SnapshotRestoreResponse = z.infer<typeof snapshotRestoreResponseSchema>;
+
+/** 恢复预检中的单项检查；失败项必须在 message 说明原因。 */
+export const restoreCheckSchema = z
+  .object({
+    name: z.string().min(1),
+    ok: z.boolean(),
+    message: z.string().nullable(),
+  })
+  .strict();
+
+export type RestoreCheck = z.infer<typeof restoreCheckSchema>;
+
+/** 恢复预检（`dryRun: true`）的响应。 */
+export const restoreDryRunResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    checks: z.array(restoreCheckSchema),
+  })
+  .strict();
+
+export type RestoreDryRunResponse = z.infer<typeof restoreDryRunResponseSchema>;
+
+/**
+ * 恢复端点的完整响应：预检与生效两种结果。
+ * 请求带 `dryRun: true` 时返回 `{ ok, checks }`，否则返回 `{ branchId, clock }`；
+ * 两种形状没有可靠的字面量判据可共享（`ok` 只出现在预检分支），因此调用方按请求是否
+ * 请求预检来选择 schema，而不是对同一份响应做联合推断。这里不把它们合成一个联合，
+ * 避免消费者只能靠字段形状猜测结果分支。
+ */
+export type SnapshotRestoreOutcome = RestoreDryRunResponse | SnapshotRestoreResponse;
 
 export const campaignResetRequestSchema = z
   .object({

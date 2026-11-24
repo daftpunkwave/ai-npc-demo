@@ -163,6 +163,69 @@ describe("模块能力声明对账", () => {
     expect(checkModuleCapabilityUsage({ root, definitions: [map, world] })).toEqual([]);
   });
 
+  it("语法合法与非法能力 ID 分别进入不同对账分支", () => {
+    const root = fixture({
+      // 同一个索引位写 `game.world` 会被对账，写成 `game.WORLD` 会报能力 ID 语法违规。
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "export const valid = ports[\"game.world\"];",
+          "export const invalid = ports[\"game.WORLD\"];",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const state = ownState;\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations.filter((violation) => violation.code === "capability-unknown")).toEqual([]);
+    const undeclared = violations.filter((violation) => violation.code === "capability-undeclared");
+    expect(undeclared).toHaveLength(1);
+    expect(undeclared[0]?.message).toContain("game.world");
+    const invalid = violations.filter((violation) => violation.code === "capability-invalid");
+    expect(invalid).toHaveLength(1);
+    expect(invalid[0]?.message).toContain("game.WORLD");
+    expect(invalid[0]?.message).toContain("<group>.<family>");
+  });
+
+  it("语法非法但带能力 group 前缀的索引访问与解构键都报告为语法违规", () => {
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "export const leadingDigit = ports[\"game.9world\"];",
+          "const { \"game.world.extra\": state } = context.modules;",
+          "export const combined = [leadingDigit, state];",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const state = ownState;\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    const messages = violations
+      .filter((violation) => violation.code === "capability-invalid")
+      .map((violation) => violation.message);
+    expect(messages).toHaveLength(2);
+    expect(messages.join("\n")).toContain("game.9world");
+    expect(messages.join("\n")).toContain("game.world.extra");
+  });
+
+  it("普通字符串与无 group 前缀的键不报语法违规", () => {
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "const label = \"hud.compact\";",
+          "const channels = { \"console.timeline\": true };",
+          "export const roads = roadsOf(label, channels);",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const state = ownState;\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations.filter((violation) => violation.code === "capability-invalid")).toEqual([]);
+  });
+
   it("登记定义没有源码目录时报告目录缺失", () => {
     const root = fixture({
       ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),

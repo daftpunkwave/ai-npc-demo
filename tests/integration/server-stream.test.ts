@@ -135,6 +135,7 @@ function createHub(overrides: {
 } = {}): StreamHub {
   const hub = new StreamHub({
     projection: overrides.projection ?? (() => projection(0)),
+    worldId: "wld-000000000001",
     channelsFor: overrides.channelsFor ?? (() => ["player"]),
     ...(overrides.channelSnapshot === undefined ? {} : { channelSnapshot: overrides.channelSnapshot }),
     ids: (prefix) => {

@@ -111,7 +111,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | S→C | `hello` | `protocolVersion`、`principalId`、`channels`（本会话可订阅的频道） |
 | C→S | `subscribe` | `channel`、`fromStreamSeq`（首次为 `null`） |
-| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准 |
+| S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`worldId`、`branchId`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准。`worldId` 与 `branchId` 是该快照所属的分支身份，客户端以帧内值为准更新本地世界与分支 |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
 | S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。已实现 `dialogue` 和 `notification`，`timeline` 为目标 |
 | C→S | `ack` | `channel`、`streamSeq` |
@@ -127,7 +127,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `console.timeline` | researcher | 订阅时和世界变化后推送时间线快照 | 已实现 |
 | `console.turns` | researcher | turn 状态变化（`append`） | 目标 |
 
-在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。
+在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。新分支的 `streamSeq` 从 0 重新计数，因此客户端对跨分支快照按「切换身份」处理，而不是用旧分支的序号判定迟到；只有同一分支内的旧快照才按 `streamSeq` 与 `projectionVersion` 丢弃。世界 ID 不同的快照仍被拒绝。
 
 重连规则：服务端为每个 `(session, channel)` 保留最近 200 条增量。`fromStreamSeq` 之后的增量都还在时补发增量；否则重新发一次 `snapshot`。重连只补投影，不重放任何命令。流式模型 token 不经过任何玩家频道。
 
@@ -181,6 +181,8 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `POST /run-requests/{requestId}/approve` / `reject` | operator | `{ note }` | approve 返回 `{ runId }` |
 
 已实现的运营入口位于 `/api/v1/console/campaign/*`，与第 3 节玩家自助入口路径独立。查询参数 `branchId` 可省略，省略时作用于在线分支；当前版本只支持在线分支，显式传入与在线分支不同的值返回 400 `validation`。快照列表与玩家入口一致，只列当前 campaign 的存档。
+
+时钟单步、快照创建与快照恢复的请求/响应 DTO 在 `packages/contracts/src/api.ts` 中各只有一份定义，`packages/contracts/src/api-operations.ts` 只做再导出。恢复端点按请求是否带 `dryRun: true` 返回两种互斥形状：预检返回 `{ ok, checks }`，实际恢复返回 `{ branchId, clock }`；两者没有共享的判别字段，因此客户端按自己发出的请求选择校验哪一份 schema，而不是对响应做形状推断。预检能力只由控制台运营入口（`/api/v1/console/campaign/restore`）提供；玩家自助入口（`/api/v1/campaign/restore`）收到 `dryRun: true` 返回 400 `validation`，不会退化成真正执行恢复。以旧契约（恢复请求必填 `dryRun`）构造的调用会被 `.strict()` 拒绝，这正是不允许多份端点契约并存的原因。
 
 ### 5.4 剧情卡
 
@@ -256,7 +258,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 |---|---|---|
 | 400 | `validation` | JSON 或 schema 不合法、未知命令类型、未知字段 |
 | 401 | `unauthenticated` | 缺少或无效的会话、令牌错误 |
-| 403 | `forbidden` / `realm-violation` | 角色不允许、Origin 不允许、玩家访问控制台接口 |
+| 403 | `forbidden` / `realm-violation` | 角色不允许、Origin 不允许、玩家访问控制台接口、命令类型已登记但当前角色无权 |
 | 404 | `not-found` | 资源不存在 |
 | 409 | `idempotency-conflict` / `version-conflict` / `stale-controller` / `stale-turn` / `cancelled` / `invalid-state` | 同 ID 不同 payload、版本不符、控制权或 turn 已失效、操作已取消、当前状态不允许操作 |
 | 422 | `assembly-incompatible` / `module-missing` / `capability-conflict` | 装配或 run 预检失败 |

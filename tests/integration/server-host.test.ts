@@ -19,6 +19,8 @@ import {
   errorResponseSchema,
   restoreDryRunResponseSchema,
   sessionAssemblyResponseSchema,
+  sessionDescriptorSchema,
+  snapshotRestoreRequestSchema,
 } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { clockConfigSchema } from "@ai-npc/mod-game-clock-controlled";
@@ -428,9 +430,29 @@ describe("服务端宿主", () => {
       "client.world-view",
     );
     expect(clientAssembly.assemblyHash).toMatch(/^[0-9a-f]{64}$/);
+    // 浏览器没有装配解析器，只能靠握手下发的配置启动模块：
+    // 每个模块的 config 必须是装配按 configRef 解析后的值，且与 configHash 自证一致。
+    for (const module of clientAssembly.modules) {
+      expect(module, `${module.moduleId} 的握手配置不能为空`).toHaveProperty("config");
+      expect(typeof module.configHash).toBe("string");
+    }
+
+    const worldViewRef = clientAssembly.modules.find(
+      (module) => module.moduleId === "client.world-view.standard",
+    );
+    expect(worldViewRef).toBeDefined();
+    expect(worldViewRef?.config).not.toBeNull();
     expect((await host.app.inject({ method: "GET", url: "/api/v1/session/assembly?realm=console", headers })).statusCode).toBe(403);
     const sessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers });
     expect(sessionView.json()).toMatchObject({ clientAssembly: { realm: "client" } });
+    // 服务端装配摘要会经 /api/v1/session 返回给玩家会话，因此只带 configHash：
+    // 服务端模块配置含内容包下发的提示词、工具描述与部署期覆盖，不能对外下发。
+    const serverAssembly = sessionDescriptorSchema.parse(sessionView.json()).serverAssembly;
+    expect(serverAssembly.modules.length).toBeGreaterThan(0);
+    for (const module of serverAssembly.modules) {
+      expect(module, `${module.moduleId} 不得下发服务端配置`).not.toHaveProperty("config");
+      expect(typeof module.configHash).toBe("string");
+    }
 
     // 客户端内容来自内容包与解析后的时钟配置；未认证不可读。
     expect((await host.app.inject({ method: "GET", url: "/api/v1/content" })).statusCode).toBe(401);
@@ -950,11 +972,18 @@ describe("服务端宿主", () => {
     // 把旧在线分支推到 tick 5 后恢复：后继分支应回到快照的 tick 3，并切换在线别名。
     const sourceBranchId = host.branchId;
     setBranchClock(host, sourceBranchId, 5);
+
+    // 用公共契约导出的请求 schema 构造请求体：契约与已实现路由必须是同一份权威定义，
+    // 否则按公共契约生成的客户端会在真实端点上被 400 拒绝。
+    const restoreRequest = snapshotRestoreRequestSchema.parse({
+      operationId: "op-000000000609",
+      snapshotId: snapshotId.snapshotId,
+    });
     const restored = await host.app.inject({
       method: "POST",
       url: "/api/v1/console/campaign/restore",
       headers: operatorHeaders,
-      payload: { operationId: "op-000000000609", snapshotId: snapshotId.snapshotId },
+      payload: restoreRequest,
     });
     expect(restored.statusCode).toBe(200);
     const restoredBody = restored.json<{
@@ -1307,11 +1336,14 @@ describe("服务端宿主", () => {
       try {
         expect(await client.next()).toMatchObject({ type: "hello", channels: ["player"] });
         client.send({ type: "subscribe", channel: "player", fromStreamSeq: null });
-        expect(await client.next()).toMatchObject({
+        const initial = await client.next();
+        expect(initial).toMatchObject({
           type: "snapshot",
           channel: "player",
           data: { clock: { worldTick: 7, mode: "paused" } },
         });
+        // 快照携带源分支身份：客户端据此知道自己当前停留在哪个分支。
+        expect(initial).toMatchObject({ worldId: host.worldId, branchId: sourceBranchId });
 
         const restored = await host.app.inject({
           method: "POST",
@@ -1327,12 +1359,16 @@ describe("服务端宿主", () => {
         // 宿主内存中的在线分支随提交结果更新。
         expect(host.branchId).toBe(successorBranchId);
 
-        // 传输层在切换后立即推送后继分支的完整投影快照。
-        expect(await client.next()).toMatchObject({
+        // 传输层在切换后立即推送后继分支的完整投影快照，且快照身份必须是新分支。
+        // 客户端只有拿到这个身份，才能把 HUD 与后续控制台查询切到新的在线分支。
+        const resynced = await client.next();
+        expect(resynced).toMatchObject({
           type: "snapshot",
           channel: "player",
           data: { clock: { worldTick: 5, mode: "paused" } },
         });
+        expect(resynced).toMatchObject({ worldId: host.worldId, branchId: successorBranchId });
+        expect((resynced as { readonly branchId: string }).branchId).not.toBe(sourceBranchId);
       } finally {
         client.close();
       }

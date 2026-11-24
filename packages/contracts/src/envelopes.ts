@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { audienceSpecSchema } from "./audience";
 import { idSchemas, principalIdSchema } from "./ids";
-import { jsonValueSchema } from "./json";
+import { boundedJsonValueSchema } from "./json";
 import { reasonCodeSchema } from "./reason-codes";
 
 /** 主体类型：玩家、Agent、控制台三类角色与系统。 */
@@ -40,7 +40,10 @@ export const authContextSchema = z
 
 export type AuthContext = z.infer<typeof authContextSchema>;
 
-/** 事件信封：worldSeq 在分支内排序，审计与事件独立提交。 */
+/**
+ * 事件信封：worldSeq 在分支内排序，审计与事件独立提交。
+ * payload 来自业务与外部输入，使用带输入预算的 JSON schema，超深或超宽输入给出校验失败而不是栈溢出。
+ */
 export const eventEnvelopeSchema = z
   .object({
     eventId: idSchemas.evt,
@@ -54,20 +57,23 @@ export const eventEnvelopeSchema = z
     causationIds: z.array(z.string().min(1)),
     correlationId: z.string().min(1),
     audience: z.array(audienceSpecSchema),
-    payload: jsonValueSchema,
+    payload: boundedJsonValueSchema,
   })
   .strict();
 
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 
-/** 命令信封：commandId 由调用方生成并在重试时复用，expectedVersions 键为 “聚合类型:聚合 ID”。 */
+/**
+ * 命令信封：commandId 由调用方生成并在重试时复用，expectedVersions 键为 “聚合类型:聚合 ID”。
+ * payload 由客户端提交，使用带输入预算的 JSON schema，深层嵌套直接判为 validation 失败。
+ */
 export const commandEnvelopeSchema = z
   .object({
     commandId: idSchemas.cmd,
     type: z.string().min(1),
     schemaVersion: z.number().int().positive(),
     expectedVersions: z.record(z.string().min(1), z.number().int().nonnegative()).optional(),
-    payload: jsonValueSchema,
+    payload: boundedJsonValueSchema,
   })
   .strict();
 
@@ -90,7 +96,8 @@ export type ExecutionStatus = z.infer<typeof executionStatusSchema>;
 
 /**
  * 命令回执：幂等键与 payload 相同时返回原回执；accepted 时 reasonCode 必须为 null。
- * operationId 用于关联模型工具操作，result 携带如 taskId 或 agreementId 的结果。
+ * operationId 用于关联模型工具操作，result 携带如 taskId 或 agreementId 的结果；
+ * result 可含处理器返回的自由结构，使用带输入预算的 JSON schema 挡住超深嵌套。
  */
 export const commandReceiptSchema = z
   .object({
@@ -102,7 +109,7 @@ export const commandReceiptSchema = z
     acceptedEventIds: z.array(idSchemas.evt),
     operationId: idSchemas.op.nullable(),
     resultingVersions: z.record(z.string().min(1), z.number().int().nonnegative()),
-    result: jsonValueSchema.nullable(),
+    result: boundedJsonValueSchema.nullable(),
     worldTick: z.number().int().nonnegative(),
   })
   .strict()

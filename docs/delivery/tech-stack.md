@@ -221,7 +221,7 @@ export default defineConfig({
 ```
 
 - 客户端通过 :5173 内部的代理访问 `/api`，浏览器视角是同源，不需要 CORS 预检；Vite 的 HMR 复用 :5173。
-- 控制台不跑 Vite dev server，只用 `vite build --watch` 生成静态文件，由服务端 `@fastify/static` 挂到 `/console/`；修改后刷新页面即可，没有 HMR。控制台是单页应用：`/console/*` 下找不到对应静态文件的 GET 请求一律返回 `index.html`，由前端路由处理；`/api/*` 不做这种回退。
+- 控制台不跑 Vite dev server，只用 `vite build --watch` 生成静态文件，由服务端 `@fastify/static` 以 wildcard 模式挂到 `/console/`；每个请求按请求路径直接读盘，因此构建后新增的 hash 资产无需重启服务端即可访问，修改后刷新页面即可，没有 HMR。控制台是单页应用，但回退有边界：只有 GET/HEAD、路径以 `/console/` 开头、末段（URL 解码后）无扩展名、且 `index.html` 实际存在时，找不到静态文件才返回 `index.html` 交给前端路由；带扩展名的资产请求缺失时返回 404 统一错误，绝不以 200 `text/html` 冒充 JS/CSS（否则浏览器会把 HTML 当脚本执行并白屏，且状态码掩盖故障）；入口文件缺失期间同样直接 404，不重复回退。`/api/*` 不做这种回退。
 - `strictPort: true` 与 Fastify 的 `listen` 失败即退出，端口被占用时启动失败，不会自动换成 5174 或 3001。
 - 服务端对带 `Origin` 头的请求和 WS 握手校验 Origin 必须是 `http://<NPC_SERVER_HOST>:<NPC_CLIENT_PORT>` 或 `http://<NPC_SERVER_HOST>:<NPC_SERVER_PORT>`（默认即 `http://127.0.0.1:5173` 与 `http://127.0.0.1:3000`）。
 
