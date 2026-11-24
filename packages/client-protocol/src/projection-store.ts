@@ -32,8 +32,20 @@ type Listener = (state: ProjectionState | null) => void;
  * 增量补丁的校验 schema。
  * `ZodObject.partial()` 每次调用都会新建一个 schema 对象，而 applyDelta 处在每条增量帧的路径上，
  * 因此只在模块初始化时构建一次。partial 保留 strict，未知顶层字段仍被拒绝。
+ * 注意 partial 也接受显式 `undefined`，那会覆盖必填字段，因此 applyDelta 另外剔除这类键。
  */
 const projectionPatchSchema = playerProjectionSchema.partial();
+
+/** 剔除值为 `undefined` 的键：它们会在合并时覆盖已通过校验的必填字段。 */
+function definedPatch(patch: Record<string, unknown>): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) {
+      kept[key] = value;
+    }
+  }
+  return kept;
+}
 
 /** 单份玩家投影的 reducer；模块共享同一实例，不能各建一套世界状态。 */
 export class ProjectionStore {
@@ -92,7 +104,8 @@ export class ProjectionStore {
     }
     // 只校验本次新增的补丁：基线投影在写入状态时已通过完整校验，补丁顶层字段又被 strict partial
     // 逐字段按完整 schema 校验，两者合并后不可能产生非法投影，因此不再对合并结果重复全量校验。
-    const changed = projectionPatchSchema.parse(message.set);
+    // 显式 `undefined` 会被 partial 接受却覆盖必填字段，合并前先剔除。
+    const changed = definedPatch(projectionPatchSchema.parse(message.set));
     const projection: PlayerProjection = { ...current.projection, ...changed };
     const next: ProjectionState = {
       ...current,
@@ -109,8 +122,9 @@ export class ProjectionStore {
     }
     const current = this.state;
     // append 帧已是按 kind 判别的联合：item 的类型由契约绑定，无需在此重新解析。
+    // 但调用方仍持有该对象，浅拷贝一次再入库，避免事后改动绕过校验与订阅通知。
     if (message.kind === "dialogue") {
-      const line = message.item;
+      const line = { ...message.item };
       if (current.projection.conversations.some((candidate) => candidate.dialogueId === line.dialogueId)) {
         return { state: current, needsSnapshot: false, changed: false };
       }
@@ -121,7 +135,7 @@ export class ProjectionStore {
       const next: ProjectionState = { ...current, projection };
       return this.commit(next);
     }
-    const notification = message.item;
+    const notification = { ...message.item };
     const duplicate = current.projection.notifications.some(
       (candidate) =>
         candidate.kind === notification.kind &&

@@ -188,6 +188,49 @@ describe("ProjectionStore", () => {
     expect(store.getSnapshot()?.projection.clock.worldTick).toBe(0);
   });
 
+  it("增量补丁里的显式 undefined 不覆盖必填字段", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot({ ...snapshot(1), data: projectionAtTick(3) });
+
+    // partial 会接受显式 undefined，若直接合并会把 clock 覆盖成 undefined。
+    store.applyDelta({
+      ...delta(2, 4),
+      set: { clock: undefined } as unknown as StreamDeltaMessage["set"],
+    });
+
+    const projection = store.getSnapshot()?.projection;
+    expect(projection?.clock).toBeDefined();
+    expect(projection?.clock.worldTick).toBe(3);
+    // 合并结果仍满足完整契约，没有被 undefined 破坏。
+    expect(playerProjectionSchema.safeParse(projection).success).toBe(true);
+  });
+
+  it("append 的 item 入库时与调用方对象隔离", () => {
+    const store = new ProjectionStore();
+    store.applySnapshot(snapshot(1));
+    const line = {
+      seq: 0,
+      dialogueId: "dlg-000000000001",
+      speakerId: "player-1",
+      speakerName: "党魁",
+      text: "你好",
+      worldTick: 0,
+      channel: "face-to-face" as const,
+    };
+
+    store.applyAppend({
+      type: "append",
+      channel: "player",
+      streamSeq: 2,
+      kind: "dialogue",
+      item: line,
+    });
+    // 调用方事后改动同一个对象，已提交的投影不得跟着变。
+    line.text = "被改写的文本";
+
+    expect(store.getSnapshot()?.projection.conversations[0]?.text).toBe("你好");
+  });
+
   it("重复对白 append 不重复写入", () => {
     const store = new ProjectionStore();
     store.applySnapshot(snapshot(1));
