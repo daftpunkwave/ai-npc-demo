@@ -39,8 +39,9 @@ export class OnlineAgentHost {
     this.initialModules = options.core.initialAgentModules;
   }
 
+  /** 分支切换失败或当前分支的 Agent 运行时处于连续失败（degraded）时，健康摘要都报降级。 */
   get healthy(): boolean {
-    return !this.failed;
+    return !this.failed && !(this.branch?.runtime.degraded ?? false);
   }
 
   switch(): Promise<void> {

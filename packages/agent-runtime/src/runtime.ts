@@ -10,8 +10,15 @@ import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";
 import { AgentModuleHandle } from "./agent-module-handle";
+import { cycleBackoffMs } from "./runtime-backoff";
 import { TurnScheduler } from "./turn-scheduler";
 import { TurnWorker, type TurnExecutionOptions } from "./turn-worker";
+
+/** 单个阶段失败的记录：阶段名加原因原文，供聚合错误与日志对账。 */
+interface CycleStageFailure {
+  readonly phase: string;
+  readonly message: string;
+}
 
 export interface AgentWorldRead {
   readonly nodeId: string | null;
@@ -38,6 +45,14 @@ export interface AgentRuntimeOptions {
   readonly turnExecution?: TurnExecutionOptions;
 }
 
+/** 把本轮阶段失败聚合为一个错误；没有失败则返回 null，保留每个原因原文供断言与排查。 */
+function cycleFailure(failures: readonly CycleStageFailure[]): Error | null {
+  if (failures.length === 0) return null;
+  return new Error(failures
+    .map(({ phase, message }) => `agent runtime stage ${phase} failed: ${message}`)
+    .join("; "));
+}
+
 /**
  * 单进程感知、记忆和调度宿主。turn 执行与后台摄入并行运行。
  */
@@ -49,6 +64,7 @@ export class AgentRuntime {
   private draining: Promise<void> | null = null;
   private running = false;
   private stopped = false;
+  private consecutiveFailures = 0;
   private consumer: PerceptionEventConsumer | null = null;
   private memory: MemoryHost | null = null;
   private scheduler: TurnScheduler | null = null;
@@ -144,6 +160,11 @@ export class AgentRuntime {
     await this.runTrackedCycle();
   }
 
+  /** 连续失败后为 true；调度端口与健康摘要据此区分降级，不把失败当成正常轮。 */
+  get degraded(): boolean {
+    return this.consecutiveFailures > 0;
+  }
+
   fenceTurns(reason: string): void {
     this.scheduler?.cancelActive(reason);
   }
@@ -200,52 +221,96 @@ export class AgentRuntime {
   private schedule(): void {
     if (!this.running || this.stopped) return;
     this.timer = setTimeout(() => {
+      // 失败已经由 recordCycleFailure 按轮数分级记录，这里只需吞掉 rejection 以免变成未处理异常。
       void this.runTrackedCycle()
-        .catch((error) => {
-          this.options.host.logger.error("Agent runtime cycle failed", {
-            message: error instanceof Error ? error.message : String(error),
-          });
-        })
+        .catch(() => undefined)
         .finally(() => this.schedule());
-    }, 250);
+    }, cycleBackoffMs(this.consecutiveFailures));
     this.timer.unref();
   }
 
   private runTrackedCycle(): Promise<void> {
     if (this.cycle !== null) return this.cycle;
-    const cycle = this.runCycle().finally(() => {
-      if (this.cycle === cycle) this.cycle = null;
-    });
+    const cycle = this.runCycle()
+      .then(() => this.recordCycleSuccess())
+      .catch((error: unknown) => {
+        this.recordCycleFailure(error instanceof Error ? error.message : String(error));
+        throw error;
+      })
+      .finally(() => {
+        if (this.cycle === cycle) this.cycle = null;
+      });
     this.cycle = cycle;
     return cycle;
   }
 
+  /** 成功轮清零连续失败计数；从 degraded 恢复时显式记录一次，便于对账。 */
+  private recordCycleSuccess(): void {
+    if (this.consecutiveFailures === 0) return;
+    this.consecutiveFailures = 0;
+    this.options.host.logger.info("Agent runtime recovered", { consecutiveFailures: 0 });
+  }
+
+  /** 进入 degraded 的第一轮用 error 级，持续失败降为 warn 级，避免退避期间刷屏。 */
+  private recordCycleFailure(message: string): void {
+    this.consecutiveFailures += 1;
+    const data = {
+      consecutiveFailures: this.consecutiveFailures,
+      nextDelayMs: cycleBackoffMs(this.consecutiveFailures),
+      message,
+    };
+    if (this.consecutiveFailures === 1) this.options.host.logger.error("Agent runtime degraded", data);
+    else this.options.host.logger.warn("Agent runtime cycle failed", data);
+  }
+
   private async runCycle(): Promise<void> {
     if (this.stopped || this.consumer === null || this.scheduler === null) return;
+    const consumer = this.consumer;
+    const scheduler = this.scheduler;
     const active = this.options.storage.transact((tx) => {
       const branch = tx.rows("branches").get({ branch_id: this.options.branchId });
       return branch?.["status"] === "active" || branch?.["status"] === "paused";
     });
     if (!active) return;
     const tick = this.clockTick();
-    await this.consumer.consume(tick);
-    this.consumer.flush(tick);
-    await this.memory?.ingestAll(tick);
-    this.memory?.proposeDueWakeups(tick);
-    await this.memory?.runDueMaintenance(tick);
-    if (this.stopped) return;
-    this.scheduler.recoverExpired();
-    const scheduled = this.scheduler.schedule({
-      tick,
-      paused: this.clockMode() === "paused",
-      runId: this.options.runId,
+    // 每个阶段独立失败：单个阶段抛错只记录，后续阶段照常执行，尤其是 turn 调度不能因此被跳过。
+    const failures: CycleStageFailure[] = [];
+    const stage = async (phase: string, operation: () => void | Promise<void>): Promise<void> => {
+      try {
+        await operation();
+      } catch (error) {
+        failures.push({ phase, message: error instanceof Error ? error.message : String(error) });
+      }
+    };
+    await stage("consumer.consume", () => consumer.consume(tick));
+    await stage("consumer.flush", () => { consumer.flush(tick); });
+    await stage("memory.ingestAll", async () => { await this.memory?.ingestAll(tick); });
+    await stage("memory.proposeDueWakeups", () => { this.memory?.proposeDueWakeups(tick); });
+    await stage("memory.runDueMaintenance", async () => { await this.memory?.runDueMaintenance(tick); });
+    if (this.stopped) {
+      const failure = cycleFailure(failures);
+      if (failure !== null) throw failure;
+      return;
+    }
+    await stage("scheduler.recoverExpired", () => { scheduler.recoverExpired(); });
+    let scheduled: readonly { readonly turnId: string; readonly agentId: string }[] = [];
+    await stage("scheduler.schedule", () => {
+      scheduled = scheduler.schedule({
+        tick,
+        paused: this.clockMode() === "paused",
+        runId: this.options.runId,
+      });
     });
     if (this.turns !== null) {
-      for (const { turnId, agentId } of this.scheduler.queuedTurns(this.options.runId)) {
-        this.turns.dispatch(turnId, agentId);
-      }
+      await stage("turns.dispatch", () => {
+        for (const { turnId, agentId } of scheduler.queuedTurns(this.options.runId)) {
+          this.turns?.dispatch(turnId, agentId);
+        }
+      });
     }
     if (scheduled.length > 0) this.options.onStateChange?.();
+    const failure = cycleFailure(failures);
+    if (failure !== null) throw failure;
   }
 
 

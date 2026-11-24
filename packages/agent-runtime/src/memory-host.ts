@@ -106,11 +106,30 @@ export class MemoryHost {
     }
   }
 
+  /**
+   * 逐个身份摄入，单个身份失败只隔离它自己的队列。
+   * 全部身份跑完后再聚合抛出，避免一个身份拖停其他身份的摄入与后续整理排队。
+   */
   async ingestAll(worldTick: number): Promise<void> {
-    await Promise.all(this.options.roster.agents.map(async (agent) => {
-      if (!this.store.agentControl(agent.agentId).active) return;
-      await this.ingestAgent(agent.agentId, worldTick);
-    }));
+    const failures: { readonly agentId: string; readonly message: string }[] = [];
+    for (const agent of this.options.roster.agents) {
+      try {
+        if (!this.store.agentControl(agent.agentId).active) continue;
+        await this.ingestAgent(agent.agentId, worldTick);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ agentId: agent.agentId, message });
+        this.options.host.logger.error("Memory ingest failed", {
+          agentId: agent.agentId,
+          phase: "memory-ingest",
+          message,
+        });
+      }
+    }
+    if (failures.length === 0) return;
+    throw new Error(failures
+      .map(({ agentId, message }) => `agent ${agentId} memory ingest failed: ${message}`)
+      .join("; "));
   }
 
   async runDueMaintenance(worldTick: number): Promise<void> {
@@ -140,19 +159,28 @@ export class MemoryHost {
     }));
   }
 
+  /** 逐个身份提出唤醒；单个身份失败只记日志并跳过，不影响其他身份的唤醒与调度。 */
   proposeDueWakeups(worldTick: number): void {
     for (const agent of this.options.roster.agents) {
-      const control = this.store.agentControl(agent.agentId);
-      if (!control.active || !control.agentControlled) continue;
-      const handle = this.module(agent.agentId);
-      const watermark = this.requireWatermark(agent.agentId);
-      const view = this.view(agent.agentId, watermark.revision);
-      const proposals = handle.port.proposeWakeups({
-        scope: this.scope(agent.agentId),
-        revision: watermark.revision,
-        worldTick,
-      }, view);
-      this.writeTriggers(agent.agentId, proposals, worldTick);
+      try {
+        const control = this.store.agentControl(agent.agentId);
+        if (!control.active || !control.agentControlled) continue;
+        const handle = this.module(agent.agentId);
+        const watermark = this.requireWatermark(agent.agentId);
+        const view = this.view(agent.agentId, watermark.revision);
+        const proposals = handle.port.proposeWakeups({
+          scope: this.scope(agent.agentId),
+          revision: watermark.revision,
+          worldTick,
+        }, view);
+        this.writeTriggers(agent.agentId, proposals, worldTick);
+      } catch (error) {
+        this.options.host.logger.error("Memory wakeup proposal failed", {
+          agentId: agent.agentId,
+          phase: "memory-wakeups",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
