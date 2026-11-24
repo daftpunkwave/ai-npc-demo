@@ -70,19 +70,28 @@ export const capabilityRefSchema = z
 
 export type CapabilityRef = z.infer<typeof capabilityRefSchema>;
 
-/** 已解析模块的身份与配置摘要。 */
+/**
+ * 已解析模块的身份与配置摘要；`config` 只在浏览器 realm 的模块集里出现。
+ * `configHash` 是配置的规范化摘要，任何 realm 都给出。
+ * `config` 是装配按 `configRef` 解析并经 `configSchema` 校验（含默认值）后的值：
+ * 浏览器 realm（client / console）没有装配解析器，必须靠握手下发的这一份启动模块，
+ * 否则只能用 `defaults`，行为与装配声明不符且无法用 `configHash` 自证一致。
+ * 服务端 realm 不下发该字段：它的实例由宿主自己创建，配置属于服务端内部参数，
+ * 不应经 `/api/v1/session` 的 `serverAssembly` 暴露给玩家会话。
+ */
 export const moduleRefSchema = z
   .object({
     moduleId: moduleIdSchema,
     version: z.string().min(1),
     apiVersion: z.string().min(1),
     configHash: z.string().min(1),
+    config: jsonValueSchema.optional(),
   })
   .strict();
 
 export type ModuleRef = z.infer<typeof moduleRefSchema>;
 
-/** 浏览器握手时能拿到的模块集：只含 ID、版本、能力与装配 hash。 */
+/** 会话握手返回的模块集：ID、版本、能力、装配 hash；浏览器 realm 另带已解析配置。 */
 export const resolvedModuleSetSchema = z
   .object({
     realm: realmSchema,

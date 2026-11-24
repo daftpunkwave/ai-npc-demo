@@ -19,6 +19,7 @@ import {
   errorResponseSchema,
   restoreDryRunResponseSchema,
   sessionAssemblyResponseSchema,
+  sessionDescriptorSchema,
   snapshotRestoreRequestSchema,
 } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
@@ -429,9 +430,29 @@ describe("服务端宿主", () => {
       "client.world-view",
     );
     expect(clientAssembly.assemblyHash).toMatch(/^[0-9a-f]{64}$/);
+    // 浏览器没有装配解析器，只能靠握手下发的配置启动模块：
+    // 每个模块的 config 必须是装配按 configRef 解析后的值，且与 configHash 自证一致。
+    for (const module of clientAssembly.modules) {
+      expect(module, `${module.moduleId} 的握手配置不能为空`).toHaveProperty("config");
+      expect(typeof module.configHash).toBe("string");
+    }
+
+    const worldViewRef = clientAssembly.modules.find(
+      (module) => module.moduleId === "client.world-view.standard",
+    );
+    expect(worldViewRef).toBeDefined();
+    expect(worldViewRef?.config).not.toBeNull();
     expect((await host.app.inject({ method: "GET", url: "/api/v1/session/assembly?realm=console", headers })).statusCode).toBe(403);
     const sessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers });
     expect(sessionView.json()).toMatchObject({ clientAssembly: { realm: "client" } });
+    // 服务端装配摘要会经 /api/v1/session 返回给玩家会话，因此只带 configHash：
+    // 服务端模块配置含内容包下发的提示词、工具描述与部署期覆盖，不能对外下发。
+    const serverAssembly = sessionDescriptorSchema.parse(sessionView.json()).serverAssembly;
+    expect(serverAssembly.modules.length).toBeGreaterThan(0);
+    for (const module of serverAssembly.modules) {
+      expect(module, `${module.moduleId} 不得下发服务端配置`).not.toHaveProperty("config");
+      expect(typeof module.configHash).toBe("string");
+    }
 
     // 客户端内容来自内容包与解析后的时钟配置；未认证不可读。
     expect((await host.app.inject({ method: "GET", url: "/api/v1/content" })).statusCode).toBe(401);

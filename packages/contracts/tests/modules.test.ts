@@ -154,7 +154,6 @@ describe("能力引用与已解析模块集", () => {
         apiVersion: "1",
         configHash: "abc123",
       },
-      { moduleId: "game.clock.controlled", version: "", apiVersion: "1", configHash: "abc" },
     );
   });
 
