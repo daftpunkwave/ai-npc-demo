@@ -43,6 +43,7 @@ describe("玩家投影缺省可选端口契约", () => {
     });
     expect(view.campaign).toBeNull();
     expect(view.meters).toBeNull();
+    expect(view.cityResources).toBeNull();
     expect(view.stockpiles).toEqual([]);
     expect(view.teams).toEqual([]);
     expect(view.characters).toEqual([]);

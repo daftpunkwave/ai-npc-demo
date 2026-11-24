@@ -20,6 +20,7 @@ const campaign: CampaignView = {
   startTick: 0,
   status: "running",
   outcome: null,
+  cityResources: null,
 };
 
 const factionOfPrincipal = (principalId: string): string | null =>

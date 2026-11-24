@@ -273,7 +273,7 @@ COMMIT
 | `RelayDegraded` / `RelayDown` / `RelayRestored` / `OrchardCrisis` / `OrchardDamaged` / `MigrationCrisis` / `SupplyShortage` | 当时数值 | public |
 | `DayPassed` | day、meters、consumption、changes | public |
 | `ScenarioCardTriggered` / `ScenarioCardPublished` / `ScenarioCardWithdrawn` / `ScenarioCompensationApplied` / `ScenarioOverrideApplied` | cardId、version、note | system |
-| `ChapterStageEvaluated` | outcome、meters、unmet、fulfilledCount、breachedCount | public |
+| `ChapterStageEvaluated` | outcome、meters、unmet、fulfilledCount、breachedCount、cityResources | public |
 
 程序案交付时，在事件目录与公共 schema 增加 `MotionDecided`，记录逐席票、赞成数、表决结果与下一周议程顺序，供议事录与投影使用。`ChapterStageEvaluated` 同步携带程序案结果。字段命名与兼容读取随该步定稿。参见 [rules.md — 序章议事与评估](../game/rules.md#10-序章议事与评估)。
 
@@ -313,6 +313,7 @@ type AudienceSpec =
 | `clock` | worldTick、day、hour、mode、runVersion | 公开 |
 | `map` | 节点（名称、坐标、设施）、道路（端点、行程、风险、当前状态） | 公开 |
 | `meters` | 三个指标的数值与等级（[规则](../game/rules.md) 第 4 节）、水闸分配 | 公开 |
+| `cityResources` | t168 交接后的六种城市资源数量；序章未结束时为 null | 公开 |
 | `stockpiles` | 每个库存点的节点、所属、三种已结算资源（供给/能源/医疗）等级；玩家持有委托的库存点给出精确数量与委托余额 | 等级公开；精确值仅限委托；材料/食物/水在序章不出现 |
 | `teams` | 位置、所属、状态；玩家委托的队伍标 `delegatedToMe` | 位置与状态公开 |
 | `characters` | 名称、派系、职责、所在节点、是否受伤、公开主张（人格 `values` 的第一条） | 公开 |

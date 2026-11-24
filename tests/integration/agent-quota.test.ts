@@ -33,7 +33,7 @@ async function storageFixture() {
   await instance.start(new AbortController().signal);
   const storage = instance.port as StoragePort;
   storage.transact((tx) => {
-    tx.rows("worlds").put({ world_id: "wld-000000000001", pack_id: "earth-2964-v1", content_version: "0.2.0", created_at: "2026-01-01T00:00:00.000Z" });
+    tx.rows("worlds").put({ world_id: "wld-000000000001", pack_id: "earth-2964-v1", content_version: "0.3.0", created_at: "2026-01-01T00:00:00.000Z" });
     for (const [index, status] of ["active", "paused", "frozen"] .entries()) {
       tx.rows("branches").put({
         branch_id: `br-00000000000${index + 1}`,

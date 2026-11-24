@@ -118,7 +118,7 @@ async function fixture(): Promise<{
     tx.rows("worlds").put({
       world_id: "wld-000000000001",
       pack_id: "earth-2964-v1",
-      content_version: "0.2.0",
+      content_version: "0.3.0",
       created_at: "2026-01-01T00:00:00.000Z",
     });
     tx.rows("branches").put({

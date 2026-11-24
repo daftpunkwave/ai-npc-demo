@@ -1153,7 +1153,7 @@ describe("服务端宿主", () => {
       };
       expect(manifest.seed).toBe(spec.seed);
       expect(manifest.selection).toMatchObject({ moduleAssemblyRef: "local-slg-standard-v1", rosterRef: "standard-15" });
-      expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.2.0" });
+      expect(manifest.content).toEqual({ packId: "earth-2964-v1", contentVersion: "0.3.0" });
       expect(manifest.agentSlots).toMatchObject({ decision: ["agent.decision.deterministic", "agent.decision.model"] });
       expect(manifest).toMatchObject({ models: { layoutId: "shared-model-layout-v1", routes: expect.arrayContaining([
         expect.objectContaining({ agentId: "human-independent", purpose: "decision", adapterId: "platform.model-transport.openai-compatible" }),
@@ -1167,7 +1167,7 @@ describe("服务端宿主", () => {
       manifestHash = run["manifest_hash"];
       branchId = first.branchId;
       const world = first.storage.transact((tx) => tx.rows("worlds").get({ world_id: first.worldId }));
-      expect(world).toMatchObject({ pack_id: "earth-2964-v1", content_version: "0.2.0" });
+      expect(world).toMatchObject({ pack_id: "earth-2964-v1", content_version: "0.3.0" });
     } finally {
       await first.close();
     }

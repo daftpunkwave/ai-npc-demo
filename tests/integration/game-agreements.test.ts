@@ -495,6 +495,7 @@ describe("协议", () => {
           startTick: 0,
           status: "running",
           outcome: null,
+          cityResources: null,
         }),
       },
       map: {

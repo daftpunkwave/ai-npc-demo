@@ -99,6 +99,7 @@ function contentWith(meta: ScenarioMetaOverride): GameContent {
       "watergate.allocation": "harbor-first",
     },
     dutyDelegations: [],
+    cityResources: { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 },
   } as unknown as GameContent;
 }
 

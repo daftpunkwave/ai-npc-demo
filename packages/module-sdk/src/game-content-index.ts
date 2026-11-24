@@ -6,6 +6,7 @@
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名表达调用契约。 */
 import type {
   CardEffect,
+  CityResourceAmounts,
   ResourceAmounts,
   RoadStatus,
   TaskType,
@@ -222,4 +223,6 @@ export interface GameContent {
   readonly chapterId: string;
   readonly initialMeters: MetersView;
   readonly dutyDelegations: readonly GameDutyDelegation[];
+  /** t168 交接时纳入城市总量的六种资源初值。 */
+  readonly cityResources: CityResourceAmounts;
 }

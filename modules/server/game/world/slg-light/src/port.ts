@@ -59,7 +59,7 @@ export function createWorldPort(
           "章节评估只能由协议模块的章节终点时钟步骤或宿主触发",
         );
       }
-      return runChapterEvaluation(tx(), counts, chapterLengthTicks);
+      return runChapterEvaluation(tx(), counts, content.cityResources, chapterLengthTicks);
     },
 
     discoverEvidence(input: {
