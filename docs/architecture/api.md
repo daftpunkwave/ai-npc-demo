@@ -283,7 +283,12 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 业务规则拒绝（例如资源不足、路线不可用）不使用以上 HTTP 错误：命令被受理并写入 receipt，返回 200 和 `commandStatus: "rejected"`。
 
-`traceId` 与响应里已写入 `trace_spans` 的请求 span 对应：`onRequest` 为每个请求生成 trace 并登记，错误出口在构造响应时取回该值；`DomainError` 显式携带 `traceId` 或 `detailsArtifactRef` 时以错误自身的值为准，用于关联在请求之外产生的记录。两者都没有时字段为 `null`，不用空串冒充。
+`traceId` 的取值分两种情况，客户端不能假定它一定对应本次请求的 span：
+
+1. `DomainError` 显式携带 `traceId` 或 `detailsArtifactRef` 时优先返回错误自身的值。这类错误可能由其他请求、后台 worker 或延迟提交产生，其 trace 指向产生错误的那个上下文，不一定能在本次 `http.request` span 下查到。
+2. 未显式携带时回落到本次请求的 trace。`onRequest` 为每个请求生成 trace，并在注入了 `recordSpan` 时登记，错误出口在构造响应时取回；该值对应本次请求写入 `trace_spans` 的 `http.request` span。
+
+两者都没有时字段为 `null`，不用空串冒充。传输层未注入 `recordSpan` 时请求 span 不会落库，此时不登记 trace，错误响应的 `traceId` 保持 `null`，避免给出查不到的伪标识。
 
 ## 8. API 验收
 
@@ -291,7 +296,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 - 同一 `commandId` 重放得到同一 receipt；换 payload 返回 409 `idempotency-conflict`。
 - 断线后带 `fromStreamSeq` 重连，客户端投影与 `GET /world/view` 一致；缺口超过 200 时收到新快照。
 - 来自其他 Origin 的请求与 WS 握手被拒绝。
-- 任一非 2xx 响应的 `traceId` 能在 `trace_spans` 中查到对应的 `http.request` span。
+- 任一非 2xx 响应的 `traceId` 要么能在 `trace_spans` 中查到对应的 `http.request` span（回落情形），要么是该错误自身携带的 trace（显式情形）；未注入 `recordSpan` 时为 `null`。
 - `GET /console/timeline` 的查询边界与 `timelineQuerySchema` 一致：缺省 `fromSeq`/`limit` 使用默认值，`types` 超过 20 个返回 400。
 - `GET /console/agents` 对已开局角色返回真实 `location` 与 `watermarkLag`，不用固定 `null` 与 `0` 冒充。
 - 所有接口的响应里都找不到 API 密钥、`credentialRef` 的解析值或任何 Agent 的私密记忆（玩家接口）。

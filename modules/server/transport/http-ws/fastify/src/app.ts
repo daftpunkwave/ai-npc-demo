@@ -393,8 +393,11 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       startedAt: Date.now(),
     };
     requestSpans.set(request, span);
-    // 错误响应要能用同一个 traceId 关联到本次请求的 span，因此在这里登记一次。
-    registerRequestTraceId(reply, span.traceId);
+    // 只有确实会写入请求 span 时才登记 traceId：未注入 recordSpan 时该 ID 查不到任何记录，
+    // 返回它等于给出一个无法关联的伪标识，因此这种情况下错误响应保持 traceId 为 null。
+    if (options.recordSpan !== undefined) {
+      registerRequestTraceId(reply, span.traceId);
+    }
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
       sendHttpError(reply, "forbidden", "Origin 不被允许");
