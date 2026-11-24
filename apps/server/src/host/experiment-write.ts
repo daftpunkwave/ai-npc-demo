@@ -119,29 +119,48 @@ export async function createExperiment(
  * 读出某实验已创建的 run。
  *
  * 归组依据是 RunSpec 上显式的 `experimentId`，与评估读取同一口径——
- * 不解析 `seed`、不猜命名约定。返回项的状态按 run 的实际记录还原。
+ * 不解析 `seed`、不猜命名约定。
  */
 function existingRunsOf(
   input: ExperimentWriteInput,
   experimentId: string,
 ): readonly ExperimentCreateResult["runs"][number][] {
   const rows = input.runWrite.storage.transact((tx) => tx.rows("runs").list({}));
-  return rows.flatMap((row) => {
-    const spec = row["run_spec_json"];
-    let parsed: unknown = spec;
-    if (typeof spec === "string") {
-      try {
-        parsed = JSON.parse(spec) as unknown;
-      } catch {
-        return [];
-      }
+  const found: ExperimentCreateResult["runs"][number][] = [];
+  for (const row of rows) {
+    if (experimentIdOfRow(row) !== experimentId) continue;
+    const runId = runIdOfRow(row);
+    if (runId === null) continue;
+    found.push({ runId, status: "ready", errors: [] });
+  }
+  return found;
+}
+
+/** 取 run 行里的 run 标识；不是字符串时返回 null。 */
+function runIdOfRow(row: Readonly<Record<string, unknown>>): string | null {
+  const value = row["run_id"];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * 取 run 行归属的实验标识。
+ *
+ * `run_spec_json` 可能以对象或 JSON 字符串返回，两种都要处理；
+ * 解析失败时返回 null 而不是抛错——单条记录损坏不该让整个幂等检查失败。
+ */
+function experimentIdOfRow(row: Readonly<Record<string, unknown>>): string | null {
+  const raw = row["run_spec_json"];
+  let spec: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      spec = JSON.parse(raw) as unknown;
+    } catch {
+      return null;
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
-    if ((parsed as Readonly<Record<string, unknown>>)["experimentId"] !== experimentId) return [];
-    const runId = row["run_id"];
-    if (typeof runId !== "string") return [];
-    return [{ runId, status: "ready" as const, errors: [] }];
-  });
+  }
+  if (typeof spec !== "object" || spec === null || Array.isArray(spec)) return null;
+  const value = (spec as { readonly experimentId?: unknown }).experimentId;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 /** 从请求里取实验规格：配置引用直接加载，内联对象经同一套 schema 校验。 */
