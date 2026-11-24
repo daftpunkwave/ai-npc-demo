@@ -804,6 +804,45 @@ describe("控制台评估读取接口", () => {
     });
     expect(exported.statusCode).toBe(404);
   });
+  it("导出只含 artifact 元数据索引，不泄漏正文", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: testRunSpec({ id: "export-artifact" }) },
+    })).json());
+    expect(created.status).toBe("ready");
+
+    // 写入一条带敏感正文的 artifact：导出的索引只能有元数据，不能把 body 带出去。
+    host.storage.transact((tx) => {
+      tx.rows("artifacts").put({
+        artifact_id: "art-aaaaaaaaaaaa",
+        run_id: created.runId,
+        kind: "model-response",
+        content_hash: "sha256-deadbeef",
+        mime: "text/plain",
+        byte_size: 32,
+        storage: "inline",
+        body: "SECRET-PROMPT-BODY-不可外泄",
+        file_path: null,
+        redaction: "raw",
+        redacted_from: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    const exported = await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId: created.runId, redaction: "redacted", operationId: "op-777777777777" },
+    });
+    expect(exported.statusCode).toBe(200);
+    const body = exported.body;
+    // 正文不能出现在导出包里，无论明示还是被脱敏模式放过。
+    expect(body).not.toContain("SECRET-PROMPT-BODY");
+    const parsed = exportResponseSchema.parse(exported.json());
+    // 导出产出一个 artifact 标识，调用方据此取包；正文不进响应。
+    expect(parsed.artifactId).toMatch(/^art-/);
+  });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

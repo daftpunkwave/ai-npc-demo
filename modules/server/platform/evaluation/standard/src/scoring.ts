@@ -101,8 +101,20 @@ export type ProbeInvalidReason =
   | "model-substituted"
   | "evidence-incomplete";
 
+/** 无效原因全集；归档值需要校验是否属于已知原因。 */
+export const probeInvalidReasons: readonly ProbeInvalidReason[] = [
+  "turn-failed",
+  "no-dialogue",
+  "empty-answer",
+  "speech-fallback",
+  "model-substituted",
+  "evidence-incomplete",
+];
+
 /** 一次探针执行的判定输入。 */
 export interface ProbeValidityInput {
+  /** 归档记录里的无效原因原文；存在时以它为准，不再从布尔位反推。 */
+  readonly archivedInvalidReason?: string;
   /** turn 是否以 completed 结束。 */
   readonly turnCompleted: boolean;
   /** 决策的意图种类；`none` 表示没有产生对白。 */
@@ -130,6 +142,13 @@ export interface ProbeValidityInput {
  * 其余四种情形（turn 失败、无对白、空白回答、模型替换、证据不完整）在任何路径下都判无效。
  */
 export function probeInvalidReason(input: ProbeValidityInput): ProbeInvalidReason | null {
+  // 归档原因优先：写入时已经判定过，重读时再推导会把 `empty-answer` 之类
+  // 抹成「有效」，让失败样本混进正确率分母。
+  if (input.archivedInvalidReason !== undefined) {
+    // 只接受已知原因：未知字符串说明记录被外部改写，退回按布尔位推导更安全。
+    const archived = probeInvalidReasons.find((reason) => reason === input.archivedInvalidReason);
+    return archived ?? null;
+  }
   if (!input.turnCompleted) {
     return "turn-failed";
   }

@@ -49,6 +49,50 @@ function execution(overrides: Partial<ProbeExecution> = {}): ProbeExecution {
   };
 }
 
+  it("全部探针无效时 run 级有效性也判为无效", () => {
+    // 三个探针都因空回答无效：run 不能算「有效但无执行机会」，
+    // 否则这些失败样本不会进入任何无效统计。
+    const report = buildRunReport({
+      runId: "run-aaaaaaaaaaaa",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
+        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
+        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(false);
+    expect(report.validity.invalidReasons).toContain("all-probes-invalid");
+    // 每个探针各自的原因仍按原样保留。
+    expect(report.invalidProbeCounts["empty-answer"]).toBe(3);
+  });
+
+  it("部分探针有效时 run 保持有效", () => {
+    const report = buildRunReport({
+      runId: "run-bbbbbbbbbbbb",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(true);
+    expect(report.validity.invalidReasons).not.toContain("all-probes-invalid");
+  });
 describe("探针词面计分", () => {
   it("规范化去掉空白与标点，使换行与句读不影响命中", () => {
     expect(normalizeProbeText(" 岑 守备，答\n应过：供给。 ")).toBe("岑守备答应过供给");
@@ -104,6 +148,50 @@ describe("探针词面计分", () => {
   });
 });
 
+  it("全部探针无效时 run 级有效性也判为无效", () => {
+    // 三个探针都因空回答无效：run 不能算「有效但无执行机会」，
+    // 否则这些失败样本不会进入任何无效统计。
+    const report = buildRunReport({
+      runId: "run-aaaaaaaaaaaa",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
+        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
+        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(false);
+    expect(report.validity.invalidReasons).toContain("all-probes-invalid");
+    // 每个探针各自的原因仍按原样保留。
+    expect(report.invalidProbeCounts["empty-answer"]).toBe(3);
+  });
+
+  it("部分探针有效时 run 保持有效", () => {
+    const report = buildRunReport({
+      runId: "run-bbbbbbbbbbbb",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(true);
+    expect(report.validity.invalidReasons).not.toContain("all-probes-invalid");
+  });
 describe("探针有效性", () => {
   it("六种无效原因各自可判定", () => {
     const base = {
@@ -139,6 +227,50 @@ describe("探针有效性", () => {
   });
 });
 
+  it("全部探针无效时 run 级有效性也判为无效", () => {
+    // 三个探针都因空回答无效：run 不能算「有效但无执行机会」，
+    // 否则这些失败样本不会进入任何无效统计。
+    const report = buildRunReport({
+      runId: "run-aaaaaaaaaaaa",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
+        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
+        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(false);
+    expect(report.validity.invalidReasons).toContain("all-probes-invalid");
+    // 每个探针各自的原因仍按原样保留。
+    expect(report.invalidProbeCounts["empty-answer"]).toBe(3);
+  });
+
+  it("部分探针有效时 run 保持有效", () => {
+    const report = buildRunReport({
+      runId: "run-bbbbbbbbbbbb",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(true);
+    expect(report.validity.invalidReasons).not.toContain("all-probes-invalid");
+  });
 describe("指标聚合", () => {
   it("无效探针不进分母，但按原因单列计数", () => {
     const report = buildRunReport({
@@ -201,6 +333,50 @@ describe("指标聚合", () => {
   });
 });
 
+  it("全部探针无效时 run 级有效性也判为无效", () => {
+    // 三个探针都因空回答无效：run 不能算「有效但无执行机会」，
+    // 否则这些失败样本不会进入任何无效统计。
+    const report = buildRunReport({
+      runId: "run-aaaaaaaaaaaa",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
+        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
+        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(false);
+    expect(report.validity.invalidReasons).toContain("all-probes-invalid");
+    // 每个探针各自的原因仍按原样保留。
+    expect(report.invalidProbeCounts["empty-answer"]).toBe(3);
+  });
+
+  it("部分探针有效时 run 保持有效", () => {
+    const report = buildRunReport({
+      runId: "run-bbbbbbbbbbbb",
+      variant: "memory-m0-window",
+      scriptId: "s-promise",
+      scriptBranch: "keep",
+      validity: { valid: true, contaminated: false, evidenceComplete: true, invalidReasons: [] },
+      behavior: [], memory: { recordsByTier: {}, maintenanceRuns: 0, maintenanceFailures: 0 },
+      cost: { inputTokens: 0, outputTokens: 0, unknownUsageAttempts: 0, costEstimate: 0, currency: "USD", pricingVersion: "2026-11" },
+      latency: { turnP50Ms: null, turnP95Ms: null },
+      lexicons,
+      probes: [
+        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+      ],
+    });
+    expect(report.validity.valid).toBe(true);
+    expect(report.validity.invalidReasons).not.toContain("all-probes-invalid");
+  });
 describe("实验汇总", () => {
   function report(variant: string, branch: string, runId: string, valid: boolean, recallValue: number | null): RunReport {
     return {

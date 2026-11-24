@@ -8,6 +8,7 @@ import type { MetricAggregate, ProbeInvalidReason, ProbeScore } from "./scoring"
 import {
   aggregateMetrics,
   probeInvalidReason,
+  probeInvalidReasons,
   scoreProbe,
   type MetricKey,
   type ProbeAnswerKey,
@@ -116,18 +117,9 @@ export interface RunReport {
   readonly invalidProbeCounts: Readonly<Record<ProbeInvalidReason, number>>;
 }
 
-/** 无效原因的全集；汇总时每个原因都给一个计数，缺失即为 0。 */
-const invalidReasons: readonly ProbeInvalidReason[] = [
-  "turn-failed",
-  "no-dialogue",
-  "empty-answer",
-  "speech-fallback",
-  "model-substituted",
-  "evidence-incomplete",
-];
-
+/** 每个原因都给一个计数，缺失即为 0。 */
 function emptyInvalidCounts(): Record<ProbeInvalidReason, number> {
-  return Object.fromEntries(invalidReasons.map((reason) => [reason, 0])) as Record<ProbeInvalidReason, number>;
+  return Object.fromEntries(probeInvalidReasons.map((reason) => [reason, 0])) as Record<ProbeInvalidReason, number>;
 }
 
 /** 对探针逐个计分与判定有效性；两项判定都是纯函数，组装只做汇合。 */
@@ -167,12 +159,22 @@ export function buildRunReport(input: RunReportInput): RunReport {
   const metrics = aggregateMetrics(scored.map(({ probe, score, invalidReason }) => ({
     probeId: probe.probeId, agentId: probe.agentId, score, invalidReason,
   })));
+  // 全部探针都无效时，run 级有效性也要如实反映：否则该 run 会被当成
+  // 「有效但全部无执行机会」，其失败样本不会进入任何无效统计。
+  const allProbesInvalid = probes.length > 0 && probes.every((probe) => !probe.valid);
+  const validity: ReportValidity = allProbesInvalid
+    ? {
+        ...input.validity,
+        valid: false,
+        invalidReasons: [...input.validity.invalidReasons, "all-probes-invalid"],
+      }
+    : input.validity;
   return {
     runId: input.runId,
     variant: input.variant,
     scriptId: input.scriptId,
     scriptBranch: input.scriptBranch,
-    validity: input.validity,
+    validity,
     metrics,
     probes,
     behavior: input.behavior,

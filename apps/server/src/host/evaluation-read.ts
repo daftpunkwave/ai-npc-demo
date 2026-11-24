@@ -161,10 +161,10 @@ function probeExecutionsOf(input: {
       continue;
     }
     const answer = stringCell(row, "answer_text") ?? "";
-    // 归档的有效性判定优先；没有归档结论时才退回最小推断。
+    // 归档的结论优先：`valid` 与 `invalid_reason` 是写入时判定的，重读时不要再推导。
+    // 只有旧记录缺这两列时才退回最小推断，否则 `empty-answer` 之类的原因会被抹成「有效」。
     const archivedValid = row["valid"] === undefined ? null : booleanCell(row, "valid");
     const archivedReason = stringCell(row, "invalid_reason");
-    const turnCompleted = archivedValid ?? answer.length > 0;
     probes.push({
       probeId,
       agentId,
@@ -172,12 +172,15 @@ function probeExecutionsOf(input: {
       kind: spec.kind as ProbeExecution["kind"],
       answerKey: spec.answerKey,
       validity: {
-        turnCompleted,
+        // 归档结论存在时原样采用；缺失时才用「回答非空」推断。
+        turnCompleted: archivedValid ?? answer.length > 0,
         dialogueIntentKind: answer.length === 0 ? "none" : "answer",
         speechFallback: archivedReason === "speech-fallback",
         modelSubstituted: archivedReason === "model-substituted",
-        evidenceComplete: turnCompleted && archivedReason !== "evidence-incomplete",
+        evidenceComplete: archivedReason === "evidence-incomplete" ? false : (archivedValid ?? answer.length > 0),
         deterministicDecision: input.deterministicDecision,
+        // 归档的无效原因直接带上，供上层按原因归类而不必再猜。
+        ...(archivedReason === null ? {} : { archivedInvalidReason: archivedReason }),
       },
     });
   }
