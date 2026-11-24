@@ -96,8 +96,18 @@ function HudView(): ReactNode {
         </span>
       </div>
       {content === null ? null : connection.kind === "reconnecting" ? (
-        <div className="hud-connection" role="status" data-testid="stream-status">
+        <div
+          className={
+            connection.error === null
+              ? "hud-connection"
+              : "hud-connection hud-connection-with-reason"
+          }
+          role="status"
+          data-testid="stream-status"
+        >
           {content.ui.reconnecting}
+          {/* 服务端 error 帧的 safeMessage 由连接状态携带，让玩家能区分「正在重连」与具体原因。 */}
+          {connection.error === null ? null : <small> {connection.error}</small>}
         </div>
       ) : connection.kind === "session-expired" ? (
         <div

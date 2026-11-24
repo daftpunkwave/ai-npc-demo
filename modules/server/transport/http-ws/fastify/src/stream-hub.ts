@@ -3,7 +3,13 @@
  * 依赖公共契约的投影类型、权限回调、注入时钟、会话注册表、重放缓冲与发送器。
  * 禁止无限保留过期会话、未消费票据或断线重放缓冲，也禁止在慢连接上堆积推送。
  */
-import { protocolVersion, type Json, type PlayerProjection, type StreamChannel } from "@ai-npc/contracts";
+import {
+  protocolVersion,
+  streamCloseCodes,
+  type Json,
+  type PlayerProjection,
+  type StreamChannel,
+} from "@ai-npc/contracts";
 import { handleClientMessage } from "./client-messages";
 import { ReplayStore } from "./replay-store";
 import { SessionRegistry } from "./session-registry";
@@ -139,17 +145,20 @@ export class StreamHub {
 
   /**
    * 消费票据并建立连接：无论校验是否通过票据都不再可用。
-   * 成功时发送 hello；失败时以 4401 关闭连接。
+   * 成功时发送 hello；只有票据本身不可用（缺失、过期、已消费、被容量淘汰）才用 4408，
+   * 票据有效但其绑定的会话已失效时仍用 4401。
+   * 两者不能共用一个关闭码：票据过期是重新申请票据就能恢复的握手失败，
+   * 若复用会话关闭码，客户端会清除仍然有效的会话令牌并停止重连。
    */
   accept(socket: StreamSocket, ticketValue: string | undefined): void {
     const ticket = this.sessions.takeTicket(ticketValue);
     if (ticket === undefined || ticket.expiresAt <= this.now()) {
-      this.sender.close(socket, 4401, "invalid ticket");
+      this.sender.close(socket, streamCloseCodes.ticketInvalid, "invalid ticket");
       return;
     }
     const session = this.sessions.activeSession(ticket.sessionId);
     if (session === null) {
-      this.sender.close(socket, 4401, "invalid ticket");
+      this.sender.close(socket, streamCloseCodes.sessionInvalid, "session expired");
       return;
     }
     // 容量检查必须在注册监听与计入计数之前：超限连接既不能占 Map 记录，
@@ -505,7 +514,7 @@ export class StreamHub {
       if (connection.isPlayer) {
         this.playerConnections = Math.max(0, this.playerConnections - 1);
       }
-      this.sender.close(socket, 4401, reason);
+      this.sender.close(socket, streamCloseCodes.sessionInvalid, reason);
     }
     this.replay.releaseSession(sessionId);
     this.notifyPlayerConnections();

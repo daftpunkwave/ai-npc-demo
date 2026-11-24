@@ -2037,9 +2037,9 @@ describe("服务端 API", () => {
     reconnect.send({ type: "subscribe", channel: "player", fromStreamSeq: 1 });
     expect(await reconnect.next()).toMatchObject({ type: "snapshot", channel: "player", streamSeq: 2 });
 
-    // 未消费票据已过期，握手失败。
+    // 未消费票据已过期，握手以票据关闭码失败，客户端可重新申请票据。
     const expired = openStream(port, unusedTicket);
-    expect((await expired.closed()).code).toBe(4401);
+    expect((await expired.closed()).code).toBe(4408);
 
     // 会话过期后由清理移除，旧令牌立即失效。
     current += 13 * 60 * 60 * 1000;
@@ -2222,13 +2222,13 @@ describe("服务端 API", () => {
     expect(await rawUpgradeStatus(port, "http://evil.example", "ticket-invalid")).toBe(403);
 
     const invalid = openStream(port, "ticket-invalid");
-    expect((await invalid.closed()).code).toBe(4401);
+    expect((await invalid.closed()).code).toBe(4408);
 
     const ticket = await ticketFor(app, session);
     const client = openStream(port, ticket);
     expect(await client.next()).toMatchObject({ type: "hello" });
     const reused = openStream(port, ticket);
-    expect((await reused.closed()).code).toBe(4401);
+    expect((await reused.closed()).code).toBe(4408);
 
     client.send({ type: "subscribe", channel: "console.health", fromStreamSeq: null });
     expect(await client.next()).toMatchObject({ type: "error", code: "forbidden" });
@@ -2339,8 +2339,10 @@ describe("服务端 API", () => {
     expect(again.statusCode).toBe(200);
     expect(again.json()).toEqual({ ok: true });
 
+    // 会话注销时其未消费票据已被一并删除，因此这张旧票据的失败归入票据失效（4408）：
+    // 客户端会重新申请票据，届时 HTTP 401 才把状态推进到会话失效，不会凭一次握手失败就清除令牌。
     const rejected = openStream(port, unusedTicket);
-    expect((await rejected.closed()).code).toBe(4401);
+    expect((await rejected.closed()).code).toBe(4408);
 
     app.notifyWorldChanged();
     expect(await other.next()).toMatchObject({ type: "delta", channel: "player", streamSeq: 1 });
@@ -2368,7 +2370,7 @@ describe("服务端 API", () => {
     app.notifyWorldChanged();
     expect((await live.closed()).code).toBe(4401);
 
-    // 票据自身仍在 30 秒内，但绑定的会话已过期，握手必须失败。
+    // 票据自身仍在 30 秒内，但绑定的会话已过期：会话失效用 4401，客户端停止重连。
     const session3 = await login(app, "player-token");
     current += 12 * 60 * 60 * 1000 - 10_000;
     const unused = await ticketFor(app, session3);

@@ -6,6 +6,7 @@
 import {
   DomainError,
   type ClientContentView,
+  type ErrorCode,
   type Json,
   type CampaignResponse,
   type PlayerProjection,
@@ -24,6 +25,7 @@ import {
 import {
   isSessionInvalidCloseCode,
   isSessionInvalidError,
+  isTicketInvalidCloseCode,
   reconnectDelayMs,
 } from "./connection-policy";
 
@@ -349,6 +351,14 @@ class WorldViewController implements WorldViewPort {
           });
         },
         onMessage: (message) => {
+          if (message.type === "error") {
+            // 订阅被拒、会话异常或帧非法都走这里：error 帧是服务端唯一的结构化失败通道，
+            // 忽略它会让连接保持打开却永远没有数据。按错误码决定是重新登录还是重连。
+            // 注意：错误帧不能算作「连接可用」，否则每次失败都会把退避计数清零，
+            // 服务端持续拒绝时会退化成固定 1 秒的热循环。
+            this.handleStreamError(message.code, message.safeMessage);
+            return;
+          }
           this.confirmStreamUsable();
           if (message.type === "snapshot" && message.channel === "player") {
             const result = this.store.applySnapshot(message);
@@ -368,6 +378,14 @@ class WorldViewController implements WorldViewPort {
             this.store.applyAppend(message);
           }
         },
+        onFrameRejected: (error) => {
+          // 帧已通过传输层校验但被领域 schema 拒绝：游标没有推进，
+          // 依靠重新取快照补齐，而不是把缺口留给下一次重连。
+          this.lastError = errorMessage(error);
+          void this.refresh().catch((refreshError: unknown) => {
+            this.lastError = errorMessage(refreshError);
+          });
+        },
         onClose: (event) => {
           // 主动关闭或已被新连接替换时，不得按断线处理。
           if (this.stream !== stream) {
@@ -381,7 +399,13 @@ class WorldViewController implements WorldViewPort {
             this.expireSession();
             return;
           }
-          this.scheduleReconnect(`流连接已关闭（${event.code}）`);
+          // 票据失效（4408）只是握手失败：连接会立刻断开，重新申请票据后即可恢复，
+          // 不能当成会话吊销去清除仍然有效的会话令牌。
+          this.scheduleReconnect(
+            isTicketInvalidCloseCode(event.code)
+              ? "票据已失效，正在重新申请"
+              : `流连接已关闭（${event.code}）`,
+          );
         },
         onError: (error) => {
           this.lastError = errorMessage(error);
@@ -401,6 +425,27 @@ class WorldViewController implements WorldViewPort {
       return;
     }
     this.stream = stream;
+  }
+
+  /**
+   * 处理服务端 error 帧：按错误码决定是重新登录还是重新订阅。
+   * 服务端在订阅被拒、会话异常与帧非法三种情形下发这个帧；
+   * `unauthenticated` / `forbidden` 表示会话或角色已不可用，重连不会自愈，必须走重新登录。
+   * 其余错误码（如 `validation`）属于本帧或本频道的问题，关闭当前连接后按既有指数退避
+   * 重新申请票据与订阅，退避上限保证持续拒绝不会变成热循环。
+   */
+  private handleStreamError(code: ErrorCode, safeMessage: string): void {
+    this.lastError = safeMessage;
+    if (code === "unauthenticated" || code === "forbidden") {
+      this.expireSession();
+      return;
+    }
+    // 错误帧不改变连接可用性，但当前订阅已失效；关闭本条连接后按退避重新申请票据与订阅。
+    this.closeStream();
+    if (this.disposed) {
+      return;
+    }
+    this.scheduleReconnect(safeMessage);
   }
 
   private scheduleReconnect(reason: string): void {
