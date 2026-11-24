@@ -20,6 +20,8 @@ teams:
   - { teamId: team-star,    ownerFactionId: species-extraterrestrial, nodeId: anchor,     capabilities: [repair, transport],         capacity: 15 }
 groups:
   - { groupId: grp-injured-migrants, nodeId: pass, injured: 6, deadlineTick: 48 }
+# t168 交接时纳入城市总量的六种资源初值；序章库存只结算供给、能源与医疗
+cityResources: { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 }
 # 各派系在开局时授予职责角色的委托
 dutyDelegations:
   - { granteeId: human-independent, grantorFactionId: human-independent,        teamIds: [team-rubble],  stockpileId: sp-rubble,  maxDraw: { supply: 10, energy: 4, medical: 2 }, untilTick: 168 }

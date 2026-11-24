@@ -97,9 +97,9 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 3.1 玩家命令权限
 
-**已实现**：`POST /api/v1/commands` 接受 `campaign.start`、`dialogue.say`、`information.share`、`agreement.propose`、`agreement.respond`、`task.dispatch`、`task.cancel` 和 `policy.set`。`policy.set` 只允许当前 campaign 的公社党魁玩家设置 `watergate.allocation`，授权按已开局 campaign 的玩家与派系裁决。
+**已实现**：`POST /api/v1/commands` 接受 `campaign.start`、`dialogue.say`、`broadcast.say`、`information.share`、`agreement.propose`、`agreement.respond`、`task.dispatch`、`task.cancel` 和 `policy.set`。`policy.set` 只允许当前 campaign 的公社党魁玩家设置 `watergate.allocation`，授权按已开局 campaign 的玩家与派系裁决。`broadcast.say` 只允许同一玩家发布公开广播，发布位置取玩家所在节点。
 
-**序章目标**：同一接口承载玩家广播及程序案交互。服务端使用认证和已开局的席位记录裁决权限。广播及程序案命令的具体请求格式待定。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
+**序章目标**：同一接口承载程序案交互。服务端使用认证和已开局的席位记录裁决权限。程序案命令的具体请求格式待定。参见 [domain-model.md — 命令目录](domain-model.md#5-命令目录)。
 
 ## 4. WebSocket：`GET /api/v1/streams?ticket=<ticket>`
 

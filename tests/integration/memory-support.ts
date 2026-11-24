@@ -111,7 +111,7 @@ export async function createMemoryHarness(
       tx.rows("worlds").put({
         world_id: memoryWorldId,
         pack_id: "earth-2964-v1",
-        content_version: "0.2.0",
+        content_version: "0.3.0",
         created_at: host.nowIso(),
       });
       tx.rows("branches").put({

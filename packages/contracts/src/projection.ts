@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { contentIdSchemas, idSchemas, principalIdSchema } from "./ids";
 import {
+  cityResourceAmountsSchema,
   escortTaskParamsSchema,
   repairTaskParamsSchema,
   rescueTaskParamsSchema,
@@ -379,6 +380,11 @@ export const playerProjectionSchema = z
     map: playerMapViewSchema,
     /** 世界指标随 campaign.start 初始化；开局前没有指标，用 null 表示尚未可知。 */
     meters: playerMetersViewSchema.nullable(),
+    /**
+     * t168 交接后的六种城市资源；序章未结束时为 null。
+     * 序章库存（supply/energy/medical）继续保留在 stockpiles，两者不互相替代。
+     */
+    cityResources: cityResourceAmountsSchema.nullable().default(null),
     stockpiles: z.array(stockpileViewSchema),
     teams: z.array(teamViewSchema),
     characters: z.array(characterViewSchema),

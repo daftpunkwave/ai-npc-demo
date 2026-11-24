@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { contentIdSchemas, idSchemas, principalIdSchema } from "./ids";
 import {
+  cityResourceAmountsSchema,
   meterChangeSchema,
   meterSnapshotSchema,
   numericMeterIdSchema,
@@ -149,5 +150,7 @@ export const chapterStageEvaluatedPayloadSchema = z
     unmet: z.array(numericMeterIdSchema),
     fulfilledCount: z.number().int().nonnegative(),
     breachedCount: z.number().int().nonnegative(),
+    /** t168 交接数据：六种城市资源按设计初值起算；旧事件没有该字段时按 null 兼容读取。 */
+    cityResources: cityResourceAmountsSchema.nullable().default(null),
   })
   .strict();

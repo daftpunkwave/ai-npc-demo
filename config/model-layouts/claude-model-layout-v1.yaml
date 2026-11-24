@@ -25,7 +25,7 @@ models:
     parameters: { effort: medium, serverSideFallback: default, strictTools: false }
     capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_schema, assistantReplay: verbatim, contextWindowTokens: 1000000, maxOutputTokens: 128000, embedding: false, embeddingDimensions: null }
     limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
-    maxOutputTokensByPurpose: { decision: 1500 }
+    maxOutputTokensByPurpose: { decision: 16000 }
 mounts:
   - modelId: npc-claude
     agentIds: &roster [npc-wenzhao, npc-yinuo, npc-wenyuan, npc-taoan, npc-muzhi, npc-luchen, npc-ahe, npc-qilu, human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial]

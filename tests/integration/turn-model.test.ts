@@ -619,6 +619,16 @@ patch:
     await expect(modelHost({ configRoot })).rejects.toThrow("模型窗口无法容纳必需上下文和工具预算");
   });
 
+  it("预检拒绝预留超过挂载用途上限，并指出主体、用途与两个数值", async () => {
+    // 把 decision 用途上限压到 1500 以下，使 profile 的 1500 预留超限：
+    // 这条诊断必须能直接定位到是哪个主体、哪个用途、预留与上限各是多少。
+    const configRoot = fixtureConfig([], (layout) =>
+      layout.replace("maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }",
+        "maxOutputTokensByPurpose: { decision: 1200, speech: 400, memory-maintenance: 800 }"));
+    await expect(modelHost({ configRoot })).rejects.toThrow(
+      /human-independent 的 decision 输出预留 1500 超过挂载 npc-fixture 的用途上限 1200/u);
+  });
+
   it("预检拒绝放不下对白输出预留的独立挂载窗口", async () => {
     const configRoot = fixtureConfig([], (layout) => {
       const agentIds = layout.match(/agentIds: \[([^\]]+)\]/)?.[1];

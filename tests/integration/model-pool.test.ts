@@ -236,15 +236,47 @@ describe("共享模型池与预算", () => {
     }
   });
 
-  it("发送上限与预留一致，即使挂载允许更大的输出", async () => {
+  it("请求的 maxOutputTokens 取挂载用途上限，预算预留在账本上单独占额", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);
     try {
       const run = harness.pool.bindRun({ routes: [route], limits });
       await run.call(work(), "decision", 30, request);
-      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(30);
+      // 硬上限来自挂载的用途上限（100）；账本按同一上限占额，避免超支。
+      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(route.maxOutputTokens);
       const entries = harness.storage.transact((tx) => tx.rows("budget_ledger").list({ work_ref: work().workRef }));
-      expect(entries).toEqual([expect.objectContaining({ reserved_output: 30, actual_output: 30 })]);
+      // 该夹具响应不带 usage，按预留保守记账并标 usage_unknown。
+      expect(entries).toEqual([expect.objectContaining({
+        reserved_output: route.maxOutputTokens,
+        actual_output: route.maxOutputTokens,
+        usage_unknown: 1,
+      })]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("含思考的模型按用途上限申请输出，思考不会耗尽预留导致 protocol 失败", async () => {
+    // claude 布局的 decision 上限为 16000，而 profile 的预留只有 1500：
+    // 若把预留当成 max_tokens 发送，自适应思考会在 1500 内耗尽并以 length 结束。
+    const thinking: ModelTransportPort["complete"] = async (input) => ({
+      ...response,
+      usage: { inputTokens: 100, outputTokens: Math.min(input.maxOutputTokens, 9000), cachedInputTokens: null, estimated: false },
+    });
+    const complete = vi.fn(thinking);
+    const claudeCapabilities = { ...capabilities, contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 };
+    const harness = await poolHarness(complete, null, undefined, {
+      adapterId: route.adapterId, capabilities: () => claudeCapabilities, complete,
+    });
+    const claude = { ...route, maxOutputTokens: 16_000, capabilities: claudeCapabilities };
+    try {
+      const run = harness.pool.bindRun({ routes: [claude], limits });
+      const result = await run.call(work(), "decision", 1500, request);
+      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(16_000);
+      expect(result.response.finishReason).toBe("stop");
+      // 账本按请求上限占额以覆盖最大可能输出，实际用量按 usage 结算。
+      expect(harness.storage.transact((tx) => tx.rows("budget_ledger").list({})))
+        .toEqual([expect.objectContaining({ reserved_output: 16_000, actual_output: 9000 })]);
     } finally {
       await harness.dispose();
     }
@@ -330,6 +362,27 @@ describe("共享模型池与预算", () => {
     }
   });
 
+  it("限流窗口按请求最大输出占额，而不是按较小的预算预留估算", async () => {
+    // 预留 30、挂载上限 100：若按预留估 TPM，两次请求合计 2×(输入+30) 会被放行；
+    // 按上限估则第二次超出 200 的 TPM 上限而必须等待窗口释放。
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const tight = { ...route, tokensPerMinute: 200, requestsPerMinute: 60 };
+      const run = harness.pool.bindRun({ routes: [tight], limits });
+      await run.call(work(), "decision", 30, request);
+      const waiting = run.call(work({ workRef: "turn-000000000002" }), "decision", 30, request);
+      harness.advance(59_999);
+      await Promise.resolve();
+      expect(complete).toHaveBeenCalledTimes(1);
+      harness.advance(1);
+      await waiting;
+      expect(complete).toHaveBeenCalledTimes(2);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("多个模型 ID 共享账号限额，等待滑动窗口释放后才发送", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);
@@ -345,6 +398,22 @@ describe("共享模型池与预算", () => {
       harness.advance(1);
       await waiting;
       expect(complete).toHaveBeenCalledTimes(2);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("剩余预算不足以覆盖请求最大输出时拒绝发送，而不是先发再超支", async () => {
+    // run 级预算只够一次 100 token 的输出，而挂载上限是 100：
+    // 账本按请求上限占额，因此第二次请求必须在发送前以 budget-exhausted 失败。
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const run = harness.pool.bindRun({ routes: [route], limits: { maxTokens: 150, maxCost: null } });
+      await run.call(work(), "decision", 30, request);
+      await expect(run.call(work({ workRef: "turn-000000000002" }), "decision", 30, request))
+        .rejects.toMatchObject({ code: "budget-exhausted" });
+      expect(complete).toHaveBeenCalledTimes(1);
     } finally {
       await harness.dispose();
     }

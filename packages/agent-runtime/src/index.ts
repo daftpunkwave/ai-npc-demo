@@ -18,6 +18,8 @@ export type { TurnExecutionOptions } from "./turn-worker";
 export { TurnLeases, TurnStopped } from "./turn-lease";
 export type { ClaimedTurn } from "./turn-lease";
 export type { ReadTurnWorld, TurnWorldRead } from "./turn-input";
+export { readTurnObservations } from "./turn-observations";
+export type { TurnObservationQuery } from "./turn-observations";
 export { MemoryHost } from "./memory-host";
 export type { MemoryHostOptions } from "./memory-host";
 export type { MemoryRecordUseRequest } from "./memory-publication";

@@ -5,6 +5,7 @@
  */
 import {
   cardEffectSchema,
+  cityResourceAmountsSchema,
   commandRequestSchema,
   principalIdSchema,
   resourceAmountsSchema,
@@ -76,6 +77,11 @@ export const contentWorldInitSchema = z
         })
         .strict(),
     ),
+    /**
+     * t168 交接时纳入城市总量的六种资源初值；序章库存仍只记供给、能源与医疗。
+     * 旧内容包没有该字段时保持可选，由评估按“无交接数据”处理，不拒绝加载。
+     */
+    cityResources: cityResourceAmountsSchema.optional(),
     dutyDelegations: z.array(
       z
         .object({

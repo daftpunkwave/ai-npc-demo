@@ -152,6 +152,32 @@ function speechCommit(context: CommsContext, payload: Json): HandlerResult {
   return { kind: "accepted", result: { messageId: result.messageId } };
 }
 
+/**
+ * 公社党魁以玩家身份发布公开广播。
+ * 正文不经模型或批准流程；权限以已开局 campaign 的玩家与派系席位裁决，位置由服务端按玩家节点计算。
+ */
+function broadcastSay(context: CommsContext, payload: Json): HandlerResult {
+  const input = commandPayloadOf("broadcast.say", payload);
+  const content = requireGameContent(context.content);
+  const ports = asPorts(context);
+  const campaign = ports["game.world"].campaign();
+  if (campaign === null || campaign.playerId !== context.auth.principalId) {
+    return { kind: "rejected", reasonCode: "no-authority", safeMessage: "只有本 campaign 的玩家可以发布公开广播" };
+  }
+  const faction = content.factions.get(campaign.factionId);
+  if (faction?.playerSeat !== content.rules.watergateSeatId) {
+    return { kind: "rejected", reasonCode: "no-authority", safeMessage: "当前席位没有公开广播权" };
+  }
+  const result = ports["game.comms"].postMessage({
+    fromId: context.auth.principalId,
+    to: ["public"],
+    text: input.text,
+    channel: "broadcast",
+    intentKind: "none",
+  });
+  return { kind: "accepted", result: { messageId: result.messageId } };
+}
+
 function seatSay(context: CommsContext, payload: Json): HandlerResult {
   const input = commandPayloadOf("seat.say", payload);
   const fromId = effectivePrincipalId(context.auth);
@@ -266,6 +292,7 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
     ],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
+      { type: "broadcast.say", handler: (context, payload) => broadcastSay(context as CommsContext, payload) },
       { type: "speech.commit", handler: (context, payload) => speechCommit(context as CommsContext, payload) },
       { type: "seat.say", handler: (context, payload) => seatSay(context as CommsContext, payload) },
       { type: "information.share", handler: (context, payload) => informationShare(context as CommsContext, payload) },

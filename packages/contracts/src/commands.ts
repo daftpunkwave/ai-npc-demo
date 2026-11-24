@@ -9,6 +9,7 @@ import { DomainError } from "./errors";
 import {
   agreementProposePayloadSchema,
   agreementRespondPayloadSchema,
+  broadcastSayPayloadSchema,
   campaignStartPayloadSchema,
   dialogueSayPayloadSchema,
   informationSharePayloadSchema,
@@ -36,6 +37,7 @@ export * from "./command-payloads";
 export const commandPayloadSchemas = {
   "campaign.start": campaignStartPayloadSchema,
   "dialogue.say": dialogueSayPayloadSchema,
+  "broadcast.say": broadcastSayPayloadSchema,
   "speech.commit": speechCommitPayloadSchema,
   "seat.say": seatSayPayloadSchema,
   "information.share": informationSharePayloadSchema,

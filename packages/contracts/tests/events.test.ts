@@ -348,6 +348,24 @@ describe("领域事件目录", () => {
     expectInvalid(schema, null);
   });
 
+  it("旧 ChapterStageEvaluated 缺少 cityResources 时按 null 解析", () => {
+    const parsed = domainEventPayloadSchemas.ChapterStageEvaluated.parse(validPayloads.ChapterStageEvaluated);
+    expect(parsed.cityResources).toBeNull();
+  });
+
+  it("ChapterStageEvaluated 携带完整六种城市资源快照", () => {
+    const cityResources = { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 };
+    const parsed = domainEventPayloadSchemas.ChapterStageEvaluated.parse({
+      ...validPayloads.ChapterStageEvaluated,
+      cityResources,
+    });
+    expect(parsed.cityResources).toEqual(cityResources);
+    expectInvalid(domainEventPayloadSchemas.ChapterStageEvaluated, {
+      ...validPayloads.ChapterStageEvaluated,
+      cityResources: { ...cityResources, water: -1 },
+    });
+  });
+
   it("无需移动的出发允许空路线", () => {
     expectValid(domainEventPayloadSchemas.TaskDeparted, {
       taskId,
