@@ -273,7 +273,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     return session;
   };
 
-  app.get("/api/v1/console/runs", (request, reply) => {
+  app.get("/api/v1/console/runs", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
     if (requireEvaluationSession(request, reply) === null) return;
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
     // undefined 表示没传该参数，null 表示传了空值；两者都不应进入 schema。
@@ -291,7 +291,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     return runsResponseSchema.parse({ runs: [...options.console.evaluation.runs(query.data)] });
   });
 
-  app.get("/api/v1/console/runs/:runId", (request, reply) => {
+  app.get("/api/v1/console/runs/:runId", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
     if (requireEvaluationSession(request, reply) === null) return;
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
     const path = parsePath(runParamsSchema, request.params);
@@ -301,7 +301,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     return runDetailResponseSchema.parse(detail);
   });
 
-  app.get("/api/v1/console/runs/:runId/report", (request, reply) => {
+  app.get("/api/v1/console/runs/:runId/report", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
     if (requireEvaluationSession(request, reply) === null) return;
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
     const path = parsePath(runParamsSchema, request.params);
@@ -311,13 +311,13 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     return runReportResponseSchema.parse(report);
   });
 
-  app.get("/api/v1/console/experiments", (request, reply) => {
+  app.get("/api/v1/console/experiments", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
     if (requireEvaluationSession(request, reply) === null) return;
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
     return { experiments: [...options.console.evaluation.experiments()] };
   });
 
-  app.get("/api/v1/console/experiments/:experimentId", (request, reply) => {
+  app.get("/api/v1/console/experiments/:experimentId", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
     if (requireEvaluationSession(request, reply) === null) return;
     if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
     const path = parsePath(experimentParamsSchema, request.params);
@@ -327,7 +327,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     return experimentDetailResponseSchema.parse(detail);
   });
 
-  app.post("/api/v1/console/runs", async (request, reply) => {
+  app.post("/api/v1/console/runs", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, async (request, reply) => {
     // 创建 run 只允许研究员：评估员只读，操作员与玩家无此权限。
     if (requireEvaluationWriter(request, reply) === null) return;
     if (options.console?.evaluationWrites === undefined) {
@@ -343,7 +343,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     ["start", "startRun"],
     ["stop", "stopRun"],
   ] as const) {
-    app.post(`/api/v1/console/runs/:runId/${action}`, (request, reply) => {
+    app.post(`/api/v1/console/runs/:runId/${action}`, { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, (request, reply) => {
       if (requireEvaluationWriter(request, reply) === null) return;
       const writes = options.console?.evaluationWrites;
       if (writes === undefined) return sendHttpError(reply, "not-ready", "评估写入尚未就绪");
@@ -360,7 +360,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     });
   }
 
-  app.post("/api/v1/console/experiments", async (request, reply) => {
+  app.post("/api/v1/console/experiments", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, async (request, reply) => {
     if (requireEvaluationWriter(request, reply) === null) return;
     if (options.console?.evaluationWrites?.createExperiment === undefined) {
       return sendHttpError(reply, "not-ready", "实验创建尚未就绪");
@@ -375,7 +375,7 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     );
   });
 
-  app.post("/api/v1/console/exports", async (request, reply) => {
+  app.post("/api/v1/console/exports", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, async (request, reply) => {
     const session = requireEvaluationWriter(request, reply);
     if (session === null) return;
     if (options.console?.evaluationWrites === undefined) {
