@@ -75,6 +75,45 @@ function recentFailures(storage: StoragePort, branchId: string) {
   }));
 }
 
+/** 预算摘要条目上限：按用途聚合后取用量最大的若干条，避免列表随用途数无界增长。 */
+const budgetSummaryLimit = 20;
+
+/**
+ * 按用途聚合已发生的模型预算消耗。
+ *
+ * 运行 ID 由 `branches.run_id` 给出：内存里的在线状态只保存分支，运行归属始终以存储为准。
+ * 取 `budget_ledger` 的实际用量，未结算条目按预留量计入（与预算裁决口径一致），
+ * 使控制台在模型调用发生后看到真实消耗，而不是恒为空的列表。
+ */
+function budgetSummary(storage: StoragePort, branchId: string) {
+  const chargedTokens = "COALESCE(actual_input, reserved_input) + COALESCE(actual_output, reserved_output)";
+  return storage.transact((tx) => {
+    const runId = tx.rows("branches").get({ branch_id: branchId })?.["run_id"];
+    if (typeof runId !== "string" || runId.length === 0) {
+      return [];
+    }
+    return tx
+      .all(
+        `SELECT purpose,
+                SUM(${chargedTokens}) AS tokens,
+                COUNT(*) AS calls
+           FROM budget_ledger
+          WHERE run_id = ?
+          GROUP BY purpose
+          ORDER BY tokens DESC
+          LIMIT ?`,
+        [runId, budgetSummaryLimit],
+      )
+      .map((row) => ({
+        scope: "purpose" as const,
+        key: String(row["purpose"]),
+        used: Number(row["tokens"] ?? 0),
+        limit: null,
+        unit: "tokens" as const,
+      }));
+  });
+}
+
 /** 开局选项：只列出内容中启用的开局，派系名、首个委托与接触角色都取自内容包索引。 */
 function startOptions(content: GameContent): StartOption[] {
   return [...content.starts.values()]
@@ -205,7 +244,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             clock: clockView(lifecycle.clockState()),
             // turnsRunning、maintenanceQueued、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
             queues: { turnsQueued: queueCounts.turnsQueued },
-            budgets: [],
+            budgets: budgetSummary(runtime.storage, active.branchId),
             recentFailures: recentFailures(runtime.storage, active.branchId),
           };
         },

@@ -12,7 +12,7 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import { DomainError, type Json, type StreamChannel } from "@ai-npc/contracts";
 import { StreamHub } from "./stream-hub";
-import { channelsFor, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
+import { channelsFor, registerRequestTraceId, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
 import { registerAuthRoutes } from "./routes/auth-routes";
 import { registerConsoleOperationsRoutes } from "./routes/console-operations-routes";
 import { registerConsoleRoutes } from "./routes/console-routes";
@@ -152,7 +152,12 @@ function registerErrorHandling(
       if (error.code === "plugin-failed" || error.code === "provider-failed") {
         report("请求处理失败", error);
       }
-      return sendHttpError(reply, error.code, error.safeMessage, error.retryable);
+      // 领域错误显式携带的关联字段优先于本次请求登记的 traceId：
+      // 跨进程或延迟产生的错误记录的是它自己的 trace，不能被响应时的请求 trace 覆盖。
+      return sendHttpError(reply, error.code, error.safeMessage, error.retryable, {
+        traceId: error.traceId,
+        detailsArtifactRef: error.detailsArtifactRef,
+      });
     }
     if (isHandlerTimeoutError(error)) {
       // 超时只中止了本次请求的响应等待，无法取消 handler 内部已发起的异步工作；
@@ -382,11 +387,14 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   >();
 
   app.addHook("onRequest", async (request, reply) => {
-    requestSpans.set(request, {
+    const span = {
       traceId: options.ids("trc"),
       spanId: options.ids("spn"),
       startedAt: Date.now(),
-    });
+    };
+    requestSpans.set(request, span);
+    // 错误响应要能用同一个 traceId 关联到本次请求的 span，因此在这里登记一次。
+    registerRequestTraceId(reply, span.traceId);
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
       sendHttpError(reply, "forbidden", "Origin 不被允许");

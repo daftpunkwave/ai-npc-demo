@@ -228,12 +228,20 @@ export class ObservabilityPort {
   }
 
   agents(branchId: string): AgentsResponse {
+    // 位置取自世界模块拥有的 character 聚合，水位滞后取该 Agent 已感知世界序号与全局最新序号之差：
+    // 两者都是已持久化的事实，不再用固定的 null / 0 冒充，避免控制台永远显示「零滞后、位置未知」。
+    const latestWorldSeq = this.storage.transact((tx) =>
+      tx.branch(branchId).table("domain_events").max("world_seq"),
+    );
     const rows = this.storage.transact((tx) =>
       tx.all(
         `SELECT a.agent_id, a.status, l.controller_kind, json_extract(roster.value, '$.kind') AS agent_kind,
+                json_extract(character.state_json, '$.nodeId') AS node_id,
                 (SELECT t.status FROM turn_runs t
                   WHERE t.branch_id = a.branch_id AND t.agent_id = a.agent_id
-                  ORDER BY t.agent_turn_index DESC LIMIT 1) AS turn_status
+                  ORDER BY t.agent_turn_index DESC LIMIT 1) AS turn_status,
+                (SELECT p.scanned_through_seq FROM perception_state p
+                  WHERE p.branch_id = a.branch_id AND p.agent_id = a.agent_id) AS scanned_through_seq
            FROM agent_activations a
            JOIN branches b ON b.branch_id = a.branch_id
            JOIN runs r ON r.run_id = b.run_id
@@ -241,21 +249,31 @@ export class ObservabilityPort {
              ON json_extract(roster.value, '$.agentId') = a.agent_id
            LEFT JOIN controller_leases l
              ON l.branch_id = a.branch_id AND l.agent_id = a.agent_id
+           LEFT JOIN aggregate_state character
+             ON character.branch_id = a.branch_id
+            AND character.aggregate_type = 'character'
+            AND character.aggregate_id = a.agent_id
           WHERE a.branch_id = ?
           ORDER BY a.agent_id`,
         [branchId],
       ),
     );
+    const latest = Number(latestWorldSeq ?? 0);
     return {
-      agents: rows.map((row) => ({
-        agentId: String(row["agent_id"]) as AgentsResponse["agents"][number]["agentId"],
-        kind: row["agent_kind"] === "character" ? "character" : "strategic",
-        active: row["status"] === "active",
-        controllerKind: row["controller_kind"] === "human" ? "human" : "agent",
-        location: null,
-        turnStatus: row["turn_status"] === null ? "idle" : String(row["turn_status"]),
-        watermarkLag: 0,
-      })),
+      agents: rows.map((row) => {
+        const nodeId = row["node_id"];
+        const scanned = row["scanned_through_seq"];
+        return {
+          agentId: String(row["agent_id"]) as AgentsResponse["agents"][number]["agentId"],
+          kind: row["agent_kind"] === "character" ? "character" : "strategic",
+          active: row["status"] === "active",
+          controllerKind: row["controller_kind"] === "human" ? "human" : "agent",
+          location: typeof nodeId === "string" && nodeId.length > 0 ? nodeId : null,
+          turnStatus: row["turn_status"] === null ? "idle" : String(row["turn_status"]),
+          // 尚未建立感知水位的 Agent 视为滞后整条事件流，而不是滞后 0。
+          watermarkLag: Math.max(0, latest - (typeof scanned === "number" ? scanned : 0)),
+        };
+      }),
     };
   }
 
