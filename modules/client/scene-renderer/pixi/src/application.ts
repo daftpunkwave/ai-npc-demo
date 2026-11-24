@@ -8,6 +8,7 @@ import type { ApplicationOptions } from "pixi.js";
 export interface SceneApplicationLike {
   init(options: Partial<ApplicationOptions>): Promise<void>;
   destroy(removeView?: boolean): void;
+  readonly renderer?: { destroy?(...args: unknown[]): void } | null;
 }
 
 export type SceneStartResult =
@@ -58,7 +59,9 @@ export class SceneApplicationSession {
     try {
       await this.application.init(options);
     } catch (error) {
-      return { status: "failed", reason: sceneFailureReason(error) };
+      const reason = sceneFailureReason(error);
+      this.releaseFailedInitialization();
+      return { status: "failed", reason };
     }
     if (this.disposed) {
       this.application.destroy(true);
@@ -75,5 +78,22 @@ export class SceneApplicationSession {
     }
     this.ready = false;
     this.application.destroy(true);
+  }
+
+  /**
+   * Pixi 的 init 在渲染器创建后、插件初始化中途失败时会留下已分配的渲染器；
+   * 只有渲染器存在时才调用 destroy，避免在完全未初始化的应用上做破坏性清理。
+   * 清理异常不覆盖原始失败原因，初始化失败时没有别的上报通道。
+   */
+  private releaseFailedInitialization(): void {
+    const renderer = this.application.renderer;
+    if (renderer === undefined || renderer === null) {
+      return;
+    }
+    try {
+      this.application.destroy(true);
+    } catch {
+      // 初始化已经失败，保留原始原因优先于清理异常。
+    }
   }
 }

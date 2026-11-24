@@ -11,10 +11,14 @@ import {
   sceneFailureReason,
 } from "../src/application";
 
-function createApplication(init: () => Promise<void>) {
+function createApplication(
+  init: () => Promise<void>,
+  renderer?: { destroy: () => void },
+) {
   return {
     init: vi.fn(() => init()),
     destroy: vi.fn((_removeView?: boolean) => undefined),
+    ...(renderer === undefined ? {} : { renderer }),
   };
 }
 
@@ -62,6 +66,27 @@ describe("SceneApplicationSession", () => {
     expect(result).toEqual({ status: "failed", reason: "显存不足" });
     session.dispose();
     expect(application.destroy).not.toHaveBeenCalled();
+  });
+
+  it("渲染器已创建后初始化失败时释放已分配资源", async () => {
+    const renderer = { destroy: vi.fn() };
+    const application = createApplication(() => Promise.reject(new Error("插件初始化失败")), renderer);
+    const session = new SceneApplicationSession(application);
+
+    await expect(session.start({})).resolves.toEqual({ status: "failed", reason: "插件初始化失败" });
+
+    expect(application.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("失败清理自身抛错时不覆盖原始初始化原因", async () => {
+    const renderer = { destroy: vi.fn() };
+    const application = createApplication(() => Promise.reject(new Error("WebGL 不可用")), renderer);
+    application.destroy.mockImplementation(() => {
+      throw new Error("清理失败");
+    });
+    const session = new SceneApplicationSession(application);
+
+    await expect(session.start({})).resolves.toEqual({ status: "failed", reason: "WebGL 不可用" });
   });
 
   it("初始化成功后只在释放时销毁一次", async () => {
