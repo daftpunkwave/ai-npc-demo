@@ -13,7 +13,7 @@
 | Origin | 请求带 `Origin` 头时，必须是 `http://127.0.0.1:5173` 或 `http://127.0.0.1:3000`，否则返回 403；WS 握手同样检查 |
 | 跨域允许面 | 只允许 `GET`、`POST`、`OPTIONS` 与 `Authorization`、`Content-Type`、`X-Active-Role` 三个请求头；会话令牌走请求头而非 Cookie，因此不启用 `credentials` |
 | 安全响应头 | 全部响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY` 与 `Referrer-Policy: same-origin`；`text/html` 文档另带 CSP（`default-src 'self'`、`frame-ancestors 'none'`，不放开内联脚本） |
-| 传输上限 | 请求、连接建立与 handler 执行各有 30 秒上限，单连接最多 1000 个请求，请求体上限 1 MiB。超期返回 500 `plugin-failed` 且 `retryable: true`，不会无限等待；超时只中止本次响应等待，handler 内已发起的异步工作不会被自动取消 |
+| 传输上限 | `requestTimeout` 与 `handlerTimeout` 各 30 秒、socket 空闲 30 秒回收、单连接最多 1000 个请求、请求体上限 1 MiB。`handlerTimeout` 超期返回 500 `plugin-failed` 且 `retryable: true`；它只中止本次响应等待，handler 内已发起的异步工作不会被自动取消。收齐请求头的期限沿用 Node 的 `headersTimeout` 默认值，本服务不另行配置 |
 
 | 幂等 | 世界命令用 `commandId`。时钟、快照、接管等控制操作用请求体里的 `operationId`，重复请求复用已记录的结果 |
 | 并发控制 | 控制操作带 `expectedRunVersion` 或 `expectedEpoch`；不一致返回 409 |
