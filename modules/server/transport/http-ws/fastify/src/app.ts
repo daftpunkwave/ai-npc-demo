@@ -268,6 +268,22 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     errorHandler: (error, socket) => {
       if (isWebSocketPayloadTooLarge(error)) {
         // ws 已按 1009 发起关闭；这里只审计，不再 terminate，避免关闭帧被丢弃后客户端只看到异常断开。
+        // 审计走与 HTTP 请求相同的观测写端口：一条结构化 span 落库后可查询，
+        // 且只记录上限与关闭码，不含帧内容或票据，避免把凭据写进观测数据。
+        const startedAt = Date.now();
+        try {
+          options.recordSpan?.({
+            spanId: options.ids("spn"),
+            traceId: options.ids("trc"),
+            name: "ws.frame.over-limit",
+            status: "error",
+            startMs: startedAt,
+            endMs: startedAt,
+            attrs: { maxPayloadBytes: maxWebSocketPayloadBytes, closeCode: 1009 },
+          });
+        } catch (auditError) {
+          report("WS 超限审计写入失败", auditError);
+        }
         report("WS 帧超过上限", error);
         return;
       }
@@ -346,10 +362,18 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     return null;
   };
+  /**
+   * 频道可用性：只有真正能产出快照的控制台频道才接受订阅。
+   * console.turns 虽已在权限表与消息契约中登记，但服务端尚无生产者；
+   * 这里必须如实报告未实现，让客户端拿到 not-ready 而不是接受订阅后永远收不到帧。
+   */
+  const consoleChannelProvided = (channel: StreamChannel): boolean =>
+    options.console !== undefined && (channel === "console.health" || channel === "console.timeline");
   const hub = new StreamHub({
     projection: () => options.projection(),
     worldId: options.worldId,
     channelSnapshot: consoleSnapshot,
+    channelProvided: consoleChannelProvided,
     channelsFor: (auth) => channelsFor(options.accessPolicy, auth),
     ids: (prefix) => options.ids(prefix),
     tokens: (kind) => options.tokens(kind),
@@ -364,10 +388,18 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     },
   });
   hub.setBranch(branch.branchId);
+  /**
+   * 健康摘要定时广播：只在确有订阅者时构造。
+   * health() 每次要跑两笔事务并重建模块清单，没有控制台页面打开时这份构造完全无人接收，
+   * 因此订阅判断必须在调用 health() 之前，而不是等 publishConsole 内部的连接循环。
+   */
   const consoleHealthTimer =
     options.console === undefined
       ? null
       : setInterval(() => {
+          if (!hub.hasSubscriber("console.health")) {
+            return;
+          }
           try {
             hub.publishConsole("console.health", options.console?.health() as unknown as Json);
           } catch (error) {
@@ -470,6 +502,11 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
     notifyWorldChanged: () => {
       hub.publishWithResync(report);
+      // 时间线快照的构建包含两笔事务与上百条事件的解析排序，先确认有人订阅再算，
+      // 否则控制台未打开时每次世界变化都要为无人接收的数据付费。
+      if (!hub.hasSubscriber("console.timeline")) {
+        return;
+      }
       try {
         const timeline = consoleSnapshot("console.timeline");
         if (timeline !== null) {

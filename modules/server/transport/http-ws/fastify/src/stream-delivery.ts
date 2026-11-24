@@ -65,11 +65,16 @@ export class SocketSender {
     }
   }
 
-  sendError(socket: StreamSocket, code: "validation" | "forbidden", safeMessage: string): void {
+  /**
+   * 发送错误帧。
+   * `not-ready` 表示请求格式与授权都成立，但该频道当前没有生产者；
+   * 客户端据此区分「尚未实现」与「暂无数据」，不会一直等待永不到来的帧。
+   */
+  sendError(socket: StreamSocket, code: "validation" | "forbidden" | "not-ready", safeMessage: string): void {
     this.sendMessage(socket, { type: "error", code, safeMessage });
   }
 
-  /** 发送完整快照；缓冲已超阈值时保留补发标记，等连接可写后再发。 */
+  /** 发送完整快照；缓冲已超阈值时保留该频道的补发标记，等连接可写后再发。 */
   sendSnapshot(connection: Connection, channel: StreamChannel): void {
     if (channel !== playerChannel) {
       let data: Json | null;
@@ -79,14 +84,17 @@ export class SocketSender {
         this.close(connection.socket, 1012, "channel unavailable");
         return;
       }
-      if (data !== null) {
-        this.sendChannelSnapshot(
-          connection,
-          channel,
-          data,
-          this.options.channelSequence?.(channel) ?? 0,
-        );
+      if (data === null) {
+        // 该频道当前没有可推送的内容，补发标记不再有意义；保留它只会让每次 flush 重复取一次空快照。
+        connection.pendingSnapshots.delete(channel);
+        return;
       }
+      this.sendChannelSnapshot(
+        connection,
+        channel,
+        data,
+        this.options.channelSequence?.(channel) ?? 0,
+      );
       return;
     }
     let projection: PlayerProjection;
@@ -99,13 +107,13 @@ export class SocketSender {
     this.sendSnapshotPayload(connection, channel, projection);
   }
 
-  /** 连接可写且需要快照时补发一次；快照覆盖积压的所有增量。 */
+  /** 逐频道补发积压的快照；每个频道的成功只清除它自己的标记。 */
   flushPendingSnapshot(connection: Connection): void {
-    if (!connection.needsSnapshot) {
-      return;
-    }
-    const channel = [...connection.subscriptions][0];
-    if (channel !== undefined) {
+    for (const channel of [...connection.pendingSnapshots]) {
+      // 补发期间可能有关闭连接或新增标记的操作改变集合，逐个确认仍待补发。
+      if (!connection.pendingSnapshots.has(channel)) {
+        continue;
+      }
       this.sendSnapshot(connection, channel);
     }
   }
@@ -163,19 +171,19 @@ export class SocketSender {
     } catch {
       // 投影无法序列化时连接无法重建基线；关闭后由客户端重连再试。
       this.close(connection.socket, 1012, "projection unavailable");
-      connection.needsSnapshot = true;
+      connection.pendingSnapshots.add(channel);
       return;
     }
-    this.sendSerializedSnapshot(connection, payload);
+    this.sendSerializedSnapshot(connection, channel, payload);
   }
 
   /** 发送已序列化的快照；重同步时一份投影复用到多个连接，避免重复序列化。 */
-  sendSerializedSnapshot(connection: Connection, payload: string): void {
+  sendSerializedSnapshot(connection: Connection, channel: StreamChannel, payload: string): void {
     if (!this.deliver(connection, payload)) {
-      connection.needsSnapshot = true;
+      connection.pendingSnapshots.add(channel);
       return;
     }
-    connection.needsSnapshot = false;
+    connection.pendingSnapshots.delete(channel);
   }
 
   /** 发送控制台频道的完整快照；序号由该频道独立维护，分支身份同样取当前值。 */
@@ -198,9 +206,9 @@ export class SocketSender {
         data,
       });
     } catch {
-      connection.needsSnapshot = true;
+      connection.pendingSnapshots.add(channel);
       return;
     }
-    this.sendSerializedSnapshot(connection, payload);
+    this.sendSerializedSnapshot(connection, channel, payload);
   }
 }

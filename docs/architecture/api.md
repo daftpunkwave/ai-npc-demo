@@ -105,7 +105,9 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 连接建立后，服务端先发 `hello`。客户端订阅 `player` 后接收快照与增量。所有消息都是 JSON 文本帧。
 
-客户端帧有 64 KiB 上限。超过上限的帧不会进入消息处理器，服务端审计该事件并以 1009 关闭连接；正常的 `subscribe`、`ack` 与 `ping` 帧远小于上限。
+客户端帧有 64 KiB 上限。超过上限的帧不会进入消息处理器，服务端以 1009 关闭连接，并写入一条可查询的结构化审计（`ws.frame.over-limit`，只记录上限与关闭码，不含帧内容与票据）；正常的 `subscribe`、`ack` 与 `ping` 帧远小于上限。
+
+`ping`、`ack` 与 `subscribe` 都在会话校验之后处理：会话已失效时一律以 4401 关闭，不会回 `pong`，也不会因 `ack` 触发补发。
 
 | 方向 | 消息 | 字段 |
 |---|---|---|
@@ -114,18 +116,20 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | S→C | `snapshot` | `channel`、`streamSeq`、`projectionVersion`、`worldId`、`branchId`、`data`。玩家频道使用真实投影版本；v1 控制台频道的 `projectionVersion` 仅作为兼容哨兵固定为 `0`，不代表玩家投影修订，控制台快照序号以 `streamSeq` 为准。`worldId` 与 `branchId` 是该快照所属的分支身份，客户端以帧内值为准更新本地世界与分支 |
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
 | S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。`kind` 与 `item` 按判别联合绑定：`dialogue` 的 `item` 必须满足 `ConversationLine`，`notification` 的 `item` 必须满足 `PlayerNotificationView`，且 `channel` 固定为 `player`。未实现的追加种类不在公开 schema 内，消费方无需区分“未实现”与“暂无数据” |
-| C→S | `ack` | `channel`、`streamSeq` |
+| C→S | `ack` | `channel`、`streamSeq`；只能确认已订阅的频道，未订阅频道回 `forbidden` |
 | C→S / S→C | `ping` / `pong` | — |
-| S→C | `error` | `code`、`safeMessage` |
+| S→C | `error` | `code`、`safeMessage`。`not-ready` 表示授权通过但该频道当前没有生产者 |
 
-控制台频道按权限出现在 `hello.channels` 中，订阅时和世界变化后推送对应快照。
+控制台频道按权限出现在 `hello.channels` 中，订阅时和世界变化后推送对应快照。已授权但尚未实现生产者的频道在订阅时回 `not-ready`，不进入推送集合，客户端据此区分“未实现”与“暂无数据”。
 
 | 频道 | 角色 | 推送内容 | 状态 |
 |---|---|---|---|
 | `player` | player | `PlayerProjection` 快照与增量；新对话行、提醒用 `append` | 已实现 |
-| `console.health` | operator、researcher | 每 2 秒一次健康摘要快照，结构与 [运行总览响应](#51-运行总览与模块装配) 一致 | 已实现 |
-| `console.timeline` | researcher | 订阅时和世界变化后推送时间线快照 | 已实现 |
-| `console.turns` | researcher | turn 状态变化（`append`） | 目标 |
+| `console.health` | operator、researcher | 每 2 秒一次健康摘要快照，结构与 [运行总览响应](#51-运行总览与模块装配) 一致。仅在存在订阅者时构造并推送 | 已实现 |
+| `console.timeline` | researcher | 订阅时和世界变化后推送时间线快照。世界变化时仅在存在订阅者时构造 | 已实现 |
+| `console.turns` | researcher | turn 状态变化（`append`） | 目标；当前订阅回 `not-ready` |
+
+因背压丢弃增量时，待补快照按频道分别记录：同一连接订阅多个频道时，某个频道补发成功不会清掉其他频道的补发请求。
 
 连接关闭码在同一应用自定义区间内区分两类完全不同的失败，客户端必须按码分别处理：
 
