@@ -28,9 +28,11 @@ const runId = "run-000000000001";
 const healthyAgentId = "npc-wenyuan";
 const failingAgentId = "npc-muzhi";
 
-/** 可切换的故障开关：Proxy 每次 prepareIngest 时读取，用于验证恢复后同一实例重新工作。 */
+/** 可切换的故障开关：Proxy 每次调用时读取，用于验证恢复后同一实例重新工作。 */
 interface FailureSwitch {
   failing: boolean;
+  /** 只让唤醒建议失败，用来区分「摄入失败」与「唤醒失败」两条隔离路径。 */
+  failWakeups: boolean;
 }
 
 /**
@@ -52,6 +54,12 @@ function throwingMemoryDefinition(control: FailureSwitch): ModuleDefinition {
               return (...args: Parameters<MemoryPort["prepareIngest"]>) => {
                 if (control.failing) throw new Error("记忆摄入替身按用例要求失败");
                 return target.prepareIngest(...args);
+              };
+            }
+            if (key === "proposeWakeups") {
+              return (...args: Parameters<MemoryPort["proposeWakeups"]>) => {
+                if (control.failWakeups) throw new Error("唤醒建议替身按用例要求失败");
+                return target.proposeWakeups(...args);
               };
             }
             const value: unknown = Reflect.get(target, key);
@@ -175,7 +183,7 @@ async function fixture(): Promise<IsolationFixture> {
     },
   });
 
-  const control: FailureSwitch = { failing: false };
+  const control: FailureSwitch = { failing: false, failWakeups: false };
   const plan = vi.fn<SchedulingPort["plan"]>(() => []);
   const runtime = new AgentRuntime({
     storage,
@@ -289,5 +297,26 @@ describe("Agent runtime 单主体故障隔离", () => {
       message: "Agent runtime recovered",
       data: expect.objectContaining({ consecutiveFailures: 0 }),
     }));
+  });
+
+  it("唤醒建议失败同样让该轮失败并进入 degraded，而不是被当成成功轮", async () => {
+    const value = await fixture();
+    // 只让 proposeWakeups 失败：摄入正常，因此失败只能来自唤醒阶段。
+    // 若唤醒失败被静默吞掉，这一轮会被当成成功轮，degraded 永远不会置位。
+    value.control.failWakeups = true;
+
+    const failure = await value.runtime.pump().then(() => null, (error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain("memory.proposeDueWakeups");
+    expect(value.runtime.degraded).toBe(true);
+    expect(value.host.logs).toContainEqual(expect.objectContaining({
+      level: "error",
+      message: "Memory wakeup proposal failed",
+      data: expect.objectContaining({ agentId: failingAgentId, phase: "memory-wakeups" }),
+    }));
+
+    value.control.failWakeups = false;
+    await expect(value.runtime.pump()).resolves.toBeUndefined();
+    expect(value.runtime.degraded).toBe(false);
   });
 });

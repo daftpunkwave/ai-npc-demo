@@ -105,11 +105,14 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     const llmCallId = host.ids("llm");
     const attempts: AgentModelCallResult["attempts"][number][] = [];
     const reservation = { scope, limits, route, reservedInput: estimated, reservedOutput: reserveOutputTokens };
+    // 限流窗口按请求可能产生的最大 token 占额：实际发送的 max_tokens 是挂载的用途上限，
+    // 若仍按较小的预算预留估算，会低估账号 TPM 消耗并导致供应商侧限流。
+    const admissionTokens = estimated + route.maxOutputTokens;
     for (let index = 0; ; index += 1) {
       requireCurrent(scope);
       budget.check(reservation);
       const queuedAt = host.monotonicMs();
-      const release = await admission.acquire({ scope, route, tokens: estimated + reserveOutputTokens });
+      const release = await admission.acquire({ scope, route, tokens: admissionTokens });
       const attemptId = host.ids("att");
       let sent = false;
       let reserved = false;

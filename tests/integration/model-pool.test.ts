@@ -357,6 +357,27 @@ describe("共享模型池与预算", () => {
     }
   });
 
+  it("限流窗口按请求最大输出占额，而不是按较小的预算预留估算", async () => {
+    // 预留 30、挂载上限 100：若按预留估 TPM，两次请求合计 2×(输入+30) 会被放行；
+    // 按上限估则第二次超出 200 的 TPM 上限而必须等待窗口释放。
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const tight = { ...route, tokensPerMinute: 200, requestsPerMinute: 60 };
+      const run = harness.pool.bindRun({ routes: [tight], limits });
+      await run.call(work(), "decision", 30, request);
+      const waiting = run.call(work({ workRef: "turn-000000000002" }), "decision", 30, request);
+      harness.advance(59_999);
+      await Promise.resolve();
+      expect(complete).toHaveBeenCalledTimes(1);
+      harness.advance(1);
+      await waiting;
+      expect(complete).toHaveBeenCalledTimes(2);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("多个模型 ID 共享账号限额，等待滑动窗口释放后才发送", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);

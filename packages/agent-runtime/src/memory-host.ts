@@ -107,24 +107,26 @@ export class MemoryHost {
   }
 
   /**
-   * 逐个身份摄入，单个身份失败只隔离它自己的队列。
-   * 全部身份跑完后再聚合抛出，避免一个身份拖停其他身份的摄入与后续整理排队。
+   * 并发摄入全部身份，单个身份失败只隔离它自己的队列。
+   * 用 allSettled 而不是 Promise.all：既不让一个身份 reject 打断其余身份的等待，
+   * 也不因为串行执行让一个挂起的身份拖住整轮摄入；全部跑完后再聚合抛出。
    */
   async ingestAll(worldTick: number): Promise<void> {
     const failures: { readonly agentId: string; readonly message: string }[] = [];
-    for (const agent of this.options.roster.agents) {
-      try {
-        if (!this.store.agentControl(agent.agentId).active) continue;
-        await this.ingestAgent(agent.agentId, worldTick);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push({ agentId: agent.agentId, message });
-        this.options.host.logger.error("Memory ingest failed", {
-          agentId: agent.agentId,
-          phase: "memory-ingest",
-          message,
-        });
-      }
+    const results = await Promise.allSettled(this.options.roster.agents.map(async (agent) => {
+      if (!this.store.agentControl(agent.agentId).active) return;
+      await this.ingestAgent(agent.agentId, worldTick);
+    }));
+    for (const [index, result] of results.entries()) {
+      if (result.status === "fulfilled") continue;
+      const agentId = this.options.roster.agents[index]?.agentId ?? "unknown";
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      failures.push({ agentId, message });
+      this.options.host.logger.error("Memory ingest failed", {
+        agentId,
+        phase: "memory-ingest",
+        message,
+      });
     }
     if (failures.length === 0) return;
     throw new Error(failures
@@ -159,8 +161,13 @@ export class MemoryHost {
     }));
   }
 
-  /** 逐个身份提出唤醒；单个身份失败只记日志并跳过，不影响其他身份的唤醒与调度。 */
+  /**
+   * 逐个身份提出唤醒；单个身份失败只隔离它自己，其余身份照常产生唤醒。
+   * 全部身份跑完后聚合抛出：唤醒失败不能让该轮被当成成功轮，
+   * 否则降级状态会被立即清除，失败身份也得不到退避重试。
+   */
   proposeDueWakeups(worldTick: number): void {
+    const failures: { readonly agentId: string; readonly message: string }[] = [];
     for (const agent of this.options.roster.agents) {
       try {
         const control = this.store.agentControl(agent.agentId);
@@ -175,13 +182,19 @@ export class MemoryHost {
         }, view);
         this.writeTriggers(agent.agentId, proposals, worldTick);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ agentId: agent.agentId, message });
         this.options.host.logger.error("Memory wakeup proposal failed", {
           agentId: agent.agentId,
           phase: "memory-wakeups",
-          message: error instanceof Error ? error.message : String(error),
+          message,
         });
       }
     }
+    if (failures.length === 0) return;
+    throw new Error(failures
+      .map(({ agentId, message }) => `agent ${agentId} memory wakeup proposal failed: ${message}`)
+      .join("; "));
   }
 
   retrieve(agentId: string, query: AgentMemoryQuery): MemoryBundle {
