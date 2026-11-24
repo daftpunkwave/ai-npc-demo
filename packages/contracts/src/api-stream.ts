@@ -95,7 +95,7 @@ export type StreamDeltaMessage = z.infer<typeof streamDeltaMessageSchema>;
 /**
  * 追加帧：按 `kind` 判别，`item` 的类型由对应视图契约固定。
  * 只声明已有生产者的两种追加（对白与提醒）；未实现的追加种类不得进入公开 schema，
- * 否则消费者无法区分「未实现」与「暂无数据」。
+ * 否则消费者无法区分“未实现”与“暂无数据”。
  */
 export const streamAppendMessageSchema = z.discriminatedUnion("kind", [
   z

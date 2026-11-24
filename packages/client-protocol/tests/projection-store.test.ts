@@ -319,7 +319,7 @@ describe("ProjectionStore", () => {
         item: { dialogueId: "dlg-000000000001" },
       }).success,
     ).toBe(false);
-    // 未实现的 timeline 种类不在公开 schema 内，不能被误判成「暂无数据」。
+    // 未实现的 timeline 种类不在公开 schema 内，不能被误判成“暂无数据”。
     expect(
       serverStreamMessageSchema.safeParse({
         type: "append",
