@@ -168,6 +168,10 @@ describe("SVG 结构安全", () => {
     // 协议相对地址；协议判定之前必须拒绝这两类字符。
     ["制表符拆分的协议", '<a href="java&#9;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
     ["换行拆分的协议", '<a href="java&#10;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
+    // 字符引用允许前导零（`&#0009;`、`&#x09;`）与十进制/十六进制两种写法，
+    // 浏览器解码后与不带前导零的写法等价；判定必须覆盖全部等价写法，不能只看最短形式。
+    ["补零的十进制字符引用", '<a href="java&#0009;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
+    ["补零的十六进制字符引用", '<a href="java&#x0009;script:alert(1)"><text>x</text></a>', "控制字符、字符引用或反斜杠"],
     ["反斜杠网络路径", '<image href="\\\\example.com/x.png"/>', "控制字符、字符引用或反斜杠"],
   ])("拒绝包含%s的资产", (_label, injection, expectedMessage) => {
     const root = createFixture();

@@ -51,7 +51,9 @@ function assertSafe(node: unknown, path: string): void {
       // 的原始值不匹配协议前缀，却会在解析时折叠成 javascript: 或协议相对地址。
       // 解析器不解码 XML 实体，因此 "java&#9;script:" 会原样保留；浏览器渲染时才解码，
       // 所以字符引用同样必须拒绝，否则白名单会被绕过。
-      if (hasControlOrBackslash(value) || /&#(?:x0*[0-9a-f]+|0*\d+);/iu.test(value)) {
+      // 分支内不写前导零量词（如 `x0*[0-9a-f]+` 或 `0*\d+`）：两种写法接受的字符集等价，
+      // 但 `0*` 与后续 `+` 重叠会让引擎在长串 0 且缺少结尾分号时逐段回溯，退化为二次复杂度。
+      if (hasControlOrBackslash(value) || /&#(?:x[0-9a-f]+|\d+);/iu.test(value)) {
         throw new Error(`资产引用包含控制字符、字符引用或反斜杠 ${key}: ${path}`);
       }
       const href = value.trim().toLowerCase();

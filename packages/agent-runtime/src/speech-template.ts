@@ -56,7 +56,9 @@ export function renderSafeSpeech(input: SafeSpeechInput): string {
   if (facts.length === 0 && (kind === "answer" || kind === "inform" || kind === "warn")) {
     text = input.prompts.speechNoFacts;
   }
-  text = text.replace(/[，：:\s]+$/u, "").trim();
+  // 前置「上一字符非分隔符或位于串首」的断言，等价于只剥离结尾连续段。
+  // 直接写 `/[，：:\s]+$/` 时，长分隔符串的失败匹配会从每个起点回溯整段，代价退化为长度平方。
+  text = text.replace(/(?<=[^，：:\s]|^)[，：:\s]+$/u, "").trim();
   if (text.length === 0) text = input.prompts.speechNoFacts;
   return limitText(text, input.maxChars);
 }
