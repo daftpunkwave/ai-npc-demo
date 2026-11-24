@@ -16,9 +16,10 @@ import {
 } from "@ai-npc/contracts";
 import type { ResolvedAgentProfile } from "@ai-npc/experiment";
 import type { DeterministicDecisionInput, DelegationView } from "@ai-npc/module-sdk";
-import { parseObservation, parseWatermark } from "./memory-row-codec";
+import { parseWatermark } from "./memory-row-codec";
 import { asRecord, numberValue } from "./runtime-records";
 import { TurnStopped, type ClaimedTurn, type TurnLeases } from "./turn-lease";
+import { readTurnObservations } from "./turn-observations";
 
 export interface TurnWorldRead {
   readonly nodeId: string | null;
@@ -110,14 +111,14 @@ function freezeIn(
   const worldSeq = perception === null ? 0 : numberValue(perception, "scanned_through_seq");
   const sourceRefs = new Set(turn.triggers.map((trigger) => trigger.sourceRef));
   const previous = previousObservationSeq(tx, turn);
-  const observations = branch.table("observations").list({ agent_id: agentId }, {
-    orderBy: [{ column: "observation_seq", direction: "asc" }],
-  }).filter((row) =>
-    numberValue(row, "observation_seq") <= watermark.observationSeqConsumed &&
-    (numberValue(row, "observation_seq") > previous ||
-      Array.isArray(row["source_event_ids_json"]) && row["source_event_ids_json"].some((id) =>
-        typeof id === "string" && sourceRefs.has(id))),
-  ).map((row) => parseObservation(row, scope));
+  const observations = readTurnObservations(tx, {
+    branchId,
+    agentId,
+    scope,
+    previousSeq: previous,
+    throughSeq: watermark.observationSeqConsumed,
+    sourceRefs: [...sourceRefs],
+  });
   const triggerObservations = observations.filter((observation) =>
     observation.sourceEventIds.some((id) => sourceRefs.has(id)));
   const latestDialogue = triggerObservations.findLast((observation) =>
