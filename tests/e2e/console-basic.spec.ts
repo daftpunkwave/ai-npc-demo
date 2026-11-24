@@ -31,6 +31,12 @@ test("控制台显示运行总览并在评估角色下禁用装配页", async ({
 });
 
 test("Agent 检查器显示实际位置和第九条记忆", async ({ page }) => {
+  let timelineRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/v1/console/timeline") {
+      timelineRequests += 1;
+    }
+  });
   const agentId = "human-independent";
   await page.route(/\/api\/v1\/console\/agents\?/, (route) => route.fulfill({
     json: { agents: [{
@@ -66,7 +72,9 @@ test("Agent 检查器显示实际位置和第九条记忆", async ({ page }) => 
   await page.goto("http://127.0.0.1:3000/console/#token=e2e-console");
   await page.getByTestId("console-role").selectOption("researcher");
   await page.getByTestId("console-nav-observability").click();
+  await expect(page.getByRole("heading", { name: "世界时间线" })).toBeVisible();
   const inspector = page.locator("section.console-panel").filter({ has: page.getByRole("heading", { name: "Agent 检查器" }) });
   await expect(inspector.locator("header").getByText("node-console-fixture")).toBeVisible();
   await expect(page.getByText("episodic · mem-000000000009", { exact: true })).toBeVisible();
+  expect(timelineRequests).toBe(0);
 });

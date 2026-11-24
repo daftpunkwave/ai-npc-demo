@@ -139,24 +139,7 @@ function ObservabilityPage(): ReactNode {
         }
       }
     }
-    const start = async (): Promise<void> => {
-      try {
-        const timeline = await host.api.consoleTimeline({
-          branchId,
-          fromSeq: 0,
-          limit: 100,
-          order: "desc",
-        });
-        if (!cancelled) {
-          setEvents(timeline.events);
-          setTimelineError(null);
-        }
-      } catch (cause) {
-        if (!cancelled) setTimelineError(String(cause));
-      }
-      if (!cancelled) await connectStream();
-    };
-    void start();
+    void connectStream();
     return () => {
       cancelled = true;
       connectionGeneration += 1;
