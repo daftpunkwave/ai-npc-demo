@@ -49,10 +49,10 @@ apps/client/dist/
 Thumbs.db
 *.swp
 
-# 本地 Agent 草稿
+# 本地 Agent 草稿与本地资料
+# 以 .local 结尾的文件与目录一律不纳入版本控制，包括本地指令、审计报告与素材
+*.local
+*.local/
+# 约定式本地指令文件（AGENTS.local.md、CLAUDE.local.md）与编辑器本地设置
+*.local.md
 .claude/settings.local.json
-/docs.local/
-
-# 根目录本地 Agent 指令
-/AGENTS.local.md
-/CLAUDE.local.md
