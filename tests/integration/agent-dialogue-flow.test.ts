@@ -265,6 +265,33 @@ describe("Dialogue flow", () => {
     }
   });
 
+  it("安全模板剥离结尾分隔符时保留正文与内部标点", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const prompts = harness.content.prompts;
+    const fact = {
+      ref: "ev-000000000001",
+      releasePolicyId: "parties:human-independent,player-1",
+      summaryZh: "路线暂时不开放",
+    };
+    const template = "补给安排：{facts}，请稍候： ";
+    const render = (subject: string, chosen: string = template): string =>
+      renderSafeSpeech({
+        intent: intent("inform", [fact.ref]),
+        facts: [fact],
+        receipts: [],
+        subject,
+        maxChars: 200,
+        prompts: { ...prompts, speechTemplates: { ...prompts.speechTemplates, inform: chosen } },
+      });
+    // 结尾的混合分隔符（冒号 + 空格）整体剥离，正文自身的冒号与逗号必须原样保留。
+    expect(render("补给安排")).toBe("补给安排：路线暂时不开放，请稍候");
+    // 剥离是整段进行，不会只去掉末尾一个字符而留下前面的分隔符。
+    expect(render("补给安排")).not.toMatch(/[，：:\s]$/u);
+    // 全部内容都是分隔符、剥离后为空时回退到无事实提示语，不产出空串。
+    expect(render("", "：： ")).toBe(prompts.speechNoFacts);
+  });
+
   it("message 工具通过固定 commandId 进入 speech.commit", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);
