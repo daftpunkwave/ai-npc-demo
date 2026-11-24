@@ -242,10 +242,15 @@ describe("共享模型池与预算", () => {
     try {
       const run = harness.pool.bindRun({ routes: [route], limits });
       await run.call(work(), "decision", 30, request);
-      // 硬上限来自挂载的用途上限（100），预留（30）只用于预算占额与结算。
+      // 硬上限来自挂载的用途上限（100）；账本按同一上限占额，避免超支。
       expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(route.maxOutputTokens);
       const entries = harness.storage.transact((tx) => tx.rows("budget_ledger").list({ work_ref: work().workRef }));
-      expect(entries).toEqual([expect.objectContaining({ reserved_output: 30, actual_output: 30 })]);
+      // 该夹具响应不带 usage，按预留保守记账并标 usage_unknown。
+      expect(entries).toEqual([expect.objectContaining({
+        reserved_output: route.maxOutputTokens,
+        actual_output: route.maxOutputTokens,
+        usage_unknown: 1,
+      })]);
     } finally {
       await harness.dispose();
     }
@@ -269,9 +274,9 @@ describe("共享模型池与预算", () => {
       const result = await run.call(work(), "decision", 1500, request);
       expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(16_000);
       expect(result.response.finishReason).toBe("stop");
-      // 预算仍按预留占额，实际用量按 usage 结算。
+      // 账本按请求上限占额以覆盖最大可能输出，实际用量按 usage 结算。
       expect(harness.storage.transact((tx) => tx.rows("budget_ledger").list({})))
-        .toEqual([expect.objectContaining({ reserved_output: 1500, actual_output: 9000 })]);
+        .toEqual([expect.objectContaining({ reserved_output: 16_000, actual_output: 9000 })]);
     } finally {
       await harness.dispose();
     }
@@ -393,6 +398,22 @@ describe("共享模型池与预算", () => {
       harness.advance(1);
       await waiting;
       expect(complete).toHaveBeenCalledTimes(2);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("剩余预算不足以覆盖请求最大输出时拒绝发送，而不是先发再超支", async () => {
+    // run 级预算只够一次 100 token 的输出，而挂载上限是 100：
+    // 账本按请求上限占额，因此第二次请求必须在发送前以 budget-exhausted 失败。
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
+    const harness = await poolHarness(complete);
+    try {
+      const run = harness.pool.bindRun({ routes: [route], limits: { maxTokens: 150, maxCost: null } });
+      await run.call(work(), "decision", 30, request);
+      await expect(run.call(work({ workRef: "turn-000000000002" }), "decision", 30, request))
+        .rejects.toMatchObject({ code: "budget-exhausted" });
+      expect(complete).toHaveBeenCalledTimes(1);
     } finally {
       await harness.dispose();
     }

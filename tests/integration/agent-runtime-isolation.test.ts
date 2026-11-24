@@ -358,9 +358,9 @@ describe("Agent runtime 单主体故障隔离", () => {
       phase: "memory-ingest",
       errorCode: "Error",
     });
-    // 摘要字段存在且被截断到上限内，而不是把 error.message 原样展开。
-    const detail = (logged?.data as Readonly<Record<string, unknown>> | undefined)?.["detail"];
-    expect(typeof detail).toBe("string");
-    expect(String(detail).length).toBeLessThanOrEqual(201);
+    // 只记录结构化字段：错误原文属自由文本，可能含观察正文或对话原文，不得进日志。
+    const data = logged?.data as Readonly<Record<string, unknown>> | undefined;
+    expect(data).not.toHaveProperty("detail");
+    expect(data).not.toHaveProperty("message");
   });
 });

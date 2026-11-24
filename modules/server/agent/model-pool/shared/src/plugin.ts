@@ -104,10 +104,13 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     }
     const llmCallId = host.ids("llm");
     const attempts: AgentModelCallResult["attempts"][number][] = [];
-    const reservation = { scope, limits, route, reservedInput: estimated, reservedOutput: reserveOutputTokens };
-    // 限流窗口按请求可能产生的最大 token 占额：实际发送的 max_tokens 是挂载的用途上限，
-    // 若仍按较小的预算预留估算，会低估账号 TPM 消耗并导致供应商侧限流。
-    const admissionTokens = estimated + route.maxOutputTokens;
+    // 账本按请求可能产生的最大输出占额，而不是按 profile 的预算预留：
+    // 实际发送的 max_tokens 是挂载用途上限，若按较小的预留占额，剩余预算不足时
+    // 仍会放行请求并在结算时超支；usage 缺失按预留记账时同样会低估。
+    const reservedOutput = Math.max(reserveOutputTokens, route.maxOutputTokens);
+    const reservation = { scope, limits, route, reservedInput: estimated, reservedOutput };
+    // 限流窗口同样按最大 token 占额，避免低估账号 TPM 消耗触发供应商侧限流。
+    const admissionTokens = estimated + reservedOutput;
     for (let index = 0; ; index += 1) {
       requireCurrent(scope);
       budget.check(reservation);

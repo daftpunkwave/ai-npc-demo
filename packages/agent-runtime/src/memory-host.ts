@@ -32,8 +32,21 @@ import {
 } from "./memory-publication";
 import { MemoryStore, type MemoryWatermark } from "./memory-store";
 
-/** 日志里保留的错误摘要上限：只作排障线索，避免整段观察正文或对话原文进入日志。 */
-const maxLoggedErrorChars = 200;
+/** 错误名的短标记上限：错误名是运行期类型名，仅作结构化字段，不承载自由文本。 */
+const maxErrorNameChars = 64;
+
+/** 把错误名收敛成可记录的枚举型短标记；不符合形态时统一记 unknown。 */
+function errorNameToken(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown";
+  const name = error.name;
+  if (name.length === 0 || name.length > maxErrorNameChars) return "unknown";
+  for (const char of name) {
+    const code = char.charCodeAt(0);
+    const isAlnum = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (!isAlnum && char !== "-" && char !== "_" && char !== "." && char !== ":" && char !== "/") return "unknown";
+  }
+  return name;
+}
 
 export interface MemoryHostOptions {
   readonly storage: StoragePort;
@@ -195,17 +208,16 @@ export class MemoryHost {
 
   /**
    * 按仓库统一的错误记录口径写日志：领域错误的 details 经白名单过滤，
-   * 自由文本只保留截断后的摘要，避免把观察正文或对话原文经日志带出信任边界。
+   * 其余错误只记结构化字段。自由文本一律不写入日志，
+   * 避免观察正文或对话原文经错误信息被带出信任边界。
    */
   private logFailure(message: string, agentId: string, phase: string, error: unknown): void {
-    const text = error instanceof Error ? error.message : String(error);
     this.options.host.logger.error(message, {
       agentId,
       phase,
-      errorCode: error instanceof DomainError ? error.code : (error instanceof Error ? error.name : "unknown"),
+      // 只记录枚举型短标记：错误名来自运行期类型，不是自由文本。
+      errorCode: error instanceof DomainError ? error.code : errorNameToken(error),
       ...(error instanceof DomainError ? { details: loggableErrorDetails(error.details) } : {}),
-      // 摘要只作为排障线索，不替代结构化字段；超长截断避免整段观察正文进日志。
-      detail: text.length > maxLoggedErrorChars ? `${text.slice(0, maxLoggedErrorChars)}…` : text,
     });
   }
 
