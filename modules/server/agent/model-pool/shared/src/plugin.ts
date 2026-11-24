@@ -93,7 +93,9 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     if (!Number.isSafeInteger(reserveOutputTokens) || reserveOutputTokens < 1 || reserveOutputTokens > route.maxOutputTokens) {
       throw new DomainError("assembly-incompatible", "模型输出预留与挂载不兼容");
     }
-    if (estimated > requestInput.inputLimit || estimated + reserveOutputTokens > route.capabilities.contextWindowTokens) {
+    // 请求硬上限取挂载的用途上限，预算预留只在账本上占额：
+    // 预留是成本估算，用它当 max_tokens 会让含思考的模型在思考阶段就耗尽输出预算。
+    if (estimated > requestInput.inputLimit || estimated + route.maxOutputTokens > route.capabilities.contextWindowTokens) {
       throw new DomainError("budget-exhausted", "模型输入超过本轮窗口", { details: { kind: "over-budget" } });
     }
     if (requestInput.tools.length > 0 && (requestInput.output.kind !== "text" || !route.capabilities.toolCalling) ||
@@ -102,12 +104,18 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     }
     const llmCallId = host.ids("llm");
     const attempts: AgentModelCallResult["attempts"][number][] = [];
-    const reservation = { scope, limits, route, reservedInput: estimated, reservedOutput: reserveOutputTokens };
+    // 账本按请求可能产生的最大输出占额，而不是按 profile 的预算预留：
+    // 实际发送的 max_tokens 是挂载用途上限，若按较小的预留占额，剩余预算不足时
+    // 仍会放行请求并在结算时超支；usage 缺失按预留记账时同样会低估。
+    const reservedOutput = Math.max(reserveOutputTokens, route.maxOutputTokens);
+    const reservation = { scope, limits, route, reservedInput: estimated, reservedOutput };
+    // 限流窗口同样按最大 token 占额，避免低估账号 TPM 消耗触发供应商侧限流。
+    const admissionTokens = estimated + reservedOutput;
     for (let index = 0; ; index += 1) {
       requireCurrent(scope);
       budget.check(reservation);
       const queuedAt = host.monotonicMs();
-      const release = await admission.acquire({ scope, route, tokens: estimated + reserveOutputTokens });
+      const release = await admission.acquire({ scope, route, tokens: admissionTokens });
       const attemptId = host.ids("att");
       let sent = false;
       let reserved = false;
@@ -124,7 +132,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         request = modelRequestSchema.parse({
           llmCallId, attemptId, purpose: route.purpose, externalModel: route.externalModel,
           system: requestInput.system, messages: requestInput.messages, tools: requestInput.tools, output: requestInput.output,
-          parameters: route.parameters, maxOutputTokens: reserveOutputTokens,
+          parameters: route.parameters, maxOutputTokens: route.maxOutputTokens,
           timeoutMs: Math.floor(Math.min(route.requestTimeoutMs, scope.deadlineMs - startedAt)),
           context: {
             agentId: scope.agentId, evaluatorId: null, workRef: scope.workRef, round: requestInput.round,

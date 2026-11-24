@@ -14,6 +14,7 @@ import type {
   ModuleDefinition,
   StoragePort,
 } from "@ai-npc/contracts";
+import { DomainError, loggableErrorDetails } from "@ai-npc/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryPort,
@@ -30,6 +31,22 @@ import {
   type MemoryRecordUseRequest,
 } from "./memory-publication";
 import { MemoryStore, type MemoryWatermark } from "./memory-store";
+
+/** 错误名的短标记上限：错误名是运行期类型名，仅作结构化字段，不承载自由文本。 */
+const maxErrorNameChars = 64;
+
+/** 把错误名收敛成可记录的枚举型短标记；不符合形态时统一记 unknown。 */
+function errorNameToken(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown";
+  const name = error.name;
+  if (name.length === 0 || name.length > maxErrorNameChars) return "unknown";
+  for (const char of name) {
+    const code = char.charCodeAt(0);
+    const isAlnum = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (!isAlnum && char !== "-" && char !== "_" && char !== "." && char !== ":" && char !== "/") return "unknown";
+  }
+  return name;
+}
 
 export interface MemoryHostOptions {
   readonly storage: StoragePort;
@@ -106,11 +123,28 @@ export class MemoryHost {
     }
   }
 
+  /**
+   * 并发摄入全部身份，单个身份失败只隔离它自己的队列。
+   * 用 allSettled 而不是 Promise.all：既不让一个身份 reject 打断其余身份的等待，
+   * 也不因为串行执行让一个挂起的身份拖住整轮摄入；全部跑完后再聚合抛出。
+   */
   async ingestAll(worldTick: number): Promise<void> {
-    await Promise.all(this.options.roster.agents.map(async (agent) => {
+    const failures: { readonly agentId: string; readonly message: string }[] = [];
+    const results = await Promise.allSettled(this.options.roster.agents.map(async (agent) => {
       if (!this.store.agentControl(agent.agentId).active) return;
       await this.ingestAgent(agent.agentId, worldTick);
     }));
+    for (const [index, result] of results.entries()) {
+      if (result.status === "fulfilled") continue;
+      const agentId = this.options.roster.agents[index]?.agentId ?? "unknown";
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      failures.push({ agentId, message });
+      this.logFailure("Memory ingest failed", agentId, "memory-ingest", result.reason);
+    }
+    if (failures.length === 0) return;
+    throw new Error(failures
+      .map(({ agentId, message }) => `agent ${agentId} memory ingest failed: ${message}`)
+      .join("; "));
   }
 
   async runDueMaintenance(worldTick: number): Promise<void> {
@@ -140,20 +174,51 @@ export class MemoryHost {
     }));
   }
 
+  /**
+   * 逐个身份提出唤醒；单个身份失败只隔离它自己，其余身份照常产生唤醒。
+   * 全部身份跑完后聚合抛出：唤醒失败不能让该轮被当成成功轮，
+   * 否则降级状态会被立即清除，失败身份也得不到退避重试。
+   */
   proposeDueWakeups(worldTick: number): void {
+    const failures: { readonly agentId: string; readonly message: string }[] = [];
     for (const agent of this.options.roster.agents) {
-      const control = this.store.agentControl(agent.agentId);
-      if (!control.active || !control.agentControlled) continue;
-      const handle = this.module(agent.agentId);
-      const watermark = this.requireWatermark(agent.agentId);
-      const view = this.view(agent.agentId, watermark.revision);
-      const proposals = handle.port.proposeWakeups({
-        scope: this.scope(agent.agentId),
-        revision: watermark.revision,
-        worldTick,
-      }, view);
-      this.writeTriggers(agent.agentId, proposals, worldTick);
+      try {
+        const control = this.store.agentControl(agent.agentId);
+        if (!control.active || !control.agentControlled) continue;
+        const handle = this.module(agent.agentId);
+        const watermark = this.requireWatermark(agent.agentId);
+        const view = this.view(agent.agentId, watermark.revision);
+        const proposals = handle.port.proposeWakeups({
+          scope: this.scope(agent.agentId),
+          revision: watermark.revision,
+          worldTick,
+        }, view);
+        this.writeTriggers(agent.agentId, proposals, worldTick);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ agentId: agent.agentId, message });
+        this.logFailure("Memory wakeup proposal failed", agent.agentId, "memory-wakeups", error);
+      }
     }
+    if (failures.length === 0) return;
+    throw new Error(failures
+      .map(({ agentId, message }) => `agent ${agentId} memory wakeup proposal failed: ${message}`)
+      .join("; "));
+  }
+
+  /**
+   * 按仓库统一的错误记录口径写日志：领域错误的 details 经白名单过滤，
+   * 其余错误只记结构化字段。自由文本一律不写入日志，
+   * 避免观察正文或对话原文经错误信息被带出信任边界。
+   */
+  private logFailure(message: string, agentId: string, phase: string, error: unknown): void {
+    this.options.host.logger.error(message, {
+      agentId,
+      phase,
+      // 只记录枚举型短标记：错误名来自运行期类型，不是自由文本。
+      errorCode: error instanceof DomainError ? error.code : errorNameToken(error),
+      ...(error instanceof DomainError ? { details: loggableErrorDetails(error.details) } : {}),
+    });
   }
 
   retrieve(agentId: string, query: AgentMemoryQuery): MemoryBundle {

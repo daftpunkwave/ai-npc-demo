@@ -138,7 +138,7 @@ export async function resolveModelConfiguration(input: {
       const route = mounts.get(`${agentId}:${purpose}`);
       if (route === undefined) fail(`Agent ${agentId} 缺少必需的 ${purpose} 挂载`);
       if (profile.budgets.reserveOutputTokens[purpose] > route.maxOutputTokens) {
-        fail(`Agent ${agentId} 的 ${purpose} 输出预留超过挂载上限`);
+        fail(`Agent ${agentId} 的 ${purpose} 输出预留 ${profile.budgets.reserveOutputTokens[purpose]} 超过挂载 ${route.modelId} 的用途上限 ${route.maxOutputTokens}`);
       }
     }
   }
