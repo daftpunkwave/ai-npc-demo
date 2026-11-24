@@ -42,6 +42,8 @@ import {
   exportResponseSchema,
   experimentCreateRequestSchema,
   experimentCreateResponseSchema,
+  runControlRequestSchema,
+  runControlResponseSchema,
 } from "@ai-npc/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
@@ -335,6 +337,22 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     if (!body.success) return sendHttpError(reply, "validation", "run 规格结构不合法");
     return runCreateResponseSchema.parse(await options.console.evaluationWrites.createRun(body.data.runSpec));
   });
+
+  // run 启动与停止：只允许研究员。状态不符时端口抛 invalid-state，由统一错误处理映射为 409。
+  for (const [action, control] of [
+    ["start", "startRun"],
+    ["stop", "stopRun"],
+  ] as const) {
+    app.post(`/api/v1/console/runs/:runId/${action}`, (request, reply) => {
+      if (requireEvaluationWriter(request, reply) === null) return;
+      const writes = options.console?.evaluationWrites;
+      if (writes === undefined) return sendHttpError(reply, "not-ready", "评估写入尚未就绪");
+      const path = parsePath(runParamsSchema, request.params);
+      const body = runControlRequestSchema.safeParse(request.body);
+      if (path === null || !body.success) return sendHttpError(reply, "validation", "run 控制请求结构不合法");
+      return runControlResponseSchema.parse(writes[control](path.runId));
+    });
+  }
 
   app.post("/api/v1/console/experiments", async (request, reply) => {
     if (requireEvaluationWriter(request, reply) === null) return;

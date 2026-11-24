@@ -17,6 +17,7 @@ import {
   runCreateResponseSchema,
   exportResponseSchema,
   experimentCreateResponseSchema,
+  runControlResponseSchema,
 } from "@ai-npc/contracts";
 
 const hosts: RunningHost[] = [];
@@ -636,6 +637,83 @@ describe("控制台评估读取接口", () => {
       });
       expect(response.statusCode, role).toBe(403);
     }
+  });
+  it("run 可启动与停止，状态与分支时钟同步更新", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: {
+        schemaVersion: 1, id: "control-target",
+        moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+        scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: "control-target:rep1",
+        player: { principalId: "player-1", factionId: null },
+        mode: "closed-loop", initialState: { kind: "cold-start" }, variant: null, script: null,
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+        failurePolicy: "strict",
+      } },
+    })).json());
+    expect(created.status).toBe("ready");
+    const branchId = String(host.storage.transact((tx) =>
+      tx.rows("runs").get({ run_id: created.runId })?.["branch_id"]));
+
+    const started = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/start`, headers,
+      payload: { operationId: "op-aaaaaaaaaaaa" },
+    });
+    expect(started.statusCode).toBe(200);
+    expect(runControlResponseSchema.parse(started.json())).toEqual({ runId: created.runId, status: "running" });
+    // run 状态与分支时钟同步：启动后时钟存在且为 running。
+    expect(host.storage.transact((tx) => tx.rows("runs").get({ run_id: created.runId })?.["status"])).toBe("running");
+    expect(host.storage.transact((tx) => tx.branch(branchId).table("clock").get({})?.["mode"])).toBe("running");
+
+    const stopped = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/stop`, headers,
+      payload: { operationId: "op-bbbbbbbbbbbb" },
+    });
+    expect(stopped.statusCode).toBe(200);
+    expect(runControlResponseSchema.parse(stopped.json())).toEqual({ runId: created.runId, status: "paused" });
+    expect(host.storage.transact((tx) => tx.branch(branchId).table("clock").get({})?.["mode"])).toBe("paused");
+  });
+
+  it("状态不符时启动或停止返回 invalid-state", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: {
+        schemaVersion: 1, id: "control-state",
+        moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+        scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: "control-state:rep1",
+        player: { principalId: "player-1", factionId: null },
+        mode: "closed-loop", initialState: { kind: "cold-start" }, variant: null, script: null,
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+        failurePolicy: "strict",
+      } },
+    })).json());
+    // ready 状态的 run 不能停止；启动后再启动也不允许。
+    const stopBeforeStart = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/stop`, headers,
+      payload: { operationId: "op-cccccccccccc" },
+    });
+    expect(stopBeforeStart.statusCode).toBe(409);
+    await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/start`, headers,
+      payload: { operationId: "op-dddddddddddd" },
+    });
+    const startTwice = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/start`, headers,
+      payload: { operationId: "op-eeeeeeeeeeee" },
+    });
+    expect(startTwice.statusCode).toBe(409);
+    // 未知 run 返回 not-found。
+    const missing = await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs/run-aaaaaaaaaaaa/start", headers,
+      payload: { operationId: "op-ffffffffffff" },
+    });
+    expect(missing.statusCode).toBe(404);
   });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
