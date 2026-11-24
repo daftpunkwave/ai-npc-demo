@@ -7,6 +7,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type { ClientContentView, ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
 import type { ProjectionState } from "@ai-npc/client-protocol";
+import { groupByNodeId } from "./node-index";
 
 type Tab = "characters" | "places" | "tasks" | "agreements" | "notebook";
 
@@ -73,11 +74,14 @@ function placesTab(
   selection: Selection | null,
   select: SelectionLike,
 ): ReactNode {
+  // 先按节点分组一次，把逐节点重扫全量库存与角色的平方级扫描降回线性。
+  const stockpilesByNode = groupByNodeId(projection.stockpiles);
+  const peopleByNode = groupByNodeId(projection.characters);
   return (
     <div className="place-list">
       {projection.map.nodes.map((node) => {
-        const stockpiles = projection.stockpiles.filter((stockpile) => stockpile.nodeId === node.nodeId);
-        const people = projection.characters.filter((character) => character.nodeId === node.nodeId);
+        const stockpiles = stockpilesByNode.get(node.nodeId) ?? [];
+        const people = peopleByNode.get(node.nodeId) ?? [];
         return (
           <button
             type="button"
