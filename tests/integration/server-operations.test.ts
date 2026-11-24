@@ -110,7 +110,11 @@ async function post(
 
 describe("运营操作幂等", () => {
   it("同键同内容重放返回首次结果且只写一次，同键不同内容 409", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
     // 时钟只能在开局后继续；先以 t0 开局，后续暂停/继续才有意义。
@@ -328,7 +332,11 @@ describe("运营操作幂等", () => {
   }, 30_000);
 
   it("重放旧的分支切换操作不会把在线入口切回已归档分支", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
 
@@ -396,7 +404,11 @@ describe("运营操作幂等", () => {
   }, 30_000);
 
   it("时钟版本冲突按 DomainError 返回 409 并记录首次失败", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
     const current = Number(clockRow(host, host.branchId)["run_version"]);
@@ -471,7 +483,11 @@ function captureError(fn: () => unknown): unknown {
 
 describe("运营失败记录的重试语义", () => {
   it("可重试失败视为未提交：同一 operationId 可换版本重试、更新记录并在成功后转为终态", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
     const operationId = "op-000000000071";
@@ -508,7 +524,11 @@ describe("运营失败记录的重试语义", () => {
   }, 30_000);
 
   it("不可重试失败保持终态：重放同一错误、换 payload 仍冲突，且失败记录不覆盖成功结果", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
     const operationId = "op-000000000072";
@@ -534,7 +554,11 @@ describe("运营失败记录的重试语义", () => {
   }, 30_000);
 
   it("可重试失败后同一 operationId 用新版本重试返回成功而不是幂等冲突", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
     const journal = new OperationJournal(host.storage, () => "2026-11-21T00:00:00.000Z", () => {});
@@ -582,7 +606,11 @@ describe("运营失败记录的重试语义", () => {
 
 describe("坏快照的错误分类", () => {
   it("冻结分支状态不一致的恢复请求返回稳定 invalid-state 而不是 plugin-failed", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const session = await loginSession(host, "player-token");
     const snapshot = await post(host, session, "/api/v1/campaign/snapshots", {
@@ -634,7 +662,11 @@ async function postConsole(
 
 describe("受控单步的运营入口", () => {
   it("operator 单步进入 stepping：重放返回首次结果，同键不同 ticks 冲突，过期版本冲突", async () => {
-    const host = await startHost({ dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token" });
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      // 本用例密集重放同一操作验证幂等，放宽限流；限流行为在专门用例里验证。
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
     hosts.push(host);
     const player = await loginSession(host, "player-token");
     const started = await post(host, player, "/api/v1/commands", {

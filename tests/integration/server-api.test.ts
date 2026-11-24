@@ -327,6 +327,9 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
   const save = new SqliteSaveService(harness.storage, harness.host);
   const accessPolicy = await accessPolicyFor(harness, overrides.accessPolicyConfig ?? {});
   const app = await createServerApp({
+    // 测试会密集发送请求验证幂等与并发语义，放宽限流阈值；
+    // 限流本身的触发行为在专门的用例里验证。
+    rateLimits: { read: 100_000, write: 100_000 },
     authority: harness.authority,
     accessPolicy,
     receipts: overrides.receipts ?? receiptsPortFor(harness),

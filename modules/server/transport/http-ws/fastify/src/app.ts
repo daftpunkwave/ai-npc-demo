@@ -11,6 +11,7 @@ import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import { DomainError, type Json, type StreamChannel } from "@ai-npc/contracts";
 import { StreamHub } from "./stream-hub";
+import { createRateLimiter, type RateLimitGroup } from "./rate-limit";
 import { channelsFor, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
 import { registerAuthRoutes } from "./routes/auth-routes";
 import { registerConsoleOperationsRoutes } from "./routes/console-operations-routes";
@@ -229,7 +230,25 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
           }
         }, 2_000);
   consoleHealthTimer?.unref();
+/**
+ * 计算限流分桶键。
+ *
+ * 只对 `/api/v1/` 下的接口限流：静态控制台资源与健康检查是廉价读，限流只会妨碍正常加载。
+ * 优先用承载凭据区分调用方（同一 NAT 后的不同用户不应共用配额）；
+ * 没有凭据时退化为远端地址，避免匿名请求无限放行。
+ */
+function rateLimitKeyOf(request: FastifyRequest): string | null {
+  if (!request.url.startsWith("/api/v1/")) return null;
+  const authorization = request.headers.authorization;
+  if (typeof authorization === "string" && authorization.length > 0) {
+    // 凭据本身不进限流键：只取其后段的稳定摘要前缀，避免把令牌留在内存映射里。
+    return `cred:${authorization.slice(-24)}`;
+  }
+  return `ip:${request.ip}`;
+}
   const context: RouteContext = { app, hub, options, identityByToken, branch, reportInternalError: report };
+  // 进程内限流器；凭据解析在鉴权路由内完成，这里只按可用的主体或远端地址分桶。
+  const rateLimiter = createRateLimiter(options.rateLimits);
   const requestSpans = new WeakMap<
     object,
     { readonly traceId: string; readonly spanId: string; readonly startedAt: number }
@@ -244,6 +263,18 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
       sendHttpError(reply, "forbidden", "Origin 不被允许");
+      return;
+    }
+    // 速率限制：按调用方主体计数，写接口阈值低于读接口。
+    // 只对需要鉴权的 API 生效——内容与健康检查是廉价读，限流只会妨碍正常加载。
+    const limiterKey = rateLimitKeyOf(request);
+    if (limiterKey === null) return;
+    const group: RateLimitGroup = request.method === "GET" || request.method === "HEAD" ? "read" : "write";
+    const decision = rateLimiter.check(limiterKey, group, Date.now());
+    if (!decision.allowed) {
+      // 429 与 Retry-After：让调用方知道何时可以重试，而不是盲目重投。
+      void reply.header("Retry-After", String(decision.retryAfterSeconds));
+      sendHttpError(reply, "budget-exhausted", `请求过于频繁，请等待 ${decision.retryAfterSeconds} 秒`);
     }
   });
 

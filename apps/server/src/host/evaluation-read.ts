@@ -59,6 +59,8 @@ export interface EvaluationReadInput {
   readonly lexicons: { readonly unknownMarkers: readonly string[]; readonly forgetMarkers: readonly string[] };
   /** 价目版本；缺失时报告里如实写「unknown」而不是编造一个日期。 */
   readonly pricingVersion: string;
+  /** 当前宿主的世界标识；读取与写入都限定在该作用域内。 */
+  readonly worldId: string;
 }
 
 /** 从 run 行读取字符串列；缺失时返回 null，避免把 undefined 当成合法值。 */
@@ -309,8 +311,14 @@ function commandTypesOf(stage: Readonly<Record<string, Json>>): readonly string[
 /** 构造评估只读端口。 */
 export function createEvaluationReadPort(input: EvaluationReadInput): EvaluationReadPort {
   const { storage, evaluation } = input;
+  /**
+   * 读取当前宿主作用域内的 run。
+   *
+   * 必须按 `world_id` 过滤：`runs` 是部署级表，同一 dataDir 下可能有多个世界的记录，
+   * 不过滤会让控制台读到其他世界的数据。
+   */
   const runRows = (): readonly Readonly<Record<string, unknown>>[] =>
-    storage.transact((tx) => tx.rows("runs").list({}));
+    storage.transact((tx) => tx.rows("runs").list({ world_id: input.worldId }));
 
   const summaryOf = (row: Readonly<Record<string, unknown>>): RunSummary => runSummary(row);
 
@@ -320,7 +328,7 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
    */
   const reportFor = (tx: Parameters<Parameters<StoragePort["transact"]>[0]>[0], runId: string): RunReport | null => {
     const run = tx.rows("runs").get({ run_id: runId });
-    if (run === null) return null;
+    if (run === null || String(run["world_id"]) !== input.worldId) return null;
     const branchId = stringCell(run, "branch_id") ?? "";
     const selection = scriptSelectionOf(run);
     const spec = jsonCell(run, "run_spec_json");
@@ -377,7 +385,8 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
     },
     run(runId) {
       const row = storage.transact((tx) => tx.rows("runs").get({ run_id: runId }));
-      if (row === null) return null;
+      // 跨 world 的 run 视为不存在：作用域外的数据不该经控制台暴露。
+      if (row === null || String(row["world_id"]) !== input.worldId) return null;
       // 契约要求 manifestHash 非空。未写摘要的 run 无法自证冻结输入，
       // 因此给出明确的「缺失」标记而不是空串，同时把该 run 报为证据不完整。
       const manifestHash = stringCell(row, "manifest_hash");

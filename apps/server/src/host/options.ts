@@ -24,6 +24,10 @@ export interface HostOptions {
   readonly rosterRef?: string;
   /** 在线世界首次启动时写入 RunSpec 的模型布局引用；缺省沿用 RunSpec 模板。 */
   readonly modelLayoutRef?: string;
+  /**
+   * 速率限制阈值覆盖；仅供测试与压测放宽，生产不设置即使用传输层默认阈值。
+   */
+  readonly rateLimits?: { readonly read?: number; readonly write?: number };
   readonly playerToken: string;
   readonly consoleToken: string;
   /** 可选的单角色控制台令牌；只发放对应角色。 */

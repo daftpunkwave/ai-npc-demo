@@ -25,6 +25,8 @@ export interface ExportRunInput {
   };
   /** 导出主体；用于审计与权限归属。 */
   readonly principalId: string;
+  /** 当前宿主的世界标识；导出范围限定在该世界内。 */
+  readonly worldId: string;
 }
 
 /** 导出包结构：清单、事件、turn 与 artifact 索引。 */
@@ -125,7 +127,8 @@ export async function exportRun(
 ): Promise<{ readonly artifactId: string }> {
   const bundle = input.storage.transact((tx) => {
     const run = tx.rows("runs").get({ run_id: request.runId });
-    if (run === null) return null;
+    // 跨 world 的 run 按不存在处理，避免经导出接口取到作用域外数据。
+    if (run === null || String(run["world_id"]) !== input.worldId) return null;
     const runId = request.runId;
     // 事件与 turn 是复核 run 行为的主要证据；artifact 索引用于定位大对象。
     // domain_events 是分支级表，必须经 branch(branchId) 访问。
@@ -146,7 +149,19 @@ export async function exportRun(
       manifestHash,
       events: redactRows(events, request.redaction),
       turns: redactRows(turns, request.redaction),
-      artifacts: redactRows(artifacts, request.redaction),
+      // 只导出 artifact 的元数据索引（标识、类型、摘要、大小），不导出 body 正文本体：
+      // artifact 可能是二进制模型响应或工具原始输出，随导出包外流的风险高于其复核价值。
+      artifacts: artifacts.map((row) => {
+        // 逐列取标量：artifact 行含 body 二进制，整行展开会把正文带进导出包。
+        const index: Record<string, Json> = {};
+        for (const column of ["artifact_id", "kind", "content_hash", "byte_size", "created_at"]) {
+          const value = row[column];
+          if (typeof value === "string" || typeof value === "number" || value === null) {
+            index[column] = value;
+          }
+        }
+        return index;
+      }),
     };
     return exported;
   });

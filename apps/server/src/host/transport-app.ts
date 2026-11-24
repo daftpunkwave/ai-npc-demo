@@ -160,6 +160,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
     });
     const modelLayouts = input.modelLayouts;
     return await runtime.transport.createApp({
+      ...(options.rateLimits === undefined ? {} : { rateLimits: options.rateLimits }),
       authority,
       accessPolicy: runtime.accessPolicy,
       receipts: reads.receipts,

@@ -137,6 +137,8 @@ function EvaluationPage(): ReactNode {
       return;
     }
     let cancelled = false;
+    // 立即清除上一个 run 的报告：加载期间继续显示旧数据会让读者以为那是当前 run 的结论。
+    setReport(null);
     setReportError(null);
     void reader.report(runId).then((next) => {
       if (!cancelled) setReport(next);

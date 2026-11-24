@@ -84,6 +84,7 @@ export function createRunWrites(input: RunWritesInput): RunWrites {
       storage: input.storage,
       artifacts: input.artifacts,
       principalId: request.principalId,
+      worldId: input.worldId,
     }, request),
   };
 }

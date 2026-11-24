@@ -324,6 +324,11 @@ export interface RecordSpanInput {
 
 export interface ServerAppOptions {
   readonly authority: AuthorityPort;
+  /**
+   * 速率限制阈值覆盖；测试需要大量并发请求时放宽，生产使用默认值。
+   * 按请求分组给出「窗口内允许次数」，未给出的分组沿用默认阈值。
+   */
+  readonly rateLimits?: { readonly read?: number; readonly write?: number };
   /** 装配的权限端口；玩家、控制台与 WS 频道的裁决都经此端口。 */
   readonly accessPolicy: AccessPolicy;
   /** 命令回执只读查询端口；传输层不直接访问存储。 */

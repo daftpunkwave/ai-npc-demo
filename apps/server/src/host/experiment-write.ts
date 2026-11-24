@@ -100,13 +100,16 @@ export async function createExperiment(
     // 否则会被当成内部故障，调用方拿不到可修正的信息。
     throw new DomainError("validation", `实验规格校验失败：${error instanceof Error ? error.message : String(error)}`);
   }
-  const runSpecs = runsOfExperiment(spec);
-  if (runSpecs.length > maxRunsPerExperiment) {
+  // 先算规模再展开：变体 × 分支 × 重复可以先相乘，避免为了发现超限而真的构造出巨大数组。
+  const branchCount = Math.max(1, spec.scriptBranches.length);
+  const planned = spec.variants.length * branchCount * spec.repetitions;
+  if (!Number.isSafeInteger(planned) || planned > maxRunsPerExperiment) {
     throw new DomainError(
       "validation",
-      `实验展开出 ${runSpecs.length} 个 run，超过单次上限 ${maxRunsPerExperiment}`,
+      `实验将展开出 ${planned} 个 run，超过单次上限 ${maxRunsPerExperiment}`,
     );
   }
+  const runSpecs = runsOfExperiment(spec);
 
   // 幂等：同一实验标识已有 run 时直接返回既有结果，不重复创建。
   // 没有这层检查时，重试同一请求会按相同规格再建一批 run，实验数据被污染成两份。
@@ -149,7 +152,15 @@ function existingRunsOf(
     if (experimentIdOfRow(row) !== experimentId) continue;
     const runId = runIdOfRow(row);
     if (runId === null) continue;
-    found.push({ runId, status: "ready", errors: [] });
+    // 返回真实状态而不是统一写 ready：已有 run 可能已经预检失败或已跑完，
+    // 统一报 ready 会让调用方误判可以启动。
+    const status = row["status"];
+    found.push({
+      runId,
+      status: status === "preflight-failed" ? "preflight-failed" : "ready",
+      // 预检失败的历史原因没有单独持久化，如实留空而不是编造一条。
+      errors: [],
+    });
   }
   return found;
 }

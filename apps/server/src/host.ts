@@ -242,6 +242,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     scripts: core.content.index.scripts,
     lexicons: core.content.locale.lexicons,
     pricingVersion: core.active.manifest.models === undefined ? "unknown" : pricingVersionOf(core.active.manifest.models),
+    worldId: core.active.worldId,
   });
 
   const transportApp = await createTransportApp({

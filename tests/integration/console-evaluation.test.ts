@@ -750,6 +750,60 @@ describe("控制台评估读取接口", () => {
     });
     expect(missing.statusCode).toBe(404);
   });
+  it("其他世界的 run 不出现在列表、详情与报告中", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    // 登记一条属于其他世界的 run：控制台读取必须看不到它。
+    // 先补一条 world 行满足外键约束（worlds 是部署级表，可容纳多个世界）。
+    // 存储层要求可序列化的 JSON 单元格；工厂返回的对象需经 JSON 往返去掉 undefined。
+    const runSpec = JSON.parse(JSON.stringify(testRunSpec({ id: "foreign-run" }))) as Record<string, never>;
+    host.storage.transact((tx) => {
+      tx.rows("worlds").put({
+        world_id: "wld-other-world", pack_id: "earth-2964-v1",
+        content_version: "1.0.0", created_at: new Date().toISOString(),
+      });
+      tx.rows("branches").put({
+        branch_id: "br-ffffffffffff", world_id: "wld-other-world",
+        kind: "experiment", status: "active", parent_branch_id: null,
+        forked_at_world_seq: 0, run_id: "run-ffffffffffff",
+        profile_hash: null, created_at: new Date().toISOString(),
+      });
+      tx.rows("runs").put({
+        run_id: "run-ffffffffffff", world_id: "wld-other-world",
+        branch_id: "br-ffffffffffff", mode: "closed-loop", status: "ready",
+        run_spec_json: runSpec, manifest_json: {}, manifest_hash: "hash",
+        contaminated: 0, evidence_complete: 1, created_at: new Date().toISOString(),
+        started_at: null, ended_at: null,
+      });
+    });
+
+    const list = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json());
+    expect(list.runs.map((run) => run.runId)).not.toContain("run-ffffffffffff");
+
+    // 直接按 ID 访问也当作不存在。
+    const detail = await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs/run-ffffffffffff", headers,
+    });
+    expect(detail.statusCode).toBe(404);
+    const report = await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs/run-ffffffffffff/report", headers,
+    });
+    expect(report.statusCode).toBe(404);
+    // 启动控制同样拒绝作用域外的 run。
+    const start = await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs/run-ffffffffffff/start", headers,
+      payload: { operationId: "op-999999999999" },
+    });
+    expect(start.statusCode).toBe(404);
+    // 导出也拒绝。
+    const exported = await host.app.inject({
+      method: "POST", url: "/api/v1/console/exports", headers,
+      payload: { runId: "run-ffffffffffff", redaction: "redacted", operationId: "op-888888888888" },
+    });
+    expect(exported.statusCode).toBe(404);
+  });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

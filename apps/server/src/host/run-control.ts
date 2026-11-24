@@ -83,6 +83,7 @@ function prepare(
   request: RunControlRequest,
   kind: RunControlKind,
   allowed: ReadonlySet<string>,
+  worldId: string,
 ): { readonly replay: RunControlResult } | { readonly context: ControlContext } {
   const replay = replayOf(tx, request, kind);
   if (replay !== null) {
@@ -93,7 +94,10 @@ function prepare(
     return { replay: { runId, status: replay.status } };
   }
   const run = tx.rows("runs").get({ run_id: runId });
-  if (run === null) throw new DomainError("not-found", `run ${runId} 不存在`);
+  // 跨 world 的 run 一律按不存在处理：作用域外数据不参与本宿主的状态流转。
+  if (run === null || String(run["world_id"]) !== worldId) {
+    throw new DomainError("not-found", `run ${runId} 不存在`);
+  }
   const status = String(run["status"]);
   if (!allowed.has(status)) {
     const action = kind === "start" ? "启动" : "停止";
@@ -133,7 +137,7 @@ function recordControl(
 export function startRun(input: RunControlInput, runId: string, request: RunControlRequest): RunControlResult {
   const now = input.host.nowIso();
   return input.storage.transact((tx) => {
-    const prepared = prepare(tx, runId, request, "start", startableStatuses);
+    const prepared = prepare(tx, runId, request, "start", startableStatuses, input.worldId);
     if ("replay" in prepared) return prepared.replay;
     const { run, branchId, clock } = prepared.context;
     const clockTable = tx.branch(branchId).table("clock");
@@ -162,7 +166,7 @@ export function startRun(input: RunControlInput, runId: string, request: RunCont
 export function stopRun(input: RunControlInput, runId: string, request: RunControlRequest): RunControlResult {
   const now = input.host.nowIso();
   return input.storage.transact((tx) => {
-    const prepared = prepare(tx, runId, request, "stop", stoppableStatuses);
+    const prepared = prepare(tx, runId, request, "stop", stoppableStatuses, input.worldId);
     if ("replay" in prepared) return prepared.replay;
     const { run, branchId, clock } = prepared.context;
     if (clock === null) {
