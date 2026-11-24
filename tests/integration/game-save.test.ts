@@ -13,6 +13,7 @@ import {
   disposeTrackedGameHarnesses,
   setGameClock,
   startNeutralCampaign,
+  withGamePorts,
   type GameHarness,
 } from "./game-support";
 
@@ -238,6 +239,33 @@ describe("SQLite 存档", () => {
 
     // 历史分支与恢复所用快照仍可查询，且仍在当前 campaign 的快照列表内。
     expect(save.listSnapshots().map((item) => item.snapshotId)).toEqual([snapshot.snapshotId]);
+  });
+
+  it("旧 campaign 状态缺少 cityResources 时快照恢复后读作 null", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    setGameClock(value, { worldTick: 5, mode: "paused" });
+    seedOnlineRun(value);
+    // 模拟旧版本写入的 campaign 聚合：没有 cityResources 键。
+    value.storage.transact((tx) => {
+      const table = tx.branch(value.branchId).table("aggregate_state");
+      const row = table.get({ aggregate_type: "campaign", aggregate_id: "campaign" });
+      if (row === null) {
+        throw new Error("测试缺少 campaign 聚合");
+      }
+      const state = row["state_json"] as Record<string, Json>;
+      delete state["cityResources"];
+      table.put({ ...row, state_json: state, version: Number(row["version"]) + 1 });
+    });
+    const save = new SqliteSaveService(value.storage, value.host);
+    const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "旧状态恢复点", createdBy: "operator-1" });
+    const restored = save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
+    const campaign = withGamePorts(value, (ports) => ports["game.world"].campaign(), restored.branchId);
+    expect(campaign).toMatchObject({
+      status: "running",
+      outcome: null,
+      cityResources: null,
+    });
   });
 
   it("快照不完整时恢复 dry-run 失败且不产生任何写入", async () => {

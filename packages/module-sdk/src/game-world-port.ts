@@ -5,6 +5,7 @@
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type {
+  CityResourceAmounts,
   MeterChangeCause,
   NumericMeterId,
   ReasonCode,
@@ -77,6 +78,8 @@ export interface CampaignView {
   readonly startTick: number;
   readonly status: "running" | "evaluated";
   readonly outcome: "equilibrium" | "strained" | null;
+  /** t168 评估时写入的六种城市资源；序章未结束时为 null。 */
+  readonly cityResources: CityResourceAmounts | null;
 }
 
 /** 委托快照；stockpileId 为 null 表示只委托队伍，remaining 是各资源的剩余可动用额度。 */

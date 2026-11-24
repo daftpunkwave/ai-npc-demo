@@ -34,6 +34,7 @@ import { expectInvalid, expectValid } from "./support";
 const expectedCommandTypes = [
   "campaign.start",
   "dialogue.say",
+  "broadcast.say",
   "speech.commit",
   "seat.say",
   "information.share",
@@ -75,6 +76,7 @@ const broadcastEffect = {
 const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
   "campaign.start": { factionId: "human-neutral" },
   "dialogue.say": { targetAgentId: agentId, text: "你好" },
+  "broadcast.say": { text: "今晚之前把水闸条款交到议事桌。" },
   "speech.commit": {
     channel: "message",
     conversationId: null,
@@ -172,6 +174,20 @@ describe("命令目录", () => {
     expectValid(commandRequestSchema, { type, payload: validPayloads[type] });
     expectInvalid(commandRequestSchema, { type, payload: { factionId: "human-neutral" }, extra: true });
     expectInvalid(commandRequestSchema, { type: "unknown.command", payload: {} });
+  });
+});
+
+describe("公开广播载荷边界", () => {
+  const schema = commandPayloadSchemas["broadcast.say"];
+
+  it("正文字数上限为 300，空正文、超限与额外字段被拒绝", () => {
+    expectValid(schema, { text: "字" });
+    expectValid(schema, { text: "字".repeat(300) });
+    expectInvalid(schema, { text: "" });
+    expectInvalid(schema, { text: "字".repeat(301) });
+    expectInvalid(schema, { text: "广播", extra: true });
+    expectInvalid(schema, { text: 1 });
+    expectInvalid(schema, null);
   });
 });
 

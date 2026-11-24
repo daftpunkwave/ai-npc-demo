@@ -14,6 +14,7 @@ import { effectivePrincipalKind } from "./types";
 export const commandIssuerKinds = {
   "campaign.start": ["player", "system"],
   "dialogue.say": ["player"],
+  "broadcast.say": ["player"],
   "speech.commit": ["agent", "system"],
   "seat.say": ["operator"],
   "information.share": ["player", "agent", "operator"],

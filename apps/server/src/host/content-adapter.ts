@@ -59,5 +59,6 @@ export function toGameContent(content: ContentPack): GameContent {
     chapterId: content.lore.chapter.id,
     initialMeters: content.worldInit.meters,
     dutyDelegations: content.worldInit.dutyDelegations,
+    ...(content.worldInit.cityResources === undefined ? {} : { cityResources: content.worldInit.cityResources }),
   };
 }

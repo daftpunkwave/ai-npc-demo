@@ -69,6 +69,7 @@ function content(roads: GameContent["roads"]): GameContent {
       "watergate.allocation": "harbor-first",
     },
     dutyDelegations: [],
+    cityResources: { energy: 0, materials: 0, food: 0, supply: 0, medical: 0, water: 0 },
   };
 }
 

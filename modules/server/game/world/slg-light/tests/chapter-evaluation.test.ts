@@ -44,9 +44,8 @@ describe("章节评估权限与惰性计数", () => {
     expect(countsRead).toBe(false);
   });
 
-  it("未到章节长度时不评估也不读取协议计数", () => {
-    let countsRead = false;
-    const tx = new TestWorldTx(100);
+  it("旧 campaign 状态缺少 cityResources 时仍可评估，交接读作 null", () => {
+    const tx = new TestWorldTx(168);
     tx.put("campaign", "campaign", {
       campaignId: "cmp-000000000001",
       factionId: "human-neutral",
@@ -56,13 +55,26 @@ describe("章节评估权限与惰性计数", () => {
       status: "running",
       outcome: null,
     });
+    tx.put("meters", "meters", {
+      "relay.stability": 45,
+      "orchard.water": 50,
+      "migration.safety": 50,
+      "watergate.allocation": "harbor-first",
+      triggered: [],
+      lastDailyTick: 168,
+    });
     const port = createWorldPort(() => tx, emptyContent, createTestHost().ids);
-    expect(
-      port.evaluateChapter(() => {
-        countsRead = true;
-        return noCounts();
+    expect(port.evaluateChapter(noCounts)).toEqual({ stopClock: true });
+    const emitted = tx.events();
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        type: "ChapterStageEvaluated",
+        payload: expect.objectContaining({ cityResources: null }),
       }),
-    ).toBeUndefined();
-    expect(countsRead).toBe(false);
+    );
+    expect(tx.get<Record<string, unknown>>("campaign", "campaign")?.state).toMatchObject({
+      status: "evaluated",
+      cityResources: null,
+    });
   });
 });
