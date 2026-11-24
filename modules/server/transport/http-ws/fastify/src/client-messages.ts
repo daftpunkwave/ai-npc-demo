@@ -4,7 +4,12 @@
  * 禁止向未订阅频道推送、跨分支补发旧序号，或在会话失效后继续处理新订阅。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 类型签名参数名用于表达频道准入契约。 */
-import { clientStreamMessageSchema, type AuthContext, type StreamChannel } from "@ai-npc/contracts";
+import {
+  clientStreamMessageSchema,
+  streamCloseCodes,
+  type AuthContext,
+  type StreamChannel,
+} from "@ai-npc/contracts";
 import type { ReplayStore } from "./replay-store";
 import type { SessionRegistry } from "./session-registry";
 import type { SocketSender } from "./stream-delivery";
@@ -51,7 +56,7 @@ export function handleClientMessage(deps: ClientMessageDeps, socket: StreamSocke
   }
   const session = deps.sessions.activeSession(connection.sessionId);
   if (session === null) {
-    deps.sender.close(socket, 4401, "session expired");
+    deps.sender.close(socket, streamCloseCodes.sessionInvalid, "session expired");
     return;
   }
   if (!deps.channelsFor(session.auth).includes(value.channel)) {

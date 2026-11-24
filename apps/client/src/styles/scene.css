@@ -121,6 +121,17 @@
   white-space: nowrap;
 }
 
+/* 带错误帧原因的连接提示是可变长文案：限制宽度并允许折行，不撑破 HUD 布局。 */
+.hud-connection-with-reason {
+  max-width: 360px;
+  white-space: normal;
+}
+
+.hud-connection-with-reason small {
+  font-size: 0.9em;
+  opacity: 0.85;
+}
+
 .hud-connection-expired {
   color: var(--danger);
   border-color: currentColor;

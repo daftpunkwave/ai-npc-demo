@@ -354,7 +354,8 @@ describe("WS 流中心", () => {
       expect(hub.authenticate(session.token)).toBeNull();
       const expired = new FakeSocket();
       hub.accept(expired, unusedTicket);
-      expect(expired.closed?.code).toBe(4401);
+      // 票据在会话语义上已不可用（票据已过 TTL），握手以票据关闭码拒绝。
+      expect(expired.closed?.code).toBe(4408);
 
       hub.sweep();
       expect(hub.stats()).toMatchObject({ sessions: 0, tickets: 0, replayBuffers: 0 });
@@ -579,8 +580,7 @@ describe("WS 流中心", () => {
     }
   });
 
-  it("等长错误令牌不认证也不注销原会话，票据保持一次性消费", () => {
-    const hub = createHub();
+  it("等长错误令牌不认证也不注销原会话，票据保持一次性消费", () => {    const hub = createHub();
     try {
       const session = hub.login({ token: "player-login-token", auth: playerAuth });
       // 等长但内容不同：查找命中摘要候选后由常量时间比较拒绝。
@@ -599,9 +599,43 @@ describe("WS 流中心", () => {
       expect(accepted.closed).toBeNull();
       const reused = new FakeSocket();
       hub.accept(reused, ticket);
-      expect(reused.closed?.code).toBe(4401);
+      // 重复消费是票据问题，不是会话失效：客户端据此重新申请票据而不是登出。
+      expect(reused.closed?.code).toBe(4408);
     } finally {
       hub.close();
+    }
+  });
+
+  it("票据失效与会话失效使用不同关闭码，客户端据此区分重连与登出", () => {
+    // 票据过期：会话本身仍有效，客户端应重新申请票据而不是清除会话令牌。
+    let ticketNow = 0;
+    const ticketHub = createHub({ now: () => ticketNow, ticketTtlMs: 1_000, sessionTtlMs: 60_000 });
+    try {
+      const session = ticketHub.login({ token: "player-login-token", auth: playerAuth });
+      const staleTicket = ticketHub.issueTicket(session.sessionId).ticket;
+      ticketNow += 1_001;
+      const staleSocket = new FakeSocket();
+      ticketHub.accept(staleSocket, staleTicket);
+      expect(staleSocket.closed?.code).toBe(4408);
+      // 会话没有被票据失败牵连。
+      expect(ticketHub.authenticate(session.token)).not.toBeNull();
+    } finally {
+      ticketHub.close();
+    }
+
+    // 票据仍在有效期内，但它绑定的会话已过期：此时必须是会话失效码，客户端停止重连。
+    let sessionNow = 0;
+    const sessionHub = createHub({ now: () => sessionNow, ticketTtlMs: 60_000, sessionTtlMs: 1_000 });
+    try {
+      const session = sessionHub.login({ token: "player-login-token", auth: playerAuth });
+      const liveTicket = sessionHub.issueTicket(session.sessionId).ticket;
+      sessionNow += 1_001;
+      // 未经 sweep 的过期会话依然不得凭票据建立连接。
+      const expiredSocket = new FakeSocket();
+      sessionHub.accept(expiredSocket, liveTicket);
+      expect(expiredSocket.closed?.code).toBe(4401);
+    } finally {
+      sessionHub.close();
     }
   });
 });

@@ -10,6 +10,7 @@ import { createWorldViewModule, type WorldViewPort } from "../src/plugin";
 import {
   isSessionInvalidCloseCode,
   isSessionInvalidError,
+  isTicketInvalidCloseCode,
   reconnectDelayMs,
 } from "../src/connection-policy";
 
@@ -230,6 +231,10 @@ describe("重连退避策略", () => {
     for (const code of [1000, 1006, 4400, 5000]) {
       expect(isSessionInvalidCloseCode(code)).toBe(false);
     }
+    // 票据失效是另一类语义：可重试，绝不能触发登出。
+    expect(isTicketInvalidCloseCode(4408)).toBe(true);
+    expect(isTicketInvalidCloseCode(4401)).toBe(false);
+    expect(isSessionInvalidCloseCode(4408)).toBe(false);
     expect(isSessionInvalidError(new DomainError("unauthenticated", "登录已失效"))).toBe(true);
     expect(isSessionInvalidError(new DomainError("forbidden", "无权访问"))).toBe(true);
     expect(isSessionInvalidError(new DomainError("provider-failed", "网络错误"))).toBe(false);
@@ -274,7 +279,19 @@ describe("世界视图流连接", () => {
     FakeWebSocket.instances[2]?.open();
     // 仅建连尚未收到服务端帧时保留退避计数。
     expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: 2 });
+    // hello 只证明连接建立，不证明玩家频道能收到数据：退避计数保持原值。
     FakeWebSocket.instances[2]?.serverMessage(hello);
+    expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: 2 });
+    // 收到玩家频道快照后才视为恢复稳定。
+    FakeWebSocket.instances[2]?.serverMessage({
+      type: "snapshot",
+      channel: "player",
+      streamSeq: 2,
+      projectionVersion: 2,
+      worldId: session.worldId,
+      branchId: session.branchId,
+      data: projection,
+    });
     expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: 0 });
 
     FakeWebSocket.instances[2]?.serverClose(1006);
@@ -346,6 +363,122 @@ describe("世界视图流连接", () => {
     expect(harness.tickets()).toBe(1);
     await dispose();
   });
+
+  it("收到 4408 票据关闭码时重新申请票据并重连，不清除会话令牌", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+    FakeWebSocket.instances[0]?.open();
+    FakeWebSocket.instances[0]?.serverMessage(hello);
+
+    // 后台标签页挂起超过票据的 30 秒有效期后建连，服务端以 4408 拒绝。
+    FakeWebSocket.instances[0]?.serverClose(4408);
+
+    // 会话令牌仍然有效：不能把它当成会话失效。
+    expect(harness.cleared()).toBe(0);
+    expect(port.getConnectionState()).toMatchObject({ kind: "reconnecting", attempt: 1 });
+    const requests = harness.tickets();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.tickets()).toBe(requests + 1);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    await dispose();
+  });
+});
+
+describe("服务端 error 帧", () => {
+  it("forbidden 错误帧映射为会话失效并清除本地令牌", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+    FakeWebSocket.instances[0]?.open();
+
+    FakeWebSocket.instances[0]?.serverMessage({
+      type: "error",
+      code: "forbidden",
+      safeMessage: "频道不可用",
+    });
+
+    expect(port.getConnectionState()).toMatchObject({ kind: "session-expired" });
+    expect(harness.cleared()).toBe(1);
+    const requests = harness.tickets();
+    await vi.advanceTimersByTimeAsync(120_000);
+    // 会话已失效：不得继续重连。
+    expect(harness.tickets()).toBe(requests);
+    await dispose();
+  });
+
+  it("validation 错误帧按退避重连且不让连接停在无数据状态", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+    FakeWebSocket.instances[0]?.open();
+    FakeWebSocket.instances[0]?.serverMessage(hello);
+    expect(port.getConnectionState()).toMatchObject({ kind: "connected" });
+
+    FakeWebSocket.instances[0]?.serverMessage({
+      type: "error",
+      code: "validation",
+      safeMessage: "消息格式不合法",
+    });
+
+    // 非会话类错误不清除令牌，但必须进入明确的可观测状态并重连。
+    expect(harness.cleared()).toBe(0);
+    expect(port.getConnectionState()).toMatchObject({
+      kind: "reconnecting",
+      attempt: 1,
+      error: "消息格式不合法",
+    });
+    const requests = harness.tickets();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.tickets()).toBe(requests + 1);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    await dispose();
+  });
+
+  it("每轮先收到 hello 再收到 error 时，退避计数仍继续增长", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+
+    const seenAttempts: number[] = [];
+    // 订阅被拒时服务端先发 hello 再发 error；若在 hello 处清零退避，
+    // 每轮都会回到 1 秒，形成对服务端的固定频率重试。
+    for (let round = 0; round < 3; round += 1) {
+      const socket = FakeWebSocket.instances.at(-1);
+      socket?.open();
+      socket?.serverMessage(hello);
+      expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: round });
+      socket?.serverMessage({ type: "error", code: "validation", safeMessage: "频道不可用" });
+      const state = port.getConnectionState();
+      expect(state.kind).toBe("reconnecting");
+      seenAttempts.push(state.attempt);
+      await vi.advanceTimersByTimeAsync(state.retryInMs ?? 0);
+    }
+
+    expect(seenAttempts).toEqual([1, 2, 3]);
+    expect(harness.cleared()).toBe(0);
+    await dispose();
+  });
+
+  it("持续收到 validation 错误帧时重连按指数退避且有上限", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+
+    // 每轮都重复同一条错误帧：退避必须继续增长，而不是回到 1 秒热循环。
+    for (let round = 0; round < 3; round += 1) {
+      const socket = FakeWebSocket.instances.at(-1);
+      socket?.open();
+      socket?.serverMessage({ type: "error", code: "validation", safeMessage: "消息格式不合法" });
+      const retryInMs = port.getConnectionState().retryInMs;
+      expect(retryInMs).toBeGreaterThanOrEqual(1_000);
+      await vi.advanceTimersByTimeAsync(retryInMs ?? 0);
+    }
+
+    expect(port.getConnectionState()).toMatchObject({ kind: "reconnecting", attempt: 3 });
+    expect(harness.cleared()).toBe(0);
+    await dispose();
+  });
 });
 
 describe("在线分支切换", () => {
@@ -392,6 +525,45 @@ describe("在线分支切换", () => {
     await dispose();
   });
 });
+describe("领域校验拒绝的增量", () => {
+  it("领域字段非法的 delta 不推进游标，并触发重新取快照补齐", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+    FakeWebSocket.instances[0]?.open();
+    FakeWebSocket.instances[0]?.serverMessage(hello);
+
+    // 起始快照建立基线：streamSeq 为 1。
+    FakeWebSocket.instances[0]?.serverMessage({
+      type: "snapshot",
+      channel: "player",
+      streamSeq: 1,
+      projectionVersion: 1,
+      worldId: session.worldId,
+      branchId: session.branchId,
+      data: { ...projection, clock: { ...projection.clock, worldTick: 4 } },
+    });
+    expect(port.getSnapshot()).toMatchObject({ streamSeq: 1 });
+
+    // 传输层 schema 放行（set 只要求是合法 JSON），领域 schema 拒绝。
+    FakeWebSocket.instances[0]?.serverMessage({
+      type: "delta",
+      channel: "player",
+      streamSeq: 2,
+      projectionVersion: 2,
+      set: { clock: { worldTick: "非法" } },
+    });
+
+    // 游标停在 1：被拒绝的增量没有被当作已应用。
+    expect(port.getSnapshot()).toMatchObject({ streamSeq: 1 });
+    // 已经通过 refresh 重新取快照补齐基线，而不是把缺口留到下次重连。
+    await vi.waitFor(() => {
+      expect(port.getSnapshot()?.projection.clock.worldTick).toBe(0);
+    });
+    await dispose();
+  });
+});
+
 describe("分支切换期间的投影请求竞态", () => {
   it("切换分支后旧的 worldView 响应被丢弃", async () => {
     let release: (() => void) | null = null;

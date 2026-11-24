@@ -23,7 +23,7 @@ export function registerStreamRoutes(context: RouteContext): void {
   app.get("/api/v1/streams", { websocket: true }, (socket, request) => {
     const query = request.query as { readonly ticket?: string };
     const ticketValue = typeof query.ticket === "string" ? query.ticket : undefined;
-    // 票据一次性使用与握手校验都由流中心完成；失败以 4401 关闭连接。
+    // 票据一次性使用与握手校验都由流中心完成；票据不可用以 4408 关闭，会话失效用 4401。
     hub.accept(socket as unknown as StreamSocket, ticketValue);
   });
 }
