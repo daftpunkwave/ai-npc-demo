@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 工程与服务端基础 | workspace、公共契约、kernel、存储、authority 与服务端宿主 | 已有 SQLite 分支复制与备份、命令网关、事件消费者、装配预检，以及在线 RunSpec 与 manifest 冻结 | **已实现** |
 | 玩家身份与开局 | 公社党魁，占 `seat.commune` | 以 `player-1` 登录；`campaign.start` 与 `/campaign` 只开放 `human-neutral`，其余四席 `enabled: false` | **已对齐** |
-| 玩家权力 | 直接改水闸、以党魁身份签水闸条款、公开广播 | `policy.set` 与 `water-allocation` 条款已按 campaign 的玩家与派系裁决；公开广播命令待定稿 | **部分实现** |
+| 玩家权力 | 直接改水闸、以党魁身份签水闸条款、公开广播 | `policy.set` 与 `water-allocation` 条款已按 campaign 的玩家与派系裁决；`broadcast.say` 对同一玩家开放并按公开广播规则冻结投递 | **已对齐** |
 | 席位契约 | 命令、事件、投影、存档可追溯席位与实际动作者 | 以 principal、派系和分支关联数据，公共契约及持久层未记录 `seatId` | **待补契约** |
 | Agent 编制 | 15 个，即 8 名支持者、4 名 AI 党魁和 3 名外域 Agent | `standard-15` 绑定 8 名公社支持者、4 名 AI 党魁与 3 名外域；内容包同步为 11 条角色与 8 条派系记录 | **已对齐** |
 | 运行配额 | 在线、实验及探针合计 15 个活动身份 | 激活事务统计所有活动或暂停分支的活动身份，开局和在线恢复执行同一配额检查 | **已对齐在线流程** |
@@ -54,6 +54,7 @@
 18. **评估读取接口与控制台页面**：`/api/v1/console/runs`（列表、详情、报告）与 `/api/v1/console/experiments`（列表、详情）按角色鉴权，研究员与评估员可读，玩家与操作员返回 403；`console.evaluation.standard` 页面可选实验与 run、展示分组汇总与逐格样本数，不可计算指标显示 `n/a`，样本少于 3 例标注「样本不足」。实验标识按配置引用格式校验（如 `exp-memory-promise-v1`），与运行期生成的 12 位 base32 ID 区分开。读取一律以归档结论为准：探针有效性沿用 `probe_results` 执行时写入的判定，延迟由 turn 的 `started_at`/`ended_at` 计算，缺脚本声明的探针标记为证据不完整；不按 `seed` 文本推断实验归属。
 19. **评估写入接口（创建 run 与导出）**：研究者可 `POST /api/v1/console/runs` 创建 run，预检覆盖规格交叉校验、装配可加载性与 manifest 冻结，失败返回 `preflight-failed` 与逐条原因且不落库；`POST /api/v1/console/exports` 导出 run 的 manifest、事件与 turn 的 artifact，`redacted` 清空正文、`raw` 保留正文，两者都不输出凭据解析值。评估员对这两个接口返回 403。`POST /experiments` 已实现：按实验规格展开「变体 × 脚本分支 × 重复次数」并逐个创建 run，实验标识写入每个 RunSpec，评估读取据此归组而不依赖 `seed` 文本。`POST /runs/{runId}/start|stop` 已实现：启动把 run 置为 `running` 并初始化该分支时钟，停止置为 `paused` 并同步时钟，状态不符返回 409。实验 run 的执行器（按脚本检查点驱动受控时钟、发起探针、写 `probe_results` 与 `experiment_results`）尚未实现，因此 run 启动后不会自行推进到脚本检查点。
 20. **t168 城市资源交接**：`world-init.yaml` 新增 `cityResources`，按数值基线写入能源 140、材料 160、食物 120、供给 60、医疗 40、水 72。t168 章节评估在同一事务把该快照写入 `ChapterStageEvaluated` 与 campaign 聚合；评估后的玩家投影给出 `cityResources`，序章库存与已发生的消耗保持不变。旧事件与旧存档缺少该字段时按 `null` 读取。内容版本同步提升到 `0.3.0`，资产清单版本随之更新。
+21. **玩家公开广播**：`broadcast.say` 只允许已开局 campaign 的玩家主体发行。通信模块按 campaign 的玩家与派系公社席裁决权限，发布位置取玩家所在节点，按公开广播规则冻结投递并提交 `MessageSent`；中继中断时只保留同节点收件者。角色与传闻路径不变。
 
 ## 3. 剩余迁移项
 
@@ -71,7 +72,7 @@
 
 ### 3.4 玩家公开广播
 
-规则要求公社党魁可以以玩家身份提交广播正文，复用 comms 的送达规则。命令名、正文长度与提交入口尚未定稿；当前玩家命令白名单没有广播类命令，事件契约也没有对应的玩家命令。定稿后经命令网关提交 `MessageSent`，与 Agent 的安全对白流程保持独立。
+状态：已交付。`broadcast.say` 由通信模块注册，只接受已开局 campaign 的玩家主体；处理器确认其派系持有公社席后，按公开广播规则计算并冻结投递，提交 `MessageSent`（channel `broadcast`）。发布位置取玩家所在节点，中继中断时只保留同节点收件者。Agent 的广播仍走 `speech.commit` 的批准流程，两条路径互不复用。
 
 ### 3.5 席位契约
 

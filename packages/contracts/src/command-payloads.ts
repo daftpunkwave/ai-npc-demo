@@ -65,6 +65,16 @@ export const seatSayPayloadSchema = z
   })
   .strict();
 
+/**
+ * 公社党魁以玩家身份提交的公开广播正文。
+ * 正文上限与对白一致；投递位置由服务端按玩家所在节点计算，不接受客户端自报。
+ */
+export const broadcastSayPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(300),
+  })
+  .strict();
+
 export const informationSharePayloadSchema = z
   .object({
     evidenceId: contentIdSchemas.ev,

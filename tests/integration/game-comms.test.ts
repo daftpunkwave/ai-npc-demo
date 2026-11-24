@@ -133,6 +133,70 @@ describe("通信", () => {
     expect(events.filter((event) => event.type === "KnowledgeGranted").length).toBeGreaterThan(0);
   });
 
+  it("玩家公开广播写入 MessageSent 并按广播规则冻结投递", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const broadcast = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("broadcast.say", { text: "今晚之前把水闸条款交到议事桌。" }, value.host.ids("cmd")),
+    );
+    expect(broadcast.commandStatus).toBe("accepted");
+    const sent = payloadOf(readGameEvents(value), "MessageSent");
+    expect(sent).toMatchObject({
+      fromId: "player-1",
+      channel: "broadcast",
+      intentKind: "none",
+      to: ["public"],
+    });
+    const deliveries = deliveriesOf(sent);
+    // 发布地在灰港：同节点的温原立即收到，异地的追风按中继正常 +1 tick。
+    expect(deliveryTick(deliveries, "player-1")).toBe(0);
+    expect(deliveryTick(deliveries, "npc-wenyuan")).toBe(0);
+    expect(deliveryTick(deliveries, "species-fauna")).toBe(1);
+    const event = readGameEvents(value).find(
+      (candidate) => candidate.type === "MessageSent" && (candidate.payload as Record<string, Json>)["channel"] === "broadcast",
+    );
+    expect(event?.audience).toEqual([{ kind: "public" }]);
+  });
+
+  it("非玩家主体不能发行公开广播，未开局时广播被拒绝", async () => {
+    const notStarted = await harness();
+    const paused = notStarted.authority.commands.execute(
+      playerAuth(notStarted),
+      gameCommandEnvelope("broadcast.say", { text: "未开局广播" }, notStarted.host.ids("cmd")),
+    );
+    // 未开局时没有 campaign，处理器按无权限拒绝，且不写通信事件。
+    expect(paused).toMatchObject({ commandStatus: "rejected", reasonCode: "no-authority" });
+
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const system = value.authority.commands.execute(
+      createSystemAuth(value.worldId, value.branchId),
+      gameCommandEnvelope("broadcast.say", { text: "系统广播" }, value.host.ids("cmd")),
+    );
+    expect(system).toMatchObject({ commandStatus: "rejected", reasonCode: "no-authority" });
+    expect(readGameEvents(value).some((event) => event.type === "MessageSent" && (event.payload as Record<string, Json>)["channel"] === "broadcast")).toBe(false);
+  });
+
+  it("中继中断时广播只冻结发布地同节点收件者", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    setRelay(value, 0);
+    const broadcast = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("broadcast.say", { text: "中继中断时的广播" }, value.host.ids("cmd")),
+    );
+    expect(broadcast.commandStatus).toBe("accepted");
+    const sent = payloadOf(readGameEvents(value), "MessageSent");
+    const deliveries = deliveriesOf(sent);
+    expect(deliveries.map((delivery) => delivery.principalId)).toContain("npc-wenyuan");
+    expect(deliveries.map((delivery) => delivery.principalId)).not.toContain("species-fauna");
+    const event = readGameEvents(value).find(
+      (candidate) => candidate.type === "MessageSent" && (candidate.payload as Record<string, Json>)["channel"] === "broadcast",
+    );
+    expect(event?.audience).not.toEqual([{ kind: "public" }]);
+  });
+
   it("同节点对话立即送达，异地对话在中继正常时立即送达", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
