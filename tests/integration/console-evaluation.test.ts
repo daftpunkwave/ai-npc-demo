@@ -677,6 +677,93 @@ describe("控制台评估读取接口", () => {
     expect(host.storage.transact((tx) => tx.branch(branchId).table("clock").get({})?.["mode"])).toBe("paused");
   });
 
+  it("同一 operationId 重放返回原结果，用于其他 run 时报冲突", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const makeRun = async (id: string) => runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: {
+        schemaVersion: 1, id,
+        moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+        scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: `${id}:rep1`,
+        player: { principalId: "player-1", factionId: null },
+        mode: "closed-loop", initialState: { kind: "cold-start" }, variant: null, script: null,
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+        failurePolicy: "strict",
+      } },
+    })).json());
+    const first = await makeRun("idem-run-a");
+    const second = await makeRun("idem-run-b");
+
+    // 首次启动成功；同一 operationId 重放返回原结果，不重复推进版本。
+    const started = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${first.runId}/start`, headers,
+      payload: { operationId: "op-111111111111" },
+    });
+    expect(started.statusCode).toBe(200);
+    const replay = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${first.runId}/start`, headers,
+      payload: { operationId: "op-111111111111" },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(started.json());
+
+    // 同一 operationId 用于其他 run：幂等冲突，不能静默当成新操作。
+    const conflicting = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${second.runId}/start`, headers,
+      payload: { operationId: "op-111111111111" },
+    });
+    expect(conflicting.statusCode).toBe(409);
+  });
+
+  it("停止后可从 paused 恢复，且保留已推进的 tick", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: {
+        schemaVersion: 1, id: "resume-run",
+        moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+        scenarioRef: "watergate-v1", rosterRef: "core-3",
+        modelLayoutRef: "deterministic-model-layout-v1", seed: "resume-run:rep1",
+        player: { principalId: "player-1", factionId: null },
+        mode: "closed-loop", initialState: { kind: "cold-start" }, variant: null, script: null,
+        clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+        failurePolicy: "strict",
+      } },
+    })).json());
+    const branchId = String(host.storage.transact((tx) =>
+      tx.rows("runs").get({ run_id: created.runId })?.["branch_id"]));
+
+    await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/start`, headers,
+      payload: { operationId: "op-222222222222" },
+    });
+    // 模拟执行推进：把分支时钟推到 tick 7。
+    host.storage.transact((tx) => {
+      const table = tx.branch(branchId).table("clock");
+      const row = table.get({});
+      table.put({ ...row, world_tick: 7, updated_at: new Date().toISOString() });
+    });
+    await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/stop`, headers,
+      payload: { operationId: "op-333333333333" },
+    });
+    expect(host.storage.transact((tx) => tx.branch(branchId).table("clock").get({})?.["world_tick"])).toBe(7);
+
+    // 从 paused 恢复：run 回到 running，tick 保持 7 不清零。
+    const resumed = await host.app.inject({
+      method: "POST", url: `/api/v1/console/runs/${created.runId}/start`, headers,
+      payload: { operationId: "op-444444444444" },
+    });
+    expect(resumed.statusCode).toBe(200);
+    expect(runControlResponseSchema.parse(resumed.json()).status).toBe("running");
+    const clock = host.storage.transact((tx) => tx.branch(branchId).table("clock").get({}));
+    expect(clock?.["mode"]).toBe("running");
+    expect(clock?.["world_tick"]).toBe(7);
+  });
+
   it("状态不符时启动或停止返回 invalid-state", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

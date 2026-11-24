@@ -51,6 +51,9 @@ export const BRANCH_COLUMN = "branch_id";
  */
 export const OPERATION_IDEMPOTENCY_TABLE = "operation_idempotency";
 
+/** run 启动与停止的幂等表；部署级，按主体与 operationId 保存首次结果。 */
+export const RUN_CONTROL_IDEMPOTENCY_TABLE = "run_control_idempotency";
+
 /** JSON 列的命名约定：迁移中以 _json 结尾的 TEXT 列存规范 JSON。 */
 const JSON_COLUMN_SUFFIX = "_json";
 

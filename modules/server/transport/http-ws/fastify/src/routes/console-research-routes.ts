@@ -350,7 +350,13 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
       const path = parsePath(runParamsSchema, request.params);
       const body = runControlRequestSchema.safeParse(request.body);
       if (path === null || !body.success) return sendHttpError(reply, "validation", "run 控制请求结构不合法");
-      return runControlResponseSchema.parse(writes[control](path.runId));
+      // 传入主体与 operationId，由端口在同一事务内做幂等去重。
+      const session = requireEvaluationWriter(request, reply);
+      if (session === null) return;
+      return runControlResponseSchema.parse(writes[control](path.runId, {
+        operationId: body.data.operationId,
+        principalId: session.auth.principalId,
+      }));
     });
   }
 

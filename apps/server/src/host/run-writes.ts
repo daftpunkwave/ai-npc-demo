@@ -32,10 +32,10 @@ export interface RunWritesInput {
 /** 写入端口：控制台评估接口的写操作入口。 */
 export interface RunWrites {
   createRun(runSpec: RunSpec): Promise<RunCreateResult>;
-  /** 启动实验 run：置为 running 并初始化分支时钟。 */
-  startRun(runId: string): RunControlResult;
-  /** 停止实验 run：置为 paused 并同步时钟。 */
-  stopRun(runId: string): RunControlResult;
+  /** 启动或恢复 run：置为 running 并确保分支时钟为运行态。 */
+  startRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): RunControlResult;
+  /** 停止 run：置为 paused 并同步时钟。 */
+  stopRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): RunControlResult;
   /** 按实验规格展开并逐个创建 run；规格不合法时在创建前失败。 */
   createExperiment(request: {
     readonly experimentSpec: unknown;
@@ -62,8 +62,8 @@ export function createRunWrites(input: RunWritesInput): RunWrites {
       worldId: input.worldId,
       repoRoot: input.repoRoot,
     }, runSpec),
-    startRun: (runId) => startRun({ host: input.host, storage: input.storage }, runId),
-    stopRun: (runId) => stopRun({ host: input.host, storage: input.storage }, runId),
+    startRun: (runId, request) => startRun({ host: input.host, storage: input.storage, worldId: input.worldId }, runId, request),
+    stopRun: (runId, request) => stopRun({ host: input.host, storage: input.storage, worldId: input.worldId }, runId, request),
     createExperiment: (request) => createExperiment({
       content: input.content,
       loadRoster: input.loadRoster,
