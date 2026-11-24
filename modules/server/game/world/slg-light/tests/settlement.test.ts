@@ -20,7 +20,7 @@ class RecordingTx extends TestWorldTx {
   }
 
   /** 已记录的领域事件，供测试断言结算发布的事件类型。 */
-  events(): readonly { readonly type: string; readonly payload: Json }[] {
+  override events(): readonly { readonly type: string; readonly payload: Json }[] {
     return this.recorded;
   }
 }

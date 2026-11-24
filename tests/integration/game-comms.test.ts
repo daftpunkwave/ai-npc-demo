@@ -196,6 +196,26 @@ describe("通信", () => {
     expect(sent["speechArtifactRef"]).toBeNull();
   });
 
+  it("广播正文超限或带额外字段在网关被拒绝且不写事件", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const tooLong = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("broadcast.say", { text: "字".repeat(301) }, value.host.ids("cmd")),
+    );
+    expect(tooLong).toMatchObject({ commandStatus: "rejected", reasonCode: "invalid-params" });
+    const extra = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("broadcast.say", { text: "广播", audience: ["public"] } as unknown as Json, value.host.ids("cmd")),
+    );
+    expect(extra).toMatchObject({ commandStatus: "rejected", reasonCode: "invalid-params" });
+    expect(
+      readGameEvents(value).some(
+        (event) => event.type === "MessageSent" && (event.payload as Record<string, Json>)["channel"] === "broadcast",
+      ),
+    ).toBe(false);
+  });
+
   it("中继中断时广播只冻结发布地同节点收件者", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");

@@ -56,6 +56,30 @@ describe("玩家投影缺省可选端口契约", () => {
     expect(view.notifications).toEqual([]);
   });
 
+  it("旧 campaign 状态缺少 cityResources 时投影按 null 输出", () => {
+    const legacyCampaign = {
+      campaignId: "cmp-000000000001",
+      factionId: "human-neutral",
+      playerId: "player-1",
+      chapterId: "watergate",
+      startTick: 0,
+      status: "evaluated",
+      outcome: "strained",
+    } as unknown as NonNullable<ReturnType<GameWorldPort["campaign"]>>;
+    const world = {
+      ...idleWorld,
+      campaign: () => legacyCampaign,
+    } as GameWorldPort;
+    const view = buildPlayerProjection({
+      content: emptyContent,
+      clock: pausedClock,
+      world,
+      map: emptyMap,
+    });
+    expect(view.cityResources).toBeNull();
+    expect(view.campaign).toMatchObject({ status: "evaluated", outcome: "strained" });
+  });
+
   it("内容包玩家主体 ID 在缺省 playerPrincipalId 时被采用", () => {
     const view = buildPlayerProjection({
       content: emptyContent,
