@@ -17,6 +17,7 @@ function projection(nodeName: string): PlayerProjection {
       roads: [],
     },
     meters: null,
+    cityResources: null,
     stockpiles: [],
     teams: [],
     characters: [],
