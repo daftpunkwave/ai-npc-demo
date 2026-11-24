@@ -14,6 +14,7 @@ import type {
   ModuleDefinition,
   StoragePort,
 } from "@ai-npc/contracts";
+import { DomainError, loggableErrorDetails } from "@ai-npc/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryPort,
@@ -30,6 +31,9 @@ import {
   type MemoryRecordUseRequest,
 } from "./memory-publication";
 import { MemoryStore, type MemoryWatermark } from "./memory-store";
+
+/** 日志里保留的错误摘要上限：只作排障线索，避免整段观察正文或对话原文进入日志。 */
+const maxLoggedErrorChars = 200;
 
 export interface MemoryHostOptions {
   readonly storage: StoragePort;
@@ -122,11 +126,7 @@ export class MemoryHost {
       const agentId = this.options.roster.agents[index]?.agentId ?? "unknown";
       const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
       failures.push({ agentId, message });
-      this.options.host.logger.error("Memory ingest failed", {
-        agentId,
-        phase: "memory-ingest",
-        message,
-      });
+      this.logFailure("Memory ingest failed", agentId, "memory-ingest", result.reason);
     }
     if (failures.length === 0) return;
     throw new Error(failures
@@ -184,17 +184,29 @@ export class MemoryHost {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push({ agentId: agent.agentId, message });
-        this.options.host.logger.error("Memory wakeup proposal failed", {
-          agentId: agent.agentId,
-          phase: "memory-wakeups",
-          message,
-        });
+        this.logFailure("Memory wakeup proposal failed", agent.agentId, "memory-wakeups", error);
       }
     }
     if (failures.length === 0) return;
     throw new Error(failures
       .map(({ agentId, message }) => `agent ${agentId} memory wakeup proposal failed: ${message}`)
       .join("; "));
+  }
+
+  /**
+   * 按仓库统一的错误记录口径写日志：领域错误的 details 经白名单过滤，
+   * 自由文本只保留截断后的摘要，避免把观察正文或对话原文经日志带出信任边界。
+   */
+  private logFailure(message: string, agentId: string, phase: string, error: unknown): void {
+    const text = error instanceof Error ? error.message : String(error);
+    this.options.host.logger.error(message, {
+      agentId,
+      phase,
+      errorCode: error instanceof DomainError ? error.code : (error instanceof Error ? error.name : "unknown"),
+      ...(error instanceof DomainError ? { details: loggableErrorDetails(error.details) } : {}),
+      // 摘要只作为排障线索，不替代结构化字段；超长截断避免整段观察正文进日志。
+      detail: text.length > maxLoggedErrorChars ? `${text.slice(0, maxLoggedErrorChars)}…` : text,
+    });
   }
 
   retrieve(agentId: string, query: AgentMemoryQuery): MemoryBundle {

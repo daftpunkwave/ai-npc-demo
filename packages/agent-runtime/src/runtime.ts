@@ -147,7 +147,15 @@ export class AgentRuntime {
       });
       this.scheduler.recoverInterrupted();
       this.running = true;
-      await this.runTrackedCycle();
+      // 首轮阶段故障只进入降级与退避，不让 startup 拆掉整个 runtime：
+      // 单主体故障是可恢复的运行期状态，销毁运行时会连带停止其余身份的摄入与调度。
+      try {
+        await this.runTrackedCycle();
+      } catch (error) {
+        this.options.host.logger.error("Agent runtime first cycle failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
       this.schedule();
     } catch (error) {
       await this.dispose();

@@ -119,8 +119,8 @@ interface IsolationFixture {
   readonly control: FailureSwitch;
 }
 
-/** 启动真实存储与两个身份的运行时时；故障开关先关闭，保证启动轮成功。 */
-async function fixture(): Promise<IsolationFixture> {
+/** 启动真实存储与两个身份的运行时时；默认故障开关关闭，保证启动轮成功。 */
+async function fixture(initial: Partial<FailureSwitch> = {}): Promise<IsolationFixture> {
   const dataDir = mkdtempSync(join(tmpdir(), "agent-runtime-isolation-"));
   const host = createFakeHost();
   const instance = await storageModuleDefinition.create({
@@ -183,7 +183,7 @@ async function fixture(): Promise<IsolationFixture> {
     },
   });
 
-  const control: FailureSwitch = { failing: false, failWakeups: false };
+  const control: FailureSwitch = { failing: false, failWakeups: false, ...initial };
   const plan = vi.fn<SchedulingPort["plan"]>(() => []);
   const runtime = new AgentRuntime({
     storage,
@@ -211,9 +211,16 @@ async function fixture(): Promise<IsolationFixture> {
       affairsText: "",
     }])),
   });
+  // 启动轮也要能被故障命中：先播种一条观察，再启动。
+  if (initial.failing === true) seedObservations({ storage, host, runtime, plan, control }, 0);
   await runtime.start();
   resources.push({ dispose: () => runtime.dispose() });
   return { storage, host, runtime, plan, control };
+}
+
+/** 启动首轮就带单主体故障的夹具：故障在 start() 之前生效。 */
+async function startWithFailingFirstCycle(): Promise<IsolationFixture> {
+  return fixture({ failing: true });
 }
 
 /** 为每个身份写入一条待摄入观察；观察是摄入路径的唯一输入。 */
@@ -318,5 +325,42 @@ describe("Agent runtime 单主体故障隔离", () => {
     value.control.failWakeups = false;
     await expect(value.runtime.pump()).resolves.toBeUndefined();
     expect(value.runtime.degraded).toBe(false);
+  });
+
+  it("启动后首轮单主体故障只进入降级与退避，不销毁整个 runtime", async () => {
+    // 启动轮之前就让失败身份开始抛错：首轮必须容错，否则 startup 会把整个
+    // runtime 连带其余身份的摄入与调度一起拆掉。
+    const value = await startWithFailingFirstCycle();
+
+    expect(value.runtime.degraded).toBe(true);
+    expect(value.host.logs).toContainEqual(expect.objectContaining({
+      level: "error",
+      message: "Agent runtime first cycle failed",
+    }));
+    // runtime 仍可继续服务：关掉故障后下一轮成功并清除降级。
+    value.control.failing = false;
+    await expect(value.runtime.pump()).resolves.toBeUndefined();
+    expect(value.runtime.degraded).toBe(false);
+    expect(watermark(value, healthyAgentId)?.revision).toBe(1);
+  });
+
+  it("失败日志按统一口径记录结构化字段，不把原始错误文本整段带入", async () => {
+    const value = await fixture();
+    seedObservations(value, 0);
+    value.control.failing = true;
+
+    await expect(value.runtime.pump()).rejects.toThrow(failingAgentId);
+
+    const logged = value.host.logs.find((entry) =>
+      entry.level === "error" && entry.message === "Memory ingest failed");
+    expect(logged?.data).toMatchObject({
+      agentId: failingAgentId,
+      phase: "memory-ingest",
+      errorCode: "Error",
+    });
+    // 摘要字段存在且被截断到上限内，而不是把 error.message 原样展开。
+    const detail = (logged?.data as Readonly<Record<string, unknown>> | undefined)?.["detail"];
+    expect(typeof detail).toBe("string");
+    expect(String(detail).length).toBeLessThanOrEqual(201);
   });
 });
