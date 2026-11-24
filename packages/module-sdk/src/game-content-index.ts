@@ -223,6 +223,6 @@ export interface GameContent {
   readonly chapterId: string;
   readonly initialMeters: MetersView;
   readonly dutyDelegations: readonly GameDutyDelegation[];
-  /** t168 交接时纳入城市总量的六种资源初值。 */
-  readonly cityResources: CityResourceAmounts;
+  /** t168 交接时纳入城市总量的六种资源初值；旧内容包可能没有该项。 */
+  readonly cityResources?: CityResourceAmounts;
 }

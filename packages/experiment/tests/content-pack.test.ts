@@ -80,6 +80,18 @@ describe("内容包加载", () => {
     expect(pack.index.scripts.get("s-promise")?.checkpoints[0]?.probes[0]?.probeId).toBe(
       "p-recall-promise",
     );
+    expect(pack.worldInit.cityResources).toEqual({ energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 });
+  });
+
+  it("旧内容包缺少 cityResources 时仍可加载，交接数据留空", () => {
+    const sources = mutatedSources(
+      "world-init.yaml",
+      "cityResources: { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 }",
+      "",
+    );
+    const pack = parseContentPack(sources);
+    expect(pack.worldInit.cityResources).toBeUndefined();
+    expect(pack.index.stockpiles.size).toBe(8);
   });
 
   it("道路引用不存在的节点时错误定位到 map.yaml 的字段", () => {

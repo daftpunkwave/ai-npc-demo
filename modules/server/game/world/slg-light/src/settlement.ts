@@ -216,7 +216,7 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
 export function runChapterEvaluation(
   tx: WorldTx,
   loadCounts: () => AgreementCounts,
-  cityResources: CityResourceAmounts,
+  cityResources: CityResourceAmounts | null,
   chapterLengthTicks = 168,
 ): { readonly stopClock: true } | undefined {
   const record = readWorldState(tx, "campaign", "campaign", campaignStateSchema);

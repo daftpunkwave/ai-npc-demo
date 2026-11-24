@@ -177,6 +177,20 @@ describe("命令目录", () => {
   });
 });
 
+describe("公开广播载荷边界", () => {
+  const schema = commandPayloadSchemas["broadcast.say"];
+
+  it("正文字数上限为 300，空正文、超限与额外字段被拒绝", () => {
+    expectValid(schema, { text: "字" });
+    expectValid(schema, { text: "字".repeat(300) });
+    expectInvalid(schema, { text: "" });
+    expectInvalid(schema, { text: "字".repeat(301) });
+    expectInvalid(schema, { text: "广播", extra: true });
+    expectInvalid(schema, { text: 1 });
+    expectInvalid(schema, null);
+  });
+});
+
 describe("协议条款 Term", () => {
   const terms = [
     deliverTerm,

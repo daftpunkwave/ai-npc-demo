@@ -295,7 +295,7 @@ describe("章节评估交接六种城市资源", () => {
       triggered: [],
       lastDailyTick: 168,
     });
-    const result = runChapterEvaluation(tx, () => ({ fulfilled: 0, breached: 0 }), content.cityResources, 168);
+    const result = runChapterEvaluation(tx, () => ({ fulfilled: 0, breached: 0 }), content.cityResources ?? null, 168);
     expect(result).toEqual({ stopClock: true });
     const evaluated = tx.events().find((event) => event.type === "ChapterStageEvaluated");
     expect(evaluated?.payload).toMatchObject({ cityResources, outcome: "equilibrium" });
@@ -306,5 +306,35 @@ describe("章节评估交接六种城市资源", () => {
       cityResources,
     });
     expect(tx.stopRequests()).toEqual([{ requestId: "chapter-evaluated", tick: 168 }]);
+  });
+
+  it("旧内容包没有城市资源初值时评估仍完成并写入 null 交接", () => {
+    const content = contentWith({});
+    const tx = new RecordingTx(168);
+    tx.put("campaign", campaignAggregateId, {
+      campaignId: "cmp-1",
+      factionId: "faction-a",
+      playerId: "player-1",
+      chapterId: "test",
+      startTick: 0,
+      status: "running",
+      outcome: null,
+      cityResources: null,
+    });
+    tx.put("meters", metersAggregateId, {
+      "relay.stability": 45,
+      "orchard.water": 50,
+      "migration.safety": 50,
+      "watergate.allocation": "harbor-first",
+      triggered: [],
+      lastDailyTick: 168,
+    });
+    expect(runChapterEvaluation(tx, () => ({ fulfilled: 0, breached: 0 }), null, 168)).toEqual({ stopClock: true });
+    const evaluated = tx.events().find((event) => event.type === "ChapterStageEvaluated");
+    expect(evaluated?.payload).toMatchObject({ cityResources: null, outcome: "equilibrium" });
+    expect(tx.get<Record<string, unknown>>("campaign", campaignAggregateId)?.state).toMatchObject({
+      status: "evaluated",
+      cityResources: null,
+    });
   });
 });

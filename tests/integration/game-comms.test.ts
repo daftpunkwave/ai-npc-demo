@@ -178,6 +178,24 @@ describe("通信", () => {
     expect(readGameEvents(value).some((event) => event.type === "MessageSent" && (event.payload as Record<string, Json>)["channel"] === "broadcast")).toBe(false);
   });
 
+  it("公开广播不读取 Agent 批准对白", async () => {
+    const value = await harness({
+      approvedSpeech: {
+        read: () => {
+          throw new Error("公开广播不应读取 speech 批准结果");
+        },
+      },
+    });
+    expect(start(value).commandStatus).toBe("accepted");
+    const broadcast = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("broadcast.say", { text: "不经过模型批准流程的广播" }, value.host.ids("cmd")),
+    );
+    expect(broadcast.commandStatus).toBe("accepted");
+    const sent = payloadOf(readGameEvents(value), "MessageSent");
+    expect(sent["speechArtifactRef"]).toBeNull();
+  });
+
   it("中继中断时广播只冻结发布地同节点收件者", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
