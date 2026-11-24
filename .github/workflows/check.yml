@@ -1,0 +1,50 @@
+# 质量门禁：类型检查、测试、边界、模块目录、资源与文档检查。
+#
+# 核心职责：在每次 push 与 pull request 上执行 `pnpm check`，让仓库既有的质量门禁在远端强制执行。
+# 交互契约：读取仓库根的 package.json 脚本链、pnpm-lock.yaml 与 pnpm-workspace.yaml；
+#   依赖 Node 24（engines.node 下限）与仓库锁定的 pnpm@12。
+# 约束与禁忌：禁止在此跳过检查项、放宽阈值或以 `|| true` 吞掉失败；
+#   任何一项检查失败都必须是失败结论。
+name: check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# 同一分支的新推送取消上一轮未完成的运行，避免排队浪费。
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      # 第三方 action 按完整 commit SHA 固定：tag 可被上游移动，SHA 不可变，
+      # 避免同一工作流在不同时间解析到不同代码。
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          # 与开发环境保持同一运行时版本。engines.node 只声明下限 >=24，
+          # 但不同主版本间的默认栈大小与内置模块行为存在差异（Node 24 的栈更小，
+          # 深层递归输入会先溢出），门禁必须与本地验证环境一致才有意义。
+          node-version: 26.13.1
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run checks
+        run: pnpm check

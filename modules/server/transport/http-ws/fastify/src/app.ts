@@ -68,6 +68,40 @@ export type {
  */
 const maxWebSocketPayloadBytes = 64 * 1024;
 
+/**
+ * HTTP 时间与连接维度上限。Fastify 默认把这些值设为 0（不限），
+ * 本服务要求局部阻塞不扩散为整机不可用，因此逐项显式声明并写明依据。
+ * 导出供测试锁定取值，避免后续重构把它们删回框架默认。
+ */
+export const httpTransportLimits = {
+  /**
+   * 单请求处理上限：最长合法请求是开局与恢复类命令、配置提交，正常远低于 1 秒。
+   * 30 秒给慢磁盘与高负载留出余量，同时让慢速发送请求体与卡死的 handler 被打断。
+   */
+  requestTimeoutMs: 30_000,
+  /** 连接建立上限：接受连接后必须在该时间内收到完整请求头，避免连接被长期占住。 */
+  connectionTimeoutMs: 30_000,
+  /** handler 执行上限：与请求上限对齐，超时交错误处理器返回 plugin-failed。 */
+  handlerTimeoutMs: 30_000,
+  /**
+   * 单连接请求数上限：本地单玩家场景一个连接远达不到该数量；
+   * 设上限是为了让长连接不能无限复用，避免 keep-alive 连接永不释放。
+   */
+  maxRequestsPerSocket: 1_000,
+  /** 请求体上限：最长的命令与配置提交小于 1 MiB，显式写出以免被误当成可随意放宽。 */
+  bodyLimitBytes: 1024 * 1024,
+} as const;
+
+/**
+ * 浏览器可发送的请求头白名单。会话令牌走 Authorization 头而非 Cookie，
+ * 控制台角色由 X-Active-Role 声明；其余头不进入跨域允许面。
+ */
+const corsAllowedHeaders = ["authorization", "content-type", "x-active-role"] as const;
+
+/** 实际使用的 HTTP 方法：路由只有查询与命令提交两类，预检需要 OPTIONS。 */
+const corsAllowedMethods = ["GET", "POST", "OPTIONS"] as const;
+
+
 /** ws 在接收帧超过 maxPayload 时抛出带该稳定错误码的 RangeError，并自行以 1009 发起关闭。 */
 function isWebSocketPayloadTooLarge(error: unknown): boolean {
   return (
@@ -78,9 +112,28 @@ function isWebSocketPayloadTooLarge(error: unknown): boolean {
 }
 
 /**
+ * 框架级请求超时错误码。Fastify 在 handlerTimeout 触发时抛出该错误，
+ * 语义是「本次请求未在期限内完成」，不是服务端缺陷，因此按可重试处理。
+ */
+const fastifyHandlerTimeoutCode = "FST_ERR_HANDLER_TIMEOUT";
+
+/**
+ * 判定框架请求超时错误。只按稳定错误码判断，不匹配错误文案，
+ * 以免框架调整措辞后分类失效。
+ */
+function isHandlerTimeoutError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { readonly code?: unknown }).code === fastifyHandlerTimeoutCode
+  );
+}
+
+/**
  * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
+ * 框架请求超时按可重试失败返回，并在诊断中保留超时事实；
  * 其余未预期错误一律 500 plugin-failed，safeMessage 不携带内部细节。
- * 4xx 属于预期拒绝，不写内部错误；5xx 交宿主记录，避免静默失败。
+ * 4xx 属于预期拒绝，不写内部错误；5xx 与超时交宿主记录，避免静默失败。
  * 未匹配路由交给调用方传入的 notFound 处理器，控制台据此区分静态资源与前端导航。
  */
 function registerErrorHandling(
@@ -95,6 +148,12 @@ function registerErrorHandling(
       }
       return sendHttpError(reply, error.code, error.safeMessage, error.retryable);
     }
+    if (isHandlerTimeoutError(error)) {
+      // 超时只中止了本次请求的响应等待，无法取消 handler 内部已发起的异步工作；
+      // 这里记录超时事实，并按可重试失败返回，避免客户端把它当成永久性错误。
+      report("请求处理超时", error);
+      return sendHttpError(reply, "plugin-failed", "请求处理超时", true);
+    }
     const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
     if (statusCode === 400 || statusCode === 413 || statusCode === 415) {
       return sendHttpError(reply, "validation", "请求结构不合法");
@@ -107,7 +166,14 @@ function registerErrorHandling(
 
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
 export async function createServerApp(options: ServerAppOptions): Promise<ServerApp> {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    requestTimeout: httpTransportLimits.requestTimeoutMs,
+    connectionTimeout: httpTransportLimits.connectionTimeoutMs,
+    handlerTimeout: httpTransportLimits.handlerTimeoutMs,
+    maxRequestsPerSocket: httpTransportLimits.maxRequestsPerSocket,
+    bodyLimit: httpTransportLimits.bodyLimitBytes,
+  });
   const report = (message: string, error: unknown): void => {
     try {
       options.onInternalError?.(message, error);
@@ -116,7 +182,33 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
   };
   const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
-  await app.register(cors, { origin: [...allowedOrigins] });
+  // 跨域允许面全部显式声明，不依赖 @fastify/cors 的默认回显：
+  // 方法锁定为实际路由使用的集合，头部锁定为会话与角色所需的最小集合；
+  // 会话令牌走 Authorization 头而非 Cookie，因此 credentials 保持 false。
+  await app.register(cors, {
+    origin: [...allowedOrigins],
+    methods: [...corsAllowedMethods],
+    allowedHeaders: [...corsAllowedHeaders],
+    credentials: false,
+  });
+  // 安全响应头对全部响应生效：禁止 MIME 嗅探、禁止被任何页面 iframe 嵌入、
+  // 跨站不携带完整路径作为 Referer。CSP 只对浏览器文档类响应设置：
+  // 它对 JSON 响应没有约束意义，给非文档响应加策略只会扩大误配面。
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    reply.header("referrer-policy", "same-origin");
+    const contentType = reply.getHeader("content-type");
+    if (typeof contentType === "string" && contentType.includes("text/html")) {
+      // 静态产物只从同源加载脚本与样式；此处按构建产物实际形态收紧，
+      // 不放开 unsafe-inline，产物若引入内联脚本会立即失败而不是静默放宽。
+      reply.header(
+        "content-security-policy",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      );
+    }
+    return payload;
+  });
   await app.register(websocket, {
     options: { maxPayload: maxWebSocketPayloadBytes },
     errorHandler: (error, socket) => {

@@ -8,7 +8,7 @@ export const packageName = "@ai-npc/mod-transport-http-ws-fastify";
 export { transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";
 export { TransportPort } from "./plugin";
-export { createServerApp } from "./app";
+export { createServerApp, httpTransportLimits } from "./app";
 export { StreamHub } from "./stream-hub";
 export type {
   StreamHubOptions,
