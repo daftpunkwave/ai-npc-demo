@@ -20,7 +20,7 @@ import {
   sendHttpError,
 } from "./context";
 import type { RouteContext } from "./context";
-import { normalizeQuery, queryText } from "./query";
+import { parseQuery, queryText } from "./query";
 
 const dashboardRoles = ["operator", "researcher"] as const;
 const researchRoles = ["researcher"] as const;
@@ -96,15 +96,10 @@ export function registerConsoleRoutes(context: RouteContext): void {
     }
     // 查询字符串先规范化为 schema 的输入类型，边界一律由共享 schema 裁决：
     // 缺省 fromSeq/limit 走 schema 默认值，types 的数量与元素长度上限也只在契约里定义一次。
-    const normalized = normalizeQuery(request.query);
-    if (normalized.invalid) {
-      return sendHttpError(reply, "validation", "查询参数不合法");
-    }
-    const parsed = timelineQuerySchema.safeParse(normalized.value);
-    if (!parsed.success) {
+    const query = parseQuery(timelineQuerySchema, request.query);
+    if (query === null) {
       return sendHttpError(reply, "validation", "fromSeq 或 limit 或 types 不合法");
     }
-    const query = parsed.data;
     const branchId = query.branchId ?? branch.branchId;
     return timelineResponseSchema.parse(
       options.console.timeline({
@@ -128,14 +123,10 @@ export function registerConsoleRoutes(context: RouteContext): void {
       return sendHttpError(reply, "not-ready", "观测服务尚未就绪");
     }
     // 与时间线共用同一条规范化 + 共享 schema 路径，避免再次出现手写校验与契约分裂。
-    const normalized = normalizeQuery(request.query);
-    if (normalized.invalid) {
-      return sendHttpError(reply, "validation", "查询参数不合法");
-    }
-    const parsed = agentsQuerySchema.safeParse(normalized.value);
-    if (!parsed.success) {
+    const query = parseQuery(agentsQuerySchema, request.query);
+    if (query === null) {
       return sendHttpError(reply, "validation", "branchId 不能为空");
     }
-    return agentsResponseSchema.parse(options.console.agents(parsed.data.branchId));
+    return agentsResponseSchema.parse(options.console.agents(query.branchId));
   });
 }

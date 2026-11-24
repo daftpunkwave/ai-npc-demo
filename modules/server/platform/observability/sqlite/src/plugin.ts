@@ -230,11 +230,10 @@ export class ObservabilityPort {
   agents(branchId: string): AgentsResponse {
     // 位置取自世界模块拥有的 character 聚合，水位滞后取该 Agent 已感知世界序号与全局最新序号之差：
     // 两者都是已持久化的事实，不再用固定的 null / 0 冒充，避免控制台永远显示「零滞后、位置未知」。
-    const latestWorldSeq = this.storage.transact((tx) =>
-      tx.branch(branchId).table("domain_events").max("world_seq"),
-    );
-    const rows = this.storage.transact((tx) =>
-      tx.all(
+    // 最新序号与逐 Agent 查询放在同一事务里，保证同一响应内的 lag 以同一快照为基准。
+    const snapshot = this.storage.transact((tx) => ({
+      latestWorldSeq: tx.branch(branchId).table("domain_events").max("world_seq"),
+      rows: tx.all(
         `SELECT a.agent_id, a.status, l.controller_kind, json_extract(roster.value, '$.kind') AS agent_kind,
                 json_extract(character.state_json, '$.nodeId') AS node_id,
                 (SELECT t.status FROM turn_runs t
@@ -257,10 +256,10 @@ export class ObservabilityPort {
           ORDER BY a.agent_id`,
         [branchId],
       ),
-    );
-    const latest = Number(latestWorldSeq ?? 0);
+    }));
+    const latest = Number(snapshot.latestWorldSeq ?? 0);
     return {
-      agents: rows.map((row) => {
+      agents: snapshot.rows.map((row) => {
         const nodeId = row["node_id"];
         const scanned = row["scanned_through_seq"];
         return {

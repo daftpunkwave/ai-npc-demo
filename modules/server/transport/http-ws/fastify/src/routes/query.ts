@@ -74,3 +74,25 @@ export function normalizeQuery(query: unknown): NormalizedQuery {
   }
   return { value, invalid };
 }
+
+/**
+ * 规范化后按调用方给出的共享 schema 校验查询参数。
+ *
+ * 成功返回解析值（含 schema 默认值），失败返回 null 由路由按 400 处理。
+ * 取值范围只由传入的 schema 决定，本函数不重复判断边界。
+ */
+export function parseQuery<T>(
+  schema: {
+    safeParse(input: unknown):
+      | { readonly success: true; readonly data: T }
+      | { readonly success: false };
+  },
+  query: unknown,
+): T | null {
+  const normalized = normalizeQuery(query);
+  if (normalized.invalid) {
+    return null;
+  }
+  const parsed = schema.safeParse(normalized.value);
+  return parsed.success ? parsed.data : null;
+}
