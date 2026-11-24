@@ -68,6 +68,17 @@ const session = {
 };
 
 const hello = { type: "hello", protocolVersion: "1", principalId: "player-1", channels: ["player"] };
+
+/** 单条对白追加项的合法样例；append 帧的 item 必须满足 ConversationLine。 */
+const dialogueItem = {
+  seq: 0,
+  dialogueId: "dlg-k3j9x0a1b2c3",
+  speakerId: "player-1",
+  speakerName: "党魁",
+  text: "你好",
+  worldTick: 0,
+  channel: "face-to-face",
+};
 const snapshotMessage = {
   type: "snapshot",
   channel: "player",
@@ -208,10 +219,44 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
     { type: "delta", channel: "player", streamSeq: -1, projectionVersion: 1, set: {} },
   ],
   [
-    "WS append",
+    "WS append（对白）",
     streamAppendMessageSchema,
+    {
+      type: "append",
+      channel: "player",
+      streamSeq: 3,
+      kind: "dialogue",
+      item: {
+        seq: 0,
+        dialogueId: "dlg-000000000001",
+        speakerId: "player-1",
+        speakerName: "党魁",
+        text: "你好",
+        worldTick: 0,
+        channel: "face-to-face",
+      },
+    },
+    // item 必须符合 ConversationLine：空对象缺必填字段，必须被拒绝。
     { type: "append", channel: "player", streamSeq: 3, kind: "dialogue", item: {} },
-    { type: "append", channel: "player", streamSeq: 3, kind: "system", item: {} },
+  ],
+  [
+    "WS append（提醒）",
+    streamAppendMessageSchema,
+    {
+      type: "append",
+      channel: "player",
+      streamSeq: 4,
+      kind: "notification",
+      item: { kind: "invite", text: "收到新的协议提案", worldTick: 0 },
+    },
+    { type: "append", channel: "player", streamSeq: 4, kind: "notification", item: { kind: "invite" } },
+  ],
+  [
+    // 未实现的追加种类与未知种类都不得进入公开 schema。
+    "WS append 拒绝未实现种类",
+    streamAppendMessageSchema,
+    { type: "append", channel: "player", streamSeq: 5, kind: "dialogue", item: dialogueItem },
+    { type: "append", channel: "player", streamSeq: 5, kind: "timeline", item: dialogueItem },
   ],
   ["WS ack", streamAckMessageSchema, { type: "ack", channel: "player", streamSeq: 3 }, { type: "ack", channel: "player" }],
   ["WS ping", streamPingMessageSchema, { type: "ping" }, { type: "ping", extra: true }],
