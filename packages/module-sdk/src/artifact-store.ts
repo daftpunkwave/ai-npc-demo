@@ -5,6 +5,7 @@
  */
 import {
   canonicalJson,
+  checkJsonBudget,
   type HostServices,
   type Json,
   type StoragePort,
@@ -99,6 +100,12 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
   ) {}
 
   async put(input: PutAgentArtifactInput): Promise<AgentArtifactRecord> {
+    // 先跑有界 JSON 校验：assertDefinedJson 与 canonicalJson 都会遍历整棵结构，
+    // 循环引用会让它们的栈/帧数组无界增长，必须在遍历前用预算拒绝。
+    const budget = checkJsonBudget(input.value);
+    if (budget !== null) {
+      throw new TypeError(`artifact 值超出 JSON 预算：${budget.message}`);
+    }
     assertDefinedJson(input.value, "value");
     const bodyText = canonicalJson(input.value);
     const body = new TextEncoder().encode(bodyText);

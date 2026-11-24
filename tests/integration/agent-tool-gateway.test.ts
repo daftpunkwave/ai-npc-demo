@@ -667,4 +667,57 @@ describe("Tool view and gateway", () => {
     expect(strategic.tools.some((entry) => entry.toolId === "task.respond")).toBe(false);
     expect(strategic.tools.find((entry) => entry.toolId === "policy.set")?.permissionProfile).toBe("policy-owner");
   });
+  it("循环引用的 artifact 值在遍历前被预算拒绝", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const stored = new StoredAgentArtifactStore(harness.storage, harness.host);
+    const cyclic: Record<string, unknown> = { name: "loop" };
+    cyclic["self"] = cyclic;
+    // 循环引用必须在遍历前被拒绝：否则显式栈会无限增长直到耗尽内存。
+    await expect(
+      stored.put({ runId: null, kind: "tool-raw", value: cyclic as never }),
+    ).rejects.toThrow(/JSON 预算/);
+  });
+
+  it("超预算参数重试换工具时返回幂等冲突而不是旧结果", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      artifacts: new StoredAgentArtifactStore(harness.storage, harness.host),
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+    });
+    // 第一次调用就提交超预算参数：进入 OVER_BUDGET_ARGS_HASH 分支并结算为 invalid-params。
+    const deep = { nested: {} as Record<string, unknown> };
+    let cursor = deep.nested;
+    for (let index = 0; index < 260; index += 1) {
+      cursor["next"] = {};
+      cursor = cursor["next"] as Record<string, unknown>;
+    }
+    const first = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-budget-conflict",
+      wireName: "asset_dispatch",
+      arguments: deep as never,
+      argumentsRaw: "{}",
+    });
+    expect(first.result.reasonCode).toBe("invalid-params");
+
+    // 同一 provider call 换成另一个工具再重试：工具身份不匹配必须报幂等冲突，
+    // 而不是把首次的超预算结算结果当作本次调用的结果返回。
+    const args = dispatchArguments("team-allowed");
+    const conflict = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-budget-conflict",
+      wireName: "message_send",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+    });
+    expect(conflict.result.reasonCode).toBe("idempotency-conflict");
+  });
 });

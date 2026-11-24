@@ -126,6 +126,19 @@ export class ToolGateway {
       // 幂等检查仍然先跑：同一 provider call 重试时，沿用既有结算结果而不是重复结算，
       // 既有成功结算也不会被这条与它无关的参数错误覆盖。
       if (existing !== null && existing["status"] === "settled") {
+        // 超预算时无法算出参数摘要，但工具身份仍可校验：同一 provider call 换了工具再重试，
+        // 必须报幂等冲突，不能把旧的成功结果当成本次调用的结果返回给模型。
+        const settledToolId = this.toolIdForWireName(input.wireName);
+        if (settledToolId !== existing["tool_id"]) {
+          return this.settleError(
+            input,
+            null,
+            OVER_BUDGET_ARGS_HASH,
+            "idempotency-conflict",
+            "Tool call retry changed its tool.",
+            existing,
+          );
+        }
         return await this.store.loadSettled(existing);
       }
       return this.settleError(
