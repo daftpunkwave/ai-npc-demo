@@ -34,6 +34,7 @@ import { expectInvalid, expectValid } from "./support";
 const expectedCommandTypes = [
   "campaign.start",
   "dialogue.say",
+  "broadcast.say",
   "speech.commit",
   "seat.say",
   "information.share",
@@ -75,6 +76,7 @@ const broadcastEffect = {
 const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
   "campaign.start": { factionId: "human-neutral" },
   "dialogue.say": { targetAgentId: agentId, text: "你好" },
+  "broadcast.say": { text: "今晚之前把水闸条款交到议事桌。" },
   "speech.commit": {
     channel: "message",
     conversationId: null,

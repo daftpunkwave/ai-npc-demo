@@ -384,7 +384,7 @@ export const playerProjectionSchema = z
      * t168 交接后的六种城市资源；序章未结束时为 null。
      * 序章库存（supply/energy/medical）继续保留在 stockpiles，两者不互相替代。
      */
-    cityResources: cityResourceAmountsSchema.nullable(),
+    cityResources: cityResourceAmountsSchema.nullable().default(null),
     stockpiles: z.array(stockpileViewSchema),
     teams: z.array(teamViewSchema),
     characters: z.array(characterViewSchema),
