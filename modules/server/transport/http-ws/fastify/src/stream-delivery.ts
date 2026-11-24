@@ -98,6 +98,11 @@ export class SocketSender {
     }
   }
 
+  /**
+   * 发送关闭帧；对端不响应关闭握手时终止底层连接。
+   * 关闭帧只是请求，socket 仍会保留到握手完成或超时；容量拒绝场景下
+   * 这类未注册的连接不在本中心的计数内，必须先确保它真的会被释放。
+   */
   close(socket: StreamSocket, code: number, reason: string): void {
     try {
       socket.close(code, reason);
@@ -107,6 +112,19 @@ export class SocketSender {
       } catch {
         // 连接已不可用；没有额外清理动作。
       }
+    }
+  }
+
+  /**
+   * 因容量拒绝连接时使用：关闭后立即终止，不等待对端回应关闭握手。
+   * 该连接从未加入注册表与计数，若它停留在半开状态，资源不会被任何清理路径回收。
+   */
+  reject(socket: StreamSocket, code: number, reason: string): void {
+    this.close(socket, code, reason);
+    try {
+      socket.terminate();
+    } catch {
+      // 已经终止或不可用；拒绝动作本身已经完成。
     }
   }
 

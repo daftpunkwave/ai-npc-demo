@@ -19,6 +19,8 @@ class FakeSocket implements StreamSocket {
   bufferedAmount = 0;
   readonly sent: string[] = [];
   closed: { readonly code: number; readonly reason: string } | null = null;
+  /** 底层连接被强制终止的次数；用于区分「只发关闭帧」与「确保释放」。 */
+  terminateCount = 0;
   private readonly listeners = new Map<string, ((data?: unknown) => void)[]>();
 
   send(payload: string): void {
@@ -31,6 +33,7 @@ class FakeSocket implements StreamSocket {
   }
 
   terminate(): void {
+    this.terminateCount += 1;
     this.closed ??= { code: 1006, reason: "terminated" };
     this.emit("close");
   }
@@ -449,7 +452,10 @@ describe("WS 流中心", () => {
       hub.accept(rejected, hub.issueTicket(session.sessionId).ticket);
       // 超限连接在注册监听与计数之前就被关闭，因此既没有 hello 也没有订阅。
       expect(rejected.drain()).toEqual([]);
-      expect(rejected.closed).toMatchObject({ code: 1013 });
+      expect(rejected.closed?.code).toBe(1013);
+      // 被拒连接不在注册表与计数内，必须立即终止而不能只等对端回应关闭握手，
+      // 否则半开状态下没有任何清理路径会回收它。
+      expect(rejected.terminateCount).toBeGreaterThan(0);
       expect(hub.stats().connections).toBe(2);
 
       // 关闭一条后腾出名额，新连接可以建立，说明计数没有泄漏成永久占位。
@@ -475,7 +481,8 @@ describe("WS 流中心", () => {
 
       const rejected = new FakeSocket();
       hub.accept(rejected, hub.issueTicket(third.sessionId).ticket);
-      expect(rejected.closed).toMatchObject({ code: 1013 });
+      expect(rejected.closed?.code).toBe(1013);
+      expect(rejected.terminateCount).toBeGreaterThan(0);
       expect(hub.stats().connections).toBe(2);
     } finally {
       hub.close();

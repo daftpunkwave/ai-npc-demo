@@ -152,12 +152,14 @@ export class StreamHub {
     }
     // 容量检查必须在注册监听与计入计数之前：超限连接既不能占 Map 记录，
     // 也不能让 sessionConnections 与 playerConnections 留下无对应连接的计数。
+    // 拒绝时用 reject 而非 close：连接不在注册表内，若只发关闭帧等对端回应，
+    // 半开状态下没有任何清理路径会回收它。
     if (this.connections.size >= this.maxConnections) {
-      this.sender.close(socket, 1013, "too many connections");
+      this.sender.reject(socket, 1013, "too many connections");
       return;
     }
     if ((this.sessionConnections.get(session.sessionId) ?? 0) >= this.maxConnectionsPerSession) {
-      this.sender.close(socket, 1013, "too many session connections");
+      this.sender.reject(socket, 1013, "too many session connections");
       return;
     }
     const channels = this.options.channelsFor(session.auth);
