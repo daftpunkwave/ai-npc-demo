@@ -127,6 +127,28 @@ export const streamErrorMessageSchema = z
 
 export type StreamErrorMessage = z.infer<typeof streamErrorMessageSchema>;
 
+/**
+ * 服务端主动关闭玩家流连接时使用的关闭码语义。
+ * 4000–4999 是应用自定义区间：票据失效与会话失效的处置相反，客户端必须按码区分。
+ * 票据失败是可重试的握手问题（重新申请票据再连），会话失效则必须清除本地凭据并停止重连。
+ */
+export const streamCloseCodes = {
+  /** 会话已被注销或过期：客户端必须清除会话令牌并停止重连。 */
+  sessionInvalid: 4401,
+  /** 票据缺失、过期、已消费或被容量淘汰：客户端重新申请票据后即可重试。 */
+  ticketInvalid: 4408,
+} as const;
+
+/** 关闭码是否只表示一次性票据不可用；该情形不得触发登出。 */
+export function isTicketInvalidCloseCode(code: number): boolean {
+  return code === streamCloseCodes.ticketInvalid;
+}
+
+/** 关闭码是否表示会话本身已失效；命中后必须清除本地凭据并停止重连。 */
+export function isSessionInvalidCloseCode(code: number): boolean {
+  return code === streamCloseCodes.sessionInvalid;
+}
+
 /** 服务端可推送的 WS 消息。 */
 export const serverStreamMessageSchema = z.union([
   streamHelloMessageSchema,

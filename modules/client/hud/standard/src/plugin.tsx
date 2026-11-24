@@ -46,6 +46,15 @@ function amountText(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+/**
+ * 重连提示的类名：带错误原因时追加限宽折行类，避免可变长文案撑破 HUD 布局。
+ * 单独导出以便在无 DOM 环境下验证分支选择，不必为此引入浏览器测试环境。
+ */
+export function connectionNoticeClassName(error: string | null): string {
+  const base = "hud-connection";
+  return error === null || error.length === 0 ? base : `${base} hud-connection-with-reason`;
+}
+
 function HudView(): ReactNode {
   const worldView = usePort<WorldViewLike>("client.world-view");
   const state = usePortSubscription<ProjectionState | null>("client.world-view");
@@ -96,8 +105,14 @@ function HudView(): ReactNode {
         </span>
       </div>
       {content === null ? null : connection.kind === "reconnecting" ? (
-        <div className="hud-connection" role="status" data-testid="stream-status">
+        <div
+          className={connectionNoticeClassName(connection.error)}
+          role="status"
+          data-testid="stream-status"
+        >
           {content.ui.reconnecting}
+          {/* 服务端 error 帧的 safeMessage 由连接状态携带，让玩家能区分「正在重连」与具体原因。 */}
+          {connection.error === null ? null : <small> {connection.error}</small>}
         </div>
       ) : connection.kind === "session-expired" ? (
         <div

@@ -6,6 +6,7 @@
 import {
   DomainError,
   type ClientContentView,
+  type ErrorCode,
   type Json,
   type CampaignResponse,
   type PlayerProjection,
@@ -24,6 +25,7 @@ import {
 import {
   isSessionInvalidCloseCode,
   isSessionInvalidError,
+  isTicketInvalidCloseCode,
   reconnectDelayMs,
 } from "./connection-policy";
 
@@ -349,6 +351,19 @@ class WorldViewController implements WorldViewPort {
           });
         },
         onMessage: (message) => {
+          if (message.type === "error") {
+            // 订阅被拒、会话异常或帧非法都走这里：error 帧是服务端唯一的结构化失败通道，
+            // 忽略它会让连接保持打开却永远没有数据。按错误码决定是重新登录还是重连。
+            // 注意：错误帧不能算作「连接可用」，否则每次失败都会把退避计数清零，
+            // 服务端持续拒绝时会退化成固定 1 秒的热循环。
+            this.handleStreamError(message.code, message.safeMessage);
+            return;
+          }
+          if (message.type === "hello" || message.type === "pong") {
+            // hello/pong 只证明连接与心跳可用，不证明玩家频道能收到数据：
+            // 订阅被拒时服务端先发 hello 再发 error，在这里清零会让重连退避失效。
+            return;
+          }
           this.confirmStreamUsable();
           if (message.type === "snapshot" && message.channel === "player") {
             const result = this.store.applySnapshot(message);
@@ -368,6 +383,27 @@ class WorldViewController implements WorldViewPort {
             this.store.applyAppend(message);
           }
         },
+        isFrameApplied: (message) => {
+          // store 用返回值而非抛错表达「本帧未应用」：delta 检测到序号缺口时返回
+          // needsSnapshot 且不改写状态。必须把该结果告诉 StreamClient，否则游标会
+          // 跨过未应用的增量，重连时服务端从缺口之后续传。
+          if (message.type === "snapshot") {
+            // 快照是否被接受看 streamSeq 是否已对齐；被拒绝的旧帧/跨世界帧不改状态。
+            return this.store.getSnapshot()?.streamSeq === message.streamSeq;
+          }
+          if (message.type === "delta") {
+            // 缺口帧不会改写 store，needsSnapshot 会置位。
+            return !this.store.needsSnapshot();
+          }
+          return true;
+        },
+        onFrameRejected: (error) => {
+          // 帧已通过传输层校验但被领域 schema 拒绝：游标没有推进。
+          // 先断开当前流再重新取快照，避免旧连接继续推帧与快照恢复并行、
+          // 导致缺口期间又有增量被应用或被确认。恢复完成后按退避重新订阅。
+          this.lastError = errorMessage(error);
+          this.abandonStreamForResnapshot(stream);
+        },
         onClose: (event) => {
           // 主动关闭或已被新连接替换时，不得按断线处理。
           if (this.stream !== stream) {
@@ -381,7 +417,13 @@ class WorldViewController implements WorldViewPort {
             this.expireSession();
             return;
           }
-          this.scheduleReconnect(`流连接已关闭（${event.code}）`);
+          // 票据失效（4408）只是握手失败：连接会立刻断开，重新申请票据后即可恢复，
+          // 不能当成会话吊销去清除仍然有效的会话令牌。
+          this.scheduleReconnect(
+            isTicketInvalidCloseCode(event.code)
+              ? "票据已失效，正在重新申请"
+              : `流连接已关闭（${event.code}）`,
+          );
         },
         onError: (error) => {
           this.lastError = errorMessage(error);
@@ -401,6 +443,52 @@ class WorldViewController implements WorldViewPort {
       return;
     }
     this.stream = stream;
+  }
+
+  /**
+   * 处理服务端 error 帧：按错误码决定是重新登录还是重新订阅。
+   * 服务端在订阅被拒、会话异常与帧非法三种情形下发这个帧；
+   * `unauthenticated` / `forbidden` 表示会话或角色已不可用，重连不会自愈，必须走重新登录。
+   * 其余错误码（如 `validation`）属于本帧或本频道的问题，关闭当前连接后按既有指数退避
+   * 重新申请票据与订阅，退避上限保证持续拒绝不会变成热循环。
+   */
+  private handleStreamError(code: ErrorCode, safeMessage: string): void {
+    this.lastError = safeMessage;
+    if (code === "unauthenticated" || code === "forbidden") {
+      this.expireSession();
+      return;
+    }
+    // 错误帧不改变连接可用性，但当前订阅已失效；关闭本条连接后按退避重新申请票据与订阅。
+    this.closeStream();
+    if (this.disposed) {
+      return;
+    }
+    this.scheduleReconnect(safeMessage);
+  }
+
+  /**
+   * 拒帧后的恢复：先摘除并关闭当前流，再重新取快照重建连续基线，最后按退避重新订阅。
+   * 顺序不能颠倒——旧连接仍在推送时做快照恢复，缺口期间到达的增量会与恢复出的
+   * 基线交错；先断开保证恢复期间没有并行消费，恢复后的订阅从新游标续传。
+   */
+  private abandonStreamForResnapshot(stream: StreamClient): void {
+    if (this.stream !== stream) {
+      return;
+    }
+    this.closeStream();
+    if (this.disposed || this.connection.kind === "session-expired") {
+      return;
+    }
+    void this.refresh()
+      .catch((error: unknown) => {
+        this.lastError = errorMessage(error);
+      })
+      .finally(() => {
+        if (this.disposed || this.connection.kind === "session-expired") {
+          return;
+        }
+        this.scheduleReconnect(this.lastError ?? "投影已重新同步");
+      });
   }
 
   private scheduleReconnect(reason: string): void {
