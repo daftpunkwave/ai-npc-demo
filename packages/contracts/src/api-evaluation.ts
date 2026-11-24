@@ -242,6 +242,23 @@ export const experimentDetailResponseSchema = z
 
 export type ExperimentDetailResponse = z.infer<typeof experimentDetailResponseSchema>;
 
+/** run 控制请求：启动与停止都要求幂等键，与运营接口的约定一致。 */
+export const runControlRequestSchema = z
+  .object({
+    operationId: idSchemas.op,
+  })
+  .strict();
+
+/** run 控制响应：操作后的状态；状态不符时返回 409 而不是伪装成功。 */
+export const runControlResponseSchema = z
+  .object({
+    runId: idSchemas.run,
+    status: z.enum(["running", "paused"]),
+  })
+  .strict();
+
+export type RunControlResponse = z.infer<typeof runControlResponseSchema>;
+
 /** 实验列表的一项：标识与已创建的 run 数量。 */
 export const experimentListEntrySchema = z
   .object({

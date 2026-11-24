@@ -8,6 +8,7 @@ import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster, RunSpec } fr
 import { createRun, type RunCreateResult } from "./run-write";
 import { exportRun } from "./run-export";
 import { createExperiment, type ExperimentCreateResult } from "./experiment-write";
+import { startRun, stopRun, type RunControlResult } from "./run-control";
 
 /** 写入端口的输入；与读取端口共用同一份存储与内容视图。 */
 export interface RunWritesInput {
@@ -31,6 +32,10 @@ export interface RunWritesInput {
 /** 写入端口：控制台评估接口的写操作入口。 */
 export interface RunWrites {
   createRun(runSpec: RunSpec): Promise<RunCreateResult>;
+  /** 启动或恢复 run：置为 running 并确保分支时钟为运行态。 */
+  startRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): RunControlResult;
+  /** 停止 run：置为 paused 并同步时钟。 */
+  stopRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): RunControlResult;
   /** 按实验规格展开并逐个创建 run；规格不合法时在创建前失败。 */
   createExperiment(request: {
     readonly experimentSpec: unknown;
@@ -57,6 +62,8 @@ export function createRunWrites(input: RunWritesInput): RunWrites {
       worldId: input.worldId,
       repoRoot: input.repoRoot,
     }, runSpec),
+    startRun: (runId, request) => startRun({ host: input.host, storage: input.storage, worldId: input.worldId }, runId, request),
+    stopRun: (runId, request) => stopRun({ host: input.host, storage: input.storage, worldId: input.worldId }, runId, request),
     createExperiment: (request) => createExperiment({
       content: input.content,
       loadRoster: input.loadRoster,

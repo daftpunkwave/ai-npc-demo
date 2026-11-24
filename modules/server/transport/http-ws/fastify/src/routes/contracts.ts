@@ -294,6 +294,10 @@ export interface ConsoleReadPort {
       readonly redaction: "redacted" | "raw";
       readonly principalId: string;
     }): Promise<{ readonly artifactId: string }>;
+    /** 启动或恢复 run：置为 running 并确保分支时钟为运行态。 */
+    startRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): { readonly runId: string; readonly status: string };
+    /** 停止 run：置为 paused 并同步时钟。 */
+    stopRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): { readonly runId: string; readonly status: string };
     /** 按实验规格展开并逐个创建 run。 */
     createExperiment(request: { readonly experimentSpec: unknown } | { readonly experimentRef: string }): Promise<{
       readonly experimentId: string;
