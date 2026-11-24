@@ -23,7 +23,7 @@ ModuleDefinition 是 TypeScript 运行域的统一注册描述符；模块私有
 
 ## 2. 全平台装配与 Agent 子配方
 
-RunSpec 的 `moduleAssemblyRef` 选择 TypeScript 装配。Godot 玩家端的本地 provider 由客户端自己的发布物装配。Agent profile 只描述主体策略子配方，不能暗中决定整个世界的地图、时钟、持久化或 UI 实现。assembly 文件分 `server`、`client`、`console` 三段。浏览器 host 连接后通过 `GET /api/v1/session/assembly?realm=...` 取得本域的 resolved 模块清单，再验证本地可信 catalog；不满足则拒绝 ready，见 [两个本地端口](../architecture/two-endpoints.md)。
+RunSpec 的 `moduleAssemblyRef` 选择 TypeScript 装配。Godot 玩家端的本地 provider 由客户端发布物装配。验收按 [composition.md — Godot 会话装配证据](../architecture/composition.md#godot-会话装配证据) 记录实际绑定和配置来源。Agent profile 只描述主体策略子配方，不能暗中决定整个世界的地图、时钟、持久化或 UI 实现。assembly 文件分 `server`、`client`、`console` 三段。浏览器 host 连接后通过 `GET /api/v1/session/assembly?realm=...` 取得本域的 resolved 模块清单，再验证本地可信 catalog；不满足则拒绝 ready，见 [两个本地端口](../architecture/two-endpoints.md)。
 
 Agent profile 的装配顺序为平台基线、场景 profile、可复用 Agent profile，最后是实验 variant patch。全平台 assembly 变体也必须声明改变的模块、连接与参数，不能靠扫描顺序覆盖；具体模块引用和 cardinality 以 [组合规范](../architecture/composition.md) 为准。
 

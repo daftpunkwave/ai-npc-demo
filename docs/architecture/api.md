@@ -150,9 +150,9 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。跨分支快照用于切换身份与投影基线。序号和投影版本只用于同一分支内的快照顺序判定。世界 ID 不同的快照仍被拒绝。
 
-`append` 可与对应 `delta` 共用同一 `streamSeq`。客户端按对白 ID 或提醒的 `kind`、`worldTick`、`text` 去重。增量重放和完整快照都可以补齐对白与提醒状态。
+`append` 可与对应 `delta` 共用同一 `streamSeq`。对白按 `dialogueId` 识别，派生提醒按 `playerNotificationKey` 的 `kind` 与 `text` 识别。`worldTick` 会随 tick 更新。
 
-重连规则：服务端为每个 `(session, channel)` 保留最近 200 条增量。`fromStreamSeq` 之后的增量都还在时补发增量；否则重新发一次 `snapshot`。重连只补投影，不重放任何命令。流式模型 token 不经过任何玩家频道。
+服务端为每个 `(session, channel)` 保留最近 200 条增量，收到可连续重放的 `fromStreamSeq` 后补发，否则返回完整快照。投影发布失败后，服务端会按当前数据重建基线，补发的快照可能沿用当前序号和投影版本。原生端在当前连接上应用通过校验的同序号替换快照，每次建立新连接都以 `fromStreamSeq: null` 获取新基线。重连只恢复投影，命令由各自的 HTTP 回执和幂等键处理。流式模型 token 不经过任何玩家频道。
 
 ## 5. 控制台 API（`/api/v1/console/*`）
 

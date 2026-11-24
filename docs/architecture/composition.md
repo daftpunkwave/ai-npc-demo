@@ -88,7 +88,7 @@ ToolBinding 允许进一步限制可作用对象、行动种类、调用预算�
 7. 解析快照、起始记忆与控制模式；每个实验 run 分配独占 branch，不复用活动分支。
 8. 校验全平台活动 Agent 配额和模型/工具并发，预留资源；未获配额只能等待或拒绝，不能创建后再补记账。
 9. 创建 scoped state 与模块实例，按依赖顺序启动，确认必需水位和资源就绪；浏览器 realm 完成握手并加载本域模块。
-10. 冻结 resolved manifest、内容/模块版本、模型挂载、工具 binding、client/console assembly hash 与 catalog 快照 hash；分支进入 ready。
+10. 冻结服务端 manifest、内容与模块版本、模型挂载、工具绑定和 server catalog hash。浏览器装配摘要由对应会话清单提供。
 11. 运行中记录各阶段实际生效值；停止时先 fencing 和 drain，再逆序释放实例及配额。
 
 dry-run 只执行解析与校验，展示将创建什么、还缺什么，不创建活动 Agent、调用模型或修改在线状态。需要连通性探测时，作为明确有预算的测试操作单独记录。
@@ -127,7 +127,13 @@ context 可以实验片段顺序，compression 可以实验阈值和算法，dec
 
 模型适配器还需报告最终序列化请求；context 的估算 token 不等于 provider 实报 usage。所有模型重试、反思、embedding 和评估请求计入成本，不能只算最后一次成功的 decision。
 
-完整 resolved manifest 随 run 保留并脱敏，包含三 realm 模块、内容/规则版本、模型池去密钥快照、工具绑定与 client/console assembly hash。只存 profileId 不足以重建实验，因为父级、模型池、内容、模块代码和浏览器端模块都可能改变。
+服务端运行按冻结清单记录模块、内容、模型布局和工具配置。TypeScript 会话装配另提供客户端与控制台各自解析后的 hash。仅凭 `profileId` 无法重建实验，父级、模型池、内容和模块版本均可能变化。
+
+### Godot 会话装配证据
+
+Godot 在收到有效投影后记录本地会话装配证据。记录包括客户端构建版本、公开协议版本、独立的非凭据会话标识、快照中的 `worldId` 和 `branchId`，以及实际启动的 provider 的能力、实现 ID、版本和去敏后的生效配置及摘要。变更分支或生效装配时记录新条目。
+
+验收报告同时引用客户端记录与服务端回执，使用世界、分支和同一次动作的 `commandId` 或 `operationId` 关联。客户端记录随验收证据独立保存。服务端继续按现有 manifest 读取旧存档。
 
 ## 11. 修改配置的语义
 
