@@ -4,6 +4,8 @@
 
 ## 1. 目录树
 
+下列目录树记录 TypeScript 工程。原生玩家端的目标目录见 [Godot 玩家端目录](#godot-玩家端目录)。
+
 模块目录与包名的映射规则见 [技术栈](../delivery/tech-stack.md) 第 2 节：server 模块在 `modules/server/<group>/<family>/<impl>/`，浏览器模块在 `modules/<client|console>/<family>/<impl>/`，每个目录是一个 workspace 源码包。
 
 ```text
@@ -240,3 +242,20 @@ modules/server/agent/memory/ledger/
 一次扩展的验收包包含源码 revision、锁文件、内容版本、冻结 manifest、输入脚本、断言结果、授权 artifact、失败记录和实测限制。每个实验 run 独占 branch；在线与实验的活动身份合计不超过 15。
 
 完整交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)；观测字段与查询权限见 [可观测性](../platform/observability.md)。
+
+## Godot 玩家端目录
+
+目标工程独立落在 `apps/player-godot/`。现有 TypeScript workspace 继续承载服务端与控制台。客户端的入口、测试和资产在独立目录构建。
+
+```text
+apps/player-godot/
+  global.json          .NET SDK pin
+  Player.Core/         public wire DTOs, projection state, intent ports
+  Player.Transport/    loopback HTTP and WebSocket adapters
+  Player.Godot/        project.godot, composition root, UI and 3D providers
+  Player.Verification/ contract and lifecycle checks
+```
+
+`Player.Transport` 依赖 `Player.Core`。Godot 功能模块通过 `Player.Core` 的端口交互，只有 Godot 组合根持有网络适配器的具体实现。核心和网络适配可在无引擎的 .NET 进程里验证。场景和资源引用属于 Godot 工程。TypeScript 侧的公开 Zod schema 与经验证的 JSON 样本用于跨语言契约，构建时保持单向输入。
+
+浏览器玩家端退役时，逐个清理玩家专用依赖、装配绑定、测试与脚本。以实际引用为准保留 TS 控制台的 SDK、协议和构建工具。先证明已有冻结运行和快照仍可被 TS 宿主打开，再清理浏览器生产入口。

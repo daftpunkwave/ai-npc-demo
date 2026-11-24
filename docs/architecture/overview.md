@@ -1,12 +1,12 @@
 # 系统架构总览
 
-> 首版目标是单玩家、统一世界观、标准 15 个 Agent 与两个本地端口。交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
+> 首版为单机单玩家、统一世界观与标准 15 个 Agent。目标部署由 Godot 原生玩家进程和一个本地 TypeScript 服务端组成。交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
 本篇与世界背景摘要中的 `v0.3` 标记各自的文档修订。Demo 发布版本记录产品交付，`contentVersion` 标识每次运行冻结的内容包。参见 [roadmap-and-acceptance.md — 交付包与判定](../delivery/roadmap-and-acceptance.md#9-交付包与判定)、[content-pack.md — 序章内容契约](../game/content-pack.md#1-文件清单)。
 
 ## 1. 核心命题：主机保留，职能全部可插拔
 
-基础宿主只保留“主板”能力：模块注册与能力图、生命周期、序列/版本/幂等/fencing、授权与提交关口、事件与证据协议、配置冻结，以及三运行域与两端口信任边界。其余全部由模块提供：游戏规则、地图、时钟、资源、行动、协议、剧情、存档，Agent 的感知、记忆、上下文、压缩、工具视图、决策、调度，以及模型池、工具、客户端渲染与界面、控制台页面、存储与模型传输。替换一个职能只改该模块、装配与配置。
+基础宿主只保留“主板”能力：模块注册与能力图、生命周期、序列/版本/幂等/fencing、授权与提交关口、事件与证据协议、配置冻结，以及三个运行域间的信任边界。其余全部由模块提供：游戏规则、地图、时钟、资源、行动、协议、剧情、存档，Agent 的感知、记忆、上下文、压缩、工具视图、决策、调度，以及模型池、工具、客户端渲染与界面、控制台页面、存储与模型传输。替换一个职能只改该模块、装配与配置。
 
 模块化、插件化、积木化说的是三个层面的问题：
 
@@ -22,7 +22,7 @@
 |---|---|
 | 单世界、单权威写者 | 单玩家与所有 Agent 对同一世界有一致结果；首版牺牲横向写扩展，换取可诊断性 |
 | 宿主最小化 + 全职能模块 | 防止每个功能自带存储、权限和循环，形成互不兼容的小系统；代价是更多契约与装配工作 |
-| 两个本地端口、三个运行域 | 客户端/服务端边界清晰；控制台复用服务端端口，避免第三套 Web 服务与权限漂移 |
+| 单机双端、三个运行域 | 原生玩家端主动连接唯一的服务端监听，控制台从同一端口提供并独立鉴权 |
 | 持久事实事件 + 受控调用管线 | 世界变化均可追踪；纯计算仍用 typed port，不把每次函数调用广播到 bus |
 | authority 与 policy 分开 | 规则负责能否执行、如何结算；Agent 负责选择、表达与协商，记忆才能影响行为 |
 | 知识、事实、记忆分开 | 共享世界观不等于全知；主观信念不回写世界真值 |
@@ -34,7 +34,7 @@
 
 ~~~mermaid
 flowchart LR
-  P["玩家浏览器 :5173<br/>client realm"] -->|"HTTP command / WS 投影"| S["server host :3000<br/>固定 guard + 模块注册"]
+  P["Godot 玩家进程（目标）<br/>client realm"] -->|"HTTP command / WS 投影"| S["server host :3000<br/>固定 guard + 模块注册"]
   C["控制台浏览器 :3000/console<br/>console realm"] -->|"同源控制台 API"| S
   S --> G["game 模块族<br/>world/map/clock/resources/actions/agreements/scenario/save"]
   S --> A["agent 模块族<br/>perception/memory/context/compression/tool-view/decision/scheduling"]
@@ -46,7 +46,7 @@ flowchart LR
   S -->|"授权投影 / WS"| P
 ~~~
 
-三个运行域都只通过 contracts 通信；server 是唯一权威。组合根持有具体实现；game 规则不依赖 LLM、网络或 UI；agent-runtime 只能读取授权投影并提交候选命令；client/console 模块只能消费授权协议。
+三个运行域通过公共 JSON 契约通信，服务端是唯一权威。组合根持有具体实现；game 规则不依赖 LLM、网络或 UI；agent-runtime 只能读取授权投影并提交候选命令；client/console 模块只能消费授权协议。
 
 ### 三种事件，不混用
 
@@ -60,13 +60,13 @@ Command 是请求，Event 是已发生的事实。不能把模型输出“已救
 
 ## 4. 部署与传输
 
-两个本地监听：`127.0.0.1:5173` 玩家客户端，`127.0.0.1:3000` 服务端（含 `/console/*`）。控制台是服务端提供的浏览器界面，不是第三个进程或端口。详见 [两个本地端口与三运行域](two-endpoints.md)。
+目标部署仅由 TS 服务端监听 `127.0.0.1:3000`。Godot 负责原生玩家界面，TS 控制台从同一监听的 `/console/*` 提供。现行浏览器客户端还使用 `127.0.0.1:5173`。见 [two-endpoints.md — 双端部署](two-endpoints.md)。
 
 接口的完整清单、载荷、角色权限与错误码见 [API](api.md)，版本统一为 `/api/v1`。
 
 HTTP 命令与所有副作用工具共用 command handler。WebSocket 重连只补投影，不重新发起 action。接口错误至少区分 forbidden、validation、version-conflict、stale-controller、stale-turn、not-ready、budget-exhausted、module-missing、assembly-incompatible、plugin-failed；完整错误码见 [公共契约](contracts.md)。
 
-一个服务端进程即可同时宿主 API、逻辑调度器、outbox worker、agent workers、控制台 API 与静态资源，但模块通过 port 交互。模型网络调用发生在数据库事务之外。client 与 console 是独立浏览器 realm，共享组件与契约，发布时分别按 player/operator/researcher/evaluator 权限隔离；服务端是唯一授权来源，隐藏按钮不是鉴权。
+一个服务端进程即可同时宿主 API、逻辑调度器、outbox worker、agent workers、控制台 API 与静态资源，但模块通过 port 交互。模型网络调用发生在数据库事务之外。玩家端与控制台是独立运行域，分别按玩家和控制台角色授权。权限决定由服务端作出。
 
 模型凭据只存在服务端 secret store/环境配置，run 保存 credentialRef，禁止写入前端、prompt 或导出清单。日志原文存储、脱敏与保留规则见 [观测](../platform/observability.md)。
 

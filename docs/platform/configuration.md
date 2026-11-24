@@ -19,11 +19,11 @@
 | console layout/roles | 控制台页面贡献、默认角色与面板布局 | console 模块与 two-endpoints |
 | RunSpec / resolved manifest | 选择上述版本与初态 / 完整冻结解析结果 | 本文与 evaluation |
 
-ModuleDefinition 是所有 realm、所有职能的统一注册描述符；模块私有 configSchema 随自身描述符，新增私有参数不牵动共享契约。公共 DTO/port/schema 归 contracts。
+ModuleDefinition 是 TypeScript 运行域的统一注册描述符；模块私有 configSchema 随自身描述符，新增私有参数不牵动共享契约。公共 DTO/port/schema 归 contracts。
 
 ## 2. 全平台装配与 Agent 子配方
 
-RunSpec 的 moduleAssemblyRef 选择全平台组合，包括 game、agent、platform、client、console、adapters 类职能实现及其配置/连接。Agent profile 只描述主体策略子配方，不能暗中决定整个世界的地图、时钟、持久化或 UI 实现。assembly 文件分 `server`、`client`、`console` 三段。浏览器 host 连接后通过 `GET /api/v1/session/assembly?realm=...` 取得本域的 resolved 模块清单，再验证本地可信 catalog；不满足则拒绝 ready，见 [两个本地端口](../architecture/two-endpoints.md)。
+RunSpec 的 `moduleAssemblyRef` 选择 TypeScript 装配。Godot 玩家端的本地 provider 由客户端自己的发布物装配。Agent profile 只描述主体策略子配方，不能暗中决定整个世界的地图、时钟、持久化或 UI 实现。assembly 文件分 `server`、`client`、`console` 三段。浏览器 host 连接后通过 `GET /api/v1/session/assembly?realm=...` 取得本域的 resolved 模块清单，再验证本地可信 catalog；不满足则拒绝 ready，见 [两个本地端口](../architecture/two-endpoints.md)。
 
 Agent profile 的装配顺序为平台基线、场景 profile、可复用 Agent profile，最后是实验 variant patch。全平台 assembly 变体也必须声明改变的模块、连接与参数，不能靠扫描顺序覆盖；具体模块引用和 cardinality 以 [组合规范](../architecture/composition.md) 为准。
 
@@ -70,12 +70,12 @@ failurePolicy: strict
 
 ## 4. 双端设置分工
 
-玩家入口为 http://127.0.0.1:5173；服务端控制台为 http://127.0.0.1:3000/console/*。API 与 WebSocket 由同一服务端监听器提供，不另启配置、运营或实验 Web 端口。
+现行网页入口为 http://127.0.0.1:5173。原生玩家端直接连接服务端。API、WebSocket 和 http://127.0.0.1:3000/console/ 共享服务端监听，见 [原生部署目标](../architecture/two-endpoints.md#原生-demo-部署目标)。
 
 | 入口 | 功能模块提供的设置 | 不允许的操作 |
 |---|---|---|
-| 玩家 settings（`:5173`） | 显示/语言、声音、镜头、输入辅助、暂停/保存 | 密钥编辑、全知视角、直接热换运行中 provider |
-| 玩家端测试 preset 申请（`:5173`） | 展示获准的装配摘要并提交新 run/branch 申请 | 直接改变当前 run、跳过预检 |
+| 玩家设置 | 显示/语言、声音、镜头、输入辅助、暂停/保存 | 密钥编辑、全知视角、直接热换运行中 provider |
+| 网页玩家端测试 preset 申请（`:5173`） | 展示获准的装配摘要并提交新 run/branch 申请 | 直接改变当前 run、跳过预检 |
 | 服务端模块装配（`:3000/console`） | 全平台 module 选择、依赖/能力、配置 diff、生命周期与迁移计划 | 绕过最终 guard、静默卸载必需能力 |
 | 服务端模型池（console） | 连接别名、模型配置、能力验证、批量挂载 | 向玩家下发 credentials、逐 Agent 复制模型参数 |
 | 服务端剧情运营（console） | 三个非人类势力席位、事件卡、世界时钟/存档 | 修改已发布历史而不留记录 |
@@ -96,7 +96,7 @@ ToolDefinition 实现只登记一次，toolset/binding 引用定义并收窄能�
 
 ## 6. 预检和预览
 
-1. 校验单玩家、内容引用、15 个 gameplay 身份的总配额和正式世界的唯一别名；确认只有两个本地端口。
+1. 校验单玩家、内容引用、15 个 gameplay 身份的总配额和正式世界的唯一别名；按[部署规格](../architecture/two-endpoints.md)核对本应用的监听端口。
 2. 解析全平台 assembly：三 realm 实现存在、API/port 版本相容、连接 cardinality 正确、无依赖环，必需能力有唯一或显式有序 provider；catalog 快照 hash 与 assembly hash 可复算。
 3. 校验 client/console 贡献的 slot、requiredCapabilities、remote 依赖与运行侧；浏览器模块不能要求服务端内存对象或凭据。
 4. 解析 Agent profile、模型挂载和工具 binding；缺用途、能力不兼容、超模型窗口或越权约束均拒绝。
@@ -124,7 +124,7 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 ## 9. 验收
 
-换一项游戏规则、存档、镜头、HUD、控制台页面或 memory 实现都只修改模块自身/装配配置，无需改无关模块；UI 编辑和运行校验使用同一 schema。缺必需能力时启动/卸载都显式失败。两个端口承担全部界面/API/WS；玩家设置无后台权限；模型批量挂载不串状态；从 manifest 可重建同一组合。浏览器页面不得因为本机访问获得服务端角色，端口/会话校验见 [两个本地端口](../architecture/two-endpoints.md)。
+换一项游戏规则、存档、镜头、HUD、控制台页面或 memory 实现都只修改模块自身/装配配置，无需改无关模块；UI 编辑和运行校验使用同一 schema。缺必需能力时启动/卸载都显式失败。服务端监听提供 API、WebSocket 与控制台静态资源。玩家设置无后台权限；模型批量挂载不串状态；从 manifest 可重建同一组合。浏览器页面不得因为本机访问获得服务端角色，端口/会话校验见 [两个本地端口](../architecture/two-endpoints.md)。
 
 模块细节见 [模块边界](../architecture/modules.md)、[插件机制](../architecture/plugins.md)、[积木组合](../architecture/composition.md)、[双端口](../architecture/two-endpoints.md)。
 

@@ -57,7 +57,7 @@ Packer 等人的 MemGPT 使用分层内存与虚拟上下文管理，可与 M3 �
 
 | 来源 | URL | 可借鉴点 |
 |---|---|---|
-| Alistair Cockburn《Hexagonal Architecture, the original 2005 article》 | https://alistair.cockburn.us/hexagonal-architecture/ | 端口按用途而非技术命名，适配器可替换；文中“很多应用只有两个端口”说的是应用能力端口，不是网络监听端口。本项目借鉴“按用途设 port”的思想；两个本地监听端口是部署边界，两者不能混为一谈 |
+| Alistair Cockburn《Hexagonal Architecture, the original 2005 article》 | https://alistair.cockburn.us/hexagonal-architecture/ | 端口按用途而非技术命名，适配器可替换；文中“很多应用只有两个端口”说的是应用能力端口，不是网络监听端口。本项目借鉴“按用途设 port”的思想；监听端口由[部署规格](../architecture/two-endpoints.md)定义 |
 | Azad Bolour《Notes on the Eclipse Plug-in Architecture》(Eclipse Corner, 2003) | https://www.eclipse.org/articles/Article-Plug-in-architecture/plugin_architecture.html | host 发布 extension-point 与 schema，扩展方声明 extension，回调对象懒实例化；文章把 Eclipse 模型与 microkernel 模式对比，支持“任何模块都可成为宿主”的思路 |
 | Visual Studio Code《Extension API》 | https://code.visualstudio.com/api | 同一套扩展 API 既支撑官方功能也支撑第三方；manifest + contribution points + activation events + 独立扩展宿主进程 |
 | Home Assistant《The integration manifest》 | https://contributors.home-assistant.io/core/integrations/manifest/ | 集成以清单声明 domain、dependencies/requirements/after_dependencies、config_flow、quality_scale、disabled 等；声明式元数据与质量分级 |
@@ -77,7 +77,7 @@ PixiJS 官方将其定义为 Web 2D 渲染器，支持 WebGL 与可选 WebGPU。
 | 单玩家首版、统一世界观 | 需求确定的范围；保留服务端权威与协议边界，玩家多人联机不进入首版验收 |
 | 宿主保留 + 全职能模块可插拔 | 需求方明确要求“像主机插 USB”；不只 memory，游戏规则、UI、控制台页面、存储与模型传输都可替换 |
 | 严格解耦优先于内聚 | 当“高内聚大模块”会阻碍替换时拆开；模块内部仍按单一职责组织，必要协议依赖显式声明 |
-| 两个本地端口、三个运行域 | 客户端 `:5173`、服务端 `:3000`（含 `/console`）；避免第三套 Web 服务与权限漂移，控制台同源但仍需鉴权 |
+| 本地双端、三个运行域 | 现行浏览器部署用 `:5173` 与 `:3000`。Godot 目标由 `:3000` 同时服务原生玩家端与控制台。三个运行域各按职责和权限隔离 |
 | 15 个身份由 8 名公社支持者、4 名 AI 党魁和 3 名外域 Agent 组成 | 需求要求增加 NPC；在一个 runtime 中表达不同主体，不用额外导演 Agent 补位；玩家不是第 16 个 Agent |
 | 三个外域运营席位 | 巡裔、根庭、泊星者可 agent/human 控制，经控制台与标准 command；不影响 15 个身份计数 |
 | 集中模型池、Agent 挂载 | 复用连接、模型参数和资源预算；按 (agent,purpose) 严格解析，避免逐角色复制配置 |

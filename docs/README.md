@@ -38,6 +38,7 @@
 |---|---|
 | 了解完整游戏 | [design/README.md](design/README.md) → [game-overview.md](design/game-overview.md) → [canon.md](design/world/canon.md) → [01-cycle-and-opening.md](design/gameplay/01-cycle-and-opening.md) |
 | 了解 Demo 做哪一段 | [README.md](../README.md) → [00-scope-and-invariants.md](00-scope-and-invariants.md) → [game/README.md](game/README.md) → [game/gameplay.md](game/gameplay.md) |
+| 迁移原生玩家端 | [client-and-rendering.md — Godot 原生玩家端](architecture/client-and-rendering.md#9-godot-原生玩家端) → [two-endpoints.md — 原生部署](architecture/two-endpoints.md#原生-demo-部署目标) → [roadmap-and-acceptance.md — 切换验收](delivery/roadmap-and-acceptance.md#godot-玩家端切换验收) |
 | 开发实现 | [AGENTS.md](../AGENTS.md) → [tech-stack.md](delivery/tech-stack.md) → [build-plan.md](delivery/build-plan.md)，再按步骤阅读所列规格 |
 | 写序章规则 | [game/rules.md](game/rules.md) → [game/content-pack.md](game/content-pack.md) → [domain-model.md](architecture/domain-model.md) |
 | 做多人（设计层） | [design/multiplayer/README.md](design/multiplayer/README.md) → [01-seats-and-clock.md](design/multiplayer/01-seats-and-clock.md) → [02-authority-economy-fairness.md](design/multiplayer/02-authority-economy-fairness.md) |
@@ -67,7 +68,7 @@
 | 模块清单、默认装配、替换演示 | [module-catalog.md](architecture/module-catalog.md) |
 | 目录与包结构 | [code-structure.md](architecture/code-structure.md) |
 | 端口、鉴权、控制台页面 | [two-endpoints.md](architecture/two-endpoints.md) |
-| 客户端交互与场景适配 | [client-and-rendering.md](architecture/client-and-rendering.md)；目标 3D 见 [design/gameplay/06](design/gameplay/06-player-experience.md) 与 [design/assets/02](design/assets/02-modeling-spec.md) |
+| 客户端装配、交互与场景适配 | [client-and-rendering.md](architecture/client-and-rendering.md)；目标 3D 见 [design/gameplay/06](design/gameplay/06-player-experience.md) 与 [design/assets/02](design/assets/02-modeling-spec.md) |
 | turn 管线、调度、确定性决策 | [runtime.md](agent/runtime.md) |
 | 记忆 / 感知 / 上下文 / 压缩与工具视图 | [memory.md](agent/memory.md) / [perception.md](agent/perception.md) / [context.md](agent/context.md) / [compression-and-tool-view.md](agent/compression-and-tool-view.md) |
 | 工具定义、绑定、工具清单 | [tools.md](agent/tools.md) |

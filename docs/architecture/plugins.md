@@ -18,6 +18,8 @@
 
 ## 2. ModuleDefinition 契约
 
+`ModuleDefinition` 是 TypeScript 宿主的插件描述符。Godot 使用 C# 本地描述符实现同样的显式能力与生命周期原则，见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
+
 字段、schema 与 TypeScript 类型以 [公共契约](contracts.md) 第 3 节为准；下面只说明各字段在注册、解析与运行中的用途，不另建第二份 schema。
 
 | 字段组 | 用途与约束 |

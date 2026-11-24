@@ -1,8 +1,8 @@
 # 玩家客户端、UI 模块与场景适配
 
-> **权威：** 目标表现是 **3D 斜俯视**，见 [design/gameplay/06-player-experience.md](../design/gameplay/06-player-experience.md) 与 [design/assets/02-modeling-spec.md](../design/assets/02-modeling-spec.md)。本文的 2.5D/PixiJS 是**序章灰盒**：验证交互、可读性与端口契约，不是最终渲染，也不作为美术验收。3D 渲染器必须实现同一个 `SceneRenderer` 端口，见第 5 节。
+> **权威：** 目标表现是 **3D 斜俯视**，见 [design/gameplay/06-player-experience.md](../design/gameplay/06-player-experience.md) 与 [design/assets/02-modeling-spec.md](../design/assets/02-modeling-spec.md)。本文的 2.5D/PixiJS 是**序章灰盒**：验证交互、可读性与端口契约，不是最终渲染，也不作为美术验收。原生迁移使用 Godot C#，验收标准见 [Godot 原生玩家端](#9-godot-原生玩家端)。
 
-> 状态：序章玩家宿主与前批模块已实现。玩家访问 http://127.0.0.1:5173，世界权威、模型和后台管理在 http://127.0.0.1:3000。当前交付覆盖登录、装配握手、授权投影、公社开局、PixiJS 灰盒、HUD、侧栏、对话、设置与通知；完整证据/提案/派遣工作流和正式 3D 资产仍待后续。两个端口是固定的部署边界，详见 [双端口拓扑](two-endpoints.md)。
+> 状态：序章玩家宿主与前批模块已实现。玩家访问 http://127.0.0.1:5173，世界权威、模型和后台管理在 http://127.0.0.1:3000。当前交付覆盖登录、装配握手、授权投影、公社开局、PixiJS 灰盒、HUD、侧栏、对话、设置与通知；完整证据/提案/派遣工作流和正式 3D 资产仍待后续。现行网页启动方式和原生部署目标见 [two-endpoints.md — 双端部署](two-endpoints.md)。本文前八节描述网页版本。
 
 ## 1. 客户端宿主保留什么
 
@@ -52,9 +52,9 @@ SceneSnapshot/SceneDelta 只包含玩家已知的节点、可见角色、获准�
 
 ## 5. 场景适配：3D 目标与 2.5D 灰盒
 
-React 是序章的 UI 适配目标，PixiJS 是序章的**灰盒场景适配**；两者都不构成宿主契约。PixiJS 是面向 Web 的 2D 渲染器，支持 WebGL 和可选的 WebGPU；序章在它之上用等距精灵表现 2.5D，不依赖完整的 3D 物理。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
+现行网页宿主使用 React 界面及 PixiJS **灰盒场景适配**。PixiJS 是面向 Web 的 2D 渲染器，支持 WebGL 和可选的 WebGPU；序章在它之上用等距精灵表现 2.5D，不依赖完整的 3D 物理。[官方介绍](https://pixijs.com/8.x/guides/getting-started/intro)
 
-**3D 目标不改变端口。** 正式渲染器（three.js/Babylon 或自研）实现同一个 `SceneRenderer` 端口：输入授权 `SceneView`、`CameraState` 与选择状态，输出 `entity-picked` / `location-picked` 意图；它有自己的相机、材质、LOD 与光照，但不得把世界坐标、通行或位置判定搬到客户端。第 5 节后半的等距投影公式只属于灰盒，3D 渲染器不复用。
+本节说明网页 `SceneRenderer` 的职责。Godot 在自己的进程内定义对应的 C# 场景端口。两个宿主之间的兼容边界是授权投影和命令协议。
 
 SceneRenderer port 接收授权场景、相机和选择状态，输出 entity-picked/location-picked 这类意图。projection 负责世界与屏幕的变换，input 负责命中和交互，renderer 负责资源与显示；三者可以分别提供实现，但在 assembly 中必须满足相容的坐标、命中和视口契约。
 
@@ -191,3 +191,20 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 | 测试 preset | 列出 `GET /api/v1/presets`，填写说明后提交 | `POST /api/v1/run-requests` |
 
 设置保存在 `PreferencePort`，不进入 run manifest，也不影响任何世界结果。
+
+## 9. Godot 原生玩家端
+
+原生玩家端按服务端公开的玩法、授权投影和序章规则重新设计界面、输入与资产。交付要求为完整可操作的 Demo 和正式 3D 场景。现行网页 UI、交互方案、素材与资产包属于浏览器实现。美术的交付范围见 [art-direction.md — Godot Demo 美术验收](../game/art-direction.md#godot-demo-美术验收)。
+
+| 职责 | 边界 |
+|---|---|
+| 原生宿主 | 显式选择 provider，预检能力、版本与依赖顺序，管理会话、UI 挂载槽和资源生命周期 |
+| 协议与网络 | 用 HTTP Bearer 会话、一次性 WebSocket 票据及公共 JSON 契约访问服务端。校验会话和 `hello` 的协议版本 |
+| 玩家投影 | 由会话持有唯一投影。快照建立世界与分支身份，增量更新顶层字段，视图取得不可变状态。切换分支时丢弃旧分支的选择、分页和待应用数据 |
+| 地图、镜头与输入 | 相机、坐标变换、3D 命中、实体显示与选择由可替换 provider 提供。以授权地点、路线和实体 ID 关联场景及输入，物理点击只产生意图 |
+| 功能界面 | 开局、HUD、人物与地点、通信、任务、条款、提醒和设置通过注入的只读视图与命令端口工作。用户动作提交服务端，回执和授权投影驱动结果显示 |
+| 本地偏好 | 通过独立偏好 provider 存放界面及图形设置。会话令牌仅存进程内存，存档通过服务端入口读写 |
+
+客户端发布物显式登记所选能力的实现、版本和依赖，并提供启动和反序清理顺序。必需能力缺失、重复或形成依赖环时，宿主拒绝就绪。功能模块依赖端口，不引用其他模块的实现。原生装配由客户端发布物拥有，`/api/v1/session/assembly?realm=client` 供现行浏览器宿主使用。服务端 RunSpec 及存档的冻结摘要由 TS 运行时按原契约复算。
+
+投影缺口与版本错误按 [api.md — WebSocket](api.md#玩家投影与恢复) 处理。将网络读取与 Godot 场景更新隔离，主线程消费不可变视图。渲染器持有的网格、碰撞体和动画仅服务显示与命中。通行、时钟与规则结果由服务端提交。新资产按稳定 ID 从打包的 Godot 资源中查找。

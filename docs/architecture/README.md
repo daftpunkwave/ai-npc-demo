@@ -18,9 +18,9 @@
 | [domain-model.md — 领域模型](domain-model.md) | 命令、事件、聚合、受众与投影 |
 | [events-and-state.md — 事件与状态](events-and-state.md) | 事务、消费、水位和恢复语义 |
 | [storage.md — 存储](storage.md) | 表结构与分支复制 |
-| [two-endpoints.md — 双端部署](two-endpoints.md) | 两端口、三 realm 与权限 |
+| [two-endpoints.md — 双端部署](two-endpoints.md) | 现行浏览器部署、原生单监听目标与三域权限 |
 | [api.md — 接口](api.md) | HTTP 与 WebSocket 清单 |
-| [client-and-rendering.md — 玩家客户端](client-and-rendering.md) | UI slot、渲染与交互 |
+| [client-and-rendering.md — 玩家客户端](client-and-rendering.md) | UI slot、渲染、交互及 Godot 原生宿主 |
 
 ## 阅读顺序
 

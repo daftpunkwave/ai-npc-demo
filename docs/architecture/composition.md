@@ -34,6 +34,8 @@
 
 ## 3. 三 realm 装配与握手
 
+本节描述 TypeScript 装配及浏览器握手。Godot 玩家进程使用随程序发布的本地装配，仅以公共协议与服务端握手。见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
+
 assembly 同时声明 `server`、`client`、`console` 三段。服务端在启动或创建 run 时解析 server 段，并校验需要 remote 能力的浏览器段。浏览器宿主连接后通过 `GET /api/v1/session/assembly`（`realm=client` 或 `console`）取得本域已解析模块清单、协议版本与远端能力描述。模块清单可以为空。本地内置 catalog 的验证结果决定模块能否加载。
 
 - 满足：加载模块并进入 ready，记录 client/console assembly hash。

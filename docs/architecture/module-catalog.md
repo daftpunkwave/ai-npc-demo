@@ -42,7 +42,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 - 证据信封与 trace 关联协议；
 - agent turn 管线、预算、租约与证据协调；
 - 配置解析、冻结 manifest 与 requested/resolved/effective 记录；
-- 两个本地端口与三运行域的信任边界；
+- 本地双端和三运行域的[信任边界](two-endpoints.md)；
 - 密钥只存在于服务端 secret 解析路径。
 
 详见 [模块边界](modules.md) 第 2 节与 [插件机制](plugins.md) 第 6 节。把授权或提交改成“可关闭的 hook”会破坏全部实验结论。
@@ -110,6 +110,8 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 `run`/`branch`/`manifest` 生命周期由宿主 `packages/experiment` 机制协调，不属于可替换能力；评估协议、runner 与报告由 `platform.evaluation.standard` 模块提供。适配器只做技术转换；语义失败（未知 schema、不支持的输出协议、缺 usage）必须显式返回，不能吞掉或伪造成功。
 
 ## 5. 客户端模块
+
+本节登记现行网页玩家端的 TypeScript provider。Godot 玩家端随客户端发布独立的能力与绑定，见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
 
 客户端是玩家域，只消费授权投影，不持有世界权威与密钥。默认装配如下；slot 名称与客户端宿主一致，见 [客户端与场景适配](client-and-rendering.md)。
 

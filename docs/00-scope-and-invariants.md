@@ -21,8 +21,8 @@
 | 时间 | 1 tick = 1 游戏小时；**20 秒/tick**；1 日 8 分钟；序章七日约 56 分钟 | [速查表](design/world/canon.md) |
 | 地图 | 序章加载近城 **6 节点、9 条路**；外域 7 节点、7 条路在 t168 后启用 | [灰港地图](design/world/grayharbor.md) |
 | 资源 | 设计共 6 种；序章只结算 **供给、能源、医疗** 三种库存；材料、食物、水在 t168 按设计初值起算 | [序章结算边界](design/gameplay/05-chapter.md) |
-| 表现 | 目标为 **3D 斜俯视**；切片用 2.5D 等距灰盒验证交互与可读性，灰盒不作为美术验收 | [界面与镜头](design/gameplay/06-player-experience.md)、[建模规格](design/assets/02-modeling-spec.md) |
-| 部署 | 两个本地监听：玩家客户端 `127.0.0.1:5173`，服务端 `127.0.0.1:3000`（含 `/console/*`） | 本文第 2 节 |
+| 表现 | Godot 原生 Demo 以正式 **3D 斜俯视**画面验收，重新设计玩家界面、交互和美术。现行 2.5D 等距版本用于灰盒验证 | [界面与镜头](design/gameplay/06-player-experience.md)、[原生玩家端](architecture/client-and-rendering.md#9-godot-原生玩家端) |
+| 部署 | Godot 玩家进程直接连接本机 TS 服务端。Demo 唯一监听为 `127.0.0.1:3000`，控制台复用 `/console/*`。现行浏览器版本另用 `127.0.0.1:5173` | [原生部署目标](architecture/two-endpoints.md#原生-demo-部署目标) |
 | 运营 | 三个外域（巡裔、根庭、泊星者）可由 Agent 或真人控制；控制台从 `:3000/console` 操作 | 本文第 2 节 |
 | 研究 | 控制台提供可观测、可评估、可调试内容；玩家客户端只获得授权投影 | [评估](platform/evaluation.md) |
 
@@ -75,8 +75,8 @@
 6. 三个外域真人接管保留 agentId，递增 controllerEpoch，拒绝旧控制者的晚到命令。
 7. 角色与派系是不同身份。派系意见必须传达后角色才知道；角色可在权限内拒绝或协商。
 8. 模块不能绕过宿主 guard：授权、scope、预算、协议、提交、fencing 与证据顺序固定；换 provider 不等于放行。
-9. 浏览器 realm 不持有世界权威、数据库连接或模型密钥；跨域只经授权 HTTP/WS 协议。
-10. 两个本地端口是部署不变量；控制台复用服务端端口，不新增第三个 Web 服务。
+9. 世界权威、数据库连接和模型密钥归服务端。玩家与控制台均经授权 HTTP/WS 协议访问服务端。
+10. 服务端与控制台共享 `127.0.0.1:3000`。原生 Demo 的监听和进程边界见 [原生 Demo 部署目标](architecture/two-endpoints.md#原生-demo-部署目标)。
 11. 单机也要保留席位和实际动作者的记录，供命令授权、事件追溯、授权投影和存档回放。参见 [02-authority-economy-fairness.md — 首版接口保留项](design/multiplayer/02-authority-economy-fairness.md)。
 
 ## 3. 配置、装配与实验边界
@@ -138,6 +138,6 @@ memory 基线统一为：
 3. 九张局势卡按设计时点触发；三项读数按 20 秒/tick 结算到 t168。
 4. 序章只结算供给、能源、医疗三种库存；材料、食物、水在 t168 按设计初值出现。
 5. 换 game 规则模块、换 client UI 模块、换 agent 认知模块、换 console 页面各一次，只改模块、装配与配置。
-6. 两个端口之外无监听；玩家/控制台权限不串。
+6. 原生 Demo 仅监听服务端端口。验收分别检查玩家授权投影与控制台角色权限。
 
 只增加目录、包或接口数量不算模块化证据。详细实现验收由 [路线与验收](delivery/roadmap-and-acceptance.md) 统一维护，逐步实施与每步完成判据见 [构建计划](delivery/build-plan.md)。

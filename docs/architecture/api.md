@@ -1,6 +1,6 @@
 # HTTP 与 WebSocket API
 
-> 本文规定首版 HTTP 与 WebSocket 接口。接口由 `server` 在 `127.0.0.1:3000` 提供，玩家客户端经 `:5173` 的代理以相对路径访问。公共 DTO 在 `packages/contracts` 中用 Zod 定义。交付范围见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。参见 [tech-stack.md — 技术栈](../delivery/tech-stack.md#6-本地双端拓扑)、[domain-model.md — 领域模型](domain-model.md)、[contracts.md — 公共契约](contracts.md)。
+> 本文规定首版 HTTP 与 WebSocket 接口。接口由 `server` 在 `127.0.0.1:3000` 提供。现行浏览器玩家端经 `:5173` 代理访问，原生玩家端直接消费相同的版本化接口。公共 DTO 在 `packages/contracts` 中用 Zod 定义。交付范围见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。参见 [tech-stack.md — 技术栈](../delivery/tech-stack.md#6-本地双端拓扑)、[domain-model.md — 领域模型](domain-model.md)、[contracts.md — 公共契约](contracts.md)。
 
 ## 1. 通用约定
 
@@ -10,7 +10,7 @@
 | 格式 | 请求与响应都是 `application/json; charset=utf-8`；字段 camelCase |
 | 认证 | `Authorization: Bearer <sessionToken>`；除 `GET /api/v1/health` 与 `POST /api/v1/auth/login` 外都需要 |
 | 控制台角色 | 控制台请求必须带 `X-Active-Role: operator \| researcher \| evaluator`，且该角色在会话角色内；服务端只按这个当前角色鉴权 |
-| Origin | 请求带 `Origin` 头时，必须是 `http://127.0.0.1:5173` 或 `http://127.0.0.1:3000`，否则返回 403；WS 握手同样检查 |
+| Origin | HTTP 请求与 WS 握手带 `Origin` 时必须匹配部署的来源白名单，否则返回 403。原生连接可省略此头，仍按 Bearer 会话或一次性票据认证 |
 | 跨域允许面 | 只允许 `GET`、`POST`、`OPTIONS` 与 `Authorization`、`Content-Type`、`X-Active-Role` 三个请求头；会话令牌走请求头而非 Cookie，因此不启用 `credentials` |
 | 安全响应头 | 全部响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY` 与 `Referrer-Policy: same-origin`；`text/html` 文档另带 CSP（`default-src 'self'`、`frame-ancestors 'none'`，不放开内联脚本） |
 | 传输上限 | `requestTimeout` 与 `handlerTimeout` 各 30 秒、socket 空闲 30 秒回收、单连接最多 1000 个请求、请求体上限 1 MiB。`handlerTimeout` 超期返回 500 `plugin-failed` 且 `retryable: true`；它只中止本次响应等待，handler 内已发起的异步工作不会被自动取消。收齐请求头的期限沿用 Node 的 `headersTimeout` 默认值，本服务不另行配置 |
@@ -142,11 +142,15 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 `error` 帧是服务端唯一的结构化失败通道，客户端必须消费：`unauthenticated` 与 `forbidden` 按会话失效处理（清除令牌并停止重连），其余错误码属于本帧或本频道的问题，客户端关闭当前连接后按既有指数退避重新申请票据与订阅。错误帧不计入「连接已可用」，否则每次失败都会重置退避，持续拒绝将退化成固定间隔的热循环。
 
-客户端只在帧成功应用之后才推进确认游标并发送 `ack`。传输层 schema 只校验帧是合法 JSON，领域 schema 更严；若先推进游标再应用，消费侧拒绝的帧会被确认掉，重连时服务端从已前移的序号续传，该增量永久丢失。被拒绝的帧保持游标不动，由重新取快照补齐。
+### 玩家投影与恢复
+
+客户端只在帧成功应用之后才推进确认游标并发送 `ack`。帧结构校验之后还须校验投影载荷与本地基线。提前确认未应用的增量会使重连跳过该增量。被拒绝的帧保持游标不动，由重新取快照补齐。
 
 出现未应用的帧后，客户端必须进入「等待快照」状态：此后的增量既不应用也不确认，直到收到 `snapshot` 重建连续基线。只让被拒的那一帧不确认是不够的——后续帧一旦被确认，游标就跨过了缺口，服务端重连时从缺口之后续传，缺失的增量同样再也不会补发。玩家端在拒帧后先断开当前连接再重新取快照，避免旧连接继续推送与恢复并行。
 
-在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。新分支的 `streamSeq` 从 0 重新计数，因此客户端对跨分支快照按「切换身份」处理，而不是用旧分支的序号判定迟到；只有同一分支内的旧快照才按 `streamSeq` 与 `projectionVersion` 丢弃。世界 ID 不同的快照仍被拒绝。
+在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。跨分支快照用于切换身份与投影基线。序号和投影版本只用于同一分支内的快照顺序判定。世界 ID 不同的快照仍被拒绝。
+
+`append` 可与对应 `delta` 共用同一 `streamSeq`。客户端按对白 ID 或提醒的 `kind`、`worldTick`、`text` 去重。增量重放和完整快照都可以补齐对白与提醒状态。
 
 重连规则：服务端为每个 `(session, channel)` 保留最近 200 条增量。`fromStreamSeq` 之后的增量都还在时补发增量；否则重新发一次 `snapshot`。重连只补投影，不重放任何命令。流式模型 token 不经过任何玩家频道。
 
