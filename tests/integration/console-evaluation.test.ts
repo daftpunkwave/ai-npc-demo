@@ -594,6 +594,37 @@ describe("控制台评估读取接口", () => {
     expect(runs.filter((run) => run.variant === "memory-m0-window").length).toBe(0);
   });
 
+  it("超出单次展开上限的实验被拒绝且不创建 run", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const before = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    // 变体 × 分支 × 重复次数超过上限：拒绝而不是创建任意多份 run。
+    const response = await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: {
+        schemaVersion: 1, experimentId: "exp-too-large-v1",
+        base: {
+          moduleAssemblyRef: "local-slg-test-v1", worldPackRef: "earth-2964-v1",
+          scenarioRef: "watergate-v1", rosterRef: "core-3",
+          modelLayoutRef: "deterministic-model-layout-v1", seed: "too-large-v1",
+          player: { principalId: "player-1", factionId: "human-neutral" },
+          mode: "closed-loop", initialState: { kind: "cold-start" },
+          clock: { kind: "controlled" }, budget: { maxTokens: null, maxCost: null },
+          failurePolicy: "strict",
+        },
+        scriptRef: "s-promise", scriptBranches: ["keep", "break"], commonPatchRefs: [],
+        variants: ["memory-m0-window"], repetitions: 200, runOrder: "sequential",
+      } },
+    });
+    expect(response.statusCode).toBe(400);
+    const after = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    expect(after).toBe(before);
+  });
+
   it("评估员与操作员不能创建实验", async () => {
     const host = await testHost();
     const consoleToken = await login(host, "evaluation-console");
