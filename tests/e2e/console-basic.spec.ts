@@ -22,7 +22,9 @@ test("控制台显示运行总览并在评估角色下禁用装配页", async ({
   await expect(page.getByTestId("console-page-debug")).toBeVisible();
   await page.getByTestId("console-role").selectOption("evaluator");
   await expect(moduleNav).toBeDisabled();
-  await expect(page.getByTestId("console-role-denied")).toBeVisible();
+  // 评估角色现在有只读的「评估与对比」页面（实验列表与报告），因此不再落入无页面回退。
+  await expect(page.getByTestId("console-nav-evaluation")).toBeEnabled();
+  await expect(page.getByText("还没有实验记录。创建实验需要研究员角色并经服务端预检。")).toBeVisible();
   await page.getByTestId("console-role").selectOption("researcher");
   await expect(page.getByTestId("console-page-health")).toBeVisible();
   await expect(page.getByTestId("console-nav-health")).toHaveClass("is-active");

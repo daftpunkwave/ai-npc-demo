@@ -362,6 +362,18 @@ describe("世界核心", () => {
     expect(
       events.filter((event) => event.type === "ChapterStageEvaluated").map((event) => event.worldTick),
     ).toEqual([168]);
+    const chapter = events.find((event) => event.type === "ChapterStageEvaluated");
+    // t168 交接按内容初值重建六种城市资源，序章已发生的消耗不回写。
+    expect(chapter?.payload).toMatchObject({
+      cityResources: {
+        energy: 140,
+        materials: 160,
+        food: 120,
+        supply: 60,
+        medical: 40,
+        water: 72,
+      },
+    });
   });
 
   it("控制方可以通过政策命令关闭道路", async () => {

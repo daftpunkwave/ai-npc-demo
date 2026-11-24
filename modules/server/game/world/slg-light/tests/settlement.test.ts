@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { Json } from "@ai-npc/contracts";
 import type { GameContent, GameModulePorts, WorldTx } from "@ai-npc/module-sdk";
-import { runDailySettlement } from "../src/settlement";
+import { runChapterEvaluation, runDailySettlement } from "../src/settlement";
 import { campaignAggregateId, metersAggregateId } from "../src/port";
 import { createTestHost, TestWorldTx } from "./support";
 
@@ -20,7 +20,7 @@ class RecordingTx extends TestWorldTx {
   }
 
   /** 已记录的领域事件，供测试断言结算发布的事件类型。 */
-  events(): readonly { readonly type: string; readonly payload: Json }[] {
+  override events(): readonly { readonly type: string; readonly payload: Json }[] {
     return this.recorded;
   }
 }
@@ -88,6 +88,7 @@ function contentWith(settlement: SettlementRulesOverride): GameContent {
       "watergate.allocation": "harbor-first",
     },
     dutyDelegations: [],
+    cityResources: { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 },
   } as unknown as GameContent;
 }
 
@@ -156,6 +157,7 @@ function seedAndRun(options: {
     startTick: 0,
     status: "running",
     outcome: null,
+    cityResources: null,
   });
   tx.put("meters", metersAggregateId, {
     "relay.stability": 45,
@@ -267,5 +269,72 @@ describe("每日结算由内容规则参数驱动", () => {
     expect(adjust[0]?.stockpileId).toBe("sp-medical");
     expect(adjust[0]?.delta).toEqual({ medical: -4 });
     expect(metersOf(tx)["orchard.water"]).toBe(0);
+  });
+});
+
+describe("章节评估交接六种城市资源", () => {
+  it("t168 评估事件与 campaign 同时写入城市资源初值", () => {
+    const content = contentWith({});
+    const cityResources = { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 };
+    const tx = new RecordingTx(168);
+    tx.put("campaign", campaignAggregateId, {
+      campaignId: "cmp-1",
+      factionId: "faction-a",
+      playerId: "player-1",
+      chapterId: "test",
+      startTick: 0,
+      status: "running",
+      outcome: null,
+      cityResources: null,
+    });
+    tx.put("meters", metersAggregateId, {
+      "relay.stability": 45,
+      "orchard.water": 50,
+      "migration.safety": 50,
+      "watergate.allocation": "harbor-first",
+      triggered: [],
+      lastDailyTick: 168,
+    });
+    const result = runChapterEvaluation(tx, () => ({ fulfilled: 0, breached: 0 }), content.cityResources ?? null, 168);
+    expect(result).toEqual({ stopClock: true });
+    const evaluated = tx.events().find((event) => event.type === "ChapterStageEvaluated");
+    expect(evaluated?.payload).toMatchObject({ cityResources, outcome: "equilibrium" });
+    const campaign = tx.get<Record<string, unknown>>("campaign", campaignAggregateId);
+    expect(campaign?.state).toMatchObject({
+      status: "evaluated",
+      outcome: "equilibrium",
+      cityResources,
+    });
+    expect(tx.stopRequests()).toEqual([{ requestId: "chapter-evaluated", tick: 168 }]);
+  });
+
+  it("旧内容包没有城市资源初值时评估仍完成并写入 null 交接", () => {
+    const content = contentWith({});
+    const tx = new RecordingTx(168);
+    tx.put("campaign", campaignAggregateId, {
+      campaignId: "cmp-1",
+      factionId: "faction-a",
+      playerId: "player-1",
+      chapterId: "test",
+      startTick: 0,
+      status: "running",
+      outcome: null,
+      cityResources: null,
+    });
+    tx.put("meters", metersAggregateId, {
+      "relay.stability": 45,
+      "orchard.water": 50,
+      "migration.safety": 50,
+      "watergate.allocation": "harbor-first",
+      triggered: [],
+      lastDailyTick: 168,
+    });
+    expect(runChapterEvaluation(tx, () => ({ fulfilled: 0, breached: 0 }), null, 168)).toEqual({ stopClock: true });
+    const evaluated = tx.events().find((event) => event.type === "ChapterStageEvaluated");
+    expect(evaluated?.payload).toMatchObject({ cityResources: null, outcome: "equilibrium" });
+    expect(tx.get<Record<string, unknown>>("campaign", campaignAggregateId)?.state).toMatchObject({
+      status: "evaluated",
+      cityResources: null,
+    });
   });
 });

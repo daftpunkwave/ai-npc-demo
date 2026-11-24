@@ -180,6 +180,7 @@ COMMIT
 |---|---|---|---|---|---|
 | `campaign.start` | player、system | `{ factionId }` | world（另有 comms、scenario 和宿主钩子） | `CampaignStarted`、`DelegationCreated`、`MessageSent`、`KnowledgeGranted`，并安排伤员期限与剧情卡 job | `campaign-exists`、`unknown-faction`、`world-tick-not-zero`、`budget-exhausted` |
 | `dialogue.say` | player | `{ targetAgentId, text }`（1–300 字） | comms | `DialogueSubmitted` | `paused`、`relay-down`、`unknown-target`、`invalid-params` |
+| `broadcast.say` | player | `{ text }`（1–300 字） | comms | `MessageSent`（channel `broadcast`） | `paused`、`no-authority`、`invalid-params` |
 | `speech.commit` | agent、system | `{ channel: "dialogue"\|"message"\|"broadcast", conversationId: string\|null, audience: string[], approvedSpeechArtifactRef, intentKind, replyToId: string\|null }` | comms | `DialogueSubmitted` 或 `MessageSent` | `speech-not-approved`、`relay-down`、`paused`、`no-authority`（无广播权） |
 | `seat.say` | operator | `{ to: string[], text }`（1–200 字，真人席位直接写的话） | comms | `MessageSent`（channel `seat`，没有 speech artifact） | `paused`、`relay-down`、`no-authority` |
 | `information.share` | player、agent、operator | `{ evidenceId, audience: string[] }` | comms | `InformationShared`、`KnowledgeGranted`×n | `evidence-not-held`、`secret-not-shareable`、`relay-down`、`paused` |
@@ -202,8 +203,9 @@ COMMIT
 
 序章待交付的命令与权限：
 
-- 公社党魁通过玩家命令提交公开广播正文。comms 按公开广播规则计算并冻结送达，提交 `MessageSent`；玩家入口与 Agent 的 `speech.commit` 批准流程独立。
 - t144 程序案需要提案与投票命令以及席位归属校验。提案和投票依 [rules.md — t144 程序案](../game/rules.md#101-t144-程序案) 裁决，经命令网关与事务提交。
+
+`broadcast.say` 对占公社席的玩家开放：处理器按已开局 campaign 的玩家与派系席位确认广播权，发布位置取玩家所在节点，投递按公开广播规则计算并冻结；玩家入口与 Agent 的 `speech.commit` 批准流程各自独立。
 
 `campaign.start` 按 [content-pack.md — 开局内容](../game/content-pack.md#8-五席开局startsyaml本切片只启用公社) 逐条提交开局消息。事件 `MessageSent` 的 `fromId` 为发件人，`to` 为 `["player-1"]`，`channel` 为 `opening`，`intentKind` 为 `scripted`，`speechArtifactRef` 为 null，`deliveries` 为玩家与发件人各自 tick 0 的条目（按 principalId 排序）。剧情卡消息的 `channel` 为 `broadcast` 或 `message`，`intentKind` 为 `scenario`，`speechArtifactRef` 为 null。剧情卡的定向投递与知识授权按显式主体 ID 执行。公社玩家的开局水账来自 `starts.knowledge`，谷寻的定向来信直接投递给 `player-1`。
 
@@ -273,7 +275,7 @@ COMMIT
 | `RelayDegraded` / `RelayDown` / `RelayRestored` / `OrchardCrisis` / `OrchardDamaged` / `MigrationCrisis` / `SupplyShortage` | 当时数值 | public |
 | `DayPassed` | day、meters、consumption、changes | public |
 | `ScenarioCardTriggered` / `ScenarioCardPublished` / `ScenarioCardWithdrawn` / `ScenarioCompensationApplied` / `ScenarioOverrideApplied` | cardId、version、note | system |
-| `ChapterStageEvaluated` | outcome、meters、unmet、fulfilledCount、breachedCount | public |
+| `ChapterStageEvaluated` | outcome、meters、unmet、fulfilledCount、breachedCount、cityResources | public |
 
 程序案交付时，在事件目录与公共 schema 增加 `MotionDecided`，记录逐席票、赞成数、表决结果与下一周议程顺序，供议事录与投影使用。`ChapterStageEvaluated` 同步携带程序案结果。字段命名与兼容读取随该步定稿。参见 [rules.md — 序章议事与评估](../game/rules.md#10-序章议事与评估)。
 
@@ -313,6 +315,7 @@ type AudienceSpec =
 | `clock` | worldTick、day、hour、mode、runVersion | 公开 |
 | `map` | 节点（名称、坐标、设施）、道路（端点、行程、风险、当前状态） | 公开 |
 | `meters` | 三个指标的数值与等级（[规则](../game/rules.md) 第 4 节）、水闸分配 | 公开 |
+| `cityResources` | t168 交接后的六种城市资源数量；序章未结束时为 null | 公开 |
 | `stockpiles` | 每个库存点的节点、所属、三种已结算资源（供给/能源/医疗）等级；玩家持有委托的库存点给出精确数量与委托余额 | 等级公开；精确值仅限委托；材料/食物/水在序章不出现 |
 | `teams` | 位置、所属、状态；玩家委托的队伍标 `delegatedToMe` | 位置与状态公开 |
 | `characters` | 名称、派系、职责、所在节点、是否受伤、公开主张（人格 `values` 的第一条） | 公开 |

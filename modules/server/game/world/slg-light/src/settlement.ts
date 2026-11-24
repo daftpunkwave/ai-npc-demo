@@ -5,7 +5,7 @@
  * 由时钟步骤事务回滚，DayPassed 不提交，调用方可重试或停止。
  * 禁止重复结算同一 tick、在事务内调用模型或把未达标的指标算作均衡。
  */
-import { DomainError, type Json, type MeterChange, type MeterChangeCause, type NumericMeterId, type ResourceId } from "@ai-npc/contracts";
+import { DomainError, type CityResourceAmounts, type Json, type MeterChange, type MeterChangeCause, type NumericMeterId, type ResourceId } from "@ai-npc/contracts";
 import type { GameModulePorts, GameSettlementRules, HandlerContext, AgreementCounts, WorldTx } from "@ai-npc/module-sdk";
 import { requireGameContent, type MetersView } from "@ai-npc/module-sdk";
 import { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
@@ -216,6 +216,7 @@ export function runDailySettlement(context: WorldContext, tick: number): void {
 export function runChapterEvaluation(
   tx: WorldTx,
   loadCounts: () => AgreementCounts,
+  cityResources: CityResourceAmounts | null,
   chapterLengthTicks = 168,
 ): { readonly stopClock: true } | undefined {
   const record = readWorldState(tx, "campaign", "campaign", campaignStateSchema);
@@ -253,10 +254,16 @@ export function runChapterEvaluation(
       unmet,
       fulfilledCount: counts.fulfilled,
       breachedCount: counts.breached,
+      cityResources,
     },
     [{ kind: "public" }],
   );
-  const campaign: CampaignState = { ...record.state, status: "evaluated", outcome };
+  const campaign: CampaignState = {
+    ...record.state,
+    status: "evaluated",
+    outcome,
+    cityResources,
+  };
   tx.put("campaign", "campaign", campaign);
   // 把“章节已到终点、需要暂停”与评估结果写在同一事务：即使暂停提交前崩溃，重启后也能补做。
   tx.requestClockStop("chapter-evaluated", "序章评估完成，切片结束");

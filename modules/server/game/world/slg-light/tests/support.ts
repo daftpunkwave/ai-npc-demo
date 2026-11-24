@@ -22,6 +22,7 @@ export class TestWorldTx implements WorldTx {
   readonly worldTick: number;
   private readonly cells = new Map<string, Map<string, StoredCell>>();
   private eventSequence = 0;
+  private readonly recordedEvents: { readonly type: string; readonly payload: Json }[] = [];
 
   constructor(worldTick = 0) {
     this.worldTick = worldTick;
@@ -50,13 +51,19 @@ export class TestWorldTx implements WorldTx {
   }
 
   emit(
-    _type: string,
-    _payload: Json,
+    type: string,
+    payload: Json,
     _audience: readonly AudienceSpec[],
     _causationIds?: readonly string[],
   ): string {
     this.eventSequence += 1;
+    this.recordedEvents.push({ type, payload });
     return `evt-${String(this.eventSequence).padStart(12, "0")}`;
+  }
+
+  /** 已发出的事件；供测试断言事务内写入了哪些事实。 */
+  events(): readonly { readonly type: string; readonly payload: Json }[] {
+    return this.recordedEvents;
   }
 
   schedule(_kind: string, _dueTick: number, _idempotencyKey: string, _payload: Json): void {
