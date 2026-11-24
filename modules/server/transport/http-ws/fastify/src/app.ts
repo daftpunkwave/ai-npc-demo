@@ -237,7 +237,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const methods = Array.isArray(route.method) ? route.method : [route.method];
     const write = methods.some((method) => method !== "GET" && method !== "HEAD");
     route.config = {
-      ...(route.config ?? {}),
+      ...route.config,
       rateLimit: { max: rateLimitFor(write ? "POST" : "GET"), timeWindow: "10 seconds" },
     };
   });
