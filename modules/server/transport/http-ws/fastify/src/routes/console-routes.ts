@@ -4,12 +4,14 @@
  * 禁止在页面接口中写入世界、泄露凭据，或由运营角色读取研究员专属时间线。
  */
 import {
+  agentsQuerySchema,
   agentsResponseSchema,
   assembliesResponseSchema,
   assemblyDetailResponseSchema,
   consoleHealthResponseSchema,
   modulesResponseSchema,
   realmQuerySchema,
+  timelineQuerySchema,
   timelineResponseSchema,
 } from "@ai-npc/contracts";
 import {
@@ -18,12 +20,10 @@ import {
   sendHttpError,
 } from "./context";
 import type { RouteContext } from "./context";
-import { queryCsv, queryInteger, queryText } from "./query";
+import { parseQuery, queryText } from "./query";
 
 const dashboardRoles = ["operator", "researcher"] as const;
 const researchRoles = ["researcher"] as const;
-const maxTimelineTypesLength = 512;
-const maxTimelineTypesCount = 20;
 
 export function registerConsoleRoutes(context: RouteContext): void {
   const { app, branch, options } = context;
@@ -94,36 +94,22 @@ export function registerConsoleRoutes(context: RouteContext): void {
     if (options.console === undefined) {
       return sendHttpError(reply, "not-ready", "观测服务尚未就绪");
     }
-    const fromSeq = queryInteger(request.query, "fromSeq", 0);
-    const limit = queryInteger(request.query, "limit", 100);
-    if (fromSeq === null || fromSeq < 0 || limit === null || limit < 1 || limit > 200) {
-      return sendHttpError(reply, "validation", "fromSeq 或 limit 不合法");
+    // 查询字符串先规范化为 schema 的输入类型，边界一律由共享 schema 裁决：
+    // 缺省 fromSeq/limit 走 schema 默认值，types 的数量与元素长度上限也只在契约里定义一次。
+    const query = parseQuery(timelineQuerySchema, request.query);
+    if (query === null) {
+      return sendHttpError(reply, "validation", "fromSeq 或 limit 或 types 不合法");
     }
-    const types = queryCsv(
-      request.query,
-      "types",
-      maxTimelineTypesLength,
-      maxTimelineTypesCount,
-    );
-    if (types === null) {
-      return sendHttpError(reply, "validation", "types 数量或长度不合法");
-    }
-    const agentId = queryText(request.query, "agentId");
-    const nodeId = queryText(request.query, "nodeId");
-    const order = queryText(request.query, "order");
-    if (order !== undefined && order !== "asc" && order !== "desc") {
-      return sendHttpError(reply, "validation", "order 必须是 asc 或 desc");
-    }
-    const branchId = queryText(request.query, "branchId") ?? branch.branchId;
+    const branchId = query.branchId ?? branch.branchId;
     return timelineResponseSchema.parse(
       options.console.timeline({
         branchId,
-        fromSeq,
-        limit,
-        ...(order === undefined ? {} : { order }),
-        ...(types === undefined ? {} : { types }),
-        ...(agentId === undefined ? {} : { agentId }),
-        ...(nodeId === undefined ? {} : { nodeId }),
+        fromSeq: query.fromSeq,
+        limit: query.limit,
+        ...(query.order === undefined ? {} : { order: query.order }),
+        ...(query.types === undefined ? {} : { types: query.types }),
+        ...(query.agentId === undefined ? {} : { agentId: query.agentId }),
+        ...(query.nodeId === undefined ? {} : { nodeId: query.nodeId }),
       }),
     );
   });
@@ -136,10 +122,11 @@ export function registerConsoleRoutes(context: RouteContext): void {
     if (options.console === undefined) {
       return sendHttpError(reply, "not-ready", "观测服务尚未就绪");
     }
-    const branchId = queryText(request.query, "branchId");
-    if (branchId === undefined) {
+    // 与时间线共用同一条规范化 + 共享 schema 路径，避免再次出现手写校验与契约分裂。
+    const query = parseQuery(agentsQuerySchema, request.query);
+    if (query === null) {
       return sendHttpError(reply, "validation", "branchId 不能为空");
     }
-    return agentsResponseSchema.parse(options.console.agents(branchId));
+    return agentsResponseSchema.parse(options.console.agents(query.branchId));
   });
 }
