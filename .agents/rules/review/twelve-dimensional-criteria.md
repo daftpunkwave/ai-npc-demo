@@ -103,11 +103,14 @@
   - **反削弱测试：** 当测试暴露出代码真实缺陷时，必须直接修复业务源码，严禁通过修改或削弱测试断言掩盖问题。
 
 ## 13. Final Verification（最终整体交付复核）
-- **核查范围：** 整体交付质量与全套自动化检查。
+- **核查范围：** 整体交付质量与自动化检查门禁。
 - **评判准则：**
-  - 全部编码与审查修复完成后，在本地运行完整的全量检查：
-    ```bash
-    pnpm check
-    ```
-    涵盖类型检查 `typecheck`、测试 `test`、边界检查 `check:boundaries`、模块目录检查 `check:catalog`、资源检查 `check:assets` 及文档检查 `check:docs`；
-  - 确保所有检查门禁 100% 干净通过，方可提交或发起合并。
+  - 全部编码与审查修复完成后，在本地依据变更类型严格执行适用的检查门禁（详见 [本地验证与门禁分级](../testing/verification-and-testing.md#11-按改动类型的针对性门禁分级)）：
+    - **业务代码变更、Bug 修复与重构：** 必须在本地运行全量检查并 100% 干净通过：
+      ```bash
+      pnpm check
+      ```
+      涵盖类型检查 `typecheck`、测试套件 `test`、边界检查 `check:boundaries`、模块目录检查 `check:catalog`、资源检查 `check:assets` 及文档检查 `check:docs`；
+    - **纯文档变更（仅修改 `docs/` 或 Markdown 文档）：** 执行 `pnpm check:docs` 与 `git diff --check`，免跑全量测试套件；
+    - **纯注释与文件头调整（无运行时代码改动）：** 执行 `pnpm typecheck` 与 `pnpm check:boundaries`，免跑全量测试套件；
+  - 确保当前变更适用的所有检查门禁 100% 干净通过，方可提交或发起合并。
