@@ -236,15 +236,42 @@ describe("共享模型池与预算", () => {
     }
   });
 
-  it("发送上限与预留一致，即使挂载允许更大的输出", async () => {
+  it("请求的 maxOutputTokens 取挂载用途上限，预算预留在账本上单独占额", async () => {
     const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue(response);
     const harness = await poolHarness(complete);
     try {
       const run = harness.pool.bindRun({ routes: [route], limits });
       await run.call(work(), "decision", 30, request);
-      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(30);
+      // 硬上限来自挂载的用途上限（100），预留（30）只用于预算占额与结算。
+      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(route.maxOutputTokens);
       const entries = harness.storage.transact((tx) => tx.rows("budget_ledger").list({ work_ref: work().workRef }));
       expect(entries).toEqual([expect.objectContaining({ reserved_output: 30, actual_output: 30 })]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("含思考的模型按用途上限申请输出，思考不会耗尽预留导致 protocol 失败", async () => {
+    // claude 布局的 decision 上限为 16000，而 profile 的预留只有 1500：
+    // 若把预留当成 max_tokens 发送，自适应思考会在 1500 内耗尽并以 length 结束。
+    const thinking: ModelTransportPort["complete"] = async (input) => ({
+      ...response,
+      usage: { inputTokens: 100, outputTokens: Math.min(input.maxOutputTokens, 9000), cachedInputTokens: null, estimated: false },
+    });
+    const complete = vi.fn(thinking);
+    const claudeCapabilities = { ...capabilities, contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 };
+    const harness = await poolHarness(complete, null, undefined, {
+      adapterId: route.adapterId, capabilities: () => claudeCapabilities, complete,
+    });
+    const claude = { ...route, maxOutputTokens: 16_000, capabilities: claudeCapabilities };
+    try {
+      const run = harness.pool.bindRun({ routes: [claude], limits });
+      const result = await run.call(work(), "decision", 1500, request);
+      expect(complete.mock.calls[0]?.[0].maxOutputTokens).toBe(16_000);
+      expect(result.response.finishReason).toBe("stop");
+      // 预算仍按预留占额，实际用量按 usage 结算。
+      expect(harness.storage.transact((tx) => tx.rows("budget_ledger").list({})))
+        .toEqual([expect.objectContaining({ reserved_output: 1500, actual_output: 9000 })]);
     } finally {
       await harness.dispose();
     }

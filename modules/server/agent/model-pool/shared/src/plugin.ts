@@ -93,7 +93,9 @@ export function createSharedModelPool(input: ModuleCreateInput) {
     if (!Number.isSafeInteger(reserveOutputTokens) || reserveOutputTokens < 1 || reserveOutputTokens > route.maxOutputTokens) {
       throw new DomainError("assembly-incompatible", "模型输出预留与挂载不兼容");
     }
-    if (estimated > requestInput.inputLimit || estimated + reserveOutputTokens > route.capabilities.contextWindowTokens) {
+    // 请求硬上限取挂载的用途上限，预算预留只在账本上占额：
+    // 预留是成本估算，用它当 max_tokens 会让含思考的模型在思考阶段就耗尽输出预算。
+    if (estimated > requestInput.inputLimit || estimated + route.maxOutputTokens > route.capabilities.contextWindowTokens) {
       throw new DomainError("budget-exhausted", "模型输入超过本轮窗口", { details: { kind: "over-budget" } });
     }
     if (requestInput.tools.length > 0 && (requestInput.output.kind !== "text" || !route.capabilities.toolCalling) ||
@@ -124,7 +126,7 @@ export function createSharedModelPool(input: ModuleCreateInput) {
         request = modelRequestSchema.parse({
           llmCallId, attemptId, purpose: route.purpose, externalModel: route.externalModel,
           system: requestInput.system, messages: requestInput.messages, tools: requestInput.tools, output: requestInput.output,
-          parameters: route.parameters, maxOutputTokens: reserveOutputTokens,
+          parameters: route.parameters, maxOutputTokens: route.maxOutputTokens,
           timeoutMs: Math.floor(Math.min(route.requestTimeoutMs, scope.deadlineMs - startedAt)),
           context: {
             agentId: scope.agentId, evaluatorId: null, workRef: scope.workRef, round: requestInput.round,

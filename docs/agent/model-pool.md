@@ -180,7 +180,7 @@ interface ScopedModelPort {             // runtime、memory 与 speech 收到的
 
 1. 预检时把 `mounts` 展开成 `(agentId, purpose) → modelId` 的映射；任何键出现两次即拒绝，不按“后者覆盖”。
 2. 由 `modelId` 找到 model 与 connection，解析 `env:` 值（外部模型名、endpoint）与 `credentialRef`（密钥只交给适配器，不写进任何记录）。
-3. 挂载用途的最大输出取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值。预检要求 profile 的 `reserveOutputTokens` 在该上限以内。实际请求以预留值限制输出并按实际用量结算。Anthropic 模型的思考也计入输出。参见 [model-transport.md — Anthropic 配置](model-transport.md#41-配置)。
+3. 挂载用途的最大输出取 `maxOutputTokensByPurpose[purpose]`，未配置时取能力上限与 4096 中较小的值，这个值就是请求发出的硬上限（`max_tokens`）。预检要求 profile 的 `reserveOutputTokens` 在该上限以内，超限时报告主体、用途、预留与上限的具体数值。预留只用于预算占额与结算，不参与硬上限：它按成本估算保守占额，收到响应后按实际 usage 结算。两者分开的原因之一是 Anthropic 模型的思考也计入输出，把预留当 `max_tokens` 会让思考阶段就耗尽预算。参见 [model-transport.md — Anthropic 配置](model-transport.md#41-配置)。
 4. 生成去密钥的路由表（agentId、purpose、modelId、connectionId、adapterId、externalModel、参数 hash）写入 manifest。
 
 ### 12.3 排队、限流与重试
@@ -193,7 +193,7 @@ interface ScopedModelPort {             // runtime、memory 与 speech 收到的
 
 ### 12.4 预算与费用
 
-- 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。
+- 发送前在 `budget_ledger` 预留：输入为估算 token（[上下文](context.md) 第 11.2 节），输出为 `reserveOutputTokens`；收到响应后按实际 usage 结算，usage 缺失时按预留值记账并标 `usage_unknown`。预留与请求的 `max_tokens` 是两个量：前者是成本占额，后者是挂载的用途上限（见 12.2 节第 3 条）。
 - run、Agent、turn 三级预算：run 的 `maxTokens` 与 `maxCost`（来自 RunSpec，可为 null 表示不限）、每个 Agent 每游戏日的 `maxTokensPerAgentPerDay`（profile 的 budgets，默认 60000）、turn 的调用次数上限（profile）。任何一级不足时以 `budget-exhausted` 失败，不排队。
 - 进程退出时未结算的预留在重启后按预留计入，并标记为未知用量；该清理只扫 `settled_at IS NULL` 并由部分索引支撑。缺少完整归档的运行标记为证据不完整，其中 `started` 的尝试标记为 `process-interrupted`。
 - 费用：布局的 `pricingRef` 选择价目文件，省略时为 `config/pricing.yaml`。文件按 `modelId` 给出 `externalModel` 与每百万输入/输出 token 的单价；预检要求实际解析出的供应商模型与记录一致。manifest 冻结所用的价目版本，报告里的费用一律标注为估算值。
