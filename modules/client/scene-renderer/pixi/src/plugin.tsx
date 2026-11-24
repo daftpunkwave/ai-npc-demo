@@ -8,7 +8,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
 import type { ClientContentView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
 import type { ProjectionState } from "@ai-npc/client-protocol";
-import { SceneApplicationSession, sceneApplicationOptions } from "./application";
+import { SceneApplicationSession, bindSceneResize, sceneApplicationOptions } from "./application";
+import { SceneFailureNotice } from "./scene-failure-notice";
 import { SceneView } from "./scene-view";
 
 interface WorldViewLike {
@@ -56,7 +57,7 @@ function PixiScene(): ReactNode {
     const app = new Application();
     const session = new SceneApplicationSession(app);
     let disposed = false;
-    let handleResize: (() => void) | null = null;
+    let unbindResize: (() => void) | null = null;
     void session.start(sceneApplicationOptions(host, devicePixelRatio())).then((result) => {
       if (disposed) {
         return;
@@ -77,8 +78,7 @@ function PixiScene(): ReactNode {
         screenProjection: projection,
         selection,
       });
-      handleResize = () => view.resize();
-      app.renderer.on("resize", handleResize);
+      unbindResize = bindSceneResize(app.renderer, () => view.resize());
       viewRef.current = view;
       setFailure(null);
       setViewVersion((version) => version + 1);
@@ -87,9 +87,9 @@ function PixiScene(): ReactNode {
       disposed = true;
       viewRef.current?.dispose();
       viewRef.current = null;
-      if (handleResize !== null) {
-        app.renderer.off("resize", handleResize);
-        handleResize = null;
+      if (unbindResize !== null) {
+        unbindResize();
+        unbindResize = null;
       }
       session.dispose();
     };
@@ -114,11 +114,7 @@ function PixiScene(): ReactNode {
   return (
     <div className="scene-host" data-testid="scene-renderer-pixi">
       <div className="scene-canvas" ref={hostRef as never} />
-      {failure === null ? null : (
-        <div className="scene-error" role="alert">
-          渲染后端不可用：{failure}
-        </div>
-      )}
+      {failure === null ? null : <SceneFailureNotice reason={failure} />}
       <div className="scene-caption">
         {content === null ? null : <span>{content.ui.sceneLabel}</span>}
         <span>{state === null ? "等待投影" : `${state.projection.map.nodes.length} 个地点`}</span>

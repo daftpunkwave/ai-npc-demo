@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApplicationOptions } from "pixi.js";
 import {
   SceneApplicationSession,
+  bindSceneResize,
   sceneApplicationOptions,
   sceneFailureReason,
 } from "../src/application";
@@ -119,5 +120,45 @@ describe("ApplicationOptions 类型约束", () => {
   it("选项对象可直接传给 Pixi 的 init", () => {
     const options: Partial<ApplicationOptions> = sceneApplicationOptions({}, 1);
     expect(options.autoStart).toBe(false);
+  });
+});
+
+function createResizeTarget() {
+  const listeners = new Set<() => void>();
+  const target = {
+    on: vi.fn((_event: "resize", listener: () => void) => {
+      listeners.add(listener);
+    }),
+    off: vi.fn((_event: "resize", listener: () => void) => {
+      listeners.delete(listener);
+    }),
+  };
+  return {
+    target,
+    emit: () => {
+      for (const listener of [...listeners]) {
+        listener();
+      }
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+describe("bindSceneResize", () => {
+  it("画布尺寸变化驱动重绘，注销后不再触发", () => {
+    const { target, emit, listenerCount } = createResizeTarget();
+    const onResize = vi.fn();
+    const unbind = bindSceneResize(target, onResize);
+
+    expect(target.on).toHaveBeenCalledWith("resize", onResize);
+    expect(listenerCount()).toBe(1);
+    emit();
+    expect(onResize).toHaveBeenCalledTimes(1);
+
+    unbind();
+    expect(target.off).toHaveBeenCalledWith("resize", onResize);
+    expect(listenerCount()).toBe(0);
+    emit();
+    expect(onResize).toHaveBeenCalledTimes(1);
   });
 });

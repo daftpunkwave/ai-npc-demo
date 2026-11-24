@@ -16,6 +16,17 @@ export type SceneStartResult =
   | { readonly status: "failed"; readonly reason: string }
   | { readonly status: "cancelled" };
 
+export interface SceneResizeTarget {
+  on(event: "resize", listener: () => void): void;
+  off(event: "resize", listener: () => void): void;
+}
+
+/** 把画布尺寸变化绑定到一次重绘；返回的函数注销同一个监听。 */
+export function bindSceneResize(target: SceneResizeTarget, onResize: () => void): () => void {
+  target.on("resize", onResize);
+  return () => target.off("resize", onResize);
+}
+
 /**
  * 场景只在投影、相机或画布尺寸变化时重绘，因此显式关闭 Ticker 的自动渲染。
  * `resizeTo` 由宿主元素驱动，仍交给 Pixi 的 ResizePlugin 计算画布尺寸。
