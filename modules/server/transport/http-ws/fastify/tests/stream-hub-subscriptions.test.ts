@@ -205,6 +205,58 @@ describe("流中心订阅者查询", () => {
     // 订阅成立并立即收到快照，而不是被拒。
     expect(socket.frames()[0]).toMatchObject({ type: "snapshot", channel: "console.timeline" });
   });
+
+  it("会话已失效的订阅连接不算订阅者，快照生产者不再被唤醒", () => {
+    const clock = { now: 0 };
+    const { hub } = makeHub({ now: () => clock.now, sessionTtlMs: 1_000 });
+    const socket = new FakeSocket();
+    const session = hub.login({
+      token: "token-1",
+      auth: { principalId: "researcher-1", kind: "researcher", roles: ["researcher"] } as never,
+    });
+    hub.accept(socket, hub.issueTicket(session.sessionId).ticket);
+    socket.emitMessage(JSON.stringify({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null }));
+    expect(hub.hasSubscriber("console.timeline")).toBe(true);
+
+    // 会话过期但 sweep 尚未回收：发布路径会跳过该连接，因此它不应继续维持生产者。
+    clock.now = 5_000;
+    expect(hub.hasSubscriber("console.timeline")).toBe(false);
+  });
+});
+
+describe("流中心重同步范围", () => {
+  it("仅具备玩家身份但未订阅 player 的连接不会在重同步后收到玩家快照", () => {
+    // 只让 publish 那一次读取失败：重同步自身再读一次时成功，才能走到补发循环。
+    let failuresLeft = 0;
+    const { hub } = makeHub({
+      channelsFor: () => ["player", "console.health"],
+      projection: () => {
+        if (failuresLeft > 0) {
+          failuresLeft -= 1;
+          throw new Error("projection unavailable");
+        }
+        return minimalProjection();
+      },
+    });
+    const socket = new FakeSocket();
+    const session = hub.login({
+      token: "token-1",
+      auth: { principalId: "player-1", kind: "player", roles: ["player"] } as never,
+    });
+    hub.accept(socket, hub.issueTicket(session.sessionId).ticket);
+    // 只订阅控制台频道：这是有玩家身份的连接，但没有订阅玩家投影。
+    socket.emitMessage(JSON.stringify({ type: "subscribe", channel: "console.health", fromStreamSeq: null }));
+    socket.sent.length = 0;
+
+    failuresLeft = 1;
+    hub.publishWithResync(() => undefined);
+    // 重同步把投影读取失败的连接跳过；随后的 sweep 与 ack 不得补发玩家快照。
+    hub.sweep();
+    socket.emitMessage(JSON.stringify({ type: "ack", channel: "console.health", streamSeq: 1 }));
+
+    const playerSnapshots = socket.frames().filter((frame) => frame.type === "snapshot" && frame.channel === "player");
+    expect(playerSnapshots).toHaveLength(0);
+  });
 });
 
 describe("流中心帧校验顺序", () => {
