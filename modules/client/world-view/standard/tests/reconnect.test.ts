@@ -279,7 +279,19 @@ describe("世界视图流连接", () => {
     FakeWebSocket.instances[2]?.open();
     // 仅建连尚未收到服务端帧时保留退避计数。
     expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: 2 });
+    // hello 只证明连接建立，不证明玩家频道能收到数据：退避计数保持原值。
     FakeWebSocket.instances[2]?.serverMessage(hello);
+    expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: 2 });
+    // 收到玩家频道快照后才视为恢复稳定。
+    FakeWebSocket.instances[2]?.serverMessage({
+      type: "snapshot",
+      channel: "player",
+      streamSeq: 2,
+      projectionVersion: 2,
+      worldId: session.worldId,
+      branchId: session.branchId,
+      data: projection,
+    });
     expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: 0 });
 
     FakeWebSocket.instances[2]?.serverClose(1006);
@@ -420,6 +432,31 @@ describe("服务端 error 帧", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(harness.tickets()).toBe(requests + 1);
     expect(FakeWebSocket.instances).toHaveLength(2);
+    await dispose();
+  });
+
+  it("每轮先收到 hello 再收到 error 时，退避计数仍继续增长", async () => {
+    const harness = apiHarness(async () => ({ ticket: "ticket-1" }));
+    const { port, dispose } = await createPort(harness);
+    await port.bootstrap();
+
+    const seenAttempts: number[] = [];
+    // 订阅被拒时服务端先发 hello 再发 error；若在 hello 处清零退避，
+    // 每轮都会回到 1 秒，形成对服务端的固定频率重试。
+    for (let round = 0; round < 3; round += 1) {
+      const socket = FakeWebSocket.instances.at(-1);
+      socket?.open();
+      socket?.serverMessage(hello);
+      expect(port.getConnectionState()).toMatchObject({ kind: "connected", attempt: round });
+      socket?.serverMessage({ type: "error", code: "validation", safeMessage: "频道不可用" });
+      const state = port.getConnectionState();
+      expect(state.kind).toBe("reconnecting");
+      seenAttempts.push(state.attempt);
+      await vi.advanceTimersByTimeAsync(state.retryInMs ?? 0);
+    }
+
+    expect(seenAttempts).toEqual([1, 2, 3]);
+    expect(harness.cleared()).toBe(0);
     await dispose();
   });
 

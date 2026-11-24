@@ -125,7 +125,7 @@ describe("StreamClient 游标确认", () => {
 
   it("消费侧拒绝帧时不发送 ack，游标不前进", () => {
     const rejected: unknown[] = [];
-    const acknowledgedAfterReject: number[] = [];
+    const appliedAfterReject: number[] = [];
     const { client, socket } = connect({
       onMessage: (message) => {
         if (message.type !== "delta") {
@@ -135,7 +135,7 @@ describe("StreamClient 游标确认", () => {
         if (message.streamSeq === 2) {
           throw new DomainError("validation", "领域字段非法");
         }
-        acknowledgedAfterReject.push(message.streamSeq);
+        appliedAfterReject.push(message.streamSeq);
       },
       onFrameRejected: (error) => rejected.push(error),
     });
@@ -148,10 +148,14 @@ describe("StreamClient 游标确认", () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0]).toBeInstanceOf(DomainError);
 
-    // 被拒绝的帧没有推进游标：后续合法帧仍按原始序号确认。
+    // 缺口未补齐前，后续增量既不应用也不确认：承认 3 就会把 2 永久跳过。
     socket.serverMessage(delta(3, {}));
-    expect(acknowledgedAfterReject).toEqual([3]);
-    expect(acknowledgedSeqs(socket)).toEqual([1, 3]);
+    expect(appliedAfterReject).toEqual([]);
+    expect(acknowledgedSeqs(socket)).toEqual([1]);
+
+    // 完整快照重建基线后恢复确认。
+    socket.serverMessage(snapshot(4));
+    expect(acknowledgedSeqs(socket)).toEqual([1, 4]);
     client.close();
   });
 
@@ -172,7 +176,6 @@ describe("StreamClient 游标确认", () => {
   });
 
   it("应用失败的帧不会让重连从被跳过的序号续传", () => {
-    const rejectKinds = new Set<number>([2]);
     const applied: number[] = [];
     const { client, socket } = connect({
       fromStreamSeq: 1,
@@ -180,7 +183,7 @@ describe("StreamClient 游标确认", () => {
         if (message.type !== "delta") {
           return;
         }
-        if (rejectKinds.has(message.streamSeq)) {
+        if (message.streamSeq === 2) {
           throw new DomainError("validation", "增量非法");
         }
         applied.push(message.streamSeq);
@@ -192,8 +195,60 @@ describe("StreamClient 游标确认", () => {
     // 游标停在 1，因此重连时的 fromStreamSeq 仍是 1，服务端会重新补发第 2 条。
     socket.serverMessage(delta(3, { tasks: [] }));
 
-    expect(applied).toEqual([3]);
-    expect(acknowledgedSeqs(socket)).toEqual([3]);
+    // 缺口未被快照补齐前，第 3 条同样不应用：只确认 3 会让 2 永久丢失。
+    expect(applied).toEqual([]);
+    expect(acknowledgedSeqs(socket)).toEqual([]);
+
+    // 快照重建基线后，后续增量重新按连续序号应用与确认。
+    socket.serverMessage(snapshot(5));
+    socket.serverMessage(delta(6, { tasks: [] }));
+    expect(applied).toEqual([6]);
+    expect(acknowledgedSeqs(socket)).toEqual([5, 6]);
+    client.close();
+  });
+
+  it("消费方声明帧未应用时不确认，缺口不会被后续帧跨过", () => {
+    // 缺口语义：store 以返回值表示「本帧没有应用」，而它不抛错。
+    // 若把这种返回当作成功，ack 会跨过未应用的帧，重连时该增量永久丢失。
+    const rejected: unknown[] = [];
+    const { client, socket } = connect({
+      fromStreamSeq: 1,
+      onMessage: () => undefined,
+      isFrameApplied: (message) =>
+        message.type === "delta" ? message.streamSeq !== 2 : true,
+      onFrameRejected: (error) => rejected.push(error),
+      onError: () => undefined,
+    });
+
+    socket.serverMessage(delta(2, {}));
+    expect(acknowledgedSeqs(socket)).toEqual([]);
+    expect(rejected).toHaveLength(1);
+
+    // 缺口帧未确认后，后续增量一律不再确认，直到快照重建连续状态。
+    socket.serverMessage(delta(3, {}));
+    expect(acknowledgedSeqs(socket)).toEqual([]);
+
+    // 快照允许重新对齐游标：它是重建基线的唯一合法帧。
+    socket.serverMessage(snapshot(9));
+    expect(acknowledgedSeqs(socket)).toEqual([9]);
+    client.close();
+  });
+
+  it("未提供 onFrameRejected 时把拒帧错误回退给 onError", () => {
+    const errors: unknown[] = [];
+    const { client, socket } = connect({
+      onMessage: () => {
+        throw new DomainError("validation", "领域字段非法");
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    socket.serverMessage(delta(2, {}));
+
+    // 没有专门的拒帧回调时不能静默吞掉错误。
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(DomainError);
+    expect(acknowledgedSeqs(socket)).toEqual([]);
     client.close();
   });
 });
