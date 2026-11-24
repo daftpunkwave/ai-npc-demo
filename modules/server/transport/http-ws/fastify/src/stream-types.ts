@@ -4,6 +4,7 @@
  * 禁止在这里引入 Fastify、读写会话存储或按连接做 I/O。
  */
 /* eslint-disable no-unused-vars -- 本文件的未使用参数只出现在 StreamSocket/StreamHubOptions 等接口签名中，名称用于表达调用契约。 */
+import { DomainError } from "@ai-npc/contracts";
 import type {
   AuthContext,
   ConversationLine,
@@ -246,6 +247,18 @@ export interface HubLimits {
   readonly maxConnectionsPerSession: number;
 }
 
+/**
+ * 容量上限必须是有限正整数。`NaN` 参与比较恒为 false，等于静默取消上限；
+ * 负数与 `Infinity` 同样让容量检查失去意义，因此显式拒绝配置错误，
+ * 而不是回退到默认值——静默回退会掩盖调用方的真实意图。
+ */
+function capacityLimit(value: number, name: string): number {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new DomainError("validation", `${name} 必须是正整数，收到 ${String(value)}`);
+  }
+  return value;
+}
+
 /** 合并调用方覆盖与缺省边界；不读取配置或环境变量。 */
 export function hubLimits(options: StreamHubOptions): HubLimits {
   return {
@@ -257,7 +270,10 @@ export function hubLimits(options: StreamHubOptions): HubLimits {
     maxSessions: options.maxSessions ?? defaultMaxSessions,
     maxTickets: options.maxTickets ?? defaultMaxTickets,
     maxReplayBuffers: options.maxReplayBuffers ?? defaultMaxReplayBuffers,
-    maxConnections: options.maxConnections ?? defaultMaxConnections,
-    maxConnectionsPerSession: options.maxConnectionsPerSession ?? defaultMaxConnectionsPerSession,
+    maxConnections: capacityLimit(options.maxConnections ?? defaultMaxConnections, "maxConnections"),
+    maxConnectionsPerSession: capacityLimit(
+      options.maxConnectionsPerSession ?? defaultMaxConnectionsPerSession,
+      "maxConnectionsPerSession",
+    ),
   };
 }

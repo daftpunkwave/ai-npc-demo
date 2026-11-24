@@ -385,6 +385,27 @@ describe("WS 流中心", () => {
     }
   });
 
+  it("连接上限必须是正整数，非法配置显式失败而不是静默取消上限", () => {
+    // NaN 参与比较恒为 false，等于静默取消上限；负数与 Infinity 同样让容量检查失效。
+    // 这些配置错误必须在构造时就暴露，不能回退默认值掩盖调用方意图。
+    const invalid: readonly (readonly [string, number])[] = [
+      ["maxConnections", Number.NaN],
+      ["maxConnections", Number.POSITIVE_INFINITY],
+      ["maxConnections", 0],
+      ["maxConnections", -1],
+      ["maxConnections", 1.5],
+      ["maxConnectionsPerSession", Number.NaN],
+      ["maxConnectionsPerSession", Number.POSITIVE_INFINITY],
+      ["maxConnectionsPerSession", 0],
+      ["maxConnectionsPerSession", -3],
+    ];
+    for (const [field, value] of invalid) {
+      expect(
+        () => createHub(field === "maxConnections" ? { maxConnections: value } : { maxConnectionsPerSession: value }),
+      ).toThrow(DomainError);
+    }
+  });
+
   it("分支切换后非玩家频道的订阅者也收到当前分支的新快照", () => {
     // console.timeline 的内容按分支查询：旧快照描述的是切换前的分支。
     // 只重发玩家快照会让控制台时间线停留在已归档分支，直到下一次世界变化。
