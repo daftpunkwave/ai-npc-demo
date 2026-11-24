@@ -75,6 +75,47 @@ function recentFailures(storage: StoragePort, branchId: string) {
   }));
 }
 
+/** 预算摘要条目上限：按用途聚合后取用量最大的若干条，避免列表随用途数无界增长。 */
+const budgetSummaryLimit = 20;
+
+/**
+ * 在一次事务内读取健康摘要需要的队列计数与预算聚合。
+ *
+ * 运行 ID 由 `branches.run_id` 给出：内存里的在线状态只保存分支，运行归属始终以存储为准。
+ * 预算取 `budget_ledger` 的实际用量，未结算条目按预留量计入（与预算裁决口径一致），
+ * 使控制台在模型调用发生后看到真实消耗，而不是恒为空的列表。
+ * 两者合并在一个事务里，是因为健康摘要由 2 秒广播驱动，多开一次事务是纯额外开销。
+ */
+function healthStorageSummary(storage: StoragePort, branchId: string) {
+  const chargedTokens = "COALESCE(actual_input, reserved_input) + COALESCE(actual_output, reserved_output)";
+  return storage.transact((tx) => {
+    const turnsQueued = tx.rows("turn_runs").count({ branch_id: branchId, status: "queued" });
+    const runId = tx.rows("branches").get({ branch_id: branchId })?.["run_id"];
+    if (typeof runId !== "string" || runId.length === 0) {
+      return { turnsQueued, budgets: [] };
+    }
+    const budgets = tx
+      .all(
+        `SELECT purpose,
+                SUM(${chargedTokens}) AS tokens
+           FROM budget_ledger
+          WHERE run_id = ?
+          GROUP BY purpose
+          ORDER BY tokens DESC
+          LIMIT ?`,
+        [runId, budgetSummaryLimit],
+      )
+      .map((row) => ({
+        scope: "purpose" as const,
+        key: String(row["purpose"]),
+        used: Number(row["tokens"] ?? 0),
+        limit: null,
+        unit: "tokens" as const,
+      }));
+    return { turnsQueued, budgets };
+  });
+}
+
 /** 开局选项：只列出内容中启用的开局，派系名、首个委托与接触角色都取自内容包索引。 */
 function startOptions(content: GameContent): StartOption[] {
   return [...content.starts.values()]
@@ -180,12 +221,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       console: {
         health: () => {
           const status = lifecycle.healthStatus();
-          const queueCounts = runtime.storage.transact((tx) => ({
-            turnsQueued: tx.rows("turn_runs").count({
-              branch_id: active.branchId,
-              status: "queued",
-            }),
-          }));
+          const summary = healthStorageSummary(runtime.storage, active.branchId);
           // createApp 只在全部模块启动成功后创建；能出现在装配集里即表示已就绪。
           const modules = [
             ...input.assembly.modules,
@@ -204,8 +240,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             modules,
             clock: clockView(lifecycle.clockState()),
             // turnsRunning、maintenanceQueued、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
-            queues: { turnsQueued: queueCounts.turnsQueued },
-            budgets: [],
+            queues: { turnsQueued: summary.turnsQueued },
+            budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),
           };
         },

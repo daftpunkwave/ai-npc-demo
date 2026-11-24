@@ -1,0 +1,164 @@
+/**
+ * 校验渲染器初始化选项关闭自动渲染，并覆盖初始化失败、卸载竞态与销毁时机。
+ * 依赖注入的假应用实例；不创建 WebGL 上下文或真实画布。
+ * 禁止让初始化 rejection 变成未处理异常，也禁止在未初始化成功的应用上销毁。
+ */
+import { describe, expect, it, vi } from "vitest";
+import type { ApplicationOptions } from "pixi.js";
+import {
+  SceneApplicationSession,
+  bindSceneResize,
+  sceneApplicationOptions,
+  sceneFailureReason,
+} from "../src/application";
+
+function createApplication(
+  init: () => Promise<void>,
+  renderer?: { destroy: () => void },
+) {
+  return {
+    init: vi.fn(() => init()),
+    destroy: vi.fn((_removeView?: boolean) => undefined),
+    ...(renderer === undefined ? {} : { renderer }),
+  };
+}
+
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((inner) => {
+    resolve = inner;
+  });
+  return { promise, resolve };
+}
+
+describe("sceneApplicationOptions", () => {
+  it("关闭 Ticker 自动渲染并保留背景透明与高清适配", () => {
+    const options = sceneApplicationOptions({}, 3);
+
+    expect(options.autoStart).toBe(false);
+    expect(options.backgroundAlpha).toBe(0);
+    expect(options.antialias).toBe(true);
+    expect(options.autoDensity).toBe(true);
+    expect(options.resolution).toBe(2);
+  });
+
+  it("低分屏不放大分辨率，缺省像素比按 1 处理", () => {
+    expect(sceneApplicationOptions({}, 0.5).resolution).toBe(0.5);
+    expect(sceneApplicationOptions({}, undefined).resolution).toBe(1);
+  });
+});
+
+describe("sceneFailureReason", () => {
+  it("优先使用错误原文，没有可读文本时给出兜底", () => {
+    expect(sceneFailureReason(new Error("WebGL 上下文创建失败"))).toBe("WebGL 上下文创建失败");
+    expect(sceneFailureReason("canvas 不可用")).toBe("canvas 不可用");
+    expect(sceneFailureReason(new Error("  "))).toBe("渲染器初始化失败");
+    expect(sceneFailureReason(undefined)).toBe("渲染器初始化失败");
+  });
+});
+
+describe("SceneApplicationSession", () => {
+  it("初始化失败时返回可见原因，且不在未初始化的应用上销毁", async () => {
+    const application = createApplication(() => Promise.reject(new Error("显存不足")));
+    const session = new SceneApplicationSession(application);
+
+    const result = await session.start({});
+
+    expect(result).toEqual({ status: "failed", reason: "显存不足" });
+    session.dispose();
+    expect(application.destroy).not.toHaveBeenCalled();
+  });
+
+  it("渲染器已创建后初始化失败时释放已分配资源", async () => {
+    const renderer = { destroy: vi.fn() };
+    const application = createApplication(() => Promise.reject(new Error("插件初始化失败")), renderer);
+    const session = new SceneApplicationSession(application);
+
+    await expect(session.start({})).resolves.toEqual({ status: "failed", reason: "插件初始化失败" });
+
+    expect(application.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("失败清理自身抛错时不覆盖原始初始化原因", async () => {
+    const renderer = { destroy: vi.fn() };
+    const application = createApplication(() => Promise.reject(new Error("WebGL 不可用")), renderer);
+    application.destroy.mockImplementation(() => {
+      throw new Error("清理失败");
+    });
+    const session = new SceneApplicationSession(application);
+
+    await expect(session.start({})).resolves.toEqual({ status: "failed", reason: "WebGL 不可用" });
+  });
+
+  it("初始化成功后只在释放时销毁一次", async () => {
+    const application = createApplication(() => Promise.resolve());
+    const session = new SceneApplicationSession(application);
+
+    await expect(session.start({})).resolves.toEqual({ status: "ready" });
+    session.dispose();
+    session.dispose();
+
+    expect(application.destroy).toHaveBeenCalledTimes(1);
+    expect(application.destroy).toHaveBeenCalledWith(true);
+  });
+
+  it("初始化完成前卸载时，等初始化落定后再销毁", async () => {
+    const pending = deferred();
+    const application = createApplication(() => pending.promise);
+    const session = new SceneApplicationSession(application);
+    const started = session.start({});
+
+    session.dispose();
+    pending.resolve();
+
+    await expect(started).resolves.toEqual({ status: "cancelled" });
+    expect(application.destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ApplicationOptions 类型约束", () => {
+  it("选项对象可直接传给 Pixi 的 init", () => {
+    const options: Partial<ApplicationOptions> = sceneApplicationOptions({}, 1);
+    expect(options.autoStart).toBe(false);
+  });
+});
+
+function createResizeTarget() {
+  const listeners = new Set<() => void>();
+  const target = {
+    on: vi.fn((_event: "resize", listener: () => void) => {
+      listeners.add(listener);
+    }),
+    off: vi.fn((_event: "resize", listener: () => void) => {
+      listeners.delete(listener);
+    }),
+  };
+  return {
+    target,
+    emit: () => {
+      for (const listener of [...listeners]) {
+        listener();
+      }
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
+describe("bindSceneResize", () => {
+  it("画布尺寸变化驱动重绘，注销后不再触发", () => {
+    const { target, emit, listenerCount } = createResizeTarget();
+    const onResize = vi.fn();
+    const unbind = bindSceneResize(target, onResize);
+
+    expect(target.on).toHaveBeenCalledWith("resize", onResize);
+    expect(listenerCount()).toBe(1);
+    emit();
+    expect(onResize).toHaveBeenCalledTimes(1);
+
+    unbind();
+    expect(target.off).toHaveBeenCalledWith("resize", onResize);
+    expect(listenerCount()).toBe(0);
+    emit();
+    expect(onResize).toHaveBeenCalledTimes(1);
+  });
+});

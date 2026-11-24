@@ -67,17 +67,47 @@ const statusByErrorCode: Readonly<Record<ErrorCode, number>> = {
   "provider-failed": 500,
 };
 
+/** 统一非 2xx 载荷的关联字段：缺省时不伪造成空串，由调用方给出本次请求的事实。 */
+export interface HttpErrorContext {
+  readonly traceId?: string | null;
+  readonly detailsArtifactRef?: string | null;
+}
+
+/**
+ * 本次请求的 traceId 登记表。
+ *
+ * 错误响应需要把 traceId 与已在 `trace_spans` 落库的请求 span 关联起来，
+ * 但错误出口被上百处路由共用，逐处透传会迫使每个调用点重复读请求上下文。
+ * 因此由 `onRequest` 钩子登记一次，`sendHttpError` 按 reply 取回；
+ * 键是单次请求的 reply 对象，条目随请求对象一起被回收，不会跨请求泄漏。
+ */
+const traceIdByReply = new WeakMap<object, string>();
+
+/** 在请求进入时登记本次请求的 traceId；未登记时错误响应的 traceId 保持 null。 */
+export function registerRequestTraceId(reply: FastifyReply, traceId: string): void {
+  traceIdByReply.set(reply, traceId);
+}
+
 /** 统一非 2xx 载荷：错误码、可重试标记与安全文案；不含内部细节或敏感上下文。 */
 export function sendHttpError(
   reply: FastifyReply,
   code: ErrorCode,
   safeMessage: string,
   retryable = false,
+  errorContext: HttpErrorContext = {},
 ): FastifyReply {
+  // 显式传入的值优先；未提供时回落到本次请求登记的 traceId，使客户端能关联到已记录的 span。
+  const traceId = errorContext.traceId ?? traceIdByReply.get(reply) ?? null;
   // eslint-disable-next-line security/detect-object-injection -- 错误码是内部 ErrorCode 枚举，索引来自受限字面量联合。
   return reply.code(statusByErrorCode[code]).send(
     errorResponseSchema.parse({
-      error: { code, retryable, safeMessage, traceId: null, detailsArtifactRef: null },
+      error: {
+        code,
+        retryable,
+        safeMessage,
+        traceId,
+        detailsArtifactRef: errorContext.detailsArtifactRef ?? null,
+      },
     }),
   );
 }

@@ -152,7 +152,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、两个端口、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；尚无数据来源的 `turnsRunning`、`maintenanceQueued`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、两个端口、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；尚无数据来源的 `turnsRunning`、`maintenanceQueued`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
@@ -215,8 +215,8 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 请求参数 | 响应 |
 |---|---|---|
-| `GET /timeline`（已实现） | `branchId`、`fromSeq`、`limit`（≤ 200）、`order`（`asc`/`desc`）、`types`、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件 |
-| `GET /agents`（已实现） | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }` |
+| `GET /timeline`（已实现） | `branchId`、`fromSeq`（缺省 0）、`limit`（缺省 100，≤ 200）、`order`（`asc`/`desc`）、`types`（≤ 20 个，每个 ≤ 64 字符）、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件。查询参数的取值范围以公共 `timelineQuerySchema` 为唯一基准，路由只做类型规范化 |
+| `GET /agents`（已实现） | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
 | `GET /agents/{agentId}/inspector`（已实现） | `branchId` | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn。未知 Agent 返回 `not-found` |
 | `GET /agents/{agentId}/memory`（已实现） | `branchId`、`revision` | `{ revision, records: MemoryRecord[] }` |
 | `GET /agents/{agentId}/memory/diff`（已实现） | `branchId`、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
@@ -283,12 +283,22 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 业务规则拒绝（例如资源不足、路线不可用）不使用以上 HTTP 错误：命令被受理并写入 receipt，返回 200 和 `commandStatus: "rejected"`。
 
+`traceId` 的取值分两种情况，客户端不能假定它一定对应本次请求的 span：
+
+1. `DomainError` 显式携带 `traceId` 或 `detailsArtifactRef` 时优先返回错误自身的值。这类错误可能由其他请求、后台 worker 或延迟提交产生，其 trace 指向产生错误的那个上下文，不一定能在本次 `http.request` span 下查到。
+2. 未显式携带时回落到本次请求的 trace。`onRequest` 为每个请求生成 trace，并在注入了 `recordSpan` 时登记，错误出口在构造响应时取回；该值对应本次请求写入 `trace_spans` 的 `http.request` span。
+
+两者都没有时字段为 `null`，不用空串冒充。传输层未注入 `recordSpan` 时请求 span 不会落库，此时不登记 trace，错误响应的 `traceId` 保持 `null`，避免给出查不到的伪标识。
+
 ## 8. API 验收
 
 - 玩家会话访问任一 `/api/v1/console/*` 返回 403；不带 `X-Active-Role` 的控制台请求返回 403。
 - 同一 `commandId` 重放得到同一 receipt；换 payload 返回 409 `idempotency-conflict`。
 - 断线后带 `fromStreamSeq` 重连，客户端投影与 `GET /world/view` 一致；缺口超过 200 时收到新快照。
 - 来自其他 Origin 的请求与 WS 握手被拒绝。
+- 任一非 2xx 响应的 `traceId` 要么能在 `trace_spans` 中查到对应的 `http.request` span（回落情形），要么是该错误自身携带的 trace（显式情形）；未注入 `recordSpan` 时为 `null`。
+- `GET /console/timeline` 的查询边界与 `timelineQuerySchema` 一致：缺省 `fromSeq`/`limit` 使用默认值，`types` 超过 20 个返回 400。
+- `GET /console/agents` 对已开局角色返回真实 `location` 与 `watermarkLag`，不用固定 `null` 与 `0` 冒充。
 - 所有接口的响应里都找不到 API 密钥、`credentialRef` 的解析值或任何 Agent 的私密记忆（玩家接口）。
 
 ## 9. 响应类型
