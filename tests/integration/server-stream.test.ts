@@ -3,7 +3,7 @@
  * 依赖真实 StreamHub 与假 socket；不监听端口，也不依赖 Fastify 或浏览器 WebSocket。
  * 禁止用等待真实网络缓冲的方式制造慢连接，也不在用例间复用流中心。
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DomainError,
   playerProjectionSchema,
@@ -19,6 +19,8 @@ class FakeSocket implements StreamSocket {
   bufferedAmount = 0;
   readonly sent: string[] = [];
   closed: { readonly code: number; readonly reason: string } | null = null;
+  /** 底层连接被强制终止的次数；用于区分「只发关闭帧」与「确保释放」。 */
+  terminateCount = 0;
   private readonly listeners = new Map<string, ((data?: unknown) => void)[]>();
 
   send(payload: string): void {
@@ -31,6 +33,7 @@ class FakeSocket implements StreamSocket {
   }
 
   terminate(): void {
+    this.terminateCount += 1;
     this.closed ??= { code: 1006, reason: "terminated" };
     this.emit("close");
   }
@@ -433,6 +436,33 @@ describe("WS 流中心", () => {
     }
   });
 
+  it("容量拒绝先发关闭帧，兜底定时器到期后强制终止连接", () => {
+    // 只用 close 会让未注册连接在半开状态下无人回收；只 terminate 则关闭帧
+    // 可能来不及发出，对端看不到拒绝原因。因此先发帧、再在窗口后强制终止。
+    const hub = createHub({ maxConnections: 1 });
+    try {
+      const first = hub.login({ token: "player-login-token", auth: playerAuth });
+      openStream(hub, first.sessionId).drain();
+
+      const rejected = new FakeSocket();
+      vi.useFakeTimers();
+      try {
+        hub.accept(rejected, hub.issueTicket(first.sessionId).ticket);
+        // 关闭帧已发出，对端能读到拒绝码。
+        expect(rejected.closed?.code).toBe(1013);
+        // 刷出窗口内尚未强制终止。
+        expect(rejected.terminateCount).toBe(0);
+        vi.advanceTimersByTime(2_000);
+        // 到期后强制终止，未注册连接不会一直占着底层 socket。
+        expect(rejected.terminateCount).toBeGreaterThan(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    } finally {
+      hub.close();
+    }
+  });
+
   it("单会话连接数超限时拒绝新连接且不留下计数泄漏", () => {
     // 同一会话可反复换取票据建立连接：每次都是一次性票据，但签发不设频率限制。
     // 没有上限时每条连接都既占内存又抬高推送扇出，且会话计数只增不减。
@@ -449,7 +479,8 @@ describe("WS 流中心", () => {
       hub.accept(rejected, hub.issueTicket(session.sessionId).ticket);
       // 超限连接在注册监听与计数之前就被关闭，因此既没有 hello 也没有订阅。
       expect(rejected.drain()).toEqual([]);
-      expect(rejected.closed).toMatchObject({ code: 1013 });
+      expect(rejected.closed?.code).toBe(1013);
+      // 强制终止由兜底定时器完成，不在拒绝当次同步发生。
       expect(hub.stats().connections).toBe(2);
 
       // 关闭一条后腾出名额，新连接可以建立，说明计数没有泄漏成永久占位。
@@ -475,7 +506,7 @@ describe("WS 流中心", () => {
 
       const rejected = new FakeSocket();
       hub.accept(rejected, hub.issueTicket(third.sessionId).ticket);
-      expect(rejected.closed).toMatchObject({ code: 1013 });
+      expect(rejected.closed?.code).toBe(1013);
       expect(hub.stats().connections).toBe(2);
     } finally {
       hub.close();
