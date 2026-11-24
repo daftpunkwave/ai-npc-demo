@@ -65,6 +65,12 @@ export interface StreamHubOptions {
   readonly worldId: string;
   /** 控制台频道的只读快照来源；未实现的频道返回 null。 */
   readonly channelSnapshot?: (channel: StreamChannel) => Json | null;
+  /**
+   * 该频道是否有实际生产者。订阅只对有生产者的频道成立，
+   * 已授权但未实现的频道必须在订阅时返回 not-ready，而不是接受后永不推送。
+   * 缺省时不额外拒绝（玩家频道恒有生产者），由装配方按实际接线情况显式声明。
+   */
+  readonly channelProvided?: (channel: StreamChannel) => boolean;
   /** 按会话角色计算可订阅频道；准入裁决由传输层的策略端口完成。 */
   readonly channelsFor: (auth: AuthContext) => readonly StreamChannel[];
   readonly ids: (prefix: IdPrefix) => string;
@@ -113,8 +119,12 @@ export interface Connection {
   readonly sessionId: string;
   readonly isPlayer: boolean;
   readonly subscriptions: Set<StreamChannel>;
-  /** 因背压丢弃增量后置位；连接可写时补发完整快照。 */
-  needsSnapshot: boolean;
+  /**
+   * 因背压丢弃增量而待补快照的频道集合。
+   * 必须按频道记录：同一连接可同时订阅玩家投影与多个控制台频道，
+   * 用连接级单标志会让先补发成功的频道清掉另一个频道的补发请求，导致后者的快照永久缺失。
+   */
+  readonly pendingSnapshots: Set<StreamChannel>;
 }
 
 /** 一次性 WS 票据，只记录绑定的会话与失效时间。 */

@@ -1,7 +1,7 @@
 /**
  * 读取控制台健康摘要与客户端内容视图，呈现端口、装配、时钟、队列、模块与失败计数。
- * 依赖注入的 console API、当前角色与 React；页面标题取自内容视图，不伪造 Agent 或预算数据。
- * 禁止在服务失败时保留过期页面并声称运行正常。
+ * 依赖注入的 console API、当前角色、页面可见性与 React；页面标题取自内容视图，不伪造 Agent 或预算数据。
+ * 禁止在服务失败时保留过期页面并声称运行正常，也禁止在页面不可见时继续按固定间隔请求。
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
@@ -13,6 +13,7 @@ import type {
 } from "@ai-npc/contracts";
 import type { ApiClient } from "@ai-npc/client-protocol";
 import { healthSummary } from "./health-summary";
+import { currentVisibility, onVisibilityChange, shouldPollHealth } from "./polling";
 
 export interface ConsoleHostPort {
   readonly api: ApiClient;
@@ -77,11 +78,20 @@ function HealthPage(): ReactNode {
           }
         });
     };
+    // 页面切到后台时定时器照常触发，但不再发请求；切回前台立即补一次，
+    // 保证恢复可见后看到的是当前状态而不是离开时的快照。
+    const loadIfVisible = (): void => {
+      if (shouldPollHealth(currentVisibility())) {
+        load();
+      }
+    };
     load();
-    const timer = setInterval(load, 2_000);
+    const timer = setInterval(loadIfVisible, 2_000);
+    const unsubscribeVisibility = onVisibilityChange(loadIfVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      unsubscribeVisibility();
     };
   }, [host.api, host.activeRole]);
 

@@ -179,7 +179,7 @@ export class StreamHub {
       sessionId: session.sessionId,
       isPlayer: channels.includes(playerChannel),
       subscriptions: new Set(),
-      needsSnapshot: false,
+      pendingSnapshots: new Set(),
     };
     this.connections.set(socket, connection);
     this.sessionConnections.set(session.sessionId, (this.sessionConnections.get(session.sessionId) ?? 0) + 1);
@@ -228,11 +228,32 @@ export class StreamHub {
         replay: this.replay,
         sender: this.sender,
         channelsFor: this.options.channelsFor,
+        channelProvided: (channel) => this.channelProvided(channel),
         streamSeq: () => this.streamSeq,
       },
       socket,
       raw,
     );
+  }
+
+  /**
+   * 该频道当前是否有能收到推送的订阅者。
+   * 供宿主在构造控制台快照前短路：没人订阅时构建与序列化整份快照是纯浪费，
+   * 而且检查必须发生在构造之前，publishConsole 内部的订阅判断已经在数据算完之后。
+   * 会话已失效的连接不计入：发布路径本就跳过它们，把它们算作订阅者只会让快照
+   * 持续被构造，而结果没有任何投递对象。
+   */
+  hasSubscriber(channel: StreamChannel): boolean {
+    for (const connection of this.connections.values()) {
+      if (!connection.subscriptions.has(channel)) {
+        continue;
+      }
+      if (this.sessions.activeSession(connection.sessionId) === null) {
+        continue;
+      }
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -268,15 +289,14 @@ export class StreamHub {
       if (this.sessions.activeSession(connection.sessionId) === null) {
         continue;
       }
-      if (connection.needsSnapshot) {
+      if (connection.pendingSnapshots.has(playerChannel)) {
         this.sender.flushPendingSnapshot(connection);
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- flushPendingSnapshot 会清除 needsSnapshot，TypeScript 的属性收窄不感知跨方法修改。
-        if (connection.needsSnapshot) {
+        if (connection.pendingSnapshots.has(playerChannel)) {
           continue;
         }
       }
       if (!this.sender.deliver(connection, deltaPayload)) {
-        connection.needsSnapshot = true;
+        connection.pendingSnapshots.add(playerChannel);
         continue;
       }
       // 同一 streamSeq 的新对白/提醒按单条追加；慢连接在任一次投递失败后等快照恢复。
@@ -289,7 +309,7 @@ export class StreamHub {
           item: append.item,
         });
         if (!this.sender.deliver(connection, appendPayload)) {
-          connection.needsSnapshot = true;
+          connection.pendingSnapshots.add(playerChannel);
           break;
         }
       }
@@ -313,6 +333,19 @@ export class StreamHub {
       }
       this.sender.sendChannelSnapshot(connection, channel, data, streamSeq);
     }
+  }
+
+  /**
+   * 频道是否存在实际生产者。
+   * 玩家投影由本类直接生成；控制台频道由装配方注入判定，未注入时不擅自拒绝订阅，
+   * 保持流中心作为底层设施的既有契约。生产装配（createServerApp）始终显式注入，
+   * 因此已授权但尚无实现的频道在生产路径上一定拿到 not-ready。
+   */
+  private channelProvided(channel: StreamChannel): boolean {
+    if (channel === playerChannel) {
+      return true;
+    }
+    return this.options.channelProvided?.(channel) ?? true;
   }
 
   /**
@@ -345,9 +378,12 @@ export class StreamHub {
   // eslint-disable-next-line no-unused-vars -- 上报回调的类型参数名用于表达调用契约，运行时由调用方传入。
   private resyncPlayers(report: (message: string, error: unknown) => void): void {
     this.replay.resetAll(this.branchId, this.generation);
-    const players = [...this.connections.values()].filter((connection) => connection.isPlayer);
+    // 只有真正订阅了玩家频道的连接才需要补发：仅具备玩家身份但未订阅的连接
+    // 不该因为一次重同步而在后续 sweep 或 ack 时收到完整投影。
+    const players = [...this.connections.values()].filter((connection) =>
+      connection.isPlayer && connection.subscriptions.has(playerChannel));
     for (const connection of players) {
-      connection.needsSnapshot = true;
+      connection.pendingSnapshots.add(playerChannel);
     }
     let projection: PlayerProjection;
     try {
@@ -388,7 +424,7 @@ export class StreamHub {
       if (!connection.subscriptions.has(playerChannel)) {
         continue;
       }
-      this.sender.sendSerializedSnapshot(connection, payload);
+      this.sender.sendSerializedSnapshot(connection, playerChannel, payload);
     }
   }
 
@@ -460,7 +496,7 @@ export class StreamHub {
     this.replay.sweep(now);
     // 连接恢复可写但没有新发布时，利用低频清理顺带补发积压快照。
     for (const connection of [...this.connections.values()]) {
-      if (connection.needsSnapshot) {
+      if (connection.pendingSnapshots.size > 0) {
         this.sender.flushPendingSnapshot(connection);
       }
     }

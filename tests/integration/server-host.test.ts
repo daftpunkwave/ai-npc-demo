@@ -791,6 +791,23 @@ describe("服务端宿主", () => {
       playerClient.close();
     }
 
+    // 超限帧：ws 以 1009 关闭，并落一条可查询的结构化审计（只含上限与关闭码）。
+    const oversizedTicket = await ticketFor(host, playerSession);
+    const oversizedClient = connectStream(
+      `ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(oversizedTicket)}`,
+    );
+    expect(await oversizedClient.next()).toMatchObject({ type: "hello" });
+    oversizedClient.send({ type: "subscribe", channel: "player", fromStreamSeq: null, padding: "x".repeat(70 * 1024) });
+    oversizedClient.close();
+    await vi.waitFor(() => {
+      const audits = host.storage.transact((tx) => tx.rows("trace_spans").list()
+        .filter((row) => row["name"] === "ws.frame.over-limit"));
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+      expect(audits[0]?.["status"]).toBe("error");
+      expect(audits[0]?.["attrs_json"]).toEqual({ maxPayloadBytes: 64 * 1024, closeCode: 1009 });
+      expect(JSON.stringify(audits[0]?.["attrs_json"])).not.toContain("padding");
+    }, { timeout: 10_000 });
+
     const consoleTicket = await ticketFor(host, consoleSession);
     const consoleClient = connectStream(
       `ws://127.0.0.1:${port}/api/v1/streams?ticket=${encodeURIComponent(consoleTicket)}`,
@@ -817,6 +834,10 @@ describe("服务端宿主", () => {
         channel: "console.timeline",
       });
       expect(initialTimelineSnapshot).toHaveProperty("projectionVersion", 0);
+      // console.turns 已在权限表与 hello 频道列表内，但服务端尚无生产者：
+      // 订阅必须显式返回 not-ready，客户端才能区分「未实现」与「暂无数据」。
+      consoleClient.send({ type: "subscribe", channel: "console.turns", fromStreamSeq: null });
+      expect(await consoleClient.next()).toMatchObject({ type: "error", code: "not-ready" });
       host.app.notifyWorldChanged();
       let timelineSnapshot: unknown = null;
       for (let attempt = 0; attempt < 4; attempt += 1) {

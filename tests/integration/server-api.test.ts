@@ -37,6 +37,7 @@ import {
   type CommandReceiptReadPort,
   type ServerApp,
   type ServerAppInjectResponse,
+  type ServerAppOptions,
   type TransportAppInput,
 } from "@ai-npc/app-server";
 import {
@@ -294,6 +295,35 @@ interface AppOverrides {
   readonly consoleEntryExists?: () => boolean;
   /** 覆盖会话容量上限；用于验证满容量时的拒绝语义。 */
   readonly maxSessions?: number;
+  /** 覆盖控制台读取端口；未提供时控制台频道没有生产者，订阅返回 not-ready。 */
+  /**
+   * 覆盖控制台读取端口。
+   * 本组用例只触发健康摘要与时间线两个查询，其余查询方法不在测试关注范围内；
+   * 因此这里声明最小形状，接线时按完整端口收窄，避免为无关方法编造占位实现。
+   */
+  readonly console?: TestConsolePort;
+
+  /**
+   * 替换观测写端口；用于确认传输层把需要审计的事件真的交了出去。
+   * 缺省不接线，避免测试进程内写入真实观测存储。
+   */
+  readonly recordSpan?: (span: AuditSpan) => void;
+}
+
+/**
+ * 测试用控制台读取端口的最小视图。
+ * 只声明本组用例真正触发的两个方法：健康摘要与时间线快照。
+ */
+interface TestConsolePort {
+  health(): unknown;
+  timeline(query: { readonly branchId: string; readonly fromSeq: number; readonly limit: number; readonly order: string }): unknown;
+}
+
+/** 传播层审计 span 的最小视图；只断言与本组用例相关的字段。 */
+interface AuditSpan {
+  readonly name: string;
+  readonly status: "ok" | "error" | "skipped";
+  readonly attrs: Json;
 }
 
 /** 用真实回执表构造只读查询端口；传输层不接触表结构。 */
@@ -370,6 +400,8 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     tokens: (kind) => `${kind}-${randomUUID()}`,
     ...(overrides.onInternalError === undefined ? {} : { onInternalError: overrides.onInternalError }),
     ...(overrides.now === undefined ? {} : { now: overrides.now }),
+    ...(overrides.console === undefined ? {} : { console: overrides.console as ServerAppOptions["console"] }),
+    ...(overrides.recordSpan === undefined ? {} : { recordSpan: overrides.recordSpan }),
     ...(overrides.consoleStaticDir === undefined
       ? {}
       : { consoleStaticDir: overrides.consoleStaticDir }),
@@ -2109,8 +2141,100 @@ describe("服务端 API", () => {
       type: "hello",
       channels: ["console.health", "console.timeline", "console.turns"],
     });
+    // 本应用没有接线控制台读取端口，控制台频道因此没有生产者：
+    // 授权通过后必须明确回 not-ready，客户端才能区分「未实现」与「暂无数据」。
     researcherClient.send({ type: "subscribe", channel: "console.health", fromStreamSeq: null });
-    await researcherClient.expectNoMessage(50);
+    expect(await researcherClient.next()).toMatchObject({ type: "error", code: "not-ready" });
+    // 无生产者的频道不进入订阅集合，世界变化不为它推送。
+    app.notifyWorldChanged();
+    await researcherClient.expectNoMessage(100);
+  });
+
+  it("超限 WS 帧以 1009 关闭并写出一条不含帧内容的审计", async () => {
+    const value = await createTrackedGameHarness(active);
+    const spans: AuditSpan[] = [];
+    const app = await appFor(value, { recordSpan: (span) => spans.push(span) });
+    const port = await listen(app);
+    const session = await login(app, "player-token");
+    const client = openStream(port, await ticketFor(app, session));
+    expect(await client.next()).toMatchObject({ type: "hello" });
+
+    // 超过 64 KiB 上限的帧在进入处理器前就被拒绝。
+    client.send({ type: "subscribe", channel: "player", fromStreamSeq: null, padding: "x".repeat(70 * 1024) });
+    expect((await client.closed()).code).toBe(1009);
+
+    const audit = spans.find((span) => span.name === "ws.frame.over-limit");
+    expect(audit).toMatchObject({ status: "error" });
+    // 审计只记录上限与关闭码，不写入帧内容。
+    expect(audit?.attrs).toEqual({ maxPayloadBytes: 64 * 1024, closeCode: 1009 });
+    expect(JSON.stringify(audit?.attrs)).not.toContain("padding");
+  });
+
+  it("控制台时间线无人订阅时不构造快照，订阅后才产出并推送", async () => {
+    const value = await createTrackedGameHarness(active);
+    let timelineCalls = 0;
+    const app = await appFor(value, {
+      console: {
+        health: () => ({ status: "ready" }) as never,
+        timeline: () => {
+          timelineCalls += 1;
+          return { branchId: value.branchId, items: [] } as never;
+        },
+      } as never,
+    });
+    const port = await listen(app);
+
+    // 没有任何连接订阅时间线：世界变化不应触发时间线查询。
+    app.notifyWorldChanged();
+    app.notifyWorldChanged();
+    expect(timelineCalls).toBe(0);
+
+    const researcherSession = await login(app, "researcher-token");
+    const researcherClient = openStream(port, await ticketFor(app, researcherSession));
+    expect(await researcherClient.next()).toMatchObject({ type: "hello" });
+    researcherClient.send({ type: "subscribe", channel: "console.timeline", fromStreamSeq: null });
+    expect(await researcherClient.next()).toMatchObject({ type: "snapshot", channel: "console.timeline" });
+    const afterSubscribe = timelineCalls;
+    expect(afterSubscribe).toBeGreaterThan(0);
+
+    // 有订阅者时世界变化继续推送。
+    app.notifyWorldChanged();
+    expect(await researcherClient.next()).toMatchObject({ type: "snapshot", channel: "console.timeline" });
+    expect(timelineCalls).toBeGreaterThan(afterSubscribe);
+  });
+
+  it("控制台健康定时广播只在有订阅者时才构造摘要", async () => {
+    const value = await createTrackedGameHarness(active);
+    let healthCalls = 0;
+    const app = await appFor(value, {
+      console: {
+        health: () => {
+          healthCalls += 1;
+          return { status: "ready" } as never;
+        },
+        timeline: () => ({ branchId: value.branchId, items: [] }) as never,
+      } as never,
+    });
+    const port = await listen(app);
+
+    // 无订阅者时定时器不得调用 health()：这是每 2 秒一次的两笔事务。
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 2_500);
+    });
+    expect(healthCalls).toBe(0);
+
+    const researcherSession = await login(app, "researcher-token");
+    const researcherClient = openStream(port, await ticketFor(app, researcherSession));
+    expect(await researcherClient.next()).toMatchObject({ type: "hello" });
+    researcherClient.send({ type: "subscribe", channel: "console.health", fromStreamSeq: null });
+    const snapshot = await researcherClient.next();
+    expect(snapshot).toMatchObject({ type: "snapshot", channel: "console.health" });
+
+    // 有订阅者后定时广播恢复，并在下一轮推送新的摘要。
+    const before = healthCalls;
+    const pushed = await researcherClient.next(3_000);
+    expect(pushed).toMatchObject({ type: "snapshot", channel: "console.health" });
+    expect(healthCalls).toBeGreaterThan(before);
   });
 
   it("同会话断线重连按旧游标补发连续增量", async () => {
