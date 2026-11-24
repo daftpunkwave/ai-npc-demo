@@ -54,3 +54,16 @@ export function schemaLoadingError(source: string, error: ZodError): LoadingErro
     message: issue.message,
   });
 }
+
+/**
+ * 构造交叉检查错误。各加载器的交叉校验都要给出「来源 + 字段路径 + 原因」，
+ * 统一从这里构造可避免错误码与格式在不同加载器之间逐渐分叉。
+ */
+export function crossCheckLoadingError(source: string, path: string, message: string): LoadingError {
+  return new LoadingError({ code: "cross-check", source, path, message });
+}
+
+/** 引用解析错误（找不到文件、同名歧义、ID 与引用不一致）。 */
+export function referenceLoadingError(source: string, path: string, message: string): LoadingError {
+  return new LoadingError({ code: "reference", source, path, message });
+}

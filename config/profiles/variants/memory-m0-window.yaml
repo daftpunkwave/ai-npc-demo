@@ -5,4 +5,13 @@ parent: null
 patch:
   slots:
     memory: { module: agent.memory.none, config: {} }
-    context: { module: agent.context.ordered-blocks, config: { historyTurns: 8 } }
+    # 槽位按整块替换，不继承父 profile 的同槽字段；因此这里重复基线中的
+    # decision/speech 预算块，只把 historyTurns 改成窗口组需要的值。
+    context:
+      module: agent.context.ordered-blocks
+      config:
+        segmentOrder: [world, task, memory, history, input]
+        historyTurns: 8
+        lendUnusedBudget: false
+        decision: { maxInputTokens: 8000, safetyTokens: 300, toolLoopReserveTokens: 1600, segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800 } }
+        speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }

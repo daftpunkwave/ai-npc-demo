@@ -8,6 +8,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import { DomainError, type Json, type StreamChannel } from "@ai-npc/contracts";
 import { StreamHub } from "./stream-hub";
@@ -16,7 +17,7 @@ import { registerAuthRoutes } from "./routes/auth-routes";
 import { registerConsoleOperationsRoutes } from "./routes/console-operations-routes";
 import { registerConsoleRoutes } from "./routes/console-routes";
 import { registerConsoleModelRoutes } from "./routes/console-model-routes";
-import { registerConsoleResearchRoutes } from "./routes/console-research-routes";
+import { registerConsoleEvaluationRoutes, registerConsoleResearchRoutes } from "./routes/console-research-routes";
 import { registerContentRoutes } from "./routes/content-routes";
 import { registerOperationsRoutes } from "./routes/operations-routes";
 import { registerPlayerRoutes } from "./routes/player-routes";
@@ -160,6 +161,15 @@ function registerErrorHandling(
       return sendHttpError(reply, "plugin-failed", "请求处理超时", true);
     }
     const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
+    // 限流插件以 429 抛出：按统一错误格式返回。插件已在抛错前写入正确的 retry-after，
+    // 这里不覆盖它；只把插件计算好的等待说明带进 safeMessage。
+    if (statusCode === 429) {
+      const pluginError = (error as { readonly error?: { readonly safeMessage?: unknown } }).error;
+      const safeMessage = typeof pluginError?.safeMessage === "string"
+        ? pluginError.safeMessage
+        : "请求过于频繁，请稍后重试";
+      return sendHttpError(reply, "budget-exhausted", safeMessage, true);
+    }
     if (statusCode === 400 || statusCode === 413 || statusCode === 415) {
       return sendHttpError(reply, "validation", "请求结构不合法");
     }
@@ -213,6 +223,45 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       );
     }
     return payload;
+  });
+  // 控制台研究/评估接口与登录入口按路由声明配额：读接口 60 次/10 秒、写接口 10 次/10 秒。
+  // 阈值可经 options.rateLimits 覆盖；其他既有路由的限流治理另见跟踪 Issue。
+  const rateLimitFor = (method: string): number =>
+    method === "GET" || method === "HEAD"
+      ? (options.rateLimits?.read ?? 60)
+      : (options.rateLimits?.write ?? 10);
+  app.addHook("onRoute", (route) => {
+    const url = route.url;
+    const limited = url.startsWith("/api/v1/console") || url === "/api/v1/auth/login";
+    if (!limited) return;
+    const methods = Array.isArray(route.method) ? route.method : [route.method];
+    const write = methods.some((method) => method !== "GET" && method !== "HEAD");
+    route.config = {
+      ...route.config,
+      rateLimit: { max: rateLimitFor(write ? "POST" : "GET"), timeWindow: "10 seconds" },
+    };
+  });
+  await app.register(rateLimit, {
+    global: false,
+    max: options.rateLimits?.read ?? 60,
+    timeWindow: "10 seconds",
+    keyGenerator: (request) => {
+      const authorization = request.headers.authorization;
+      // 凭据本身不进键：只取其后段的稳定前缀，避免把令牌留在内存映射里。
+      if (typeof authorization === "string" && authorization.length > 0) return `cred:${authorization.slice(-24)}`;
+      return `ip:${request.ip}`;
+    },
+    errorResponseBuilder: (_request, context) => ({
+      // 与项目统一错误格式一致：429 走 budget-exhausted，并带 retryAfter 秒数。
+      statusCode: 429,
+      error: {
+        code: "budget-exhausted",
+        retryable: true,
+        safeMessage: `请求过于频繁，请等待 ${Math.ceil(context.ttl / 1000)} 秒`,
+        traceId: null,
+        detailsArtifactRef: null,
+      },
+    }),
   });
   await app.register(websocket, {
     options: { maxPayload: maxWebSocketPayloadBytes },
@@ -341,6 +390,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
       sendHttpError(reply, "forbidden", "Origin 不被允许");
+      return;
     }
   });
 
@@ -376,6 +426,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerConsoleRoutes(context);
   registerConsoleModelRoutes(context);
   registerConsoleResearchRoutes(context);
+  registerConsoleEvaluationRoutes(context);
   registerConsoleOperationsRoutes(context);
   registerErrorHandling(app, report, notFound);
 

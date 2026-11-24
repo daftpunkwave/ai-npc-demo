@@ -226,7 +226,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `GET /runs/{runId}/report` | researcher、evaluator | — | 指标、分子分母、无效样本数与原因、探针结果（[评估](../platform/evaluation.md) 第 9 节） |
 | `POST /experiments` | researcher | `{ experimentSpec }` 或 `{ experimentRef }`（格式见第 9 节末尾） | `{ experimentId, runIds }`：按顺序创建并排队执行 |
 | `GET /experiments/{experimentId}` | researcher、evaluator | — | 各 run 状态与汇总报告 |
-| `POST /exports` | researcher | `{ runId, redaction: "redacted"\|"raw", operationId }` | `{ artifactId }`：导出包（manifest、事件、turn、artifact 索引） |
+| `POST /exports` | researcher | `{ runId, redaction: "redacted"\|"raw" }` | `{ artifactId }`：导出包（manifest、事件、turn、artifact 索引） |
 
 ## 6. 角色权限矩阵
 

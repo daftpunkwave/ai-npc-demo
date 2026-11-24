@@ -67,6 +67,8 @@ export const runDetailResponseSchema = z
   })
   .strict();
 
+export type RunDetailResponse = z.infer<typeof runDetailResponseSchema>;
+
 export const runStatusChangeRequestSchema = z
   .object({
     operationId: idSchemas.op,
@@ -99,6 +101,15 @@ export const reportMetricSchema = z
     reason: z.string().min(1).optional(),
   })
   .strict();
+
+export const reportProbeInvalidReasonSchema = z.enum([
+  "turn-failed",
+  "no-dialogue",
+  "empty-answer",
+  "speech-fallback",
+  "model-substituted",
+  "evidence-incomplete",
+]);
 
 export const reportProbeSchema = z
   .object({
@@ -163,6 +174,8 @@ export const runReportResponseSchema = z
     validity: runValiditySchema,
     metrics: z.array(reportMetricSchema),
     probes: z.array(reportProbeSchema),
+    /** 无效样本按原因汇总的数量；无效样本不进入正确率分母。 */
+    invalidProbeCounts: z.record(reportProbeInvalidReasonSchema, z.number().int().nonnegative()),
     behavior: z.array(reportBehaviorSchema),
     memory: reportMemorySchema,
     cost: reportCostSchema,
@@ -172,15 +185,44 @@ export const runReportResponseSchema = z
 
 export type RunReportResponse = z.infer<typeof runReportResponseSchema>;
 
+/**
+ * 实验标识：来自实验规格的 `experimentId`，是配置引用（如 `exp-memory-promise-v1`），
+ * 不是运行期生成的 `<前缀>-<12 位 base32>` ID，因此不能复用 `idSchemas.exp`。
+ */
+export const experimentIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "实验标识只能由字母、数字、点、下划线与连字符组成");
+
 export const experimentCreateRequestSchema = z.union([
   z.object({ experimentSpec: z.record(z.string().min(1), jsonValueSchema) }).strict(),
   z.object({ experimentRef: z.string().min(1) }).strict(),
 ]);
 
+/**
+ * 实验创建响应：逐个 run 的创建状态与失败详情。
+ *
+ * 创建是部分可成功的——一个变体的配置问题不该掩盖其他变体已创建的事实，
+ * 也不该让调用方失去定位失败项的依据。因此响应保留全部 run 的身份与状态，
+ * 而不是只回一个整体失败码。
+ */
+export const experimentRunOutcomeSchema = z
+  .object({
+    runId: idSchemas.run,
+    /** 真实 run 生命周期状态；重放既有实验时不能统一改写为 ready。 */
+    status: z.enum(["created", "preflight-failed", "ready", "running", "paused", "completed", "failed", "invalid"]),
+    errors: z.array(runValidationErrorSchema),
+  })
+  .strict();
+
 export const experimentCreateResponseSchema = z
   .object({
-    experimentId: idSchemas.exp,
+    experimentId: experimentIdSchema,
+    /** 本次请求创建的 run 标识，顺序与展开顺序一致。 */
     runIds: z.array(idSchemas.run),
+    /** 与 runIds 一一对应的逐个结果；失败项在 errors 里给出逐条原因。 */
+    runs: z.array(experimentRunOutcomeSchema),
+    /** 预检失败的 run 数量；为 0 表示全部就绪。 */
+    failedRunCount: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -204,7 +246,7 @@ export const experimentCellSummarySchema = z
 
 export const experimentDetailResponseSchema = z
   .object({
-    experimentId: idSchemas.exp,
+    experimentId: experimentIdSchema,
     runs: z.array(runSummarySchema),
     cells: z.array(experimentCellSummarySchema),
   })
@@ -212,11 +254,43 @@ export const experimentDetailResponseSchema = z
 
 export type ExperimentDetailResponse = z.infer<typeof experimentDetailResponseSchema>;
 
+/** run 控制请求：启动与停止都要求幂等键，与运营接口的约定一致。 */
+export const runControlRequestSchema = z
+  .object({
+    operationId: idSchemas.op,
+  })
+  .strict();
+
+/** run 控制响应：操作后的状态；状态不符时返回 409 而不是伪装成功。 */
+export const runControlResponseSchema = z
+  .object({
+    runId: idSchemas.run,
+    status: z.enum(["running", "paused"]),
+  })
+  .strict();
+
+export type RunControlResponse = z.infer<typeof runControlResponseSchema>;
+
+/** 实验列表的一项：标识与已创建的 run 数量。 */
+export const experimentListEntrySchema = z
+  .object({
+    experimentId: experimentIdSchema,
+    runCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const experimentsListResponseSchema = z
+  .object({
+    experiments: z.array(experimentListEntrySchema),
+  })
+  .strict();
+
+export type ExperimentsListResponse = z.infer<typeof experimentsListResponseSchema>;
+
 export const exportRequestSchema = z
   .object({
     runId: idSchemas.run,
     redaction: z.enum(["redacted", "raw"]),
-    operationId: idSchemas.op,
   })
   .strict();
 

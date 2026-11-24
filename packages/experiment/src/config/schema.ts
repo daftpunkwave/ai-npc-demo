@@ -70,6 +70,11 @@ export const runSpecSchema = z
   .object({
     schemaVersion: z.literal(1),
     id: configRefSchema,
+    /**
+     * 归属的实验标识；由实验展开写入，普通单 run 规格没有该字段。
+     * 评估读取按它归组，不再从 `seed` 文本推断——两者是独立配置项，可以不同名。
+     */
+    experimentId: configRefSchema.optional(),
     moduleAssemblyRef: configRefSchema,
     worldPackRef: configRefSchema,
     scenarioRef: configRefSchema,

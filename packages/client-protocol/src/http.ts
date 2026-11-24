@@ -12,6 +12,11 @@ import {
   clockResponseSchema,
   commandReceiptSchema,
   consoleHealthResponseSchema,
+  experimentDetailResponseSchema,
+  experimentsListResponseSchema,
+  runDetailResponseSchema,
+  runReportResponseSchema,
+  runsResponseSchema,
   conversationResponseSchema,
   errorResponseSchema,
   loginResponseSchema,
@@ -250,6 +255,37 @@ export class ApiClient {
     return this.requestConsole(
       assemblyDetailResponseSchema,
       `/api/v1/console/assemblies/${encodeURIComponent(assemblyId)}`,
+    );
+  }
+
+  /** 评估读取：run 列表与详情、run 报告、实验列表与详情。角色由服务端按会话裁决。 */
+  consoleRuns(query: { readonly status?: string; readonly limit?: number } = {}) {
+    const search = new URLSearchParams();
+    if (query.status !== undefined) search.set("status", query.status);
+    if (query.limit !== undefined) search.set("limit", String(query.limit));
+    const suffix = search.size === 0 ? "" : `?${search.toString()}`;
+    return this.requestConsole(runsResponseSchema, `/api/v1/console/runs${suffix}`);
+  }
+
+  consoleRun(runId: string) {
+    return this.requestConsole(runDetailResponseSchema, `/api/v1/console/runs/${encodeURIComponent(runId)}`);
+  }
+
+  consoleRunReport(runId: string) {
+    return this.requestConsole(
+      runReportResponseSchema,
+      `/api/v1/console/runs/${encodeURIComponent(runId)}/report`,
+    );
+  }
+
+  consoleExperiments() {
+    return this.requestConsole(experimentsListResponseSchema, "/api/v1/console/experiments");
+  }
+
+  consoleExperiment(experimentId: string) {
+    return this.requestConsole(
+      experimentDetailResponseSchema,
+      `/api/v1/console/experiments/${encodeURIComponent(experimentId)}`,
     );
   }
 

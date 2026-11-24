@@ -19,6 +19,7 @@ import {
   type HandlerResult,
 } from "@ai-npc/module-sdk";
 import { messageDeliveryKey, type MessageState } from "./state";
+import { probeAsk, probeRequestAggregate } from "./probe";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -261,12 +262,15 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
       "share",
       "message",
       "message-delivery",
+      probeRequestAggregate,
     ],
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
       { type: "speech.commit", handler: (context, payload) => speechCommit(context as CommsContext, payload) },
       { type: "seat.say", handler: (context, payload) => seatSay(context as CommsContext, payload) },
       { type: "information.share", handler: (context, payload) => informationShare(context as CommsContext, payload) },
+      // 探针由实验运行器在沙盒分支以 system:world 发行；按规范归属通信模块，但不产生对白或投递。
+      { type: "probe.ask", handler: (context, payload) => probeAsk(context as CommsContext, payload) },
     ],
     afterCommands: [
       {

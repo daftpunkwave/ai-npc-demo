@@ -20,6 +20,8 @@ import type { HostReadPorts } from "./reads";
 import type { SessionAssemblies } from "./startup";
 import type { ModelLayoutAdminPort } from "./model-layout-admin";
 import { createConsoleResearchPort } from "./console-research";
+import type { EvaluationReadPort } from "./evaluation-read";
+import type { RunWrites } from "./run-writes";
 
 export interface TransportAppInput {
   readonly host: HostServices;
@@ -38,6 +40,10 @@ export interface TransportAppInput {
   readonly sessionAssembly: SessionAssemblies;
   /** 仓库模型布局只读端口；未注入时控制台模型页返回 not-ready。 */
   readonly modelLayouts?: ModelLayoutAdminPort;
+  /** 评估只读端口；未注入时评估读取路由返回 not-ready。 */
+  readonly evaluation?: EvaluationReadPort;
+  /** 评估写入端口；不依赖评估模块，未注入时写入路由返回 not-ready。 */
+  readonly writes?: RunWrites;
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
@@ -139,7 +145,7 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 
 /** 创建传输应用；调用方负责之后监听端口并在关闭时释放。 */
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
-  const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent } = input;
+  const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent, evaluation, writes } = input;
   const consoleStaticDir = resolve(
     input.consoleStaticDir ?? resolve(process.cwd(), "apps/server/console-static"),
   );
@@ -154,6 +160,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
     });
     const modelLayouts = input.modelLayouts;
     return await runtime.transport.createApp({
+      ...(options.rateLimits === undefined ? {} : { rateLimits: options.rateLimits }),
       authority,
       accessPolicy: runtime.accessPolicy,
       receipts: reads.receipts,
@@ -229,6 +236,17 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         debugQueues: research.debugQueues,
         replayTurn: research.replayTurn,
         debugWake: research.debugWake,
+        ...(evaluation === undefined ? {} : {
+          evaluation: {
+            runs: (query: { readonly status?: string; readonly limit?: number }) => evaluation.runs(query),
+            run: (runId: string) => evaluation.run(runId),
+            report: (runId: string) => evaluation.report(runId),
+            experiment: (experimentId: string) => evaluation.experiment(experimentId),
+            experiments: () => evaluation.experiments(),
+          },
+        }),
+        // 写入与读取分开装配：评估模块未绑定时写接口仍然可用。
+        ...(writes === undefined ? {} : { evaluationWrites: writes }),
       },
       projection: () => reads.projection(),
       campaign: () => reads.campaign(),

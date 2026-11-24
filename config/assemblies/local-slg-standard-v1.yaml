@@ -28,6 +28,7 @@ realms:
       - { capability: platform.operations, moduleId: platform.operations.standard, configRef: null }
       - { capability: platform.observability, moduleId: platform.observability.sqlite, configRef: null }
       - { capability: platform.module-admin, moduleId: platform.module-admin.standard, configRef: null }
+      - { capability: platform.evaluation, moduleId: platform.evaluation.standard, configRef: null }
       - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
     agentSlots:
       perception: [agent.perception.local]
@@ -56,4 +57,5 @@ realms:
       - { capability: console.model-mounts, moduleId: console.model-mounts.standard, configRef: null }
       - { capability: console.faction-ops, moduleId: console.faction-ops.standard, configRef: null }
       - { capability: console.observability, moduleId: console.observability.standard, configRef: null }
+      - { capability: console.evaluation, moduleId: console.evaluation.standard, configRef: null }
       - { capability: console.debug, moduleId: console.debug.standard, configRef: null }

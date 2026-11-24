@@ -15,6 +15,7 @@ import type {
   DebugQueuesResponse,
   DebugWakeInput,
   DebugWakeResponse,
+  ExperimentDetailResponse,
   MemoryDiffResponse,
   MemoryResponse,
   ModelLayoutRoutesResponse,
@@ -23,6 +24,9 @@ import type {
   ModelLayoutsResponse,
   ModulesResponse,
   ObservationsResponse,
+  RunDetailResponse,
+  RunReportResponse,
+  RunSummary,
   AuthContext,
   CampaignView,
   ClockView,
@@ -261,6 +265,51 @@ export interface ConsoleReadPort {
     readonly turnId: string;
   }) => Promise<TurnReplayResponse>;
   debugWake?: (input: DebugWakeInput) => DebugWakeResponse;
+  /**
+   * 评估读取：run 列表、run 详情、run 报告、实验详情与实验列表。
+   * 未提供时对应路由返回 not-ready，与模型布局等可选能力的处理方式一致。
+   */
+  evaluation?: {
+    runs(query: { readonly status?: string; readonly limit?: number }): readonly RunSummary[];
+    run(runId: string): RunDetailResponse | null;
+    /** run 报告；run 不存在时返回 null，路由据此返回 not-found。 */
+    report(runId: string): RunReportResponse | null;
+    experiment(experimentId: string): ExperimentDetailResponse | null;
+    experiments(): readonly { readonly experimentId: string; readonly runCount: number }[];
+  };
+  /**
+   * 评估写入：创建 run 与导出。
+   * 与 `evaluation` 分开，因为写操作只依赖存储、内容与装配定义，
+   * 装配未绑定评估模块时写入仍应可用。
+   */
+  evaluationWrites?: {
+    /** run 规格已由路由层按契约 schema 校验，这里只接收已校验的结构。 */
+    createRun(runSpec: Json): Promise<{
+      readonly runId: string;
+      readonly status: "ready" | "preflight-failed";
+      readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
+    }>;
+    exportRun(request: {
+      readonly runId: string;
+      readonly redaction: "redacted" | "raw";
+      readonly principalId: string;
+    }): Promise<{ readonly artifactId: string }>;
+    /** 启动或恢复 run：置为 running 并确保分支时钟为运行态。 */
+    startRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): { readonly runId: string; readonly status: string };
+    /** 停止 run：置为 paused 并同步时钟。 */
+    stopRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): { readonly runId: string; readonly status: string };
+    /** 按实验规格展开并逐个创建 run。 */
+    createExperiment(request: { readonly experimentSpec: unknown } | { readonly experimentRef: string }): Promise<{
+      readonly experimentId: string;
+      readonly runIds: readonly string[];
+      readonly runs: readonly {
+        readonly runId: string;
+        readonly status: "created" | "preflight-failed" | "ready" | "running" | "paused" | "completed" | "failed" | "invalid";
+        readonly errors: readonly { readonly code: string; readonly message: string; readonly path: string }[];
+      }[];
+      readonly failedRunCount: number;
+    }>;
+  };
 }
 
 /** HTTP 适配器写入观测存储的最小跨度视图。 */
@@ -276,6 +325,11 @@ export interface RecordSpanInput {
 
 export interface ServerAppOptions {
   readonly authority: AuthorityPort;
+  /**
+   * 速率限制阈值覆盖；测试需要大量并发请求时放宽，生产使用默认值。
+   * 按请求分组给出「窗口内允许次数」，未给出的分组沿用默认阈值。
+   */
+  readonly rateLimits?: { readonly read?: number; readonly write?: number };
   /** 装配的权限端口；玩家、控制台与 WS 频道的裁决都经此端口。 */
   readonly accessPolicy: AccessPolicy;
   /** 命令回执只读查询端口；传输层不直接访问存储。 */

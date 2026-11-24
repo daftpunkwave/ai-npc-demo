@@ -55,6 +55,7 @@ import {
 } from "@ai-npc/mod-platform-access-policy-roster";
 import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
 import { modelBudgetDefinition } from "@ai-npc/mod-platform-budget-standard/definition";
+import { evaluationModuleDefinition } from "@ai-npc/mod-platform-evaluation-standard/definition";
 import { anthropicTransportDefinition } from "@ai-npc/mod-platform-model-transport-anthropic/definition";
 import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
 import { openAICompatibleTransportDefinition } from "@ai-npc/mod-platform-model-transport-openai-compatible/definition";
@@ -92,6 +93,7 @@ import { modelMountsPageModuleDefinition } from "@ai-npc/mod-console-model-mount
 import { factionOpsPageModuleDefinition } from "@ai-npc/mod-console-faction-ops-standard/definition";
 import { debugPageModuleDefinition } from "@ai-npc/mod-console-debug-standard/definition";
 import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
+import { evaluationPageModuleDefinition } from "@ai-npc/mod-console-evaluation-standard/definition";
 
 export { toGameContent } from "./content-adapter";
 export {
@@ -105,6 +107,15 @@ export function parseTransportConfig(config: unknown): TransportConfig {
 }
 
 export type { OperationsDriver, TransportPort };
+export type { EvaluationPort } from "@ai-npc/mod-platform-evaluation-standard";
+export type {
+  ProbeExecution,
+  ReportBehavior,
+  ReportCost,
+  ReportLatency,
+  ReportMemory,
+  RunReport,
+} from "@ai-npc/mod-platform-evaluation-standard";
 export type {
   IdempotentOperationsDriver,
   OperationRequest,
@@ -170,6 +181,7 @@ export const serverModuleDefinitions = [
   operationsModuleDefinition,
   observabilityModuleDefinition,
   moduleAdminModuleDefinition,
+  evaluationModuleDefinition,
   transportModuleDefinition,
   ...serverAgentModuleDefinitions,
 ] as const;
@@ -193,6 +205,7 @@ export const browserModuleDefinitions = [
   modelMountsPageModuleDefinition,
   factionOpsPageModuleDefinition,
   observabilityPageModuleDefinition,
+  evaluationPageModuleDefinition,
   debugPageModuleDefinition,
 ] as const;
 

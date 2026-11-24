@@ -29,14 +29,37 @@ import {
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticate, requireConsoleRole, sendHttpError } from "./context";
+import {
+  experimentDetailResponseSchema,
+  runDetailResponseSchema,
+  runReportResponseSchema,
+  runsQuerySchema,
+  runsResponseSchema,
+  experimentIdSchema,
+  runCreateRequestSchema,
+  runCreateResponseSchema,
+  exportRequestSchema,
+  exportResponseSchema,
+  experimentCreateRequestSchema,
+  experimentCreateResponseSchema,
+  runControlRequestSchema,
+  runControlResponseSchema,
+} from "@ai-npc/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
 
+
 const researchRoles = ["researcher"] as const;
+/** 评估读取角色：研究员与评估员都可读；写操作仍限研究员。 */
+const evaluationRoles = ["researcher", "evaluator"] as const;
+/** 评估写入角色：创建 run 与导出仅限研究员。 */
+const evaluationWriteRoles = ["researcher"] as const;
 const agentParamsSchema = z.object({ agentId: principalIdSchema }).strict();
 const turnParamsSchema = z.object({ turnId: idSchemas.turn }).strict();
 const artifactParamsSchema = z.object({ artifactId: idSchemas.art }).strict();
 const traceParamsSchema = z.object({ traceId: idSchemas.trc }).strict();
+const runParamsSchema = z.object({ runId: idSchemas.run }).strict();
+const experimentParamsSchema = z.object({ experimentId: experimentIdSchema }).strict();
 
 function parsePath<T>(schema: z.ZodType<T>, params: unknown): T | null {
   const parsed = schema.safeParse(params);
@@ -218,6 +241,152 @@ export function registerConsoleResearchRoutes(context: RouteContext): void {
       reason: body.data.reason,
       operationId: body.data.operationId,
       branchId: branch.branchId,
+      principalId: session.auth.principalId,
+    }));
+  });
+}
+
+/**
+ * 评估读取路由：run 列表与详情、run 报告、实验列表与详情。
+ * 研究员可读写全部评估接口，评估员只能读；创建实验与导出不在本组路由内。
+ */
+export function registerConsoleEvaluationRoutes(context: RouteContext): void {
+  const { app, options } = context;
+
+  /** 评估读取角色：研究员与评估员都可读。 */
+  const requireEvaluationSession = (
+    request: Parameters<typeof requireConsoleRole>[1],
+    reply: Parameters<typeof requireConsoleRole>[3],
+  ) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, evaluationRoles)) return null;
+    return session;
+  };
+
+  /** 评估写入角色：只有研究员可写，评估员只读。 */
+  const requireEvaluationWriter = (
+    request: Parameters<typeof requireConsoleRole>[1],
+    reply: Parameters<typeof requireConsoleRole>[3],
+  ) => {
+    const session = authenticate(context, request, reply);
+    if (session === null || !requireConsoleRole(context, request, session, reply, evaluationWriteRoles)) return null;
+    return session;
+  };
+
+  app.get("/api/v1/console/runs", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    // undefined 表示没传该参数，null 表示传了空值；两者都不应进入 schema。
+    const status = queryOptionalText(request.query, "status");
+    const limitText = queryOptionalText(request.query, "limit");
+    const limit = typeof limitText === "string" ? Number(limitText) : undefined;
+    if (limit !== undefined && !Number.isSafeInteger(limit)) {
+      return sendHttpError(reply, "validation", "limit 必须是整数");
+    }
+    const query = runsQuerySchema.safeParse({
+      ...(typeof status !== "string" ? {} : { status }),
+      ...(limit === undefined ? {} : { limit }),
+    });
+    if (!query.success) return sendHttpError(reply, "validation", "run 查询参数不合法");
+    return runsResponseSchema.parse({ runs: [...options.console.evaluation.runs(query.data)] });
+  });
+
+  app.get("/api/v1/console/runs/:runId", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    const path = parsePath(runParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "runId 不合法");
+    const detail = options.console.evaluation.run(path.runId);
+    if (detail === null) return sendHttpError(reply, "not-found", "run 不存在");
+    return runDetailResponseSchema.parse(detail);
+  });
+
+  app.get("/api/v1/console/runs/:runId/report", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    const path = parsePath(runParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "runId 不合法");
+    const report = options.console.evaluation.report(path.runId);
+    if (report === null) return sendHttpError(reply, "not-found", "run 不存在");
+    return runReportResponseSchema.parse(report);
+  });
+
+  app.get("/api/v1/console/experiments", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    return { experiments: [...options.console.evaluation.experiments()] };
+  });
+
+  app.get("/api/v1/console/experiments/:experimentId", { config: { rateLimit: { max: options.rateLimits?.read ?? 60, timeWindow: "10 seconds" } } }, (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.evaluation === undefined) return sendHttpError(reply, "not-ready", "评估读取尚未就绪");
+    const path = parsePath(experimentParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "experimentId 不合法");
+    const detail = options.console.evaluation.experiment(path.experimentId);
+    if (detail === null) return sendHttpError(reply, "not-found", "实验不存在");
+    return experimentDetailResponseSchema.parse(detail);
+  });
+
+  app.post("/api/v1/console/runs", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, async (request, reply) => {
+    // 创建 run 只允许研究员：评估员只读，操作员与玩家无此权限。
+    if (requireEvaluationWriter(request, reply) === null) return;
+    if (options.console?.evaluationWrites === undefined) {
+      return sendHttpError(reply, "not-ready", "评估写入尚未就绪");
+    }
+    const body = runCreateRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "run 规格结构不合法");
+    return runCreateResponseSchema.parse(await options.console.evaluationWrites.createRun(body.data.runSpec));
+  });
+
+  // run 启动与停止：只允许研究员。状态不符时端口抛 invalid-state，由统一错误处理映射为 409。
+  for (const [action, control] of [
+    ["start", "startRun"],
+    ["stop", "stopRun"],
+  ] as const) {
+    app.post(`/api/v1/console/runs/:runId/${action}`, { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, (request, reply) => {
+      if (requireEvaluationWriter(request, reply) === null) return;
+      const writes = options.console?.evaluationWrites;
+      if (writes === undefined) return sendHttpError(reply, "not-ready", "评估写入尚未就绪");
+      const path = parsePath(runParamsSchema, request.params);
+      const body = runControlRequestSchema.safeParse(request.body);
+      if (path === null || !body.success) return sendHttpError(reply, "validation", "run 控制请求结构不合法");
+      // 传入主体与 operationId，由端口在同一事务内做幂等去重。
+      const session = requireEvaluationWriter(request, reply);
+      if (session === null) return;
+      return runControlResponseSchema.parse(writes[control](path.runId, {
+        operationId: body.data.operationId,
+        principalId: session.auth.principalId,
+      }));
+    });
+  }
+
+  app.post("/api/v1/console/experiments", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, async (request, reply) => {
+    if (requireEvaluationWriter(request, reply) === null) return;
+    if (options.console?.evaluationWrites?.createExperiment === undefined) {
+      return sendHttpError(reply, "not-ready", "实验创建尚未就绪");
+    }
+    const body = experimentCreateRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "实验规格请求结构不合法");
+    // 创建是部分可成功的：返回 200 并保留每个 run 的身份、状态与失败原因。
+    // 用整体错误码会把已经创建的 run 与需要修正的具体问题一起丢掉。
+    // 展开规模由端口层按上限约束，响应因此有界。
+    return experimentCreateResponseSchema.parse(
+      await options.console.evaluationWrites.createExperiment(body.data),
+    );
+  });
+
+  app.post("/api/v1/console/exports", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, async (request, reply) => {
+    const session = requireEvaluationWriter(request, reply);
+    if (session === null) return;
+    if (options.console?.evaluationWrites === undefined) {
+      return sendHttpError(reply, "not-ready", "导出尚未就绪");
+    }
+    const body = exportRequestSchema.safeParse(request.body);
+    if (!body.success) return sendHttpError(reply, "validation", "导出请求结构不合法");
+    // run 不存在等业务失败由端口抛 DomainError，交给统一错误处理映射状态码。
+    return exportResponseSchema.parse(await options.console.evaluationWrites.exportRun({
+      runId: body.data.runId,
+      redaction: body.data.redaction,
       principalId: session.auth.principalId,
     }));
   });

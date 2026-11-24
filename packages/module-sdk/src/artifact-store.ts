@@ -12,7 +12,7 @@ import {
   type StorageRow,
 } from "@ai-npc/contracts";
 
-const artifactKinds = ["tool-raw", "tool-view", "speech", "decision", "context", "model-request", "model-response"] as const;
+const artifactKinds = ["tool-raw", "tool-view", "speech", "decision", "context", "model-request", "model-response", "export"] as const;
 
 export type AgentArtifactKind = typeof artifactKinds[number];
 

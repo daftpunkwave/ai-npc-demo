@@ -24,6 +24,7 @@ import {
 } from "@ai-npc/module-sdk";
 import { loadContentPack, type ResolvedAgentProfile, type Roster } from "@ai-npc/experiment";
 import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none";
+import { perceptionModuleDefinition } from "@ai-npc/mod-agent-perception-local";
 import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
@@ -196,6 +197,59 @@ async function fixture(): Promise<{
   };
   const requests: PerceptionRequest[] = [];
   return { storage, host, roster, profile, definition: perceptionDefinition(requests), requests };
+}
+
+/**
+ * 与 fixture 相同，但感知槽位改用真实的 `agent.perception.local`。
+ * 渠道表与 trigger 生成属于真实模块的行为，测试替身无法覆盖。
+ */
+async function runtimeWithRealPerception(value: Awaited<ReturnType<typeof fixture>>): Promise<AgentRuntime> {
+  const profile: ResolvedAgentProfile = {
+    ...value.profile,
+    slots: { ...value.profile.slots, perception: { module: "agent.perception.local", config: {} } },
+  };
+  const runtime = new AgentRuntime({
+    storage: value.storage,
+    host: value.host,
+    content: loadContentPack("content", "earth-2964-v1"),
+    roster: value.roster,
+    profiles: new Map([["human-independent", profile]]),
+    moduleDefinitions: new Map([
+      [perceptionModuleDefinition.id, perceptionModuleDefinition],
+      [memoryNoneModuleDefinition.id, memoryNoneModuleDefinition],
+    ]),
+    scheduling: { plan: () => [] },
+    maxConcurrentTurns: 1,
+    worldId: "wld-000000000001",
+    branchId: "br-000000000001",
+    runId: "run-000000000001",
+    readWorlds: (agentIds) => new Map(agentIds.map((agentId) => [agentId, {
+      nodeId: "grayharbor",
+      factionId: "human-independent",
+      worldViewText: "",
+      affairsText: "",
+    }])),
+  });
+  await runtime.start();
+  resources.push({ dispose: () => runtime.dispose() });
+  return runtime;
+}
+
+/** 一个点名 human-independent 的议事召唤事件；同一夹具供 trigger 生成与去重两条用例复用。 */
+function summonEvent(worldSeq: number, eventId: string): StorageRow {
+  return {
+    world_seq: worldSeq,
+    event_id: eventId,
+    world_tick: 0,
+    type: "AgentsSummoned",
+    schema_version: 1,
+    principal_id: "human-pacifist",
+    causation_ids_json: [],
+    correlation_id: `corr-${eventId.slice(4)}`,
+    audience_json: [{ kind: "principals", ids: ["human-independent", "human-pacifist"] }],
+    payload_json: { agentIds: ["human-independent", "human-pacifist"], reason: "council" },
+    committed_at: "2026-01-01T00:00:00.000Z",
+  };
 }
 
 describe("Agent runtime 持久状态", () => {
@@ -634,5 +688,45 @@ describe("Agent runtime 持久状态", () => {
     expect(value.storage.transact((tx) =>
       tx.branch("br-000000000001").table("consumer_offsets").get({ consumer_id: "agent.perception.local" }),
     )).toMatchObject({ last_world_seq: 1 });
+  });
+
+  it("AgentsSummoned 点名自己时生成 scenario trigger", async () => {
+    const value = await fixture();
+    const runtime = await runtimeWithRealPerception(value);
+    value.storage.transact((tx) => {
+      tx.branch("br-000000000001").table("domain_events").put(summonEvent(1, "evt-000000000010"));
+    });
+    await runtime.pump();
+
+    const triggers = value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("triggers").list({ agent_id: "human-independent" }));
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]).toMatchObject({
+      kind: "scenario",
+      priority: 60,
+      source_ref: "evt-000000000010",
+      // 去重键把 kind、主体与来源事件绑定在一起：同一事件重投不会生成第二个 trigger。
+      dedupe_key: "scenario:human-independent:evt-000000000010",
+      consumed_by_turn_id: null,
+    });
+  });
+
+  it("同一事件重投后 trigger 去重，不产生第二行", async () => {
+    const value = await fixture();
+    const runtime = await runtimeWithRealPerception(value);
+    value.storage.transact((tx) => {
+      tx.branch("br-000000000001").table("domain_events").put(summonEvent(1, "evt-000000000011"));
+    });
+    await runtime.pump();
+    // 消费游标回退模拟崩溃后重投同一事件。
+    value.storage.transact((tx) => {
+      const offsets = tx.branch("br-000000000001").table("consumer_offsets");
+      const row = offsets.get({ consumer_id: "agent.perception.local" });
+      offsets.put({ ...row, last_world_seq: 0 });
+    });
+    await runtime.pump();
+
+    expect(value.storage.transact((tx) =>
+      tx.branch("br-000000000001").table("triggers").list({ agent_id: "human-independent" }))).toHaveLength(1);
   });
 });

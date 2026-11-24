@@ -29,7 +29,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-async function testHost(): Promise<RunningHost> {
+async function testHost(rateLimits?: { readonly read?: number; readonly write?: number }): Promise<RunningHost> {
   const root = mkdtempSync(join(tmpdir(), "ai-npc-console-research-"));
   roots.push(root);
   const host = await startHost({
@@ -38,6 +38,7 @@ async function testHost(): Promise<RunningHost> {
     consoleToken: "research-console",
     assemblyRef: "local-slg-test-v1",
     rosterRef: "core-3",
+    ...(rateLimits === undefined ? {} : { rateLimits }),
   });
   hosts.push(host);
   return host;
@@ -64,6 +65,49 @@ function onlineRun(host: RunningHost) {
 }
 
 describe("控制台研究接口", () => {
+  it("无限请求超过阈值后返回 429 与 Retry-After", async () => {
+    const host = await testHost();
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    // 读接口阈值 60/10s：连续请求直到被拒，验证限流真实生效。
+    let rejected = 0;
+    let retryAfter: string | undefined;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const response = await host.app.inject({ method: "GET", url: "/api/v1/console/runs", headers });
+      if (response.statusCode === 429) {
+        rejected += 1;
+        retryAfter = response.headers["retry-after"] as string | undefined;
+        expect(errorResponseSchema.parse(response.json()).error.code).toBe("budget-exhausted");
+        break;
+      }
+      expect(response.statusCode).toBe(200);
+    }
+    expect(rejected).toBe(1);
+    // Retry-After 必须给出可用的等待秒数，便于调用方退避。
+    expect(Number(retryAfter)).toBeGreaterThan(0);
+  });
+
+  it("rateLimits 覆盖阈值实际生效", async () => {
+    const host = await testHost({ read: 1, write: 1 });
+    const consoleToken = await login(host, "research-console");
+    const headers = modelHeader(consoleToken);
+    const first = await host.app.inject({ method: "GET", url: "/api/v1/console/runs", headers });
+    const second = await host.app.inject({ method: "GET", url: "/api/v1/console/runs", headers });
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(429);
+  });
+
+  it("内容接口不受限流影响", async () => {
+    const host = await testHost();
+    const session = await login(host, "research-player");
+    const auth = { Authorization: `Bearer ${session}` };
+    // 内容是廉价读且位于 /api/v1/ 之外的路由分组；连续请求都应成功。
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const content = await host.app.inject({ method: "GET", url: "/api/v1/content", headers: auth });
+      expect(content.statusCode, `content 第 ${attempt} 次`).toBe(200);
+    }
+  });
+
   it("列出模型布局、解析路由并提供受限静态校验", async () => {
     const host = await testHost();
     const consoleToken = await login(host, "research-console");

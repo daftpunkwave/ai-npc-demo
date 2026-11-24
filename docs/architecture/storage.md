@@ -579,6 +579,8 @@ CREATE INDEX jobs_status_due_seq ON jobs (branch_id, status, due_tick, seq) WHER
 
 记忆版本边界迁移 `0014_memory-revision-frontiers.sql` 为 `memory_revisions` 增加非负整数 `public_revision` 和 `derived_through_seq`，默认均为 0。前者固定公共行的可见范围，后者保存该 revision 已完成整理的观察水位；反思返回空数组、结果全部丢弃或看法被淘汰均不会丢失水位。旧 revision 使用零公共边界，不反推不同 Agent 的历史发布顺序。
 
+run 控制幂等迁移 `0015_run-control-idempotency.sql` 新增部署级 `run_control_idempotency`：按 `(world_id, principal_id, operation_id, operation_kind)` 唯一保存启动/停止的首次结果，操作重放时直接返回原 `run_id` 与状态。主键包含 `world_id`，同一 operationId 在不同世界互不冲突；表不参与分支复制。
+
 维护任务的 `task_json` 保存模型名额裁决 `modelQuotaGranted` 和实际调用日期 `modelCallDays`。配额裁决计入已租用、失败和已完成任务；模型池每次实际尝试发送前通过宿主注入的 `beforeAttempt` 在事务中占用执行日的名额（包括内部重试），失败和晚到结果仍计入。部分整理保留已提交规则变更，任务记为 `failed` 并绑定已提交 revision；重启或后续领取可重试；`rulesApplied` 保证已提交规则段不会重复执行，`failureAttempts` 最多允许三次实际失败。配额等待通过 `retryAfterTick` 延期，不消耗失败次数。模型工作预算按维护任务 ID 与租约代次隔离，单租约最多两次实际模型尝试，内部重试和冲突重算共享同一工作预算。纯规则任务不解析模型挂载。成功前不推进派生水位。
 
 ## 3. 分支复制 `forkBranch`

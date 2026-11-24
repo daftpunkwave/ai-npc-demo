@@ -48,6 +48,17 @@ export function parseCommandType(type: string): CommandType | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * 发行者之外的分支限制：某些命令只在特定分支种类上成立，与暂停状态无关。
+ * `probe.ask` 只用于沙盒探针，正式世界与实验分支都不接受，避免探针事件污染受评世界。
+ */
+export function isCommandBranchAllowed(type: CommandType, branch: BranchRecord): boolean {
+  if (type === "probe.ask") {
+    return branch.kind === "sandbox";
+  }
+  return true;
+}
+
 /** 暂停豁免：开局命令，以及系统世界探针在 sandbox 分支上的询问。 */
 export function isPauseExempt(type: CommandType, auth: AuthContext, branch: BranchRecord): boolean {
   if (type === "campaign.start") {

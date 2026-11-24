@@ -91,7 +91,7 @@ describe("装配驱动的模块选择与启动", () => {
       const assembly = loadAssembly(ref);
       const resolved = await resolveServerAssembly(assembly, serverModuleDefinitions);
       expect(resolved.plan.assemblyId).toBe(ref);
-      expect(resolved.plan.modules).toHaveLength(ref === "local-slg-escalating-v1" ? 16 : ref === "local-slg-test-v1" ? 21 : 22);
+      expect(resolved.plan.modules).toHaveLength(ref === "local-slg-escalating-v1" ? 17 : ref === "local-slg-test-v1" ? 22 : 23);
       if (ref !== "local-slg-escalating-v1") {
         expect(resolved.plan.agentSlots.decision).toEqual([
           "agent.decision.deterministic",
@@ -148,7 +148,7 @@ describe("装配驱动的模块选择与启动", () => {
       expect(runtime.contributors.map((contributor) => contributor.moduleId)).toContain("game.scenario.watergate");
       const clockPlan = startup.plan.modules.find((module) => module.moduleId === "game.clock.controlled");
       expect(clockPlan?.config).toMatchObject({ secondsPerTick: 20 });
-      expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(22);
+      expect((await resolveServerModules(assembly, serverModuleDefinitions)).modules).toHaveLength(23);
     } finally {
       await started.started.dispose();
       await started.storageStarted.dispose();

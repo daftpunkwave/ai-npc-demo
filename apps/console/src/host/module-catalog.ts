@@ -9,6 +9,7 @@ import { modelMountsPageModuleDefinition } from "@ai-npc/mod-console-model-mount
 import { factionOpsPageModuleDefinition } from "@ai-npc/mod-console-faction-ops-standard/definition";
 import { debugPageModuleDefinition } from "@ai-npc/mod-console-debug-standard/definition";
 import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
+import { evaluationPageModuleDefinition } from "@ai-npc/mod-console-evaluation-standard/definition";
 
 export const consoleModuleDefinitions = [
   healthPageModuleDefinition,
@@ -16,5 +17,6 @@ export const consoleModuleDefinitions = [
   modelMountsPageModuleDefinition,
   factionOpsPageModuleDefinition,
   observabilityPageModuleDefinition,
+  evaluationPageModuleDefinition,
   debugPageModuleDefinition,
 ] as const;

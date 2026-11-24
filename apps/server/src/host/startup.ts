@@ -515,8 +515,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     await disposeInReverse([{ label: "storage", dispose: () => storageStarted.dispose() }]);
     throw new Error("宿主运行时未初始化");
   }
-  return {
-    host,
+  return {    host,
     storage,
     storageStarted,
     startedModules: activeStarted,

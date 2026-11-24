@@ -22,8 +22,8 @@ import {
   startStorage,
 } from "./support";
 
-/** 迁移中的表总数：部署级 10 + 分支级 19 + 运行级 12（含运营操作幂等表）。 */
-const EXPECTED_TABLE_COUNT = 41;
+/** 迁移中的表总数：部署级 11 + 分支级 19 + 运行级 12（含运营操作幂等表）。 */
+const EXPECTED_TABLE_COUNT = 42;
 
 function readTableNames(port: StoragePort): readonly string[] {
   return port.transact((tx) =>
@@ -87,7 +87,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -106,7 +106,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -309,7 +309,7 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
       closeDatabase(upgraded);
       upgraded = null;
