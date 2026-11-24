@@ -75,7 +75,7 @@ failurePolicy: strict
 | 入口 | 功能模块提供的设置 | 不允许的操作 |
 |---|---|---|
 | 玩家设置 | 显示/语言、声音、镜头、输入辅助、暂停/保存 | 密钥编辑、全知视角、直接热换运行中 provider |
-| 网页玩家端测试 preset 申请（`:5173`） | 展示获准的装配摘要并提交新 run/branch 申请 | 直接改变当前 run、跳过预检 |
+| 网页玩家端测试 preset 申请（目标） | 展示获准的装配摘要并提交新 run/branch 申请 | 直接改变当前 run、跳过预检 |
 | 服务端模块装配（`:3000/console`） | 全平台 module 选择、依赖/能力、配置 diff、生命周期与迁移计划 | 绕过最终 guard、静默卸载必需能力 |
 | 服务端模型池（console） | 连接别名、模型配置、能力验证、批量挂载 | 向玩家下发 credentials、逐 Agent 复制模型参数 |
 | 服务端剧情运营（console） | 三个非人类势力席位、事件卡、世界时钟/存档 | 修改已发布历史而不留记录 |
@@ -97,8 +97,8 @@ ToolDefinition 实现只登记一次，toolset/binding 引用定义并收窄能�
 ## 6. 预检和预览
 
 1. 校验单玩家、内容引用、15 个 gameplay 身份的总配额和正式世界的唯一别名；按[部署规格](../architecture/two-endpoints.md)核对本应用的监听端口。
-2. 解析全平台 assembly：三 realm 实现存在、API/port 版本相容、连接 cardinality 正确、无依赖环，必需能力有唯一或显式有序 provider；catalog 快照 hash 与 assembly hash 可复算。
-3. 校验 client/console 贡献的 slot、requiredCapabilities、remote 依赖与运行侧；浏览器模块不能要求服务端内存对象或凭据。
+2. 解析 TypeScript 装配，检查模块、版本、能力基数、依赖图和摘要。服务端与控制台的必需能力按各自契约检查。
+3. 对现行网页部署校验 client 和 console 的 slot、必需能力及远端依赖。原生部署仅允许浏览器玩家模块集为空。Godot 客户端的能力与绑定在自己的组合根预检。 [三域装配与握手](../architecture/composition.md#3-三-realm-装配与握手)
 4. 解析 Agent profile、模型挂载和工具 binding；缺用途、能力不兼容、超模型窗口或越权约束均拒绝。
 5. 校验世界/观察/记忆 frontier、状态 schema 与迁移路径；不能换 provider 后清库冒充成功。
 6. 校验预算、任务/监听/人数配额、持久化和必需 artifact 可用；所有资源先预留后激活。
@@ -108,7 +108,7 @@ ToolDefinition 实现只登记一次，toolset/binding 引用定义并收窄能�
 
 ## 7. 冻结清单与实际生效
 
-manifest 保存 module assembly、每模块 ID/实现版本/配置 hash、runtime/client/console 侧、port 连接与内容版本；同时保存 roster/派系、Agent 子配方、模型池去密钥快照/挂载、tool binding、prompt/schema/tokenizer、初态 frontier、时钟、随机源、脚本、失败策略与停止规则。连接过世界的 client/console assembly hash 一并记录，便于解释 UI/控制台差异。
+服务端冻结 manifest 记录种子、运行规格引用、内容包与版本、服务端模块及配置摘要、服务端 catalog 和 assembly hash、名册及适用的 Agent 和模型配置。TypeScript 浏览器端的各域摘要由会话装配返回。Godot 单独保存 [会话装配证据](../architecture/composition.md#godot-会话装配证据) 并与服务端回执关联。三类证据分别核验，历史 TS 存档按其原有服务端冻结记录复算。
 
 requested 是用户选择，resolved 是装配解析，effective 是本阶段实际使用。effective 与 applied/skipped/failed 在运行证据中追加，不回写覆盖 manifest；只记录模块名字不足以重建组合。
 
@@ -124,7 +124,7 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 ## 9. 验收
 
-换一项游戏规则、存档、镜头、HUD、控制台页面或 memory 实现都只修改模块自身/装配配置，无需改无关模块；UI 编辑和运行校验使用同一 schema。缺必需能力时启动/卸载都显式失败。服务端监听提供 API、WebSocket 与控制台静态资源。玩家设置无后台权限；模型批量挂载不串状态；从 manifest 可重建同一组合。浏览器页面不得因为本机访问获得服务端角色，端口/会话校验见 [两个本地端口](../architecture/two-endpoints.md)。
+换一项游戏规则、存档、镜头、HUD、控制台页面或 memory 实现都只修改模块自身/装配配置，无需改无关模块；UI 编辑和运行校验使用同一 schema。缺必需能力时启动/卸载都显式失败。服务端监听提供 API、WebSocket 与控制台静态资源。玩家设置无后台权限；模型批量挂载不串状态；服务端组合可按原 manifest 复算，各界面装配另按会话证据核对。浏览器页面不得因为本机访问获得服务端角色，端口/会话校验见 [两个本地端口](../architecture/two-endpoints.md)。
 
 模块细节见 [模块边界](../architecture/modules.md)、[插件机制](../architecture/plugins.md)、[积木组合](../architecture/composition.md)、[双端口](../architecture/two-endpoints.md)。
 

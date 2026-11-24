@@ -1,6 +1,6 @@
 # ai-npc-demo
 
-一个 TypeScript 全栈的单玩家轻数值 SLG（3D 斜俯视是目标，2.5D 是序章灰盒），以及可观测、可评估、可调试的研究控制台。NPC 根据自己的立场、感知与经历行动；研究者可以追溯行为所依据的观察、记忆、工具结果和模型调用。
+一个单玩家轻数值 SLG 与研究控制台。现行玩家端是 TypeScript 2.5D 网页灰盒，原生目标为采用全新 3D 表现的 Godot C# 玩家端。NPC 根据自己的立场、感知与经历行动；研究者可以追溯行为所依据的观察、记忆、工具结果和模型调用。
 
 > 完整游戏设计、Demo 切片范围与工程文档的权威链见 [docs/README.md — 文档导航](docs/README.md#1-三层结构与全局入口)。
 
@@ -19,6 +19,8 @@
 | 架构 | 最小宿主 + 全职能插件，不限于 memory；解耦优先于内聚 |
 
 ## 1. 三个 realm，两个本地端口
+
+本图展示现行网页部署。原生 Demo 目标由 Godot 主动连接本机 TS 服务端，唯一监听为 `127.0.0.1:3000`。 [原生部署目标](docs/architecture/two-endpoints.md#原生-demo-部署目标)
 
 ```mermaid
 flowchart LR
@@ -194,7 +196,8 @@ flowchart LR
 | SQLite、node:sqlite、WAL | 单写者事务存储与一致备份，封装在存储适配器 |
 | Zod、YAML | 命令、配置、内容和模型输出校验，数据驱动装配 |
 | React、Vite | 玩家端与控制台模块化页面及构建 |
-| PixiJS | 2.5D 灰盒场景，不参与世界规则裁决；3D 渲染器实现同一端口 |
+| PixiJS | 现行网页灰盒场景适配器 |
+| Godot C#（目标） | 独立的原生玩家宿主，通过授权协议连接 TS 服务端 |
 | Anthropic SDK、OpenAI-compatible fetch | 两类参考模型传输适配器，业务层不依赖供应商类型 |
 | Vitest、Playwright | 确定性契约、集成、场景测试与双端 e2e |
 

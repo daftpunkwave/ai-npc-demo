@@ -13,7 +13,7 @@
 
 catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略子配方。三者都由宿主校验并冻结，不能由模块自行修改。
 
-默认装配分三个运行域（realm）：`server`、`client`、`console`。同一 assembly 同时声明三域选择；浏览器域只能拿到本域模块与远端能力描述，不拿到 Node 对象、数据库连接或密钥，详见 [双端拓扑](two-endpoints.md)。
+现行 TypeScript 装配分三个运行域（realm）：`server`、`client`、`console`。同一 assembly 同时声明三域选择；浏览器域只能拿到本域模块与远端能力描述，不拿到 Node 对象、数据库连接或密钥，详见 [双端拓扑](two-endpoints.md)。
 
 ## 2. 命名、类别与实例作用域
 
@@ -118,7 +118,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | 模块 ID | 类别 | 实例作用域 | 提供能力/贡献 | 必需性 | 说明 |
 |---|---|---|---|---|---|
 | `client.world-view.standard` | service | session | `client.world-view` | required | 网络投影 reducer，合并快照/增量与游标 |
-| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 2.5D 等距灰盒；3D 渲染器实现同一端口 |
+| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 现行网页的 2.5D 等距灰盒 |
 | `client.scene-renderer.null` | adapter | session | `client.scene-renderer` | 仅测试装配 | 不绘制画面，只记录收到的场景视图，用于 CI 跑规则场景 |
 | `client.camera.standard` | service | session | `client.camera` | required | 平移/缩放/跟随，不读世界库 |
 | `client.screen-projection.isometric` | service | session | `client.screen-projection` | required | 世界坐标与屏幕坐标互转、命中转换 |
@@ -230,7 +230,7 @@ M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `
 - 替换矩阵中游戏规则、客户端 UI、Agent 认知、控制台页面四类各换一次，只改模块、装配与配置；
 - 缺必需模块时启动被拒绝；
 - 卸载可选模块后无残余订阅；
-- 两个端口之外没有监听；
+- 按 [部署规格](two-endpoints.md) 核对本应用监听范围
 - 从冻结 manifest 能重建同一组合。
 
 具体装配语义见 [积木组合](composition.md)，交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)。

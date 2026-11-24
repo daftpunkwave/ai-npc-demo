@@ -30,7 +30,7 @@
 [ai-npc] console login: http://127.0.0.1:3000/console/#token=<console token>
 ```
 
-目标浏览器宿主启动时读取 `location.hash` 里的 `token`，调用登录接口，把返回的 `sessionToken` 存进按 origin 隔离的 `sessionStorage`，再用 `history.replaceState` 清掉 hash。
+现行浏览器宿主从 URL 片段取得登录令牌，将会话令牌存入按 origin 隔离的 `sessionStorage` 后清除片段。原生玩家端目标使用本机部署提供的玩家令牌，在进程内保存登录返回的会话令牌。
 
 | 令牌 | principalId | 角色 |
 |---|---|---|
@@ -58,7 +58,7 @@
 | `GET /api/v1/campaign` | — | `{ campaign: CampaignView \| null, starts: StartOption[] }`（类型见第 9 节） |
 | `GET /api/v1/content` | — | `{ chapterTitle, clock: { secondsPerTick, evaluationTick, motionTick }, ui: ClientUiText }`：客户端只读内容视图，章节名与界面文字取自内容包，时钟刻度取自装配配置；任何已认证会话可读 |
 | `POST /api/v1/commands` | `CommandEnvelope` | `CommandReceipt` |
-| `GET /api/v1/commands/{commandId}` | — | `CommandReceipt`；不存在返回 404 |
+| `GET /api/v1/commands/{commandId}` | — | 当前在线分支中该会话主体的 `CommandReceipt`。未找到返回 404 |
 | `GET /api/v1/world/view` | — | `{ streamSeq, projectionVersion, projection: PlayerProjection }`（[领域模型](domain-model.md) 第 8.1 节） |
 | `GET /api/v1/conversations/{agentId}?beforeSeq=&limit=` | — | `{ conversationId, lines: ConversationLine[] }`，最多 100 条 |
 | `POST /api/v1/campaign/pause` | `{ operationId, expectedRunVersion }` | `ClockView` |
@@ -94,6 +94,10 @@ interface CommandReceipt {
 
 interface ClockView { worldTick: number; day: number; hour: number; mode: "running" | "pausing" | "paused" | "resuming" | "stepping"; runVersion: number; }
 ```
+
+玩家命令按认证主体、受理时的在线分支和 `commandId` 去重。运营类 `operationId` 在世界与认证主体内跨分支保存。玩家写入口以请求处理时的在线分支为作用域，客户端无法指定目标分支。
+
+原生客户端收到响应前断线或超时时，先重新取得授权快照，再核对回执或运营结果。同一 `commandId` 在切换分支后可能失去原回执，客户端把无法确认的结果保留为待核对状态。写请求交给传输层后禁止自动补发。
 
 ### 3.1 玩家命令权限
 
@@ -160,7 +164,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、两个端口、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；尚无数据来源的 `turnsRunning`、`maintenanceQueued`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；尚无数据来源的 `turnsRunning`、`maintenanceQueued`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|

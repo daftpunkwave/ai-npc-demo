@@ -36,7 +36,7 @@
 
 本节描述 TypeScript 装配及浏览器握手。Godot 玩家进程使用随程序发布的本地装配，仅以公共协议与服务端握手。见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
 
-assembly 同时声明 `server`、`client`、`console` 三段。服务端在启动或创建 run 时解析 server 段，并校验需要 remote 能力的浏览器段。浏览器宿主连接后通过 `GET /api/v1/session/assembly`（`realm=client` 或 `console`）取得本域已解析模块清单、协议版本与远端能力描述。模块清单可以为空。本地内置 catalog 的验证结果决定模块能否加载。
+assembly 同时声明 `server`、`client`、`console` 三段。服务端在启动或创建 run 时解析 server 段，并校验需要 remote 能力的浏览器段。浏览器宿主连接后通过 `GET /api/v1/session/assembly`（`realm=client` 或 `console`）取得本域已解析模块清单、协议版本与远端能力描述。现行 `client` 域会检查浏览器必需能力，空绑定无法满足该检查。原生部署切换时仅为无浏览器玩家宿主的模式返回空 client 模块集。服务端及控制台装配继续独立校验。本地 catalog 决定浏览器模块能否加载。
 
 - 满足：加载模块并进入 ready，记录 client/console assembly hash。
 - 缺必需模块或 apiVersion 不兼容：显示组合不完整，不加载旧实现、不静默降级。
@@ -87,8 +87,8 @@ ToolBinding 允许进一步限制可作用对象、行动种类、调用预算�
 6. 生成阶段依赖图及上下文显式顺序；检查 hook 环、工具协议、模型窗口和预算约束。
 7. 解析快照、起始记忆与控制模式；每个实验 run 分配独占 branch，不复用活动分支。
 8. 校验全平台活动 Agent 配额和模型/工具并发，预留资源；未获配额只能等待或拒绝，不能创建后再补记账。
-9. 创建 scoped state 与模块实例，按依赖顺序启动，确认必需水位和资源就绪；浏览器 realm 完成握手并加载本域模块。
-10. 冻结服务端 manifest、内容与模块版本、模型挂载、工具绑定和 server catalog hash。浏览器装配摘要由对应会话清单提供。
+9. 确定并校验服务端冻结 manifest，包含内容与模块版本、模型挂载、工具绑定和 server catalog hash。旧在线运行以原冻结证据复算。
+10. 按确定的装配启动服务端模块。浏览器通过会话接口取得本域解析结果及摘要，再加载本域模块。
 11. 运行中记录各阶段实际生效值；停止时先 fencing 和 drain，再逆序释放实例及配额。
 
 dry-run 只执行解析与校验，展示将创建什么、还缺什么，不创建活动 Agent、调用模型或修改在线状态。需要连通性探测时，作为明确有预算的测试操作单独记录。
@@ -150,6 +150,6 @@ Godot 在收到有效投影后记录本地会话装配证据。记录包括客�
 - 改变一个实验轴时 resolved diff 只出现预期差异；其他变更必须显式列为混杂因素。
 - 缺模型 purpose、未知参数、能力不兼容、状态不兼容、realm 冲突和配额不足都在运行前给出可定位错误。
 - 只换客户端 HUD/renderer 或控制台页面时，server 世界结果与 trace 证据不变；只换游戏规则模块时，客户端无需改实现。
-- 从冻结 manifest 可重建同一组合；重新推理作为新 run，不能承诺远程模型输出逐 token 相同。
+- 从冻结 manifest 可复算同一服务端组合。客户端及控制台使用各自的会话装配记录。重新推理按新 run 记录。
 
 扩展接入和交付顺序见 [代码结构](code-structure.md) 与 [路线与验收](../delivery/roadmap-and-acceptance.md)。

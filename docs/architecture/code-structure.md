@@ -117,11 +117,11 @@ ai-npc-demo/
 
 | 入口 | 组合根 | 允许依赖 | 禁止 |
 |---|---|---|---|
-| `apps/server` | `host/module-catalog.ts` + `host/bootstrap.ts` | server 模块、contracts/kernel/module-sdk、server 适配器 | 浏览器模块、DOM/PixiJS；console 页面代码 |
+| `apps/server` | `src/host.ts` 与 `src/host/module-catalog.ts` | server 实现、contracts/kernel/module-sdk、浏览器模块定义 | 浏览器实现、DOM/PixiJS、console 页面代码 |
 | `apps/client` | `host/module-catalog.ts` + `host/bootstrap.tsx` | client 模块、contracts/kernel/client-sdk/client-protocol | Node 内置模块、数据库、密钥、server 模块实现 |
 | `apps/console` | `host/module-catalog.ts` + `host/bootstrap.tsx` | console 模块、contracts/kernel/client-sdk/client-protocol | 服务端对象、直接数据库/模型连接；玩家域私有投影 |
 
-每个宿主只有一个实例级 registry；模块通过显式 import 清单登记，禁止文件系统扫描自动执行，也禁止模块在 import 时向全局 Map 自注册。三个组合根共享解析算法，但不共享进程内对象。
+每个宿主只有一个实例级 registry；模块通过显式 import 清单登记，禁止文件系统扫描自动执行，也禁止模块在 import 时向全局 Map 自注册。TypeScript 服务端负责解析装配。两个浏览器宿主使用同一客户端 SDK 校验并加载握手返回的本域模块。Godot 的目录与依赖见 [Godot 玩家端目录](#godot-玩家端目录)。
 
 `apps/server` 对 console 静态资源只做挂载以及权限和缓存策略；console 前端仍然是独立的构建产物，由 server 的 HTTP 路由提供，不把 React 组件编译进 server 业务代码。
 
@@ -250,6 +250,7 @@ modules/server/agent/memory/ledger/
 ```text
 apps/player-godot/
   global.json          .NET SDK pin
+  Directory.Build.props   locked restore policy for client and export
   Player.Core/         public wire DTOs, projection state, intent ports
   Player.Transport/    loopback HTTP and WebSocket adapters
   Player.Godot/        project.godot, composition root, UI and 3D providers
