@@ -144,7 +144,7 @@ export function resultWithoutRef(input: {
   readonly executionStatus: ToolExecutionResult["executionStatus"];
   readonly commandStatus: ToolExecutionResult["commandStatus"];
   readonly taskStatus: ToolExecutionResult["taskStatus"];
-  readonly reasonCode: string | null;
+  readonly reasonCode: ToolExecutionResult["reasonCode"];
   readonly receiptId: string | null;
   readonly operationId: string | null;
   readonly detail: string;
