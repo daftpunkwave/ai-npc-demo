@@ -4,6 +4,7 @@
  * 禁止调用模块与模型，或暴露跨 agent 读取。
  */
 import { completeMemoryMaintenance } from "./memory-maintenance-publication";
+import { latestDayPassedSql } from "./agent-hot-path-sql";
 
 import { publicRevision, publicRows, publishPublicRecords, validateMemorySources } from "./memory-public-records";
 import {
@@ -139,14 +140,7 @@ export class MemoryStore {
    */
   latestDayPassed(agentId: string): { readonly tick: number; readonly observationSeq: number } | null {
     return this.storage.transact((tx) => {
-      const row = tx.all(
-        `SELECT known_at_tick, observation_seq FROM observations
-          WHERE branch_id = ? AND agent_id = ?
-            AND json_extract(content_json, '$.eventType') = 'DayPassed'
-          ORDER BY known_at_tick DESC, observation_seq DESC
-          LIMIT 1`,
-        [this.branchId, agentId],
-      )[0];
+      const row = tx.all(latestDayPassedSql, [this.branchId, agentId])[0];
       if (row === undefined) return null;
       return {
         tick: numberColumn(row, "known_at_tick"),

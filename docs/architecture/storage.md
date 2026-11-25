@@ -35,7 +35,7 @@ PRAGMA busy_timeout = 5000;
 | `maintenance_runs_run_agent_due` | `maintenance_runs (run_id, agent_id, due_tick)` | turn 就绪检查在等待循环里按运行与角色读整理水位 |
 | `maintenance_runs_task` | `maintenance_runs (branch_id, agent_id, trigger, due_tick)` | 入队与 `hasTask` 的任务去重查询 |
 
-部分索引的过滤条件必须与代码查询逐字一致，否则优化器不会采用；仓库有测试按实际查询形状断言查询计划命中这些索引。
+部分索引的过滤条件必须与代码查询逐字一致，否则优化器不会采用。额外一条约束：SQLite 只在谓词里看到字面量时才信任部分索引的成立条件，绑定参数会让 `turn_runs_active` 退化成全量索引扫描；因此非终态状态词由 `agent-runtime` 内联成字面量拼进 SQL，`tests/integration/agent-hot-path-indexes.test.ts` 直接对生产语句断言查询计划。
 
 0017 为 `observations` 增加表达式部分索引 `observations_day_passed (branch_id, agent_id, known_at_tick DESC, observation_seq DESC)`，过滤条件为 `json_extract(content_json, '$.eventType') = 'DayPassed'`。取最近一次 `DayPassed` 的查询原先要按分支与角色把全部观察读进内存再逐行解码 JSON，成本随会话增长；该索引让过滤、排序与 `LIMIT 1` 都在索引内完成。
 

@@ -17,6 +17,12 @@ export type { AgentRuntimeOptions, AgentWorldRead } from "./runtime";
 export type { TurnExecutionOptions } from "./turn-worker";
 export { TurnLeases, TurnStopped } from "./turn-lease";
 export type { ClaimedTurn } from "./turn-lease";
+export {
+  cancelActiveTurnsSql,
+  latestDayPassedSql,
+  pendingTriggersSql,
+  recoverExpiredTurnsSql,
+} from "./agent-hot-path-sql";
 export type { ReadTurnWorld, TurnWorldRead } from "./turn-input";
 export { readTurnObservations } from "./turn-observations";
 export type { TurnObservationQuery } from "./turn-observations";

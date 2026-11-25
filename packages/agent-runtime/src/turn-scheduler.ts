@@ -7,7 +7,8 @@ import type { HostServices, StoragePort } from "@ai-npc/contracts";
 import type { SchedulingPort } from "@ai-npc/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
-import { cancelTurn, activeTurnStatuses, terminalTurnStatuses } from "./turn-lease";
+import { cancelActiveTurnsSql, pendingTriggersSql, recoverExpiredTurnsSql } from "./agent-hot-path-sql";
+import { cancelTurn, terminalTurnStatuses } from "./turn-lease";
 
 export interface TurnSchedulerInput {
   readonly storage: StoragePort;
@@ -28,25 +29,16 @@ export class TurnScheduler {
   }
 
   cancelActive(reason: string): void {
-    const statuses = activeTurnStatuses.map(() => "?").join(", ");
     const interrupted = this.input.storage.transact((tx) =>
-      tx.all(
-        `SELECT * FROM turn_runs WHERE branch_id = ? AND status IN (${statuses})`,
-        [this.input.branchId, ...activeTurnStatuses],
-      ),
+      tx.all(cancelActiveTurnsSql, [this.input.branchId]),
     );
     this.cancel(interrupted, reason);
   }
 
   recoverExpired(): void {
     const now = this.input.host.nowIso();
-    const statuses = activeTurnStatuses.map(() => "?").join(", ");
     const expired = this.input.storage.transact((tx) =>
-      tx.all(
-        `SELECT * FROM turn_runs
-          WHERE branch_id = ? AND status IN (${statuses}) AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
-        [this.input.branchId, ...activeTurnStatuses, now],
-      ),
+      tx.all(recoverExpiredTurnsSql, [this.input.branchId, now]),
     );
     this.cancel(expired, "lease-expired");
     this.releaseOrphanedTriggers();
@@ -118,7 +110,7 @@ export class TurnScheduler {
         activations: branch.table("agent_activations").list(),
         leases: branch.table("controller_leases").list(),
         // 相同 tick 的触发按持久化顺序合并，随机生成的 ID 不参与排序。
-        triggers: tx.all("SELECT * FROM triggers WHERE branch_id = ? AND consumed_by_turn_id IS NULL ORDER BY rowid", [this.input.branchId]),
+        triggers: tx.all(pendingTriggersSql, [this.input.branchId]),
         turns: tx.rows("turn_runs").list({ branch_id: this.input.branchId }),
       };
     });
