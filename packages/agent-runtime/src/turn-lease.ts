@@ -8,7 +8,25 @@ import type {
 } from "@ai-npc/contracts";
 import { arrayValue, numberValue, stringValue, triggerFromRow } from "./runtime-records";
 
+/**
+ * turn 的终态集合：到达这些状态后不再推进，也不再占用并发名额。
+ * 与 SQL 中 turn_runs_active 部分索引的非终态列表互补，二者必须一起改。
+ */
 export const terminalTurnStatuses: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "budget-exhausted"]);
+
+/**
+ * 非终态集合，与 turn_runs_active 部分索引的过滤条件逐字一致。
+ * 直接用于 SQL IN 列表，让「按分支取活跃 turn」走部分索引而不是扫全部历史行。
+ */
+export const activeTurnStatuses: readonly string[] = [
+  "queued",
+  "preparing",
+  "waiting",
+  "deciding",
+  "executing",
+  "speaking",
+  "settling",
+];
 
 export class TurnStopped extends Error {
   constructor(

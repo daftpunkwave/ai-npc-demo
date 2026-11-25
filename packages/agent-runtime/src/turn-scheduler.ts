@@ -7,7 +7,7 @@ import type { HostServices, StoragePort } from "@ai-npc/contracts";
 import type { SchedulingPort } from "@ai-npc/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
-import { cancelTurn, terminalTurnStatuses } from "./turn-lease";
+import { cancelTurn, activeTurnStatuses, terminalTurnStatuses } from "./turn-lease";
 
 export interface TurnSchedulerInput {
   readonly storage: StoragePort;
@@ -28,22 +28,25 @@ export class TurnScheduler {
   }
 
   cancelActive(reason: string): void {
+    const statuses = activeTurnStatuses.map(() => "?").join(", ");
     const interrupted = this.input.storage.transact((tx) =>
-      tx.rows("turn_runs").list({ branch_id: this.input.branchId })
-        .filter((row) => !terminalTurnStatuses.has(stringValue(row, "status"))),
+      tx.all(
+        `SELECT * FROM turn_runs WHERE branch_id = ? AND status IN (${statuses})`,
+        [this.input.branchId, ...activeTurnStatuses],
+      ),
     );
     this.cancel(interrupted, reason);
   }
 
   recoverExpired(): void {
     const now = this.input.host.nowIso();
+    const statuses = activeTurnStatuses.map(() => "?").join(", ");
     const expired = this.input.storage.transact((tx) =>
-      tx.rows("turn_runs").list({ branch_id: this.input.branchId })
-        .filter((row) =>
-          !terminalTurnStatuses.has(stringValue(row, "status")) &&
-          typeof row["lease_expires_at"] === "string" &&
-          row["lease_expires_at"] <= now,
-        ),
+      tx.all(
+        `SELECT * FROM turn_runs
+          WHERE branch_id = ? AND status IN (${statuses}) AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
+        [this.input.branchId, ...activeTurnStatuses, now],
+      ),
     );
     this.cancel(expired, "lease-expired");
     this.releaseOrphanedTriggers();

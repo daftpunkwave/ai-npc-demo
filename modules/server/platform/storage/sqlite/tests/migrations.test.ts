@@ -87,7 +87,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -106,7 +106,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -183,6 +183,42 @@ describe("初始迁移", () => {
         .join("\n");
       expect(plan).toContain("jobs_status_due_seq");
       expect(plan).not.toContain("SCAN jobs");
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("Agent 热路径按活跃集建索引，查询计划不回落到全表扫描", async () => {
+    const harness = await openStorageHarness();
+    try {
+      // 0016 为 triggers、turn_runs 与 maintenance_runs 补索引；
+      // 这里的查询形状与 agent-runtime 的实际调用逐字一致，条件改了就应在此失败。
+      const plans = harness.port.transact((tx) => ({
+        triggers: tx
+          .all("EXPLAIN QUERY PLAN SELECT * FROM triggers WHERE branch_id = ? AND consumed_by_turn_id IS NULL ORDER BY rowid", ["br-000000000000"])
+          .map((row) => String(row["detail"])),
+        recoverExpired: tx
+          .all(
+            "EXPLAIN QUERY PLAN SELECT * FROM turn_runs WHERE branch_id = ? AND status IN ('queued', 'preparing', 'waiting', 'deciding', 'executing', 'speaking', 'settling') AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?",
+            ["br-000000000000", "2026-01-01T00:00:00.000Z"],
+          )
+          .map((row) => String(row["detail"])),
+        due: tx
+          .all("EXPLAIN QUERY PLAN SELECT * FROM maintenance_runs WHERE branch_id = ? ORDER BY due_tick ASC, created_at ASC, maintenance_id ASC", ["br-000000000000"])
+          .map((row) => String(row["detail"])),
+        readiness: tx
+          .all("EXPLAIN QUERY PLAN SELECT MAX(due_tick) AS latest_due FROM maintenance_runs WHERE run_id = ? AND agent_id = ? AND due_tick <= ?", ["run-1", "human-independent", 24])
+          .map((row) => String(row["detail"])),
+      }));
+
+      const flat = Object.values(plans).flat().join("\n");
+      expect(flat).not.toContain("SCAN triggers");
+      expect(flat).not.toContain("SCAN turn_runs");
+      expect(flat).not.toContain("SCAN maintenance_runs");
+      expect(plans.triggers.join("\n")).toContain("triggers_pending");
+      expect(plans.recoverExpired.join("\n")).toContain("turn_runs_active");
+      expect(plans.due.join("\n")).toContain("maintenance_runs_due");
+      expect(plans.readiness.join("\n")).toContain("maintenance_runs_run_agent_due");
     } finally {
       await harness.dispose();
     }
@@ -309,7 +345,7 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
       closeDatabase(upgraded);
       upgraded = null;
