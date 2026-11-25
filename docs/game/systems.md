@@ -77,13 +77,13 @@
 
 game.scenario 接收策划发布内容，事件卡声明 ID/版本、条件、受众、允许命令、延时、次数限制、幂等键与补偿路径。草稿不进感知，发布后按条件产生合法命令；剧情模块不能直接宣告无规则支持的胜负。
 
-三个非人类势力（巡裔、根庭、泊星者）可由 Agent 或真人运营，通过相同命令 port。服务端页面位于 http://127.0.0.1:3000/console/，玩家页面位于 http://127.0.0.1:5173；页面功能是可注册 UI 模块，不能因操作员能打开后台就获得全部真值或写库权限。两个端口是部署不变量，控制台不新开端口。
+三个非人类势力（巡裔、根庭、泊星者）可由 Agent 或真人运营，通过相同命令 port。服务端控制台位于 http://127.0.0.1:3000/console/。其页面功能由可注册模块提供，控制台 API 逐次校验会话、角色与资源范围。玩家端的现行网页部署与 Godot 目标见 [two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
 
 覆盖性调试产生 ScenarioOverride 与实验污染标记；历史修正用补偿事件。新增职能必须声明 capability、状态/schema 和参与的事务/投影，不把“临时剧情逻辑”塞进宿主或某个 NPC executor。
 
 ## 8. 安装、替换与卸载
 
-RunSpec.moduleAssemblyRef 冻结整个游戏/Agent/平台/UI 组合，Agent profile 只是其中子配方。安装先校验依赖、接口版本与权限，再注册 handler、timer 和 UI 贡献；缺必需能力拒绝启动。
+`RunSpec.moduleAssemblyRef` 选择 TypeScript 装配，Agent profile 选择其中的主体策略。服务端模块按冻结清单复算，TypeScript 界面和 Godot 各按其会话装配核验。安装先校验依赖、接口版本与权限，再登记 handler、timer 和 UI 贡献。缺必需能力时拒绝启动。 [冻结清单与实际生效](../platform/configuration.md#7-冻结清单与实际生效)
 
 可选模块卸载时撤销它贡献的工具绑定、订阅、任务入口与 UI 槽；依赖它的消费者必须停用或显式降级，不得保留能点击却不会工作的操作。必需 provider 不能在活动组合中拔空：先停止组合或准备兼容替代，实现 drain/fence 和状态迁移后切换。
 
@@ -93,4 +93,4 @@ RunSpec.moduleAssemblyRef 冻结整个游戏/Agent/平台/UI 组合，Agent prof
 
 重复命令只预留一次；冲突资源只有合法一方成功；timer 与恢复不重复结算；暂停不推进 tick；角色拒绝不会被当成同意；误解不污染真值。
 
-首版的替换演示固定为：剧情推进 provider 从 `game.scenario.watergate` 换成 `game.scenario.watergate-escalating`，客户端 HUD 从 `client.hud.standard` 换成 `client.hud.compact`，控制台观测页从 `console.observability.standard` 换成 `console.observability.lite`，再加上 memory 的四组切换。时钟 provider 的替换属于后续扩展，首版不要求。替换只改模块自身、注册清单与配置，不修改无关消费者源码；差异要有版本和 trace 记录，依赖与状态兼容性需经过验证。缺 provider 或不兼容版本必须在启用前失败。两端口启动、界面可用与最终验收见 [交付计划](../delivery/roadmap-and-acceptance.md)；模块目录见 [模块目录](../architecture/module-catalog.md)，事务恢复见 [事件与状态](../architecture/events-and-state.md)，行为复用见 [Tools](../agent/tools.md)。
+首版的替换演示固定为：剧情推进 provider 从 `game.scenario.watergate` 换成 `game.scenario.watergate-escalating`，客户端 HUD 从 `client.hud.standard` 换成 `client.hud.compact`，控制台观测页从 `console.observability.standard` 换成 `console.observability.lite`，再加上 memory 的四组切换。时钟 provider 的替换属于后续扩展，首版不要求。替换只改模块自身、注册清单与配置，不修改无关消费者源码；差异要有版本和 trace 记录，依赖与状态兼容性需经过验证。缺 provider 或不兼容版本必须在启用前失败。现行网页的 HUD 替换属于 TypeScript 装配。Godot 原生部署与 provider 替换按 [Godot 玩家端切换验收](../delivery/roadmap-and-acceptance.md#godot-玩家端切换验收) 执行。模块目录见 [模块目录](../architecture/module-catalog.md)，事务恢复见 [事件与状态](../architecture/events-and-state.md)，行为复用见 [Tools](../agent/tools.md)。

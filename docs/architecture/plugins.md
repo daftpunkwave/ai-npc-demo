@@ -18,6 +18,8 @@
 
 ## 2. ModuleDefinition 契约
 
+`ModuleDefinition` 是 TypeScript 宿主的插件描述符。Godot 使用 C# 本地描述符实现同样的显式能力与生命周期原则，见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
+
 字段、schema 与 TypeScript 类型以 [公共契约](contracts.md) 第 3 节为准；下面只说明各字段在注册、解析与运行中的用途，不另建第二份 schema。
 
 | 字段组 | 用途与约束 |
@@ -135,6 +137,6 @@ hook 分为 transform、guard、observe：transform 返回不可变新版本；g
 - 有效性：trace 显示 requested/resolved/effective、applied/skipped/failed 及输入输出差分；必需阶段 skipped 不进入有效样本。
 - 可替换：增加或替换模块只触及模块自身、组合根登记及配置，不修改领域规则或复制 runtime。
 - 共享能力：多个 Agent 引用同一模型条目和工具定义，仍保有独立预算、权限、会话和 trace。
-- 双端：替换 client/console 模块不需要改 server 实现；两个端口之外无监听。
+- 双端替换 client 或 console 模块时，只变更本域实现和装配。按 [部署规格](two-endpoints.md) 核对应用监听。
 
 正式实验失败策略与报告分母见 [评估](../platform/evaluation.md)；交付入口见 [路线与验收](../delivery/roadmap-and-acceptance.md)。

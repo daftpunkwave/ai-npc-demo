@@ -16,14 +16,20 @@
 | 配置/内容 | YAML | `yaml@^2` | `config/**`、`content/**` 都是 YAML，读入后用 Zod 校验 |
 | 资产校验脚本 | fast-xml-parser | `fast-xml-parser@^5` | 解析资产包 SVG/XML，只被 `scripts/check-assets.ts` 引用，由 `scripts` 包声明 |
 | 浏览器构建 | Vite | `vite@^8`、`@vitejs/plugin-react` | 客户端与控制台各一个 Vite 配置 |
-| UI | React | `react@^19`、`react-dom@^19` | 不引入状态管理库与 CSS 框架 |
-| 2.5D 灰盒场景 | PixiJS | `pixi.js@^8` | 只在 `client.scene-renderer.pixi` 适配器内出现；3D 目标另实现同一端口 |
+| Web UI | React | `react@^19`、`react-dom@^19` | 用于 TS 控制台和现行网页灰盒 |
+| 2.5D 灰盒场景 | PixiJS | `pixi.js@^8` | 现行网页适配器 `client.scene-renderer.pixi` |
 | Claude 调用 | Anthropic 官方 SDK | `@anthropic-ai/sdk@^1` | 只在 `platform.model-transport.anthropic` 适配器内出现 |
 | OpenAI 兼容调用 | 内置 `fetch` | — | `platform.model-transport.openai-compatible` 直接发 HTTP，不引入 SDK |
 | 单元/集成测试 | Vitest | `vitest@^5` | `pnpm test` |
 | 端到端测试 | Playwright | `@playwright/test@^1` | 只用 Chromium；`pnpm test:e2e` |
 
 首版不引入：Redis、Kafka、ORM、向量数据库、状态管理库、CSS 框架、微服务、Docker。ESLint/Prettier 可选，不作为完成条件；依赖边界由 `scripts/check-boundaries.ts` 强制。
+
+### Godot 原生玩家端目标
+
+新玩家端交付 Windows x64 桌面包。使用最新稳定的 Godot .NET 编辑器、匹配的 .NET 导出模板和最新稳定 .NET SDK。以 2026-11-24 为核对日期，候选组合为 Godot `4.7.2-stable` 和 .NET SDK `11.0.100`，目标框架为 `net11.0`。Godot 的桌面项目生成器默认设置 `net8.0`。在目标机完成 C# 场景启动和 Windows x64 导出实测后，固定验证通过的工具链。正式迁移以目标框架的运行和导出结果为准。 [Godot 稳定发布](https://godotengine.org/download/archive/4.7.2-stable) · [.NET 11 下载](https://dotnet.microsoft.com/en-us/download/dotnet/11.0) · [Godot 桌面项目生成器](https://github.com/godotengine/godot/blob/4.7.2-stable/modules/mono/editor/GodotTools/GodotTools.ProjectEditor/ProjectGenerator.cs)
+
+原生工程独立于 pnpm。C# 核心与网络适配使用 .NET 标准库，Godot 入口使用锁定的 `Godot.NET.Sdk` 与随版本发布的引擎程序集。用客户端目录内的 `global.json` 固定 .NET SDK，用项目引用表达依赖，用 NuGet 锁文件验证适用项目的可重复还原。客户端级 `Directory.Build.props` 固定 `RuntimeIdentifier=win-x64`，使常规还原、验证与 Godot `ExportRelease` 使用相同 RID。通过 `RestoreLockedMode` 覆盖导出时的隐式还原。新增第三方依赖沿用仓库审批要求，并在所属适配器内声明。 [Godot 发布实现](https://github.com/godotengine/godot/blob/4.7.2-stable/modules/mono/editor/GodotTools/GodotTools/Build/BuildManager.cs) · [NuGet 锁定还原](https://learn.microsoft.com/nuget/consume-packages/package-references-in-project-files#locking-dependencies) · [code-structure.md — Godot 玩家端目录](../architecture/code-structure.md#godot-玩家端目录)
 
 ## 2. Workspace 与包命名
 
@@ -197,7 +203,7 @@ packages:
 
 ## 6. 本地双端拓扑
 
-只有两个监听：`127.0.0.1:5173`（客户端）与 `127.0.0.1:3000`（服务端 + `/console`）。实现方式固定如下：
+现行网页模式监听 `127.0.0.1:5173` 与 `127.0.0.1:3000`。Godot 目标拓扑见 [two-endpoints.md — 原生 Demo 部署目标](../architecture/two-endpoints.md#原生-demo-部署目标)。以下配置适用于迁移切换前的网页模式。
 
 ```ts
 // 客户端 Vite 配置（关键部分）；环境变量由 dev/start 脚本提供

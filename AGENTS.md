@@ -1,6 +1,6 @@
 # Coding Agent 工作说明与规范总则
 
-本项目是 TypeScript 全栈、单玩家轻数值 SLG 与研究控制台；3D 斜俯视是目标，2.5D 是序章灰盒。
+本项目是单玩家轻数值 SLG 与研究控制台。现行版本为 TypeScript 网页灰盒，原生目标采用 Godot C# 玩家端及 TypeScript 服务端与控制台。
 
 ## 最高指令与执行铁律（Meta-Directive）
 
@@ -58,7 +58,7 @@
 | **提 Issue** | [Issue 创建、管理与维护规范](.agents/rules/issue/issue-workflow.md) | 前置按需建单策略、Issue 模板执行、右侧 Sidebar 结构化配置、全生命周期维护与闭环准则 |
 | **审查重点** | [编码审查十二维工程准则](.agents/rules/review/twelve-dimensional-criteria.md) | 涵盖 Correctness、Edge Case、Security、Contract、Decouple、Dependency、Performance、Resilience 等十二维深度核查清单与最终复核 |
 | **质量门禁** | [门禁分级与审查处理策略](.agents/rules/review/gates-and-triage.md) | 仓库实际门禁基准、红线必改项（Bug/Security/Secrets 零容忍）、非阻塞告警误报甄别与建单防丢弃、审查线程处理 |
-| **架构与工程** | [架构设计与核心工程铁律](.agents/rules/architecture/engineering-iron-laws.md) | 解耦优先于内聚（全职能插件化）、单一职责物理隔离（SRP 500行）、依赖倒置（DIP）、网络端口白名单（5173/3000）、单向依赖与 Import 隔离 |
+| **架构与工程** | [架构设计与核心工程铁律](.agents/rules/architecture/engineering-iron-laws.md) | 解耦优先于内聚（全职能插件化）、单一职责物理隔离（SRP 500行）、依赖倒置（DIP）、按部署模式约束本地监听、单向依赖与 Import 隔离 |
 | **命名与风格** | [命名规范、代码注释与核心文件头规范](.agents/rules/conventions/naming-and-headers.md) | 意图导向命名、绝对黑名单与高危泛化词管控、代码自解释、手写源码核心文件头（三要素）规范、Git 客观性事实性约束 |
 | **测试与交付** | [本地验证、测试有效性与交付标准](.agents/rules/testing/verification-and-testing.md) | 针对性门禁分级（文档/注释跳过全量测试）、代码全量门禁（`pnpm check`）、强有效断言与反脆弱 Mock |
 | **文档维护** | [文档编写与维护规范](docs/AGENTS.md) | `docs/` 目录下基于真实代码的实证撰写、标点规范（直角引号非必要不使用）、术语全库一致性与修改存疑界限 |

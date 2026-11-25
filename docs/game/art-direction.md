@@ -3,6 +3,14 @@
 > **权威：** 目标表现是 **3D 斜俯视 + 半拟真 PBR**，以 [design/gameplay/06-player-experience.md](../design/gameplay/06-player-experience.md)、[design/assets/README.md](../design/assets/README.md)、[01-inventory.md](../design/assets/01-inventory.md)、[02-modeling-spec.md](../design/assets/02-modeling-spec.md) 为准。
 > 本文的 2D 矢量与等距资产是**序章灰盒、宣发与无画面兜底**，不是游戏最终表现，也不作为美术验收。
 
+## Godot Demo 美术验收
+
+原生 Demo 新设计玩家界面、交互和整套 3D 表现。设计输入为序章玩法、公开身份与世界设定。以下旧灰盒记录仅用于说明现行网页交付。资产来源遵循 [资产总纲](../design/assets/README.md#五现有网页资产与原生资产)。
+
+制作前确定新概念、斜俯视镜头样张、角色和地标清单、UI 信息层级与性能预算。先完成一个可操作的正式质量场景，再批量补齐序章范围内的地点、道路、上场身份与必要状态。资产表以稳定的角色、地点和状态 ID 关联新资源，并记录来源、许可及版本。范围以 [00-scope-and-invariants.md — 序章切片范围](../00-scope-and-invariants.md#1-切片范围) 为准。
+
+正式验收包含 GLB 导入、模型比例与枢轴、材质和贴图预算、动画、地图与角色辨识度、缩放后命中、界面文字可读性，以及目标机整段运行的帧时间和显存记录。按 [建模规格中的 Godot Demo 验收](../design/assets/02-modeling-spec.md#134-godot-demo-验收) 审核相应资产，在导出的客户端中人工核对完整 Demo。灰模仅用于验证安装、输入、尺寸和协议联调。
+
 ## 0. 三层资产与边界
 
 | 层 | 用途 | 验收 |
@@ -59,7 +67,6 @@
 ## 5. 已知限制
 
 - 当前包为手工矢量插画，没有摄影级 matte painting 或角色立绘；环境缺少可用的图像生成额度，未伪造“已完成写实美术”。
-- 尚无客户端 `client.scene-renderer.pixi` 接线；资源先作为内容资产与设计基准交付。
 - 徽记含少量中文名称，需确认目标字体可渲染；若字体缺失，以图形符号为主。
 
 ## 6. 冲突记录

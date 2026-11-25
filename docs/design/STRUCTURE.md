@@ -23,7 +23,7 @@
 | `docs/game/rules.md` | `design/balance/01-baseline.md`、`gameplay/02`–`09` | 序章可结算规则；设计值以 balance 为准 |
 | `docs/game/content-pack.md` | `design/world/canon.md` §13、`balance/01` | 内容契约；ID 以 canon §13 为准 |
 | `docs/game/systems.md` | `design/gameplay/11-agent-actions.md`、`14-agent-society.md` | 模块边界；设计意图以 design 为准 |
-| `docs/game/art-direction.md` | `design/assets/README.md`、`01`–`03` | 3D 目标 + 2.5D 灰盒 + 2D 宣发三层 |
+| `docs/game/art-direction.md` | `design/assets/README.md`、`01`–`03` | 原生 Demo 正式 3D 的交付条件，以及现行网页灰盒资产记录 |
 | `docs/00-scope-and-invariants.md` | `design/multiplayer/README.md`、`game-overview.md` | 切片范围、15 人、6 资源边界 |
 | `docs/IMPLEMENTATION-STATUS.md` | 无（工程状态） | 当前代码与规格的差距；迁移清单 |
 
@@ -38,7 +38,7 @@
 | 袭击与损毁修复 | `design/gameplay/15-raids-and-repair.md` | 不实现 |
 | 四季与寒潮 | `design/gameplay/16-campaign-arc.md` | 只到 t168 评估；t168 之后不在切片内 |
 | 多人联机 | `design/multiplayer/**` | 不实现；命令/投影/存档带 `seatId` |
-| 完整资产管线 | `design/assets/**` | P0 灰盒；3D 目标不在切片验收内 |
+| 开放世界的完整资产管线 | `design/assets/**` | 网页灰盒验证可读性。原生切片验收覆盖其可玩范围内的新制正式 3D，见 [Godot Demo 美术验收](../game/art-direction.md#godot-demo-美术验收) |
 
 **“不实现”不是“另一套简化规则”。** 序章文档不能写“城建简化成 XX”“支持简化成 YY”；只能写“未开放 + 接口在哪里”。
 

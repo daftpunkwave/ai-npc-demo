@@ -4,6 +4,8 @@
 
 ## 1. 目录树
 
+下列目录树记录 TypeScript 工程。原生玩家端的目标目录见 [Godot 玩家端目录](#godot-玩家端目录)。
+
 模块目录与包名的映射规则见 [技术栈](../delivery/tech-stack.md) 第 2 节：server 模块在 `modules/server/<group>/<family>/<impl>/`，浏览器模块在 `modules/<client|console>/<family>/<impl>/`，每个目录是一个 workspace 源码包。
 
 ```text
@@ -115,11 +117,11 @@ ai-npc-demo/
 
 | 入口 | 组合根 | 允许依赖 | 禁止 |
 |---|---|---|---|
-| `apps/server` | `host/module-catalog.ts` + `host/bootstrap.ts` | server 模块、contracts/kernel/module-sdk、server 适配器 | 浏览器模块、DOM/PixiJS；console 页面代码 |
+| `apps/server` | `src/host.ts` 与 `src/host/module-catalog.ts` | server 实现、contracts/kernel/module-sdk、浏览器模块定义 | 浏览器实现、DOM/PixiJS、console 页面代码 |
 | `apps/client` | `host/module-catalog.ts` + `host/bootstrap.tsx` | client 模块、contracts/kernel/client-sdk/client-protocol | Node 内置模块、数据库、密钥、server 模块实现 |
 | `apps/console` | `host/module-catalog.ts` + `host/bootstrap.tsx` | console 模块、contracts/kernel/client-sdk/client-protocol | 服务端对象、直接数据库/模型连接；玩家域私有投影 |
 
-每个宿主只有一个实例级 registry；模块通过显式 import 清单登记，禁止文件系统扫描自动执行，也禁止模块在 import 时向全局 Map 自注册。三个组合根共享解析算法，但不共享进程内对象。
+每个宿主只有一个实例级 registry；模块通过显式 import 清单登记，禁止文件系统扫描自动执行，也禁止模块在 import 时向全局 Map 自注册。TypeScript 服务端负责解析装配。两个浏览器宿主使用同一客户端 SDK 校验并加载握手返回的本域模块。Godot 的目录与依赖见 [Godot 玩家端目录](#godot-玩家端目录)。
 
 `apps/server` 对 console 静态资源只做挂载以及权限和缓存策略；console 前端仍然是独立的构建产物，由 server 的 HTTP 路由提供，不把 React 组件编译进 server 业务代码。
 
@@ -240,3 +242,21 @@ modules/server/agent/memory/ledger/
 一次扩展的验收包包含源码 revision、锁文件、内容版本、冻结 manifest、输入脚本、断言结果、授权 artifact、失败记录和实测限制。每个实验 run 独占 branch；在线与实验的活动身份合计不超过 15。
 
 完整交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)；观测字段与查询权限见 [可观测性](../platform/observability.md)。
+
+## Godot 玩家端目录
+
+目标工程独立落在 `apps/player-godot/`。现有 TypeScript workspace 继续承载服务端与控制台。客户端的入口、测试和资产在独立目录构建。
+
+```text
+apps/player-godot/
+  global.json          .NET SDK pin
+  Directory.Build.props   locked restore policy for client and export
+  Player.Core/         public wire DTOs, projection state, intent ports
+  Player.Transport/    loopback HTTP and WebSocket adapters
+  Player.Godot/        project.godot, composition root, UI and 3D providers
+  Player.Verification/ contract and lifecycle checks
+```
+
+`Player.Transport` 依赖 `Player.Core`。Godot 功能模块通过 `Player.Core` 的端口交互，只有 Godot 组合根持有网络适配器的具体实现。核心和网络适配可在无引擎的 .NET 进程里验证。场景和资源引用属于 Godot 工程。TypeScript 侧的公开 Zod schema 与经验证的 JSON 样本用于跨语言契约，构建时保持单向输入。
+
+浏览器玩家端退役时，逐个清理玩家专用依赖、装配绑定、测试与脚本。以实际引用为准保留 TS 控制台的 SDK、协议和构建工具。切换时仅将浏览器玩家装配改为空绑定，服务端和控制台继续执行各自的校验。现行会话装配解析会对 client 注入浏览器必需能力，须由 TS 宿主明确处理原生模式，改动范围限定在浏览器玩家能力及目录预检。先证明已有冻结运行和快照仍可被 TS 宿主打开，再清理浏览器生产入口。

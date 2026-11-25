@@ -13,7 +13,7 @@
 
 catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略子配方。三者都由宿主校验并冻结，不能由模块自行修改。
 
-默认装配分三个运行域（realm）：`server`、`client`、`console`。同一 assembly 同时声明三域选择；浏览器域只能拿到本域模块与远端能力描述，不拿到 Node 对象、数据库连接或密钥，详见 [双端拓扑](two-endpoints.md)。
+现行 TypeScript 装配分三个运行域（realm）：`server`、`client`、`console`。同一 assembly 同时声明三域选择；浏览器域只能拿到本域模块与远端能力描述，不拿到 Node 对象、数据库连接或密钥，详见 [双端拓扑](two-endpoints.md)。
 
 ## 2. 命名、类别与实例作用域
 
@@ -42,7 +42,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 - 证据信封与 trace 关联协议；
 - agent turn 管线、预算、租约与证据协调；
 - 配置解析、冻结 manifest 与 requested/resolved/effective 记录；
-- 两个本地端口与三运行域的信任边界；
+- 本地双端和三运行域的[信任边界](two-endpoints.md)；
 - 密钥只存在于服务端 secret 解析路径。
 
 详见 [模块边界](modules.md) 第 2 节与 [插件机制](plugins.md) 第 6 节。把授权或提交改成“可关闭的 hook”会破坏全部实验结论。
@@ -111,12 +111,14 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 ## 5. 客户端模块
 
+本节登记现行网页玩家端的 TypeScript provider。Godot 玩家端随客户端发布独立的能力与绑定，见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
+
 客户端是玩家域，只消费授权投影，不持有世界权威与密钥。默认装配如下；slot 名称与客户端宿主一致，见 [客户端与场景适配](client-and-rendering.md)。
 
 | 模块 ID | 类别 | 实例作用域 | 提供能力/贡献 | 必需性 | 说明 |
 |---|---|---|---|---|---|
 | `client.world-view.standard` | service | session | `client.world-view` | required | 网络投影 reducer，合并快照/增量与游标 |
-| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 2.5D 等距灰盒；3D 渲染器实现同一端口 |
+| `client.scene-renderer.pixi` | adapter | session | `client.scene-renderer`（`scene` slot） | required | 现行网页的 2.5D 等距灰盒 |
 | `client.scene-renderer.null` | adapter | session | `client.scene-renderer` | 仅测试装配 | 不绘制画面，只记录收到的场景视图，用于 CI 跑规则场景 |
 | `client.camera.standard` | service | session | `client.camera` | required | 平移/缩放/跟随，不读世界库 |
 | `client.screen-projection.isometric` | service | session | `client.screen-projection` | required | 世界坐标与屏幕坐标互转、命中转换 |
@@ -221,14 +223,14 @@ M 阶段的四次替换演示各自只改一处绑定：`game.scenario` 换成 `
 - fallback 声明完整；slot ID 与排序冲突可检测；
 - realm 边界：client/console 模块不得 import 服务端实现或读取密钥；只有 transport 端口可跨域；
 - 状态所有权：每个有状态模块声明 scope、schemaVersion、导出/迁移路径；
-- 目录快照 hash 进入 assembly 与 run manifest，注册顺序不影响解析结果（解析与摘要已实现，替换验收仍须展示）。
+- 服务端目录与装配的 hash 进入 run manifest。验证注册顺序不改变解析结果。
 
 验收时必须展示：
 
 - 替换矩阵中游戏规则、客户端 UI、Agent 认知、控制台页面四类各换一次，只改模块、装配与配置；
 - 缺必需模块时启动被拒绝；
 - 卸载可选模块后无残余订阅；
-- 两个端口之外没有监听；
-- 从冻结 manifest 能重建同一组合。
+- 按 [部署规格](two-endpoints.md) 核对本应用监听范围。
+- 服务端组合使用冻结 manifest 复算。TypeScript 浏览器模块集与 Godot provider 各按会话装配记录核对。 [冻结清单与实际生效](../platform/configuration.md#7-冻结清单与实际生效)
 
 具体装配语义见 [积木组合](composition.md)，交付顺序见 [路线与验收](../delivery/roadmap-and-acceptance.md)。
