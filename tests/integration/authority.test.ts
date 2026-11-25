@@ -482,6 +482,53 @@ describe("authority job runner", () => {
     });
   });
 
+  it("cancels only jobs whose idempotency key starts with the given prefix", async () => {
+    await withHarness(async (harness) => {
+      // 预置一条前缀命中的 job 与一条不相干的 job；
+      // fixture 的 task-000000000009 分支会排入 test-job:xxx 并调用 cancelJobs("test-job:")。
+      harness.storage.transact((tx) => {
+        const jobs = tx.branch(harness.branchId).table("jobs");
+        jobs.put({
+          job_id: "job-000000000901",
+          seq: 901,
+          kind: "test.job",
+          due_tick: 5,
+          status: "scheduled",
+          idempotency_key: "test-job:seeded",
+          payload_json: { seeded: true },
+          attempts: 0,
+        });
+        jobs.put({
+          job_id: "job-000000000902",
+          seq: 902,
+          kind: "test.job",
+          due_tick: 5,
+          status: "scheduled",
+          idempotency_key: "unrelated:seeded",
+          payload_json: { seeded: true },
+          attempts: 0,
+        });
+      });
+
+      harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000009", "cmd-000000000026"),
+      );
+
+      const remaining = harness.storage.transact((tx) =>
+        tx.branch(harness.branchId).table("jobs").list({ status: "scheduled" }),
+      );
+      expect(remaining.map((row) => row["idempotency_key"])).toEqual(["unrelated:seeded"]);
+      const cancelled = harness.storage.transact((tx) =>
+        tx.branch(harness.branchId).table("jobs").list({ status: "cancelled" }),
+      );
+      expect(cancelled.map((row) => row["idempotency_key"]).sort()).toEqual([
+        "test-job:seeded",
+        "test-job:task-000000000009",
+      ]);
+    });
+  });
+
   it("rolls back a failed job and keeps it scheduled", async () => {
     await withHarness(async (harness) => {
       harness.authority.commands.execute(
