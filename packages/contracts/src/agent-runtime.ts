@@ -4,10 +4,12 @@
  * 禁止在此执行调度、检索、模型调用或持久化。
  */
 import { z } from "zod";
+import { commandStatusSchema, executionStatusSchema, taskStatusSchema } from "./envelopes";
 import { inputFrontierSchema, memoryScopeSchema } from "./frontier";
 import { idSchemas, principalIdSchema } from "./ids";
 import { jsonValueSchema, type Json } from "./json";
 import { agentObservationSchema } from "./observation";
+import { toolResultReasonCodeSchema } from "./reason-codes";
 
 /** trigger 只表达唤醒原因；合并、公平与冷却由调度策略决定。 */
 export const agentTriggerKindSchema = z.enum([
@@ -406,10 +408,10 @@ export type ToolsetDocument = z.infer<typeof toolsetDocumentSchema>;
 
 export const toolExecutionResultSchema = z
   .object({
-    executionStatus: z.enum(["ok", "error", "unknown"]),
-    commandStatus: z.enum(["accepted", "rejected"]).nullable(),
-    taskStatus: z.enum(["pending", "running", "completed", "failed", "cancelled"]).nullable(),
-    reasonCode: z.string().min(1).nullable(),
+    executionStatus: executionStatusSchema,
+    commandStatus: commandStatusSchema.nullable(),
+    taskStatus: taskStatusSchema.nullable(),
+    reasonCode: toolResultReasonCodeSchema.nullable(),
     receiptId: z.string().min(1).nullable(),
     operationId: z.string().min(1).nullable(),
     resultRef: z.string().min(1),

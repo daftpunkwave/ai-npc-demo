@@ -8,7 +8,26 @@ import type {
 } from "@ai-npc/contracts";
 import { arrayValue, numberValue, stringValue, triggerFromRow } from "./runtime-records";
 
+/**
+ * turn 的终态集合：到达这些状态后不再推进，也不再占用并发名额。
+ * 与 SQL 中 turn_runs_active 部分索引的非终态列表互补，二者必须一起改。
+ */
 export const terminalTurnStatuses: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "budget-exhausted"]);
+
+/**
+ * 非终态集合，与 turn_runs_active 部分索引的过滤条件逐字一致。
+ * 只作为状态词的唯一来源；拼进 SQL 时必须内联成字面量而不是绑定参数，
+ * 因为 SQLite 只有看到字面量才肯为部分索引判定谓词成立，绑定参数会退回全量索引。
+ */
+export const activeTurnStatuses: readonly string[] = [
+  "queued",
+  "preparing",
+  "waiting",
+  "deciding",
+  "executing",
+  "speaking",
+  "settling",
+];
 
 export class TurnStopped extends Error {
   constructor(

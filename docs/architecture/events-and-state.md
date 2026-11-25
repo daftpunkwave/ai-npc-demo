@@ -53,7 +53,7 @@ ambient 世界读取、既有观察、会话和记忆都绑定 [InputFrontier](c
 
 outbox 按至少一次投递，consumer 以 (consumerId, branchId, eventId) 建立 inbox；处理结果、投影与记忆变化、水位在各自的事务内原子提交。进程在提交后、确认前崩溃会触发重投，但不会重复记忆、重复扣物资或重复强化。这里不承诺网络上的 exactly-once。
 
-逻辑 timer 同样保存 jobId、dueTick、状态和幂等键。重启时依据持久化的 tick 与任务状态恢复，不把进程内 setTimeout 当作权威计时。LLM 任务通过短租约认领；租约过期可以重试，旧 attempt 的结果不能再次提交。
+逻辑 timer 同样保存 jobId、dueTick、状态和幂等键。重启时依据持久化的 tick 与任务状态恢复，不把进程内 setTimeout 当作权威计时。LLM 任务通过短租约认领；租约过期可以重试，旧 attempt 的结果不能再次提交。取消一个逻辑操作时按幂等键前缀批量取消它的后续 job（如出发、工作、完成、返回各自一个），前缀匹配下推为 `idempotency_key` 的范围条件，由该列上的唯一约束支撑范围扫描，不在应用层遍历全部待执行 job。
 
 ### 世界与记忆的最终一致性
 

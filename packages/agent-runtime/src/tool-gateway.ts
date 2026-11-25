@@ -18,6 +18,7 @@ import {
   type ToolBinding,
   type ToolDefinition,
   type ToolExecutionResult,
+  type ToolResultReasonCode,
 } from "@ai-npc/contracts";
 import type { AgentToolViewPort } from "@ai-npc/module-sdk";
 import { StoredAgentArtifactStore, type AgentArtifactStore } from "@ai-npc/module-sdk";
@@ -415,7 +416,7 @@ export class ToolGateway {
     input: ToolCallExecutionInput,
     binding: ToolBinding | null,
     argsHash: string,
-    reasonCode: string,
+    reasonCode: ToolResultReasonCode,
     detail: string,
     existing: Readonly<Record<string, import("@ai-npc/contracts").StorageCell>> | ToolCallIdentity | null = null,
     operationId: string | null = null,

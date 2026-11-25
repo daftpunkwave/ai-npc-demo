@@ -87,7 +87,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -106,7 +106,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -183,6 +183,50 @@ describe("初始迁移", () => {
         .join("\n");
       expect(plan).toContain("jobs_status_due_seq");
       expect(plan).not.toContain("SCAN jobs");
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("Agent 热路径索引按活跃集收录，索引规模不随历史增长", async () => {
+    const harness = await openStorageHarness();
+    try {
+      // 这里只断言索引本身的定义；查询是否真的命中由 agent-runtime 侧用生产 SQL 断言，
+      // 因为参数化写法会让 SQLite 放弃部分索引，字面量副本的查询计划说明不了生产行为。
+      const indexes = harness.port.transact((tx) =>
+        tx.all(
+          "SELECT tbl_name, name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('triggers', 'turn_runs', 'maintenance_runs') ORDER BY name",
+        ),
+      );
+      const byName = new Map(indexes.map((row) => [String(row["name"]), String(row["sql"])]));
+
+      expect(byName.get("triggers_pending")).toContain("WHERE consumed_by_turn_id IS NULL");
+      expect(byName.get("turn_runs_active")).toContain("WHERE status IN ('queued', 'preparing', 'waiting', 'deciding', 'executing', 'speaking', 'settling')");
+      expect(byName.get("maintenance_runs_due")).toContain("due_tick");
+      expect(byName.get("maintenance_runs_run_agent_due")).toContain("run_id, agent_id, due_tick");
+      expect(byName.get("maintenance_runs_task")).toContain("trigger, due_tick");
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("最近一次 DayPassed 查询命中表达式部分索引", async () => {
+    const harness = await openStorageHarness();
+    try {
+      // 0017 用表达式部分索引把范围限定在 DayPassed 行；
+      // 查询形状与 MemoryStore.latestDayPassed 逐字一致，条件改了就应在此失败。
+      const plan = harness.port
+        .transact((tx) =>
+          tx.all(
+            "EXPLAIN QUERY PLAN SELECT known_at_tick, observation_seq FROM observations WHERE branch_id = ? AND agent_id = ? AND json_extract(content_json, '$.eventType') = 'DayPassed' ORDER BY known_at_tick DESC, observation_seq DESC LIMIT 1",
+            ["br-000000000000", "human-independent"],
+          ),
+        )
+        .map((row) => String(row["detail"]))
+        .join("\n");
+      expect(plan).toContain("observations_day_passed");
+      expect(plan).not.toContain("SCAN observations");
+      expect(plan).not.toContain("USE TEMP B-TREE");
     } finally {
       await harness.dispose();
     }
@@ -309,7 +353,7 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
       closeDatabase(upgraded);
       upgraded = null;

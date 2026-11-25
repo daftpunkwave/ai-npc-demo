@@ -90,3 +90,28 @@ export const reasonCodeSchema = z.enum(reasonCodes);
 export function isReasonCode(value: string): value is ReasonCode {
   return reasonCodeSchema.safeParse(value).success;
 }
+
+/**
+ * 工具执行专用码：只出现在工具结果里，表达执行器缺失与副作用结果未确认。
+ * 它们不是命令 receipt 的业务拒绝理由，也不进入玩家提示词表，
+ * 因此不并入 reasonCodes；工具结果可同时携带 receipt 原因码，读取方按并集处理。
+ */
+export const toolExecutionReasonCodeGroups = {
+  toolExecution: ["execution-failed", "execution-unknown"],
+} as const;
+
+export type ToolExecutionReasonCode =
+  (typeof toolExecutionReasonCodeGroups)[keyof typeof toolExecutionReasonCodeGroups][number];
+
+/** 按分组展开的全部工具执行专用码。 */
+export const toolExecutionReasonCodes = [
+  ...toolExecutionReasonCodeGroups.toolExecution,
+] as const satisfies readonly ToolExecutionReasonCode[];
+
+/** 工具结果可携带的原因码：命令拒绝原因码与工具执行专用码的并集。 */
+export const toolResultReasonCodeSchema = z.enum([
+  ...reasonCodes,
+  ...toolExecutionReasonCodes,
+] as const);
+
+export type ToolResultReasonCode = z.infer<typeof toolResultReasonCodeSchema>;

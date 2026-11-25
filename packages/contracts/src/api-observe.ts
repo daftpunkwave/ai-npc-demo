@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { agentWorldViewSchema } from "./agent-world-view";
 import { timelineItemSchema } from "./api";
+import { commandStatusSchema, executionStatusSchema } from "./envelopes";
 import { idSchemas, principalIdSchema } from "./ids";
 import { jsonValueSchema, type Json } from "./json";
 import { memoryRecordSchema } from "./memory";
@@ -246,8 +247,8 @@ export const turnToolCallViewSchema = z
   .object({
     toolCallId: z.string().min(1),
     toolId: z.string().min(1),
-    executionStatus: z.enum(["ok", "error", "unknown"]).nullable(),
-    commandStatus: z.enum(["accepted", "rejected"]).nullable(),
+    executionStatus: executionStatusSchema.nullable(),
+    commandStatus: commandStatusSchema.nullable(),
     rawArtifactId: idSchemas.art.nullable(),
     viewArtifactId: idSchemas.art.nullable(),
     operationId: idSchemas.op.nullable(),

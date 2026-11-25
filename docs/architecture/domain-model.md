@@ -357,6 +357,8 @@ receipt 与 `TaskFailed` 的 `reasonCode` 只能取下表的值；同一个码�
 | 政策与剧情 | `no-change`、`unknown-policy`、`card-not-draft`、`card-not-triggered`、`card-not-found`、`card-already-triggered`、`invalid-effect`、`campaign-exists`、`unknown-faction`、`world-tick-not-zero` |
 | Agent 拒绝理由（`task.respond`、对白意图用） | `danger`、`duty`、`past-breach`、`low-trust`、`lack-resources`、`policy`、`need-guarantee`、`injured`、`busy`、`none` |
 
+工具结果另有一组只属于执行侧的码：`execution-failed`（执行器未配置）与 `execution-unknown`（副作用结果未确认）。它们不是命令的业务拒绝理由，也不进入玩家提示词表，因此不并入上表；工具结果的 `reasonCode` 取上表与该组专用码的并集，见 [公共契约](contracts.md)。
+
 ## 10. 内容 schema 要点
 
 内容加载器对 [内容包](../game/content-pack.md) 的每个文件做 Zod 校验，另外做以下交叉检查，任何一项失败都拒绝启动：

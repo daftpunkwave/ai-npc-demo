@@ -275,16 +275,21 @@ export class TransactionWorldTx implements WorldTx {
     });
   }
 
+  /**
+   * 取消幂等键以给定前缀开头的待执行 job。
+   * 前缀下推到 SQL 的范围条件（idempotency_key >= prefix AND < upper），
+   * 由 jobs 上的 (branch_id, idempotency_key) 唯一约束支撑范围扫描；
+   * 不能只按 status 过滤后在应用层做 startsWith，那会把分支的全部待执行 job 拉进内存。
+   */
   cancelJobs(idempotencyKeyPrefix: string): void {
     if (idempotencyKeyPrefix.trim().length === 0) {
       throw new DomainError("validation", "job 幂等键前缀不能为空");
     }
-    const rows = this.jobsTable.list({ status: "scheduled" });
+    const rows = this.jobsTable.list(
+      { status: "scheduled" },
+      { prefix: { column: "idempotency_key", value: idempotencyKeyPrefix } },
+    );
     for (const row of rows) {
-      const key = String(row["idempotency_key"] ?? "");
-      if (!key.startsWith(idempotencyKeyPrefix)) {
-        continue;
-      }
       this.jobsTable.put({
         ...row,
         status: "cancelled",

@@ -4,6 +4,7 @@
  * 禁止调用模块与模型，或暴露跨 agent 读取。
  */
 import { completeMemoryMaintenance } from "./memory-maintenance-publication";
+import { latestDayPassedSql } from "./agent-hot-path-sql";
 
 import { publicRevision, publicRows, publishPublicRecords, validateMemorySources } from "./memory-public-records";
 import {
@@ -132,21 +133,19 @@ export class MemoryStore {
     });
   }
 
+  /**
+   * 最近一次 DayPassed 观察的 tick 与序号。
+   * 条件与 observations_day_passed 部分索引逐字一致：eventType 在 SQL 里过滤，
+   * 排序与 LIMIT 也在 SQL 里完成，不再把该 Agent 的全部观察读进内存解码。
+   */
   latestDayPassed(agentId: string): { readonly tick: number; readonly observationSeq: number } | null {
     return this.storage.transact((tx) => {
-      const rows = tx.branch(this.branchId)
-        .table("observations")
-        .list({ agent_id: agentId }, { orderBy: [{ column: "known_at_tick", direction: "desc" }] });
-      for (const row of rows) {
-        const content = jsonObject(row["content_json"]);
-        if (content["eventType"] === "DayPassed") {
-          return {
-            tick: numberColumn(row, "known_at_tick"),
-            observationSeq: numberColumn(row, "observation_seq"),
-          };
-        }
-      }
-      return null;
+      const row = tx.all(latestDayPassedSql, [this.branchId, agentId])[0];
+      if (row === undefined) return null;
+      return {
+        tick: numberColumn(row, "known_at_tick"),
+        observationSeq: numberColumn(row, "observation_seq"),
+      };
     });
   }
 

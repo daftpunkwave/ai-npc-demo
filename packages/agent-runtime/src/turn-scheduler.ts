@@ -7,6 +7,7 @@ import type { HostServices, StoragePort } from "@ai-npc/contracts";
 import type { SchedulingPort } from "@ai-npc/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
+import { cancelActiveTurnsSql, pendingTriggersSql, recoverExpiredTurnsSql } from "./agent-hot-path-sql";
 import { cancelTurn, terminalTurnStatuses } from "./turn-lease";
 
 export interface TurnSchedulerInput {
@@ -29,8 +30,7 @@ export class TurnScheduler {
 
   cancelActive(reason: string): void {
     const interrupted = this.input.storage.transact((tx) =>
-      tx.rows("turn_runs").list({ branch_id: this.input.branchId })
-        .filter((row) => !terminalTurnStatuses.has(stringValue(row, "status"))),
+      tx.all(cancelActiveTurnsSql, [this.input.branchId]),
     );
     this.cancel(interrupted, reason);
   }
@@ -38,12 +38,7 @@ export class TurnScheduler {
   recoverExpired(): void {
     const now = this.input.host.nowIso();
     const expired = this.input.storage.transact((tx) =>
-      tx.rows("turn_runs").list({ branch_id: this.input.branchId })
-        .filter((row) =>
-          !terminalTurnStatuses.has(stringValue(row, "status")) &&
-          typeof row["lease_expires_at"] === "string" &&
-          row["lease_expires_at"] <= now,
-        ),
+      tx.all(recoverExpiredTurnsSql, [this.input.branchId, now]),
     );
     this.cancel(expired, "lease-expired");
     this.releaseOrphanedTriggers();
@@ -115,7 +110,7 @@ export class TurnScheduler {
         activations: branch.table("agent_activations").list(),
         leases: branch.table("controller_leases").list(),
         // 相同 tick 的触发按持久化顺序合并，随机生成的 ID 不参与排序。
-        triggers: tx.all("SELECT * FROM triggers WHERE branch_id = ? AND consumed_by_turn_id IS NULL ORDER BY rowid", [this.input.branchId]),
+        triggers: tx.all(pendingTriggersSql, [this.input.branchId]),
         turns: tx.rows("turn_runs").list({ branch_id: this.input.branchId }),
       };
     });

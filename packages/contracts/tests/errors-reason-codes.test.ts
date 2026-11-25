@@ -17,6 +17,8 @@ import {
   reasonCodeGroups,
   reasonCodes,
   reasonCodeSchema,
+  toolExecutionReasonCodes,
+  toolResultReasonCodeSchema,
 } from "../src/index";
 import { expectInvalid, expectSchema } from "./support";
 
@@ -194,5 +196,18 @@ describe("原因码", () => {
     expectInvalid(reasonCodeSchema, "unknown-reason");
     expectInvalid(reasonCodeSchema, "");
     expect(isReasonCode("unknown-reason")).toBe(false);
+  });
+
+  it("工具执行码单独登记，不与命令 receipt 原因码混用", () => {
+    expect(toolExecutionReasonCodes).toEqual(["execution-failed", "execution-unknown"]);
+    for (const code of toolExecutionReasonCodes) {
+      expect(toolResultReasonCodeSchema.safeParse(code).success).toBe(true);
+      // 命令 receipt 的拒绝理由集合不接受工具专用码。
+      expect(reasonCodeSchema.safeParse(code).success).toBe(false);
+    }
+    for (const code of reasonCodes) {
+      expect(toolResultReasonCodeSchema.safeParse(code).success).toBe(true);
+    }
+    expectInvalid(toolResultReasonCodeSchema, "execution-crashed");
   });
 });

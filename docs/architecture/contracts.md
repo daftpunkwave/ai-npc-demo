@@ -93,7 +93,7 @@ CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 p
 
 CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、acceptedEventIds、operationId 与 resultingVersions。commandStatus 只有 accepted 或 rejected 两个值，是不可变的提交回执；accepted 不代表异步任务已经完成。幂等键和 payloadHash 都相同的请求返回原 receipt，不重复执行；键相同但内容不同的请求拒绝。
 
-异步任务投影使用独立的 taskStatus：pending、running、completed、failed、cancelled。ToolResult 使用 executionStatus：ok、error、unknown。ok 表示网关拿到了确定的合法响应，响应里仍可能带 commandStatus=rejected；unknown 表示副作用结果未确认，必须去查 receipt。工具视图不得把这几个层次的状态混成一个 status，也不能省略失败。没有任务的只读结果不伪造 taskStatus。
+异步任务投影使用独立的 taskStatus：pending、running、completed、failed、cancelled。ToolResult 使用 executionStatus：ok、error、unknown。ok 表示网关拿到了确定的合法响应，响应里仍可能带 commandStatus=rejected；unknown 表示副作用结果未确认，必须去查 receipt。工具视图不得把这几个层次的状态混成一个 status，也不能省略失败。没有任务的只读结果不伪造 taskStatus。这三个状态枚举与 receipt 共用同一份 schema 定义，工具结果不另写内联枚举。工具结果的 reasonCode 接受命令原因码与执行侧专用码 execution-failed、execution-unknown 的并集，后者只描述执行器缺失与结果未确认，不进入 receipt 的业务拒绝理由表。
 
 ## 3. 模块、能力与装配
 
@@ -212,7 +212,7 @@ interface UiExtension {
 }
 ```
 
-其余受控类型的首版定义：`StrictConfigSchema` 是一个调用过 `.strict()` 的 Zod object schema（未知键报错），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本、装配 hash，以及每个模块的已解析配置 `config`。浏览器 realm 没有装配解析器，模块必须用握手下发的 `config` 启动而不是自带的 `defaults`，否则实际行为与装配声明不符且无法用 `configHash` 自证一致；`config` 缺失或未通过模块 `configSchema` 校验时按 `assembly-incompatible` 拒绝启动。`config` 只对 client 与 console 两个 realm 下发：服务端 realm 的实例由宿主自己创建，其配置含内容包下发的提示词、工具描述与部署期覆盖，属服务端内部参数，而 `serverAssembly` 会经 `/api/v1/session` 返回给玩家会话，因此只带 `configHash`。客户端以在下发值基础上补齐 `configSchema` 默认字段的方式构造最终配置，不重新执行 `transform`，保证浏览器实际使用的值与服务端冻结结果一致。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
+其余受控类型的首版定义：`StrictConfigSchema` 是形状由 `ZodRawShape` 表达的 Zod object schema，类型层只依赖 zod 的公开导出，未知键是否被拒绝由运行期探测判定（见 [插件与生命周期](plugins.md)），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本、装配 hash，以及每个模块的已解析配置 `config`。浏览器 realm 没有装配解析器，模块必须用握手下发的 `config` 启动而不是自带的 `defaults`，否则实际行为与装配声明不符且无法用 `configHash` 自证一致；`config` 缺失或未通过模块 `configSchema` 校验时按 `assembly-incompatible` 拒绝启动。`config` 只对 client 与 console 两个 realm 下发：服务端 realm 的实例由宿主自己创建，其配置含内容包下发的提示词、工具描述与部署期覆盖，属服务端内部参数，而 `serverAssembly` 会经 `/api/v1/session` 返回给玩家会话，因此只带 `configHash`。客户端以在下发值基础上补齐 `configSchema` 默认字段的方式构造最终配置，不重新执行 `transform`，保证浏览器实际使用的值与服务端冻结结果一致。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
 
 ## 4. 跨端会话与协议
 
