@@ -3,7 +3,9 @@
  * 依赖公共契约包的 modules 主题导出。
  * 禁止在此加载模块实现或解析真实装配；装配样例为手写 JSON。
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   CAPABILITY_ID_PATTERN,
   agentSlotSchema,
@@ -14,6 +16,7 @@ import {
   capabilityRefSchema,
   cardinalitySchema,
   contributionRefSchema,
+  emptyModuleConfigSchema,
   experimentAxisSchema,
   instanceScopeSchema,
   moduleIdSchema,
@@ -22,6 +25,7 @@ import {
   realmSchema,
   resolvedModuleSetSchema,
   uiExtensionSchema,
+  type StrictConfigSchema,
 } from "../src/index";
 import { expectInvalid, expectSchema, expectValid } from "./support";
 
@@ -271,5 +275,24 @@ describe("UI 贡献与实验轴", () => {
       { key: "", label: "记忆实现" },
     );
     expectInvalid(experimentAxisSchema, { key: "memory", label: "记忆实现", values: [Number.NaN] });
+  });
+});
+
+describe("严格配置 schema 的公共类型", () => {
+  it("StrictConfigSchema 不引用 zod 内部命名空间", () => {
+    // 公共契约只允许依赖 zod 的公开导出；z.core 的内部符号若回到类型里，这里会暴露。
+    const source = readFileSync(new URL("../src/modules.ts", import.meta.url), "utf8");
+    expect(source).not.toContain("z.core");
+  });
+
+  it("严格空 schema 拒绝未知键并接受空对象", () => {
+    const parsed = emptyModuleConfigSchema.safeParse({});
+    expect(parsed.success).toBe(true);
+    expect(emptyModuleConfigSchema.safeParse({ unexpected: 1 }).success).toBe(false);
+  });
+
+  it("声明为 StrictConfigSchema 的实参可直接参与 JSON Schema 生成", () => {
+    const schema: StrictConfigSchema = z.strictObject({ secondsPerTick: z.number().int().positive() });
+    expect(z.toJSONSchema(schema)).toMatchObject({ type: "object", additionalProperties: false });
   });
 });
