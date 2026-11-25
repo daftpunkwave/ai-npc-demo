@@ -37,6 +37,8 @@ PRAGMA busy_timeout = 5000;
 
 部分索引的过滤条件必须与代码查询逐字一致，否则优化器不会采用；仓库有测试按实际查询形状断言查询计划命中这些索引。
 
+0017 为 `observations` 增加表达式部分索引 `observations_day_passed (branch_id, agent_id, known_at_tick DESC, observation_seq DESC)`，过滤条件为 `json_extract(content_json, '$.eventType') = 'DayPassed'`。取最近一次 `DayPassed` 的查询原先要按分支与角色把全部观察读进内存再逐行解码 JSON，成本随会话增长；该索引让过滤、排序与 `LIMIT 1` 都在索引内完成。
+
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
 ```sql

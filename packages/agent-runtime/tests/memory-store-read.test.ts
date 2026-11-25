@@ -136,3 +136,27 @@ describe("memory store observation read", () => {
     expect(log.observationTableReads).toBe(0);
   });
 });
+
+describe("memory store latest DayPassed", () => {
+  it("在 SQL 里按 tick 取最新一条 DayPassed，不读整表也不排序", () => {
+    const rows = [{ known_at_tick: 24, observation_seq: 7 }];
+    const { port, log } = recordingStorage(rows);
+    const store = new MemoryStore(port, host, "wld-000000000001", "br-000000000001", "run-000000000001");
+
+    expect(store.latestDayPassed("human-independent")).toEqual({ tick: 24, observationSeq: 7 });
+    expect(log.rawQueries).toHaveLength(1);
+    const sql = log.rawQueries[0] as string;
+    // 过滤条件必须留在 SQL 里，才能命中 observations_day_passed 表达式部分索引。
+    expect(sql).toContain("json_extract(content_json, '$.eventType') = 'DayPassed'");
+    expect(sql).toContain("ORDER BY known_at_tick DESC, observation_seq DESC");
+    expect(sql).toContain("LIMIT 1");
+    expect(log.observationTableReads).toBe(0);
+  });
+
+  it("没有任何 DayPassed 时返回 null", () => {
+    const { port } = recordingStorage([]);
+    const store = new MemoryStore(port, host, "wld-000000000001", "br-000000000001", "run-000000000001");
+
+    expect(store.latestDayPassed("human-independent")).toBeNull();
+  });
+});
