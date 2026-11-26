@@ -8,8 +8,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import { jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@ai-npc/contracts";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
-import { parseYamlText } from "../loading/yaml";
-import { envReferenceName, loadConfigDocument, resolveConfigReference, type ConfigLoadContext } from "./load-config";
+import { envReferenceName, loadConfigDocument, type ConfigLoadContext } from "./load-config";
 import { configRefSchema } from "./schema";
 
 const positive = z.number().int().positive();
@@ -66,16 +65,24 @@ const pricingSchema = z.object({
 
 export type ModelLayout = z.infer<typeof modelLayoutSchema>;
 
+/**
+ * 加载模型布局，复用共享的 `loadConfigDocument` 管线：引用解析、YAML 解析、草稿回退、
+ * 缓存与错误格式化与其他配置完全一致。
+ *
+ * 唯一不同的是显式关闭该管线的通用 env 替换（`resolveEnv: false`）。
+ * 布局里的 `endpoint` 与 `externalModel` 用 `env:` 引用部署环境，`credentialRef`
+ * 保留为引用由传输适配器解析——这三者各有专用解析器与白名单；若通用替换作用于
+ * 整个文档，任意环境变量都能被写进布局，`parameters` 里的值还会被原样送进模型请求。
+ * 代价是 `parameters` 中的 `env:` 不被解析，配置文档已按此声明。
+ */
 export function loadModelLayout(modelLayoutRef: string, context: ConfigLoadContext): ModelLayout {
-  const ref = resolveConfigReference(modelLayoutRef, context, "model-layout");
-  const source = ref.kind === "file" ? ref.path : ref.configRef;
-  const data = ref.kind === "file" ? parseYamlText(ref.text, source) : ref.value;
-  const parsed = modelLayoutSchema.safeParse(data);
-  if (!parsed.success) throw schemaLoadingError(source, parsed.error);
-  if (parsed.data.layoutId !== modelLayoutRef) {
-    throw new LoadingError({ code: "reference", source, message: "模型布局 ID 与文件引用不一致" });
+  const loaded = loadConfigDocument(modelLayoutRef, modelLayoutSchema, context, "model-layout", undefined, {
+    resolveEnv: false,
+  });
+  if (loaded.value.layoutId !== modelLayoutRef) {
+    throw new LoadingError({ code: "reference", source: loaded.source, message: "模型布局 ID 与文件引用不一致" });
   }
-  return parsed.data;
+  return loaded.value;
 }
 
 export function loadModelPricing(context: ConfigLoadContext, ref = "pricing") {

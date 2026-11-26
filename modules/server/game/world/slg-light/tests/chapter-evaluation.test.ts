@@ -77,4 +77,29 @@ describe("章节评估权限与惰性计数", () => {
       cityResources: null,
     });
   });
+
+  it("章节评估时机与端口报告的章节长度跟随构造参数，而不是写死的默认值", () => {
+    const countsNeverRead = (): AgreementCounts => {
+      throw new Error("未到章节长度时不应读取协议计数");
+    };
+    for (const chapterLengthTicks of [96, 168]) {
+      // 取章节长度减一：无论长度是多少，这一刻都还没到终点。
+      const tx = new TestWorldTx(chapterLengthTicks - 1);
+      tx.put("campaign", "campaign", {
+        campaignId: "cmp-000000000001",
+        factionId: "human-neutral",
+        playerId: "player-1",
+        chapterId: "ch-000000000001",
+        startTick: 0,
+        status: "running",
+        outcome: null,
+      });
+      const port = createWorldPort(() => tx, emptyContent, createTestHost().ids, {
+        chapterLengthTicks,
+        allowChapterEvaluation: true,
+      });
+      expect(port.chapterLengthTicks()).toBe(chapterLengthTicks);
+      expect(port.evaluateChapter(countsNeverRead)).toBeUndefined();
+    }
+  });
 });

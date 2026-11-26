@@ -12,7 +12,7 @@ import {
   type ModuleDefinition,
   type StoragePort,
 } from "@ai-npc/contracts";
-import { validateRunSpec, type ContentPack, type LoadedConfig, type Roster, type RunSpec } from "@ai-npc/experiment";
+import { runSpecSchema, validateRunSpec, type ContentPack, type LoadedConfig, type Roster, type RunSpec } from "@ai-npc/experiment";
 import { buildRunManifest } from "./manifest";
 import { loadAssembly, resolveServerAssembly, type ResolvedServerAssembly } from "./assembly";
 
@@ -62,25 +62,40 @@ function failureOf(code: string, path: string, error: unknown): RunValidationFai
 /**
  * 创建 run：先预检，通过后冻结 manifest 并写入 ready 记录。
  *
- * 预检覆盖三件事：RunSpec 与内容包/名册的交叉校验、装配引用能否加载、装配能否解析。
+ * 预检覆盖四件事：RunSpec 结构是否符合严格 schema、与内容包/名册的交叉校验、
+ * 装配引用能否加载、装配能否解析。
+ * HTTP 入口的契约只把 runSpec 描述为 JSON 对象（由配置加载边界负责结构校验），
+ * 因此这里必须自己补上严格 schema——否则文件加载会被 schema 拒绝的字段形状，
+ * 经 HTTP 提交却能进入冻结清单。
  * 任一失败都返回 `preflight-failed` 与逐条原因且不落库——创建出无法启动的 run
  * 会让后续的清单核对与配额统计都不成立。
  */
-export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise<RunCreateResult> {
+export async function createRun(input: RunWriteInput, runSpec: unknown): Promise<RunCreateResult> {
   const failures: RunValidationFailure[] = [];
+  const parsed = runSpecSchema.safeParse(runSpec);
+  if (!parsed.success) {
+    const [first] = parsed.error.issues;
+    failures.push({
+      code: "run-spec-invalid",
+      path: first === undefined ? "runSpec" : `runSpec.${first.path.map(String).join(".")}`,
+      message: first?.message ?? "run 规格结构不合法",
+    });
+    return { runId: input.host.ids("run"), status: "preflight-failed", errors: failures };
+  }
+  const spec = parsed.data;
   // 名册必须按请求的 `rosterRef` 加载：用在线名册代替会拒绝有效请求，
   // 也会把与 RunSpec 不一致的名册冻结进 manifest。
   let roster: LoadedConfig<Roster> | undefined;
   try {
-    roster = input.loadRoster(runSpec.rosterRef);
-    validateRunSpec(runSpec, input.content, roster);
+    roster = input.loadRoster(spec.rosterRef);
+    validateRunSpec(spec, input.content, roster);
   } catch (error) {
     failures.push(failureOf("run-spec-invalid", "runSpec", error));
   }
 
   let resolved: ResolvedServerAssembly | null = null;
   try {
-    const assembly = loadAssembly(runSpec.moduleAssemblyRef, input.repoRoot);
+    const assembly = loadAssembly(spec.moduleAssemblyRef, input.repoRoot);
     resolved = await resolveServerAssembly(assembly, input.definitions, { content: input.content });
   } catch (error) {
     failures.push(failureOf("assembly-unresolved", "runSpec.moduleAssemblyRef", error));
@@ -95,7 +110,7 @@ export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise
   let sealed: Awaited<ReturnType<typeof buildRunManifest>>;
   try {
     sealed = await buildRunManifest({
-      runSpec,
+      runSpec: spec,
       content: { packId: input.content.pack.packId, contentVersion: input.contentVersion },
       roster: roster.value,
       resolved,
@@ -128,11 +143,11 @@ export async function createRun(input: RunWriteInput, runSpec: RunSpec): Promise
       run_id: runId,
       world_id: input.worldId,
       branch_id: runBranchId,
-      mode: runSpec.mode,
+      mode: spec.mode,
       // ready 表示预检与冻结已完成，等待显式 start；不在这里自动开跑。
       status: "ready",
       // 规范 JSON 往返会剔除 undefined 属性：存储层拒绝 undefined，且冻结值本就不该带它。
-      run_spec_json: canonicalJsonValue(runSpec),
+      run_spec_json: canonicalJsonValue(spec),
       manifest_json: canonicalJsonValue(sealed.manifest),
       manifest_hash: sealed.manifestHash,
       contaminated: 0,

@@ -40,7 +40,7 @@ experimentId: exp-memory-promise-v1   # optional; populated when created from an
 moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
-rosterRef: standard-15
+rosterRef: core-3         # 三个脚本都声明 rosterRef: core-3；与脚本不一致会在预检被拒绝
 modelLayoutRef: shared-model-layout-v1
 seed: run-seed-001
 player:
@@ -48,14 +48,13 @@ player:
   factionId: human-neutral
 mode: closed-loop
 initialState:
-  kind: snapshot
-  snapshotRef: watergate-common-start
+  kind: cold-start
 variant:
   id: structured-ledger
   profilePatchRefs: [memory-m1-structured-ledger]   # applied in order after the agent profiles
   agentIds: null            # null = every agent in the roster
 script:
-  scriptRef: s-promise      # optional; drives external inputs in audit/open-loop/closed-loop modes
+  scriptRef: s-promise      # optional; the script supplies external inputs for this run
   branch: keep
 clock:
   kind: controlled
@@ -67,7 +66,7 @@ failurePolicy: strict
 
 这是目标格式，引用内容与模块必须在实现时实际存在并通过 schema 与能力校验。clock.kind 表示所选时钟模块声明支持的运行模式，不会因此切到另一套隐式时钟实现。对 console/UI 贡献的选择也进入 assembly 版本，不能靠隐藏的硬编码菜单补足缺模块。
 
-每个新实验 run 独占 branchId，不允许指定复用活动分支。mode 取 live、audit、open-loop 或 closed-loop：live 接收自由玩家输入，后三者分别对应评估篇的审计重放、开环重决策与闭环分支。冷启、快照、合法观察历史重建分别声明，不混用。玩家设置与 console 布局不属于 RunSpec；它们可即时生效，但不能改变 assembly、规则或世界状态。
+每个新实验 run 独占 branchId，不允许指定复用活动分支。当前 schema 只接受两种 mode：live 接收自由玩家输入，对应 `clock.kind: realtime`；closed-loop 对应实验分支，要求 `clock.kind: controlled`。mode 与 clock.kind 必须成对匹配，预检拒绝不匹配的组合。audit 与 open-loop 依赖尚未实现的实验执行器，`initialState` 目前只接受 `cold-start`；快照与记忆重建的取值同样在执行器落地前被拒绝，避免配置写错却静默按冷启动执行。玩家设置与 console 布局不属于 RunSpec；它们可即时生效，但不能改变 assembly、规则或世界状态。
 
 ## 4. 双端设置分工
 
@@ -131,7 +130,16 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 ## 10. 完整配置文件（首版）
 
-所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找，找不到时仅对装配、模型布局、profile 与工具集（`assembly`、`model-layout`、`profile`、`toolset`）回退查询控制台保存的草稿（`config_drafts`）。`env:NAME` 形式的值在预检时从环境变量解析。
+所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找。
+
+`env:NAME` 的解析时机按文档分类，不能一概而论：
+
+- 装配、RunSpec、Agent profile、toolset 与价目：加载时由共享管线做深度 `env:` 替换，缺失或空值在预检期报错。
+- 模型布局：加载时不做通用替换，各字段按自己的时机解析。`endpoint` 与 `externalModel` 在宿主预检（`resolveModelEnv`）时按白名单取值，布局对象本身保留原始 `env:` 引用；`credentialRef` 始终保留为引用，由传输适配器在调用时解析；模型 `parameters` 内的 `env:` 不解析——任意环境变量经该字段可直达模型请求，保留原样才能在预检期暴露误用。
+
+三条路径都走同一条 `loadConfigDocument` 管线（引用解析、YAML、草稿回退、缓存、错误格式化一致），布局只显式关闭其中的通用 env 替换。
+
+草稿回退尚未接线：`ConfigDraftReader` 已定义、`config_drafts` 已建表，但宿主没有构造点，因此仓库文件找不到时不会回退到控制台草稿，而是直接报引用缺失。该能力属未交付项。
 
 > 本节示例描述首版的目标配置。实际绑定见 [config/assemblies — 装配文件](../../config/assemblies)，交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
@@ -342,7 +350,7 @@ repetitions: 3
 runOrder: rotate               # rotate the variant order on each repetition
 ```
 
-实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 取 `cold-start`（从内容包初态开始）、`snapshot`（引用快照）或 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）。在线模板另有 `config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用）。
+实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 当前只接受 `cold-start`（从内容包初态开始）；`snapshot`（引用快照）与 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）依赖尚未实现的实验执行器，预检会拒绝。在线模板另有 `config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用）。
 
 ### 10.4 玩家测试 preset `config/presets/*.yaml`（目标，尚未创建）
 
@@ -360,7 +368,7 @@ runSpecTemplate:
   initialState: { kind: snapshot, snapshotRef: latest }
 ```
 
-玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。
+玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。该 preset 依赖 `initialState.kind: snapshot`，需等实验执行器实现后才可用；当前 schema 会拒绝该取值。
 
 ### 10.5 价目 `config/pricing*.yaml`
 

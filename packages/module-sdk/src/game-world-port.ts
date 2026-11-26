@@ -101,6 +101,12 @@ export interface DelegationAllocation {
 
 /** 世界端口；campaign、指标、角色、队伍、群体、委托与证据位置由世界模块拥有。 */
 export interface GameWorldPort {
+  /**
+   * 一个章节的长度（tick），取自当前装配的世界模块配置。
+   * 剧情发布窗口与协议期限等「一个章节内」的判断一律读这里，
+   * 不再各自内联常量，否则装配改成非默认长度时只有部分规则跟随。
+   */
+  chapterLengthTicks(): number;
   campaign(): CampaignView | null;
   meters(): MetersView | null;
   character(agentId: string): CharacterView | null;

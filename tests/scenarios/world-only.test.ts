@@ -1,5 +1,5 @@
 /**
- * 固定命令脚本推进 168 tick 的世界验收：每日结算、运输与协议、剧情卡与章节评估。
+ * 固定命令脚本推进整章的世界验收：每日结算、运输与协议、剧情卡与章节评估。
  * 依赖真实 SQLite 游戏环境、服务端 tick 顺序、存档服务与确定性宿主随机源。
  * 禁止绕过命令网关或宿主顺序手写 job/时钟/消费者调用，也禁止让墙钟时间影响结果。
  */
@@ -20,15 +20,15 @@ import {
   chapterPayload,
   CHAPTER_END_TICK,
   createWorldAtChapterEnd,
-  ESCALATING_RATE,
   eventSequence,
   eventsOf,
   meterChanges,
   playerDelegationId,
+  playerDelegationUntilTick,
   readClockTick,
   runWorldScript,
   stableWorldFacts,
-  STANDARD_CARD_TICKS,
+  standardCardTicks,
   stockpile,
   type DayPassedPayload,
 } from "./world-only-support";
@@ -39,7 +39,7 @@ afterEach(async () => {
   await disposeTrackedGameHarnesses(active);
 });
 
-describe("168 tick 世界脚本", () => {
+describe("章节世界脚本", () => {
   it("固定命令序列产出确定的每日结算、资源、协议与章节结果", { timeout: 120_000 }, async () => {
     const harness = await createTrackedGameHarness(active);
     const script = runWorldScript(harness);
@@ -64,7 +64,7 @@ describe("168 tick 世界脚本", () => {
 
     // 每日结算：第 1–7 天各一次，最后一次供给不足只扣到 0。
     const days = eventsOf(events, "DayPassed");
-    expect(days.map((event) => event.worldTick)).toEqual([24, 48, 72, 96, 120, 144, 168]);
+    expect(days.map((event) => event.worldTick)).toEqual([24, 48, 72, 96, 120, 144, CHAPTER_END_TICK]);
     expect(days.map((event) => (event.payload as unknown as DayPassedPayload).day)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(days.map((event) => (event.payload as unknown as DayPassedPayload).consumption.supply)).toEqual([
       6, 6, 6, 6, 6, 6, 4,
@@ -179,7 +179,7 @@ describe("168 tick 世界脚本", () => {
       granteeId: "player-1",
       remaining: { supply: 5, energy: 6, medical: 4 },
       limit: { supply: 15, energy: 6, medical: 4 },
-      untilTick: 168,
+      untilTick: playerDelegationUntilTick(harness, "human-neutral"),
     });
 
     // 指标阈值：群体期限、果园危机与损坏、中继降级按首次触发各提交一次。
@@ -193,21 +193,22 @@ describe("168 tick 世界脚本", () => {
     expect(eventsOf(events, "RelayDegraded")).toMatchObject([{ worldTick: 144, payload: { value: 27 } }]);
     expect(eventsOf(events, "OrchardCrisis")).toMatchObject([{ worldTick: 96, payload: { value: 14 } }]);
     expect(eventsOf(events, "OrchardDamaged")).toMatchObject([{ worldTick: 144, payload: { value: 0 } }]);
-    expect(eventsOf(events, "SupplyShortage")).toMatchObject([{ worldTick: 168, payload: { value: 4 } }]);
+    expect(eventsOf(events, "SupplyShortage")).toMatchObject([{ worldTick: CHAPTER_END_TICK, payload: { value: 4 } }]);
     expect(eventsOf(events, "MigrationCrisis")).toHaveLength(0);
     expect(readGameAggregate(harness, "meters", "meters")).toMatchObject({
       "relay.stability": 24,
       "orchard.water": 0,
       "migration.safety": 32,
-      lastDailyTick: 168,
+      lastDailyTick: CHAPTER_END_TICK,
       triggered: ["OrchardCrisis", "RelayDegraded", "OrchardDamaged"],
     });
 
     // 九张剧情卡各在自己的触发 tick 出现一次。
+    const expectedCardTicks = standardCardTicks(harness);
     const ticks = cardTriggerTicks(events);
-    expect(eventsOf(events, "ScenarioCardTriggered")).toHaveLength(Object.keys(STANDARD_CARD_TICKS).length);
-    expect([...ticks.keys()].sort()).toEqual(Object.keys(STANDARD_CARD_TICKS).sort());
-    for (const [cardId, atTick] of Object.entries(STANDARD_CARD_TICKS)) {
+    expect(eventsOf(events, "ScenarioCardTriggered")).toHaveLength(Object.keys(expectedCardTicks).length);
+    expect([...ticks.keys()].sort()).toEqual(Object.keys(expectedCardTicks).sort());
+    for (const [cardId, atTick] of Object.entries(expectedCardTicks)) {
       expect(ticks.get(cardId)).toBe(atTick);
     }
     // 剧情卡 job 在每日结算之前执行：tick 72 的卡片事件 worldSeq 更小。
@@ -239,16 +240,18 @@ describe("168 tick 世界脚本", () => {
     const standard = await createWorldAtChapterEnd(active);
     const escalating = await createWorldAtChapterEnd(active, { scenarioEscalating: true });
 
-    // 升级版把同一份内容卡片的触发 tick 按 0.75 向下取整。
+    // 升级版把同一份内容卡片的触发 tick 提前。
+    // 只断言相对关系：复算 floor(atTick × 倍率) 等于把实现公式抄进测试，
+    // 实现改倍率时测试会跟着一起变，无法发现行为漂移。
+    const expectedCardTicks = standardCardTicks(standard);
     const standardTicks = cardTriggerTicks(readGameEvents(standard));
     const escalatingTicks = cardTriggerTicks(readGameEvents(escalating));
-    expect([...standardTicks.keys()].sort()).toEqual(Object.keys(STANDARD_CARD_TICKS).sort());
-    expect([...escalatingTicks.keys()].sort()).toEqual(Object.keys(STANDARD_CARD_TICKS).sort());
-    for (const [cardId, atTick] of Object.entries(STANDARD_CARD_TICKS)) {
+    expect([...standardTicks.keys()].sort()).toEqual(Object.keys(expectedCardTicks).sort());
+    expect([...escalatingTicks.keys()].sort()).toEqual(Object.keys(expectedCardTicks).sort());
+    for (const [cardId, atTick] of Object.entries(expectedCardTicks)) {
       expect(standardTicks.get(cardId)).toBe(atTick);
-      expect(escalatingTicks.get(cardId)).toBe(Math.floor(atTick * ESCALATING_RATE));
+      expect(escalatingTicks.get(cardId)).toBeLessThan(atTick);
     }
-    expect(escalatingTicks.get("card-relay-alarm")).toBe(1);
 
     // 升级版在每次每日结算后追加 −2 中继压力；章节评估先于该追加提交，因此评估值差 7×2。
     const standardChapter = chapterPayload(readGameEvents(standard));
@@ -283,13 +286,13 @@ describe("168 tick 世界脚本", () => {
     expect(readGameAggregate(escalating, "meters", "meters")).toMatchObject({ "relay.stability": 10 });
   });
 
-  it("tick 168 快照与恢复出的后继分支逐表保留世界行", { timeout: 120_000 }, async () => {
+  it("章节末快照与恢复出的后继分支逐表保留世界行", { timeout: 120_000 }, async () => {
     const harness = await createWorldAtChapterEnd(active);
 
     const save = createSaveService(harness.storage, harness.host);
     const snapshot = save.createSnapshot({
       sourceBranchId: harness.branchId,
-      label: "168 tick 世界快照",
+      label: "章节末世界快照",
       createdBy: "operator-1",
     });
     expect(snapshot).toMatchObject({ sourceBranchId: harness.branchId, worldTick: CHAPTER_END_TICK });

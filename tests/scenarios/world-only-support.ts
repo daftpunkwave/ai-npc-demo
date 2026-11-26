@@ -1,10 +1,11 @@
 /**
- * 168 tick 世界验收的共享脚本：固定命令序列、逐 tick 宿主推进、事件投影与只读事实读取。
+ * 章节世界验收的共享脚本：固定命令序列、逐 tick 宿主推进、事件投影与只读事实读取。
  * 依赖真实 SQLite 游戏环境、服务端 tick 顺序与确定性宿主随机源。
  * 禁止绕过命令网关或宿主顺序手写 job/时钟/消费者调用，也禁止让墙钟时间影响结果。
  */
 import type { AuthContext, CommandReceipt, CommandType, Json } from "@ai-npc/contracts";
 import { advanceWorldTick } from "@ai-npc/app-server";
+import { defaultChapterLengthTicks } from "@ai-npc/mod-game-world-slg-light";
 import {
   createTrackedGameHarness,
   gameCommandEnvelope,
@@ -17,24 +18,35 @@ import {
   type GameHarness,
 } from "../integration/game-support";
 
-/** 首章最后一个 tick：tick 0–167 为七天，tick 168 提交章节评估。 */
-export const CHAPTER_END_TICK = 168;
+/**
+ * 首章最后一个 tick，取自世界模块定义的默认章节长度。
+ * 这里不复制具体数值：改默认长度时夹具随之变化，测试失败会指向行为变化而不是夹具常量。
+ */
+export const CHAPTER_END_TICK = defaultChapterLengthTicks;
 
-/** 标准剧情节奏的卡片触发 tick；内容包 watergate-v1 的 trigger.atTick 固定值。 */
-export const STANDARD_CARD_TICKS: Readonly<Record<string, number>> = {
-  "card-relay-alarm": 2,
-  "card-injured-migrants": 6,
-  "card-water-dispute": 26,
-  "card-repair-exchange": 30,
-  "card-flood-delay": 44,
-  "card-attack-rumor": 50,
-  "card-supply-spoilage": 72,
-  "card-migration-season": 96,
-  "card-council": 144,
-};
+/**
+ * 标准剧情节奏的卡片触发 tick，直接从 harness 已加载的内容包读取。
+ * 复制一份常量表会让内容包调整 atTick 后测试继续按旧值断言，从而掩盖真实行为漂移。
+ */
+export function standardCardTicks(harness: GameHarness): Readonly<Record<string, number>> {
+  const scenario = harness.gameContent.scenarios.get(harness.gameContent.defaultScenario);
+  if (scenario === undefined) {
+    throw new Error("内容包缺少默认剧情");
+  }
+  return Object.fromEntries(scenario.cards.map((card) => [card.cardId, card.trigger.atTick]));
+}
 
-/** 升级版剧情节奏倍率：触发 tick 按 0.75 向下取整。 */
-export const ESCALATING_RATE = 0.75;
+/**
+ * 开局玩家委托的期限 tick，取自内容包的开局条目。
+ * 委托期限是内容参数，不应在验收断言里另抄一份。
+ */
+export function playerDelegationUntilTick(harness: GameHarness, factionId: string): number {
+  const start = harness.content.index.starts.get(factionId);
+  if (start === undefined) {
+    throw new Error(`内容包缺少派系「${factionId}」的开局条目`);
+  }
+  return start.playerDelegation.untilTick;
+}
 
 /** 履约条款：玩家在 tick 48 前把 10 点供给从灰港运到果园。 */
 const FULFILLED_TERM: Json = {

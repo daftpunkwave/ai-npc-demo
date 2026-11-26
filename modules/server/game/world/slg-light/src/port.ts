@@ -7,6 +7,7 @@
 import { DomainError, type ResourceAmounts } from "@ai-npc/contracts";
 import { gameModuleIds, principalsAudience, totalAmount, type AgreementCounts, type GameContent, type GameIdFactory, type GameWorldPort, type ScopedWorldTxFactory } from "@ai-npc/module-sdk";
 import { runChapterEvaluation } from "./settlement";
+import { defaultChapterLengthTicks } from "./definition";
 import { campaignAggregateId, metersAggregateId } from "./port-aggregates";
 import { createWorldQueries } from "./port-queries";
 import { createWorldEntityOps } from "./port-entity-ops";
@@ -29,9 +30,9 @@ export interface WorldPortOptions {
   readonly allowChapterEvaluation: boolean;
 }
 
-/** 直接构造世界端口时的规则参数：章节长度 168，并允许调用方触发评估（测试与宿主直接构造）。 */
+/** 直接构造世界端口时的规则参数：用定义的默认章节长度，并允许调用方触发评估（测试与宿主直接构造）。 */
 const defaultWorldPortOptions: WorldPortOptions = {
-  chapterLengthTicks: 168,
+  chapterLengthTicks: defaultChapterLengthTicks,
   allowChapterEvaluation: true,
 };
 
@@ -51,6 +52,10 @@ export function createWorldPort(
     ...createWorldEntityOps({ txFor, content }),
     ...createWorldDelegationOps({ txFor, ids, queries: { findDelegations } }),
     ...createWorldMeterOps({ txFor }),
+
+    chapterLengthTicks(): number {
+      return chapterLengthTicks;
+    },
 
     evaluateChapter(counts: () => AgreementCounts): { readonly stopClock: true } | undefined {
       if (!allowChapterEvaluation) {

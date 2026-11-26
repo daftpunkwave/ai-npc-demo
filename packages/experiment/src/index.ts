@@ -36,15 +36,15 @@ export type {
 } from "./content/schema/index";
 export {
   loadConfigDocument,
-  createConfigDocumentCache,
   loadRoster,
   loadRunSpec,
   resolveConfigReference,
   validateRoster,
   validateRunSpec,
 } from "./config/load-config";
+export { createConfigDocumentCache } from "./config/config-document-cache";
+export type { ConfigDocumentCache } from "./config/config-document-cache";
 export type {
-  ConfigDocumentCache,
   ConfigDraftKind,
   ConfigDraftReader,
   ConfigLoadContext,

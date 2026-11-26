@@ -18,6 +18,7 @@ import {
   loadConfigDocument,
   loadContentPack,
   loadModelFixtures,
+  loadModelLayout,
   loadRoster,
   loadRunSpec,
   resolveConfigReference,
@@ -572,5 +573,79 @@ describe("RunSpec 交叉检查", () => {  const content = loadContentPack(conten
       ),
     );
     expect(rosterError.path).toBe("rosterRef");
+  });
+
+  it("拒绝尚无运行时消费者的 mode 与 initialState 取值", () => {
+    // audit 与 open-loop 依赖尚未实现的实验执行器；接受它们会让配置写错也启动成功。
+    for (const mode of ["audit", "open-loop"]) {
+      const result = runSpecSchema.safeParse({ ...run.value, mode });
+      expect(result.success).toBe(false);
+    }
+    // snapshot 与 rebuild 需要执行器按快照初始化，当前一律按冷启动执行，必须显式拒绝。
+    for (const initialState of [
+      { kind: "snapshot", snapshotRef: "some-snapshot" },
+      { kind: "rebuild", snapshotRef: "some-snapshot" },
+    ]) {
+      const result = runSpecSchema.safeParse({ ...run.value, initialState });
+      expect(result.success).toBe(false);
+    }
+    // 已实现的取值仍被接受。
+    expect(runSpecSchema.safeParse({ ...run.value, mode: "live" }).success).toBe(true);
+    expect(runSpecSchema.safeParse({ ...run.value, mode: "closed-loop" }).success).toBe(true);
+    expect(runSpecSchema.safeParse({
+      ...run.value,
+      initialState: { kind: "cold-start" },
+    }).success).toBe(true);
+  });
+
+  it("拒绝与 mode 不匹配的 clock.kind", () => {
+    // live 由实时时钟驱动、closed-loop 由受控时钟驱动；写错组合在预检期失败而不是静默运行。
+    const mismatchedLive = captureLoadingError(() =>
+      validateRunSpec({ ...run.value, mode: "live", clock: { kind: "controlled" } }, content),
+    );
+    expect(mismatchedLive.path).toBe("clock.kind");
+    expect(mismatchedLive.message).toContain("realtime");
+
+    const mismatchedLoop = captureLoadingError(() =>
+      validateRunSpec({ ...run.value, mode: "closed-loop", clock: { kind: "realtime" } }, content),
+    );
+    expect(mismatchedLoop.path).toBe("clock.kind");
+    expect(mismatchedLoop.message).toContain("controlled");
+
+    // 匹配的组合不被拒绝。
+    expect(validateRunSpec({ ...run.value, mode: "live", clock: { kind: "realtime" } }, content)).toBeUndefined();
+  });
+});
+
+describe("模型布局的环境变量边界", () => {
+  const layoutYaml = [
+    "schemaVersion: 1",
+    "layoutId: env-boundary-layout",
+    "connections:",
+    "  fixture:",
+    "    adapterId: platform.model-transport.deterministic",
+    "models:",
+    "  m1:",
+    "    connectionId: fixture",
+    "    externalModel: env:NPC_OPENAI_COMPAT_MODEL",
+    "    parameters: { apiKey: \"env:LEAKED_SECRET\" }",
+    "    capabilities: { toolCalling: true, strictTools: false, structuredOutput: none, assistantReplay: verbatim, contextWindowTokens: 1000, maxOutputTokens: 100, embedding: false, embeddingDimensions: null }",
+    "    limits: { maxConcurrent: 1, requestsPerMinute: 1, tokensPerMinute: 1, requestTimeoutMs: 1000 }",
+    "mounts: []",
+    "",
+  ].join("\n");
+
+  it("parameters 中的 env: 不会被解析，避免任意环境变量进入模型请求", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-layout-env-"));
+    try {
+      writeFileSync(join(tempDir, "env-boundary-layout.yaml"), layoutYaml, "utf8");
+      const layout = loadModelLayout("env-boundary-layout", { configDir: tempDir });
+      // 原样保留为字符串引用；解析它会把密钥经 parameters 送进模型请求。
+      expect(layout.models["m1"]?.parameters).toEqual({ apiKey: "env:LEAKED_SECRET" });
+      // endpoint 与 externalModel 仍是有意为之的例外：由宿主按白名单解析。
+      expect(layout.models["m1"]?.externalModel).toBe("env:NPC_OPENAI_COMPAT_MODEL");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

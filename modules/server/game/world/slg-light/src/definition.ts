@@ -7,10 +7,16 @@ import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
+/**
+ * 章节长度默认值（tick）。这是全仓唯一的章节长度字面量：
+ * 端口、结算、剧情发布窗口与协议期限都从端口读取实际装配值，不再各自复制一份。
+ */
+export const defaultChapterLengthTicks = 168;
+
 /** 轻数值世界规则实现经校验的模块配置。 */
 export const worldConfigSchema = z
   .object({
-    chapterLengthTicks: z.number().int().positive().default(168),
+    chapterLengthTicks: z.number().int().positive().default(defaultChapterLengthTicks),
   })
   .strict();
 
@@ -45,7 +51,7 @@ const worldDefinition: ModuleDefinition = {
   ],
   requiresRemote: [],
   configSchema: worldConfigSchema,
-  defaults: { chapterLengthTicks: 168 },
+  defaults: { chapterLengthTicks: defaultChapterLengthTicks },
   stateSchemaVersion: 1,
   ownsAggregates: [
     "campaign",

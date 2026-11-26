@@ -45,7 +45,8 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
     return "obligor-not-party";
   }
   const deadline = termDeadline(term);
-  if (deadline <= context.tx.worldTick || deadline > context.tx.worldTick + 168) {
+  // 截止窗口是一个章节长度，取自世界端口；与提案的期限上限共用同一权威值。
+  if (deadline <= context.tx.worldTick || deadline > context.tx.worldTick + ports["game.world"].chapterLengthTicks()) {
     return "deadline-out-of-range";
   }
   if (term.kind === "deliver") {

@@ -4,7 +4,7 @@
  * 约束与禁忌：不启动 Agent 运行时、不推进时钟步进循环、不写世界状态；失败时不留下半个 run 或半个 artifact。
  */
 import type { HostServices, Json, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
-import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster, RunSpec } from "@ai-npc/experiment";
+import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster } from "@ai-npc/experiment";
 import { createRun, type RunCreateResult } from "./run-write";
 import { exportRun } from "./run-export";
 import { createExperiment, type ExperimentCreateResult } from "./experiment-write";
@@ -31,7 +31,11 @@ export interface RunWritesInput {
 
 /** 写入端口：控制台评估接口的写操作入口。 */
 export interface RunWrites {
-  createRun(runSpec: RunSpec): Promise<RunCreateResult>;
+  /**
+   * 创建 run。入参来自 HTTP 边界，因此按未知值接收：结构严格校验由 createRun
+   * 用与配置文件相同的 RunSpec schema 完成，避免两个入口对同一字段形状给出不同结论。
+   */
+  createRun(runSpec: unknown): Promise<RunCreateResult>;
   /** 启动或恢复 run：置为 running 并确保分支时钟为运行态。 */
   startRun(runId: string, request: { readonly operationId: string; readonly principalId: string }): RunControlResult;
   /** 停止 run：置为 paused 并同步时钟。 */
