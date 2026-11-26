@@ -81,9 +81,11 @@ export function ConsoleShell(input: {
                     ? "模型挂载"
                     : page.extensionId.includes("faction-ops")
                       ? "势力运营"
-                      : page.extensionId.includes("debug")
-                        ? "调试"
-                        : "可观测");
+                      : page.extensionId.includes("evaluation")
+                        ? "评估与对比"
+                        : page.extensionId.includes("debug")
+                          ? "调试"
+                          : "可观测");
             return (
               <button
                 type="button"
@@ -128,8 +130,8 @@ export function ConsoleShell(input: {
           {selected === null ? (
             <section className="console-denied" data-testid="console-role-denied">
               <span className="console-eyebrow">角色边界</span>
-              <h1>当前角色没有可打开的首批页面</h1>
-              <p>评估者只能读取 run 与报告；对应页面将在评估工作流接入后装配。</p>
+              <h1>当前角色没有可打开的页面</h1>
+              <p>当前装配未包含该角色可访问的控制台页面模块。</p>
             </section>
           ) : (
             <ContributionBoundary extensionId={selected.extensionId}>

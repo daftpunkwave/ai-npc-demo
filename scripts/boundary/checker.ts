@@ -7,6 +7,7 @@ import { extname } from "node:path";
 import { RULE_DEPENDENCY_GRAPH, RULE_MODULE_REALM, SCRIPT_EXTENSIONS } from "./constants";
 import { checkDefinitionFileImports, isModuleDefinitionFile } from "./definition";
 import { checkDependencyGraph } from "./dependency-graph";
+import { checkSourceFileLengths } from "./file-length";
 import { dedupeAndSort, violation } from "./finding";
 import { checkFileHeader } from "./header";
 import { inspectImport } from "./import-rules";
@@ -138,6 +139,7 @@ export function checkBoundaries(input: BoundaryCheckInput): readonly BoundaryVio
 
   violations.push(...checkModuleManifests(packages, modulePackages));
   violations.push(...checkDependencyGraph(packages, productionImports));
+  violations.push(...checkSourceFileLengths(files));
   return dedupeAndSort(violations);
 }
 

@@ -11,11 +11,11 @@
 
 ## 规则
 
-- `campaign.start` 建立 campaign、三个指标、十二位角色、八支队伍、群体、证据位置与九份委托，并安排群体期限 job。
+- `campaign.start` 建立 campaign、三个指标、十一位角色（8 名公社支持者与 3 名外域 Agent；4 名 AI 党魁以派系主体运行，不建 `character` 聚合）、八支队伍、群体、证据位置与九份委托，并安排群体期限 job。
 - 每日结算按水闸分配计算中继与果园，按迁徙季与隘口道路计算迁徙安全，再消耗公共供给；结果截断在 0–100。
 - 首次低于阈值才发布危机事件；中继恢复到 30 以上发布恢复事件。每日结算以 `lastDailyTick` 防止同 tick 重复执行。
 - 同一主体对同一库存点的多份有效委托按 `delegationId` 字典序逐份扣减；资源不足时整笔失败，不留下部分余额变化。`drawAuthority` 的余额按资源合计，委托 ID 取稳定首份，到期 tick 取有效委托中的最早值。
-- 章节评估在配置的 `chapterLengthTicks` 到达后由 `game.agreements` 的章节终点时钟步骤调用 `evaluateChapter` 触发，默认 tick 168；只有协议 provider 的步骤或宿主可以触发，其他模块调用会被拒绝。评估结果写入 campaign，随后暂停时钟并保留存档。
+- 章节评估在配置的 `chapterLengthTicks` 到达后由 `game.agreements` 的章节终点时钟步骤调用 `evaluateChapter` 触发，默认 tick 168；只有协议 provider 的步骤或宿主可以触发，其他模块调用会被拒绝。评估结果与 `cityResources` 交接快照（内容包省略该字段时写 `null`）写入 `ChapterStageEvaluated` 与 campaign，随后登记持久停止点并由收尾路径暂停时钟、保留存档。
 
 ## 参数与限制
 

@@ -1,7 +1,7 @@
 /**
- * 管理 WS 连接、订阅、玩家投影增量发布、有界重放与心跳活性；会话/票据、帧处理、重放缓冲与发送出口由独立模块负责。
+ * 管理 WS 连接、订阅、玩家投影增量发布与有界重放；会话/票据、帧处理、重放缓冲与发送出口由独立模块负责。
  * 依赖公共契约的投影类型、权限回调、注入时钟、会话注册表、重放缓冲与发送器。
- * 禁止无限保留过期会话、未消费票据或断线重放缓冲，也禁止在慢连接上堆积推送；禁止让半开连接继续占用计数。
+ * 禁止无限保留过期会话、未消费票据或断线重放缓冲，也禁止在慢连接上堆积推送。
  */
 import {
   protocolVersion,
@@ -14,7 +14,14 @@ import { handleClientMessage } from "./client-messages";
 import { HeartbeatProbe } from "./heartbeat-probe";
 import { ReplayStore } from "./replay-store";
 import { SessionRegistry } from "./session-registry";
+import { ConnectionAdmission } from "./stream-connections";
 import { SocketSender } from "./stream-delivery";
+import {
+  publishProjection,
+  resyncProjection,
+  type ProjectionBaseline,
+  type ProjectionPublisherInput,
+} from "./stream-publish";
 import {
   appendedItems,
   changedFields,
@@ -50,27 +57,23 @@ export class StreamHub {
   private readonly connections = new Map<StreamSocket, Connection>();
   /** 每个会话的活动连接数；用于判断重放缓冲是否仍绑定在线连接，并限制单会话连接数。 */
   private readonly sessionConnections = new Map<string, number>();
-  /** 全局连接上限与单会话连接上限；与其它 hubLimits 同源，不在此另设默认。 */
-  private readonly maxConnections: number;
-  private readonly maxConnectionsPerSession: number;
+  /** 玩家连接计数由本类与接纳模块共享同一可变单元，避免两处计数漂移。 */
+  private readonly playerConnections = { count: 0 };
+  private readonly admission: ConnectionAdmission;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastSweepAt: number;
-  private playerConnections = 0;
-  private branchId: string;
-  private generation = 0;
-  private streamSeq = 0;
-  private projectionVersion = 0;
-  private readonly consoleSequences = new Map<StreamChannel, number>();
   /** 心跳间隔；半开连接没有 close 事件，只能靠定时探测回收。 */
   private readonly heartbeatIntervalMs: number;
   /** 连接活性探测器：超时回收与 ping 推送都在其中，本类只提供依赖。 */
   private readonly probe: HeartbeatProbe;
-  /** 上一份投影的顶层只读副本；用于识别新增对白与提醒。 */
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
-  private lastProjection: PlayerProjection | null;
-  /** 上一份投影各顶层字段的序列化文本；不可变且避免每次递归深比较。 */
-  private lastFieldText: Map<string, string> | null;
+  private branchId: string;
+  private generation = 0;
+  /** 流游标：发布模块直接推进其中的序号与版本。 */
+  private readonly cursor = { streamSeq: 0, projectionVersion: 0 };
+  private readonly consoleSequences = new Map<StreamChannel, number>();
+  /** 增量基线：上一份投影与其各顶层字段文本，由发布模块维护。 */
+  private readonly baseline: ProjectionBaseline = { projection: null, fieldText: null };
   private closed = false;
 
   constructor(options: StreamHubOptions) {
@@ -78,8 +81,6 @@ export class StreamHub {
     this.now = options.now ?? (() => Date.now());
     const limits = hubLimits(options);
     this.sweepIntervalMs = limits.sweepIntervalMs;
-    this.maxConnections = limits.maxConnections;
-    this.maxConnectionsPerSession = limits.maxConnectionsPerSession;
     this.heartbeatIntervalMs = limits.heartbeatIntervalMs;
     this.branchId = "";
     this.lastSweepAt = this.now();
@@ -108,14 +109,15 @@ export class StreamHub {
       projection: options.projection,
       // 分支身份每次现取：恢复或重开会切换在线分支，快照必须携带当时的身份。
       snapshotIdentity: () => ({ worldId: options.worldId, branchId: this.branchId }),
-      sequence: () => ({ streamSeq: this.streamSeq, projectionVersion: this.projectionVersion }),
+      sequence: () => ({ streamSeq: this.cursor.streamSeq, projectionVersion: this.cursor.projectionVersion }),
       ...(options.channelSnapshot === undefined
         ? {}
         : { channelSnapshot: options.channelSnapshot }),
       channelSequence: (channel) => this.consoleSequences.get(channel) ?? 0,
       maxBufferedBytes: limits.maxBufferedBytes,
     });
-    // 探测器只拿连接集合与两个出口；超时回收走本类的 disconnect，确保计数同步递减。
+    // 探测器只读连接集合与活跃时间，超时回收必须走 disconnect，
+    // 否则玩家连接计数不会递减，宿主的「全员断线自动暂停」不会触发。
     this.probe = new HeartbeatProbe({
       connections: () => this.connections,
       disconnect: (socket) => {
@@ -128,8 +130,27 @@ export class StreamHub {
       timeoutMs: limits.heartbeatTimeoutMs,
     });
     const initial = options.projection();
-    this.lastProjection = Object.freeze({ ...initial });
-    this.lastFieldText = fieldTexts(initial);
+    this.baseline.projection = Object.freeze({ ...initial });
+    this.baseline.fieldText = fieldTexts(initial);
+    this.admission = new ConnectionAdmission({
+      options,
+      now: this.now,
+      sessions: this.sessions,
+      sender: this.sender,
+      branchId: () => this.branchId,
+      connections: this.connections,
+      sessionConnections: this.sessionConnections,
+      playerConnections: this.playerConnections,
+      onPlayerConnectionsChanged: (connected) => {
+        this.notifyPlayerConnections(connected);
+      },
+      onMessage: (socket, raw) => {
+        this.handleMessage(socket, raw);
+      },
+      onDisconnected: (connection) => {
+        this.replay.touch(connection.sessionId, playerChannel);
+      },
+    });
   }
 
   /** 设置分支；只在启动装配时调用一次，之后的切换走 applyBranchChange。 */
@@ -163,83 +184,16 @@ export class StreamHub {
   }
 
   /**
-   * 消费票据并建立连接：无论校验是否通过票据都不再可用。
-   * 成功时发送 hello；只有票据本身不可用（缺失、过期、已消费、被容量淘汰）才用 4408，
-   * 票据有效但其绑定的会话已失效时仍用 4401。
-   * 两者不能共用一个关闭码：票据过期是重新申请票据就能恢复的握手失败，
-   * 若复用会话关闭码，客户端会清除仍然有效的会话令牌并停止重连。
+   * 消费票据并建立连接：票据校验、容量上限、连接计数与关闭清理由接纳模块负责。
+   * 票据不可用与会话失效使用不同关闭码，见接纳模块的说明。
    */
   accept(socket: StreamSocket, ticketValue: string | undefined): void {
-    const ticket = this.sessions.takeTicket(ticketValue);
-    if (ticket === undefined || ticket.expiresAt <= this.now()) {
-      this.sender.close(socket, streamCloseCodes.ticketInvalid, "invalid ticket");
-      return;
-    }
-    const session = this.sessions.activeSession(ticket.sessionId);
-    if (session === null) {
-      this.sender.close(socket, streamCloseCodes.sessionInvalid, "session expired");
-      return;
-    }
-    // 容量检查必须在注册监听与计入计数之前：超限连接既不能占 Map 记录，
-    // 也不能让 sessionConnections 与 playerConnections 留下无对应连接的计数。
-    // 拒绝时用 reject 而非 close：连接不在注册表内，若只发关闭帧等对端回应，
-    // 半开状态下没有任何清理路径会回收它。
-    if (this.connections.size >= this.maxConnections) {
-      this.sender.reject(socket, 1013, "too many connections");
-      return;
-    }
-    if ((this.sessionConnections.get(session.sessionId) ?? 0) >= this.maxConnectionsPerSession) {
-      this.sender.reject(socket, 1013, "too many session connections");
-      return;
-    }
-    const channels = this.options.channelsFor(session.auth);
-    const connection: Connection = {
-      socket,
-      sessionId: session.sessionId,
-      isPlayer: channels.includes(playerChannel),
-      subscriptions: new Set(),
-      pendingSnapshots: new Set(),
-      lastSeenAt: this.now(),
-    };
-    this.connections.set(socket, connection);
-    this.sessionConnections.set(session.sessionId, (this.sessionConnections.get(session.sessionId) ?? 0) + 1);
-    if (connection.isPlayer) {
-      this.playerConnections += 1;
-      this.notifyPlayerConnections();
-    }
-    socket.on("close", () => {
-      this.disconnect(socket);
-    });
-    socket.on("error", () => {
-      this.disconnect(socket);
-    });
-    socket.on("message", (data) => {
-      // 任何合法帧都先记账再解析：半开判定看的是「对端还在不在」，
-      // 而不是「这一帧是否被业务接受」，否则非法帧会被误当成失联证据。
-      connection.lastSeenAt = this.now();
-      this.handleMessage(socket, data.toString());
-    });
-    this.sender.sendMessage(socket, {
-      type: "hello",
-      protocolVersion,
-      principalId: session.auth.principalId,
-      channels,
-    });
+    this.admission.accept(socket, ticketValue);
   }
 
   /** 连接关闭后的清理；重复调用保持幂等。 */
   disconnect(socket: StreamSocket): void {
-    const connection = this.connections.get(socket);
-    if (connection === undefined) {
-      return;
-    }
-    this.connections.delete(socket);
-    this.decrementSessionConnection(connection.sessionId);
-    if (connection.isPlayer) {
-      this.playerConnections = Math.max(0, this.playerConnections - 1);
-      this.notifyPlayerConnections();
-    }
-    this.replay.touch(connection.sessionId, playerChannel);
+    this.admission.disconnect(socket);
   }
 
   /** 处理客户端帧：交给独立的帧处理模块，连接与竞态由流中心持有。 */
@@ -252,7 +206,7 @@ export class StreamHub {
         sender: this.sender,
         channelsFor: this.options.channelsFor,
         channelProvided: (channel) => this.channelProvided(channel),
-        streamSeq: () => this.streamSeq,
+        streamSeq: () => this.cursor.streamSeq,
       },
       socket,
       raw,
@@ -290,53 +244,7 @@ export class StreamHub {
     this.ensureSweepTimer();
     this.maybeSweep();
     // 投影读取失败直接向上抛出：全库没有可静默跳过的“未初始化”错误文本，吞错会掩盖真实故障。
-    const projection = this.options.projection();
-    const appends = this.lastProjection === null ? [] : appendedItems(this.lastProjection, projection);
-    const changed = changedFields(this.lastProjection, this.lastFieldText, projection);
-    this.lastProjection = Object.freeze({ ...projection });
-    this.lastFieldText = changed.texts;
-    this.streamSeq += 1;
-    this.projectionVersion += 1;
-    this.replay.append({ streamSeq: this.streamSeq, projectionVersion: this.projectionVersion, set: changed.set });
-    const deltaPayload = JSON.stringify({
-      type: "delta",
-      channel: playerChannel,
-      streamSeq: this.streamSeq,
-      projectionVersion: this.projectionVersion,
-      set: changed.set,
-    });
-    for (const connection of [...this.connections.values()]) {
-      if (!connection.subscriptions.has(playerChannel)) {
-        continue;
-      }
-      if (this.sessions.activeSession(connection.sessionId) === null) {
-        continue;
-      }
-      if (connection.pendingSnapshots.has(playerChannel)) {
-        this.sender.flushPendingSnapshot(connection);
-        if (connection.pendingSnapshots.has(playerChannel)) {
-          continue;
-        }
-      }
-      if (!this.sender.deliver(connection, deltaPayload)) {
-        connection.pendingSnapshots.add(playerChannel);
-        continue;
-      }
-      // 同一 streamSeq 的新对白/提醒按单条追加；慢连接在任一次投递失败后等快照恢复。
-      for (const append of appends) {
-        const appendPayload = JSON.stringify({
-          type: "append",
-          channel: playerChannel,
-          streamSeq: this.streamSeq,
-          kind: append.kind,
-          item: append.item,
-        });
-        if (!this.sender.deliver(connection, appendPayload)) {
-          connection.pendingSnapshots.add(playerChannel);
-          break;
-        }
-      }
-    }
+    publishProjection(this.publisher());
     return true;
   }
 
@@ -398,67 +306,35 @@ export class StreamHub {
   }
 
   /** 投影基线失效后的恢复：清空旧增量，按当前投影重建基线并向订阅中的玩家补发完整快照。 */
-  // eslint-disable-next-line no-unused-vars -- 上报回调的类型参数名用于表达调用契约，运行时由调用方传入。
   private resyncPlayers(report: (message: string, error: unknown) => void): void {
-    this.replay.resetAll(this.branchId, this.generation);
-    // 只有真正订阅了玩家频道的连接才需要补发：仅具备玩家身份但未订阅的连接
-    // 不该因为一次重同步而在后续 sweep 或 ack 时收到完整投影。
-    const players = [...this.connections.values()].filter((connection) =>
-      connection.isPlayer && connection.subscriptions.has(playerChannel));
-    for (const connection of players) {
-      connection.pendingSnapshots.add(playerChannel);
-    }
-    let projection: PlayerProjection;
-    try {
-      projection = this.options.projection();
-    } catch (error) {
-      report("projection resync failed", error);
-      return;
-    }
-    let payload: string;
-    try {
-      payload = JSON.stringify({
-        type: "snapshot",
-        channel: playerChannel,
-        streamSeq: this.streamSeq,
-        projectionVersion: this.projectionVersion,
-        // 一份投影复用到多个连接，但身份仍按当前在线分支现取。
-        worldId: this.options.worldId,
-        branchId: this.branchId,
-        data: projection,
-      });
-    } catch (error) {
-      report("projection resync failed", error);
-      return;
-    }
-    // 快照已经包含当前状态；先推进增量基线，避免下一次 publish 重复追加快照里已有的条目。
-    try {
-      this.lastProjection = Object.freeze({ ...projection });
-      this.lastFieldText = fieldTexts(projection);
-    } catch (error) {
-      report("projection resync failed", error);
-      return;
-    }
-    for (const connection of players) {
-      // 过期会话可能在读取投影期间失效；activeSession 会撤销会话并关闭其连接，不能再补发快照。
-      if (this.sessions.activeSession(connection.sessionId) === null) {
-        continue;
-      }
-      if (!connection.subscriptions.has(playerChannel)) {
-        continue;
-      }
-      this.sender.sendSerializedSnapshot(connection, playerChannel, payload);
-    }
+    resyncProjection(this.publisher(), report);
+  }
+
+  /** 组装一次投影发布所需的连接、会话、重放缓冲、发送器与当前基线。 */
+  private publisher(): ProjectionPublisherInput {
+    return {
+      connections: this.connections,
+      sessions: this.sessions,
+      replay: this.replay,
+      sender: this.sender,
+      projection: this.options.projection,
+      worldId: this.options.worldId,
+      branchId: () => this.branchId,
+      generation: () => this.generation,
+      cursor: this.cursor,
+      baseline: this.baseline,
+      playerChannel,
+    };
   }
 
   /** 分支切换：递增代次与序号，清空旧分支缓冲，并向已订阅连接强制发送快照。 */
   applyBranchChange(nextBranchId: string): void {
     this.branchId = nextBranchId;
     this.generation += 1;
-    this.streamSeq += 1;
-    this.projectionVersion += 1;
-    this.lastProjection = null;
-    this.lastFieldText = null;
+    this.cursor.streamSeq += 1;
+    this.cursor.projectionVersion += 1;
+    this.baseline.projection = null;
+    this.baseline.fieldText = null;
     this.replay.resetAll(nextBranchId, this.generation);
     this.options.onBranchChanged?.(nextBranchId);
     // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
@@ -488,14 +364,14 @@ export class StreamHub {
       }
     }
     if (projection !== null) {
-      this.lastProjection = Object.freeze({ ...projection });
-      this.lastFieldText = fieldTexts(projection);
+      this.baseline.projection = Object.freeze({ ...projection });
+      this.baseline.fieldText = fieldTexts(projection);
     }
   }
 
   /** 当前流位置；供世界视图与测试读取。 */
   streamState(): StreamState {
-    return { branchId: this.branchId, streamSeq: this.streamSeq, projectionVersion: this.projectionVersion };
+    return { branchId: this.branchId, streamSeq: this.cursor.streamSeq, projectionVersion: this.cursor.projectionVersion };
   }
 
   /** 资源计数；测试与健康检查用来确认后台对象有界。 */
@@ -526,12 +402,10 @@ export class StreamHub {
   }
 
   /**
-   * 心跳：超过超时窗口没有收到任何帧的连接视为半开，直接终止，随后向存活连接发 ping。
+   * 探测半开连接：超过时限没有收到任何帧的连接按失联回收，并向存活连接发 ping。
    *
-   * 回收与推送的细节在 HeartbeatProbe 内，这里只提供连接集合、回收清理与发送出口。
-   * 必须走 `disconnect` 而不是只关 socket：`playerConnections` 计数是宿主判断
-   * 「玩家全部断开」的唯一输入，不递减就永远不会触发断线自动暂停，
-   * 时钟会在无人在线时继续推进，违背「断线经宽限自动暂停、离线时间不补算」的约定。
+   * 回收必须走 `disconnect` 而不是只关 socket：`playerConnections` 计数是宿主判断
+   * 「玩家全部断线」的唯一入口，漏减计数会让自动暂停永不触发。
    */
   heartbeat(): void {
     if (this.closed) {
@@ -561,12 +435,12 @@ export class StreamHub {
     this.sessionConnections.clear();
     this.replay.clear();
     this.sessions.clear();
-    this.playerConnections = 0;
+    this.playerConnections.count = 0;
   }
 
   /**
-   * 首次使用流资源时才建立后台定时器；unref 避免阻止进程退出。
-   * 心跳与清理分开计时：心跳间隔短于清理间隔，绑在一起会让探测频率被清理节拍绑死。
+   * 首次使用流资源时才建立低频清理与心跳定时器；unref 避免阻止进程退出。
+   * 两个定时器分开调度：清理按分钟级节流，心跳间隔更短且必须独立于清理节奏。
    */
   private ensureSweepTimer(): void {
     if (this.closed) {
@@ -594,33 +468,13 @@ export class StreamHub {
 
   /** 会话撤销：关闭其全部连接并丢弃缓冲；票据已由注册表删除。 */
   private revokeSessionConnections(sessionId: string, reason: string): void {
-    for (const [socket, connection] of [...this.connections]) {
-      if (connection.sessionId !== sessionId) {
-        continue;
-      }
-      this.connections.delete(socket);
-      this.decrementSessionConnection(sessionId);
-      if (connection.isPlayer) {
-        this.playerConnections = Math.max(0, this.playerConnections - 1);
-      }
-      this.sender.close(socket, streamCloseCodes.sessionInvalid, reason);
-    }
+    this.admission.revokeSession(sessionId, reason);
     this.replay.releaseSession(sessionId);
-    this.notifyPlayerConnections();
   }
 
-  private decrementSessionConnection(sessionId: string): void {
-    const current = this.sessionConnections.get(sessionId) ?? 0;
-    if (current <= 1) {
-      this.sessionConnections.delete(sessionId);
-      return;
-    }
-    this.sessionConnections.set(sessionId, current - 1);
-  }
-
-  private notifyPlayerConnections(): void {
+  private notifyPlayerConnections(connected: number): void {
     try {
-      this.options.onPlayerConnectionsChanged?.(this.playerConnections);
+      this.options.onPlayerConnectionsChanged?.(connected);
     } catch {
       // 宿主回调失败不能中断连接管理；宿主自行记录错误。
     }

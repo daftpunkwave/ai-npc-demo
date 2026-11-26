@@ -10,7 +10,7 @@
 | 包管理 | pnpm workspaces | `pnpm@12` | Node 25 起不再自带 corepack，用 `npm install -g pnpm@12` 安装 |
 | 语言 | TypeScript | `typescript@^7` | `strict: true`；只用于类型检查（`noEmit`） |
 | 运行 TS | tsx | `tsx@^4` | 服务端开发、启动与 `scripts/*.ts` 都用 tsx 直接运行源码 |
-| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`、`@fastify/static@^10` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器，依赖由该适配器包的 manifest 声明 |
+| HTTP/WS | Fastify | `fastify@^5`、`@fastify/cors@^11`、`@fastify/websocket@^11`、`@fastify/static@^10`、`@fastify/rate-limit@^11` | Fastify 及插件的生产使用限于 `transport.http-ws.fastify` 适配器，依赖由该适配器包的 manifest 声明 |
 | 数据库 | SQLite | Node 内置 `node:sqlite`（`DatabaseSync`） | 同步 API、WAL、单写者；只在 `platform.storage.sqlite` 适配器内出现 |
 | 校验 | Zod | `zod@^4`（锁定 `4.6.7`） | 所有 DTO、配置、内容与 LLM 输出的唯一运行时校验；`z.toJSONSchema()` 生成工具与输出 schema。多数包声明下限 `^4`，`packages/experiment` 另声明 `^4.6.7` 下限，新增使用方按实现所需下限声明 |
 | 配置/内容 | YAML | `yaml@^2` | `config/**`、`content/**` 都是 YAML，读入后用 Zod 校验 |
@@ -176,6 +176,7 @@ packages:
 | `pnpm check:assets` | 已实现 | `tsx scripts/check-assets.ts` | 核对资产清单、版本与内容包覆盖 |
 | `pnpm check:docs` | 已实现 | `tsx scripts/check-docs.ts` | 检查相对链接、锚点与表格列数 |
 | `pnpm check:ports` | 已实现 | `tsx scripts/check-ports.ts` | 启动后核对应用只监听 :5173 与 :3000，并验证端口占用失败 |
+| `pnpm measure:model-evidence` | 已实现 | `tsx scripts/measure-model-evidence.ts` | 在临时目录生成三轮模型档案实测落盘字节与清理查询计划 |
 | `pnpm check` | 已实现 | 见下文 “`pnpm check` 的组成” | 每个构建步骤完成前必须通过 |
 
 `scripts/dev.ts` 与 `scripts/start.ts` 先调用 `process.loadEnvFile()`（`.env` 不存在时跳过），再用 `node:child_process.spawn` 启动子进程并把环境变量传给它们；任一子进程退出时结束全部子进程并以非零码退出；不自动重启、不改端口。
@@ -186,7 +187,7 @@ packages:
 
 ### 远端质量门禁
 
-`.github/workflows/check.yml` 在 `main` 的每次 push 与每个 pull request 上以 `pnpm install --frozen-lockfile` 安装依赖并运行 `pnpm check`，因此上表的检查在远端强制执行，而不只依赖本地执行。工作流固定 Node 24（`engines.node` 的运行时下限），由 `pnpm/action-setup` 读取 `packageManager` 字段确定 pnpm 版本，并对同一分支的新推送取消上一轮未完成的运行。
+`.github/workflows/check.yml` 在 `main` 的每次 push 与每个 pull request 上以 `pnpm install --frozen-lockfile` 安装依赖并运行 `pnpm check`，因此上表的检查在远端强制执行，而不只依赖本地执行。工作流固定 Node `26.13.1`（与本机验证一致，满足 `engines.node >= 24` 下限），由 `pnpm/action-setup` 读取 `packageManager` 字段确定 pnpm 版本，并对同一分支的新推送取消上一轮未完成的运行。
 
 `.codacy.yml` 只声明分析范围（排除测试、夹具、锁文件与已发布迁移），与工作流不重复；工作流负责仓库自有的六项检查，Codacy 负责外部静态分析。新增检查项时加入 `pnpm check` 脚本链即可同时进入本地与远端门禁，无需改工作流。
 
@@ -273,4 +274,4 @@ TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 P
 
 `vitest.config.ts` 放在根目录，`include` 为 `["apps/*/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts", "modules/**/tests/**/*.test.ts", "tests/{contract,integration,catalog,scenarios}/**/*.test.ts"]`。需要真实模型的测试不进入 `pnpm test`，单独放在 `tests/live/`，只在设置了相应 API key 时手动运行。
 
-`playwright.config.ts` 的 `webServer` 固定使用测试环境：`NPC_ASSEMBLY=local-slg-test-v1`、`NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3`、`NPC_DATA_DIR=./data-e2e/run-<pid>`、`NPC_PLAYER_TOKEN=e2e-player`、`NPC_CONSOLE_TOKEN=e2e-console`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，Playwright 在 webServer 启动前清空该目录，保证全新世界），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。
+`playwright.config.ts` 的 `webServer` 固定使用测试环境：`NPC_ASSEMBLY=local-slg-test-v1`、`NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3`、`NPC_DATA_DIR=./data-e2e/run-<pid>`、`NPC_SERVER_HOST=127.0.0.1`、`NPC_SERVER_PORT=3000`、`NPC_CLIENT_PORT=5173`、`NPC_PLAYER_TOKEN=e2e-player`、`NPC_CONSOLE_TOKEN=e2e-console`、`NPC_OPERATOR_TOKEN=e2e-operator`、`NPC_RESEARCHER_TOKEN=e2e-researcher`、`NPC_EVALUATOR_TOKEN=e2e-evaluator`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，Playwright 在 webServer 启动前清空该目录，保证全新世界），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。

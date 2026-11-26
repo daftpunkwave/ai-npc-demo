@@ -10,6 +10,8 @@ import { idSchemas, principalIdSchema } from "./ids";
 import { jsonValueSchema, type Json } from "./json";
 import { agentObservationSchema } from "./observation";
 import { toolResultReasonCodeSchema } from "./reason-codes";
+import { dialogueIntentSchema } from "./agent-tools";
+export * from "./agent-tools";
 
 /** trigger 只表达唤醒原因；合并、公平与冷却由调度策略决定。 */
 export const agentTriggerKindSchema = z.enum([
@@ -355,141 +357,6 @@ export const contextArtifactSchema = z
   .strict();
 
 export type ContextArtifact = z.infer<typeof contextArtifactSchema>;
-
-export const toolDefinitionSchema = z
-  .object({
-    toolId: z.string().min(1),
-    version: z.string().min(1),
-    description: z.string().min(1),
-    effect: z.enum(["query", "command"]),
-    commandType: z.string().min(1).nullable(),
-    inputSchema: jsonValueSchema,
-    outputSchema: jsonValueSchema,
-    viewFields: z.array(z.string().min(1)),
-    permissionProfile: z.string().min(1),
-  })
-  .strict();
-
-export type ToolDefinition = z.infer<typeof toolDefinitionSchema>;
-
-export const toolBindingSchema = z
-  .object({
-    bindingId: z.string().min(1),
-    agentId: principalIdSchema,
-    toolId: z.string().min(1),
-    version: z.string().min(1),
-    permissionProfile: z.string().min(1),
-    maxCallsPerTurn: z.number().int().nonnegative(),
-    viewConstraints: z
-      .object({
-        maxListItems: z.number().int().positive(),
-        maxTokens: z.number().int().positive(),
-      })
-      .strict(),
-  })
-  .strict();
-
-export type ToolBinding = z.infer<typeof toolBindingSchema>;
-
-export const toolsetEntrySchema = toolBindingSchema.pick({
-  toolId: true,
-  version: true,
-  permissionProfile: true,
-  viewConstraints: true,
-}).extend({ budgetProfile: z.enum(["query", "command"]) });
-
-export const toolsetDocumentSchema = z.object({
-  schemaVersion: z.literal(1),
-  toolsetId: z.string().min(1),
-  tools: z.array(toolsetEntrySchema).min(1),
-}).strict();
-
-export type ToolsetDocument = z.infer<typeof toolsetDocumentSchema>;
-
-export const toolExecutionResultSchema = z
-  .object({
-    executionStatus: executionStatusSchema,
-    commandStatus: commandStatusSchema.nullable(),
-    taskStatus: taskStatusSchema.nullable(),
-    reasonCode: toolResultReasonCodeSchema.nullable(),
-    receiptId: z.string().min(1).nullable(),
-    operationId: z.string().min(1).nullable(),
-    resultRef: z.string().min(1),
-    detail: z.string(),
-    data: jsonValueSchema,
-  })
-  .strict();
-
-export type ToolExecutionResult = z.infer<typeof toolExecutionResultSchema>;
-
-export const dialogueIntentSchema = z
-  .object({
-    kind: z.enum([
-      "none",
-      "acknowledge",
-      "answer",
-      "agree",
-      "refuse",
-      "counter-offer",
-      "request",
-      "inform",
-      "warn",
-      "thank",
-      "apologize",
-      "decline-to-disclose",
-      "report-result",
-      "remind",
-    ]),
-    audience: z.array(principalIdSchema).max(4),
-    tone: z.enum(["warm", "neutral", "cold", "urgent"]),
-    reasonCode: z.enum([
-      "none",
-      "danger",
-      "duty",
-      "past-breach",
-      "low-trust",
-      "lack-resources",
-      "policy",
-      "need-guarantee",
-      "injured",
-      "busy",
-    ]),
-    subjectRef: z.string().min(1).nullable(),
-    factRefs: z.array(z.string().min(1)).max(6),
-  })
-  .strict();
-
-export type DialogueIntent = z.infer<typeof dialogueIntentSchema>;
-
-export const noteworthySchema = z
-  .object({
-    kind: z.enum(["promise-by-other", "promise-by-me", "claim", "request"]),
-    aboutId: principalIdSchema,
-    summary: z.string().min(1).max(60),
-    dueTick: z.number().int().nonnegative().nullable(),
-    sourceRefs: z.array(z.string().min(1)).min(1).max(3),
-  })
-  .strict();
-
-export const decisionSubmissionSchema = z
-  .object({
-    stance: z.enum(["accept", "decline", "negotiate", "defer", "inform", "none"]),
-    dialogueIntent: dialogueIntentSchema,
-    noteworthy: z.array(noteworthySchema).max(3),
-    citedMemoryIds: z.array(idSchemas.mem).max(8),
-    decisionNote: z.string().max(120),
-  })
-  .strict();
-
-export type DecisionSubmission = z.infer<typeof decisionSubmissionSchema>;
-export const decisionSubmitWireSchema = jsonValueSchema.parse(z.toJSONSchema(decisionSubmissionSchema));
-
-export const speechOutputSchema = z.object({
-  utterance: z.string().min(1).max(160),
-  citedRefs: z.array(z.string()).max(6),
-}).strict();
-
-export const speechOutputWireSchema = jsonValueSchema.parse(z.toJSONSchema(speechOutputSchema));
 
 export const speechArtifactSchema = z
   .object({

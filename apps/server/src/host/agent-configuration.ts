@@ -49,6 +49,9 @@ export async function resolveAgentConfiguration(input: {
   const profiles = new Map<string, ResolvedAgentProfile>();
   const profileHashes = new Map<string, string>();
   const toolsets = new Map<string, AgentToolset>();
+  // 名册里多数身份共享同一 profile 与 toolset 引用：按引用只解析一次，避免逐个 Agent 重走继承链。
+  const baseProfiles = new Map<string, ResolvedAgentProfile>();
+  const loadedToolsets = new Map<string, AgentToolset>();
   const modules = new Map(input.definitions.map((definition) => [definition.id, definition]));
   const scheduling = input.assembly.plan.modules.find(({ definition }) =>
     definition.provides.some((port) => port.capability === "agent.scheduling"));
@@ -58,7 +61,11 @@ export async function resolveAgentConfiguration(input: {
   const modelAgents = new Set<string>();
 
   for (const agent of input.roster.agents) {
-    let profile = loadAgentProfile(agent.profileRef, input.loadContext);
+    let profile = baseProfiles.get(agent.profileRef);
+    if (profile === undefined) {
+      profile = loadAgentProfile(agent.profileRef, input.loadContext);
+      baseProfiles.set(agent.profileRef, profile);
+    }
     if (input.legacyDecision === true && profile.slots.decision?.module === "agent.decision.model") {
       profile = applyProfilePatch(profile, "decision-deterministic", input.loadContext);
     }
@@ -98,7 +105,8 @@ export async function resolveAgentConfiguration(input: {
       failurePolicy: input.runSpec.failurePolicy,
       scheduling: { module: scheduling.moduleId, config: schedule },
     };
-    const toolset = loadAgentToolset(agent.toolsetRef, input.loadContext);
+    const toolset = loadedToolsets.get(agent.toolsetRef) ?? loadAgentToolset(agent.toolsetRef, input.loadContext);
+    loadedToolsets.set(agent.toolsetRef, toolset);
     const source = { profile: profileJson(resolved), slotModules, toolset };
     const profileHash = await canonicalHasher(canonicalJson(source));
     profiles.set(agent.agentId, resolved);

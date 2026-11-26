@@ -18,302 +18,36 @@ import {
   type StorageRow,
   type StorageTransaction,
 } from "@ai-npc/contracts";
+import {
+  assertExpectedSource,
+  campaignBranchIds,
+  inspectSnapshot,
+  maxWorldSeq,
+  numberValue,
+  readFrozenSnapshot,
+  readSourceRun,
+  snapshotRecordOf,
+  stringValue,
+} from "./snapshot-read";
+import type {
+  CreateSnapshotInput,
+  FrozenSnapshot,
+  RestoreExpectation,
+  RestoreInspection,
+  RestoreResult,
+  RestoreSnapshotInput,
+  SnapshotRecord,
+  SnapshotSourceRun,
+} from "./snapshot-types";
 
-export interface SnapshotRecord {
-  readonly snapshotId: string;
-  readonly sourceBranchId: string;
-  readonly frozenBranchId: string;
-  readonly worldSeq: number;
-  readonly worldTick: number;
-  readonly label: string;
-  readonly createdBy: string;
-  readonly createdAt: string;
-}
+export type {
+  CreateSnapshotInput,
+  RestoreResult,
+  RestoreSnapshotInput,
+  SnapshotRecord,
+  SnapshotSourceRun,
+} from "./snapshot-types";
 
-export interface CreateSnapshotInput {
-  readonly sourceBranchId: string;
-  readonly label: string;
-  readonly createdBy: string;
-}
-
-/** 恢复 dry-run 读出的源 run；宿主据它校验内容、装配、名册与运行规格兼容性。 */
-export interface SnapshotSourceRun {
-  readonly runId: string;
-  readonly worldId: string;
-  readonly branchId: string;
-  readonly runSpec: Json;
-  readonly manifest: Json;
-  readonly manifestHash: string;
-  readonly contaminated: number;
-  readonly evidenceComplete: number;
-}
-
-/** 一次恢复 dry-run 的结果；只做只读校验，不产生任何写入。 */
-export interface RestoreInspection {
-  readonly snapshotId: string;
-  readonly sourceBranchId: string;
-  readonly frozenBranchId: string;
-  readonly worldId: string;
-  readonly worldSeq: number;
-  readonly worldTick: number;
-  readonly sourceRun: SnapshotSourceRun;
-}
-
-/** dry-run 与提交之间源 run 的稳定摘要；事务内重新比对，防止校验后被并发改写。 */
-export interface RestoreExpectation {
-  readonly sourceRunId: string;
-  readonly canonicalRunSpec: string;
-  readonly manifestHash: string;
-  readonly worldSeq: number;
-  readonly worldTick: number;
-}
-
-export interface RestoreSnapshotInput {
-  readonly snapshotId: string;
-  readonly createdBy: string;
-  readonly runId?: string;
-  readonly expected?: RestoreExpectation;
-}
-
-/** 恢复提交结果：新在线分支、绑定的新 run 与被替换的旧在线分支。 */
-export interface RestoreResult {
-  readonly branchId: string;
-  readonly runId: string;
-  readonly worldId: string;
-  readonly previousBranchId: string;
-  readonly sourceRunId: string;
-  readonly worldSeq: number;
-  readonly worldTick: number;
-}
-
-/** 已校验的冻结快照：快照行与冻结分支一致，且冻结分支带完整时钟与事件前沿。 */
-interface FrozenSnapshot {
-  readonly snapshotId: string;
-  readonly sourceBranchId: string;
-  readonly frozenBranchId: string;
-  readonly worldId: string;
-  readonly worldSeq: number;
-  readonly worldTick: number;
-  readonly sourceRunId: string | null;
-}
-
-function numberValue(value: unknown, column: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new DomainError("invalid-state", `快照数据字段 ${column} 不是安全整数`, { details: { column } });
-  }
-  return value;
-}
-
-function stringValue(value: unknown, column: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new DomainError("invalid-state", `快照数据字段 ${column} 不是非空字符串`, { details: { column } });
-  }
-  return value;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
-function objectValue(value: StorageCell | undefined, column: string): Json {
-  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
-    throw new DomainError("invalid-state", `快照数据字段 ${column} 不是 JSON 对象`, { details: { column } });
-  }
-  return value as Json;
-}
-
-/** 分支事件前沿：domain_events 主键为 (branch_id, world_seq)，MAX 走主键索引而非全表遍历。 */
-function maxWorldSeq(tx: StorageTransaction, branchId: string): number {
-  const value = tx.branch(branchId).table("domain_events").max("world_seq");
-  if (value === null) {
-    return 0;
-  }
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    throw new DomainError("invalid-state", "分支事件前沿不是非负安全整数", { details: { branchId } });
-  }
-  return value;
-}
-
-/**
- * 校验快照行、冻结分支与源分支属于同一份一致复制：冻结分支必须仍处于 frozen 且无 run，
- * 时钟 tick 与快照记录一致，事件前沿等于快照的 world_seq；任何缺失都视为快照不完整。
- */
-function readFrozenSnapshot(tx: StorageTransaction, snapshotId: string): FrozenSnapshot {
-  const row = tx.rows("snapshots").get({ snapshot_id: snapshotId });
-  if (row === null) {
-    throw new DomainError("not-found", `快照 ${snapshotId} 不存在`, { details: { snapshotId } });
-  }
-  const sourceBranchId = stringValue(row["source_branch_id"], "snapshots.source_branch_id");
-  const frozenBranchId = stringValue(row["frozen_branch_id"], "snapshots.frozen_branch_id");
-  const worldSeq = numberValue(row["world_seq"], "snapshots.world_seq");
-  const worldTick = numberValue(row["world_tick"], "snapshots.world_tick");
-
-  const sourceBranch = tx.rows("branches").get({ branch_id: sourceBranchId });
-  if (sourceBranch === null) {
-    throw new DomainError("not-found", `快照源分支 ${sourceBranchId} 不存在`, {
-      details: { sourceBranchId },
-    });
-  }
-  if (sourceBranch["kind"] !== "online") {
-    throw new DomainError("invalid-state", `快照源分支 ${sourceBranchId} 不是 online 分支，无法作为在线恢复来源`, {
-      details: { sourceBranchId },
-    });
-  }
-  const worldId = stringValue(sourceBranch["world_id"], "branches.world_id");
-
-  const frozen = tx.rows("branches").get({ branch_id: frozenBranchId });
-  if (frozen === null) {
-    throw new DomainError("not-found", `快照冻结分支 ${frozenBranchId} 不存在`, {
-      details: { snapshotId, frozenBranchId },
-    });
-  }
-  if (frozen["kind"] !== "snapshot" || frozen["status"] !== "frozen" || frozen["run_id"] !== null) {
-    throw new DomainError("invalid-state", "快照冻结分支状态不合法", {
-      details: {
-        snapshotId,
-        frozenBranchId,
-        kind: typeof frozen["kind"] === "string" ? frozen["kind"] : null,
-        status: typeof frozen["status"] === "string" ? frozen["status"] : null,
-      },
-    });
-  }
-  if (frozen["world_id"] !== worldId) {
-    throw new DomainError("invalid-state", "快照冻结分支与源分支不属于同一 world", {
-      details: { snapshotId, frozenBranchId, sourceBranchId },
-    });
-  }
-  if (frozen["parent_branch_id"] !== sourceBranchId) {
-    throw new DomainError("invalid-state", "快照冻结分支的父分支与快照源分支不一致", {
-      details: { snapshotId, frozenBranchId, sourceBranchId },
-    });
-  }
-
-  const clock = tx.branch(frozenBranchId).table("clock").get({});
-  if (clock === null) {
-    throw new DomainError("invalid-state", `快照冻结分支 ${frozenBranchId} 缺少时钟记录`, {
-      details: { snapshotId, frozenBranchId },
-    });
-  }
-  if (numberValue(clock["world_tick"], "clock.world_tick") !== worldTick) {
-    throw new DomainError("invalid-state", `快照 ${snapshotId} 的 worldTick 与冻结分支时钟不一致`, {
-      details: { snapshotId, frozenBranchId, worldTick },
-    });
-  }
-  if (maxWorldSeq(tx, frozenBranchId) !== worldSeq) {
-    throw new DomainError("invalid-state", `快照 ${snapshotId} 的 worldSeq 与冻结分支事件前沿不一致`, {
-      details: { snapshotId, frozenBranchId, worldSeq },
-    });
-  }
-
-  const sourceRunId = typeof sourceBranch["run_id"] === "string" && sourceBranch["run_id"].length > 0
-    ? sourceBranch["run_id"]
-    : null;
-  return { snapshotId, sourceBranchId, frozenBranchId, worldId, worldSeq, worldTick, sourceRunId };
-}
-
-/** 读取源分支已冻结的 run；恢复沿用它的 RunSpec、seed 与 manifest，不再按当前入参重建。 */
-function readSourceRun(tx: StorageTransaction, frozen: FrozenSnapshot): SnapshotSourceRun {
-  if (frozen.sourceRunId === null) {
-    throw new DomainError("invalid-state", `快照源分支 ${frozen.sourceBranchId} 没有绑定 run，无法沿用运行规格`, {
-      details: { snapshotId: frozen.snapshotId, sourceBranchId: frozen.sourceBranchId },
-    });
-  }
-  const run = tx.rows("runs").get({ run_id: frozen.sourceRunId });
-  if (run === null) {
-    throw new DomainError("not-found", `快照源 run ${frozen.sourceRunId} 不存在`, {
-      details: { runId: frozen.sourceRunId },
-    });
-  }
-  if (run["world_id"] !== frozen.worldId) {
-    throw new DomainError("invalid-state", `快照源 run ${frozen.sourceRunId} 与快照不属于同一 world`, {
-      details: { runId: frozen.sourceRunId, worldId: frozen.worldId },
-    });
-  }
-  if (run["branch_id"] !== frozen.sourceBranchId) {
-    throw new DomainError("invalid-state", `快照源 run ${frozen.sourceRunId} 绑定的分支与快照源分支不一致`, {
-      details: { runId: frozen.sourceRunId, sourceBranchId: frozen.sourceBranchId },
-    });
-  }
-  return {
-    runId: frozen.sourceRunId,
-    worldId: frozen.worldId,
-    branchId: frozen.sourceBranchId,
-    runSpec: objectValue(run["run_spec_json"], "runs.run_spec_json"),
-    manifest: objectValue(run["manifest_json"], "runs.manifest_json"),
-    manifestHash: stringValue(run["manifest_hash"], "runs.manifest_hash"),
-    contaminated: numberValue(run["contaminated"], "runs.contaminated"),
-    evidenceComplete: numberValue(run["evidence_complete"], "runs.evidence_complete"),
-  };
-}
-
-/** 从快照行一路读出完整恢复信息；快照与源 run 任一不完整都抛错，不产生写入。 */
-function inspectSnapshot(tx: StorageTransaction, snapshotId: string): RestoreInspection {
-  const frozen = readFrozenSnapshot(tx, snapshotId);
-  return {
-    snapshotId: frozen.snapshotId,
-    sourceBranchId: frozen.sourceBranchId,
-    frozenBranchId: frozen.frozenBranchId,
-    worldId: frozen.worldId,
-    worldSeq: frozen.worldSeq,
-    worldTick: frozen.worldTick,
-    sourceRun: readSourceRun(tx, frozen),
-  };
-}
-
-function assertExpectedSource(expected: RestoreExpectation, inspection: RestoreInspection): void {
-  const matches =
-    expected.sourceRunId === inspection.sourceRun.runId &&
-    expected.manifestHash === inspection.sourceRun.manifestHash &&
-    expected.canonicalRunSpec === canonicalJson(inspection.sourceRun.runSpec) &&
-    expected.worldSeq === inspection.worldSeq &&
-    expected.worldTick === inspection.worldTick;
-  if (!matches) {
-    throw new DomainError("invalid-state", "快照源 run 在 dry-run 后被修改，拒绝按旧校验结果恢复", {
-      details: { snapshotId: inspection.snapshotId, sourceRunId: inspection.sourceRun.runId },
-    });
-  }
-}
-
-/**
- * 当前 campaign 的在线分支集合：从在线别名分支沿 parent_branch_id 向上追溯，
- * 只收集链上的 online 分支（跨越恢复产生的冻结分支）；其他 campaign、实验与沙盒分支不在链上。
- */
-function campaignBranchIds(tx: StorageTransaction): ReadonlySet<string> {
-  const alias = tx.rows("world_aliases").get({ alias: "online" });
-  if (alias === null) {
-    return new Set();
-  }
-  const onlineBranchId = typeof alias["branch_id"] === "string" ? alias["branch_id"] : "";
-  if (onlineBranchId.length === 0) {
-    return new Set();
-  }
-  const seen = new Set<string>();
-  const online = new Set<string>();
-  let current: string | null = onlineBranchId;
-  while (current !== null && !seen.has(current)) {
-    seen.add(current);
-    const branch = tx.rows("branches").get({ branch_id: current });
-    if (branch === null) {
-      break;
-    }
-    if (branch["kind"] === "online") {
-      online.add(current);
-    }
-    const parent = branch["parent_branch_id"];
-    current = typeof parent === "string" && parent.length > 0 ? parent : null;
-  }
-  return online;
-}
-
-function snapshotRecordOf(row: StorageRow): SnapshotRecord {
-  return {
-    snapshotId: stringValue(row["snapshot_id"], "snapshots.snapshot_id"),
-    sourceBranchId: stringValue(row["source_branch_id"], "snapshots.source_branch_id"),
-    frozenBranchId: stringValue(row["frozen_branch_id"], "snapshots.frozen_branch_id"),
-    worldSeq: numberValue(row["world_seq"], "snapshots.world_seq"),
-    worldTick: numberValue(row["world_tick"], "snapshots.world_tick"),
-    label: stringValue(row["label"], "snapshots.label"),
-    createdBy: stringValue(row["created_by"], "snapshots.created_by"),
-    createdAt: stringValue(row["created_at"], "snapshots.created_at"),
-  };
-}
 
 /** SQLite 存档实现；恢复在一次存储事务内完成分支、run、旧分支归档与在线别名切换。 */
 export class SqliteSaveService {

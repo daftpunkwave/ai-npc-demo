@@ -206,7 +206,7 @@ active   --任一条款违约--> breached（其余条款继续追踪，只记录
 |---|---|
 | 玩家对话 `dialogue.say` | 只有玩家能用。目标角色与玩家同在 grayharbor 时为当面交谈（channel `face-to-face`），否则为中继通话（channel `relay`）。文本 1–300 字。受众只有双方，旁人感知不到内容 |
 | 角色回话 | 由宿主的安全对白流程生成，以 `speech.commit` 提交为 `DialogueSubmitted`，受众与渠道规则同上 |
-| 消息 `message.send` | Agent 之间或 Agent 对玩家的定向消息，经安全对白流程生成正文后提交 |
+| 消息（Agent 工具 `message.send`） | Agent 之间或 Agent 对玩家的定向消息，经安全对白流程生成正文后以 `speech.commit` 提交为 `MessageSent` |
 | 公开广播 | 公社党魁以玩家身份提交正文，伊诺（`npc-yinuo`）走 Agent 安全对白流程，剧情卡按自身配置发布。送达适用同一张延迟表 |
 | 分享证据 `information.share` | 分享者必须持有该证据的知识授权（秘密不能分享）；受众获得知识授权，提交 `InformationShared` |
 | 传闻 | 剧情卡用 `reported` 渠道下发的声称，来源是非 Agent 来源 ID（如 `src-trader`）；规则不判断传闻真假，NPC 只能依靠反证或求证来更新认识 |
@@ -230,7 +230,7 @@ AI 党魁的初始投票倾向：岑雁（砾火）看“是否有担保”，�
 
 ### 10.2 t168 评估
 
-tick 168 时提交 `ChapterStageEvaluated`，内容包括三个指标的当前值、已履约与已违约协议数、t144 程序案结果，以及评估结果：
+tick 168 时提交 `ChapterStageEvaluated`，内容包括三个指标的当前值、已履约与已违约协议数、t168 城市资源交接快照（`cityResources`）以及评估结果（t144 程序案尚未实现，其结果待接入后并入）：
 
 - 同时满足 `relay.stability ≥ 40`、`orchard.water ≥ 30`、`migration.safety ≥ 40` 时，结果为 `equilibrium`（暂时均衡）；
 - 否则结果为 `strained`，并列出未达标的指标。

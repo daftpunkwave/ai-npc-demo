@@ -103,7 +103,10 @@ function nextEventSql(consumer: StoredEventConsumer): { readonly sql: string; re
       typeParams: [],
     };
   }
-  const types = [...consumer.eventTypes].sort();
+  // 按码位排序而不是按语言环境：SQL 文本与参数顺序由此确定，
+  // 同一消费者每次生成的语句逐字相同，才能命中存储层的预编译语句缓存；
+  // localeCompare 会随运行环境改变顺序，既破坏缓存也影响可复现性。
+  const types = [...consumer.eventTypes].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   const placeholders = types.map(() => "?").join(", ");
   return {
     sql: `SELECT * FROM domain_events

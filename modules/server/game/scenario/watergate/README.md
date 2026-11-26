@@ -7,7 +7,7 @@
 - 提供能力：`game.scenario`（`exactly-one`，run 作用域）。
 - 拥有聚合：`scenario-card`、`scenario-run`。
 - 依赖：`game.world`、`game.map`、`game.resources`、`game.comms`、`game.actions`。
-- 命令：`scenario.publish`、`scenario.withdraw`、`scenario.compensate`、`scenario.override`。
+- 命令：`scenario.draft`、`scenario.publish`、`scenario.withdraw`、`scenario.compensate`、`scenario.override`。
 - 后续钩子：`campaign.start` 安排内容包默认剧情的卡片 job。
 - job：`scenario.card`；升级版订阅 `TaskCompleted`、`DayPassed`。
 
@@ -21,6 +21,6 @@
 
 ## 参数与限制
 
-- 草稿由运营 API 写入 `scenario-card` 状态；本模块的 `scenario.publish` 只发布已有草稿。
-- 当前运行表没有污染字段，覆盖命令只提交事件；`contaminated` 标记由后续宿主/评估步骤接线。
+- 草稿通过 `scenario.draft` 命令写入 `scenario-card` 状态；`scenario.publish` 只发布已存在的草稿。
+- `scenario-run` 聚合记录 `contaminated` 标记，`scenario.override` 提交 `ScenarioOverrideApplied` 并置位该标记；运行级别的 `runs.contaminated` 当前由调试唤醒直接置位并在评估读取时检查，`scenario.override` 尚未同步更新 `runs.contaminated`。
 - 内容包默认剧情来自 `GameContent.defaultScenario`；广播发布节点、压力卡与 signature-only 署名名单由剧情元数据声明，模块不写具体内容 ID。

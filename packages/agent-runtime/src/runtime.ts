@@ -15,6 +15,13 @@ import { cycleBackoffMs, idleDelayMs } from "./runtime-backoff";
 import { TurnScheduler } from "./turn-scheduler";
 import { TurnWorker, type TurnExecutionOptions } from "./turn-worker";
 
+/**
+ * 收到世界变化信号后到下一轮的最短延迟。
+ * 不取 0：命令与运营操作会成批提交，排到下一个事件循环 tick 可以把同一段时间内的
+ * 多个信号合并成一轮，避免为每一条提交各跑一次完整流水线。
+ */
+const baseWakeDelayMs = 25;
+
 /** 单个阶段失败的记录：阶段名加原因原文，供聚合错误与日志对账。 */
 interface CycleStageFailure {
   readonly phase: string;
@@ -335,19 +342,30 @@ export class AgentRuntime {
   }
 
   /**
-   * 收到「世界可能已变化」的信号：重置空闲计数并立即推进一轮。
-   * 已在运行中的轮次会被 runTrackedCycle 复用，不产生并发；停止后忽略信号。
+   * 收到「世界可能已变化」的信号：重置空闲计数，并把下一轮提前到最短延迟。
+   *
+   * 信号只缩短等待，不直接同步起跑：命令提交是一批批到达的，逐条立即重跑会让同一
+   * 段世界变化被反复完整扫描；把重跑挂在同一个计时器上，一轮正在进行时到达的多个
+   * 信号合并成一次后续轮次，既保留「变化后立即处理」的时延，也不产生并发轮次。
+   * 停止后忽略信号。
    */
   notifyWorldChanged(): void {
     this.idleCycles = 0;
     if (!this.running || this.stopped) return;
+    if (this.cycle !== null) {
+      // 本轮结束后由 runTrackedCycle 的收尾统一排下一轮，届时延迟已按重置后的计数计算。
+      return;
+    }
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    void this.runTrackedCycle()
-      .catch(() => undefined)
-      .finally(() => this.schedule());
+    this.timer = setTimeout(() => {
+      void this.runTrackedCycle()
+        .catch(() => undefined)
+        .finally(() => this.schedule());
+    }, baseWakeDelayMs);
+    this.timer.unref();
   }
 
   private runTrackedCycle(): Promise<void> {

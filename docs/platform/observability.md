@@ -131,22 +131,17 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 
 ### 8.1 span 与 trace
 
+当前实现产生的 span（均直接同步写入 SQLite `trace_spans`，`turn.*` 阶段跨度为扁平记录、`parentSpanId = null`；`command`、`job`、`perception.event`、`memory.ingest`、`memory.maintenance`、`tool.call` 及 `http.request` 的角色明细属性、内存缓冲与溢出降级属于后续观测扩展目标）：
+
 | span 名称 | 产生位置 | 关键属性 |
 |---|---|---|
-| `http.request` | 路由层 | `route`、`status`、`principalId`、`activeRole` |
-| `command` | authority | `commandType`、`commandId`、`principalId`、`commandStatus`、`reasonCode`、事件数 |
-| `job` | 规则 job 执行 | `jobKind`、`jobId`、`dueTick` |
-| `perception.event` | 感知消费者 | `eventId`、`eventType`、获得观察的 Agent 数 |
-| `memory.ingest` / `memory.maintenance` | 记忆 worker | `agentId`、`moduleId`、`baseRevision`、`newRevision`、条数、结果 |
-| `turn` | turn 根 span | `turnId`、`agentId`、`triggerIds`、`profileHash`、终态 |
-| `turn.freeze` / `turn.retrieve` / `turn.context` / `turn.compression` / `turn.speech` / `turn.settle` | turn 各阶段 | 阶段的 requested/resolved/effective、`applied`/`skipped`/`failed` 与原因 |
-| `turn.decision.round` | 每一轮 decision | 轮次、工具调用数 |
+| `http.request` | 传输层 `onResponse` | `route`、`status` |
+| `ws.frame.over-limit` | WebSocket 接收上限守卫 | `maxBytes`、`closeCode` |
+| `turn.claim` / `turn.readiness` / `turn.perception` / `turn.memory.retrieve` / `turn.context` / `turn.compression` / `turn.decision` / `turn.model` / `turn.tool` / `turn.tool-view` / `turn.speech` / `turn.settle` | turn 各阶段 | `turnId`、`agentId`、阶段 requested/resolved/effective 与终态（如适用） |
 | `model.attempt` | 模型池 | `attemptId`、`purpose`、`modelId`、`adapterId`、usage、各段耗时、错误 |
-| `tool.call` | 工具网关 | `toolId`、`bindingId`、`operationId`、`executionStatus`、`commandStatus` |
 
-- 每个外部输入（玩家或运营的一次 HTTP 命令）开启一个 trace，`traceId` 同时写进由它产生的事件的 `correlationId`。
-- 由事件唤醒的 turn 开启新的 trace，在根 span 的 `causeTraceIds` 属性里记录触发事件的 `correlationId`，控制台据此跨 trace 跳转。
-- span 先写进内存缓冲，每 200 ms 或满 500 条批量落库。`turn`、`model.attempt`、`tool.call`、`command` 四类是必需证据：缓冲溢出时可以丢弃其他 span，但这四类不能丢；一旦丢失，该 run 的 `evidence_complete` 置 0。
+- 每个外部输入（玩家或运营的一次 HTTP 命令）在产生事件时把 `traceId` 写进 `correlationId`。
+- 由事件唤醒的 turn 开启新的 trace，记录触发来源及有效配置，控制台据此定位上下文与模型调用。
 
 ### 8.2 artifact 种类
 
@@ -157,16 +152,14 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 | `tool-raw` / `tool-view` | 工具网关 / tool-view 模块 | 工具完整结果 / 入模视图 |
 | `speech` | speech 流程 | 已通过校验的对白与校验记录 |
 | `manifest` | experiment | 去密钥的冻结 manifest |
-| `export` | audit | 导出包 |
+| `export` | 导出服务 | 导出包 |
 
-当前上下文、模型请求和响应沿用 SQLite 内联 artifact。大于 64 KB 的正文单独存储仍属目标，表记录预留路径与 hash。
+当前上下文、模型请求和响应均内联写入 SQLite `artifacts` 表。大于 64 KB 的正文外部文件存储仍属目标，表记录预留路径与 hash。
 
 ### 8.3 脱敏副本
 
-控制台默认展示、导出默认使用脱敏副本；原文需要 researcher 角色并写一条审计生命周期事件。首版的脱敏规则：
+控制台默认展示脱敏视图、导出接口支持 `redacted` 与 `raw` 两种视图；读取 `raw` 需 `researcher` 角色并写一条审计生命周期事件。当前实现采用读取/导出时动态脱敏，不单独落盘 `redacted_from` 副本行：
 
-1. 秘密原文（`private:` 资料）替换为 `[SECRET <secretId> len=N]`。
-2. 凭据形态的字符串（与任一已解析凭据相同的子串）替换为 `[REDACTED]`；正常情况下不应出现，出现即记一条安全事件。
-3. 其余字段（包括玩家原话）保留，它们本身就是研究对象；对外分享前由研究员另行审查。
-
-脱敏副本另存为新的 artifact（`redaction: redacted`，`redacted_from` 指向原文），不覆盖原文。
+1. 查询 `GET /artifacts/{artifactId}?view=redacted` 时按内容包秘密列表将秘密正文替换为 `[SECRET <secretId> len=N]`。
+2. 凭据字段在写入模型 attempt 与导出时掩码或清空，防止凭据原文进入可观测数据。
+3. `POST /exports` 设为 `redacted` 时清空正文字段并保留元数据与哈希，设为 `raw` 时保留正文（同样不输出凭据解析值）。

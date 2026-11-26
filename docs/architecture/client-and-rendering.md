@@ -114,81 +114,79 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 5. `GET /api/v1/campaign`：没有 campaign 时只渲染 `boot.screen`（开局选择）；有 campaign 时 `GET /api/v1/world/view`，再申请 WS 票据并订阅 `player` 频道。
 6. 渲染全部 slot；WS 断线时 HUD 显示“重连中”，带 `fromStreamSeq` 重连。
 
-### 8.3 客户端模块之间的端口
+### 8.3 客户端模块之间的端口与当前实现边界
+
+下表为首版设计端口模型；当前代码里浏览器模块统一通过 `@ai-npc/client-sdk` 的 `BrowserViewPort` 与宿主上下文暴露状态与渲染贡献（例如 `client.world-view.standard` 提供 `getSnapshot(): ProjectionState | null`、`subscribe`、`getContent`、`getConnectionState` 与命令/运营方法；`client.input.standard` 与 `client.camera.standard` 使用 `getSnapshot()`；`client.scene-renderer.null` 向 `window.__aiNpcSceneLog` 记录 `{ projection }`）。
 
 | 端口 | 提供者 | 接口 |
 |---|---|---|
-| `ProjectionPort` | `client.world-view.standard` | `getSnapshot(): PlayerProjection`、`subscribe(listener): () => void`、`streamSeq` |
+| `ProjectionPort` | `client.world-view.standard` | `getSnapshot(): ProjectionState \| null`、`subscribe(listener): () => void`、`getContent()`、`getConnectionState()`、`startCampaign()`、`sendDialogue()`、`pause()`、`resume()`、`save()` |
 | `CommandClient` | 宿主（`client-protocol`） | `send(type, payload): Promise<CommandReceipt>`：生成 `commandId`，网络失败时用同一个 `commandId` 重试最多 3 次 |
-| `SelectionPort` | `client.input.standard` | `get(): { kind: "node" \| "character" \| "team" \| "task", id } \| null`、`select(sel)`、`subscribe` |
-| `CameraPort` | `client.camera.standard` | `get(): { x, y, zoom }`、`pan(dx, dy)`、`zoomTo(z)`、`follow(entityId)` |
+| `SelectionPort` | `client.input.standard` | `getSnapshot(): { kind: "node" \| "character" \| "team" \| "task", id } \| null`、`select(sel)`、`subscribe` |
+| `CameraPort` | `client.camera.standard` | `getSnapshot(): { x, y, zoom }`、`pan(dx, dy)`、`zoomTo(z)`、`follow(entityId)`、`subscribe` |
 | `ScreenProjectionPort` | `client.screen-projection.isometric` | `worldToScreen(x, y, h)`、`screenToWorld(px, py)`，公式见第 5 节，`tileWidth = 64`、`tileHeight = 32` |
-| `SceneRenderer` | `client.scene-renderer.*` | `mount(container)`、`render(view: SceneView)`、`onPick(cb)`、`unmount()` |
+| `SceneRenderer` | `client.scene-renderer.*` | 通过 `BrowserViewPort.renderContribution()` 挂载画布或测试日志 |
 | `PreferencePort` | 宿主 | `get(key)`、`set(key, value)`，存于 `localStorage`，键前缀 `ai-npc.pref.` |
 
 `SceneView` 由 world-view 从投影派生：节点、道路（含当前状态）、角色与队伍的位置、在途任务（路线与出发/到达 tick）、当前选择。
 
 ### 8.4 灰盒场景绘制（`client.scene-renderer.pixi`）
 
-灰盒使用版本化世界资产包（`assets/manifest.json`，设计与冲突记录见 [美术方向](../game/art-direction.md)）；以下 PixiJS `Graphics`/`Text` 画法作为缺图、无画面测试与确定性 fallback 保留。**这些画法不是 3D 资产规格**，3D 建模按 [design/assets/02](../design/assets/02-modeling-spec.md)：
+灰盒目标使用版本化世界资产包（`assets/manifest.json`，设计与冲突记录见 [美术方向](../game/art-direction.md)）；当前 `client.scene-renderer.pixi` 直接采用 PixiJS `Graphics`/`Text` 矢量图元绘制节点、道路与角色（尚未加载 `assets/manifest.json`、尚未绘制队伍方块与选中描边，且当前画布只绑定节点与角色点击，尚未绑定悬停提示、拖拽平移与滚轮缩放）。以下表格记录完整灰盒绘制目标与现行色板约定，**这些画法不是 3D 资产规格**，3D 建模按 [design/assets/02](../design/assets/02-modeling-spec.md)：
 
-| 元素 | 画法 |
+| 元素 | 目标画法（当前实现备注） |
 |---|---|
-| 节点 | 等距菱形（64×32），按设施类型填色；下方写节点名 |
-| 道路 | 两节点中心连线：open 为灰色实线，restricted 为橙色虚线，closed 为红色实线加“×”；risk 每高一级线宽 +1 |
-| 角色 | 直径 10 的圆，颜色取派系色，围绕所在节点均匀排布，悬停显示姓名 |
-| 队伍 | 边长 10 的方块，同样按派系色；在途时沿路线插值移动：`进度 = min(1, (worldTick − departTick) / (nominalCompletionTick − departTick))`；任务被标记延误后停在终点前 90% 处，直到收到完成事件 |
-| 选择 | 选中对象加白色描边 |
+| 节点 | 等距菱形（64×32），下方写节点名（目标按设施类型填色，当前统一底色 `0x243a38`） |
+| 道路 | 两节点中心连线：open 灰色实线、restricted 橙色虚线（当前实线 `0xd18b43`）、closed 红色实线（目标加“×”）；risk 每高一级线宽 +1 |
+| 角色 | 直径 10 的圆，颜色取派系色，围绕所在节点均匀排布（目标悬停显示姓名） |
+| 队伍 | 边长 10 的方块，按派系色在途插值移动（目标绘制项，当前未渲染） |
+| 选择 | 选中对象加白色描边（目标绘制项，当前通过侧栏与选择状态呈现） |
 
-派系色：砾火 `#c0392b`、地生 `#27ae60`、止戈 `#f1c40f`、远星 `#8e44ad`、灰港 `#7f8c8d`、巡裔 `#d35400`、根庭 `#16a085`、泊星者 `#2980b9`。
+当前 PixiJS 代码使用的派系调色：`human-independent` `0xc0392b`、`human-earth-alliance` `0x3e8b62`、`human-pacifist` `0xc9a83d`、`human-alien-accord` `0x7c6595`、`human-neutral` `0xd6b35a`、`species-fauna` `0xc97139`、`species-flora` `0x419985`、`species-extraterrestrial` `0x4d7fa8`。
 
-图形对象设置 `eventMode = "static"`，点击时向 `SelectionPort` 发出 `location-picked` 或 `entity-picked`。拖拽平移、滚轮缩放（范围 0.5–2.0，由设置限制）由 camera 处理；平移与缩放只改视口，不改任何世界坐标。
+图形对象设置 `eventMode = "static"`，点击时向 `SelectionPort` 发出实体/地点选择；拖拽平移与滚轮缩放（0.5–2.0）目前通过 `client.settings.standard` 的缩放滑块与 `CameraPort` 调整，画布手势平移/滚轮尚未接入。
 
-`client.scene-renderer.null` 实现同一端口，不绘制，只把最近一次收到的 `SceneView` 保存在 `window.__aiNpcSceneLog`，供测试读取。
+`client.scene-renderer.null` 不绘制画面，只把最近一次收到的投影（`{ projection }`）保存在 `window.__aiNpcSceneLog`，供无渲染回归读取。
 
 ### 8.5 交互到命令
 
+下表区分当前网页客户端已实现交互与目标交互：
+
 | 玩家操作 | 界面 | 结果 |
 |---|---|---|
-| 选择开局派系 | `boot.screen` 的五张卡片（名称、首个委托、接触角色） | `campaign.start`（暂停时也被接受）；受理后先重新执行第 8.2 节第 5 步的有 campaign 分支（获取投影、申请 WS 票据并订阅），再调用 `POST /api/v1/campaign/resume`，`expectedRunVersion` 取投影的 `clock.runVersion` |
-| 点击角色 | 底部对话面板打开与该角色的会话 | 输入文字发送 → `dialogue.say`；发出后显示“等待回应”，直到收到回话或投影的 `awaitingReplyFrom` 不再包含该角色 |
-| 对话面板“出示证据” | 从笔记里选证据 | `information.share`（受众为当前角色） |
-| 对话面板“提议” | 协议表单：当事人、条款类型与参数、有效期 | `agreement.propose` |
-| 点击节点 | 侧栏“地点”页：该节点的库存（等级，委托库存显示精确值）、队伍、角色 | — |
-| 地点页“派遣” | 派遣表单：任务类型、我能派遣的队伍、参数、可邀请的角色 | `task.dispatch` |
-| 任务页 | 我的任务列表：受理状态与任务状态分两列显示 | 可撤销的任务显示“撤销” → `task.cancel` |
-| 协议页 | 我参与的协议与条款状态；收到的提案显示接受/拒绝/还价 | `agreement.respond` |
-| HUD 暂停/继续/保存 | 已暂停时 HUD 醒目显示“已暂停 · 点击继续”（服务端重启后时钟总是暂停的） | `POST /campaign/pause`、`/resume`、`/snapshots`，`expectedRunVersion` 取投影的 `clock.runVersion` |
+| 选择开局派系（已实现） | `boot.screen` 显示当前唯一开放席位（`human-neutral`，名称、首个委托、接触角色） | `campaign.start`（暂停时也被接受）；受理后获取投影、申请 WS 票据并订阅，再调用 `POST /api/v1/campaign/resume`，`expectedRunVersion` 取投影的 `clock.runVersion` |
+| 点击角色（已实现对话） | 底部对话面板打开与该角色的会话 | 输入文字发送 → `dialogue.say`（`awaitingReplyFrom` 提示、“出示证据” `information.share` 与“提议” `agreement.propose` 表单为目标交互） |
+| 点击节点（已实现只读） | 侧栏“地点”页：该节点的库存（等级，委托库存显示精确值）、队伍、角色 | “派遣”表单（`task.dispatch`）为目标交互 |
+| 任务页与协议页（只读已实现） | 任务列表、协议列表与条款状态 | 撤销任务（`task.cancel`）与接受/拒绝/还价（`agreement.respond`）操作按钮为目标交互 |
+| HUD 暂停/继续/保存（已实现） | 已暂停时 HUD 醒目显示“已暂停 · 点击继续”（服务端重启后时钟总是暂停的）；水闸与提醒操作为目标项 | `POST /campaign/pause`、`/resume`、`/snapshots`，`expectedRunVersion` 取投影的 `clock.runVersion` |
 
-为了无障碍与端到端测试，侧栏“地点”与“人物”页同时提供可点击的 DOM 列表，与画布点击等价。关键元素带 `data-testid`：`faction-start-<factionId>`、`list-node-<nodeId>`、`list-character-<agentId>`、`dialogue-input`、`dialogue-send`、`dialogue-line`、`hud-pause`、`hud-resume`、`hud-save`、`dispatch-submit`、`task-row-<taskId>`。
+为了无障碍与端到端测试，侧栏“地点”与“人物”页提供可点击的 DOM 列表，与画布点击等价。当前已带 `data-testid` 的关键元素包括：`faction-start-<factionId>`、`list-node-<nodeId>`、`list-character-<agentId>`、`dialogue-input`、`dialogue-send`、`dialogue-line`、`hud-pause`、`hud-resume`、`hud-save`、`hud-settings`（由设置模块渲染）。
 
-投影需要为“等待回应”提供 `awaitingReplyFrom: string[]`：玩家在某会话中的最后一句之后，对方还没有回话，且对方的 turn 处于排队或进行中。它只暴露“正在处理”这一状态，不暴露任何内容。
+投影已提供 `awaitingReplyFrom: string[]`：玩家在某会话中的最后一句之后，对方还没有回话，且对方的 turn 处于排队或进行中。它只暴露“正在处理”这一状态，不暴露任何内容。
 
-### 8.6 HUD 两种实现
+### 8.6 HUD 两种实现（`client.hud.compact` 为 S24 目标）
 
-| 内容 | `client.hud.standard` | `client.hud.compact` |
+| 内容 | `client.hud.standard`（已实现基础状态与暂停/保存） | `client.hud.compact`（目标，尚未实现） |
 |---|---|---|
 | 时间与时钟 | “第 3 天 14 时 · 运行中”+ 暂停/继续按钮 | 时钟图标 + 天数 |
 | 三个指标 | 名称、数值、等级色条（等级阈值见 [规则](../game/rules.md) 第 4 节） | 三个彩色圆点（危急红、紧张黄、稳定绿），悬停显示数值 |
-| 水闸分配 | 文字 | 图标 |
+| 水闸分配（目标） | 文字 | 图标 |
 | 我的委托余额 | 三种已结算资源（供给/能源/医疗）的剩余数量 | 隐藏，点击展开 |
-| 提醒、设置、保存 | 按钮 | 按钮（可整体折叠成一行） |
+| 设置、保存（提醒入口为目标） | 按钮（`hud-settings` 由设置模块贡献） | 按钮（可整体折叠成一行） |
 
 两者读取同一个 `ProjectionPort`，发出同样的命令；替换时只改装配里的一行绑定。
 
 ### 8.7 设置项（`client.settings.standard`）
 
-| 设置 | 首版取值 | 生效方式 |
+| 设置 | 首版取值与当前实现状态 | 生效方式 |
 |---|---|---|
-| 语言 | 仅 `zh-CN`（下拉框只有一项） | — |
-| 字号 | 小 / 中 / 大 | 根元素 `font-size` |
-| 高对比度 | 开 / 关 | 切换 CSS 变量 |
-| 通知 | 四个级别各自开关 | 过滤 toast |
-| 声音 | 显示“声音模块未装载” | 首版没有 `client.audio` |
-| 镜头速度、缩放范围 | 0.5–2.0 | 交给 camera |
-| 图形质量 | 标准 / 清晰（PixiJS `resolution` 1 或 2） | 重建画布 |
-| 暂停 / 保存 | 与 HUD 相同 | campaign API |
-| 测试 preset | 列出 `GET /api/v1/presets`，填写说明后提交 | `POST /api/v1/run-requests` |
+| 语言 | 仅 `zh-CN` | — |
+| 字号（已实现） | 小 / 中 / 大 | 根元素 `font-size` |
+| 高对比度（已实现） | 开 / 关 | 切换 CSS 变量 |
+| 声音（已实现提示） | 显示“声音模块未装载” | 首版没有 `client.audio` |
+| 镜头缩放（已实现） | 0.5–2.0 滑块 | 交给 camera |
+| 暂停 / 继续 / 保存（已实现） | 与 HUD 相同 | campaign API |
+| 通知开关、镜头速度、图形质量、测试 preset（目标） | 尚未实现（需配合 `/presets` 与 `/run-requests`） | 偏好或 run 申请 |
 
 设置保存在 `PreferencePort`，不进入 run manifest，也不影响任何世界结果。
 
