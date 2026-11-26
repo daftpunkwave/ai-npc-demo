@@ -464,7 +464,7 @@ describe("断线自动暂停的计时边界", () => {
       active: { branchId: harness.branchId, worldId: harness.worldId },
       autoPauseAfterDisconnectMs,
       campaignStarted: () => true,
-      disposeResources: async () => {},
+      closeResources: async () => {},
     });
     return { lifecycle, fakeClock };
   }
