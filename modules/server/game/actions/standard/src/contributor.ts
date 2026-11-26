@@ -9,12 +9,13 @@ import { dispatch } from "./dispatch";
 import { respond } from "./respond";
 import { complete, depart, returnToOrigin, work } from "./task-jobs";
 import type { ActionContext } from "./task-shared";
+import { actionsOwnedAggregates } from "./definition";
 
 /** 行动模块的规则贡献。 */
 export function createActionsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.actions,
-    ownsAggregates: ["task", "task-invitation"],
+    ownsAggregates: actionsOwnedAggregates,
     commands: [
       { type: "task.dispatch", handler: (context, payload) => dispatch(context as ActionContext, payload) },
       { type: "task.respond", handler: (context, payload) => respond(context as ActionContext, payload) },

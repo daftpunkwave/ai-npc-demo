@@ -8,12 +8,13 @@ import { onInformationShared, onPolicyChanged, onTaskCompleted } from "./agreeme
 import { propose, respond } from "./agreement-commands";
 import { breach, expire } from "./agreement-jobs";
 import { asPorts, type AgreementContext } from "./agreement-shared";
+import { agreementsOwnedAggregates } from "./definition";
 
 /** 协议模块的规则贡献。 */
 export function createAgreementsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.agreements,
-    ownsAggregates: ["agreement"],
+    ownsAggregates: agreementsOwnedAggregates,
     commands: [
       { type: "agreement.propose", handler: (context, payload) => propose(context as AgreementContext, payload) },
       { type: "agreement.respond", handler: (context, payload) => respond(context as AgreementContext, payload) },

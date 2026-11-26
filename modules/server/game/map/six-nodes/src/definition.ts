@@ -13,6 +13,11 @@ const mapConfigSchema = z
   })
   .strict();
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const mapOwnedAggregates = ["road", "passage-grant"] as const;
+
 const mapDefinition: ModuleDefinition = {
   id: "game.map.six-nodes",
   realm: "server",
@@ -32,7 +37,7 @@ const mapDefinition: ModuleDefinition = {
   configSchema: mapConfigSchema,
   defaults: { maxNodes: 64 },
   stateSchemaVersion: 1,
-  ownsAggregates: ["road", "passage-grant"],
+  ownsAggregates: mapOwnedAggregates,
   migrationPaths: [],
   create: async (input) => {
     const { createMapModule } = await import("./plugin");

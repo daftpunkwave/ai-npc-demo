@@ -1,7 +1,8 @@
 /**
  * 核心职责：从已解析装配与已启动实例构造游戏模块的事务内端口绑定器与规则贡献。
  * 交互契约：依赖 kernel 的实例计划、已启动实例的公开端口、内容索引与宿主 ID 服务；
- * 绑定器按计划的拓扑顺序构造端口，处理器只得到自身能力与 requires 声明的端口。
+ * 绑定器按计划的拓扑顺序构造端口，处理器只得到自身能力与 requires 声明的端口；
+ * 规则贡献的模块 ID 与聚合所有权必须与模块定义一致，否则启动期拒绝。
  * 约束与禁忌：禁止按模块 ID 挑选实现、跳过 requires 限制或把全部端口交给任意处理器。
  */
 import { DomainError, type HostServices } from "@world-prism/contracts";
@@ -54,6 +55,27 @@ function gameCapabilitiesOf(planned: PlannedModule): readonly string[] {
   return planned.definition.provides
     .map((provided) => provided.capability as string)
     .filter(isGameCapability);
+}
+
+/**
+ * 模块定义与规则贡献声明的聚合所有权必须是同一集合：前者进入 manifest 摘要与冻结装配，
+ * 后者是 authority 运行期写权限的唯一来源。两者分叉时 manifest 无法解释实际可写范围，
+ * 因此在启动期拒绝并列出差异，而不是等到运行期写入被拒或静默越权。
+ */
+function assertSameOwnedAggregates(
+  planned: PlannedModule,
+  contributor: GameRuleContributor<GameModulePorts, unknown>,
+): void {
+  const declared = new Set(planned.definition.ownsAggregates ?? []);
+  const registered = new Set(contributor.ownsAggregates);
+  const onlyDeclared = [...declared].filter((aggregate) => !registered.has(aggregate)).sort();
+  const onlyRegistered = [...registered].filter((aggregate) => !declared.has(aggregate)).sort();
+  if (onlyDeclared.length > 0 || onlyRegistered.length > 0) {
+    throw new Error(
+      `游戏模块 ${planned.moduleId} 的规则贡献与模块定义声明的聚合所有权不一致：` +
+        `仅模块定义声明 [${onlyDeclared.join(", ")}]，仅规则贡献声明 [${onlyRegistered.join(", ")}]`,
+    );
+  }
 }
 
 /** 请求端口视图的调用方身份；宿主自身与具体模块用于区分端口触发来源。 */
@@ -187,6 +209,7 @@ export function resolveGameModuleBindings(input: {
         `游戏模块 ${planned.moduleId} 暴露的规则贡献属于 ${port.contributor.moduleId}`,
       );
     }
+    assertSameOwnedAggregates(planned, port.contributor);
     const requires = planned.requires
       .map((requirement) => requirement.capability as string)
       .filter(isGameCapability);

@@ -30,6 +30,7 @@ import {
   type GroupState,
   type TeamState,
 } from "./state";
+import { worldOwnedAggregates } from "./definition";
 
 type WorldContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -206,15 +207,7 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
 export function createWorldContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.world,
-    ownsAggregates: [
-      "campaign",
-      "meters",
-      "character",
-      "team",
-      "group",
-      "delegation",
-      "evidence-placement",
-    ],
+    ownsAggregates: worldOwnedAggregates,
     commands: [
       {
         type: "campaign.start",

@@ -14,8 +14,11 @@ import {
   type HandlerContext,
   type HandlerResult,
 } from "@world-prism/module-sdk";
+import type { commsOwnedAggregates } from "./definition";
 
 type ProbeContext = HandlerContext<GameModulePorts, unknown>;
+
+type CommsOwnedAggregate = (typeof commsOwnedAggregates)[number];
 
 /** 系统世界身份：唯一允许发行 `probe.ask` 的主体。 */
 const probeIssuerId = "system:world";
@@ -23,8 +26,9 @@ const probeIssuerId = "system:world";
 /**
  * 已提交探针的登记聚合类型。它属于通信模块的写作用域，
  * 以 `probeId` 为主键，用于让同一探针在重复提交时保持幂等。
+ * `satisfies` 让它在类型层必须出现在模块声明的聚合所有权里。
  */
-export const probeRequestAggregate = "probe-request";
+export const probeRequestAggregate = "probe-request" satisfies CommsOwnedAggregate;
 
 /**
  * 校验主体在内容索引中的登记类型。

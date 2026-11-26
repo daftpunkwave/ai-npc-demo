@@ -9,6 +9,20 @@ import { z } from "zod";
 
 const commsConfigSchema = z.object({}).strict();
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const commsOwnedAggregates = [
+  "conversation",
+  "conversation-line",
+  "conversation-membership",
+  "knowledge-grant",
+  "share",
+  "message",
+  "message-delivery",
+  "probe-request",
+] as const;
+
 const commsDefinition: ModuleDefinition = {
   id: "game.comms.standard",
   realm: "server",
@@ -34,16 +48,7 @@ const commsDefinition: ModuleDefinition = {
   configSchema: commsConfigSchema,
   defaults: {},
   stateSchemaVersion: 1,
-  ownsAggregates: [
-    "conversation",
-    "conversation-line",
-    "conversation-membership",
-    "knowledge-grant",
-    "share",
-    "message",
-    "message-delivery",
-    "probe-request",
-  ],
+  ownsAggregates: commsOwnedAggregates,
   migrationPaths: [],
   create: async (input) => {
     const { createCommsModule } = await import("./plugin");

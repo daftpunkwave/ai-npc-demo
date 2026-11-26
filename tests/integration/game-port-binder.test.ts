@@ -12,8 +12,8 @@ import { resolveGameModuleBindings } from "@world-prism/app-server/host";
 /** 记录每次绑定收到的上下文，供断言端口记录内容使用。 */
 const bindContexts: { readonly moduleId: string; readonly context: GamePortBindContext }[] = [];
 
-/** 构造只记录绑定上下文的模块公开端口。 */
-function recordingPort(moduleId: string): unknown {
+/** 构造只记录绑定上下文的模块公开端口；规则贡献按参数声明聚合所有权。 */
+function recordingPort(moduleId: string, ownsAggregates: readonly string[] = []): unknown {
   return {
     bind: (
       _txFor: unknown,
@@ -24,12 +24,17 @@ function recordingPort(moduleId: string): unknown {
       bindContexts.push({ moduleId, context });
       return { moduleId };
     },
-    contributor: { moduleId },
+    contributor: { moduleId, ownsAggregates },
   };
 }
 
-/** 构造最小模块定义；能力声明即实际读取的全部字段。 */
-function definition(id: string, provides: readonly string[], requires: readonly string[]): ModuleDefinition {
+/** 构造最小模块定义；能力声明与聚合所有权即实际读取的全部字段。 */
+function definition(
+  id: string,
+  provides: readonly string[],
+  requires: readonly string[],
+  ownsAggregates: readonly string[] = [],
+): ModuleDefinition {
   return {
     id,
     realm: "server",
@@ -51,7 +56,7 @@ function definition(id: string, provides: readonly string[], requires: readonly 
     configSchema: { safeParse: () => ({ success: true, data: {} }) } as never,
     defaults: {},
     stateSchemaVersion: 1,
-    ownsAggregates: [],
+    ownsAggregates,
     migrationPaths: [],
     create: async () => {
       throw new Error("绑定器测试不创建实例");
@@ -131,6 +136,37 @@ describe("游戏端口绑定上下文", () => {
     const hostPorts = binder(txFor, null) as unknown as Record<string, unknown>;
     expect(hostPorts["game.map"]).toBeDefined();
     expect(hostPorts["game.world"]).toBeDefined();
+  });
+
+  it("模块定义与规则贡献的聚合所有权不一致时启动期失败并列出差异", () => {
+    const mapPlanned = planned("mod-map", definition("mod-map", ["game.map"], [], ["road"]), []);
+    expect(() => resolveGameModuleBindings({
+      plan: { assemblyId: "test-assembly", realm: "server", modules: [mapPlanned], agentSlots: {} } as never,
+      instances: [{
+        moduleId: "mod-map",
+        version: "1.0.0",
+        instance: {} as never,
+        port: recordingPort("mod-map", ["passage-grant", "road"]),
+      }],
+      content: contentStub(),
+      host: { ids: (prefix: string) => `${prefix}-000000000001` } as never,
+    })).toThrow("游戏模块 mod-map 的规则贡献与模块定义声明的聚合所有权不一致：仅模块定义声明 []，仅规则贡献声明 [passage-grant]");
+  });
+
+  it("聚合所有权按集合比较，声明顺序不同不视为不一致", () => {
+    const mapPlanned = planned("mod-map", definition("mod-map", ["game.map"], [], ["road", "passage-grant"]), []);
+    const result = resolveGameModuleBindings({
+      plan: { assemblyId: "test-assembly", realm: "server", modules: [mapPlanned], agentSlots: {} } as never,
+      instances: [{
+        moduleId: "mod-map",
+        version: "1.0.0",
+        instance: {} as never,
+        port: recordingPort("mod-map", ["passage-grant", "road"]),
+      }],
+      content: contentStub(),
+      host: { ids: (prefix: string) => `${prefix}-000000000001` } as never,
+    });
+    expect(result.contributors.map((contributor) => contributor.ownsAggregates)).toEqual([["passage-grant", "road"]]);
   });
 
   it("未注册的模块 ID 直接失败", () => {
