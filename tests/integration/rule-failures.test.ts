@@ -293,6 +293,46 @@ describe("事件消费者失败隔离", () => {
   });
 });
 
+/** 消费者跳过不相关事件时不写游标：过滤下推到 SQL 后，游标只随真正处理的事件推进。 */
+describe("消费者游标推进范围", () => {
+  it("只订阅单一事件类型的消费者不因无关事件写入 offset", async () => {
+    const harness = await createHarness();
+    const processed: string[] = [];
+    harness.authority.registerModule({
+      moduleId: "test.filtered-consumer",
+      ownsAggregates: [],
+      events: [
+        { type: "TestFilteredEvent", payloadSchema: z.unknown() },
+        { type: "TestIgnoredEvent", payloadSchema: z.unknown() },
+      ],
+      consumers: [
+        {
+          consumerId: "test.filtered",
+          eventTypes: ["TestFilteredEvent"],
+          handler: (_context, event) => {
+            processed.push(event.eventId);
+          },
+        },
+      ],
+    });
+    seedDomainEvent(harness, 1, "evt-0123456789ae", "TestIgnoredEvent");
+    seedDomainEvent(harness, 2, "evt-0123456789af", "TestIgnoredEvent");
+
+    expect(harness.authority.consumers.run(harness.branchId)).toEqual({ processed: 0, scanned: 0 });
+    expect(processed).toEqual([]);
+    const offset = (): unknown =>
+      harness.storage.transact((tx) =>
+        tx.branch(harness.branchId).table("consumer_offsets").get({ consumer_id: "test.filtered" }),
+      );
+    expect(offset()).toBeNull();
+
+    seedDomainEvent(harness, 3, "evt-0123456789ag", "TestFilteredEvent");
+    expect(harness.authority.consumers.run(harness.branchId)).toEqual({ processed: 1, scanned: 1 });
+    expect(processed).toEqual(["evt-0123456789ag"]);
+    expect(offset()).toMatchObject({ last_world_seq: 3 });
+  });
+});
+
 /** 时钟步骤失败达到上限后只跳过该 tick 的毒丸步骤，其他步骤继续执行。 */
 describe("时钟步骤失败隔离", () => {
   it("达到重试上限后跳过毒丸步骤，同一 tick 的后续步骤仍执行", async () => {
