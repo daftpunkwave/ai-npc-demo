@@ -1,6 +1,6 @@
 /**
  * 按角色名册裁决玩家入口、命令、控制台接口、控制台会话与 WS 频道。
- * 依赖定义中的严格配置与 API 第 4 节声明的频道角色；无存储、无 I/O。
+ * 依赖定义中的严格配置与频道角色映射表；无存储、无 I/O。
  * 禁止把页面自报角色当作授权来源，也禁止让传输层自行维护角色白名单。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
@@ -19,7 +19,7 @@ const deny = (reason: "forbidden" | "unknown-role" = "forbidden"): AccessDecisio
 });
 
 /**
- * 频道与可订阅角色的对应关系固定取自 API 第 4 节。
+ * 频道与可订阅角色的对应关系固定在策略表中。
  * 频道集合不进入部署配置，避免把玩家频道或研究频道放宽给其他角色。
  */
 const channelRoles: Readonly<Record<string, readonly string[]>> = {

@@ -1,7 +1,7 @@
 /**
- * 核心职责：把 run 的创建与导出组装成宿主可注入的写入端口，供控制台评估接口调用。
- * 交互契约：依赖宿主服务、存储、内容包、装配定义与 artifact 存储；两个操作各自独立完成。
- * 约束与禁忌：不启动 Agent 运行时、不推进时钟、不写世界状态；失败时不留下半个 run 或半个 artifact。
+ * 核心职责：把 run 创建、启停控制、实验创建与导出组装成宿主可注入的写入端口，供控制台评估接口调用。
+ * 交互契约：依赖宿主服务、存储、内容包、装配定义、配置加载上下文与 artifact 存储；各写操作各自独立完成。
+ * 约束与禁忌：不启动 Agent 运行时、不推进时钟步进循环、不写世界状态；失败时不留下半个 run 或半个 artifact。
  */
 import type { HostServices, Json, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
 import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster, RunSpec } from "@ai-npc/experiment";
@@ -49,7 +49,7 @@ export interface RunWrites {
   }): Promise<{ readonly artifactId: string }>;
 }
 
-/** 构造写入端口；两个操作各自独立，互不共享中间状态。 */
+/** 构造写入端口；各操作各自独立，互不共享中间状态。 */
 export function createRunWrites(input: RunWritesInput): RunWrites {
   return {
     createRun: (runSpec) => createRun({

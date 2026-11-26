@@ -6,7 +6,7 @@
 import type { ConversationLine, InboxItemView, NotebookEntryView } from "@ai-npc/contracts";
 import type { GameCommsPort, GameContent } from "@ai-npc/module-sdk";
 
-/** 会话对白与收件箱的保留条数；与 API 第 3 节的会话分页上限一致取最近 50 条。 */
+/** 会话对白与收件箱的保留条数；取最近 50 条。 */
 const conversationLineLimit = 50;
 const inboxItemLimit = 50;
 
