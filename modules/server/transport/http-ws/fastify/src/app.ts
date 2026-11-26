@@ -64,10 +64,13 @@ export type {
 } from "./routes/contracts";
 
 import {
+  bearerToken,
   corsAllowedHeaders,
   corsAllowedMethods,
   httpTransportLimits,
   isHandlerTimeoutError,
+  isRateLimitedRoute,
+  registerRateLimits,
   isWebSocketPayloadTooLarge,
   maxWebSocketPayloadBytes,
 } from "./transport-limits";
@@ -167,44 +170,20 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     return payload;
   });
-  // 控制台研究/评估接口与登录入口按路由声明配额：读接口 60 次/10 秒、写接口 10 次/10 秒。
-  // 阈值可经 options.rateLimits 覆盖；其他既有路由的限流治理另见跟踪 Issue。
-  const rateLimitFor = (method: string): number =>
-    method === "GET" || method === "HEAD"
-      ? (options.rateLimits?.read ?? 60)
-      : (options.rateLimits?.write ?? 10);
-  app.addHook("onRoute", (route) => {
-    const url = route.url;
-    const limited = url.startsWith("/api/v1/console") || url === "/api/v1/auth/login";
-    if (!limited) return;
-    const methods = Array.isArray(route.method) ? route.method : [route.method];
-    const write = methods.some((method) => method !== "GET" && method !== "HEAD");
-    route.config = {
-      ...route.config,
-      rateLimit: { max: rateLimitFor(write ? "POST" : "GET"), timeWindow: "10 seconds" },
-    };
-  });
-  await app.register(rateLimit, {
-    global: false,
-    max: options.rateLimits?.read ?? 60,
-    timeWindow: "10 seconds",
-    keyGenerator: (request) => {
-      const authorization = request.headers.authorization;
-      // 凭据本身不进键：只取其后段的稳定前缀，避免把令牌留在内存映射里。
-      if (typeof authorization === "string" && authorization.length > 0) return `cred:${authorization.slice(-24)}`;
-      return `ip:${request.ip}`;
-    },
-    errorResponseBuilder: (_request, context) => ({
-      // 与项目统一错误格式一致：429 走 budget-exhausted，并带 retryAfter 秒数。
-      statusCode: 429,
-      error: {
-        code: "budget-exhausted",
-        retryable: true,
-        safeMessage: `请求过于频繁，请等待 ${Math.ceil(context.ttl / 1000)} 秒`,
-        traceId: null,
-        detailsArtifactRef: null,
-      },
-    }),
+  // 限流键按已认证会话主体分桶；hub 建立前恒为 null，此时全部归入未认证桶。
+  let sessionHub: StreamHub | null = null;
+  const principalOfSession = (header: string | undefined): string | null => {
+    const hub: StreamHub | null = sessionHub;
+    if (hub === null) {
+      return null;
+    }
+    const token = bearerToken(header);
+    return token === null ? null : (hub.authenticate(token)?.auth.principalId ?? null);
+  };
+  await registerRateLimits(app, rateLimit, {
+    ...(options.rateLimits?.read === undefined ? {} : { readLimit: options.rateLimits.read }),
+    ...(options.rateLimits?.write === undefined ? {} : { writeLimit: options.rateLimits.write }),
+    sessionPrincipalOf: (header) => principalOfSession(header),
   });
   await app.register(websocket, {
     options: { maxPayload: maxWebSocketPayloadBytes },
@@ -331,6 +310,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     },
   });
   hub.setBranch(branch.branchId);
+  sessionHub = hub;
   /**
    * 健康摘要定时广播：只在确有订阅者时构造。
    * health() 每次要跑两笔事务并重建模块清单，没有控制台页面打开时这份构造完全无人接收，

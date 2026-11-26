@@ -49,6 +49,14 @@
 
 会话数量有上限。容量满时服务端先清理过期会话，再淘汰没有活动 WS 连接且最早过期的会话；如果剩余会话都保持活动连接，登录返回 429 `budget-exhausted`（`retryable: true`），不会驱逐活跃会话。
 
+### 2.1 请求配额
+
+除 `GET /api/v1/health` 与 WebSocket 升级 `GET /api/v1/streams` 外，全部 `/api/v1/` 路由按会话主体计配额：读入口（`GET`/`HEAD`）默认 60 次每 10 秒，写入口默认 10 次每 10 秒。超限返回 429 `budget-exhausted`，并带 `Retry-After` 秒数。
+
+配额按路由声明在传输层的统一钩子里，不分散到各路由注册器：用豁免清单而不是白名单，新增路由默认受保护。豁免项各有依据——健康检查无鉴权且供探活高频调用，限流会让探活本身变成故障源；WebSocket 升级是长连接，请求次数不代表资源占用，连接期内由心跳与连接上限约束。
+
+写入口阈值显著低于读入口，因为这些路径会推进世界状态或消耗会话资源：`POST /api/v1/commands` 与 `POST /api/v1/streams/ticket` 都是写入口。被限流的请求在业务处理之前被拒绝，不写回执、不产生事件、不推进世界状态。
+
 ## 3. 玩家 API（角色 `player`）
 
 本节是玩家自助入口：暂停、继续、存档、恢复与重新开局都由玩家会话直接作用于在线分支。控制台运营角色使用第 5.3 节的 `/api/v1/console/campaign/*` 入口；两者路径、角色与幂等主体各自独立，互不复用。
@@ -113,6 +121,10 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 `ping`、`ack` 与 `subscribe` 都在会话校验之后处理：会话已失效时一律以 4401 关闭，不会回 `pong`，也不会因 `ack` 触发补发。
 
+心跳是双向的，因为单向心跳只能证明一方仍能写出帧，证明不了对端仍在收。服务端按 `heartbeatIntervalMs` 发 `ping`，客户端须回 `pong`；客户端同样发 `ping`，服务端回 `pong`。两端都以「最近一次收到任意帧」判定连接存活：服务端超过 `heartbeatTimeoutMs` 未收到该连接的任何帧即 `terminate` 并按正常断开清理，客户端超过活跃窗口未收到任何帧即关闭当前连接并进入既有退避重连。
+
+这一判定不能省略。半开连接（客户端进程被杀、网络中断、休眠唤醒后的失效 socket）不会产生 `close` 事件，服务端会一直保留该连接与玩家连接计数，导致「全部玩家断开后经宽限自动暂停」永不触发；客户端则停在「已连接」却永远收不到增量。
+
 | 方向 | 消息 | 字段 |
 |---|---|---|
 | S→C | `hello` | `protocolVersion`、`principalId`、`channels`（本会话可订阅的频道） |
@@ -121,7 +133,9 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | S→C | `delta` | `channel`、`streamSeq`、`projectionVersion`、`set`（顶层字段 → 新值的映射，例如 `{ "tasks": [...], "meters": {...} }`） |
 | S→C | `append` | `channel`、`streamSeq`、`kind`、`item`。`kind` 与 `item` 按判别联合绑定：`dialogue` 的 `item` 必须满足 `ConversationLine`，`notification` 的 `item` 必须满足 `PlayerNotificationView`，且 `channel` 固定为 `player`。未实现的追加种类不在公开 schema 内，消费方无需区分“未实现”与“暂无数据” |
 | C→S | `ack` | `channel`、`streamSeq`；只能确认已订阅的频道，未订阅频道回 `forbidden` |
-| C→S / S→C | `ping` / `pong` | — |
+| C→S | `ping` | 客户端心跳；服务端回 `pong` |
+| S→C | `ping` | 服务端心跳；客户端须回 `pong` |
+| C→S / S→C | `pong` | 对端心跳的回执；收到任意帧都证明该连接仍在 |
 | S→C | `error` | `code`、`safeMessage`。`not-ready` 表示授权通过但该频道当前没有生产者 |
 
 控制台频道按权限出现在 `hello.channels` 中，订阅时和世界变化后推送对应快照。已授权但尚未实现生产者的频道在订阅时回 `not-ready`，不进入推送集合，客户端据此区分“未实现”与“暂无数据”。

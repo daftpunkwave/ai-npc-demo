@@ -11,6 +11,7 @@ import {
   type StreamChannel,
 } from "@ai-npc/contracts";
 import { handleClientMessage } from "./client-messages";
+import { HeartbeatProbe } from "./heartbeat-probe";
 import { ReplayStore } from "./replay-store";
 import { SessionRegistry } from "./session-registry";
 import { ConnectionAdmission } from "./stream-connections";
@@ -60,7 +61,12 @@ export class StreamHub {
   private readonly playerConnections = { count: 0 };
   private readonly admission: ConnectionAdmission;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastSweepAt: number;
+  /** 心跳间隔；半开连接没有 close 事件，只能靠定时探测回收。 */
+  private readonly heartbeatIntervalMs: number;
+  /** 连接活性探测器：超时回收与 ping 推送都在其中，本类只提供依赖。 */
+  private readonly probe: HeartbeatProbe;
   private branchId: string;
   private generation = 0;
   /** 流游标：发布模块直接推进其中的序号与版本。 */
@@ -75,6 +81,7 @@ export class StreamHub {
     this.now = options.now ?? (() => Date.now());
     const limits = hubLimits(options);
     this.sweepIntervalMs = limits.sweepIntervalMs;
+    this.heartbeatIntervalMs = limits.heartbeatIntervalMs;
     this.branchId = "";
     this.lastSweepAt = this.now();
     this.sessions = new SessionRegistry({
@@ -108,6 +115,19 @@ export class StreamHub {
         : { channelSnapshot: options.channelSnapshot }),
       channelSequence: (channel) => this.consoleSequences.get(channel) ?? 0,
       maxBufferedBytes: limits.maxBufferedBytes,
+    });
+    // 探测器只读连接集合与活跃时间，超时回收必须走 disconnect，
+    // 否则玩家连接计数不会递减，宿主的「全员断线自动暂停」不会触发。
+    this.probe = new HeartbeatProbe({
+      connections: () => this.connections,
+      disconnect: (socket) => {
+        this.disconnect(socket);
+      },
+      ping: (socket) => {
+        this.sender.sendMessage(socket, { type: "ping" });
+      },
+      now: this.now,
+      timeoutMs: limits.heartbeatTimeoutMs,
     });
     const initial = options.projection();
     this.baseline.projection = Object.freeze({ ...initial });
@@ -381,6 +401,19 @@ export class StreamHub {
     }
   }
 
+  /**
+   * 探测半开连接：超过时限没有收到任何帧的连接按失联回收，并向存活连接发 ping。
+   *
+   * 回收必须走 `disconnect` 而不是只关 socket：`playerConnections` 计数是宿主判断
+   * 「玩家全部断线」的唯一入口，漏减计数会让自动暂停永不触发。
+   */
+  heartbeat(): void {
+    if (this.closed) {
+      return;
+    }
+    this.probe.probe();
+  }
+
   /** 清空后台对象并关闭连接；close 后 publish 不再工作。 */
   close(): void {
     if (this.closed) {
@@ -390,6 +423,10 @@ export class StreamHub {
     if (this.sweepTimer !== null) {
       clearInterval(this.sweepTimer);
       this.sweepTimer = null;
+    }
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     for (const connection of [...this.connections.values()]) {
       this.sender.close(connection.socket, 1001, "server shutting down");
@@ -401,15 +438,26 @@ export class StreamHub {
     this.playerConnections.count = 0;
   }
 
-  /** 首次使用流资源时才建立低频清理定时器；unref 避免阻止进程退出。 */
+  /**
+   * 首次使用流资源时才建立低频清理与心跳定时器；unref 避免阻止进程退出。
+   * 两个定时器分开调度：清理按分钟级节流，心跳间隔更短且必须独立于清理节奏。
+   */
   private ensureSweepTimer(): void {
-    if (this.sweepTimer !== null || this.closed) {
+    if (this.closed) {
       return;
     }
-    this.sweepTimer = setInterval(() => {
-      this.sweep();
-    }, this.sweepIntervalMs);
-    this.sweepTimer.unref();
+    if (this.sweepTimer === null) {
+      this.sweepTimer = setInterval(() => {
+        this.sweep();
+      }, this.sweepIntervalMs);
+      this.sweepTimer.unref();
+    }
+    if (this.heartbeatTimer === null) {
+      this.heartbeatTimer = setInterval(() => {
+        this.heartbeat();
+      }, this.heartbeatIntervalMs);
+      this.heartbeatTimer.unref();
+    }
   }
 
   private maybeSweep(): void {

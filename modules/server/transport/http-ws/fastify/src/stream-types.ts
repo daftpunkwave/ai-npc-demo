@@ -94,6 +94,14 @@ export interface StreamHubOptions {
   readonly maxConnections?: number;
   /** 单会话连接上限；默认 8。超限时新连接以 1013 关闭。 */
   readonly maxConnectionsPerSession?: number;
+  /**
+   * 服务端主动心跳间隔；默认 30 秒。
+   * 半开连接没有 `close` 事件，只能靠 ping/pong 往返发现，
+   * 因此该值与超时判定一起决定死连接被回收的最长延迟。
+   */
+  readonly heartbeatIntervalMs?: number;
+  /** 心跳超时上限；超过该时长没有收到任何帧即终止连接。默认 2 个间隔。 */
+  readonly heartbeatTimeoutMs?: number;
 }
 
 /** 一条玩家投影增量；set 只含发生变化的顶层字段。 */
@@ -125,6 +133,12 @@ export interface Connection {
    * 用连接级单标志会让先补发成功的频道清掉另一个频道的补发请求，导致后者的快照永久缺失。
    */
   readonly pendingSnapshots: Set<StreamChannel>;
+  /**
+   * 最近一次收到该连接任何帧的时间（毫秒）。
+   * 半开连接不会触发 `close`，只能靠这个时间戳与心跳超时判定它已经失联；
+   * 任何合法帧都算存活证据，包括 pong、ack 与 subscribe。
+   */
+  lastSeenAt: number;
 }
 
 /** 一次性 WS 票据，只记录绑定的会话与失效时间。 */
@@ -153,6 +167,16 @@ export const defaultMaxReplayBuffers = 512;
  */
 export const defaultMaxConnections = 256;
 export const defaultMaxConnectionsPerSession = 8;
+/**
+ * 服务端心跳间隔。半开连接（客户端进程被杀、网络中断、休眠唤醒）不会触发 `close`，
+ * 只能靠主动探测发现；间隔取值与既有清理节拍同量级，不额外引入高频轮询。
+ */
+export const defaultHeartbeatIntervalMs = 30_000;
+/**
+ * 心跳超时判定：超过「间隔 + 宽限」没有收到任何帧即视为对端失联。
+ * 宽限取一个完整间隔，容忍一次调度抖动或短暂拥塞，避免把正常连接误判为死连接。
+ */
+export const defaultHeartbeatTimeoutMs = 2 * defaultHeartbeatIntervalMs;
 
 /** 提醒的稳定键；派生提醒的 worldTick 会随 tick 重算，不参与同一提醒的识别。 */
 export const notificationKey = playerNotificationKey;
@@ -258,6 +282,8 @@ export interface HubLimits {
   readonly maxReplayBuffers: number;
   readonly maxConnections: number;
   readonly maxConnectionsPerSession: number;
+  readonly heartbeatIntervalMs: number;
+  readonly heartbeatTimeoutMs: number;
 }
 
 /**
@@ -272,8 +298,36 @@ function capacityLimit(value: number, name: string): number {
   return value;
 }
 
+/**
+ * 定时器间隔上限：Node 的 `setTimeout`/`setInterval` 只接受 32 位有符号整数。
+ * 超过该值时 Node 打印 `TimeoutOverflowWarning` 并把间隔降为 1 毫秒——
+ * 心跳会因此变成每毫秒一次的高频轮询，把限流保护反向变成拒绝服务入口。
+ * 在这里显式拒绝，而不是让运行期静默降级。
+ */
+const maxTimerDelayMs = 2 ** 31 - 1;
+
 /** 合并调用方覆盖与缺省边界；不读取配置或环境变量。 */
 export function hubLimits(options: StreamHubOptions): HubLimits {
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? defaultHeartbeatIntervalMs;
+  const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? defaultHeartbeatTimeoutMs;
+  if (!Number.isInteger(heartbeatIntervalMs) || heartbeatIntervalMs <= 0) {
+    throw new DomainError("validation", `heartbeatIntervalMs 必须是正整数，收到 ${String(heartbeatIntervalMs)}`);
+  }
+  // 超出 32 位有符号范围时 Node 会把间隔降为 1ms，心跳随之变成高频轮询。
+  if (heartbeatIntervalMs > maxTimerDelayMs) {
+    throw new DomainError(
+      "validation",
+      `heartbeatIntervalMs 不得超过 ${String(maxTimerDelayMs)}，收到 ${String(heartbeatIntervalMs)}`,
+    );
+  }
+  // 超时短于一个间隔时，第一次探测就会立刻被判超时，连接永远等不到回执。
+  // 超时只用于比较而不直接作为定时器间隔，因此只需校验它不超出安全整数范围，便于做差比较。
+  if (!Number.isInteger(heartbeatTimeoutMs) || heartbeatTimeoutMs <= heartbeatIntervalMs) {
+    throw new DomainError(
+      "validation",
+      `heartbeatTimeoutMs 必须大于 heartbeatIntervalMs 且为整数，收到 ${String(heartbeatTimeoutMs)}`,
+    );
+  }
   return {
     maxBufferedBytes: options.maxBufferedBytes ?? defaultMaxBufferedBytes,
     sweepIntervalMs: options.sweepIntervalMs ?? defaultSweepIntervalMs,
@@ -288,5 +342,7 @@ export function hubLimits(options: StreamHubOptions): HubLimits {
       options.maxConnectionsPerSession ?? defaultMaxConnectionsPerSession,
       "maxConnectionsPerSession",
     ),
+    heartbeatIntervalMs,
+    heartbeatTimeoutMs,
   };
 }

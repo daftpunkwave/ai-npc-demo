@@ -166,23 +166,33 @@ export function isSessionInvalidCloseCode(code: number): boolean {
   return code === streamCloseCodes.sessionInvalid;
 }
 
-/** 服务端可推送的 WS 消息。 */
+/**
+ * 服务端可推送的 WS 消息。
+ * `ping` 由服务端心跳发出，客户端须回 `pong`；两端都发心跳，因为单向心跳只能证明
+ * 一方能发出帧，证明不了对端仍在收。半开连接不会有 `close` 事件，只能由这种往返探测发现。
+ */
 export const serverStreamMessageSchema = z.union([
   streamHelloMessageSchema,
   streamSnapshotMessageSchema,
   streamDeltaMessageSchema,
   streamAppendMessageSchema,
+  streamPingMessageSchema,
   streamPongMessageSchema,
   streamErrorMessageSchema,
 ]);
 
 export type ServerStreamMessage = z.infer<typeof serverStreamMessageSchema>;
 
-/** 客户端可发送的 WS 消息。 */
+/**
+ * 客户端可发送的 WS 消息。
+ * `pong` 是对服务端 `ping` 的回执；它与客户端主动 `ping` 是两件事：
+ * 前者证明客户端仍在收，后者证明客户端仍在发。
+ */
 export const clientStreamMessageSchema = z.discriminatedUnion("type", [
   streamSubscribeMessageSchema,
   streamAckMessageSchema,
   streamPingMessageSchema,
+  streamPongMessageSchema,
 ]);
 
 export type ClientStreamMessage = z.infer<typeof clientStreamMessageSchema>;

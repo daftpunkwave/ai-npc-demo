@@ -70,6 +70,7 @@ export class ConnectionAdmission {
       isPlayer: channels.includes(playerChannel),
       subscriptions: new Set(),
       pendingSnapshots: new Set(),
+      lastSeenAt: this.input.now(),
     };
     connections.set(socket, connection);
     sessionConnections.set(session.sessionId, (sessionConnections.get(session.sessionId) ?? 0) + 1);
@@ -84,6 +85,9 @@ export class ConnectionAdmission {
       this.disconnect(socket);
     });
     socket.on("message", (data) => {
+      // 任何合法帧都先刷新活性再判业务：非法帧同样证明对端还在，
+      // 若把它当作失联证据，合法客户端会被心跳误踢。
+      connection.lastSeenAt = this.input.now();
       this.input.onMessage(socket, data.toString());
     });
     sender.sendMessage(socket, {

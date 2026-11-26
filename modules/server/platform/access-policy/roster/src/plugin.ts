@@ -4,24 +4,12 @@
  * 禁止把页面自报角色当作授权来源，也禁止让传输层自行维护角色白名单。
  */
 import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import {
+  createStatelessModule,
+  type AccessDecision,
+  type AccessRequest,
+} from "@ai-npc/module-sdk";
 import { accessPolicyConfigSchema, type AccessPolicyConfig } from "./definition";
-
-/** 需要裁决的动作：玩家入口、命令、控制台接口、控制台会话握手与 WS 频道。 */
-export type AccessAction = "player" | "command" | "console" | "console-session" | "channel";
-
-export interface AccessRequest {
-  readonly principalId: string;
-  readonly role: string;
-  readonly action: AccessAction;
-  readonly commandType?: string;
-  readonly channel?: string;
-}
-
-export interface AccessDecision {
-  readonly allowed: boolean;
-  readonly reason: "allowed" | "forbidden" | "unknown-role";
-}
 
 const allow = (): AccessDecision => ({ allowed: true, reason: "allowed" });
 
