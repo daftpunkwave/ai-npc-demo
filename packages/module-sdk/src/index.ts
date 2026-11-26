@@ -13,6 +13,13 @@ export { createStatelessModule } from "./lifecycle";
 export { createScopedStateKey } from "./ports";
 export { isApprovedSpeechUsable } from "./speech-approval";
 export type {
+  AccessAction,
+  AccessDecision,
+  AccessDecisionReason,
+  AccessPolicy,
+  AccessRequest,
+} from "./access-policy";
+export type {
   AggregateEntry,
   AggregateListOptions,
   AggregateRecord,

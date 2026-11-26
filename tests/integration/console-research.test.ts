@@ -97,14 +97,98 @@ describe("控制台研究接口", () => {
     expect(second.statusCode).toBe(429);
   });
 
-  it("内容接口不受限流影响", async () => {
-    const host = await testHost();
+  it("内容接口同样受会话配额约束，不再是无配额的裸读入口", async () => {
+    const host = await testHost({ read: 3, write: 100_000 });
     const session = await login(host, "research-player");
     const auth = { Authorization: `Bearer ${session}` };
-    // 内容是廉价读且位于 /api/v1/ 之外的路由分组；连续请求都应成功。
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    // 内容接口是已鉴权读入口，与其它读接口同一套配额；阈值调低后必须真的被拒，
+    // 而不是靠「前缀不在钩子判定范围内」侥幸通过。
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       const content = await host.app.inject({ method: "GET", url: "/api/v1/content", headers: auth });
-      expect(content.statusCode, `content 第 ${attempt} 次`).toBe(200);
+      statuses.push(content.statusCode);
+    }
+    expect(statuses.slice(0, 3)).toEqual([200, 200, 200]);
+    expect(statuses[3]).toBe(429);
+  });
+
+  it("玩家写入口使用写阈值：命令提交比读入口更早被拒", async () => {
+    const host = await testHost({ read: 100_000, write: 2 });
+    const session = await login(host, "research-player");
+    const headers = { Authorization: `Bearer ${session}` };
+    const receipts = () =>
+      host.storage.transact((tx) => tx.branch(host.branchId).table("command_receipts").list());
+    const before = receipts();
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const response = await host.app.inject({
+        method: "POST",
+        url: "/api/v1/commands",
+        headers,
+        payload: {
+          commandId: `cmd-${String(attempt).padStart(12, "0")}`,
+          type: "campaign.start",
+          schemaVersion: 1,
+          payload: {},
+        },
+      });
+      statuses.push(response.statusCode);
+    }
+
+    // 前两次进入业务处理（未必被接受，但不再是被限流拦下），之后必须是 429。
+    expect(statuses.slice(0, 2).every((status) => status !== 429)).toBe(true);
+    expect(statuses.slice(2)).toEqual([429, 429]);
+    // 被限流的请求不产生回执：限流在业务处理之前生效。
+    expect(receipts()).toHaveLength(before.length + statuses.filter((status) => status === 200).length);
+  });
+
+  it("轮换无效令牌不能换到新配额，伪造 Authorization 头绕不过限流", async () => {
+    // 配额键若直接取自未认证的 Authorization 头，请求方只要每次换一个无效令牌，
+    // 就能落到新的计数器上，反复发送无效会话的请求永远不被限流。
+    // 这里按未认证来源收敛：轮换无效令牌的请求共享同一个桶。
+    const host = await testHost({ read: 2, write: 100_000 });
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await host.app.inject({
+        method: "GET",
+        url: "/api/v1/content",
+        headers: { Authorization: `Bearer forged-token-${String(attempt)}` },
+      });
+      statuses.push(response.statusCode);
+    }
+    // 前两次未认证返回 401 但仍然计数；之后同一个桶耗尽，继续换令牌也只会拿到 429。
+    expect(statuses.slice(0, 2)).toEqual([401, 401]);
+    expect(statuses.slice(2)).toEqual([429, 429, 429]);
+  });
+
+  it("已认证会话按主体计配额，与未认证来源分开计数", async () => {
+    // 键按已验证会话的主体生成：同一主体持续请求会被限流，
+    // 而未认证来源的消耗不影响已认证主体的配额。
+    const host = await testHost({ read: 2, write: 100_000 });
+    // 先耗尽未认证来源的桶。
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await host.app.inject({
+        method: "GET",
+        url: "/api/v1/content",
+        headers: { Authorization: "Bearer invalid" },
+      });
+    }
+    const session = await login(host, "research-player");
+    const authenticated = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/content",
+      headers: { Authorization: `Bearer ${session}` },
+    });
+    expect(authenticated.statusCode).toBe(200);
+  });
+
+  it("健康检查不参与请求次数限流，探活不会把自己限死", async () => {
+    const host = await testHost({ read: 1, write: 1 });
+    // 健康检查无鉴权且供探活高频调用；把它纳入限流会让探活本身成为故障源。
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await host.app.inject({ method: "GET", url: "/api/v1/health" });
+      expect(response.statusCode, `health 第 ${attempt} 次`).toBe(200);
     }
   });
 

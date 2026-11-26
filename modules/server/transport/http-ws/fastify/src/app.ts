@@ -107,6 +107,31 @@ const corsAllowedHeaders = ["authorization", "content-type", "x-active-role"] as
 /** 实际使用的 HTTP 方法：路由只有查询与命令提交两类，预检需要 OPTIONS。 */
 const corsAllowedMethods = ["GET", "POST", "OPTIONS"] as const;
 
+/**
+ * 不参与请求次数限流的路径：健康检查与 WebSocket 升级。
+ *
+ * 健康检查无鉴权且供探活高频调用，限流会让探活本身变成故障源；
+ * WebSocket 升级是长连接，请求次数不代表资源占用，由心跳与连接上限约束。
+ * 其余路径一律限流——用豁免清单而不是白名单，新增路由默认受保护，
+ * 遗漏只会表现为「本可以更宽松」，而不是「本应受保护却裸露」。
+ */
+function isRateLimitExempt(url: string): boolean {
+  return url === "/api/v1/health" || url === "/api/v1/streams";
+}
+
+/** 需要限流的路由：除豁免清单外的全部 API 路径。 */
+function isRateLimitedRoute(url: string): boolean {
+  return url.startsWith("/api/v1/") && !isRateLimitExempt(url);
+}
+
+/** 从 Authorization 头取 Bearer 令牌；非该形态一律视为未提供。 */
+function bearerToken(header: string | undefined): string | null {
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+    return null;
+  }
+  return header.slice("Bearer ".length);
+}
+
 
 /** ws 在接收帧超过 maxPayload 时抛出带该稳定错误码的 RangeError，并自行以 1009 发起关闭。 */
 function isWebSocketPayloadTooLarge(error: unknown): boolean {
@@ -229,17 +254,46 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     return payload;
   });
-  // 控制台研究/评估接口与登录入口按路由声明配额：读接口 60 次/10 秒、写接口 10 次/10 秒。
-  // 阈值可经 options.rateLimits 覆盖；其他既有路由的限流治理另见跟踪 Issue。
+  /**
+   * 速率限制按路由声明配额，读接口与写接口使用不同阈值。
+   *
+   * 判定分三类，逐路由在 `onRoute` 阶段决定，而不是在各路由注册器里各写一份：
+   * - 写入口（命令、票据、登录、运营变更）：阈值显著低于读入口，这些路径会推进世界状态或消耗会话资源；
+   * - 读入口（会话、内容、投影、回执、会话对白）：按会话主体的稳定窗口配额；
+   * - 不参与限流：健康检查（无鉴权、供探活高频调用）与 WebSocket 升级（连接期内由心跳与连接上限约束）。
+   *
+   * 阈值可经 options.rateLimits 覆盖；分组覆盖项缺省时沿用同一分组的默认阈值，
+   * 避免出现「覆盖了读阈值但写阈值突然变成 0」这类静默失效。
+   */
   const rateLimitFor = (method: string): number =>
     method === "GET" || method === "HEAD"
       ? (options.rateLimits?.read ?? 60)
       : (options.rateLimits?.write ?? 10);
+  // 配额键要按已验证的会话主体计，而流中心在本函数后半段才创建。
+  // 这里用一个读取器推迟取值：键生成发生在请求处理期，届时 hub 必然已就绪。
+  let sessionHub: StreamHub | null = null;
+  const sessionTokenIdentity = (header: string | undefined): string | null => {
+    if (sessionHub === null) {
+      return null;
+    }
+    const token = bearerToken(header);
+    if (token === null) {
+      return null;
+    }
+    // 只返回已验证会话的主体：未认证或过期时返回 null，交给 IP 桶。
+    return sessionHub.authenticate(token)?.auth.principalId ?? null;
+  };
   app.addHook("onRoute", (route) => {
     const url = route.url;
-    const limited = url.startsWith("/api/v1/console") || url === "/api/v1/auth/login";
-    if (!limited) return;
     const methods = Array.isArray(route.method) ? route.method : [route.method];
+    // WebSocket 升级不是可重复的请求-响应交互：连接生命周期内由心跳与连接上限约束，
+    // 按请求次数限流只会在重连抖动时误伤正常恢复。
+    if (route.websocket === true) {
+      return;
+    }
+    if (!isRateLimitedRoute(url)) {
+      return;
+    }
     const write = methods.some((method) => method !== "GET" && method !== "HEAD");
     route.config = {
       ...route.config,
@@ -250,11 +304,20 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     global: false,
     max: options.rateLimits?.read ?? 60,
     timeWindow: "10 seconds",
+    /**
+     * 配额键必须只由服务端能验证的事实构成。
+     *
+     * 旧实现直接取 `Authorization` 头的后 24 个字符。该值在认证之前完全由请求方控制：
+     * 每次换一个无效令牌就能落到新的计数器上，反复发送无效会话的请求永远不会被限流。
+     * 正确做法是先用流中心的会话表验证令牌，只有已验证的会话才按主体计配额——
+     * 此时 `principalId` 由服务端会话给出，伪造令牌换不到新桶。
+     *
+     * 未认证请求（缺失令牌、令牌无效、会话过期）统一落到 IP 桶：
+     * 它们的共同特征是「服务端无法确认调用方是谁」，因此只能按来源地址收敛。
+     */
     keyGenerator: (request) => {
-      const authorization = request.headers.authorization;
-      // 凭据本身不进键：只取其后段的稳定前缀，避免把令牌留在内存映射里。
-      if (typeof authorization === "string" && authorization.length > 0) return `cred:${authorization.slice(-24)}`;
-      return `ip:${request.ip}`;
+      const principalId = sessionTokenIdentity(request.headers.authorization);
+      return principalId === null ? `ip:${request.ip}` : `cred:${principalId}`;
     },
     errorResponseBuilder: (_request, context) => ({
       // 与项目统一错误格式一致：429 走 budget-exhausted，并带 retryAfter 秒数。
@@ -387,6 +450,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       ? {}
       : { onPlayerConnectionsChanged: options.onPlayerConnectionsChanged }),
     ...(options.maxSessions === undefined ? {} : { maxSessions: options.maxSessions }),
+    ...(options.heartbeatIntervalMs === undefined
+      ? {}
+      : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
+    ...(options.heartbeatTimeoutMs === undefined
+      ? {}
+      : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
     onBranchChanged: (nextBranchId) => {
       branch.branchId = nextBranchId;
       options.onBranchChanged?.(nextBranchId);
@@ -478,6 +547,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerConsoleEvaluationRoutes(context);
   registerConsoleOperationsRoutes(context);
   registerErrorHandling(app, report, notFound);
+
+  // 限流键需要按已验证会话的主体生成，hub 在此时才存在；接上后所有请求都能取到主体。
+  sessionHub = hub;
 
   /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */
   const listen = async (listenOptions: { readonly host: string; readonly port: number }): Promise<void> => {

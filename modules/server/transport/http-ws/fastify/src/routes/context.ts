@@ -27,6 +27,24 @@ import type {
   HttpSession,
 } from "./contracts";
 
+/**
+ * 把一组裁决结果归并成一个结论，并区分「配置未覆盖该角色」与「角色合法但无权」。
+ *
+ * 两者都返回 403，响应体不区分，避免向调用方泄露角色存在性；
+ * 但 `unknown-role` 说明 provider 的配置没有覆盖会话持有的角色，属于装配漂移，
+ * 必须上报内部错误，否则它会被当成普通权限拒绝而长期无人发现。
+ */
+function decisionOutcome(
+  decisions: readonly { readonly allowed: boolean; readonly reason: string }[],
+): { readonly allowed: boolean; readonly misconfigured: boolean } {
+  const allowed = decisions.some((decision) => decision.allowed);
+  return {
+    allowed,
+    misconfigured:
+      !allowed && decisions.some((decision) => decision.reason === "unknown-role"),
+  };
+}
+
 /** 路由共享的在线入口：分支在恢复或重开后由流中心同步更新。 */
 export interface OnlineBranch {
   branchId: string;
@@ -159,16 +177,22 @@ export function authenticate(
  * 控制台角色不会因同源地址或页面自报身份获得玩家入口。
  */
 export function requirePlayer(context: RouteContext, session: HttpSession, reply: FastifyReply): boolean {
-  const allowed = session.auth.roles.some(
-    (role) =>
-      context.options.accessPolicy.authorize({
-        principalId: session.auth.principalId,
-        role,
-        action: "player",
-      }).allowed,
+  const decisions = session.auth.roles.map((role) =>
+    context.options.accessPolicy.authorize({
+      principalId: session.auth.principalId,
+      role,
+      action: "player",
+    }),
   );
-  if (allowed) {
+  const outcome = decisionOutcome(decisions);
+  if (outcome.allowed) {
     return true;
+  }
+  if (outcome.misconfigured) {
+    context.reportInternalError(
+      "玩家入口裁决未覆盖会话角色",
+      new Error(`角色 ${session.auth.roles.join(",")} 不在权限 provider 的配置内`),
+    );
   }
   sendHttpError(reply, "forbidden", "当前角色无权访问玩家接口");
   return false;
@@ -184,20 +208,30 @@ export function requireCommand(
   commandType: string,
   reply: FastifyReply,
 ): boolean {
-  const allowed = session.auth.roles.some((role) => {
-    const principalId = session.auth.principalId;
-    return (
-      context.options.accessPolicy.authorize({ principalId, role, action: "player" }).allowed &&
-      context.options.accessPolicy.authorize({
-        principalId,
-        role,
-        action: "command",
-        commandType,
-      }).allowed
-    );
-  });
-  if (allowed) {
+  const principalId = session.auth.principalId;
+  const decisions = session.auth.roles.map((role) => ({
+    player: context.options.accessPolicy.authorize({ principalId, role, action: "player" }),
+    command: context.options.accessPolicy.authorize({
+      principalId,
+      role,
+      action: "command",
+      commandType,
+    }),
+  }));
+  const granted = decisions.filter((pair) => pair.player.allowed && pair.command.allowed);
+  if (granted.length > 0) {
     return true;
+  }
+  // 玩家入口已放行却因命令类型被拒，说明是业务拒绝；两者都未放行时才可能是配置漂移。
+  const playerOutcome = decisionOutcome(decisions.map((pair) => pair.player));
+  if (!playerOutcome.allowed) {
+    const commandOutcome = decisionOutcome(decisions.map((pair) => pair.command));
+    if (playerOutcome.misconfigured || commandOutcome.misconfigured) {
+      context.reportInternalError(
+        `命令入口裁决未覆盖会话角色（commandType=${commandType}）`,
+        new Error(`角色 ${session.auth.roles.join(",")} 不在权限 provider 的配置内`),
+      );
+    }
   }
   sendHttpError(reply, "forbidden", "当前角色不能使用该命令");
   return false;
@@ -234,6 +268,13 @@ export function requireConsole(
     action: "console",
   });
   if (!decision.allowed) {
+    // 会话确实持有该角色却拿到 unknown-role：provider 的 consoleRoles 没有覆盖它。
+    if (decision.reason === "unknown-role") {
+      context.reportInternalError(
+        `控制台入口裁决未覆盖会话角色（role=${parsed.data}）`,
+        new Error(`角色 ${parsed.data} 不在权限 provider 的配置内`),
+      );
+    }
     sendHttpError(reply, "forbidden", "当前角色无权访问控制台接口");
     return false;
   }

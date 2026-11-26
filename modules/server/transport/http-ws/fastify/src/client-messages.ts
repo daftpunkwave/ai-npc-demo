@@ -1,5 +1,5 @@
 /**
- * WS 客户端帧处理：解析消息、应答 ping/ack、校验会话与频道，并按游标补发增量或完整快照。
+ * WS 客户端帧处理：解析消息、应答 ping/pong/ack、校验会话与频道，并按游标补发增量或完整快照。
  * 依赖连接集合、会话注册表、重放缓冲、发送器与频道准入回调；不注册连接、不维护定时器。
  * 禁止向未订阅频道推送、跨分支补发旧序号，或在会话失效后继续处理新订阅。
  */
@@ -60,6 +60,11 @@ export function handleClientMessage(deps: ClientMessageDeps, socket: StreamSocke
   const value = parsed.data;
   if (value.type === "ping") {
     deps.sender.sendMessage(socket, { type: "pong" });
+    return;
+  }
+  if (value.type === "pong") {
+    // 服务端心跳的回执：到达这里即已证明对端仍在收，存活时间戳由连接层在解析前更新。
+    // 不需要额外动作，忽略它会静默把回执当成未知帧并回 error。
     return;
   }
   if (value.type === "ack") {

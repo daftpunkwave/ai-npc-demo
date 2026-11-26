@@ -25,7 +25,7 @@ type SessionRole = "player" | "operator" | "researcher" | "evaluator";
 export function registerAuthRoutes(context: RouteContext): void {
   const { app, hub, options, identityByToken, branch } = context;
 
-  app.post("/api/v1/auth/login", { config: { rateLimit: { max: options.rateLimits?.write ?? 10, timeWindow: "10 seconds" } } }, (request, reply) => {
+  app.post("/api/v1/auth/login", (request, reply) => {
     const body = loginRequestSchema.safeParse(request.body);
     if (!body.success) {
       return sendHttpError(reply, "validation", "登录请求结构不合法");
