@@ -498,12 +498,15 @@ export class ToolGateway {
     existing: Readonly<Record<string, import("@ai-npc/contracts").StorageCell>> | null,
   ): boolean {
     const currentId = existing === null ? null : existing["tool_call_id"];
-    const priorCalls = this.options.storage.transact((tx) => tx.rows("tool_calls").list({
+    // 配额只需要「本 turn 该工具已调用几次」，交给 SQL 走 COUNT；list 会把每条历史调用整行解码，
+    // 成本随会话累计的调用数增长，而这里只需要一个计数。
+    const priorCalls = this.options.storage.transact((tx) => tx.rows("tool_calls").count({
       run_id: input.runId,
       turn_id: input.turnId,
       tool_id: toolId,
-    })).filter((row) => row["tool_call_id"] !== currentId);
-    return priorCalls.length >= binding.maxCallsPerTurn;
+    }));
+    // 同一 provider call 的既有结果不占用额外名额：它本身就是这次调用的重放目标。
+    return (currentId === null ? priorCalls : priorCalls - 1) >= binding.maxCallsPerTurn;
   }
 
   private assertAuthenticatedTurn(input: ToolGatewayTurn): void {
