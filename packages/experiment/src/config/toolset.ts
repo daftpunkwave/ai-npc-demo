@@ -4,12 +4,19 @@
  * 工具实现与权限组合由已绑定的工具目录验证。
  */
 import { toolsetDocumentSchema, type ToolsetDocument } from "@ai-npc/contracts";
+import { referenceLoadingError } from "../loading/errors";
 import { loadConfigDocument, type ConfigLoadContext } from "./load-config";
 
 export type { ToolsetDocument as AgentToolset } from "@ai-npc/contracts";
 
 export function loadAgentToolset(ref: string, context: ConfigLoadContext): ToolsetDocument {
   const loaded = loadConfigDocument(ref, toolsetDocumentSchema, context, "toolset");
-  if (loaded.value.toolsetId !== ref) throw new Error(`Toolset "${ref}" has a mismatched ID`);
+  if (loaded.value.toolsetId !== ref) {
+    throw referenceLoadingError(
+      loaded.source,
+      "toolsetId",
+      `Toolset「${loaded.value.toolsetId}」与引用「${ref}」不一致`,
+    );
+  }
   return loaded.value;
 }

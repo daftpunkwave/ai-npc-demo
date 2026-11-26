@@ -276,6 +276,33 @@ describe("内容包加载", () => {
     expect(error.path).toBe("steps.0.command.payload.targetAgentId");
   });
 
+  it("脚本内重复的 probeId 被拒绝并指出冲突位置", () => {
+    // 探针 ID 是评估汇总的分组键；重名会让同一 key 下的结果静默合并，分数分母不可信。
+    const duplicateProbe = [
+      "probes:",
+      "      - { probeId: p-recall-promise, agentId: human-independent, askedBy: player-1, question: 重复探针, kind: recall,",
+      "          answerKey: { mustMention: [], mustNotMention: [] } }",
+    ].join("\n");
+    const error = captureLoadingError(() =>
+      parseContentPack(mutatedSources("scripts/s-promise.yaml", "probes:", duplicateProbe)),
+    );
+    expect(error.code).toBe("cross-check");
+    expect(error.source).toBe("scripts/s-promise.yaml");
+    expect(error.path).toMatch(/^checkpoints\.\d+\.probes\.\d+\.probeId$/u);
+    expect(error.message).toContain("p-recall-promise");
+  });
+
+  it("脚本内重复的分支名被拒绝并指出冲突位置", () => {
+    // 分支名是 RunSpec `script.branch` 的选择键；重名会让分支选择无法唯一确定。
+    const error = captureLoadingError(() =>
+      parseContentPack(mutatedSources("scripts/s-promise.yaml", "- name: break", "- name: keep")),
+    );
+    expect(error.code).toBe("cross-check");
+    expect(error.source).toBe("scripts/s-promise.yaml");
+    expect(error.path).toMatch(/^branches\.\d+\.name$/u);
+    expect(error.message).toContain("keep");
+  });
+
   it("理由模板只允许 none 为空", () => {
     const error = captureLoadingError(() =>
       parseContentPack(mutatedSources("prompts/zh-CN.yaml", "danger: 太危险了。", 'danger: ""')),
@@ -338,5 +365,36 @@ describe("名册校验", () => {
     };
     const unknownError = captureLoadingError(() => validateRoster(unknown, content));
     expect(unknownError.path).toBe("agents.0.agentId");
+  });
+
+  it("同一派系的党魁与支持者不能同时激活", () => {
+    // 玩家占席时 human-neutral 由 npc-wenzhao 上场；AI 控制时由 human-neutral 党魁上场。
+    // 两者同时激活会产生两个同派系领袖，内容文档明确禁止。
+    const dualLeader: Roster = {
+      schemaVersion: 1,
+      rosterId: "dual-leader",
+      agents: [
+        { agentId: "npc-wenzhao", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-default" },
+        { agentId: "human-neutral", kind: "strategic", profileRef: "agent-strategic-default", toolsetRef: "strategic-default" },
+      ],
+    };
+    const error = captureLoadingError(() => validateRoster(dualLeader, content));
+    expect(error.code).toBe("cross-check");
+    expect(error.path).toBe("agents.1.agentId");
+    expect(error.message).toContain("human-neutral");
+    expect(error.message).toContain("npc-wenzhao");
+  });
+
+  it("同一派系的多个支持者可以同时激活", () => {
+    // 支持者之间不互斥：standard-15 就包含多名 human-neutral 支持者。
+    const supportTeam: Roster = {
+      schemaVersion: 1,
+      rosterId: "support-team",
+      agents: [
+        { agentId: "npc-wenzhao", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-default" },
+        { agentId: "npc-yinuo", kind: "character", profileRef: "agent-character-default", toolsetRef: "character-escalating" },
+      ],
+    };
+    expect(() => validateRoster(supportTeam, content)).not.toThrow();
   });
 });

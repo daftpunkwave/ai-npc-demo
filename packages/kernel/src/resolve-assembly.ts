@@ -7,6 +7,7 @@
 import {
   DomainError,
   agentSlots as agentSlotNames,
+  capabilityIdSchema,
   isSupportedModuleApiVersion,
   type AgentSlot,
   type AssemblyDescriptor,
@@ -173,6 +174,14 @@ function pickDefinition(
   return definition;
 }
 
+/**
+ * 槽位到能力 ID 的映射：toolView 的能力族与槽位名不同，其余槽位与能力族同名。
+ * 这里只表达「候选模块必须为自己声明提供该能力」，不校验具体实现版本。
+ */
+function capabilityOfAgentSlot(slot: AgentSlot): CapabilityId {
+  return capabilityIdSchema.parse(slot === "toolView" ? "agent.tool-view" : `agent.${slot}`);
+}
+
 /** 解析 Agent 槽位候选模块；候选不进入本 realm 的实例计划，但其依赖必须满足闭包。 */
 function resolveAgentSlotCandidates(
   assembly: AssemblyDescriptor,
@@ -204,6 +213,37 @@ function resolveAgentSlotCandidates(
     }
     for (const moduleId of moduleIds) {
       const definition = pickDefinition(catalogIndex, moduleId, realm, { slot });
+      // 槽位候选会按槽位创建为 Agent 级实例，并由运行时按槽位能力取用；
+      // 作用域或能力不匹配时在装配解析阶段失败，避免预检通过而 run 启动必然失败。
+      const expectedCapability = capabilityOfAgentSlot(slot);
+      if (definition.instanceScope !== "agent") {
+        throw new DomainError(
+          "assembly-incompatible",
+          `agentSlots.${slot} 的模块 ${definition.id} 的实例作用域为 ${definition.instanceScope}，槽位只接受 agent 作用域`,
+          {
+            details: {
+              slot,
+              moduleId: definition.id,
+              expectedInstanceScope: "agent",
+              instanceScope: definition.instanceScope,
+            },
+          },
+        );
+      }
+      if (!definition.provides.some((provided) => provided.capability === expectedCapability)) {
+        throw new DomainError(
+          "assembly-incompatible",
+          `agentSlots.${slot} 的模块 ${definition.id} 未声明提供槽位能力 ${expectedCapability}`,
+          {
+            details: {
+              slot,
+              moduleId: definition.id,
+              expectedCapability,
+              providedCapabilities: definition.provides.map((provided) => provided.capability),
+            },
+          },
+        );
+      }
       candidates.set(definition.id, definition);
     }
     // eslint-disable-next-line security/detect-object-injection -- 槽位、realm 与配置引用来自固定清单与受限枚举。

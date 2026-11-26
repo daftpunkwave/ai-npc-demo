@@ -4,27 +4,27 @@
  * 等待和策略计算在事务外进行。旧租约、暂停和接管不得发布结果。
  */
 import {
-  canonicalJson, toModelToolName,
+  canonicalJson, DomainError, toModelToolName,
   type AgentTurnStatus, type AuthContext, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall,
 } from "@ai-npc/contracts";
 import type { ResolvedAgentProfile } from "@ai-npc/experiment";
-import {
-  agentModelPoolCapability, bindAgentModelRoutes,
-  type AgentDecisionPort, type AgentToolViewPort, type AgentContextPort, type AgentCompressionPort,
-  type DeterministicDecisionInput, type ModelDecisionPort, type RunModelPort,
+import type {
+  AgentDecisionPort,
+  DeterministicDecisionInput,
+  RunModelPort,
 } from "@ai-npc/module-sdk";
-import { AgentModuleHandle } from "./agent-module-handle";
 import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
 import { DialogueFlow, messageIntentFromArguments, type SpeechApprovalIndex, type SpeechApprovalInput } from "./dialogue-flow";
 import type { MemoryHost } from "./memory-host";
 import { ModelTurn, type ModelTurnPorts } from "./model-turn";
 import { decisionSubmitTool } from "./model-turn-materials";
 import type { AgentRuntimeOptions } from "./runtime";
-import { asRecord } from "./runtime-records";
+import { asRecord, errorNameToken } from "./runtime-records";
 import { ToolGateway, type ToolCallOutcome, type ToolCatalogPort } from "./tool-gateway";
 import { TurnEvidence, type StageSelection, type TurnSpan } from "./turn-evidence";
 import { freezeTurnInput, type ReadTurnWorld } from "./turn-input";
-import { TurnLeases, TurnStopped, type ClaimedTurn } from "./turn-lease";
+import { TurnLeases, TurnStopped, failClaim, type ClaimedTurn } from "./turn-lease";
+import { TurnSlotAssembly, deterministicDecisionPort } from "./turn-worker-assembly";
 import { checkedDecision, probeQuestion, prospectiveInputs, speechInput, turnMemoryQuery } from "./turn-materials";
 import { turnQueries } from "./turn-queries";
 import { disclosedTurnReceipts } from "./turn-speech-receipts";
@@ -42,24 +42,12 @@ export interface TurnExecutionOptions {
   readonly model?: RunModelPort | null;
 }
 
-/** 每 Agent 已装配的 turn 模块端口：model 为模型路径端口组，deterministicDecision 为未挂模型池时的确定性决策端口，二者互斥。 */
-type TurnPorts = { readonly toolView: AgentToolViewPort } & (
-  { readonly model: ModelTurnPorts; readonly deterministicDecision: null } |
-  { readonly model: null; readonly deterministicDecision: AgentDecisionPort<DeterministicDecisionInput> }
-);
-
-/** 确定性决策端口仅在未挂模型路径的装配下存在；越界访问说明装配与运行时模型配置不一致，显式失败并给出主体上下文。 */
-function deterministicDecisionPort(ports: TurnPorts, agentId: string): AgentDecisionPort<DeterministicDecisionInput> {
-  if (ports.model !== null || ports.deterministicDecision === null) {
-    throw new Error(`Deterministic decision port missing for ${agentId}`);
-  }
-  return ports.deterministicDecision;
-}
+/** 关闭时等待在途 turn 的默认上限；与租约期限解耦，避免关闭被单个卡住的 turn 无限拖住。 */
+const turnDisposeDeadlineMs = 10_000;
 
 export class TurnWorker {
-  private readonly ports = new Map<string, TurnPorts>();
-  private readonly disposables: { dispose(): Promise<void> }[] = [];
   private readonly running = new Set<Promise<void>>();
+  private readonly assembly: TurnSlotAssembly;
   private readonly leases: TurnLeases;
   private readonly artifacts: StoredAgentArtifactStore;
   private readonly dialogue: DialogueFlow;
@@ -71,34 +59,15 @@ export class TurnWorker {
     private readonly signal: AbortSignal,
   ) {
     const { content, host, storage } = runtime;
+    this.assembly = new TurnSlotAssembly(runtime, execution, signal);
     this.leases = new TurnLeases(storage, host, signal);
     this.artifacts = new StoredAgentArtifactStore(storage, host);
     this.dialogue = new DialogueFlow({ host, content, artifacts: this.artifacts, approvals: execution.approvals });
   }
 
+  /** 装配每个 Agent 的 turn 模块；失败即整体启动失败，由宿主统一处理。 */
   async start(): Promise<void> {
-    for (const agent of this.runtime.roster.agents) {
-      const profile = this.requireProfile(agent.agentId);
-      if (!this.execution.profileHashes.has(agent.agentId)) throw new Error(`Missing profile hash for ${agent.agentId}`);
-      const { agentId } = agent;
-      const { slots } = profile;
-      const toolView = (await this.createSlot<AgentToolViewPort>(agentId, slots.toolView)).port;
-      const definition = this.runtime.moduleDefinitions.get(slots.decision?.module ?? "");
-      if (definition?.requires.some(({ capability }) => capability === agentModelPoolCapability)) {
-        const pool = this.execution.model;
-        if (pool == null) throw new Error(`No scoped model pool for ${agentId}`);
-        const decision = (await this.createSlot<ModelDecisionPort>(agentId, slots.decision, {
-          ...this.execution.ports,
-          [agentModelPoolCapability]: bindAgentModelRoutes(pool, agentId),
-        })).port;
-        const context = (await this.createSlot<AgentContextPort>(agentId, slots.context)).port;
-        const compression = (await this.createSlot<AgentCompressionPort>(agentId, slots.compression)).port;
-        this.ports.set(agentId, { deterministicDecision: null, toolView, model: { decision, context, compression } });
-      } else {
-        const decision = (await this.createSlot<AgentDecisionPort<DeterministicDecisionInput>>(agentId, slots.decision)).port;
-        this.ports.set(agentId, { deterministicDecision: decision, toolView, model: null });
-      }
-    }
+    await this.assembly.start();
   }
 
   dispatch(turnId: string, agentId: string): void {
@@ -109,38 +78,88 @@ export class TurnWorker {
     this.running.add(execution);
   }
 
-  async dispose(): Promise<void> {
-    await Promise.all(this.running);
-    let failure: unknown;
-    for (const handle of this.disposables.splice(0).reverse()) {
-      try {
-        await handle.dispose();
-      } catch (error) {
-        failure ??= error;
-      }
-    }
-    if (failure !== undefined) throw failure;
+  /**
+   * 释放在途 turn 与已装配模块。
+   * 在途 turn 只等到 `deadlineMs`：卡在模型或长计算里的 turn 不能无限拖住进程退出，
+   * 超时后记录仍未结束的 turn 数量并继续释放，让关闭回到有界时间。
+   */
+  async dispose(deadlineMs = turnDisposeDeadlineMs): Promise<void> {
+    await this.settleRunning(deadlineMs);
+    await this.assembly.dispose();
   }
 
-  private async createSlot<Port>(agentId: string, selected: ResolvedAgentProfile["slots"]["decision"], ports = this.execution.ports) {
-    const definition = selected === undefined ? undefined : this.runtime.moduleDefinitions.get(selected.module);
-    if (selected === undefined || definition === undefined) throw new Error(`Unresolved turn module for ${agentId}`);
-    const handle = await AgentModuleHandle.create<Port>({
-      ...this.runtime, agentId, moduleId: selected.module, config: selected.config, definition,
-      ports, signal: this.signal,
+  /**
+   * 等待在途 turn 结束；超过截止时间只记录未排空数量，不抛错也不取消已经写入的终态。
+   * `running` 里的 Promise 自身已带 catch，超时后继续在后台收尾不会产生未处理的 rejection。
+   */
+  private async settleRunning(deadlineMs: number): Promise<void> {
+    if (this.running.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(() => resolve(), Math.max(0, deadlineMs));
+      timer.unref();
     });
-    this.disposables.push(handle);
-    return handle;
+    try {
+      await Promise.race([Promise.all(this.running), timeout]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+    const outstanding = this.running.size;
+    if (outstanding === 0) return;
+    this.runtime.host.logger.warn("Agent turn drain timed out", {
+      outstanding,
+      deadlineMs,
+    });
   }
+
+  /**
+   * 认领 turn：把 claim 期间抛出的异常转为该 turn 的终态。
+   * claim 在事务内读取时钟、触发绑定与租约代次，任何一处损坏都会抛错；若让它冒泡，
+   * 该行会停在 `queued` 且租约为空，恢复路径与调度都不会再推进它，于是每轮重复认领并永久占用并发名额。
+   * 因此这里按原因落终态，并把失败交给调用方统一记日志。
+   */
+  private claim(turnId: string, agentId: string, profileHash: string, profile: ResolvedAgentProfile): ClaimedTurn | null {
+    try {
+      return this.leases.claim(turnId, { ...this.runtime, profileHash, maxTurnMs: profile.budgets.maxTurnMs });
+    } catch (error) {
+      const reason = error instanceof TurnStopped ? error.reason : "turn-claim-failed";
+      const failed = failClaim(this.runtime.storage, turnId, reason, this.runtime.host.nowIso());
+      this.runtime.host.logger.error("Agent turn claim failed", {
+        turnId,
+        agentId,
+        reason,
+        // 只记错误类型与领域错误码，不写可能含观察正文的原始消息。
+        errorCode: error instanceof DomainError ? error.code : errorNameToken(error),
+        terminal: failed,
+      });
+      this.runtime.onStateChange?.();
+      return null;
+    }
+  }
+
+  /**
+   * 组合 turn 级取消信号：运行时停止，或到达 `turn.deadlineMs`。
+   * 定时器 `unref` 且随 turn 结束清除，避免每个 turn 留一个挂起的计时器。
+   */
+  private turnSignal(turn: ClaimedTurn): AbortSignal {
+    const deadline = new AbortController();
+    const remaining = Math.max(1, turn.deadlineMs - this.runtime.host.monotonicMs());
+    const timer = setTimeout(() => { deadline.abort(); }, remaining);
+    timer.unref();
+    const signal = AbortSignal.any([this.signal, deadline.signal]);
+    signal.addEventListener("abort", () => { clearTimeout(timer); }, { once: true });
+    return signal;
+  }
+
 
   private async run(turnId: string, agentId: string): Promise<void> {
     const { storage, host, content } = this.runtime;
     const profile = this.requireProfile(agentId);
     const profileHash = this.execution.profileHashes.get(agentId);
-    const ports = this.ports.get(agentId);
+    const ports = this.assembly.port(agentId);
     if (profileHash === undefined || ports === undefined) throw new Error(`Turn modules missing for ${agentId}`);
     const claimStarted = host.monotonicMs();
-    const turn = this.leases.claim(turnId, { ...this.runtime, profileHash, maxTurnMs: profile.budgets.maxTurnMs });
+    const turn = this.claim(turnId, agentId, profileHash, profile);
     if (turn === null) return;
     const evidence = new TurnEvidence(storage, host, turn, this.execution.recordSpan);
     try {
@@ -177,9 +196,12 @@ export class TurnWorker {
       const committedMessageIntents = new Set<string>();
       const messagePrincipalIds = new Set([content.index.playerPrincipalId, ...this.runtime.roster.agents.map((entry) => entry.agentId)]);
       messagePrincipalIds.delete(agentId);
+      // turn 级取消信号：运行时停止或 turn 截止任一到达都中止在途模型调用。
+      // 只用运行时信号无法在 `turn.deadlineMs` 到达时打断模型，工具调用挂起会让决策窗口无限延长。
+      const turnSignal = this.turnSignal(turn);
       const model = ports.model === null || this.execution.model == null ? null : new ModelTurn({
         host, pool: this.execution.model, ports: ports.model, content, profile, memory, frozen, turn, evidence,
-        signal: this.signal, artifacts: this.artifacts, assertCurrent: (status) => this.assertCurrent(turn, status),
+        signal: turnSignal, artifacts: this.artifacts, assertCurrent: (status) => this.assertCurrent(turn, status),
         messagePrincipalIds: this.execution.tools.bindingsFor(agentId).some(({ toolId }) => toolId === "message.send")
           ? messagePrincipalIds : new Set(),
       });
@@ -292,7 +314,7 @@ export class TurnWorker {
           },
           taskInvitations: frozen.world.taskInvitations, lexicons: content.locale.lexicons,
           executeTool, deadlineMs: turn.deadlineMs,
-        });
+        }, evidence, turn);
         this.assertCurrent(turn, "deciding");
         if (result.status !== "ok") {
           // terminal_reason 优先取细分原因（round-limit、call-budget、context-window、deadline-backpressure 等），
@@ -374,20 +396,40 @@ export class TurnWorker {
     }
   }
 
-  private async decideBeforeDeadline(port: AgentDecisionPort<DeterministicDecisionInput>, input: DeterministicDecisionInput) {
-    const timer = new AbortController();
-    const signal = AbortSignal.any([timer.signal, this.signal]);
+  /**
+   * 在截止时间前完成决策：超时、运行时停止与正常完成三者竞争。
+   * 截止时把取消传给端口，让在途网络调用随之结束；端口不响应取消时，
+   * 迟到的决策仍会被租约与 fencing 拒绝，但会继续占用并发与预算，因此事实要记进证据。
+   */
+  private async decideBeforeDeadline(
+    port: AgentDecisionPort<DeterministicDecisionInput>,
+    input: Omit<DeterministicDecisionInput, "signal">,
+    evidence: TurnEvidence,
+    turn: ClaimedTurn,
+  ) {
+    // 与模型路径共用同一个 turn 级信号：截止与运行时停止任一到达都中止在途调用。
+    const signal = this.turnSignal(turn);
+    const started = this.runtime.host.monotonicMs();
+    // 端口自身的 promise 单独持有，用于判断超时后它是否还在后台运行。
+    let settled = false;
+    const deciding = port.decide({ ...input, signal });
+    void deciding.then(() => { settled = true; }, () => { settled = true; });
     try {
-      const remaining = Math.max(0, input.deadlineMs - this.runtime.host.monotonicMs());
+      const remaining = Math.max(0, input.deadlineMs - started);
       const deadline = this.runtime.host.sleep(remaining, signal).then(() => {
         throw new TurnStopped("budget-exhausted", "turn-deadline");
       }, (error: unknown) => {
         if (this.signal.aborted) throw new TurnStopped("cancelled", "runtime-stopped");
         throw error;
       });
-      return await Promise.race([port.decide(input), deadline]);
+      return await Promise.race([deciding, deadline]);
     } finally {
-      timer.abort();
+      // 放弃等待时端口仍未结束：说明取消没有被响应，事实记进证据而不是假装已停止。
+      if (!settled) {
+        evidence.record("turn.decision-cancel", started, {
+          status: "skipped", reason: "cancelled-not-honored", effective: { deadlineMs: input.deadlineMs },
+        });
+      }
     }
   }
 

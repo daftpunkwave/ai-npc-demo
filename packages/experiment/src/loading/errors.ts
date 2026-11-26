@@ -36,22 +36,41 @@ export class LoadingError extends Error {
   }
 }
 
-/** 把 zod 的受限路径格式化为点号路径；数组下标保留为 `.0` 形式。 */
+/**
+ * 把 zod 的受限路径格式化为点号路径；数组下标保留为 `.0` 形式。
+ * 路径为空时返回空串，表示问题位于文档根。
+ */
 export function formatIssuePath(path: readonly PropertyKey[]): string {
   return path.map((segment) => String(segment)).join(".");
 }
 
-/** 把首个 zod 问题转换为带来源与路径的加载错误；没有问题时退化为通用 schema 错误。 */
-export function schemaLoadingError(source: string, error: ZodError): LoadingError {
-  const issue = error.issues.at(0);
-  if (issue === undefined) {
-    return new LoadingError({ code: "schema", source, message: "内容不符合 schema" });
+/**
+ * 把 zod 问题合并为一条可定位的原因：单条问题只写原因，
+ * 多条问题时逐条带路径，避免调用方只看到第一个字段的错误而反复试错。
+ */
+function issueSummary(error: ZodError): { readonly path: string; readonly message: string } {
+  const [first, ...rest] = error.issues;
+  if (first === undefined) {
+    return { path: "", message: "内容不符合 schema" };
   }
+  if (rest.length === 0) {
+    return { path: formatIssuePath(first.path), message: first.message };
+  }
+  const described = [first, ...rest].map((issue) => {
+    const issuePath = formatIssuePath(issue.path);
+    return issuePath === "" ? issue.message : `${issuePath}: ${issue.message}`;
+  });
+  return { path: "", message: `内容不符合 schema（共 ${error.issues.length} 处）：${described.join("；")}` };
+}
+
+/** 把 zod 问题转换为带来源与路径的加载错误；多处问题时在原因里列出全部位置。 */
+export function schemaLoadingError(source: string, error: ZodError): LoadingError {
+  const summary = issueSummary(error);
   return new LoadingError({
     code: "schema",
     source,
-    path: formatIssuePath(issue.path),
-    message: issue.message,
+    ...(summary.path === "" ? {} : { path: summary.path }),
+    message: summary.message,
   });
 }
 

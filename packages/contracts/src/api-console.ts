@@ -44,6 +44,8 @@ export const consoleQueueSummarySchema = z
     turnsQueued: z.number().int().nonnegative(),
     turnsRunning: z.number().int().nonnegative().optional(),
     maintenanceQueued: z.number().int().nonnegative().optional(),
+    /** 失败次数已达上限、不会再被认领的维护任务数；与「仍在排队」分开计数。 */
+    maintenanceExhausted: z.number().int().nonnegative().optional(),
     modelQueue: z.number().int().nonnegative().optional(),
   })
   .strict();

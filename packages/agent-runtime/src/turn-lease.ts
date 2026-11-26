@@ -96,6 +96,57 @@ export function cancelTurn(tx: StorageTransaction, row: StorageRow, reason: stri
   }
 }
 
+/**
+ * 认领前的不可恢复输入失败：时钟行缺失、触发引用损坏、租约代次非法等。
+ * 与 TurnStopped 区分：后者是已获知 turn 状态后的业务终止，这里连 turn 行都还没有可用租约。
+ */
+export class TurnClaimRejected extends Error {
+  constructor(readonly reason: string, cause: unknown) {
+    super(reason, { cause });
+    this.name = "TurnClaimRejected";
+  }
+}
+
+/**
+ * 把无法继续认领的 turn 落成终态并释放它占用的 trigger 与并发名额。
+ * 认领过程自身抛错时 turn 行仍是 `queued`、租约字段为空，恢复机制只处理已过期租约，
+ * 因此这里必须显式收尾，否则该行不会被任何路径再次推进。
+ * 这类失败属于不可恢复的输入损坏，因此落 `failed` 而不是可重试的 `cancelled`。
+ */
+export function failClaim(
+  storage: StoragePort,
+  turnId: string,
+  reason: string,
+  endedAt: string,
+): boolean {
+  return storage.transact((tx) => {
+    const turns = tx.rows("turn_runs");
+    const row = turns.get({ turn_id: turnId });
+    if (row === null || terminalTurnStatuses.has(String(row["status"]))) return false;
+    // 已过 ready 检查的 turn 可能带着已完成的部分副作用，保留其消费位置避免重复下令。
+    if (row["started_at"] !== null) {
+      cancelTurn(tx, row, reason, endedAt);
+      return true;
+    }
+    turns.put({
+      ...row,
+      status: "failed",
+      terminal_reason: reason,
+      lease_expires_at: null,
+      ended_at: endedAt,
+    });
+    const triggers = tx.branch(stringValue(row, "branch_id")).table("triggers");
+    for (const id of arrayValue(row["trigger_ids_json"])) {
+      if (typeof id !== "string") continue;
+      const trigger = triggers.get({ trigger_id: id });
+      if (trigger?.["consumed_by_turn_id"] === row["turn_id"]) {
+        triggers.put({ ...trigger, consumed_by_turn_id: null });
+      }
+    }
+    return true;
+  });
+}
+
 function branchAndControllerReason(
   tx: StorageTransaction,
   branchId: string,

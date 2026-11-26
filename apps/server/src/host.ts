@@ -10,7 +10,7 @@ import { DomainError, modelLayoutRoutesResponseSchema, type Json, type StoragePo
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
 import { createHostStartup } from "./host/startup";
-import { disposeInReverse } from "./host/dispose";
+import { disposeInReverse, disposeWithin, drainBeforeClose, type DrainFailure } from "./host/dispose";
 import { logInternalError } from "./host/internal-error-log";
 import { createLifecycle } from "./host/lifecycle";
 import type { LiveRunState } from "./host/live-state";
@@ -32,8 +32,11 @@ import type { EvaluationPort } from "./host/module-catalog";
 import type { HostStartup } from "./host/startup";
 
 export type { HostOptions } from "./host/options";
-export type { DisposalStep } from "./host/dispose";
-export { disposeInReverse } from "./host/dispose";
+export type { DisposalStep, DrainFailure, DrainStep } from "./host/dispose";
+export { disposeInReverse, disposeWithin, drainBeforeClose, settleWithin } from "./host/dispose";
+
+/** 关闭时每级资源排空的默认预算；与租约期限解耦，只用于给关闭一个可终止的边界。 */
+const defaultShutdownDrainMs = 10_000;
 
 export interface RunningHost {
   readonly app: ServerApp;
@@ -117,12 +120,43 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   if (core.active.agents !== null) {
     agents = new OnlineAgentHost({ core, active, reads, authority, approvals, onStateChange: () => app?.notifyWorldChanged() });
   }
+  // 关闭分两级：先按契约排空（停止新任务、等待提交边界），再逆序释放资源。
+  // 排空预算来自宿主配置，未配置时用与租约解耦的默认值，避免单个卡住的 turn 无限拖住退出。
+  // 整个关闭共享一次预算：每级只拿剩余时间，n 个层级不会累积成 n 倍预算。
+  const shutdownBudgetMs = options.shutdownDrainMs ?? defaultShutdownDrainMs;
+  // 只写标签、本次剩余预算与原因，不写可能含业务正文的整份上下文。
+  const reportClose = (message: string, data: DrainFailure): void => {
+    core.host.logger.warn(message, { label: data.label, deadlineMs: data.deadlineMs, message: data.message });
+  };
+  const drainResources = async (deadlineAt: number): Promise<void> => drainBeforeClose(
+    [
+      { label: "online Agents", drain: async (deadlineMs) => { await agents?.drain(deadlineMs); } },
+      { label: "started modules", drain: (deadlineMs) => core.startedModules.drain(deadlineMs) },
+      { label: "storage", drain: (deadlineMs) => core.storageStarted.drain(deadlineMs) },
+    ],
+    Math.max(0, deadlineAt - Date.now()),
+    reportClose,
+  );
   const disposeResources = (transportApp: ServerApp | null): Promise<void> => disposeInReverse([
     { label: "storage", dispose: () => core.storageStarted.dispose() },
     { label: "started modules", dispose: () => core.startedModules.dispose() },
     { label: "online Agents", dispose: async () => { await agents?.close(); } },
     ...(transportApp === null ? [] : [{ label: "transport", dispose: () => core.runtime.transport.close(transportApp) }]),
   ]);
+  const closeResources = async (transportApp: ServerApp | null): Promise<void> => {
+    const deadlineAt = Date.now() + shutdownBudgetMs;
+    // 先停止接受新请求：关闭传输监听放在排空之前，否则排空边界会被新到达的请求突破。
+    // 传输实例本身仍保留到释放阶段，已建立的读请求可以在预算内收尾。
+    if (transportApp !== null) core.runtime.transport.stopAccepting?.(transportApp);
+    await drainResources(deadlineAt);
+    // 释放同样受同一绝对截止时间约束：被放弃的释放仍在后台继续，不会阻塞进程退出。
+    await disposeWithin(
+      () => disposeResources(transportApp),
+      Math.max(0, deadlineAt - Date.now()),
+      "host resources",
+      reportClose,
+    );
+  };
   try {
     await agents?.switch();
   } catch (error) {
@@ -144,7 +178,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     autoPauseAfterDisconnectMs: clockConfig.autoPauseAfterDisconnectMs,
     // 投影里的 campaign 是当前分支唯一权威来源；未开局时禁止继续时钟。
     campaignStarted: () => reads.projection().campaign !== null,
-    disposeResources,
+    // 关闭走两级编排（排空后释放）；只有启动失败路径直接释放资源。
+    closeResources,
     agentHealth: () => agents?.healthy ?? true,
   });
   const operations = createOperationsHost({
@@ -262,6 +297,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     modelLayouts,
     evaluation,
     writes,
+    // 未启动 Agent 运行时（无 Agent 名册）时没有维护队列，健康摘要按零值展示。
+    ...(agents === null ? {} : { maintenanceQueue: () => agents.maintenanceQueue }),
     disposeOnFailure: () => disposeResources(null),
   });
 

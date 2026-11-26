@@ -224,6 +224,13 @@ describe("装配描述符", () => {
     });
   });
 
+  it("拒绝未知装配格式版本", () => {
+    // schemaVersion 是演进契约：未知版本必须被拒绝，不能被静默按 v1 解释。
+    expectInvalid(assemblyDescriptorSchema, { ...assembly, schemaVersion: 2 });
+    expectInvalid(assemblyDescriptorSchema, { ...assembly, schemaVersion: "1" });
+    expectSchema(assemblyDescriptorSchema, { ...assembly, schemaVersion: 1 });
+  });
+
   it("拒绝未知键、错误绑定结构与缺失 realm", () => {
     expectInvalid(assemblyDescriptorSchema, { ...assembly, extra: true });
     expectInvalid(assemblyDescriptorSchema, {

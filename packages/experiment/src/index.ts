@@ -73,5 +73,5 @@ export type {
   AgentProfileDocument,
   ResolvedAgentProfile,
 } from "./config/agent-profile";
-export { LoadingError } from "./loading/errors";
+export { LoadingError, formatIssuePath, schemaLoadingError } from "./loading/errors";
 export type { LoadingErrorCode } from "./loading/errors";

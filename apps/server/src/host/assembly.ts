@@ -1,6 +1,7 @@
 /**
  * 加载并解析 server 装配：严格读取装配目录，按 kernel 解析计划校验绑定、能力闭包、作用域、
  * 拓扑与模块配置，并计算规范化摘要；部署期配置覆盖只用于启动计划，不进入冻结摘要。
+ * 装配目录的扫描是启动路径与 check:catalog 的唯一实现，文件级约束只在这里维护一份。
  * 依赖 yaml、契约 schema、kernel 解析/摘要与组合根模块定义；不启动模块、不打开存储。
  * 禁止接受任意路径、未登记模块，也禁止用模块 ID、原始 JSON.stringify 或截断摘要代替规范化哈希。
  */
@@ -9,6 +10,7 @@
 import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
+import type { LoadingError } from "@ai-npc/experiment";
 import {
   assemblyDescriptorSchema,
   protocolVersion,
@@ -19,7 +21,7 @@ import {
   type ModuleRef,
   type ResolvedModuleSet,
 } from "@ai-npc/contracts";
-import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
+import { loadContentPack, schemaLoadingError, type ContentPack } from "@ai-npc/experiment";
 import {
   computeAssemblyHash,
   computeCatalogHash,
@@ -37,50 +39,148 @@ function assemblyDirectory(root: string = process.cwd()): string {
   return resolve(root, "config/assemblies");
 }
 
-/** 读取装配目录内的全部 YAML；每个文件必须是普通文件并通过严格 schema。 */
-export function loadAssemblies(root: string = process.cwd()): readonly AssemblyDescriptor[] {
+/** 装配文件枚举与逐文件诊断：只报告文件名与原因，由调用方决定是抛出还是累积。 */
+export interface AssemblyScanFailure {
+  readonly file: string;
+  readonly code: "assemblies-unreadable" | "assembly-unreadable" | "assembly-schema" | "assembly-duplicate";
+  readonly message: string;
+  /** schema 失败时保留原始加载错误，启动路径据此抛出带字段路径的错误。 */
+  readonly error?: LoadingError;
+}
+
+/** 装配目录中的一份成功解析的装配及其来源文件名。 */
+export interface ScannedAssembly {
+  readonly fileName: string;
+  readonly assembly: AssemblyDescriptor;
+}
+
+/** 装配目录扫描结果：成功解析的装配按文件顺序排列，失败项逐条记录。 */
+export interface AssemblyScan {
+  readonly directory: string;
+  readonly assemblies: readonly ScannedAssembly[];
+  readonly failures: readonly AssemblyScanFailure[];
+}
+
+/**
+ * 扫描并解析装配目录，是启动路径与 check:catalog 共用的唯一实现。
+ * 文件级约束（目录可读、普通文件、realpath 不越界、schema、assemblyId 唯一）都在这里生效，
+ * 避免两条路径对同一目录给出不同结论。
+ */
+/**
+ * 执行单文件的 realpath、普通文件、读取、YAML 解析与 schema 校验。
+ * 任一环节失败都返回失败项而不是抛出：预检要累积同一次扫描的全部问题，
+ * 单个文件在 realpath 之后被删除或不可读不能吞掉其余文件的结论。
+ */
+function scanAssemblyFile(
+  directory: string,
+  realDirectory: string,
+  fileName: string,
+): { readonly assembly: AssemblyDescriptor } | { readonly failure: AssemblyScanFailure } {
+  const filePath = join(directory, fileName);
+  const fail = (message: string): { readonly failure: AssemblyScanFailure } => ({
+    failure: { file: fileName, code: "assembly-unreadable", message },
+  });
+  let realFile: string;
+  try {
+    // 拒绝符号链接与越界路径：realpath 必须仍位于固定的装配目录内，且目标是普通文件。
+    realFile = realpathSync(filePath);
+  } catch (error) {
+    return fail(`装配文件不可用 ${fileName}：${error instanceof Error ? error.message : String(error)}`);
+  }
+  let isPlainFile: boolean;
+  try {
+    isPlainFile = realFile.startsWith(`${realDirectory}${sep}`) && statSync(realFile).isFile();
+  } catch (error) {
+    // realpath 与 stat 之间文件被删除或权限变化：同样按不可用处理，不中断扫描。
+    return fail(`装配文件不可用 ${fileName}：${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isPlainFile) {
+    return fail(`装配文件越出目录或不是普通文件: ${fileName}`);
+  }
+  let text: string;
+  try {
+    text = readFileSync(realFile, "utf8");
+  } catch (error) {
+    return fail(`装配文件不可读 ${fileName}：${error instanceof Error ? error.message : String(error)}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = parse(text);
+  } catch (error) {
+    return fail(`装配文件 ${fileName} 不是合法 YAML：${error instanceof Error ? error.message : String(error)}`);
+  }
+  const result = assemblyDescriptorSchema.safeParse(parsed);
+  if (!result.success) {
+    // 装配文件是配置边界：失败原因必须带字段路径，并与其它配置加载器共用同一错误类型。
+    const error = schemaLoadingError(fileName, result.error);
+    return { failure: { file: fileName, code: "assembly-schema", message: error.message, error } };
+  }
+  return { assembly: result.data };
+}
+
+export function scanAssemblyDirectory(root: string = process.cwd()): AssemblyScan {
   const directory = assemblyDirectory(root);
+  const failures: AssemblyScanFailure[] = [];
   let fileNames: string[];
   try {
     fileNames = readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
+      // 只按名字筛选，是否可用交给后续的 realpath 与普通文件检查判定。
+      // 若在此用 isFile() 过滤，目录或符号链接会被静默忽略而不是被拒绝，
+      // 指向目录外的链接就会绕过越界校验。
+      .filter((entry) => /\.ya?ml$/.test(entry.name))
       .map((entry) => entry.name)
       .sort();
   } catch (error) {
-    throw new Error(`无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`);
+    failures.push({
+      file: directory,
+      code: "assemblies-unreadable",
+      message: `无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`,
+    });
+    return { directory, assemblies: [], failures };
   }
-  const assemblies: AssemblyDescriptor[] = [];
-  const realDirectory = realpathSync(directory);
+  const assemblies: ScannedAssembly[] = [];
+  let realDirectory: string;
+  try {
+    realDirectory = realpathSync(directory);
+  } catch (error) {
+    // 目录可枚举但无法解析真实路径：后续无法判定越界，整体按目录不可读处理。
+    failures.push({
+      file: directory,
+      code: "assemblies-unreadable",
+      message: `无法解析装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`,
+    });
+    return { directory, assemblies: [], failures };
+  }
+  const seenAssemblyIds = new Map<string, string>();
   for (const fileName of fileNames) {
-    const filePath = join(directory, fileName);
-    // 拒绝符号链接与越界路径：realpath 必须仍位于固定的装配目录内，且目标是普通文件。
-    const realFile = realpathSync(filePath);
-    if (!realFile.startsWith(`${realDirectory}${sep}`) || !statSync(realFile).isFile()) {
-      throw new Error(`装配文件越出目录或不是普通文件: ${fileName}`);
+    const scanned = scanAssemblyFile(directory, realDirectory, fileName);
+    if ("failure" in scanned) {
+      failures.push(scanned.failure);
+      continue;
     }
-    const text = readFileSync(realFile, "utf8");
-    let parsed: unknown;
-    try {
-      parsed = parse(text);
-    } catch (error) {
-      throw new Error(`装配文件 ${fileName} 不是合法 YAML：${error instanceof Error ? error.message : String(error)}`);
+    const previous = seenAssemblyIds.get(scanned.assembly.assemblyId);
+    if (previous !== undefined) {
+      failures.push({
+        file: fileName,
+        code: "assembly-duplicate",
+        message: `装配目录中存在重复 assemblyId=${scanned.assembly.assemblyId}，另一处在 ${previous}`,
+      });
+      continue;
     }
-    const result = assemblyDescriptorSchema.safeParse(parsed);
-    if (!result.success) {
-      throw new Error(
-        `装配文件 ${fileName} 不符合装配 schema：${result.error.issues.map((issue) => issue.message).join("；")}`,
-      );
-    }
-    assemblies.push(result.data);
+    seenAssemblyIds.set(scanned.assembly.assemblyId, fileName);
+    assemblies.push({ fileName, assembly: scanned.assembly });
   }
-  const ids = new Set<string>();
-  for (const assembly of assemblies) {
-    if (ids.has(assembly.assemblyId)) {
-      throw new Error(`装配目录中存在重复 assemblyId=${assembly.assemblyId}`);
-    }
-    ids.add(assembly.assemblyId);
+  return { directory, assemblies, failures };
+}
+
+/** 读取装配目录内的全部 YAML；任一文件不可用即失败，不静默跳过。 */
+export function loadAssemblies(root: string = process.cwd()): readonly AssemblyDescriptor[] {
+  const scan = scanAssemblyDirectory(root);
+  const [first] = scan.failures;
+  if (first !== undefined) {
+    throw first.error ?? new Error(first.message);
   }
-  return assemblies;
+  return scan.assemblies.map((entry) => entry.assembly);
 }
 
 /**

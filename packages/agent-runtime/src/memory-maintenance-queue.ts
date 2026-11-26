@@ -14,6 +14,27 @@ import type {
 
 const maxMaintenanceAttempts = 3;
 
+/**
+ * 水位未追平时最小的重排间隔（逻辑 tick）。
+ * Agent 运行时的轮询远快于世界 tick，不加间隔时同一个未就绪任务会在一个 tick 内被反复认领与延期；
+ * 用固定的一个 tick 而不是累加次数，既能消除热循环，也不会让后来已经追平水位的任务被长时间推迟。
+ */
+const deferMinRetryTicks = 1;
+
+/**
+ * 认领前判断任务是否还有资格被推进：失败次数已达上限的持久行不再被认领，
+ * 保持 `failed` 作为可查询的最终状态，避免坏任务被无限重复认领。
+ * 只认 `failureAttempts`：租约代次会在每次认领时递增，用它冒充失败次数会让正常任务被误判为耗尽。
+ *
+ * 旧数据兼容：引入 `failureAttempts` 之前写入的行没有该字段。这些行无法区分「失败未达上限」
+ * 与「已经耗尽」，因此只在 `status: failed` 时按租约代次推断耗尽——`queued` 与 `leased`
+ * 表示任务仍被期待推进，不能因为历史上认领过几次就判死。
+ */
+function attemptsExhausted(row: StorageRow, task: MaintenanceTask): boolean {
+  if (task.failureAttempts !== undefined) return task.failureAttempts >= maxMaintenanceAttempts;
+  return row["status"] === "failed" && numberColumn(row, "lease_epoch") >= maxMaintenanceAttempts;
+}
+
 export interface ClaimedMaintenance {
   readonly maintenanceId: string;
   readonly moduleId: string;
@@ -58,7 +79,7 @@ export class MemoryMaintenanceQueue {
         });
       }
       for (const row of table.list({ branch_id: this.branchId, status: "failed" })) {
-        if ((maintenanceTaskSchema.parse(row["task_json"]).failureAttempts ?? numberColumn(row, "lease_epoch")) >= maxMaintenanceAttempts) continue;
+        if (attemptsExhausted(row, maintenanceTaskSchema.parse(row["task_json"]))) continue;
         table.put({
           ...row,
           status: "queued",
@@ -215,13 +236,18 @@ export class MemoryMaintenanceQueue {
           const dueTick = numberColumn(row, "due_tick");
           if (dueTick > worldTick) return false;
           const task = maintenanceTaskSchema.parse(row["task_json"]);
+          // 重排点未到：说明上一轮判过「水位未追平」，此时不重复认领，
+          // 否则同一个未就绪任务会在每个轮询周期被重新拾起。
+          // 只有当世界时钟确实越过重排点时才会重新尝试，重排点本身按 tick 推进而非按尝试次数累加，
+          // 因此后来已追平水位的任务不会被长期推迟。
           if ((task.retryAfterTick ?? 0) > worldTick) return false;
           if (task.needsModel && task.modelQuota !== undefined && (usedCalls.get(task.moduleId) ?? 0) >= task.modelQuota) return false;
-          if (row["status"] === "queued") return true;
-          if (row["status"] === "failed") return (task.failureAttempts ?? numberColumn(row, "lease_epoch")) < maxMaintenanceAttempts;
+          if (row["status"] === "queued") return !attemptsExhausted(row, task);
+          if (row["status"] === "failed") return !attemptsExhausted(row, task);
           return row["status"] === "leased" &&
             typeof row["lease_expires_at"] === "string" &&
-            new Date(row["lease_expires_at"]).getTime() <= nowMs;
+            new Date(row["lease_expires_at"]).getTime() <= nowMs &&
+            !attemptsExhausted(row, task);
         })
         .slice(0, Math.max(0, limit));
       for (const row of candidates) {
@@ -282,7 +308,11 @@ export class MemoryMaintenanceQueue {
     });
   }
 
-  defer(maintenanceId: string, leaseEpoch: number): void {
+  /**
+   * 延期任务并在逻辑时间上重排，避免持续 `not-ready` 的 Agent 每轮都被重新认领。
+   * 重排不消耗 `failureAttempts`：水位未追平不是任务本身的失败，只是还没轮到它。
+   */
+  defer(maintenanceId: string, leaseEpoch: number, worldTick: number): void {
     this.storage.transact((tx) => {
       const table = tx.rows("maintenance_runs");
       const current = table.get({ maintenance_id: maintenanceId });
@@ -293,11 +323,42 @@ export class MemoryMaintenanceQueue {
       ) {
         return;
       }
+      const stored = maintenanceTaskSchema.parse(current["task_json"]);
       table.put({
         ...current,
         status: "queued",
         lease_expires_at: null,
+        task_json: {
+          ...stored,
+          // 保留配额等待写下的更晚时间点，取两者中较晚者。
+          retryAfterTick: Math.max(stored.retryAfterTick ?? 0, worldTick + deferMinRetryTicks),
+        },
       });
+    });
+  }
+
+  /**
+   * 健康摘要用的维护队列计数：
+   * - `queued`：仍在等待推进的行（含重排未到期与已被认领但未终结的行）；
+   * - `exhausted`：失败次数已达上限、不会再被认领的持久行。
+   *
+   * 两者分开命名，避免把「不会再被推进」的行混进「排队中」的数字。
+   * 只读持久行、不认领任务，因此可安全地在概览路径调用。
+   */
+  queueSummary(): { readonly queued: number; readonly exhausted: number } {
+    return this.storage.transact((tx) => {
+      let queued = 0;
+      let exhausted = 0;
+      for (const row of tx.rows("maintenance_runs").list({ branch_id: this.branchId })) {
+        const status = row["status"];
+        if (status === "completed" || status === "cancelled") continue;
+        if (status === "failed" && attemptsExhausted(row, maintenanceTaskSchema.parse(row["task_json"]))) {
+          exhausted += 1;
+          continue;
+        }
+        queued += 1;
+      }
+      return { queued, exhausted };
     });
   }
 

@@ -17,6 +17,25 @@ export function asRecord(value: unknown): Readonly<Record<string, Json>> {
     : {};
 }
 
+/** 错误名的短标记上限：错误名是运行期类型名，仅作结构化字段，不承载自由文本。 */
+const maxErrorNameChars = 64;
+
+/**
+ * 把错误名收敛成可记录的枚举型短标记；不符合形态时统一记 unknown。
+ * 失败日志只写错误名与领域错误码，不写可能含观察正文的原始消息。
+ */
+export function errorNameToken(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown";
+  const name = error.name;
+  if (name.length === 0 || name.length > maxErrorNameChars) return "unknown";
+  for (const char of name) {
+    const code = char.charCodeAt(0);
+    const isAlnum = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (!isAlnum && char !== "-" && char !== "_" && char !== "." && char !== ":" && char !== "/") return "unknown";
+  }
+  return name;
+}
+
 export function arrayValue(value: unknown): readonly Json[] {
   return Array.isArray(value) ? value : [];
 }

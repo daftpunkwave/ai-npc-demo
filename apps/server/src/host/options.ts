@@ -7,6 +7,11 @@ import type { AssemblyDescriptor, ModuleDefinition } from "@ai-npc/contracts";
 
 export interface HostOptions {
   readonly dataDir: string;
+  /**
+   * 控制台静态产物目录；缺省按仓库根下的固定构建输出位置解析。
+   * 部署参数只来自环境变量与项目根，不得按 process.cwd() 派生，否则从其它工作目录启动会挂载到空目录。
+   */
+  readonly consoleStaticDir?: string;
   readonly contentRoot?: string;
   /** 嵌入场景的 profile、工具集、名册和 RunSpec 配置根目录。 */
   readonly configRoot?: string;
@@ -45,4 +50,9 @@ export interface HostOptions {
    * 缺省拒绝启动并给出迁移指引，不静默修改旧 run。
    */
   readonly migrateOnlineRun?: boolean;
+  /**
+   * 关闭时每级资源排空的预算（毫秒）：先停止新任务并等待提交边界，超时记录后继续释放。
+   * 缺省使用与租约期限解耦的默认值，避免单个卡住的 turn 无限拖住进程退出。
+   */
+  readonly shutdownDrainMs?: number;
 }

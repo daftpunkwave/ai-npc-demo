@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   createShutdownHandler,
   credentialsFileName,
@@ -106,6 +106,7 @@ describe("部署配置", () => {
       serverPort: 3000,
       clientPort: 5173,
       dataDir: join(root, "data"),
+      consoleStaticDir: join(root, "apps/server/console-static"),
       assemblyRef: "local-slg-standard-v1",
       modelLayoutRef: "shared-model-layout-v1",
       rosterRef: "standard-15",
@@ -135,6 +136,18 @@ describe("部署配置", () => {
     expect(config.modelLayoutRef).toBe("deterministic-model-layout-v1");
     expect(config.rosterRef).toBe("core-3");
     expect(config.configuredTokens).toEqual({ player: "player-token", operator: "operator-token" });
+  });
+
+  it("控制台静态目录按项目根解析，可被 NPC_CONSOLE_STATIC_DIR 覆盖", () => {
+    const root = tempRoot();
+    // 相对路径按项目根解析：与数据目录同一规则，不随进程工作目录变化。
+    expect(parseDeploymentConfig({ env: { NPC_CONSOLE_STATIC_DIR: "./build/console" }, projectRoot: root })
+      .consoleStaticDir).toBe(join(root, "build/console"));
+    // 绝对路径原样使用，允许把构建产物部署到仓库之外。
+    expect(parseDeploymentConfig({ env: { NPC_CONSOLE_STATIC_DIR: resolve("/srv/console-static") }, projectRoot: root })
+      .consoleStaticDir).toBe(resolve("/srv/console-static"));
+    expect(parseDeploymentConfig({ env: { NPC_CONSOLE_STATIC_DIR: "   " }, projectRoot: root })
+      .consoleStaticDir).toBe(join(root, "apps/server/console-static"));
   });
 
   it("拒绝非回环主机", () => {

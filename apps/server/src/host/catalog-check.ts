@@ -2,16 +2,13 @@
  * 校验 server 组合根与 config/assemblies 目录下的全部装配：模块目录、realm/kind 白名单、
  * 能力名与绑定匹配、运行时 requires 闭包、作用域/重复绑定、拓扑顺序、模块配置 schema 与必需能力。
  * 依赖 kernel 的统一解析器、module-sdk 描述符校验与组合根模块目录；不启动服务、不打开存储。
+ * 装配目录的枚举与文件级约束复用启动路径的扫描实现，这里只在其上追加逐装配的解析检查。
  * 禁止写死装配文件名、放宽 schema 或用首错掩盖同一次预检中的其他失败项。
  */
-/* eslint-disable security/detect-non-literal-fs-filename -- 只读取 root/config/assemblies 下由 readdir 得到的普通文件。 */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { resolve } from "node:path";
 import {
   DomainError,
-  assemblyDescriptorSchema,
   moduleKindSchema,
   type AssemblyDescriptor,
   type CapabilityRef,
@@ -27,7 +24,7 @@ import {
   serverRequiredCapabilities,
 } from "./module-catalog";
 import { checkModuleCapabilityUsage } from "./module-capability-usage";
-import { serverAssemblyInputs, needsContentPack } from "./assembly";
+import { needsContentPack, scanAssemblyDirectory, serverAssemblyInputs } from "./assembly";
 
 /** 一条装配预检失败：文件、稳定代码与可直接定位的原因。 */
 export interface CatalogViolation {
@@ -300,31 +297,26 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
   if (options.definitions === undefined) {
     violations.push(...checkModuleCapabilityUsage({ root, definitions }));
   }
-  const directory = join(root, "config/assemblies");
-  let fileNames: string[];
-  try {
-    fileNames = readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    violations.push({
-      file: directory,
-      code: "assemblies-unreadable",
-      message: `无法读取装配目录：${errorMessage(error)}`,
-    });
+  // 文件枚举与文件级约束（普通文件、realpath 越界、schema、assemblyId 唯一）复用启动路径的同一实现，
+  // 避免 check:catalog 通过而启动失败，或反之。
+  const scan = scanAssemblyDirectory(root);
+  violations.push(...scan.failures.map((failure) => ({
+    file: failure.file,
+    code: failure.code,
+    message: failure.message,
+  })));
+  if (scan.directory.length === 0) {
     return { moduleCount: definitions.length, assemblies: [], violations };
   }
-  if (fileNames.length === 0) {
+  if (scan.assemblies.length === 0 && scan.failures.length === 0) {
     violations.push({
-      file: directory,
+      file: scan.directory,
       code: "assemblies-empty",
       message: "装配目录中没有 YAML 文件",
     });
   }
 
-  const assemblies: string[] = [];
-  const seenAssemblyIds = new Map<string, string>();
+  const assemblies = scan.assemblies.map((entry) => entry.assembly.assemblyId);
   // 内容包只影响 server 装配的工具描述注入：整轮预检加载一次并复用，逐装配重复读取会按装配数量倍数放大成本。
   // 没有装配需要它时（如只校验模块目录的自定义夹具）保持不读盘。
   let loadedContent: ContentPack | null = null;
@@ -334,43 +326,7 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
       return loadedContent;
     },
   };
-  for (const fileName of fileNames) {
-    const file = join(directory, fileName);
-    let text: string;
-    try {
-      text = readFileSync(file, "utf8");
-    } catch (error) {
-      violations.push({ file: fileName, code: "assembly-unreadable", message: errorMessage(error) });
-      continue;
-    }
-    let parsed: unknown;
-    try {
-      parsed = parseYaml(text);
-    } catch (error) {
-      violations.push({ file: fileName, code: "assembly-unreadable", message: `不是合法 YAML：${errorMessage(error)}` });
-      continue;
-    }
-    const result = assemblyDescriptorSchema.safeParse(parsed);
-    if (!result.success) {
-      violations.push({
-        file: fileName,
-        code: "assembly-schema",
-        message: `不符合装配 schema：${result.error.issues.map((issue) => issue.message).join("；")}`,
-      });
-      continue;
-    }
-    const assembly = result.data;
-    const previous = seenAssemblyIds.get(assembly.assemblyId);
-    if (previous !== undefined) {
-      violations.push({
-        file: fileName,
-        code: "assembly-duplicate",
-        message: `assemblyId ${assembly.assemblyId} 与 ${previous} 重复`,
-      });
-      continue;
-    }
-    seenAssemblyIds.set(assembly.assemblyId, fileName);
-    assemblies.push(assembly.assemblyId);
+  for (const { fileName, assembly } of scan.assemblies) {
     checkAssembly(
       root,
       fileName,

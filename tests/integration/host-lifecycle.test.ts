@@ -107,7 +107,7 @@ function createLifecycleFor(
     active,
     autoPauseAfterDisconnectMs: 60_000,
     campaignStarted,
-    disposeResources: async () => {},
+    closeResources: async () => {},
   });
 }
 
@@ -457,7 +457,7 @@ describe("宿主运营审计", () => {
       active: { branchId: harness.branchId, worldId: harness.worldId },
       autoPauseAfterDisconnectMs: 60_000,
       campaignStarted: () => true,
-      disposeResources: async () => {},
+      closeResources: async () => {},
     });
     try {
       lifecycle.handlePlayerConnections(1);

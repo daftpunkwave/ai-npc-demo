@@ -66,22 +66,21 @@ interface MemoryRecord {
   readonly scope: MemoryScope;
   readonly kind: "episodic" | "relation" | "belief" | "prospective" | "core" | "public";
   readonly sourceObservationIds: readonly string[];
-  readonly contentRefs: readonly ContentRef[];
   readonly status: "active" | "superseded" | "expired" | "evicted" | "retracted";
   readonly epistemic: "verified-event" | "reported-claim" | "inference"; // 证据地位
   readonly releasePolicyId: string;
   readonly validFromTick: number;
   readonly validUntilTick: number | null;
-  readonly revision: number;
+  readonly revision: number;                              // 该记录自身改写次数，取 row_version
   readonly content: Json;
 }
 ```
 
-`AgentObservation.epistemic` 与 `MemoryRecord.epistemic` 是两个不同的枚举：前者表示获知方式（亲历/转述/推断），后者表示记忆的证据地位（已验证事件/声称/推断）。两者不能互换，也不能合并成一个字符串；传播权限另由 `releasePolicyId` 表达。scope 和事件 envelope 由服务端赋值或验证，worldSeq 在 branch 内排序。来源 ID 必须存在，并且落在合法的知识边界内。版本化的身份和 lore 用独立 contentRef 表达，不能拿来伪造观察来源。
+`AgentObservation.epistemic` 与 `MemoryRecord.epistemic` 是两个不同的枚举：前者表示获知方式（亲历/转述/推断），后者表示记忆的证据地位（已验证事件/声称/推断）。两者不能互换，也不能合并成一个字符串；传播权限另由 `releasePolicyId` 表达。scope 和事件 envelope 由服务端赋值或验证，worldSeq 在 branch 内排序。来源 ID 必须存在，并且落在合法的知识边界内。`MemoryRecord.revision` 是这条记录自身的改写次数，来自 `memory_records.row_version`（同一 `memoryId` 每写一版加 1，从 1 开始），与冻结视图水位 `MemoryBundle.revision` 语义不同，不能相互替代。记忆记录不带内容引用：`memory_records` 没有对应列，版本化的身份与 lore 由内容包索引表达，不拿来伪造观察来源。
 
 InputFrontier 由 scope 绑定，是每个 Agent 的冻结边界；多主体快照按身份各存一份 frontier map。同一个 worldSeq 下，延迟观察也可能稍后送达，所以必须同时冻结 observationSeq、perceptionRevision 和 knowledgeGrantRevision，只比较世界序号不够。memoryRevision 指向满足边界的不可变视图；conversationCursor 限定该主体有权使用的会话日志。
 
-时间顺序上，occurredAtTick 不晚于 sensedAtTick，sensedAtTick 不晚于 knownAtTick；confidence 必须是 0 到 1 的有限数，channel 从已注册渠道解析。运行中经历到的观察，来源不能为空；contentRefs 只用于版本化背景，不能替代经历证据。JSON 只是传输形态，实际 payload 按 type 和 schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
+时间顺序上，occurredAtTick 不晚于 sensedAtTick，sensedAtTick 不晚于 knownAtTick；confidence 必须是 0 到 1 的有限数，channel 从已注册渠道解析。运行中经历到的观察，来源不能为空；背景材料不能替代经历证据。JSON 只是传输形态，实际 payload 按 type 和 schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
 
 命令载荷的文本与数组边界由公共 schema 统一约束：对白正文 1–300 字，席位发言 1–200 字，侦察问题与剧情卡说明不超过 300 字，政策键不超过 120 字；主体名单（协议当事人、通信受众、席位收件人）不超过 20 个，协议提案与还价的条款各不超过 20 条。超出上限的载荷在 schema 层被拒绝，返回 `invalid-params`，不进入处理器，也不产生状态、事件或 job。
 
@@ -213,6 +212,15 @@ interface UiExtension {
 ```
 
 其余受控类型的首版定义：`StrictConfigSchema` 是形状由 `ZodRawShape` 表达的 Zod object schema，类型层只依赖 zod 的公开导出，未知键是否被拒绝由运行期探测判定（见 [插件与生命周期](plugins.md)），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本、装配 hash，以及每个模块的已解析配置 `config`。浏览器 realm 没有装配解析器，模块必须用握手下发的 `config` 启动而不是自带的 `defaults`，否则实际行为与装配声明不符且无法用 `configHash` 自证一致；`config` 缺失或未通过模块 `configSchema` 校验时按 `assembly-incompatible` 拒绝启动。`config` 只对 client 与 console 两个 realm 下发：服务端 realm 的实例由宿主自己创建，其配置含内容包下发的提示词、工具描述与部署期覆盖，属服务端内部参数，而 `serverAssembly` 会经 `/api/v1/session` 返回给玩家会话，因此只带 `configHash`。客户端以在下发值基础上补齐 `configSchema` 默认字段的方式构造最终配置，不重新执行 `transform`，保证浏览器实际使用的值与服务端冻结结果一致。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
+
+### 3.1 哈希口径
+
+哈希有两类口径，选哪一种由比对双方的可用接口决定，不按包归属区分。
+
+- `HostServices.hash`：输入为 JSON 值，先做规范 JSON 序列化再取 SHA-256。装配摘要、manifest、证据与 artifact 摘要走这一条，因此宿主可以替出确定性实现用于测试。
+- 固定 SHA-256：`commandPayloadHash` 直接对规范 JSON 取 SHA-256，不经注入端口。命令幂等键要写进 `command_receipts.payload_hash` 并长期留存，是同一 `commandId` 重复提交时判断内容是否相同的唯一依据；若跟随注入实现变化，更换宿主哈希后同一命令会被判成 `idempotency-conflict`。
+
+固定口径只覆盖命令幂等键一处，其余摘要仍统一走 `host.hash`。
 
 ## 4. 跨端会话与协议
 

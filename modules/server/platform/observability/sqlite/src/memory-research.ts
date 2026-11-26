@@ -110,7 +110,7 @@ function readMemorySnapshot(
   return {
     response: memoryResponseSchema.parse({
       revision,
-      records: rows.map((row) => decodeMemoryRecord(row, { worldId, branchId, agentId, revision })),
+      records: rows.map((row) => decodeMemoryRecord(row, { worldId, branchId, agentId })),
     }),
     rows: new Map(rows.map((row) => [String(row["memory_id"]), row])),
   };

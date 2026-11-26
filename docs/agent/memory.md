@@ -20,7 +20,7 @@ scope 固定为 `worldId/branchId/agentId`；每个实验 run 独占一个 branc
 |---|---|
 | `MemoryScope` | worldId、branchId、agentId，由宿主绑定 |
 | `AgentObservation` | observationId、observationSeq、sourceEventIds、knownAtTick、epistemic、releasePolicyId、content |
-| `MemoryRecord` | memoryId、scope、kind、sourceObservationIds、contentRefs、revision、status、有效时间、releasePolicyId、content |
+| `MemoryRecord` | memoryId、scope、kind、sourceObservationIds、revision、status、有效时间、releasePolicyId、content |
 | `MemoryQuery` | scope、冻结 revision、inputFrontier、话题/对象/地点、purpose、目标受众、条数/token 预算 |
 | `MemoryBundle` | 候选及得分、过滤原因、最终条目、来源、版本、预算消耗、空结果/错误状态 |
 | `MemoryChangePlan` | baseRevision、输入观察范围、增改/失效/淘汰操作、来源映射、容量变化、派生任务 |
@@ -28,7 +28,7 @@ scope 固定为 `worldId/branchId/agentId`；每个实验 run 独占一个 branc
 
 epistemic 分两层：`AgentObservation.epistemic` 为 witnessed/reported/inferred（怎么知道），`MemoryRecord.epistemic` 为 verified-event/reported-claim/inference（证据地位）。两者不得互换；传播权限另由 releasePolicyId 表达，宿主从来源计算，不能由模块自由提升。
 
-状态值为 active、superseded、expired、evicted、retracted。取代旧认识时新增 revision，保留审计；检索默认排除非 active 项。只读身份/世界观通过 contentRefs 引用版本化内容，不伪造一条“亲历事件”。
+状态值为 active、superseded、expired、evicted、retracted。取代旧认识时新增 revision，保留审计；检索默认排除非 active 项。`MemoryRecord.revision` 是该记录自身的改写次数，取自存储的 `memory_records.row_version`（同一 memoryId 每写一版加 1，从 1 开始），与冻结视图水位 `MemoryBundle.revision` 不是同一个量。只读身份与世界观背景不进记忆记录：`memory_records` 没有内容引用列，对外契约也不保留只能填值的空字段，背景引用由内容包与证据链各自表达，不伪造一条“亲历事件”。
 
 | 操作 | 输入与输出 | 提交责任 |
 |---|---|---|

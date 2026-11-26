@@ -87,7 +87,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -106,7 +106,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -227,6 +227,37 @@ describe("初始迁移", () => {
       expect(plan).toContain("observations_day_passed");
       expect(plan).not.toContain("SCAN observations");
       expect(plan).not.toContain("USE TEMP B-TREE");
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("工具调用的配额计数与结果查找命中 0018 的覆盖索引", async () => {
+    const harness = await openStorageHarness();
+    try {
+      // 0018 为 tool_calls 补 (run_id, turn_id, tool_id) 与
+      // (run_id, turn_id, attempt_id, provider_call_id, created_at) 两个索引；
+      // 两个查询形状分别对应 tool-gateway 的配额计数与 tool-outcome-store 的首行查找。
+      const planOf = (sql: string, params: readonly string[]): string =>
+        harness.port
+          .transact((tx) => tx.all(`EXPLAIN QUERY PLAN ${sql}`, params))
+          .map((row) => String(row["detail"]))
+          .join("\n");
+
+      const quota = planOf(
+        "SELECT COUNT(*) AS total FROM tool_calls WHERE run_id = ? AND turn_id = ? AND tool_id = ?",
+        ["run-000000000001", "turn-000000000001", "message.send"],
+      );
+      expect(quota).toContain("tool_calls_turn_tool");
+      expect(quota).not.toContain("SCAN tool_calls");
+
+      const outcome = planOf(
+        "SELECT * FROM tool_calls WHERE run_id = ? AND turn_id = ? AND attempt_id = ? AND provider_call_id = ? ORDER BY created_at ASC",
+        ["run-000000000001", "turn-000000000001", "att-000000000001", "call-000000000001"],
+      );
+      expect(outcome).toContain("tool_calls_attempt_call");
+      expect(outcome).not.toContain("SCAN tool_calls");
+      expect(outcome).not.toContain("USE TEMP B-TREE");
     } finally {
       await harness.dispose();
     }
@@ -353,7 +384,7 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
       closeDatabase(upgraded);
       upgraded = null;

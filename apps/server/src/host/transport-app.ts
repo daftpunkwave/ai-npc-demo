@@ -5,11 +5,13 @@
  */
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Authority } from "@ai-npc/authority";
 import { listRuleFailures, type RuleFailureRecord } from "@ai-npc/authority";
 import type { AuthContext, ClientContentView, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
 import type { GameContent } from "@ai-npc/module-sdk";
+import { consoleStaticDirRelativeToRoot } from "../config";
 import { clockView } from "./clock-view";
 import { logInternalError } from "./internal-error-log";
 import type { HostLifecycle } from "./lifecycle";
@@ -44,6 +46,11 @@ export interface TransportAppInput {
   readonly evaluation?: EvaluationReadPort;
   /** 评估写入端口；不依赖评估模块，未注入时写入路由返回 not-ready。 */
   readonly writes?: RunWrites;
+  /**
+   * 记忆维护队列计数；宿主未提供数据源时返回零值，而不是编造数字。
+   * `queued` 与 `exhausted` 分别对应「仍会推进」与「已达上限不再推进」。
+   */
+  readonly maintenanceQueue?: () => { readonly queued: number; readonly exhausted: number };
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
@@ -77,6 +84,15 @@ function recentFailures(storage: StoragePort, branchId: string) {
 
 /** 预算摘要条目上限：按用途聚合后取用量最大的若干条，避免列表随用途数无界增长。 */
 const budgetSummaryLimit = 20;
+
+/**
+ * 控制台静态目录的宿主级缺省值：与导入该模块的源文件位置绑定，而不是进程工作目录。
+ * 本文件位于 apps/server/src/host/，源文件目录到仓库根要上溯四级（host → src → server → apps → 根），
+ * 再拼上仓库内的相对构建输出位置。嵌入式宿主（测试、脚本）没有经过部署配置时仍指向同一目录。
+ */
+function consoleStaticDirFromProjectRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../..", consoleStaticDirRelativeToRoot);
+}
 
 /**
  * 在一次事务内读取健康摘要需要的队列计数与预算聚合。
@@ -187,8 +203,10 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 /** 创建传输应用；调用方负责之后监听端口并在关闭时释放。 */
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
   const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent, evaluation, writes } = input;
+  // 静态目录必须由部署参数给出：调用方缺省时按项目根下的固定构建输出位置解析，
+  // 不读 process.cwd()，否则从仓库根以外的工作目录启动会挂载到一个空的 console-static。
   const consoleStaticDir = resolve(
-    input.consoleStaticDir ?? resolve(process.cwd(), "apps/server/console-static"),
+    input.consoleStaticDir ?? options.consoleStaticDir ?? consoleStaticDirFromProjectRoot(),
   );
   try {
     // 开发宿主与控制台构建并行启动：目录先存在，静态路由按请求路径读盘，构建完成后无需重启服务端。
@@ -222,6 +240,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         health: () => {
           const status = lifecycle.healthStatus();
           const summary = healthStorageSummary(runtime.storage, active.branchId);
+          const maintenance = input.maintenanceQueue?.() ?? { queued: 0, exhausted: 0 };
           // createApp 只在全部模块启动成功后创建；能出现在装配集里即表示已就绪。
           const modules = [
             ...input.assembly.modules,
@@ -239,8 +258,12 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             assemblyHash: input.assembly.assemblyHash,
             modules,
             clock: clockView(lifecycle.clockState()),
-            // turnsRunning、maintenanceQueued、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
-            queues: { turnsQueued: summary.turnsQueued },
+            // turnsRunning、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
+            queues: {
+              turnsQueued: summary.turnsQueued,
+              maintenanceQueued: maintenance.queued,
+              maintenanceExhausted: maintenance.exhausted,
+            },
             budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),
           };
