@@ -209,7 +209,7 @@ export const scenarioOverridePayloadSchema = z
 
 export const probeAskPayloadSchema = z
   .object({
-    probeId: idSchemas.prb,
+    probeId: contentIdSchemas.p,
     agentId: principalIdSchema,
     askedBy: principalIdSchema,
     question: z.string().min(1).max(maxCommandTextLength),

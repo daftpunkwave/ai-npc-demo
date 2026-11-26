@@ -143,7 +143,7 @@ export const agentsSummonedPayloadSchema = z
 
 export const probeAskedPayloadSchema = z
   .object({
-    probeId: idSchemas.prb,
+    probeId: contentIdSchemas.p,
     agentId: principalIdSchema,
     askedBy: principalIdSchema,
     question: z.string().min(1),

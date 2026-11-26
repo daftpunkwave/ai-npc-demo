@@ -133,7 +133,7 @@ const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
     note: "调试覆盖",
   },
   "probe.ask": {
-    probeId: "prb-k3j9x0a1b2c3",
+    probeId: "p-recall-promise",
     agentId,
     askedBy: "system:world",
     question: "你还记得上次的承诺吗？",

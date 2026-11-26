@@ -89,8 +89,9 @@ async function harnessWithSandbox(): Promise<GameHarness> {
 describe("探针命令", () => {
   it("在活跃沙盒分支提交后产生面向被问 Agent 的 ProbeAsked 事件", async () => {
     const harness = await harnessWithSandbox();
+    // 直接使用内容包 s-promise 脚本声明的探针 ID：命令、事件与脚本 answerKey 共用同一命名空间。
     const receipt = askProbe(harness, sandboxBranchId, {
-      probeId: "prb-000000000001",
+      probeId: "p-recall-promise",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "党魁之前答应过你什么？",
@@ -100,7 +101,7 @@ describe("探针命令", () => {
     expect(receipt.acceptedEventIds).toHaveLength(1);
     const probeEvent = eventsOf(harness, sandboxBranchId).find((event) => event.type === "ProbeAsked");
     expect(probeEvent?.payload).toMatchObject({
-      probeId: "prb-000000000001",
+      probeId: "p-recall-promise",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "党魁之前答应过你什么？",
@@ -119,7 +120,7 @@ describe("探针命令", () => {
     });
 
     const receipt = askProbe(harness, sandboxBranchId, {
-      probeId: "prb-000000000002",
+      probeId: "p-probe-2",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "你知道星图有几份吗？",
@@ -134,7 +135,7 @@ describe("探针命令", () => {
     setGameClock(harness, { worldTick: 3, mode: "paused" });
 
     const receipt = askProbe(harness, harness.branchId, {
-      probeId: "prb-000000000003",
+      probeId: "p-probe-3",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "越权探针",
@@ -151,7 +152,7 @@ describe("探针命令", () => {
     setGameClock(harness, { worldTick: 3, mode: "running" });
 
     const receipt = askProbe(harness, harness.branchId, {
-      probeId: "prb-000000000009",
+      probeId: "p-probe-9",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "运行中世界的探针",
@@ -171,7 +172,7 @@ describe("探针命令", () => {
     });
 
     const receipt = askProbe(harness, sandboxBranchId, {
-      probeId: "prb-00000000000a",
+      probeId: "p-probe-a",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "实验分支探针",
@@ -196,7 +197,7 @@ describe("探针命令", () => {
     const before = counts();
 
     askProbe(harness, sandboxBranchId, {
-      probeId: "prb-00000000000b",
+      probeId: "p-probe-b",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "不产生对白的探针",
@@ -217,7 +218,7 @@ describe("探针命令", () => {
         { ...auth, branchId: sandboxBranchId },
         gameCommandEnvelope(
           "probe.ask",
-          { probeId: "prb-000000000004", agentId: "human-independent", askedBy: "player-1", question: "越权探针" },
+          { probeId: "p-probe-4", agentId: "human-independent", askedBy: "player-1", question: "越权探针" },
           harness.host.ids("cmd"),
         ),
       );
@@ -230,7 +231,7 @@ describe("探针命令", () => {
   it("未知被问主体与未知提问者都被拒绝且不留下事件", async () => {
     const harness = await harnessWithSandbox();
     const unknownAgent = askProbe(harness, sandboxBranchId, {
-      probeId: "prb-000000000005",
+      probeId: "p-probe-5",
       agentId: "npc-does-not-exist",
       askedBy: "player-1",
       question: "未知主体",
@@ -239,7 +240,7 @@ describe("探针命令", () => {
     expect(unknownAgent.reasonCode).toBe("unknown-target");
 
     const unknownAsker = askProbe(harness, sandboxBranchId, {
-      probeId: "prb-000000000006",
+      probeId: "p-probe-6",
       agentId: "human-independent",
       askedBy: "npc-does-not-exist",
       question: "未知提问者",
@@ -253,7 +254,7 @@ describe("探针命令", () => {
     // 幂等以 commandId 为准，因此换命令 ID 会重新执行处理器；探针语义要求同一 probeId 只留一条观察。
     const harness = await harnessWithSandbox();
     const payload = {
-      probeId: "prb-00000000000c", agentId: "human-independent", askedBy: "player-1", question: "不同命令 ID",
+      probeId: "p-probe-c", agentId: "human-independent", askedBy: "player-1", question: "不同命令 ID",
     };
     const first = askProbe(harness, sandboxBranchId, payload);
     const second = askProbe(harness, sandboxBranchId, payload);
@@ -268,7 +269,7 @@ describe("探针命令", () => {
     const harness = await harnessWithSandbox();
     const envelope = gameCommandEnvelope(
       "probe.ask",
-      { probeId: "prb-000000000007", agentId: "human-independent", askedBy: "player-1", question: "重放探针" },
+      { probeId: "p-probe-7", agentId: "human-independent", askedBy: "player-1", question: "重放探针" },
       "cmd-000000000777",
     );
     const first = harness.authority.commands.execute(
@@ -289,7 +290,7 @@ describe("探针命令", () => {
   it("沙盒分支的事件受众只含被问 Agent", async () => {
     const harness = await harnessWithSandbox();
     askProbe(harness, sandboxBranchId, {
-      probeId: "prb-000000000008",
+      probeId: "p-probe-8",
       agentId: "human-independent",
       askedBy: "player-1",
       question: "受众检查",

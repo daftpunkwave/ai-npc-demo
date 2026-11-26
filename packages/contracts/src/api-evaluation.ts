@@ -4,7 +4,7 @@
  * 禁止在此计算指标或生成报告，只描述查询与返回结构。
  */
 import { z } from "zod";
-import { idSchemas, principalIdSchema } from "./ids";
+import { idSchemas, principalIdSchema, probeIdSchema } from "./ids";
 import { jsonValueSchema } from "./json";
 /** run 规格由配置加载边界校验，这里只约束它必须是 JSON 对象。 */
 export const runSpecSchema = z.record(z.string().min(1), jsonValueSchema);
@@ -113,7 +113,7 @@ export const reportProbeInvalidReasonSchema = z.enum([
 
 export const reportProbeSchema = z
   .object({
-    probeId: z.string().min(1),
+    probeId: probeIdSchema,
     agentId: principalIdSchema,
     answer: z.string(),
     score: z

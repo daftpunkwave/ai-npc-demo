@@ -365,6 +365,37 @@ describe("控制台评估读取接口", () => {
     expect(report.memory.recordsByTier["short"]).toBe(1);
   });
 
+  it("脚本声明的 p-* 探针结果在报告中按脚本 answerKey 计分", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: testExperimentSpec({
+        experimentId: "exp-probe-link-v1", variants: ["memory-m0-window"], scriptBranches: ["keep"],
+      }) },
+    })).json());
+    const runId = created.runIds[0] as string;
+    host.storage.transact((tx) => {
+      // probe_id 与 s-promise 检查点声明的探针 ID 相同，报告据此取回 kind 与 answerKey。
+      tx.rows("probe_results").put({
+        probe_result_id: "prb-cccccccccccc", run_id: runId, script_id: "s-promise",
+        probe_id: "p-recall-promise", agent_id: "human-independent", asked_at_tick: 62,
+        answer_text: "党魁答应过补充供给，已经做到了。", decision_json: null, score_json: null, valid: 1, invalid_reason: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    const response = await host.app.inject({ method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers });
+    expect(response.statusCode).toBe(200);
+    const report = runReportResponseSchema.parse(response.json());
+    expect(report.validity.invalidReasons).not.toContain("undeclared-probes");
+    expect(report.probes).toEqual([expect.objectContaining({
+      probeId: "p-recall-promise",
+      agentId: "human-independent",
+      score: { kind: "recall", correct: true },
+    })]);
+  });
+
   it("缺脚本声明的探针计入证据不完整，非法 JSON 不使读取失败", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

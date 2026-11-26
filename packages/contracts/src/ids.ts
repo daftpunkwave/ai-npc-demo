@@ -118,6 +118,12 @@ export const evidenceIdSchema = contentIdSchemaWithPrefix("ev-");
 export const secretIdSchema = contentIdSchemaWithPrefix("sec-");
 export const scenarioCardIdSchema = contentIdSchemaWithPrefix("card-");
 export const sourceIdSchema = contentIdSchemaWithPrefix("src-");
+/**
+ * 探针 ID：实验脚本检查点声明的固定 ID（如 `p-recall-promise`）。`probe.ask`、`ProbeAsked`、
+ * `probe_results.probe_id` 与报告都使用这一形态，才能把作答关联回脚本的 answerKey；
+ * 运行中前缀 `prb` 只标识一条探针结果记录，不是探针本身的 ID。
+ */
+export const probeIdSchema = contentIdSchemaWithPrefix("p-");
 
 /** 全部内容 ID schema，按内容对象类别命名，避免与运行中前缀混淆。 */
 export const contentIdSchemas = {
@@ -130,6 +136,7 @@ export const contentIdSchemas = {
   sec: secretIdSchema,
   card: scenarioCardIdSchema,
   src: sourceIdSchema,
+  p: probeIdSchema,
 } as const;
 
 /** 内容包中的一种固定 ID，供需要接受任意内容 ID 的字段使用。 */

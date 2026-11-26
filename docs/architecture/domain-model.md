@@ -30,7 +30,7 @@
 | `exp` | 实验 | `rum` | 传闻 |
 | `fact` | 叙事事实 | `backup` | 灾备备份 |
 
-内容 ID：节点用节点名（`grayharbor`），道路 `r-*`，库存点 `sp-*`，队伍 `team-*`，群体 `grp-*`，证据 `ev-*`，秘密 `sec-*`，剧情卡 `card-*`，非 Agent 来源 `src-*`。
+内容 ID：节点用节点名（`grayharbor`），道路 `r-*`，库存点 `sp-*`，队伍 `team-*`，群体 `grp-*`，证据 `ev-*`，秘密 `sec-*`，剧情卡 `card-*`，非 Agent 来源 `src-*`，实验脚本探针 `p-*`。`probe.ask`、`ProbeAsked`、`probe_results.probe_id` 与评估报告都使用脚本声明的 `p-*` 探针 ID，才能按脚本 `answerKey` 计分；运行中前缀 `prb` 只标识一条探针结果记录。
 
 ## 2. 主体与认证上下文
 

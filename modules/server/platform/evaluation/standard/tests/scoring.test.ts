@@ -63,9 +63,9 @@ function execution(overrides: Partial<ProbeExecution> = {}): ProbeExecution {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
-        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
-        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+        execution({ probeId: "p-probe-a", answer: "" }),
+        execution({ probeId: "p-probe-b", answer: "   " }),
+        execution({ probeId: "p-probe-c", answer: "。！" }),
       ],
     });
     expect(report.validity.valid).toBe(false);
@@ -86,8 +86,8 @@ function execution(overrides: Partial<ProbeExecution> = {}): ProbeExecution {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
-        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+        execution({ probeId: "p-probe-d", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "p-probe-e", answer: "" }),
       ],
     });
     expect(report.validity.valid).toBe(true);
@@ -162,9 +162,9 @@ describe("探针词面计分", () => {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
-        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
-        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+        execution({ probeId: "p-probe-a", answer: "" }),
+        execution({ probeId: "p-probe-b", answer: "   " }),
+        execution({ probeId: "p-probe-c", answer: "。！" }),
       ],
     });
     expect(report.validity.valid).toBe(false);
@@ -185,8 +185,8 @@ describe("探针词面计分", () => {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
-        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+        execution({ probeId: "p-probe-d", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "p-probe-e", answer: "" }),
       ],
     });
     expect(report.validity.valid).toBe(true);
@@ -250,9 +250,9 @@ describe("探针有效性", () => {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
-        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
-        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+        execution({ probeId: "p-probe-a", answer: "" }),
+        execution({ probeId: "p-probe-b", answer: "   " }),
+        execution({ probeId: "p-probe-c", answer: "。！" }),
       ],
     });
     expect(report.validity.valid).toBe(false);
@@ -273,8 +273,8 @@ describe("探针有效性", () => {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
-        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+        execution({ probeId: "p-probe-d", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "p-probe-e", answer: "" }),
       ],
     });
     expect(report.validity.valid).toBe(true);
@@ -356,9 +356,9 @@ describe("指标聚合", () => {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-aaaaaaaaaaaa", answer: "" }),
-        execution({ probeId: "prb-bbbbbbbbbbbb", answer: "   " }),
-        execution({ probeId: "prb-cccccccccccc", answer: "。！" }),
+        execution({ probeId: "p-probe-a", answer: "" }),
+        execution({ probeId: "p-probe-b", answer: "   " }),
+        execution({ probeId: "p-probe-c", answer: "。！" }),
       ],
     });
     expect(report.validity.valid).toBe(false);
@@ -379,8 +379,8 @@ describe("指标聚合", () => {
       latency: { turnP50Ms: null, turnP95Ms: null },
       lexicons,
       probes: [
-        execution({ probeId: "prb-dddddddddddd", answer: "我不会忘记我们的约定" }),
-        execution({ probeId: "prb-eeeeeeeeeeee", answer: "" }),
+        execution({ probeId: "p-probe-d", answer: "我不会忘记我们的约定" }),
+        execution({ probeId: "p-probe-e", answer: "" }),
       ],
     });
     expect(report.validity.valid).toBe(true);
