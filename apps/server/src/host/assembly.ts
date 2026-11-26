@@ -72,7 +72,10 @@ export function scanAssemblyDirectory(root: string = process.cwd()): AssemblySca
   let fileNames: string[];
   try {
     fileNames = readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
+      // 只按名字筛选，是否可用交给下面的 realpath 与普通文件检查判定。
+      // 若在此用 isFile() 过滤，目录或符号链接会被静默忽略而不是被拒绝，
+      // 指向目录外的链接就会绕过越界校验。
+      .filter((entry) => /\.ya?ml$/.test(entry.name))
       .map((entry) => entry.name)
       .sort();
   } catch (error) {

@@ -4,7 +4,7 @@
  * 禁止写死装配文件名或只断言异常存在而不核对原因。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -240,7 +240,7 @@ describe("catalog 预检", () => {
     expect(violation?.message).toContain("schemaVersion");
   });
 
-  it("重复 assemblyId 与越界符号链接在预检阶段失败", () => {
+  it("重复 assemblyId 与不可用装配文件在预检阶段失败", () => {
     const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
     const duplicateRoot = fixtureRoot({
       "first.yaml": assembly({ assemblyId: "assembly-dup" }),
@@ -249,22 +249,12 @@ describe("catalog 预检", () => {
     const duplicateReport = checkCatalog({ root: duplicateRoot, definitions: [clock], requiredCapabilities: [] });
     expect(duplicateReport.violations.some((violation) => violation.code === "assembly-duplicate")).toBe(true);
 
-    // 指向装配目录外的符号链接必须被拒绝：启动路径与 check:catalog 共用同一扫描实现。
-    const linkRoot = fixtureRoot({ "kept.yaml": assembly({ assemblyId: "assembly-kept" }) });
-    const outside = join(linkRoot, "outside.yaml");
-    writeFileSync(outside, stringify(assembly({ assemblyId: "assembly-outside" })), "utf8");
-    try {
-      symlinkSync(outside, join(linkRoot, "config/assemblies/linked.yaml"));
-    } catch {
-      // 无权限创建符号链接的环境跳过该半段断言，重复 ID 已覆盖扫描失败路径。
-      return;
-    }
-    const linkReport = checkCatalog({ root: linkRoot, definitions: [clock], requiredCapabilities: [] });
-    expect(
-      linkReport.violations.some(
-        (violation) => violation.code === "assembly-unreadable" || violation.code === "assembly-duplicate",
-      ),
-    ).toBe(true);
+    // 以 .yaml 结尾的目录必须被拒绝而不是静默跳过：启动路径与 check:catalog 共用同一扫描实现。
+    // 用目录而非符号链接构造，避免测试依赖创建符号链接的管理员权限。
+    const notPlainRoot = fixtureRoot({ "kept.yaml": assembly({ assemblyId: "assembly-kept" }) });
+    mkdirSync(join(notPlainRoot, "config/assemblies/not-a-file.yaml"));
+    const notPlainReport = checkCatalog({ root: notPlainRoot, definitions: [clock], requiredCapabilities: [] });
+    expect(notPlainReport.violations.some((violation) => violation.code === "assembly-unreadable")).toBe(true);
   });
 
   it("CLI 在失败时非零退出并逐项打印原因", () => {
