@@ -132,7 +132,12 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找。
 
-`env:NAME` 形式的值按字段分类解析：`endpoint` 与 `externalModel` 经带白名单的解析器取值，`credentialRef` 保留为引用、由传输适配器在调用时解析，模型 `parameters` 内的 `env:` 不解析（任意环境变量经该字段可直达模型请求）。三条加载路径共用同一管线：装配、RunSpec 与模型布局都先做 env 替换与 schema 校验，再进入交叉检查。
+`env:NAME` 的解析时机按文档分类，不能一概而论：
+
+- 装配、RunSpec、Agent profile、toolset 与价目：加载时由共享管线做深度 `env:` 替换，缺失或空值在预检期报错。
+- 模型布局：加载时不做通用替换，各字段按自己的时机解析。`endpoint` 与 `externalModel` 在宿主预检（`resolveModelEnv`）时按白名单取值，布局对象本身保留原始 `env:` 引用；`credentialRef` 始终保留为引用，由传输适配器在调用时解析；模型 `parameters` 内的 `env:` 不解析——任意环境变量经该字段可直达模型请求，保留原样才能在预检期暴露误用。
+
+三条路径都走同一条 `loadConfigDocument` 管线（引用解析、YAML、草稿回退、缓存、错误格式化一致），布局只显式关闭其中的通用 env 替换。
 
 草稿回退尚未接线：`ConfigDraftReader` 已定义、`config_drafts` 已建表，但宿主没有构造点，因此仓库文件找不到时不会回退到控制台草稿，而是直接报引用缺失。该能力属未交付项。
 

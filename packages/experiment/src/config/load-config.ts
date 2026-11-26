@@ -9,6 +9,12 @@ import type { z } from "zod";
 import type { ContentPack } from "../content/load-content-pack";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { parseYamlText } from "../loading/yaml";
+import {
+  createConfigDocumentCache,
+  documentCacheSlot,
+  type ConfigDocumentCache,
+  type LoadedConfigDocument,
+} from "./config-document-cache";
 import { configRefSchema, rosterSchema, type Roster, runSpecSchema, type RunSpec } from "./schema";
 
 /** 可保存为数据库草稿的配置种类；与 config_drafts 的 kind 约束一致。 */
@@ -20,19 +26,6 @@ export interface ConfigDraftReader {
   read: (kind: ConfigDraftKind, configId: string) => unknown;
 }
 
-/**
- * 装配期文档缓存：把「引用 → 文件路径」索引与已解析文档限制在一次启动或一次预检内。
- * 缓存必须随调用方新建的上下文丢弃，不能提升为跨请求的模块级单例，否则配置变更不再生效。
- * 文档按「schema → 种类 → transform → 引用」逐级索引：仅用引用作键会让同名不同种类的文档互相覆盖。
- */
-export interface ConfigDocumentCache {
-  readonly fileIndex: Map<string, readonly string[]>;
-  readonly documents: Map<
-    unknown,
-    Map<string, Map<unknown, Map<string, LoadedConfig<unknown>>>>
-  >;
-}
-
 /** 配置加载上下文：仓库配置目录、环境变量、可选的草稿来源与可选的装配期文档缓存。 */
 export interface ConfigLoadContext {
   readonly configDir: string;
@@ -41,22 +34,13 @@ export interface ConfigLoadContext {
   readonly cache?: ConfigDocumentCache;
 }
 
-/** 新建一份装配期缓存；调用方为一次启动、一次预检或一次测试装配各建一份。 */
-export function createConfigDocumentCache(): ConfigDocumentCache {
-  return { fileIndex: new Map(), documents: new Map() };
-}
-
 /** 已解析的配置引用：仓库文件或草稿。 */
 export type ResolvedConfigReference =
   | { readonly kind: "file"; readonly path: string; readonly text: string }
   | { readonly kind: "draft"; readonly configRef: string; readonly value: unknown };
 
 /** 加载结果：保留引用与来源，便于观测与冻结 manifest。 */
-export interface LoadedConfig<T> {
-  readonly configRef: string;
-  readonly source: string;
-  readonly value: T;
-}
+export interface LoadedConfig<T> extends LoadedConfigDocument<T> {}
 
 /** 递归列出目录下的 YAML 文件；跳过符号链接目录，避免扫描环路。 */
 function listYamlFiles(dir: string): string[] {
@@ -222,6 +206,10 @@ function environmentMap(env: Readonly<Record<string, string | undefined>>): Read
  * 读取、解析、替换 env: 并校验任意配置文档。
  * transform 在 schema 校验前执行，供宿主把运行时选择（如在线 seed 与实际装配引用）并入模板；
  * 变换后的结果仍必须通过严格 schema，不能借此跳过校验。
+ *
+ * `resolveEnv: false` 用于「env 必须逐字段按白名单解析」的文档：通用替换会把任意
+ * 环境变量带进载荷，因此这类文档只跳过替换这一步，其余环节（引用解析、YAML、
+ * 草稿回退、缓存、错误格式化）仍与其它配置共用同一条管线。
  */
 export function loadConfigDocument<T>(
   configRef: string,
@@ -230,40 +218,21 @@ export function loadConfigDocument<T>(
   draftKind?: ConfigDraftKind,
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   transform?: (value: unknown) => unknown,
+  options: { readonly resolveEnv?: boolean } = {},
 ): LoadedConfig<T> {
-  const slot = documentCacheSlot(context, schema, draftKind, transform);
+  const slot = documentCacheSlot(context.cache, {
+    schema,
+    draftKind,
+    transform: transform ?? null,
+    resolveEnv: options.resolveEnv !== false,
+  });
   const cached = slot?.get(configRef);
   if (cached !== undefined) {
     return cached as LoadedConfig<T>;
   }
-  const loaded = parseConfigDocument(configRef, schema, context, draftKind, transform);
+  const loaded = parseConfigDocument(configRef, schema, context, draftKind, transform, options);
   slot?.set(configRef, loaded as LoadedConfig<unknown>);
   return loaded;
-}
-
-/**
- * 取一份缓存槽位：同一引用在同一上下文里可能按不同 schema 或种类解析（例如 run 文档与 profile 文档同名）。
- * transform 也参与分层，避免把「并入在线 seed 的 RunSpec」与模板文档混为一份。
- */
-function documentCacheSlot(
-  context: ConfigLoadContext,
-  schema: z.ZodType<unknown>,
-  draftKind: ConfigDraftKind | undefined,
-  transform: ((value: unknown) => unknown) | undefined,
-): Map<string, LoadedConfig<unknown>> | undefined {
-  const cache = context.cache?.documents;
-  if (cache === undefined) {
-    return undefined;
-  }
-  const byKind = cache.get(schema) ?? new Map<string, Map<unknown, Map<string, LoadedConfig<unknown>>>>();
-  cache.set(schema, byKind);
-  const kindKey = draftKind ?? "";
-  const byTransform = byKind.get(kindKey) ?? new Map<unknown, Map<string, LoadedConfig<unknown>>>();
-  byKind.set(kindKey, byTransform);
-  const transformKey: unknown = transform ?? null;
-  const byRef = byTransform.get(transformKey) ?? new Map<string, LoadedConfig<unknown>>();
-  byTransform.set(transformKey, byRef);
-  return byRef;
 }
 
 /** 单次解析：读取引用、解析 YAML、替换 env: 并校验；结果按需由 loadConfigDocument 缓存。 */
@@ -273,11 +242,14 @@ function parseConfigDocument<T>(
   context: ConfigLoadContext,
   draftKind?: ConfigDraftKind,
   transform?: (value: unknown) => unknown,
+  options: { readonly resolveEnv?: boolean } = {},
 ): LoadedConfig<T> {
   const reference = resolveConfigReference(configRef, context, draftKind);
   const source = reference.kind === "file" ? reference.path : `draft:${draftKind ?? "unknown"}:${configRef}`;
   const raw = reference.kind === "file" ? parseYamlText(reference.text, source) : reference.value;
-  const resolved = resolveEnvValue(raw, [], source, environmentMap(context.env ?? {}));
+  const resolved = options.resolveEnv === false
+    ? raw
+    : resolveEnvValue(raw, [], source, environmentMap(context.env ?? {}));
   const transformed = transform === undefined ? resolved : transform(resolved);
   const result = schema.safeParse(transformed);
   if (!result.success) {
