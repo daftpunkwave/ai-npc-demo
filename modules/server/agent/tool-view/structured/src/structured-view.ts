@@ -3,24 +3,11 @@
  * 交互契约：只从已授权结果中筛字段、截列表和文本，并返回实际 token 估值。
  * 约束与禁忌：不得执行工具、改写 receipt、重新授权或读取 resultRef。
  */
-import type { Json, ToolExecutionResult } from "@ai-npc/contracts";
+import { estimateTokens, type Json, type ToolExecutionResult } from "@ai-npc/contracts";
 import type { AgentToolViewPort } from "@ai-npc/module-sdk";
 import type { StructuredToolViewConfig } from "./definition";
 
 type RenderInput = Parameters<AgentToolViewPort["render"]>[0];
-
-function estimateTokens(text: string): number {
-  let cjk = 0;
-  let other = 0;
-  for (const character of text) {
-    if (/[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/u.test(character)) {
-      cjk += 1;
-    } else {
-      other += 1;
-    }
-  }
-  return cjk + Math.ceil(other / 4);
-}
 
 function isRecord(value: Json): value is { readonly [key: string]: Json } {
   return typeof value === "object" && value !== null && !Array.isArray(value);

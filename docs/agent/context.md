@@ -177,6 +177,10 @@ export function estimateTokens(text: string): number {
 
 估算值记为 `tokenizer: "estimate-v1"`，与供应商实报的 usage 分开记录。
 
+`packages/contracts/src/token-estimate.ts` 是这套口径的唯一实现。窗口压缩、工具视图与记忆账本（M1/M2/M3 的检索预算与核心块截断）都从公共契约引入 `estimateTokens`，不再各自维护一份字符分类。因此同一段文本在上下文段预算、压缩裁剪点与记忆检索上得到相同的估值；调整口径只需要改这一处。
+
+记忆配置里的 `coreBlockMaxTokens` 与检索用的 `AgentMemoryQuery.maxTokens` 都以这套 token 口径计量，不是字符数。
+
 ### 11.3 预算与裁剪
 
 参数来自 context 槽配置的 `decision`/`speech` 子块（默认值见 [配置](../platform/configuration.md) 第 10.2 节），`reservedOutputTokens` 来自 profile 的 `budgets.reserveOutputTokens`（经 `ContextBuildRequest.budget.reservedOutputTokens` 传入）：
@@ -189,6 +193,8 @@ export function estimateTokens(text: string): number {
 | `toolLoopReserveTokens`（给工具循环留的空间） | 1600 | — |
 
 默认内置分段预算为 `segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800, input: 400 }`；`agent-strategic-default` 会覆盖 `historyTurns: 6` 与 `segmentBudgets: { world: 900, task: 600, memory: 900, history: 600 }`。
+
+`segmentBudgets` 的键是一份封闭的段名清单，由公共契约的 `contextSegmentKindValues` 定义（`world`、`task`、`memory`、`history`、`input` 与 speech 段的 `facts`）。契约的 `ContextBuildRequest.budget.segmentBudgets` 与 ordered-blocks 模块配置共用同一个 `contextSegmentBudgetsSchema`，因此写错段名会在契约入口与模块创建两处得到同样的拒绝结论，不会出现一侧放行、另一侧失败的分叉。
 
 选用模型决策的 run 在启动预检时要求 `decision` 与 `speech` 两个子块齐全；缺失任一子块以 `assembly-incompatible` 拒绝启动，诊断包含 profile 与用途。确定性决策跳过上下文构建，不消费这两个子块，空配置可以省略它们。
 

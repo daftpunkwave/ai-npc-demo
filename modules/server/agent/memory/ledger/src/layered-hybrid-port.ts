@@ -3,14 +3,15 @@
  * 交互契约：复用同包账本实现，模型只能返回受校验的认知变更。
  * 约束与禁忌：模型失败不得伪造水位推进；禁止直接存储、跨 Agent 或世界写入。
  */
-import type {
-  WakeupProposal,
-  AgentMemoryQuery,
-  AgentObservation,
-  IdPrefix,
-  MemoryBundle,
-  MemoryChangePlan,
-  MaintenanceTask,
+import {
+  estimateTokens,
+  type WakeupProposal,
+  type AgentMemoryQuery,
+  type AgentObservation,
+  type IdPrefix,
+  type MemoryBundle,
+  type MemoryChangePlan,
+  type MaintenanceTask,
 } from "@ai-npc/contracts";
 import type {
   MemoryPort,
@@ -109,7 +110,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     const dropped = [...base.dropped];
     let tokens = 0;
     for (const item of ranked) {
-      const cost = Array.from(item.summaryZh).length;
+      const cost = estimateTokens(item.summaryZh);
       if (tokens + cost > query.maxTokens) {
         dropped.push({ memoryId: item.memoryId, reason: "budget" });
       } else if (items.length < Math.min(query.maxItems, this.config.recall.topK + this.config.chronicle.maxPerRecall)) {
@@ -322,7 +323,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
       `目标：${(view.identity.goals ?? []).join("、") || "无"}`,
       `当前关注：${concerns || "暂无"}`,
     ].join("\n");
-    return truncate(staticPart, this.config.coreBlockMaxTokens);
+    return truncateCoreBlock(staticPart, this.config.coreBlockMaxTokens);
   }
 
   private ruleConcerns(query: AgentMemoryQuery, view: RevisionView): string {
@@ -378,8 +379,26 @@ function dedupeRetires(retires: MemoryChangePlan["retires"]): MemoryChangePlan["
   return [...new Map(retires.map((retire) => [retire.memoryId, retire])).values()];
 }
 
-function truncate(value: string, maxTokens: number): string {
-  return Array.from(value).slice(0, maxTokens).join("");
+/**
+ * 按 estimate-v1 口径把核心块裁剪到预算内，返回放得下的最长前缀。
+ * 预算单位是 token 而不是字符：中文每字约 1 token、拉丁文每 4 字符约 1 token，
+ * 因此字符数与 token 数不成比例，不能直接按字符切片。
+ * 由于 estimateTokens 对前缀单调不减，这里对前缀长度做二分查找，
+ * 得到满足预算的最长前缀，而不是按固定比例反复收缩（后者会多裁掉可用内容）。
+ * 导出仅为让模块测试直接锁定这条口径，不进入模块的公开端口。
+ */
+export function truncateCoreBlock(value: string, maxTokens: number): string {
+  const characters = Array.from(value);
+  if (estimateTokens(value) <= maxTokens) return value;
+  const fits = (keep: number): boolean => estimateTokens(characters.slice(0, keep).join("")) <= maxTokens;
+  let low = 0;
+  let high = characters.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return characters.slice(0, low).join("");
 }
 
 export function createLayeredHybridPort(config: LayeredHybridConfig, ids: Ids, rng: Rng | null): LayeredHybridMemoryPort {

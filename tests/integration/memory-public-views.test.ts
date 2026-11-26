@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止直接写入公共记忆或绕过记忆提交路径。
  */
 import { describe, expect, it } from "vitest";
-import type { AgentObservation } from "@ai-npc/contracts";
+import { estimateTokens, type AgentObservation } from "@ai-npc/contracts";
 import type { RunModelPort } from "@ai-npc/module-sdk";
 import { memoryLayeredHybridModuleDefinition, memoryLedgerModuleDefinition, memoryStreamReflectionModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
 import { createMemoryHarness, insertObservation, memoryAgentId, memoryBranchId, memoryIdentity, memoryQuery } from "./memory-support";
@@ -66,7 +66,8 @@ describe("public memory revision boundaries", () => {
       const zero = first.retrieve(memoryAgentId, { ...memoryQuery(2, 24), maxItems: 0, maxTokens: 0 });
       expect(zero.items).toEqual([]);
       const limited = first.retrieve(memoryAgentId, { ...memoryQuery(2, 24), maxTokens: 8 });
-      expect(limited.items.reduce((sum, item) => sum + Array.from(item.summaryZh).length, 0)).toBeLessThanOrEqual(8);
+      // maxTokens 以 estimate-v1 的 token 口径计量，断言必须用同一口径求和。
+      expect(limited.items.reduce((sum, item) => sum + estimateTokens(item.summaryZh), 0)).toBeLessThanOrEqual(8);
       await first.runDueMaintenance(24);
       expect(first.watermark(memoryAgentId).revision).toBe(3);
       expect(first.retrieve(memoryAgentId, memoryQuery(1, 100)).items).toEqual(frozen);

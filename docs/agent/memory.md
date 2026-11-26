@@ -118,6 +118,7 @@ turn 等待所需水位后冻结不可变 revision；检索还需验证每条来
 memory:
   module: agent.memory.layered-hybrid
   config:
+    retrievalBudget: { maxItems: 8, maxTokens: 1000 }
     capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 }
     recall: { topK: 8, candidateLimit: 40 }
     relationInput: enabled
@@ -357,6 +358,7 @@ value(dim, t) = baseline(dim) + Σ delta_i × 0.5 ^ ((t − t0_i) / halfLife_i)
 memory:
   module: agent.memory.ledger
   config:
+    retrievalBudget: { maxItems: 8, maxTokens: 1000 }
     capacity: { short: 50, long: 120, core: 30 }
     salienceThresholds: { long: 0.5, short: 0.2 }
     decayBaseTicks: { short: 48, long: 480 }
@@ -387,6 +389,7 @@ memory:
 memory:
   module: agent.memory.stream-reflection
   config:
+    retrievalBudget: { maxItems: 8, maxTokens: 1000 }
     capacity: { stream: 300, reflections: 60 }
     retrieval:
       topK: 6
@@ -416,6 +419,7 @@ memory:
 memory:
   module: agent.memory.layered-hybrid
   config:
+    retrievalBudget: { maxItems: 8, maxTokens: 1000 }
     capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 }
     salienceThresholds: { long: 0.5, short: 0.2 }
     decayBaseTicks: { short: 48, long: 480 }
@@ -437,7 +441,7 @@ memory:
     maintenanceTrigger: world-period
 ```
 
-检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), memoryId)`）。公共编年史当前接收入 `public` 渠道且 `salience ≥ 0.5` 的观察；每日整理先委派 M1 执行规则段（当前暂未针对他人过期非正式承诺单独补写 `inference` 经历），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进；核心块在尚无活动 `core` 记录时回退到规则摘要，长度截断按字符数执行；检索总条数同时受调用方传入 `maxItems`（turn 材料装配当前传 `8`）约束，候选落选 `dropped` 明细暂未按 `candidateLimit` 截断。
+检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), memoryId)`）。公共编年史当前接收入 `public` 渠道且 `salience ≥ 0.5` 的观察；每日整理先委派 M1 执行规则段（当前暂未针对他人过期非正式承诺单独补写 `inference` 经历），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进；核心块在尚无活动 `core` 记录时回退到规则摘要，长度按 `coreBlockMaxTokens` 以 estimate-v1 的 token 口径截断（见 [上下文组装](context.md#112-token-估算)）；检索总条数同时受 memory 槽位配置的 `retrievalBudget.maxItems` 约束（缺省 8），`retrievalBudget.maxTokens` 是同一口径下的 token 上限（缺省 1000）；候选落选 `dropped` 明细暂未按 `candidateLimit` 截断。
 
 ### 11.9 检索查询与自报要点
 

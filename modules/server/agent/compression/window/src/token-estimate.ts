@@ -1,21 +1,13 @@
 /**
- * 核心职责：提供窗口压缩使用的确定性 token 估值。
- * 交互契约：文本估值与 context estimate-v1 保持同一字符分类。
- * 约束与禁忌：不得调用供应商计数接口。
+ * 核心职责：把窗口压缩使用的文本估值接到 estimate-v1 单一实现上。
+ * 交互契约：`estimateTokens` 直接复用公共契约，本文件只补充按段拼接的请求估值。
+ * 约束与禁忌：不得调用供应商计数接口，也不得在这里保留第二套字符分类。
  */
-export function estimateTokens(text: string): number {
-  let cjk = 0;
-  let other = 0;
-  for (const character of text) {
-    if (/[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/u.test(character)) {
-      cjk += 1;
-    } else {
-      other += 1;
-    }
-  }
-  return cjk + Math.ceil(other / 4);
-}
+import { estimateSystemAndUserTokens, estimateTokens } from "@ai-npc/contracts";
 
+export { estimateTokens };
+
+/** 请求估值：system 与 user 段按空行拼接后计入固定 4 个消息开销。 */
 export function estimateArtifactTokens(system: string, userTexts: readonly string[]): number {
-  return estimateTokens(system) + estimateTokens(userTexts.join("\n\n")) + 4;
+  return estimateSystemAndUserTokens(system, userTexts.join("\n\n"));
 }

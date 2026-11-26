@@ -3,12 +3,13 @@
  * 只依赖确定性账本规则与宿主注入的 ID 服务。
  * 禁止读取存储、调用模型，或信任未校验的自报引用。
  */
-import type {
-  AgentMemoryQuery,
-  AgentObservation,
-  IdPrefix,
-  MemoryBundle,
-  MemoryChangePlan,
+import {
+  estimateTokens,
+  type AgentMemoryQuery,
+  type AgentObservation,
+  type IdPrefix,
+  type MemoryBundle,
+  type MemoryChangePlan,
 } from "@ai-npc/contracts";
 import type {
   MemoryPort,
@@ -421,10 +422,6 @@ function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBu
  */
 function recordSourceKey(record: MemoryRecordView): string {
   return record.sourceObservationIds.slice().sort(compareStrings).join(",");
-}
-
-function estimateTokens(text: string): number {
-  return Array.from(text).length;
 }
 
 function speakerIds(observation: AgentObservation): readonly string[] {

@@ -4,9 +4,19 @@
  * 禁止把决策理由、私有会话全文或全量世界事实带入对白。
  */
 import {
-  decisionSubmissionSchema, dialogueSubmittedPayloadSchema, probeAskedPayloadSchema,
-  type AgentMemoryQuery, type DecisionSubmission, type DialogueIntent, type Json,
-  type MemoryBundle, type ToolExecutionResult,
+  agentMemoryRetrievalBudgetSchema,
+  decisionSubmissionSchema,
+  dialogueSubmittedPayloadSchema,
+  DomainError,
+  memoryRetrievalBudgetDefaults,
+  probeAskedPayloadSchema,
+  type AgentMemoryQuery,
+  type AgentMemoryRetrievalBudget,
+  type DecisionSubmission,
+  type DialogueIntent,
+  type Json,
+  type MemoryBundle,
+  type ToolExecutionResult,
 } from "@ai-npc/contracts";
 import type { ContentPack, ResolvedAgentProfile } from "@ai-npc/experiment";
 import type { DeterministicDecisionInput, MemoryRecordView } from "@ai-npc/module-sdk";
@@ -75,14 +85,32 @@ export function turnMemoryQuery(
   for (const entry of content.locale.lexicons.memoryQueryTags) {
     if (queryText.includes(entry.word)) for (const tag of entry.tags) tags.add(tag);
   }
-  const context = asRecord(profile.slots.context?.config);
-  const decisionBudget = asRecord(asRecord(context["decision"])["segmentBudgets"])["memory"];
+  const retrieval = memoryRetrievalBudget(profile);
   return {
     scope: frozen.scope, revision: frozen.frontier.memoryRevision, frontier: frozen.frontier,
     counterpartIds: [...participants(frozen, prospective)], nodeId: frozen.world.nodeId,
     queryTags: [...tags], queryText, purpose: "decision", audience: [],
-    maxItems: 8, maxTokens: typeof decisionBudget === "number" ? decisionBudget : 1000,
+    maxItems: retrieval.maxItems, maxTokens: retrieval.maxTokens,
   };
+}
+
+/**
+ * 读取 memory 槽位自己声明的检索预算。
+ * 检索上限属于记忆模块的配置面：这里只读 memory 槽，不再反查 context 槽的
+ * `segmentBudgets`，因此换用不含段预算的 context 实现不会改变检索行为，
+ * 调大上下文段的记忆配额也不会顺带放宽检索返回量。
+ * 未声明该字段的记忆实现（如 `agent.memory.none`）按记忆侧默认值处理；
+ * 声明了但形状非法时以领域错误拒绝，不静默猜测。
+ */
+export function memoryRetrievalBudget(profile: ResolvedAgentProfile): AgentMemoryRetrievalBudget {
+  const declared = asRecord(profile.slots.memory?.config)["retrievalBudget"];
+  if (declared === undefined) return memoryRetrievalBudgetDefaults;
+  const parsed = agentMemoryRetrievalBudgetSchema.safeParse(declared);
+  if (!parsed.success) {
+    throw new DomainError("assembly-incompatible",
+      `Agent profile「${profile.profileId}」的 memory 槽 retrievalBudget 非法，无法确定记忆检索预算`);
+  }
+  return parsed.data;
 }
 
 export function checkedDecision(
