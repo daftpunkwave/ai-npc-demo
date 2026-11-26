@@ -57,7 +57,8 @@ describe("整库备份", () => {
         expect(backup.prepare("PRAGMA integrity_check").get()?.["integrity_check"]).toBe("ok");
         const worlds = backup.prepare("SELECT world_id FROM worlds").all();
         expect(worlds.map((row) => row["world_id"])).toEqual(["wld-1"]);
-        expect(backup.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()?.["version"]).toBe(18);
+        // 备份必须是一致副本：迁移版本随最新一次迁移同步，而不是停在旧编号。
+        expect(backup.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()?.["version"]).toBe(19);
       } finally {
         backup.close();
       }

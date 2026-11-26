@@ -42,6 +42,23 @@ export interface HostReadPorts {
   readonly conversation: ConversationReadPort;
 }
 
+/**
+ * 按对白 ID 批量取各自提交事件最大 world_seq 的查询。
+ * json_extract(payload_json, '$.dialogueId') 必须与迁移 0019 里 domain_events_dialogue 的索引列逐字一致，
+ * 否则 SQLite 只能靠 (branch_id, type) 收窄后逐行解析 JSON；导出给集成测试，
+ * 让查询计划断言直接跑生产语句而不是另写一份等价副本。
+ */
+export function dialogueWorldSeqSql(dialogueCount: number): string {
+  const placeholders = Array.from({ length: dialogueCount }, () => "?").join(", ");
+  return `SELECT json_extract(payload_json, '$.dialogueId') AS dialogue_id,
+                 MAX(world_seq) AS world_seq
+            FROM domain_events
+           WHERE branch_id = ?
+             AND type = 'DialogueSubmitted'
+             AND json_extract(payload_json, '$.dialogueId') IN (${placeholders})
+           GROUP BY dialogue_id`;
+}
+
 /** 构造宿主只读端口；每个方法自行开启只读事务绑定已授权的模块端口。 */
 export function createReadPorts(input: ReadPortsInput): HostReadPorts {
   const { host, storage, runtime, authority, gameContent, active } = input;
@@ -117,17 +134,10 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
           return [];
         }
         const dialogueIds = [...new Set(lines.map((line) => line.dialogueId))];
-        const placeholders = dialogueIds.map(() => "?").join(", ");
-        const events = tx.all(
-          `SELECT json_extract(payload_json, '$.dialogueId') AS dialogue_id,
-                  MAX(world_seq) AS world_seq
-             FROM domain_events
-            WHERE branch_id = ?
-              AND type = 'DialogueSubmitted'
-              AND json_extract(payload_json, '$.dialogueId') IN (${placeholders})
-            GROUP BY dialogue_id`,
-          [active.branchId, ...dialogueIds],
-        );
+        const events = tx.all(dialogueWorldSeqSql(dialogueIds.length), [
+          active.branchId,
+          ...dialogueIds,
+        ]);
         const worldSeqByDialogueId = new Map(
           events.map((event) => [
             String(event["dialogue_id"]),
