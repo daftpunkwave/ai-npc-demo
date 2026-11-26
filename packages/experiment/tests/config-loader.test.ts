@@ -573,4 +573,45 @@ describe("RunSpec 交叉检查", () => {  const content = loadContentPack(conten
     );
     expect(rosterError.path).toBe("rosterRef");
   });
+
+  it("拒绝尚无运行时消费者的 mode 与 initialState 取值", () => {
+    // audit 与 open-loop 依赖尚未实现的实验执行器；接受它们会让配置写错也启动成功。
+    for (const mode of ["audit", "open-loop"]) {
+      const result = runSpecSchema.safeParse({ ...run.value, mode });
+      expect(result.success).toBe(false);
+    }
+    // snapshot 与 rebuild 需要执行器按快照初始化，当前一律按冷启动执行，必须显式拒绝。
+    for (const initialState of [
+      { kind: "snapshot", snapshotRef: "some-snapshot" },
+      { kind: "rebuild", snapshotRef: "some-snapshot" },
+    ]) {
+      const result = runSpecSchema.safeParse({ ...run.value, initialState });
+      expect(result.success).toBe(false);
+    }
+    // 已实现的取值仍被接受。
+    expect(runSpecSchema.safeParse({ ...run.value, mode: "live" }).success).toBe(true);
+    expect(runSpecSchema.safeParse({ ...run.value, mode: "closed-loop" }).success).toBe(true);
+    expect(runSpecSchema.safeParse({
+      ...run.value,
+      initialState: { kind: "cold-start" },
+    }).success).toBe(true);
+  });
+
+  it("拒绝与 mode 不匹配的 clock.kind", () => {
+    // live 由实时时钟驱动、closed-loop 由受控时钟驱动；写错组合在预检期失败而不是静默运行。
+    const mismatchedLive = captureLoadingError(() =>
+      validateRunSpec({ ...run.value, mode: "live", clock: { kind: "controlled" } }, content),
+    );
+    expect(mismatchedLive.path).toBe("clock.kind");
+    expect(mismatchedLive.message).toContain("realtime");
+
+    const mismatchedLoop = captureLoadingError(() =>
+      validateRunSpec({ ...run.value, mode: "closed-loop", clock: { kind: "realtime" } }, content),
+    );
+    expect(mismatchedLoop.path).toBe("clock.kind");
+    expect(mismatchedLoop.message).toContain("controlled");
+
+    // 匹配的组合不被拒绝。
+    expect(validateRunSpec({ ...run.value, mode: "live", clock: { kind: "realtime" } }, content)).toBeUndefined();
+  });
 });

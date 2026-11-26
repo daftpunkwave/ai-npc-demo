@@ -437,6 +437,13 @@ export function validateRunSpec(
   function fail(path: string, message: string): never {
     throw new LoadingError({ code: "cross-check", source, path, message });
   }
+  // mode 与 clock.kind 必须成对匹配：在线 run 由实时时钟驱动，实验 run 由受控时钟驱动。
+  // 两者都是必填字段，但宿主写入 run 行时按实际装配时钟运行，写错组合只会静默失效，
+  // 因此把「声明的驱动方式」固定成唯一合法组合，配置写错在预检期就失败。
+  const expectedClockKind = runSpec.mode === "live" ? "realtime" : "controlled";
+  if (runSpec.clock.kind !== expectedClockKind) {
+    fail("clock.kind", `mode「${runSpec.mode}」要求 clock.kind 为「${expectedClockKind}」，实际是「${runSpec.clock.kind}」`);
+  }
   if (runSpec.worldPackRef !== content.pack.packId) {
     fail("worldPackRef", `内容包「${runSpec.worldPackRef}」与已加载内容包「${content.pack.packId}」不一致`);
   }

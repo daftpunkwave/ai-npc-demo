@@ -32,11 +32,14 @@ export const rosterSchema = z
 export type Roster = z.infer<typeof rosterSchema>;
 export type RosterAgent = z.infer<typeof rosterAgentSchema>;
 
-/** run 的初始状态来源：冷启动、快照或按快照重建记忆。 */
+/**
+ * run 的初始状态来源。当前只支持冷启动：快照与记忆重建需要实验执行器消费，
+ * 而执行器尚未实现（见 IMPLEMENTATION-STATUS 的 S21 与实验执行器条目）。
+ * 在这里接受它们会让「声明了 snapshot/rebuild」的配置静默按冷启动跑完，
+ * 因此改为显式拒绝，待执行器落地后连同消费路径一起加回。
+ */
 const initialStateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cold-start") }).strict(),
-  z.object({ kind: z.literal("snapshot"), snapshotRef: configRefSchema }).strict(),
-  z.object({ kind: z.literal("rebuild"), snapshotRef: configRefSchema }).strict(),
 ]);
 
 /** 实验变体：profile patch 列表与可选的 Agent 范围。 */
@@ -56,8 +59,11 @@ const scriptSelectionSchema = z
   })
   .strict();
 
-/** run 的运行模式。 */
-export const runModeSchema = z.enum(["live", "audit", "open-loop", "closed-loop"]);
+/**
+ * run 的运行模式。当前只有 live（在线自由输入）与 closed-loop（实验分支）有一条真实的
+ * 执行路径；audit 与 open-loop 依赖尚未实现的实验执行器，没有消费者，因此不再接受。
+ */
+export const runModeSchema = z.enum(["live", "closed-loop"]);
 
 /** 时钟实现声明的运行方式。 */
 export const clockKindSchema = z.enum(["controlled", "realtime"]);

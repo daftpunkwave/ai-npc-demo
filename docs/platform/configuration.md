@@ -67,7 +67,7 @@ failurePolicy: strict
 
 这是目标格式，引用内容与模块必须在实现时实际存在并通过 schema 与能力校验。clock.kind 表示所选时钟模块声明支持的运行模式，不会因此切到另一套隐式时钟实现。对 console/UI 贡献的选择也进入 assembly 版本，不能靠隐藏的硬编码菜单补足缺模块。
 
-每个新实验 run 独占 branchId，不允许指定复用活动分支。mode 取 live、audit、open-loop 或 closed-loop：live 接收自由玩家输入，后三者分别对应评估篇的审计重放、开环重决策与闭环分支。冷启、快照、合法观察历史重建分别声明，不混用。玩家设置与 console 布局不属于 RunSpec；它们可即时生效，但不能改变 assembly、规则或世界状态。
+每个新实验 run 独占 branchId，不允许指定复用活动分支。当前 schema 只接受两种 mode：live 接收自由玩家输入，对应 `clock.kind: realtime`；closed-loop 对应实验分支，要求 `clock.kind: controlled`。mode 与 clock.kind 必须成对匹配，预检拒绝不匹配的组合。audit 与 open-loop 依赖尚未实现的实验执行器，`initialState` 目前只接受 `cold-start`；快照与记忆重建的取值同样在执行器落地前被拒绝，避免配置写错却静默按冷启动执行。玩家设置与 console 布局不属于 RunSpec；它们可即时生效，但不能改变 assembly、规则或世界状态。
 
 ## 4. 双端设置分工
 
