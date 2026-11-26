@@ -1,6 +1,6 @@
 # 评估、对比与实验有效性
 
-> 目标规范，尚无运行成绩。首版优先比较 memory；全模块架构允许把游戏规则、客户端 UI、控制台页面等也作为显式装配轴，但任何轴都必须固定其他条件并记录 resolved diff。原文档案字段由 [可观测性](observability.md) 维护；装配语义见 [积木组合](../architecture/composition.md)。
+> 状态：接口、实验展开与探针计分已实现，自动化实验执行器（驱动受控时钟检查点、分叉沙盒并写入 `probe_results`）待接入。首版优先比较 memory；全模块架构允许把游戏规则、客户端 UI、控制台页面等也作为显式装配轴，但任何轴都必须固定其他条件并记录 resolved diff。原文档案字段由 [可观测性](observability.md) 维护；装配语义见 [积木组合](../architecture/composition.md)。
 
 ## 1. 三种运行模式及其结论边界
 
@@ -131,9 +131,7 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 
 ## 8. 探针执行与计分（首版）
 
-探针脚本格式见 [内容包](../game/content-pack.md) 第 11 节，prompt 见 [prompts](../agent/prompts.md) 第 7 节。
-
-执行：
+探针脚本格式见 [内容包](../game/content-pack.md) 第 11 节，prompt 见 [prompts](../agent/prompts.md) 第 7 节。`platform.evaluation.standard` 计分与报告组装、`probe.ask` 沙盒命令及 `/api/v1/console/runs*`、`/experiments*` 接口已实现；下述受控时钟推进与自动化探针执行循环为实验执行器待接入部分：
 
 1. 受控时钟推进到检查点 tick，并等本步结算完成（[运行时](../agent/runtime.md) 第 13.2 节）。
 2. 静默实验分支，为每个探针各复制一个沙盒分支（[存储](../architecture/storage.md) 第 3 节），互不影响。先把实验分支激活状态置为 dormant 释放配额，再逐个创建沙盒；沙盒里只激活被提问的 Agent（占用配额，探针结束后释放）。全部探针结束后重新预留配额并激活实验名册。
@@ -168,10 +166,10 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
   "validity": { "valid": true, "contaminated": false, "evidenceComplete": true, "invalidReasons": [] },
   "metrics": [
     { "metric": "recall-accuracy", "numerator": 1, "denominator": 1, "value": 1.0 },
+    { "metric": "omission-rate", "numerator": 0, "denominator": 1, "value": 0.0 },
+    { "metric": "belief-accuracy", "numerator": 1, "denominator": 1, "value": 1.0 },
     { "metric": "fabrication-rate", "numerator": 0, "denominator": 1, "value": 0.0 },
-    { "metric": "leak-rate", "numerator": 0, "denominator": 1, "value": 0.0 },
-    { "metric": "rule-rejection-rate", "numerator": 1, "denominator": 4, "value": 0.25 },
-    { "metric": "traceable-turn-rate", "numerator": 9, "denominator": 9, "value": 1.0 }
+    { "metric": "leak-rate", "numerator": 0, "denominator": 1, "value": 0.0 }
   ],
   "probes": [
     { "probeId": "p-recall-promise", "agentId": "human-independent", "answer": "……", "score": { "kind": "recall", "correct": true }, "valid": true }
@@ -193,4 +191,4 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 }
 ```
 
-没有机会计算的指标写 `"value": null` 并附 `"reason": "n/a"`。实验汇总（`GET /api/v1/console/experiments/{id}`）按“变体 × 脚本分支”列出各指标的有效样本数、无效样本数与均值，以及每个 run 的链接；样本数少于 3 的格子标注“样本不足”。首版报告不做显著性检验，结论可以是“差异不显著”或“证据不足”。
+没有机会计算的指标写 `"value": null` 并附 `"reason": "n/a"`。当前 `platform.evaluation.standard` 已实现上例 5 项探针指标的聚合（`rule-rejection-rate` 与 `traceable-turn-rate` 为后续扩展指标）。实验汇总（`GET /api/v1/console/experiments/{id}`）按“变体 × 脚本分支”列出各指标的有效样本数、无效样本数与均值，以及每个 run 的链接；样本数少于 3 的格子标注“样本不足”。首版报告不做显著性检验，结论可以是“差异不显著”或“证据不足”。

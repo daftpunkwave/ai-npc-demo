@@ -200,19 +200,19 @@ compression:
     targetTokenRatio: 0.6
 ```
 
-- 触发：估算 token 超过 `triggerRatio × 有效上限`；未触发时状态为 `not-triggered`，记录阈值与实际估算值。
+- 触发：目标上限取 `min(请求目标上限, targetTokenRatio × 有效上限)`，触发阈值取 `min(triggerRatio × 有效上限, 目标上限)`（按默认 `0.8` 与 `0.6` 时，实际在 `0.6 × 有效上限` 触发）；未触发时状态为 `not-triggered`，记录阈值与实际估算值。
 - 一个“历史组”是同一说话人连续的发言；保留最近 `preserveRecentGroups` 组，删除更早的组，并在 history 段开头插入一行“（更早的 N 条对话已省略）”。
-- 删除后仍高于 `targetTokenRatio × 有效上限` 时，继续按 context 的裁剪顺序处理 memory 与 world，直到达到目标或只剩受保护内容。
-- 结果写入 `sourceMap`（被删除的 dialogueId 列表）与 `lossReport`（`removed: history-groups`，数量）。
+- 删除后仍高于目标上限时，按 `["memory", "world", "task"]` 顺序裁剪未保护段，直到达到目标或只剩受保护内容。
+- 结果在 `lossReport` 内写入 `sourceMap`（被删除的条目引用）与 `removed`（`historyGroups`、`linesByKind`）。
 
 ### 12.4 `agent.tool-view.structured`
 
 每个工具在 [工具](tools.md) 第 13 节声明 `viewFields`（入模字段白名单）与列表字段。转换规则：
 
-1. 结果 envelope 永远保留：`executionStatus`、`commandStatus`（有命令时）、`taskStatus`（有任务时）、`reasonCode`、`receiptId`、`operationId`、`resultRef`。
-2. 其余字段只保留 `viewFields` 中列出的；列表截断到 `maxListItems`（默认 5），并附 `omittedCount`。
+1. 结果 envelope 永远包含 7 个键（缺失值填 `null`）：`executionStatus`、`commandStatus`、`taskStatus`、`reasonCode`、`receiptId`、`operationId`、`resultRef`；同时附带 `omittedFields` 与 `omittedCount`，并在 `executionStatus !== "ok"` 或 `viewFields` 包含 `"detail"` 时保留 `detail`。
+2. 其余字段只保留 `viewFields` 中列出的；列表截断到 `maxListItems`（默认 5），并累计 `omittedCount`。
 3. 字符串超过 `maxTextChars`（默认 120）时截断并加“…”。
-4. 估算 token 超过 binding 的 `viewConstraints.maxTokens` 时，从列表尾部继续删除；仍超出则只保留 envelope 与 `resultRef`。
+4. 估算 token 超过 binding 的 `viewConstraints.maxTokens` 时，从列表尾部继续删除；仍超出则回退为仅保留 `envelope`、`omittedFields` 与 `omittedCount`。
 5. 输出写为 `tool-view` artifact，记录原始结果 artifact 的 hash、删除字段与条数、实际 token。
 
 ```yaml

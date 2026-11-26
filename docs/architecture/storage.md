@@ -23,7 +23,7 @@ PRAGMA busy_timeout = 5000;
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
 
-本节列出初始迁移的表结构。后续迁移单独追加：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 的已发布内容指纹，0005 为 `turn_runs` 增加逻辑创建 tick `created_tick`。0002 与 0003 的完整语句见 §2.1。
+本节展示经后续迁移演进后的核心表结构（其中 `rule_failures`、`clock_stop_requests`、`trace_spans.started_at` 分别由 0006、0007、0013 追加，初始迁移 `0001_init.sql` 原建的 `conversation_lines` 已由 0010 移除）。完整迁移链为 0001–0018：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 指纹，0005 为 `turn_runs` 增加 `created_tick`，0006 新增 `rule_failures`，0007 新增 `clock_stop_requests`，0008 重建 `operation_idempotency` 加入 `'step'` 种类，0009–0013 补充预算日界、移除 `conversation_lines`、物化通信索引聚合（`conversation-line`、`conversation-membership`、`message-delivery` 并重写 `knowledge-grant` 键格式）、新增 `budget_ledger_unsettled` 部分索引及 `trace_spans.started_at` 与调试审计索引，0014–0018 见下文。0002 与 0003 的语句见 §2.1。
 
 0016 为 Agent 热路径补索引，只新增索引、不改表结构：
 
@@ -38,6 +38,8 @@ PRAGMA busy_timeout = 5000;
 部分索引的过滤条件必须与代码查询逐字一致，否则优化器不会采用。额外一条约束：SQLite 只在谓词里看到字面量时才信任部分索引的成立条件，绑定参数会让 `turn_runs_active` 退化成全量索引扫描；因此非终态状态词由 `agent-runtime` 内联成字面量拼进 SQL，`tests/integration/agent-hot-path-indexes.test.ts` 直接对生产语句断言查询计划。
 
 0017 为 `observations` 增加表达式部分索引 `observations_day_passed (branch_id, agent_id, known_at_tick DESC, observation_seq DESC)`，过滤条件为 `json_extract(content_json, '$.eventType') = 'DayPassed'`。取最近一次 `DayPassed` 的查询原先要按分支与角色把全部观察读进内存再逐行解码 JSON，成本随会话增长；该索引让过滤、排序与 `LIMIT 1` 都在索引内完成。
+
+0018 为 `tool_calls` 新增覆盖索引 `tool_calls_turn_tool (run_id, turn_id, tool_id)` 与 `tool_calls_attempt_call (run_id, turn_id, attempt_id, provider_call_id, created_at)`，让配额计数与按调用 ID 查找首行不再仅靠 `(run_id, turn_id)` 前缀扫表回表。
 
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
@@ -569,7 +571,7 @@ CREATE TABLE IF NOT EXISTS operation_idempotency (
   world_id TEXT NOT NULL,
   principal_id TEXT NOT NULL,
   operation_id TEXT NOT NULL,
-  operation_kind TEXT NOT NULL CHECK (operation_kind IN ('pause', 'resume', 'snapshot', 'restore', 'reset')),
+  operation_kind TEXT NOT NULL CHECK (operation_kind IN ('pause', 'resume', 'snapshot', 'restore', 'reset')), -- 0008 重建此表加入 'step'
   request_hash TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed')),
   result_json TEXT,
@@ -602,9 +604,10 @@ run 控制幂等迁移 `0015_run-control-idempotency.sql` 新增部署级 `run_c
 快照、恢复、实验分支和开环沙盒都用同一个操作：把源分支的全部分支级数据拷贝到一个新的 `branch_id`。数据规模很小（序章数千行），整表拷贝足够快，也最不容易出错。
 
 ```ts
-// 所有分支级表，按以下顺序复制。
+// 所有分支级表（共 19 张），按以下顺序复制。
 const BRANCH_TABLES = [
   "clock", "aggregate_state", "domain_events", "command_receipts", "speech_commits", "jobs",
+  "rule_failures", "clock_stop_requests",
   "consumer_offsets", "consumer_inbox", "agent_activations",
   "controller_leases", "observations", "perception_state", "memory_records",
   "memory_revisions", "memory_watermarks", "triggers", "operations",
@@ -639,7 +642,7 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 | 从快照恢复在线世界 | `forkBranch(snap, new, 'online')` → 预检 → 在同一事务中：先将旧在线分支设为 archived、其激活状态置为 dormant，再按名册预留配额并把新分支名册内 Agent 置为 active，最后切换 `world_aliases('online')`（配额不足则整个事务回滚，旧分支与别名保持不变） |
 | 创建实验 run | 冷启动：新建空分支（时钟 paused、tick 0），由运行器以 `player-1` 身份提交 `campaign.start`；从快照：`forkBranch(snap, exp, 'experiment', runId)`，再按名册激活。每个 run 一个分支 |
 | 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入 |
-| 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `<UTC时间>.<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `ai-npc-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
+| 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `ai-npc-<UTC时间>[-<label>].<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `ai-npc-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
 
 ## 4. 常用查询
 

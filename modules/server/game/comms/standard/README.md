@@ -5,9 +5,9 @@
 ## 边界
 
 - 提供能力：`game.comms`（`exactly-one`，run 作用域）。
-- 拥有聚合：`conversation`、`message`、`knowledge-grant`、`share`。
+- 拥有聚合：`conversation`、`conversation-line`、`conversation-membership`、`message`、`message-delivery`、`knowledge-grant`、`share`、`probe-request`。
 - 依赖：`game.world`，只读指标与角色位置。
-- 命令：`dialogue.say`、`speech.commit`、`seat.say`、`information.share`。
+- 命令：`dialogue.say`、`speech.commit`、`seat.say`、`broadcast.say`、`information.share`、`probe.ask`；job：`comms.knowledge-delivery`。
 - `campaign.start` 后续钩子提交开局消息与内容包 `heldBy` 知识授权。
 - 事件消费者 `comms-rumor-log` 把公开传闻 `RumorSpread` 物化为 `reported` 渠道的通信日志。
 

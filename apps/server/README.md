@@ -14,7 +14,7 @@
 - 宿主通过 `transport.http-ws.fastify` 的 `createApp/listen` 获取应用与监听，通过 `platform.operations.standard` 的快照/恢复/重开编排调用存档。
 - `pnpm dev:server`：先加载项目根 `.env`（进程环境中的同名变量优先），再读取 `NPC_SERVER_HOST`、`NPC_SERVER_PORT`、`NPC_CLIENT_PORT`、`NPC_DATA_DIR`、`NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 与角色令牌；只监听 `127.0.0.1:3000`，玩家登录地址使用 `5173`，控制台登录地址使用 `3000/console/`。缺省的玩家与控制台令牌生成后写入 `<NPC_DATA_DIR>/dev-tokens.json`，只在生成当次打印带令牌的登录地址。
 - WS 玩家频道：订阅快照、命令后的顶层 delta、按 `fromStreamSeq` 补发最近 200 条增量；缺口回退快照。
-- 控制台研究接口：健康总览、模块目录、仓库装配详情、模型布局只读与静态校验、世界时间线、Agent 检查器、记忆/观察、turn 证据、artifact 与 trace；`/console/*` 静态资源由同一服务端监听提供。
+- 控制台研究与评估接口：健康总览、模块目录、仓库装配详情、模型布局只读与静态校验、世界时间线、Agent 检查器、记忆/观察、turn 证据、artifact、trace、分支事件对比、调试（队列、turn 摘要校验、调试唤醒）、run/实验列表与创建、run 启停/报告及脱敏导出；`/console/*` 静态资源由同一服务端监听提供。
 - `console.health` 每 2 秒推送快照，`console.timeline` 在世界变化后推送，二者使用独立频道序号。
 - HTTP 请求和 Agent turn 阶段写入 `trace_spans`。turn 记录有效配置、冻结输入、决定与对白 artifact 引用。
 - `config/assemblies/*.yaml`：标准、测试与升级剧情三份装配，均包含 server、client 与 console 绑定；`check:catalog` 对三个 realm 执行能力闭包、作用域、重复绑定、拓扑与配置 schema 预检。
@@ -22,8 +22,8 @@
 
 ## 尚未包含
 
-- 实验评估。
-- 席位契约、t144 程序案、公开广播和六资源交接。
+- 实验自动执行器（按脚本检查点驱动受控时钟、发起探针并写入 `probe_results`）。
+- 席位契约、t144 程序案与控制台运营页面（三势力席位接管、剧情卡编辑与导出页面）。
 
 ## 运行标准装配
 

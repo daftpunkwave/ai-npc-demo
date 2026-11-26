@@ -176,12 +176,15 @@ interface MemoryPort {
   // 前瞻唤醒；调度器每个 tick 调用一次（runtime.md §13.2）；M0 与 M2 返回 []。
   proposeWakeups(input: { scope: MemoryScope; revision: number; worldTick: number },
                  view: RevisionView): WakeupProposal[];
-  exportState(scope: MemoryScope, revision: number): MemoryCheckpoint;
-  importState(scope: MemoryScope, checkpoint: MemoryCheckpoint): MemoryChangePlan; // schema 不兼容时抛出。
+  // exportState / importState 属于后续迁移扩展契约，当前 MemoryPort 尚未包含。
 }
 
 interface MemoryAgentIdentity {
   factionId: string;
+  name?: string;
+  role?: string;
+  goals?: string[];
+  knownPrincipalNames?: Readonly<Record<string, string>>;
   values: string[];                       // 宿主提供的稳定人格价值。
   initialRelations: { targetId: string; trust: number }[];
   personalityKeywords: Record<"agreement" | "rescue" | "resource" | "road" | "evidence", string[]>;
@@ -279,6 +282,8 @@ salience = clamp01(base(eventType, role) × involvement × personality × freshn
 | 指标与每日变化（`MetersChanged`、`DayPassed`） | 0.1 |
 | 其他事件 | 0.2 |
 
+说明：当前实现中 `AgreementBreached` 统一按 `0.8` 记分（暂不区分自己/对方违约），`OrchardCrisis`/`MigrationCrisis`（0.6）与 `PolicyChanged`/`PassageGranted`（0.5）暂未按派系或常用道路筛选；`freshness` 索引上限为 3，因此重复衰减最低倍率为 `0.6`。
+
 | 因子 | 取值 |
 |---|---|
 | involvement | 按观察的 channel（[感知](perception.md) 第 11.2 节）：`self`、`party`、`face-to-face`、`relay`、`evidence`、`probe`（直接发给自己或自己参与的）1.0；`on-site`（在场目击）0.5；`broadcast`、`rumor`、`public-notice`、`briefing`（听说或通报）0.3 |
@@ -310,14 +315,14 @@ value(dim, t) = baseline(dim) + Σ delta_i × 0.5 ^ ((t − t0_i) / halfLife_i)
 | X 履约，自己是当事人（`AgreementTermFulfilled`，X 为 `obligorId`，X 不是自己） | trust +6 | `fulfilled` | 240 |
 | X 违约，自己是当事人（`AgreementBreached`，X 为 `obligorId`，X 不是自己） | trust −8，affinity −3 | `breach` | 480 / 240 |
 | 与 X 的协议生效 | trust +1 | `agreement` | 120 |
-| X 派遣的任务救了自己或自己派系照看的群体（`GroupRescued`），或把物资送到自己派系的库存点（`ResourcesTransferred` 的终点属于自己派系）；X 取事件的 `dispatcherId` | affinity +5，trust +3 | `aid` | 240 |
+| X 派遣的任务救了自己或自己派系照看的群体（`GroupRescued`），或把物资送到自己派系的库存点（`ResourcesTransferred`）；X 取事件的 `dispatcherId` | affinity +5，trust +3 | `aid` | 240 |
 | X 接受自己的邀请 / 拒绝自己的邀请 | affinity +2 / −2 | `invite-accepted` / `invite-declined` | 120 |
 | X 向自己分享证据 | trust +2 | `shared-evidence` | 120 |
-| X 的政策关闭或限制了自己派系需要的道路，或（对 earth-alliance 与 flora）把水闸设为 harbor-first | wariness +4 | `hostile-policy` | 240 |
+| X 的政策关闭或限制了受控道路，或（对 earth-alliance 与 flora）把水闸设为 harbor-first | wariness +4 | `hostile-policy` | 240 |
 | 听说 X 有敌对行为（传闻） | wariness +1 | `rumor-hostile` | 120 |
 | 收到可信反证（带 `rumor-counter` 标签的证据，涉及 X） | 撤销对应传闻修正（标记 superseded），并 trust +1 | `counter-evidence` | 120 |
 
-每个对象最多保留 20 个修正项，超出时淘汰当前权重（`|delta| × 衰减系数`）最小的；每日整理时，权重低于 0.1 的修正项过期，并把原 delta 的 20% 沉淀进基线，同时留下一句概括性原因（例如“多次按约送达”）。
+每个对象最多保留 20 个修正项，超出时淘汰当前权重（`|delta| × 衰减系数`）最小的；每日整理时，权重低于 0.1 的修正项过期，并把原 delta 的 20% 沉淀进基线（摘要前缀记为 `关系累计：`；注：当前实现中 `GroupRescued` 不额外筛选所照看群体、`ResourcesTransferred` 通过 `subjectIds` 是否含本派系判定、`hostile-policy` 对任意关闭/受限道路触发，且容量淘汰直接标记 `evicted` 而不归并入每日聚合）。
 
 `retrieve` 返回的 `relationSummary` 只含本次查询的 counterpart：`causes` 是当前权重 ≥ 0.1 的修正项的 cause 去重列表，`reasonMemoryIds` 是绝对贡献最大的两项对应的记忆。context 把它渲染成文字行（`relationInput: enabled` 时，排在记忆段的核心块之后、条目之前）：
 
@@ -341,7 +346,7 @@ value(dim, t) = baseline(dim) + Σ delta_i × 0.5 ^ ((t − t0_i) / halfLife_i)
 
 - `prepareIngest`：不写记录，只把 `observationSeqThrough` 推进到最后一条观察；durable 水位随之推进。
 - `retrieve`：返回 `status: "empty-by-design"`、`items: []`、`relationSummary: []` 的 MemoryBundle。
-- `planMaintenance` 恒返回 null，`derivedThroughSeq`/`derivedThroughTick` 随摄入推进；`proposeWakeups` 返回 `[]`；`recordUse` 只记录使用统计，不写记录。
+- `planMaintenance` 恒返回 null，`derivedThroughSeq`/`derivedThroughTick` 随摄入推进；`proposeWakeups` 返回 `[]`；`recordUse` 返回空变更计划（不写记录）。
 - 两个 preset 的差别只在 context：`baseline-window` 的 `historyTurns = 8`（主基线），`baseline-current` 的 `historyTurns = 0`（诊断基线）。
 
 ### 11.6 M1：`agent.memory.ledger`（structured-ledger preset）
@@ -414,11 +419,13 @@ memory:
     capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 }
     salienceThresholds: { long: 0.5, short: 0.2 }
     decayBaseTicks: { short: 48, long: 480 }
+    relationModifiersPerTarget: 20
     coreBlockMaxTokens: 300
     chronicle: { enabled: true, maxPerRecall: 3 }
     llmMaintenance: { enabled: true, maxAgentsPerDay: 8 }
     recall:
       mustIncludeProspective: 5
+      mustIncludeAboutCounterpart: 2
       topK: 8
       candidateLimit: 40
       weights: { strength: 0.35, salience: 0.25, relevance: 0.30, recency: 0.10 }
@@ -430,7 +437,7 @@ memory:
     maintenanceTrigger: world-period
 ```
 
-检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), String(agentTurnIndex))`）。每日整理先做规则段（与 M1 相同，另加：别人做出的非正式承诺过期未兑现时，写一条 `inference` 经历“X 没有兑现……”），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进。
+检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), memoryId)`）。公共编年史当前接收入 `public` 渠道且 `salience ≥ 0.5` 的观察；每日整理先委派 M1 执行规则段（当前暂未针对他人过期非正式承诺单独补写 `inference` 经历），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进；核心块在尚无活动 `core` 记录时回退到规则摘要，长度截断按字符数执行；检索总条数同时受调用方传入 `maxItems`（turn 材料装配当前传 `8`）约束，候选落选 `dropped` 明细暂未按 `candidateLimit` 截断。
 
 ### 11.9 检索查询与自报要点
 

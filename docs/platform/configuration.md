@@ -36,6 +36,7 @@ models/mounts 由 modelLayoutRef 集中选择，Agent profile 不能隐式覆盖
 ~~~yaml
 schemaVersion: 1
 id: watergate-memory-ledger
+experimentId: exp-memory-promise-v1   # optional; populated when created from an experiment spec
 moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
@@ -130,7 +131,7 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 ## 10. 完整配置文件（首版）
 
-所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找，找不到再查控制台保存的草稿（`config_drafts`）。`env:NAME` 形式的值在预检时从环境变量解析。
+所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找，找不到时仅对装配、模型布局、profile 与工具集（`assembly`、`model-layout`、`profile`、`toolset`）回退查询控制台保存的草稿（`config_drafts`）。`env:NAME` 形式的值在预检时从环境变量解析。
 
 > 本节示例描述首版的目标配置。实际绑定见 [config/assemblies — 装配文件](../../config/assemblies)，交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 
@@ -142,6 +143,7 @@ assemblyId: local-slg-standard-v1
 configs:                         # named config blocks referenced by bindings
   clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
+  model-secrets: { allowlist: [NPC_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY] }
   # 此处不配置 host、端口与数据目录；服务端宿主从环境变量读取，并在启动时合并到
   # transport.http-ws.fastify 与 platform.storage.sqlite 的配置中。
   # allowedOrigins 通过宿主选项设置，未指定时使用两个本机地址：
@@ -168,7 +170,7 @@ realms:
       - { capability: platform.evaluation,    moduleId: platform.evaluation.standard,  configRef: null }
       - { capability: platform.operations,    moduleId: platform.operations.standard,  configRef: null }
       - { capability: platform.module-admin,  moduleId: platform.module-admin.standard, configRef: null }
-      - { capability: platform.secrets,       moduleId: platform.secrets.env,          configRef: null }
+      - { capability: platform.secrets,       moduleId: platform.secrets.env,          configRef: model-secrets }
       - { capability: platform.model-transport, moduleId: platform.model-transport.openai-compatible, configRef: null }
       - { capability: platform.model-transport, moduleId: platform.model-transport.anthropic,         configRef: null }
       - { capability: transport.http-ws, moduleId: transport.http-ws.fastify, configRef: null }
@@ -178,7 +180,7 @@ realms:
       context: [agent.context.ordered-blocks]
       compression: [agent.compression.none, agent.compression.window]
       toolView: [agent.tool-view.structured]
-      decision: [agent.decision.model, agent.decision.deterministic]
+      decision: [agent.decision.deterministic, agent.decision.model]
   client:
     bindings:
       - { capability: client.world-view,        moduleId: client.world-view.standard,         configRef: null }
@@ -198,21 +200,20 @@ realms:
       - { capability: console.module-admin,    moduleId: console.module-admin.standard,    configRef: null }
       - { capability: console.model-mounts,    moduleId: console.model-mounts.standard,    configRef: null }
       - { capability: console.faction-ops,     moduleId: console.faction-ops.standard,     configRef: null }
-      - { capability: console.scenario-editor, moduleId: console.scenario-editor.standard, configRef: null }
       - { capability: console.observability,   moduleId: console.observability.standard,   configRef: null }
       - { capability: console.evaluation,      moduleId: console.evaluation.standard,      configRef: null }
       - { capability: console.debug,           moduleId: console.debug.standard,           configRef: null }
-      - { capability: console.audit,           moduleId: console.audit.standard,           configRef: null }
+      # console.scenario-editor.standard 与 console.audit.standard 为后续目标页面，当前未在主装配中绑定
 ```
 
-下表给出其他目标装配相对首版标准装配的差异。模块替换验收要求目录检查核对相应装配只改表中的绑定。
+下表给出其他目标装配相对当前标准装配的差异。模块替换验收要求目录检查核对相应装配只改表中的绑定。
 
 | 文件 | 与标准装配的差异 |
 |---|---|
-| `local-slg-test-v1.yaml` | model-transport 两行换成一行 `platform.model-transport.deterministic`；`client.scene-renderer` 换成 `client.scene-renderer.null`（模型布局与名册不属于装配：测试时由 RunSpec 或环境变量 `NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3` 选择） |
-| `local-slg-escalating-v1.yaml` | `game.scenario` 换成 `game.scenario.watergate-escalating`；该装配不启用 Agent 模型池，因此不装载 `console.model-mounts` |
-| `local-slg-compact-hud-v1.yaml` | `client.hud` 换成 `client.hud.compact` |
-| `local-slg-obs-lite-v1.yaml` | `console.observability` 换成 `console.observability.lite` |
+| `local-slg-test-v1.yaml` | model-transport 两行换成一行 `platform.model-transport.deterministic`；`client.scene-renderer` 换成 `client.scene-renderer.null`；省略 `configs.model-secrets` 且 `platform.secrets` 的 `configRef` 为 `null`（模型布局与名册不属于装配：测试时由 RunSpec 或环境变量 `NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3` 选择） |
+| `local-slg-escalating-v1.yaml` | `game.scenario` 换成 `game.scenario.watergate-escalating`；当前不启用 Agent 运行时与模型池（省略 `agent.*`、`agentSlots`、`platform.budget`、`platform.model-transport`、`configs.model-secrets`），`console.bindings` 也暂不装载 `console.model-mounts` 与 `console.evaluation` |
+| `local-slg-compact-hud-v1.yaml`（目标，尚未创建） | `client.hud` 换成 `client.hud.compact` |
+| `local-slg-obs-lite-v1.yaml`（目标，尚未创建） | `console.observability` 换成 `console.observability.lite` |
 
 ### 10.2 profile 继承链 `config/profiles/`
 
@@ -249,7 +250,7 @@ slots:
       speech: { maxInputTokens: 2500, safetyTokens: 200, segmentBudgets: { facts: 800, history: 400 } }
   compression: { module: agent.compression.window, config: { triggerRatio: 0.8, preserveRecentGroups: 4, targetTokenRatio: 0.6 } }
   toolView:    { module: agent.tool-view.structured, config: { maxListItems: 5, maxTextChars: 120, includeEvidenceRefs: true } }
-  decision:    { module: agent.decision.deterministic, config: {} }
+  decision:    { module: agent.decision.model, config: {} }
 ```
 
 ```yaml
@@ -293,7 +294,7 @@ variant patch 放在 `config/profiles/variants/`，`memory` 槽的完整参数�
 
 | profileId | patch |
 |---|---|
-| `memory-m0-window` | `slots.memory = { module: agent.memory.none, config: {} }` |
+| `memory-m0-window` | `slots.memory = { module: agent.memory.none, config: {} }`，并显式将 `slots.context` 设为 `historyTurns: 8` |
 | `memory-m0-current` | 同上，并把 `slots.context` 整块替换为与 baseline 相同、只把 `historyTurns` 改为 0 的版本 |
 | `memory-m1-structured-ledger` | `slots.memory = { module: agent.memory.ledger, config: <11.6 节全部参数> }` |
 | `memory-m2-stream-reflection` | `slots.memory = { module: agent.memory.stream-reflection, config: <11.7 节全部参数> }` |
@@ -341,9 +342,9 @@ repetitions: 3
 runOrder: rotate               # rotate the variant order on each repetition
 ```
 
-实验按“变体 × 脚本分支 × 重复次数”生成 run（上例为 24 个），按顺序逐个执行；每个 run 独占一个分支。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 取 `cold-start`（从内容包初态开始）、`snapshot`（引用快照）或 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）。
+实验按“变体 × 脚本分支 × 重复次数”生成 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），按顺序逐个执行；每个 run 独占一个分支。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 取 `cold-start`（从内容包初态开始）、`snapshot`（引用快照）或 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）。在线模板另有 `config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用）。
 
-### 10.4 玩家测试 preset `config/presets/*.yaml`
+### 10.4 玩家测试 preset `config/presets/*.yaml`（目标，尚未创建）
 
 ```yaml
 schemaVersion: 1

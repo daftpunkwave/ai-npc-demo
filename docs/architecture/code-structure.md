@@ -17,14 +17,10 @@ ai-npc-demo/
   apps/
     server/                      # server host (Node, :3000)
       src/
-        main.ts                  # load env -> open storage -> load content/config -> bootstrap -> listen
-        host/
-          bootstrap.ts           # resolve assembly, create/start instances, ready check
-          module-catalog.ts      # explicit imports of every server module definition
-          guards/                # fixed-order guards: auth, scope, schema, budget, commit, fencing, evidence
-          sessions/              # session mechanics; call bound access-policy ports
-          routes/                # HTTP route table -> application services (no business rules here)
-          workers/               # lifecycle and wake-up coordination; call runtime and bound ports
+        main.ts                  # load env -> open storage -> load content/config -> startHost -> listen
+        host.ts  startup.ts  projection.ts  tick.ts  shutdown.ts  host-services.ts  config.ts  process-faults.ts
+        projection/              # pure read-side projection builders (campaign, comms, meters, resources, tasks, agreements, notifications)
+        host/                    # host orchestration: assembly, catalog-check, dispose, operations, console-research, evaluation-read, experiment/run writes, online-agents
       console-static/            # built console assets served at /console/* (generated, git-ignored)
     client/                      # client host (browser, :5173)
       index.html
@@ -62,12 +58,11 @@ ai-npc-demo/
         actions/standard/        # game.actions.standard
         agreements/standard/     # game.agreements.standard
         comms/standard/          # game.comms.standard
-        scenario/watergate/      # game.scenario.watergate
-        scenario/watergate-escalating/
+        scenario/watergate/      # game.scenario.watergate 及 watergate-escalating
         save/sqlite/             # game.save.sqlite
       agent/
         perception/local/
-        memory/none/  memory/ledger/  memory/stream-reflection/  memory/layered-hybrid/
+        memory/none/  memory/ledger/   # memory/ledger 同时提供 ledger、stream-reflection 与 layered-hybrid
         context/ordered-blocks/
         compression/none/  compression/window/
         tool-view/structured/
@@ -83,28 +78,28 @@ ai-npc-demo/
         http-ws/fastify/
     client/
       world-view/standard/  scene-renderer/pixi/  scene-renderer/null/  camera/standard/
-      screen-projection/isometric/  input/standard/  hud/standard/  hud/compact/
+      screen-projection/isometric/  input/standard/  hud/standard/
       dialogue/standard/  faction-start/standard/  characters/standard/  settings/standard/
-      notifications/standard/
+      notifications/standard/    # hud/compact/ 为 S24 替换目标，尚未创建
     console/
       health/standard/  module-admin/standard/  model-mounts/standard/  faction-ops/standard/
-      scenario-editor/standard/  observability/standard/  observability/lite/
-      evaluation/standard/  debug/standard/  audit/standard/
+      observability/standard/  evaluation/standard/  debug/standard/
+      # scenario-editor/standard/、observability/lite/、audit/standard/ 为后续目标，尚未创建
   config/
     assemblies/                  # standard, test and escalating are present; HUD and console swaps arrive in S24
     profiles/                    # platform baseline, scene profile, agent profiles, memory variant patches
     rosters/                     # standard-15, core-3
     model-layouts/               # shared-, claude-, deterministic-model-layout-v1
     toolsets/                    # character-default, character-broadcaster, strategic-default
-    presets/                     # test presets players may request
+    # presets/                   # 玩家测试申请预设目录为后续目标，尚未创建
     runs/                        # RunSpec and experiment examples
-    pricing.yaml
+    pricing.yaml  pricing-live.yaml
   content/
     world-packs/earth-2964-v1/   # see docs/game/content-pack.md
   tests/
     contract/  integration/  catalog/  scenarios/  e2e/  live/  fixtures/
   scripts/
-    dev.ts  start.ts  check-boundaries.ts  check-catalog.ts  check-docs.ts  check-ports.ts
+    dev.ts  start.ts  check-boundaries.ts  check-catalog.ts  check-docs.ts  check-ports.ts  check-assets.ts  measure-model-evidence.ts
   data/                          # runtime database, artifacts, backups, dev tokens (git-ignored)
   docs/
 ```
@@ -225,7 +220,7 @@ modules/server/agent/memory/ledger/
 - 普通策略自行创建数据库连接、模型 client、随机源或未登记网络调用；
 - 模块 ID/能力/版本重复、能力闭包缺口、实例作用域非法、slot 冲突。
 
-检查失败时优先修正 owning module 和依赖方向，不加宽泛的 allowlist、不导出整个内部目录、不关闭 schema 校验。这些脚本是待实现的交付项，不能把本文的目录当成已有的 CI。
+检查失败时优先修正 owning module 和依赖方向，不加宽泛的 allowlist、不导出整个内部目录、不关闭 schema 校验。上述边界、目录、资产与文档检查脚本已接入 `pnpm check` 门禁。
 
 ## 8. 测试放置与验收证据
 

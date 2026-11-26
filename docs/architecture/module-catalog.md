@@ -124,7 +124,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `client.screen-projection.isometric` | service | session | `client.screen-projection` | required | 世界坐标与屏幕坐标互转、命中转换 |
 | `client.input.standard` | service | session | `client.input` | required | 点选、移动、交谈意图转为 command |
 | `client.hud.standard` | contributor | session | `client.hud`（`hud` slot） | required | 局势、资源、任务、承诺与时钟状态，文字与数值完整显示 |
-| `client.hud.compact` | contributor | session | `client.hud`（`hud` slot） | 替换演示 | 第二实现：只显示图标与等级，可折叠；与 standard 二选一 |
+| `client.hud.compact` | contributor | session | `client.hud`（`hud` slot） | 替换演示（目标，尚未实现） | 第二实现：只显示图标与等级，可折叠；与 standard 二选一 |
 | `client.dialogue.standard` | contributor | session | `client.dialogue`（`dialogue` slot） | required | 已提交对白、证据卡、提案入口 |
 | `client.faction-start.standard` | contributor | session | `client.faction-start`（`boot.screen` slot） | required（新 campaign） | 席位开局选择与初始化确认；本切片只开放公社席 |
 | `client.characters.standard` | contributor | session | `client.characters`（`sidebar` slot） | default | 人物册、公开主张、已知经历 |
@@ -145,12 +145,12 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `console.module-admin.standard` | 模块目录与装配 | `platform.module-admin` | operator/researcher | 查看 catalog、装配 diff、预检、更换计划 |
 | `console.model-mounts.standard` | 模型池与挂载 | `agent.model-pool` | operator/researcher | connections/models/mounts、批量挂载、能力验证 |
 | `console.faction-ops.standard` | 三势力运营席位 | `platform.operations`、`game.clock` | operator | 三个非人类势力 agent/human、暂停/单步/快照 |
-| `console.scenario-editor.standard` | 事件卡与剧情 | `game.scenario`、`platform.operations` | operator | 草稿、预演、发布、撤回、补偿与污染标记 |
+| `console.scenario-editor.standard`（目标，尚未实现） | 事件卡与剧情 | `game.scenario`、`platform.operations` | operator | 草稿、预演、发布、撤回、补偿与污染标记 |
 | `console.observability.standard` | 可观测 | `platform.observability` | researcher | 世界时间线、Agent 检查器、请求/响应、记忆 diff、分支对比 |
-| `console.observability.lite` | 可观测（精简） | `platform.observability` | researcher | 替换演示用第二实现：只有 turn 列表与单个 turn 详情两页，读取同一批 API；与 standard 二选一 |
+| `console.observability.lite`（目标，尚未实现） | 可观测（精简） | `platform.observability` | researcher | 替换演示用第二实现：只有 turn 列表与单个 turn 详情两页，读取同一批 API；与 standard 二选一 |
 | `console.evaluation.standard` | 可评估 | `platform.evaluation` | researcher/evaluator | run 创建、指标、报告、判定与失败分母 |
 | `console.debug.standard` | 可调试 | `platform.observability`、`game.clock` | researcher | 有界单步/重放、预算与队列、注入与定位工具 |
-| `console.audit.standard` | 审计与导出 | `platform.observability` | researcher | 按权限脱敏导出与保留策略 |
+| `console.audit.standard`（目标，尚未实现） | 审计与导出 | `platform.observability` | researcher | 按权限脱敏导出与保留策略 |
 
 角色只是默认最小权限；具体 API 仍需服务端会话与资源 scope 校验。控制台模块不得把模型密钥、原始秘密或全知 trace 带给玩家域。
 
@@ -163,7 +163,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | 一个 capability 恰好需要一个 provider | 装配必须解析出唯一实现；两个默认实现冲突则预检失败 |
 | 一个 capability 允许多个 contributor | 各贡献必须带稳定 ID 与排序；ID 冲突或不可比较顺序拒绝启动 |
 | 一个 capability 有 fallback | fallback 必须是显式声明、有触发条件、有预算且写入 effective 记录；不能按注册顺序静默选择 |
-| 必需能力缺失 | 该 realm 拒绝进入 ready；不允许“先启动再补”。各宿主的必需能力：server 为全部 `game.*`、`platform.storage`、`platform.secrets`、`platform.access-policy`、`platform.operations`、`transport.http-ws`；装配含 `agentSlots` 时再加 `agent.scheduling`、`agent.tools` 以及 `agentSlots` 中各模块 `requires` 的能力；client 为 `client.world-view`、`client.scene-renderer`、`client.camera`、`client.screen-projection`、`client.input`、`client.hud`、`client.dialogue`、`client.faction-start`；console 没有必需页面 |
+| 必需能力缺失 | 该 realm 拒绝进入 ready；不允许“先启动再补”。各宿主的必需能力：server 为全部 `game.*`、`platform.storage`、`platform.secrets`、`platform.access-policy`、`platform.operations`、`platform.observability`、`platform.module-admin`、`transport.http-ws`；装配含 `agentSlots` 时再加 `agent.scheduling`、`agent.tools` 以及 `agentSlots` 中各模块 `requires` 的能力；client 为 `client.world-view`、`client.scene-renderer`、`client.camera`、`client.screen-projection`、`client.input`、`client.hud`、`client.dialogue`、`client.faction-start`；console 没有必需页面 |
 | 可选 UI/页面缺失 | 导航与 slot 显示不可用原因；不影响服务端权威 |
 | 同一模块 ID/version 两个实现 | 拒绝注册；模块升级必须新 version 与新装配 |
 | 跨 realm 提供能力 | 拒绝；浏览器只能 `requiresRemote`，由握手与角色校验 |

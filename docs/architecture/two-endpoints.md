@@ -93,14 +93,14 @@ flowchart LR
 | 页面 | 模块 | 主要能力 | 默认角色 |
 |---|---|---|---|
 | 运行总览 | `console.health.standard` | 端口、模块 readiness、水位、预算、失败 | operator / researcher |
-| 模块与装配 | `console.module-admin.standard` | catalog、装配 diff、预检、更换计划 | operator / researcher |
-| 模型池 | `console.model-mounts.standard` | connections/models/mounts、批量挂载、能力验证 | operator / researcher |
-| 三势力运营 | `console.faction-ops.standard` | 三个非人类势力席位 agent/human、暂停/单步/快照 | operator |
-| 事件卡与剧情 | `console.scenario-editor.standard` | 草稿、预演、发布、撤回、补偿、污染标记 | operator |
-| 可观测 | `console.observability.standard` | 世界时间线、Agent 检查器、请求/响应、记忆 diff、分支对比 | researcher |
-| 可评估 | `console.evaluation.standard` | run 创建、指标、报告、判定与失败分母 | researcher / evaluator |
-| 可调试 | `console.debug.standard` | 有界单步/重放、预算与队列、故障定位、测试注入 | researcher |
-| 审计与导出 | `console.audit.standard` | 按权限脱敏、导出、保留策略 | researcher |
+| 模块与装配 | `console.module-admin.standard` | catalog、装配详情（预检、diff 与草稿编辑为目标能力） | operator / researcher |
+| 模型池 | `console.model-mounts.standard` | connections/models/mounts、路由与静态校验（草稿保存与连通性探测为目标能力） | operator / researcher |
+| 三势力运营 | `console.faction-ops.standard` | 暂停/继续/单步、快照/恢复（三势力席位接管与运行申请审批为目标能力） | operator |
+| 事件卡与剧情（目标，尚未实现） | `console.scenario-editor.standard` | 草稿、预演、发布、撤回、补偿、污染标记 | operator |
+| 可观测 | `console.observability.standard` | 世界时间线、Agent 检查器、请求/响应、turn 证据、trace 树与 Artifact 查看（时间线筛选、记忆 diff 与分支对比页为目标能力） | researcher |
+| 可评估 | `console.evaluation.standard` | 只读实验列表、分组指标汇总与 run 报告（创建与启停表单为目标能力） | researcher / evaluator |
+| 可调试 | `console.debug.standard` | 调度/维护队列、turn 请求摘要校验与调试唤醒 | researcher |
+| 审计与导出（目标，尚未实现） | `console.audit.standard` | 按权限脱敏、导出、保留策略 | researcher |
 
 “可运营”具体指：
 
@@ -186,15 +186,15 @@ flowchart LR
 
 | 页面模块 | 角色 | 数据来源 | 视图 | 操作 |
 |---|---|---|---|---|
-| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度、水位落后的 Agent、预算消耗、最近 20 条失败 | 无 |
-| `console.module-admin.standard` | operator、researcher | `/console/modules`、`/console/assemblies*` | catalog 表（按 realm 筛选）、装配列表、各 realm 的解析结果 | 粘贴装配 YAML 做预检，显示错误与相对当前装配的 diff；operator 可保存为草稿 |
-| `console.model-mounts.standard` | operator、researcher | `/console/model-layouts*` | 布局列表；布局详情（连接只显示适配器、主机名与 `credentialRef` 名称）；“按模型看挂载”与“按角色看路由”两个视图 | 校验草稿、保存草稿；operator 可对某个模型做一次计费的连通性测试 |
-| `console.faction-ops.standard` | operator | `/console/ops/*`、`/console/campaign/*`、`/console/run-requests` | 三个席位的控制方式、epoch、租约；接管后的席位视图（只含该身份合法获知的信息与待处理事项）；时钟状态；存档列表；玩家的运行申请 | 接管/交还（填写原因）；以席位身份提交命令（消息 `seat.say`、协议提出与回复、`policy.set`、派遣）；暂停/继续/单步 N tick；存档；恢复（先 dry-run 再确认）；批准或拒绝运行申请 |
-| `console.scenario-editor.standard` | operator | `/console/scenarios/*` | 卡片列表与在线分支中的状态 | YAML 编辑草稿并校验；沙盒预演；按 tick 发布；撤回未触发的卡；补偿；调试覆盖（醒目提示会污染当前 run） |
-| `console.observability.standard` | researcher | `/console/timeline`、`/console/agents*`、`/console/turns*`、`/console/artifacts/*`、`/console/traces/*`、`/console/branches/compare` | 世界时间线（可按 Agent、节点、事件类型筛选，标注受众）；Agent 检查器（人格、最后已知视图、指定 revision 的记忆、关系、承诺、水位）；记忆 diff；turn 详情（各阶段 requested/resolved/effective、context 段落与剔除报告、全部 attempt 的请求与响应、工具原始结果与模型视图并排、receipt、对白）；trace 树；分支对比 | 原文与脱敏切换（查看原文写审计记录） |
-| `console.observability.lite` | researcher | `/console/turns*`、`/console/artifacts/*` | 只有 turn 列表与单个 turn 详情 | 同上 |
-| `console.evaluation.standard` | researcher、evaluator | `/console/runs*`、`/console/experiments*` | run 列表与状态；run 详情（去密钥 manifest、污染标记、证据完整性）；报告（指标、分子分母、无效样本与原因、探针回答与得分） | researcher：用 RunSpec YAML 创建 run（先显示预检结果）、启动/停止、用实验规格创建实验；evaluator 只读 |
-| `console.debug.standard` | researcher | `/console/debug/*` | 调度队列、模型池队列、整理队列 | 审计重放某个 turn 并比较请求 hash；注入调试唤醒（污染当前 run）；单步 |
-| `console.audit.standard` | researcher | `POST /console/exports`、`/console/artifacts/*` | 导出列表 | 创建脱敏或原文导出包并下载 |
+| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度、水位落后的 Agent、预算消耗、最近 10 条失败 | 无 |
+| `console.module-admin.standard` | operator、researcher | `/console/modules`、`/console/assemblies*` | catalog 表（按 realm 筛选）、装配列表、各 realm 的解析结果 | 查看 catalog 与装配详情（预检、diff 与保存草稿为目标能力） |
+| `console.model-mounts.standard` | operator、researcher | `/console/model-layouts*` | 布局列表；布局详情（连接只显示适配器、主机名与 `credentialRef` 名称）；“按模型看挂载”与“按角色看路由”两个视图 | 静态校验布局草稿（保存草稿与连通性探测为目标能力） |
+| `console.faction-ops.standard` | operator | `/console/campaign/*`（`/console/ops/*`、`/console/run-requests` 为目标） | 时钟状态；存档列表（三个非人类势力席位状态、接管视图与运行申请为目标视图） | 暂停/继续/单步 N tick；存档；恢复（席位接管/交还、席位命令与运行申请审批为目标操作） |
+| `console.scenario-editor.standard`（目标，尚未实现） | operator | `/console/scenarios/*` | 卡片列表与在线分支中的状态 | YAML 编辑草稿并校验；沙盒预演；按 tick 发布；撤回未触发的卡；补偿；调试覆盖（醒目提示会污染当前 run） |
+| `console.observability.standard` | researcher | `/console/timeline`、`/console/agents*`、`/console/turns*`、`/console/artifacts/*`、`/console/traces/*` | 世界时间线、Agent 检查器（人格、最后已知视图、记忆摘要、关系、承诺、水位）、turn 列表与详情（各阶段 requested/resolved/effective、attempt 请求响应、工具调用与对白）、trace 树 | 原文与脱敏切换查看（时间线筛选、记忆 diff 与分支对比页为目标视图） |
+| `console.observability.lite`（目标，尚未实现） | researcher | `/console/turns*`、`/console/artifacts/*` | 只有 turn 列表与单个 turn 详情 | 同上 |
+| `console.evaluation.standard` | researcher、evaluator | `/console/runs*`、`/console/experiments*` | 实验列表、run 列表与状态；分组指标汇总；run 详情（去密钥 manifest、污染标记、证据完整性）；报告（指标、分子分母、无效样本与原因、探针回答与得分） | 当前为只读评估页面（界面层创建与启停操作为目标能力） |
+| `console.debug.standard` | researcher | `/console/debug/*` | 调度队列、模型池队列、整理队列 | 审计重放某个 turn 并比较请求 hash；注入调试唤醒（污染当前 run）；单步控制在 `console.faction-ops.standard` 提供 |
+| `console.audit.standard`（目标，尚未实现） | researcher | `POST /console/exports`、`/console/artifacts/*` | 导出列表 | 创建脱敏或原文导出包并下载 |
 
 每个页面的数据都按当前角色向服务端请求；页面隐藏某个按钮不能代替服务端鉴权。

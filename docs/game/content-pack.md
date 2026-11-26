@@ -26,7 +26,7 @@
 # 内容包清单 pack.yaml
 schemaVersion: 1
 packId: earth-2964-v1
-contentVersion: "0.2.0"
+contentVersion: "0.3.0"
 defaultScenario: watergate-v1
 files: [lore.yaml, map.yaml, factions.yaml, characters.yaml, world-init.yaml, rules.yaml, evidence.yaml, starts.yaml, prompts/zh-CN.yaml, locale/zh-CN.yaml]
 scenarios: [scenarios/watergate-v1.yaml]
@@ -120,7 +120,7 @@ factions:
       bottomLines: [不在没有担保时开放守备设施]
       goals: [保住隘口防线, 恢复守备通信]
       secret: 2961 年雾夜放弃过一个哨位
-      relations: [ { targetId: species-fauna, trust: -1 }, { targetId: npc-luchen, trust: 1 } ]
+    relations: [ { targetId: species-fauna, trust: -1 }, { targetId: npc-luchen, trust: 1 } ]
   - factionId: human-earth-alliance
     name: 地生共约
     leaderCharacterId: linwu
@@ -136,7 +136,7 @@ factions:
       bottomLines: [不牺牲果园换取短期供能]
       goals: [保住果园, 维持救援通道]
       secret: 曾优先给幼体用药，死了两个病人
-      relations: [ { targetId: species-flora, trust: 1 }, { targetId: npc-muzhi, trust: 1 } ]
+    relations: [ { targetId: species-flora, trust: 1 }, { targetId: npc-muzhi, trust: 1 } ]
   - factionId: human-pacifist
     name: 止戈议团
     leaderCharacterId: tangzhen
@@ -152,7 +152,7 @@ factions:
       bottomLines: [不支持任何军事升级]
       goals: [救出伤员, 促成书面停火条款]
       secret: 起草过一份被撕毁的停火协议
-      relations: [ { targetId: npc-wenzhao, trust: 1 }, { targetId: npc-muzhi, trust: 1 } ]
+    relations: [ { targetId: npc-wenzhao, trust: 1 }, { targetId: npc-muzhi, trust: 1 } ]
   - factionId: human-alien-accord
     name: 远星协进会
     leaderCharacterId: qiaoshu
@@ -168,7 +168,7 @@ factions:
       bottomLines: [不签没有监督条款的交换]
       goals: [促成修复交换, 核实翻译]
       secret: 第一次翻译“对等”时译错
-      relations: [ { targetId: species-extraterrestrial, trust: 1 } ]
+    relations: [ { targetId: species-extraterrestrial, trust: 1 } ]
   - factionId: human-neutral
     name: 灰港公社
     leaderCharacterId: wenzhao
@@ -185,7 +185,7 @@ factions:
       bottomLines: [不在未公开说明时改变配给]
       goals: [中继不断线, 灰港供给不断档]
       secret: 左耳失聪；讨厌被绕过
-      relations: [ { targetId: npc-yinuo, trust: 2 }, { targetId: npc-wenyuan, trust: 1 } ]
+    relations: [ { targetId: npc-yinuo, trust: 2 }, { targetId: npc-wenyuan, trust: 1 } ]
   - factionId: species-fauna
     name: 巡裔
     leaderCharacterId: zhuifeng
@@ -200,7 +200,7 @@ factions:
       bottomLines: [不接受迁徙季封锁隘口]
       goals: [迁徙季隘口畅通]
       secret: 记得一条不在地图上的备用路线
-      relations: [ { targetId: human-independent, trust: -1 } ]
+    relations: [ { targetId: human-independent, trust: -1 } ]
   - factionId: species-flora
     name: 根庭
     leaderCharacterId: qingzhi
@@ -215,7 +215,7 @@ factions:
       bottomLines: [不接受毁坏幼体的交换]
       goals: [争取轮换供水]
       secret: 根网深处藏着战前种子
-      relations: [ { targetId: human-earth-alliance, trust: 1 } ]
+    relations: [ { targetId: human-earth-alliance, trust: 1 } ]
   - factionId: species-extraterrestrial
     name: 泊星者
     leaderCharacterId: luo
@@ -230,7 +230,7 @@ factions:
       bottomLines: [不接受不对等的通行条件]
       goals: [以修复换取战前星图]
       secret: 知道救援船可能永远不会来
-      relations: [ { targetId: human-alien-accord, trust: 1 } ]
+    relations: [ { targetId: human-alien-accord, trust: 1 } ]
 ```
 
 ## 5. 角色（characters.yaml）
@@ -450,6 +450,7 @@ dutyDelegations:
   - { granteeId: species-flora, grantorFactionId: species-flora,            teamIds: [team-flora],   stockpileId: sp-flora,   maxDraw: { supply: 0,  energy: 0, medical: 8 }, untilTick: 168 }
   - { granteeId: species-extraterrestrial, grantorFactionId: species-extraterrestrial, teamIds: [team-star],    stockpileId: sp-star,    maxDraw: { supply: 0,  energy: 20, medical: 0 }, untilTick: 168 }
 player: { principalId: player-1, nodeId: grayharbor }
+cityResources: { energy: 140, materials: 160, food: 120, supply: 60, medical: 40, water: 72 }
 ```
 
 ### 章节规则参数（rules.yaml）
@@ -820,7 +821,7 @@ checkpoints:
 ```yaml
 # 提示词词表 prompts/zh-CN.yaml（labels 部分）
 labels:
-  kinds: { character: 人物, strategic: 党魁/外域 }
+  kinds: { character: 人物, strategic: 派系代表 }
   intents: { none: 不说话, acknowledge: 表示知道了, answer: 回答对方的问题, agree: 同意, refuse: 拒绝, counter-offer: 提出替代方案,
              request: 提出请求, inform: 告知一件事, warn: 提醒对方注意风险, thank: 道谢, apologize: 道歉,
              decline-to-disclose: 婉拒透露细节, report-result: 汇报行动结果, remind: 提醒对方之前的约定 }

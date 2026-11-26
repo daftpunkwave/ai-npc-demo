@@ -17,6 +17,6 @@
 
 ## 参数与限制
 
-- 配置提供 `secondsPerTick` 与 `maxStepTicks`，默认 10 秒与 24 tick。
+- 配置提供 `secondsPerTick`、`maxStepTicks` 与 `autoPauseAfterDisconnectMs`，默认 20 秒、24 tick 与 60000 毫秒。
 - 时钟模块不执行 job、时钟步骤或事件消费；这些由 authority 的固定执行器按顺序驱动。
 - 离线自动暂停与“客户端开局后自动继续”属于宿主运营流程，不在本模块内实现。
