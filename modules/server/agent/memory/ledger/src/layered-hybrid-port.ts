@@ -323,7 +323,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
       `目标：${(view.identity.goals ?? []).join("、") || "无"}`,
       `当前关注：${concerns || "暂无"}`,
     ].join("\n");
-    return truncate(staticPart, this.config.coreBlockMaxTokens);
+    return truncateCoreBlock(staticPart, this.config.coreBlockMaxTokens);
   }
 
   private ruleConcerns(query: AgentMemoryQuery, view: RevisionView): string {
@@ -380,18 +380,25 @@ function dedupeRetires(retires: MemoryChangePlan["retires"]): MemoryChangePlan["
 }
 
 /**
- * 按 estimate-v1 口径把核心块裁剪到预算内。
+ * 按 estimate-v1 口径把核心块裁剪到预算内，返回放得下的最长前缀。
  * 预算单位是 token 而不是字符：中文每字约 1 token、拉丁文每 4 字符约 1 token，
- * 因此先按整块估值判断，超限时按比例折算出字符上限再逐步收紧，避免对长文本反复全量估值。
+ * 因此字符数与 token 数不成比例，不能直接按字符切片。
+ * 由于 estimateTokens 对前缀单调不减，这里对前缀长度做二分查找，
+ * 得到满足预算的最长前缀，而不是按固定比例反复收缩（后者会多裁掉可用内容）。
+ * 导出仅为让模块测试直接锁定这条口径，不进入模块的公开端口。
  */
-function truncate(value: string, maxTokens: number): string {
-  if (estimateTokens(value) <= maxTokens) return value;
+export function truncateCoreBlock(value: string, maxTokens: number): string {
   const characters = Array.from(value);
-  let keep = Math.min(characters.length, maxTokens);
-  while (keep > 0 && estimateTokens(characters.slice(0, keep).join("")) > maxTokens) {
-    keep = Math.floor(keep * 0.9);
+  if (estimateTokens(value) <= maxTokens) return value;
+  const fits = (keep: number): boolean => estimateTokens(characters.slice(0, keep).join("")) <= maxTokens;
+  let low = 0;
+  let high = characters.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
   }
-  return characters.slice(0, keep).join("");
+  return characters.slice(0, low).join("");
 }
 
 export function createLayeredHybridPort(config: LayeredHybridConfig, ids: Ids, rng: Rng | null): LayeredHybridMemoryPort {

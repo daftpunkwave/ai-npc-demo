@@ -3,6 +3,12 @@ profileId: agent-strategic-default
 kind: agent
 parent: scene-watergate
 slots:
+  memory:
+    module: agent.memory.ledger
+    config:
+      # 检索预算原先取自 context 的 decision.segmentBudgets.memory（900）；
+      # 该上限已归 memory 槽位自己声明，这里保持同一个数值。
+      retrievalBudget: { maxItems: 8, maxTokens: 900 }
   context:
     module: agent.context.ordered-blocks
     config:
