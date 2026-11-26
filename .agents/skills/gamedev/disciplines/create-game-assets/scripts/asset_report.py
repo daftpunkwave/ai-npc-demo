@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inspect raster game assets and enforce simple production constraints.
 
-Requires Pillow 10+. The command exits 1 when an explicit constraint fails and
+Requires Pillow 13+. The command exits 1 when an explicit constraint fails and
 otherwise prints either a compact table or JSON suitable for build tooling.
 """
 

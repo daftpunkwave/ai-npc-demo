@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a labelled nearest-neighbor contact sheet for raster game assets.
 
-Requires Pillow 10+. Inputs are sorted by path so repeated runs stay stable.
+Requires Pillow 13+. Inputs are sorted by path so repeated runs stay stable.
 """
 
 from __future__ import annotations

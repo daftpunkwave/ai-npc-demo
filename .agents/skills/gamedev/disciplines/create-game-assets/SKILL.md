@@ -117,8 +117,8 @@ python scripts/build_preview_sheet.py output/player/*.png \
 ```
 
 Run script paths relative to this skill directory, or resolve the installed skill path first.
-Both scripts need Python and Pillow (see Version notes). Install the only dependency with
-`python -m pip install -r scripts/requirements.txt` when it is not already available.
+Both scripts need Python 3.11+ and Pillow 13+ (see Version notes). Install the only dependency
+with `python -m pip install -r scripts/requirements.txt` when it is not already available.
 `asset_report.py` exits 1 when any explicit constraint fails, so it can gate a build.
 
 ## Quality gates
@@ -194,9 +194,10 @@ technical checks plus an in-engine or native-scale visual inspection.
 
 Last verified: 2026-11-11.
 
-- Scripts: Python 3.10+ with Pillow 10 to 13 (`scripts/requirements.txt` pins `Pillow>=10,<14`).
-  Pillow 13.0.0 is the latest release and requires Python 3.11+
-  (https://pypi.org/project/pillow/).
+- Scripts: Python 3.11+ with Pillow 13 (`scripts/requirements.txt` pins `Pillow>=13.0.0,<14`).
+  The floor is the first release without the known Pillow 10 to 12 CVEs; Python 3.11 is
+  required by Pillow 13 and is the oldest still-supported CPython line
+  (https://pypi.org/project/pillow/, https://endoflife.date/python).
 - Steam Content Survey: the generative AI section separates pre-generated content (made during
   development and shipped) from live-generated content (made while the game runs, which also
   needs a description of guardrails); AI tools used only for efficiency are not its focus
