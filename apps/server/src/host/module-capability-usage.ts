@@ -299,33 +299,42 @@ function sourceFilesOf(directory: string): readonly string[] {
 
 /** 返回指定位置之前最近的代码字符，用于区分索引访问与声明数组。 */
 function previousSignificantChar(text: string, index: number): string {
+  const at = previousSignificantIndex(text, index);
+  return at < 0 ? "" : (text[at] ?? "");
+}
+
+/** 返回指定位置之前最近的非空白字符位置；没有时返回 -1。 */
+function previousSignificantIndex(text: string, index: number): number {
   let cursor = index - 1;
   while (cursor >= 0 && isWhitespace(text[cursor])) {
     cursor -= 1;
   }
-  return cursor < 0 ? "" : (text[cursor] ?? "");
+  return cursor;
 }
 
 /**
  * 判断 `[` 之前的接收者是否是成员访问链的终点。
  *
- * 除标识符、`)` 与 `]` 外，`ports?.["x"]` 与 `ports.["x"]` 的 `[` 前一个有效字符是 `.`，
- * `?.` 的可选链写法同理。这些形态都是对已有表达式的属性取用，
+ * 除标识符、`)` 与 `]` 外，`ports?.["x"]` 的 `[` 前一个有效字符是 `.`。
  * 漏判会让同一处能力访问在改写为可选链后静默逃过对账，正是本检查要防的情况。
- * 单个 `.` 也可能是数字字面量的小数点，但能力访问的接收者不可能是裸数字，
- * 因此这里按成员访问接受即可。
+ *
+ * 但 `.` 有三种来源，不能一律当成成员访问：
+ * - `?.`：可选链，是成员访问；
+ * - `obj.`：普通属性访问，是成员访问；
+ * - `...`：展开运算符，`[...["a"]]` 里的 `["a"]` 是数组字面量而不是能力取用。
+ * 把展开误判为访问会让装配检查错误地拒绝合法模块，因此必须按 `.` 之前的字符区分。
  */
 function isMemberAccessReceiver(text: string, bracketIndex: number): boolean {
-  const receiver = previousSignificantChar(text, bracketIndex);
+  const dotIndex = previousSignificantIndex(text, bracketIndex);
+  const receiver = dotIndex < 0 ? "" : (text[dotIndex] ?? "");
   if (isIdentifierCharacter(receiver) || receiver === ")" || receiver === "]") {
     return true;
   }
   if (receiver !== ".") {
     return false;
   }
-  // `?.` 与 `.` 都算成员访问：再往前一个有效字符是 `?` 时属于可选链，
-  // 否则是普通属性访问，两者对能力对账完全等价。
-  return true;
+  // `...` 是展开运算符：`.` 之前仍是 `.`，说明这个方括号属于被展开的数组字面量。
+  return previousSignificantChar(text, dotIndex) !== ".";
 }
 
 /** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */

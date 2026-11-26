@@ -11,6 +11,7 @@ import {
   type StreamChannel,
 } from "@ai-npc/contracts";
 import { handleClientMessage } from "./client-messages";
+import { HeartbeatProbe } from "./heartbeat-probe";
 import { ReplayStore } from "./replay-store";
 import { SessionRegistry } from "./session-registry";
 import { SocketSender } from "./stream-delivery";
@@ -61,9 +62,10 @@ export class StreamHub {
   private streamSeq = 0;
   private projectionVersion = 0;
   private readonly consoleSequences = new Map<StreamChannel, number>();
-  /** 心跳间隔与超时判定；半开连接没有 close 事件，只能靠这两个值回收。 */
+  /** 心跳间隔；半开连接没有 close 事件，只能靠定时探测回收。 */
   private readonly heartbeatIntervalMs: number;
-  private readonly heartbeatTimeoutMs: number;
+  /** 连接活性探测器：超时回收与 ping 推送都在其中，本类只提供依赖。 */
+  private readonly probe: HeartbeatProbe;
   /** 上一份投影的顶层只读副本；用于识别新增对白与提醒。 */
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   private lastProjection: PlayerProjection | null;
@@ -79,7 +81,6 @@ export class StreamHub {
     this.maxConnections = limits.maxConnections;
     this.maxConnectionsPerSession = limits.maxConnectionsPerSession;
     this.heartbeatIntervalMs = limits.heartbeatIntervalMs;
-    this.heartbeatTimeoutMs = limits.heartbeatTimeoutMs;
     this.branchId = "";
     this.lastSweepAt = this.now();
     this.sessions = new SessionRegistry({
@@ -113,6 +114,18 @@ export class StreamHub {
         : { channelSnapshot: options.channelSnapshot }),
       channelSequence: (channel) => this.consoleSequences.get(channel) ?? 0,
       maxBufferedBytes: limits.maxBufferedBytes,
+    });
+    // 探测器只拿连接集合与两个出口；超时回收走本类的 disconnect，确保计数同步递减。
+    this.probe = new HeartbeatProbe({
+      connections: () => this.connections,
+      disconnect: (socket) => {
+        this.disconnect(socket);
+      },
+      ping: (socket) => {
+        this.sender.sendMessage(socket, { type: "ping" });
+      },
+      now: this.now,
+      timeoutMs: limits.heartbeatTimeoutMs,
     });
     const initial = options.projection();
     this.lastProjection = Object.freeze({ ...initial });
@@ -515,32 +528,16 @@ export class StreamHub {
   /**
    * 心跳：超过超时窗口没有收到任何帧的连接视为半开，直接终止，随后向存活连接发 ping。
    *
+   * 回收与推送的细节在 HeartbeatProbe 内，这里只提供连接集合、回收清理与发送出口。
    * 必须走 `disconnect` 而不是只关 socket：`playerConnections` 计数是宿主判断
    * 「玩家全部断开」的唯一输入，不递减就永远不会触发断线自动暂停，
    * 时钟会在无人在线时继续推进，违背「断线经宽限自动暂停、离线时间不补算」的约定。
-   * 用 `terminate` 而不是 `close`：半开连接上发送关闭帧再等对端回应，正是会永久挂住的操作。
-   * 存活判定看「是否收到过任何帧」，而不是「这一帧是否被业务接受」，
-   * 因此非法帧同样能证明对端还在，不会被误当成失联证据。
    */
   heartbeat(): void {
     if (this.closed) {
       return;
     }
-    const now = this.now();
-    for (const [socket, connection] of [...this.connections]) {
-      if (now - connection.lastSeenAt <= this.heartbeatTimeoutMs) {
-        continue;
-      }
-      this.disconnect(socket);
-      try {
-        socket.terminate();
-      } catch {
-        // 连接已不可用；计数与订阅已由 disconnect 清理，没有额外动作。
-      }
-    }
-    for (const connection of [...this.connections.values()]) {
-      this.sender.sendMessage(connection.socket, { type: "ping" });
-    }
+    this.probe.probe();
   }
 
   /** 清空后台对象并关闭连接；close 后 publish 不再工作。 */

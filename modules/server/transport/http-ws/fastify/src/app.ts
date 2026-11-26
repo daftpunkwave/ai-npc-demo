@@ -124,6 +124,14 @@ function isRateLimitedRoute(url: string): boolean {
   return url.startsWith("/api/v1/") && !isRateLimitExempt(url);
 }
 
+/** 从 Authorization 头取 Bearer 令牌；非该形态一律视为未提供。 */
+function bearerToken(header: string | undefined): string | null {
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+    return null;
+  }
+  return header.slice("Bearer ".length);
+}
+
 
 /** ws 在接收帧超过 maxPayload 时抛出带该稳定错误码的 RangeError，并自行以 1009 发起关闭。 */
 function isWebSocketPayloadTooLarge(error: unknown): boolean {
@@ -261,6 +269,20 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     method === "GET" || method === "HEAD"
       ? (options.rateLimits?.read ?? 60)
       : (options.rateLimits?.write ?? 10);
+  // 配额键要按已验证的会话主体计，而流中心在本函数后半段才创建。
+  // 这里用一个读取器推迟取值：键生成发生在请求处理期，届时 hub 必然已就绪。
+  let sessionHub: StreamHub | null = null;
+  const sessionTokenIdentity = (header: string | undefined): string | null => {
+    if (sessionHub === null) {
+      return null;
+    }
+    const token = bearerToken(header);
+    if (token === null) {
+      return null;
+    }
+    // 只返回已验证会话的主体：未认证或过期时返回 null，交给 IP 桶。
+    return sessionHub.authenticate(token)?.auth.principalId ?? null;
+  };
   app.addHook("onRoute", (route) => {
     const url = route.url;
     const methods = Array.isArray(route.method) ? route.method : [route.method];
@@ -282,11 +304,20 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     global: false,
     max: options.rateLimits?.read ?? 60,
     timeWindow: "10 seconds",
+    /**
+     * 配额键必须只由服务端能验证的事实构成。
+     *
+     * 旧实现直接取 `Authorization` 头的后 24 个字符。该值在认证之前完全由请求方控制：
+     * 每次换一个无效令牌就能落到新的计数器上，反复发送无效会话的请求永远不会被限流。
+     * 正确做法是先用流中心的会话表验证令牌，只有已验证的会话才按主体计配额——
+     * 此时 `principalId` 由服务端会话给出，伪造令牌换不到新桶。
+     *
+     * 未认证请求（缺失令牌、令牌无效、会话过期）统一落到 IP 桶：
+     * 它们的共同特征是「服务端无法确认调用方是谁」，因此只能按来源地址收敛。
+     */
     keyGenerator: (request) => {
-      const authorization = request.headers.authorization;
-      // 凭据本身不进键：只取其后段的稳定前缀，避免把令牌留在内存映射里。
-      if (typeof authorization === "string" && authorization.length > 0) return `cred:${authorization.slice(-24)}`;
-      return `ip:${request.ip}`;
+      const principalId = sessionTokenIdentity(request.headers.authorization);
+      return principalId === null ? `ip:${request.ip}` : `cred:${principalId}`;
     },
     errorResponseBuilder: (_request, context) => ({
       // 与项目统一错误格式一致：429 走 budget-exhausted，并带 retryAfter 秒数。
@@ -516,6 +547,9 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerConsoleEvaluationRoutes(context);
   registerConsoleOperationsRoutes(context);
   registerErrorHandling(app, report, notFound);
+
+  // 限流键需要按已验证会话的主体生成，hub 在此时才存在；接上后所有请求都能取到主体。
+  sessionHub = hub;
 
   /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */
   const listen = async (listenOptions: { readonly host: string; readonly port: number }): Promise<void> => {

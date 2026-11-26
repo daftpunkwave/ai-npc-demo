@@ -298,6 +298,14 @@ function capacityLimit(value: number, name: string): number {
   return value;
 }
 
+/**
+ * 定时器间隔上限：Node 的 `setTimeout`/`setInterval` 只接受 32 位有符号整数。
+ * 超过该值时 Node 打印 `TimeoutOverflowWarning` 并把间隔降为 1 毫秒——
+ * 心跳会因此变成每毫秒一次的高频轮询，把限流保护反向变成拒绝服务入口。
+ * 在这里显式拒绝，而不是让运行期静默降级。
+ */
+const maxTimerDelayMs = 2 ** 31 - 1;
+
 /** 合并调用方覆盖与缺省边界；不读取配置或环境变量。 */
 export function hubLimits(options: StreamHubOptions): HubLimits {
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? defaultHeartbeatIntervalMs;
@@ -305,7 +313,15 @@ export function hubLimits(options: StreamHubOptions): HubLimits {
   if (!Number.isInteger(heartbeatIntervalMs) || heartbeatIntervalMs <= 0) {
     throw new DomainError("validation", `heartbeatIntervalMs 必须是正整数，收到 ${String(heartbeatIntervalMs)}`);
   }
+  // 超出 32 位有符号范围时 Node 会把间隔降为 1ms，心跳随之变成高频轮询。
+  if (heartbeatIntervalMs > maxTimerDelayMs) {
+    throw new DomainError(
+      "validation",
+      `heartbeatIntervalMs 不得超过 ${String(maxTimerDelayMs)}，收到 ${String(heartbeatIntervalMs)}`,
+    );
+  }
   // 超时短于一个间隔时，第一次探测就会立刻被判超时，连接永远等不到回执。
+  // 超时只用于比较而不直接作为定时器间隔，因此只需校验它不超出安全整数范围，便于做差比较。
   if (!Number.isInteger(heartbeatTimeoutMs) || heartbeatTimeoutMs <= heartbeatIntervalMs) {
     throw new DomainError(
       "validation",

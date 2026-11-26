@@ -197,6 +197,43 @@ describe("模块能力声明对账", () => {
     expect(checkModuleCapabilityUsage({ root, definitions: [map, world] })).toEqual([]);
   });
 
+  it("展开运算符里的数组字面量不算能力访问", () => {
+    // `...["game.world"]` 的 `[` 前面也是 `.`，若不区分展开与成员访问，
+    // 合法模块会被误判成访问了未声明的能力，装配检查随之错误拒绝。
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "const declared = [\"game.world\"];",
+          "export const spread = [...declared];",
+          "export const roads = roadsOf(spread);",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    expect(checkModuleCapabilityUsage({ root, definitions: [map, world] })).toEqual([]);
+  });
+
+  it("展开运算符与可选链相邻出现时仍只识别真实访问", () => {
+    // 同一文件里既有展开数组又有真实可选链访问：前者不报，后者必须报。
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "const declared = [\"game.actions\"];",
+          "export const spread = [...declared];",
+          "export const world = ports?.[\"game.world\"];",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations.filter((violation) => violation.code === "capability-undeclared")).toHaveLength(1);
+    expect(violations[0]?.message).toContain("game.world");
+  });
+
   it("访问与声明一致时没有违规", () => {
     const root = fixture({
       ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),

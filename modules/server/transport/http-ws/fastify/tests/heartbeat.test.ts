@@ -158,4 +158,27 @@ describe("流中心心跳活性判定", () => {
       }),
     ).toThrow(/heartbeatTimeoutMs/);
   });
+
+  it("超过 32 位定时器上限的间隔被拒绝，不让 Node 静默降级为 1ms 轮询", () => {
+    // Node 的定时器只接受 32 位有符号整数；超出的间隔会被降为 1ms 并打印告警，
+    // 心跳随之变成每毫秒一次的高频轮询。必须在构造期显式拒绝而不是让运行期降级。
+    expect(() =>
+      new StreamHub({
+        projection: minimalProjection,
+        worldId: "wld-000000000001",
+        channelsFor: () => ["player"],
+        ids: (prefix) => `${prefix}-000000000001`,
+        tokens: (kind) => `${kind}-token`,
+        now: () => 0,
+        heartbeatIntervalMs: 2 ** 31,
+        heartbeatTimeoutMs: 2 ** 31 + 1,
+      }),
+    ).toThrow(/heartbeatIntervalMs/);
+  });
+
+  it("上限之内的最大间隔仍可构造", () => {
+    // 反向对照：边界判定不能把合法取值也拒掉。
+    const { hub } = makeHub({ heartbeatIntervalMs: 2 ** 31 - 1, heartbeatTimeoutMs: 2 ** 31 });
+    expect(hub.stats().connections).toBe(0);
+  });
 });

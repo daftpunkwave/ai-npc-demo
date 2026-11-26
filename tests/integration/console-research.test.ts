@@ -143,6 +143,46 @@ describe("控制台研究接口", () => {
     expect(receipts()).toHaveLength(before.length + statuses.filter((status) => status === 200).length);
   });
 
+  it("轮换无效令牌不能换到新配额，伪造 Authorization 头绕不过限流", async () => {
+    // 配额键若直接取自未认证的 Authorization 头，请求方只要每次换一个无效令牌，
+    // 就能落到新的计数器上，反复发送无效会话的请求永远不被限流。
+    // 这里按未认证来源收敛：轮换无效令牌的请求共享同一个桶。
+    const host = await testHost({ read: 2, write: 100_000 });
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await host.app.inject({
+        method: "GET",
+        url: "/api/v1/content",
+        headers: { Authorization: `Bearer forged-token-${String(attempt)}` },
+      });
+      statuses.push(response.statusCode);
+    }
+    // 前两次未认证返回 401 但仍然计数；之后同一个桶耗尽，继续换令牌也只会拿到 429。
+    expect(statuses.slice(0, 2)).toEqual([401, 401]);
+    expect(statuses.slice(2)).toEqual([429, 429, 429]);
+  });
+
+  it("已认证会话按主体计配额，与未认证来源分开计数", async () => {
+    // 键按已验证会话的主体生成：同一主体持续请求会被限流，
+    // 而未认证来源的消耗不影响已认证主体的配额。
+    const host = await testHost({ read: 2, write: 100_000 });
+    // 先耗尽未认证来源的桶。
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await host.app.inject({
+        method: "GET",
+        url: "/api/v1/content",
+        headers: { Authorization: "Bearer invalid" },
+      });
+    }
+    const session = await login(host, "research-player");
+    const authenticated = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/content",
+      headers: { Authorization: `Bearer ${session}` },
+    });
+    expect(authenticated.statusCode).toBe(200);
+  });
+
   it("健康检查不参与请求次数限流，探活不会把自己限死", async () => {
     const host = await testHost({ read: 1, write: 1 });
     // 健康检查无鉴权且供探活高频调用；把它纳入限流会让探活本身成为故障源。
