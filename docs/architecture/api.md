@@ -9,6 +9,7 @@
 | 前缀 | `/api/v1`；控制台接口在 `/api/v1/console/*`；静态控制台页面在 `/console/*` |
 | 格式 | 请求与响应都是 `application/json; charset=utf-8`；字段 camelCase |
 | 认证 | `Authorization: Bearer <sessionToken>`；除 `GET /api/v1/health` 与 `POST /api/v1/auth/login` 外都需要 |
+| 限流 | 除 `GET /api/v1/health` 与 `GET /api/v1/streams` 外，全部 `/api/v1/*` 路由按会话主体（未认证时按客户端 IP）与 10 秒窗口限流（默认读接口 60 次、写接口 10 次，可通过传输配置覆盖），超限返回 `429 budget-exhausted` |
 | 控制台角色 | 控制台请求必须带 `X-Active-Role: operator \| researcher \| evaluator`，且该角色在会话角色内；服务端只按这个当前角色鉴权 |
 | Origin | HTTP 请求与 WS 握手带 `Origin` 时必须匹配部署的来源白名单，否则返回 403。原生连接可省略此头，仍按 Bearer 会话或一次性票据认证 |
 | 跨域允许面 | 只允许 `GET`、`POST`、`OPTIONS` 与 `Authorization`、`Content-Type`、`X-Active-Role` 三个请求头；会话令牌走请求头而非 Cookie，因此不启用 `credentials` |
@@ -44,7 +45,7 @@
 | `POST /api/v1/auth/login` | `{ token }` | `{ sessionToken, principalId, roles, expiresAt }` | 令牌错误返回 401。会话自登录起默认有效 12 小时 |
 | `POST /api/v1/auth/logout` | — | `{ ok: true }` | 吊销当前会话 |
 | `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集 |
-| `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；玩家会话请求 `realm=console` 返回 403 |
+| `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；玩家会话请求 `realm=console` 返回 403 `realm-violation` |
 | `POST /api/v1/streams/ticket` | — | `{ ticket, expiresAt }` | 一次性 WS 票据，30 秒内有效 |
 
 会话数量有上限。容量满时服务端先清理过期会话，再淘汰没有活动 WS 连接且最早过期的会话；如果剩余会话都保持活动连接，登录返回 429 `budget-exhausted`（`retryable: true`），不会驱逐活跃会话。
@@ -158,7 +159,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 两类失败共用同一个码会让可重试的握手失败被当成强制登出：票据 30 秒有效，后台标签页挂起后恢复建连即命中。票据有效但其绑定的会话已失效时归入会话失效，用 `4401`。
 
-`error` 帧是服务端唯一的结构化失败通道，客户端必须消费：`unauthenticated` 与 `forbidden` 按会话失效处理（清除令牌并停止重连），其余错误码属于本帧或本频道的问题，客户端关闭当前连接后按既有指数退避重新申请票据与订阅。错误帧不计入「连接已可用」，否则每次失败都会重置退避，持续拒绝将退化成固定间隔的热循环。
+`error` 帧是服务端唯一的结构化失败通道，客户端必须消费：`forbidden` 按会话失效处理（清除令牌并停止重连；传输层当前 `error` 帧仅发送 `validation`、`forbidden`、`not-ready`，会话失效与 `unauthenticated` 直接以 `4401` 关闭连接），其余错误码属于本帧或本频道的问题，客户端关闭当前连接后按既有指数退避重新申请票据与订阅。错误帧不计入「连接已可用」，否则每次失败都会重置退避，持续拒绝将退化成固定间隔的热循环。
 
 ### 玩家投影与恢复
 
@@ -242,12 +243,12 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 请求参数 | 响应 |
 |---|---|---|
 | `GET /timeline`（已实现） | `branchId`、`fromSeq`（缺省 0）、`limit`（缺省 100，≤ 200）、`order`（`asc`/`desc`）、`types`（≤ 20 个，每个 ≤ 64 字符）、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件。查询参数的取值范围以公共 `timelineQuerySchema` 为唯一基准，路由只做类型规范化 |
-| `GET /agents`（已实现） | `branchId` | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
-| `GET /agents/{agentId}/inspector`（已实现） | `branchId` | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn。未知 Agent 返回 `not-found` |
-| `GET /agents/{agentId}/memory`（已实现） | `branchId`、`revision` | `{ revision, records: MemoryRecord[] }` |
-| `GET /agents/{agentId}/memory/diff`（已实现） | `branchId`、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
-| `GET /agents/{agentId}/observations`（已实现） | `branchId`、`fromSeq`、`limit` | `{ observations: AgentObservation[] }` |
-| `GET /turns`（已实现） | `runId`、`agentId`、`status`、`limit` | turn 列表 |
+| `GET /agents`（已实现） | `branchId`（必填） | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
+| `GET /agents/{agentId}/inspector`（已实现） | `branchId`（必填） | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn。未知 Agent 返回 `not-found` |
+| `GET /agents/{agentId}/memory`（已实现） | `branchId`（必填）、`revision`（可选，缺省为当前最新） | `{ revision, records: MemoryRecord[] }` |
+| `GET /agents/{agentId}/memory/diff`（已实现） | `branchId`（必填）、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
+| `GET /agents/{agentId}/observations`（已实现） | `branchId`（必填）、`fromSeq`（缺省 0）、`limit`（缺省 100，范围 1–200） | `{ observations: AgentObservation[] }` |
+| `GET /turns`（已实现） | `runId`、`branchId`、`agentId`、`status`、`limit`（缺省 50，范围 1–200） | turn 列表 |
 | `GET /turns/{turnId}`（已实现） | — | turn 详情：frontier、各阶段 requested/resolved/effective、span、context artifact 引用、全部 model attempt、tool call（原始与视图 artifact 引用）、receipt、对白 |
 | `GET /artifacts/{artifactId}`（已实现） | `view=redacted\|raw` | 当前世界所属 run 的 artifact 正文。缺少可访问 run 时返回 `forbidden`。读取原文记一条审计生命周期事件 |
 | `GET /traces/{traceId}`（已实现） | — | span 树 |
@@ -260,14 +261,15 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `POST /runs` | researcher | `{ runSpec }`（[配置](../platform/configuration.md) 第 3 节） | `{ runId, status: "ready" \| "preflight-failed", errors }` |
-| `GET /runs` | researcher、evaluator | `status`、`limit` | run 列表 |
-| `GET /runs/{runId}` | researcher、evaluator | — | 状态、去密钥 manifest、manifest hash、contaminated、evidenceComplete |
-| `POST /runs/{runId}/start` / `stop` | researcher | `{ operationId }` | run 状态 |
-| `GET /runs/{runId}/report` | researcher、evaluator | — | 指标、分子分母、无效样本数与原因、探针结果（[评估](../platform/evaluation.md) 第 9 节） |
-| `POST /experiments` | researcher | `{ experimentSpec }` 或 `{ experimentRef }`（格式见第 9 节末尾） | `{ experimentId, runIds }`：按顺序创建并排队执行 |
-| `GET /experiments/{experimentId}` | researcher、evaluator | — | 各 run 状态与汇总报告 |
-| `POST /exports` | researcher | `{ runId, redaction: "redacted"\|"raw" }` | `{ artifactId }`：导出包（manifest、事件、turn、artifact 索引） |
+| `POST /runs`（已实现） | researcher | `{ runSpec }`（[配置](../platform/configuration.md) 第 3 节） | `{ runId, status: "ready" \| "preflight-failed", errors }` |
+| `GET /runs`（已实现） | researcher、evaluator | `status`、`limit` | run 列表 |
+| `GET /runs/{runId}`（已实现） | researcher、evaluator | — | 状态、去密钥 manifest、manifest hash、contaminated、evidenceComplete |
+| `POST /runs/{runId}/start` / `stop`（已实现） | researcher | `{ operationId }` | `{ runId, status: "running" \| "paused" }` |
+| `GET /runs/{runId}/report`（已实现） | researcher、evaluator | — | 指标、分子分母、无效样本数与原因、探针结果（[评估](../platform/evaluation.md) 第 9 节） |
+| `GET /experiments`（已实现） | researcher、evaluator | — | `{ experiments: { experimentId, runCount }[] }` |
+| `POST /experiments`（已实现） | researcher | `{ experimentSpec }` 或 `{ experimentRef }`（格式见第 9 节末尾） | `{ experimentId, runIds, runs: { runId, status, errors }[], failedRunCount }` |
+| `GET /experiments/{experimentId}`（已实现） | researcher、evaluator | — | 各 run 状态与汇总报告 |
+| `POST /exports`（已实现） | researcher | `{ runId, redaction: "redacted"\|"raw" }` | `{ artifactId }`：导出包（manifest、事件、turn、artifact 索引） |
 
 ## 6. 角色权限矩阵
 

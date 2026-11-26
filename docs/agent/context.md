@@ -148,11 +148,11 @@ speech 的输入重新取“北侧目前不开放”等已授权状态，不带�
 | segment | 内容来源 | 发到哪里 | 是否受保护 |
 |---|---|---|---|
 | `protocol` | [prompts](prompts.md) 第 2.1 节的规则部分 | system | 是 |
-| `identity` | 内容包的 lore 摘要与人格 | system | 是 |
-| `world` | `AgentWorldView`（[领域模型](../architecture/domain-model.md) 第 8.2 节）：现在、位置、最后已知局势、持有的证据与秘密 | 第一条 user 消息 | 现在与位置受保护，其余可裁剪 |
-| `task` | 自己的委托、进行中的任务、待回复邀请、proposed/active 的协议与条款状态、最近 12 tick 内状态变化的协议（[领域模型](../architecture/domain-model.md) 第 8.2 节） | 第一条 user 消息 | 与本次触发直接相关的条目受保护 |
+| `identity` | 合并在 `systemIdentity` 中（`protocol` 段落之后紧跟世界观与人格） | system | 是 |
+| `world` | `AgentWorldView`（[领域模型](../architecture/domain-model.md) 第 8.2 节）：当前实现写入持有的证据与秘密（指标/道路/水闸行待后续扩展） | 第一条 user 消息 | 是 |
+| `task` | 当前实现写入待回复的任务邀请（委托、进行中任务与协议行待后续扩展） | 第一条 user 消息 | 是 |
 | `memory` | MemoryBundle 的内容，固定顺序：M3 的核心块（第一行）→ 关系摘要（M1、M3，`relationInput` 开启时）→ 记忆条目（按检索顺序） | 第一条 user 消息 | 核心块、关系摘要与必带项受保护 |
-| `history` | 触发所在会话中、受众包含本 Agent 的最近 `historyTurns` 条发言 | 第一条 user 消息 | 否 |
+| `history` | 冻结观察中的非本次触发 `DialogueSubmitted` 记录，最多 `historyTurns` 条（当前未按 `conversationId` 过滤） | 第一条 user 消息 | 否 |
 | `input` | 本次触发的观察 | 第一条 user 消息 | 是 |
 
 `segmentOrder` 只调整第一条 user 消息里各段的顺序；`protocol` 与 `identity` 总在 system 中。M0 的 `baseline-current` preset 把 `historyTurns` 设为 0。
@@ -187,18 +187,18 @@ export function estimateTokens(text: string): number {
 | `reservedOutputTokens`（预算估算，不是发给供应商的上限） | 1500 | 400 |
 | `safetyTokens` | 300 | 200 |
 | `toolLoopReserveTokens`（给工具循环留的空间） | 1600 | — |
-| `segmentBudgets` | world 800、task 500、memory 1000、history 800 | facts 800、history 400 |
+
+默认内置分段预算为 `segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800, input: 400 }`；`agent-strategic-default` 会覆盖 `historyTurns: 6` 与 `segmentBudgets: { world: 900, task: 600, memory: 900, history: 600 }`。
 
 选用模型决策的 run 在启动预检时要求 `decision` 与 `speech` 两个子块齐全；缺失任一子块以 `assembly-incompatible` 拒绝启动，诊断包含 profile 与用途。确定性决策跳过上下文构建，不消费这两个子块，空配置可以省略它们。
 
 有效上限 `L = min(maxInputTokens, 模型窗口 − reservedOutputTokens − safetyTokens)`；decision 首轮请求的目标上限为 `L − toolLoopReserveTokens`，speech 的目标上限为 `L`。若模型窗口不足以容纳 `reservedOutputTokens` 与 `safetyTokens`，`L` 为 0，表示没有可用输入预算，构建直接返回 `over-budget`，不把下限钳制成正数。组装顺序：
 
-1. 按段配额生成各段（每段内部超出配额时，按该段的裁剪规则先删到配额以内）。
-2. 估算整个请求（[11.2 节](#112-token-估算)）。若 profile 的压缩模块不是 `none`，且估算值超过 `triggerRatio × 目标上限`，先调用压缩槽（[压缩与工具视图](compression-and-tool-view.md) 第 12 节）。
-3. 仍超出目标上限时，按顺序裁剪，每裁一项都写进剔除报告：`history` 从最早的发言开始删；`memory` 从分数最低的非必带项开始删；`world` 删除与本次触发无关的道路与库存行；`task` 删除与本次触发无关的旧条目。
-4. 只剩受保护内容仍超出时返回 `over-budget`，本次请求不发送。
+1. 按段配额生成各段（每段内部超出配额时，按该段的裁剪规则删到配额以内；其中 `history` 按尾部截断保留较早条目）。
+2. 估算整个请求（[11.2 节](#112-token-估算)）。若 profile 的压缩模块不是 `none`，且估算值超过触发阈值，先调用压缩槽（[压缩与工具视图](compression-and-tool-view.md) 第 12 节）。
+3. 组装后总估算仍超出目标上限时直接返回 `over-budget`（`request-over-budget`），不做跨段二次裁剪。
 
-`lendUnusedBudget: true` 时，某段没用完的配额按 world → task → memory → history 的顺序借给后面超出配额的段；默认 false。
+`lendUnusedBudget: true` 时，某段没用完的配额按 world → task → memory → history → input 的顺序借给后面超出配额的段；默认 false。
 
 ### 11.4 ContextArtifact
 
@@ -206,9 +206,11 @@ export function estimateTokens(text: string): number {
 interface ContextArtifact {
   artifactId: string;
   parentArtifactId: string | null;   // 同一工具循环中的上一轮
-  scope: MemoryScope;
+  session: MemoryScope;
   turnId: string;
   phase: "decision" | "speech";
+  status: "ready" | "not-ready" | "over-budget" | "invalid-source" | "unsupported" | "failed";
+  failureReason: string | null;
   inputFrontier: InputFrontier;
   profileHash: string;
   templateVersion: string;

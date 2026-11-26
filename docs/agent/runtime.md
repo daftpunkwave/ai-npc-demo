@@ -203,7 +203,7 @@ worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不�
 | 规则消费者 | 新领域事件 | 协议履约判定、剧情模块订阅等 |
 | 记忆摄入 | 有新观察 | 对每个 Agent：读取 `observation_seq > consumed` 的观察，调用 `prepareIngest`，在 Agent 的 actor 事务中提交；提交后调用 `planMaintenance(trigger = "importance")`，返回任务时写入 `maintenance_runs` |
 | 记忆整理 | `DayPassed` 被摄入后；有排队的整理任务 | `DayPassed` 被某 Agent 摄入后调用 `planMaintenance(trigger = "day-passed")` 并排队；认领排队任务（租约 2 分钟）→ `runMaintenance`（可调用模型，`deadlineMs` 为认领时刻 + 120000）→ CAS 提交（13.5 节）。分支激活时，对 `derived_through_tick` 落后于最近一次 `DayPassed` 且没有排队任务的 Agent 重新排队 |
-| 调度器 | 每 250 ms，以及新 trigger 通知 | 13.2 节 |
+| 调度器 | 周期调度（`250 ms` 基础间隔，连续失败按指数退避上限 `5000 ms`） | 13.2 节 |
 | turn 执行 | 调度器创建的 turn | 13.3 节 |
 | 投影推送 | 新领域事件、turn 状态变化 | 更新玩家投影与控制台频道并经 WS 推送 |
 
@@ -247,7 +247,7 @@ scheduling:
 4. 每个 Agent 同一时刻最多一个活动 turn；turn 运行中新到的 trigger 只排队，不改变已冻结的输入。
 5. turn 以 `cancelled` 结束（暂停、静默、接管、租约过期导致）时，它并入的 trigger 被释放（`consumed_by_turn_id` 置空），之后重新调度；以 `completed`、`failed`、`budget-exhausted` 结束时 trigger 视为已消费。
 
-`stepping` 模式下，每个 tick 按规则第 1 节注入该 tick 的脚本命令，然后排空本 tick：规则与感知消费者追平最新 worldSeq、记忆摄入追平已投递观察、没有到期 job、没有当前可调度的 trigger、没有排队或运行中的 turn、没有 `due_tick ≤ 当前 tick` 的排队或执行中的整理任务。消费者或 turn 产生新事件后重新检查这些条件；未来投递与冷却中的 trigger 留到后续 tick，不阻塞本 tick。达到收敛点才推进下一 tick；目标 tick 收敛后回到 paused。超出运行预算时明确失败并暂停，不把未收敛当作完成。
+`stepping` 模式下，宿主 `advanceSteppingTick` 每次时钟间隔推进 1 tick（`advanceWorldTick`）直到到达 `stepTargetTick` 后调用 `finishStep` 回到 `paused`；按规则第 1 节在单步循环内自动注入脚本命令并等待消费者、记忆摄入、整理任务与 turn 排空收敛属于实验执行器待接入部分。
 
 ### 13.3 turn 主循环
 
@@ -260,7 +260,7 @@ async function runTurn(turnId: string): Promise<void> {
   // 5. artifact = context.build(decision 阶段)；需要时执行压缩。（同步，仅首次请求前）
   // 6. decision 循环（agent.decision.model）：round 从 1 到 maxDecisionRounds。
   //      请求 -> pool.call(decision) -> 按下方规则处理本轮 -> 追加 assistant 与 tool 结果。
-  //      decision_submit 通过校验时停止；模型只返回纯文本时提醒一次（prompts.md §2.3）。
+  //      decision_submit 通过校验时停止；纯文本纠偏与 invalid decision_submit 重试共享同一单次纠偏标记（整轮最多触发一次，prompts.md §2.3）。
   //    agent.decision.deterministic 以 §13.7 替代步骤 5-6，并且绝不调用模型。
   // 7. speech：dialogueIntent.kind != "none" 时 -> speech 请求 -> 校验 -> 模板后备 -> speech.commit。
   //    （agent.decision.deterministic 始终使用 prompts.md §5 的安全模板。）
@@ -275,8 +275,8 @@ async function runTurn(turnId: string): Promise<void> {
 一轮 decision 响应的处理规则：
 
 1. `finishReason` 为 `length` 或 `refusal`：不执行其中任何工具调用，turn 以 `invalid-decision` 结束（不重试本轮）。
-2. 按模型返回的顺序处理工具调用：先执行所有非 `decision_submit` 的调用，其中只有前 `maxToolCallsPerRound` 个真正执行，其余返回错误结果（文本取 `decision.budgetStop`）；达到 `maxToolCallsPerTurn` 或 [压缩与工具视图](compression-and-tool-view.md) 第 12.1 节的预算条件时同样返回该错误结果。
-3. 然后处理 `decision_submit`（若有多个只认第一个，其余返回错误结果）：校验时，本轮刚执行的工具结果中出现的 ID 也算“出现在本次请求中”。校验通过则结束循环；不通过则返回 `invalid_decision` 结果，下一轮再给一次机会。
+2. 按模型返回的顺序处理工具调用：先执行所有非 `decision_submit` 的调用，其中只有前 `maxToolCallsPerRound` 个真正执行，其余返回错误结果（文本取 `decision.budgetStop`）；超过 `maxToolCallsPerTurn` 时抛出 `TurnStopped("budget-exhausted", "tool-call-limit")`，达到 [压缩与工具视图](compression-and-tool-view.md) 第 12.1 节的预算条件时同样返回该错误结果。
+3. 然后处理 `decision_submit`（若有多个只认第一个，其余返回错误结果）：校验时，本轮刚执行的工具结果中出现的 ID 也算“出现在本次请求中”。校验通过则结束循环；不通过则返回 `invalid_decision` 结果，若本轮尚未使用纠偏机会则允许再试一次。
 4. 每个工具调用都配一条结果消息（包括被拒绝的），保证调用与结果一一对应。
 
 turn 的默认预算与失败策略（Agent profile，完整默认值见 [配置](../platform/configuration.md) 第 10.2 节）：
@@ -288,7 +288,9 @@ budgets:
   maxToolCallsPerTurn: 8
   maxToolCallsPerRound: 3
   maxTurnMs: 90000
-  maxReplans: 1
+  maxReplans: 1               # retained in strict budgetSchema (currently unused at runtime)
+  maxTokensPerAgentPerDay: 60000
+  reserveOutputTokens: { decision: 1500, speech: 400, memory-maintenance: 800 }
 readiness:
   requireDurable: true
   requireDerived: true
@@ -297,9 +299,9 @@ readiness:
 failurePolicy: strict         # strict | online-fallback (RunSpec.failurePolicy overrides it)
 ```
 
-所有模型阶段共用 `maxModelCallsPerTurn` 硬上限。发出请求、nudge 后再次询问、重试或重新规划前都检查剩余额度，模型池的重试同样消耗额度。有效决定完成前耗尽预算时，turn 标记 `budget-exhausted`。决定含有对白意图但没有额度生成或重试对白时，走安全模板并记录 `speech-fallback` 与预算原因。
+所有模型阶段共用 `maxModelCallsPerTurn` 硬上限。发出请求、nudge 后再次询问、重试前都检查剩余额度，模型池的重试同样消耗额度。有效决定完成前耗尽预算时，turn 标记 `budget-exhausted`。决定含有对白意图但没有额度生成或重试对白时，走安全模板并记录 `speech-fallback` 与预算原因。
 
-`budget-exhausted` 类终态用 terminal_reason 区分成因：`round-limit`（决策轮次用完仍无有效提交）、`call-budget`（额度账本拒绝）、`context-window`（输入超出模型窗口）。模型池因截止余量不足无法接纳请求时，决策层保留 `model-failed` 类别并以 `deadline-backpressure` 标注；租约已超过截止时间时终态为 `budget-exhausted`、原因 `turn-deadline`，两者分别记录。turn 因接管、暂停或运行时停止进入取消语义时，在途对白生成按取消中止，不生成安全模板 fallback，也不留下 `generation-failed` 记录。
+`budget-exhausted` 类终态用 `terminal_reason` 区分成因：`round-limit`（决策轮次用完仍无有效提交）、`call-budget`（额度账本拒绝）、`tool-call-limit`（工具调用超限）、`turn-deadline`（租约超时或超过 `deadlineMs`）。上下文窗口或单轮构建超限时记录 `status = "failed"`、`terminal_reason = "over-budget"`。模型池因截止余量不足无法接纳请求时，决策层保留 `model-failed` 类别并以 `deadline-backpressure` 标注。turn 在已有对白提交或已受理工具命令后被中断时，租约清理把终态记为 `status = "failed"`，原因分别为 `interrupted-after-speech` 与 `interrupted-after-command`；其余取消情况（接管、暂停、运行时停止）在途对白按取消中止，不生成安全模板 fallback。
 
 | 失败点 | strict（实验默认） | online-fallback（在线世界默认） |
 |---|---|---|
@@ -330,7 +332,7 @@ M2 的重要度触发整理的 `due_tick` 为触发时 tick + 1（[记忆](memor
 
 ### 13.6 真人席位
 
-控制者为 human 的身份不会被调度：它的 trigger 继续累积，在控制台席位视图里作为待处理事项显示。真人通过 `/api/v1/console/ops/seats/{agentId}/commands` 提交与 Agent 相同的命令（以该 agentId 身份、带当前 `controllerEpoch`），用 `seat.say` 命令直接发送人写的消息（见 [领域模型](../architecture/domain-model.md) 第 5 节）。交还给 agent 时 epoch 再加一，积累的 trigger 按 13.2 节正常调度；交接摘要只由该身份合法获知的观察组成，不写入操作员笔记。
+控制者为 human 的身份不会被调度：它的 trigger 继续累积，在控制台席位视图里作为待处理事项显示。真人目标通过 `/api/v1/console/ops/seats/{agentId}/commands`（目标路由，HTTP 层尚未注册）提交与 Agent 相同的命令（以该 agentId 身份、带当前 `controllerEpoch`），用 `seat.say` 命令直接发送人写的消息（见 [领域模型](../architecture/domain-model.md) 第 5 节）。交还给 agent 时 epoch 再加一，积累的 trigger 按 13.2 节正常调度；交接摘要只由该身份合法获知的观察组成，不写入操作员笔记。
 
 ### 13.7 确定性决策（`agent.decision.deterministic`）
 
@@ -345,7 +347,7 @@ willingness(kind, requester) = 1
     + jitter                                   # rngFor(runSeed, "jitter", agentId, String(worldTick), String(agentTurnIndex))，均匀分布 [−0.25, 0.25]
 ```
 
-拒绝理由的选择（willingness < 1.5 时）：requester 的关系摘要 `causes` 含 `breach` → `past-breach`；否则 trust ≤ −3 → `low-trust`；否则 → `need-guarantee`。
+拒绝理由的选择（willingness < 1.5 时）：requester 的关系摘要 `causes` 含 `breach` → `past-breach`；否则 trust ≤ −3 → `low-trust`；否则 → `need-guarantee`。资源或权限不足（`!covered`）时采用 `lack-resources`；工具命令未被受理（`commandStatus !== "accepted"`）时退回 `stance: "defer"`、`dialogueIntent.kind = "refuse"`、`reasonCode = "busy"`。
 
 任务类型的识别：按 `lexicons.taskKeywords` 的顺序找第一个出现在文本里的词（具体任务词排在“派人/帮忙”之类的泛称前面）；命中泛称（`generic`）时取该 Agent `skills` 的第一项，没有技能则视为没有任务请求。“我需要你派人护送隘口那条路，能帮忙吗？”因此识别为 escort。
 

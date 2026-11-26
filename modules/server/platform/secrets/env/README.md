@@ -5,7 +5,7 @@
 ## 配置
 
 ```yaml
-allowlist: [OPENAI_API_KEY, ANTHROPIC_API_KEY]
+allowlist: [NPC_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY]
 ```
 
 ## 行为
@@ -16,4 +16,4 @@ allowlist: [OPENAI_API_KEY, ANTHROPIC_API_KEY]
 ## 限制
 
 - 只支持环境变量；文件/密钥库适配器后续实现。
-- 当前没有 agent/model 适配器消费该端口。
+- 当前由 `agent.model-pool.shared` 消费该端口解析模型连接的 `credentialRef`。

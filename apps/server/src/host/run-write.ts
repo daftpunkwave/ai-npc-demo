@@ -45,7 +45,6 @@ export interface RunWriteInput {
   readonly repoRoot: string;
 }
 
-/** 把任意异常收敛成一条预检失败原因；不吞掉原始信息。 */
 /**
  * 转成可存入 JSON 列的值：经 JSON 往返剔除 `undefined` 属性。
  * 存储层拒绝带 undefined 的对象，而可选字段在运行期确实可能是 undefined。
@@ -54,6 +53,7 @@ function canonicalJsonValue(value: unknown): Json {
   return JSON.parse(JSON.stringify(value)) as Json;
 }
 
+/** 把任意异常收敛成一条预检失败原因；不吞掉原始信息。 */
 function failureOf(code: string, path: string, error: unknown): RunValidationFailure {
   if (error instanceof DomainError) return { code, path, message: error.safeMessage };
   return { code, path, message: error instanceof Error ? error.message : String(error) };

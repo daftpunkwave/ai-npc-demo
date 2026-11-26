@@ -24,5 +24,5 @@
 ## 参数与限制
 
 - 过期默认 24 tick，显式 `expiresInTicks` 允许 1–168；超过 168 返回 `deadline-out-of-range`，不做静默钳制。
-- `delegate` 条款的 `stockpileId` 目前要求非空：世界委托聚合的 `stockpileId` 仍为非空字符串；规则文档允许 null，这是已报告的实现/规范冲突，待后续步骤统一。
+- `delegate` 条款的 `stockpileId` 允许 `null`（仅授予队伍动用委托，不授予库存动用权）。
 - 本模块只读取任务完成事实；不直接修改行动、地图或世界聚合，效果通过端口提交。

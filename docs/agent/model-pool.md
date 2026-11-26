@@ -1,6 +1,6 @@
 # 集中模型池与 Agent 挂载
 
-> 状态：部分实现。测试装配使用集中挂载、共享队列、尝试级预算账本和本地模型夹具。本文给出路由、排队和预算契约。
+> 状态：已实现。标准与测试装配均已接入集中挂载、共享队列、尝试级预算账本以及三种模型传输；`evaluator` 运行与 `compression`/`embedding` 挂载尚未使用。本文给出路由、排队和预算契约。
 
 ## 1. 核心关系
 
@@ -61,13 +61,9 @@ mounts:
   - modelId: npc-chat
     agentIds: [npc-yinuo]
     purposes: [decision, speech, memory-maintenance]
-evaluator:
-  enabled: false
-  principalId: evaluator-judge
-  modelId: npc-chat
 ~~~
 
-`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`。Claude 布局沿用上例的 evaluator 配置。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
+`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`（`evaluator` 独立评估主体目前尚未写入仓库预设布局文件，开启 `evaluator.enabled: true` 会在运行启动预检时被拒绝）。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
 
 ## 5. 解析与 run 冻结
 
@@ -75,7 +71,7 @@ Agent profile 的装配顺序是平台配置、场景 profile、可复用 Agent 
 
 1. 校验 connections/models 的引用、字段、单位、有限上限与 adapter 可用性。
 2. 将 mounts 展开为唯一映射，由 `(agentId, purpose)` 解析出唯一 `modelId`；未知身份或重复键立即报错。
-3. 由激活 roster、策略能力与运行模式确定 required purposes；缺少挂载报错，不自动套默认模型。
+3. 由激活 roster、策略能力与运行模式确定 required purposes（当前 `agentRequiredModelPurposes` 在运行启动预检阶段强制校验 `decision` 与 `speech` 挂载；M2/M3 所需的 `memory-maintenance` 在整理任务实际调用模型时解析，缺失时报错）；缺少挂载报错，不自动套默认模型。
 4. 从 modelId 解析 connection、externalModel、参数、tokenizer 与能力证据，检查与工具/输出协议兼容。
 5. 生成去密钥的路由表、请求能力、预算、显式 fallback、版本与 hash，并随 run 持久化。
 
@@ -186,7 +182,7 @@ interface ScopedModelPort {             // runtime、memory 与 speech 收到的
 ### 12.3 排队、限流与重试
 
 - 全池一个 admission 队列，按 `(purpose 份额, 等待时间)` 出队：decision 与 speech 共享 70% 的份额，memory-maintenance 至少 20%，evaluation 至多 10%；同一 purpose 内按 Agent 轮转。
-- 出队时检查：该 model 的 `maxConcurrent`；`rateLimitKey` 对应账号在最近 60 秒内的请求数与 token 数（估算输入 + 挂载的用途上限，即请求可能产生的最大输出）不超过 `requestsPerMinute` 与 `tokensPerMinute`；`fence()` 仍为 true；距 `deadlineMs` 至少还剩 `requestTimeoutMs` 的一半。不满足时继续排队，等到 deadline 就以 `backpressure` 失败。
+- 出队时检查：该 model 的 `maxConcurrent`；`rateLimitKey` 对应账号在最近 60 秒内的请求数与 token 数（估算输入 + 挂载的用途上限，即请求可能产生的最大输出）不超过 `requestsPerMinute` 与 `tokensPerMinute`（单次请求自身估算 token 超过 `tokensPerMinute` 时立即以 `backpressure` 拒绝，不再排队等待）；`fence()` 仍为 true；距 `deadlineMs` 至少还剩 `requestTimeoutMs` 的一半。不满足时继续排队，等到 deadline 就以 `backpressure` 失败。
 - 队列长度上限 200；超过时新请求立即以 `backpressure` 失败。上述余量判据在准入筛选、发送前检查与重试判断三处共用同一实现，不各自重算超时的一半。
 - 重试：只对可重试错误（`rate-limited`、`timeout`、`network`、`server`）重试，最多 2 次，等待 1 秒、4 秒，若错误带 `retryAfterMs` 且更长则用它，单次等待上限 30 秒。每次重试都是新的 attempt，之前的 attempt 标为 superseded。不可重试错误与 `protocol` 错误（refusal、JSON 不合法）不在模型池内重试，交给调用方按失败策略处理。
 - 收到响应后再检查一次 `fence()`：为 false 时响应只归档、标 superseded，不返回给调用方使用。

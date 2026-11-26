@@ -1,6 +1,6 @@
 # Prompt 与模型输入输出规格
 
-> 状态：部分实现。测试装配使用 `prompts/zh-CN.yaml` 分别构建决策和对白请求，校验输出并冻结模板版本。上下文分段与预算见 [上下文](context.md)，线协议见 [模型传输](model-transport.md)，决策与对白的边界见 [运行时](runtime.md) 第 7 节。
+> 状态：已实现。标准与测试装配使用 `prompts/zh-CN.yaml` 分别构建决策、对白与探针请求，校验输出并冻结模板版本（M2/M3 记忆整理提示词由记忆模块内置）。上下文分段与预算见 [上下文](context.md)，线协议见 [模型传输](model-transport.md)，决策与对白的边界见 [运行时](runtime.md) 第 7 节。
 
 ## 1. 总则
 
@@ -15,7 +15,7 @@
 ### 2.1 system 模板
 
 ```text
-你是《炉边议会》中的{{kindLabel}}“{{name}}”（ID：{{agentId}}）。你只能以这个身份行动和说话。
+你是《炉边议会》中的{{kindLabel}}「{{name}}」（ID：{{agentId}}）。你只能以这个身份行动和说话。
 
 【规则】
 1. 你只知道下面列出的信息。没有列出的事你不知道；不要编造人物、地点、数量或已经发生的事。
@@ -65,13 +65,13 @@
 
 各段的渲染规则：
 
-| 段 | 每行格式 | 例子 |
+| 段 | 每行格式（含当前实现说明） | 例子 |
 |---|---|---|
-| 局势 | `- <名称>：<值或等级>（截至第 d 天 h 时）`；之后列出持有的证据 `- [<evidenceId>] 证据《标题》：正文` 与秘密 `- [<secretId>] 只有你知道（不可外传）：正文` | `- 中继稳定度：28，降级（截至第 4 天 0 时）` |
-| 事务 | `- [<ID>] <类型>：<摘要>；状态：<状态>` | `- [agr-…] 协议（与党魁）：党魁在 tick 36 前从灰港运 8 点供给到隘口；状态：生效中，未履约` |
-| 记忆 | `- [<memoryId>] <摘要>（<证据地位>·第 d 天）` | `- [mem-…] 党魁答应在第 2 天结束前送 8 点供给，但没有送到。（确有其事·第 2 天）` |
+| 局势 | 持有证据 `- [<evidenceId>] 证据《标题》：正文` 与秘密 `- [<secretId>] 只有你知道（不可外传）：正文`（指标/道路/水闸行待后续扩展） | `- [ev-…] 证据《…》：…` |
+| 事务 | 待回复任务邀请 `- [<ID>] <类型>：<摘要>；状态：<状态>`（委托、进行中任务与协议行待后续扩展） | `- [inv-…] …` |
+| 记忆 | `- [<memoryId>] <摘要>（<epistemic>, tick <validFromTick>）`（关系行按 `- <targetId>: trust=..., affinity=..., wariness=...` 格式输出） | `- [mem-…] 党魁答应在第 2 天结束前送 8 点供给。（verified-event, tick 24）` |
 | 对话 | `- [<dialogueId>] <说话人>：<原文>` | `- [dlg-…] 党魁：我需要你派人护送隘口那条路。` |
-| 本次输入 | `- [<observationId>] <渠道与来源>：<内容>` | `- [obs-…] 党魁当面对你说：“我需要你派人护送隘口那条路，能帮忙吗？”` |
+| 本次输入 | `- [<observationId>] <内容>` | `- [obs-…] 党魁说：“我需要你派人护送隘口那条路，能帮忙吗？”` |
 
 证据地位标签：`verified-event` 为“确有其事”，`reported-claim` 为“有人声称”，`inference` 为“我的看法”。观察的获知方式标签：`witnessed` 为“亲眼所见”，`reported` 为“听说（来源：X）”，`inferred` 为“推断”。
 
@@ -104,7 +104,7 @@ const DecisionSubmit = z.object({
 });
 ```
 
-工具描述取 `toolDescriptions.decision.submit`（“结束本轮并提交你的决定。对外说话只填意图，不写台词。”）。`decisionNote` 的字段说明写作“一句话写明你的决定依据了哪些已知事实（引用 ID 即可），研究员可见，不会说给任何角色听”；不要要求模型复述思考过程。
+工具描述取 `toolDescriptions.decision.submit`（“结束本轮并提交你的决定。对外说话只填意图，不写台词。”）。`decisionNote` 在运行时以 `z.string().max(120)` 校验，当前 schema 未附加额外 `.describe()` 文案；不要要求模型复述思考过程。
 
 宿主校验（全部通过才算有效决定）：
 
@@ -128,7 +128,7 @@ const DecisionSubmit = z.object({
 | `day`、`hour`、`worldTick` | 冻结 frontier 的 worldTick |
 | `locationLine` | 角色：“你在{节点名}。”（受伤时再加“你有伤在身。”）；战略 Agent：“你在派系驻地处理事务，不在地图上。” |
 | `worldViewLines`、`affairsLines`、`memoryLines`、`historyLines`、`inputLines` | 各段按上表渲染；`labels.epistemic`、`labels.channels` 提供“确有其事/有人声称/我的看法”“亲眼所见/听说”等标签 |
-| `audienceNames`、`audienceLines` | 受众主体的 `name`（玩家为“党魁”）；`audienceLines` 每人一行：名字、身份、与说话者的关系等级 |
+| `audienceNames`、`audienceLines` | 受众主体的 `name`（玩家为“党魁”）；当前实现每行格式为 `- <name>（<principalId>）` |
 | `intentLabel`、`toneLabel`、`reasonLabel` | `labels.intents.<kind>`、`labels.tones.<tone>`、`labels.reasons.<reasonCode>` |
 | `subjectLine` | `subjectRef` 指向的协议、任务、邀请或证据的一句话摘要（协议用 `termTemplates` 渲染）；为 null 时写“无” |
 | `maxChars` | speech 输出的字数上限：profile 的 `speech.maxChars`（[配置](../platform/configuration.md) 第 10.2 节），默认 80 |
@@ -143,7 +143,7 @@ speech 只能使用“对受众可披露”的资料。每条资料的 `releaseP
 | `public` | public 与 node 受众的事件、公开广播、传闻、静态内容 | 总是可以 |
 | `parties:<id1,id2,...>` | 定向消息、对话、协议、任务邀请等 principals 受众的事件 | A 中每个主体都在名单内 |
 | `faction:<factionId>` | faction 受众的事件（库存预留、派系简报） | A 中每个主体都属于该派系 |
-| `holders:<evidenceId>` | 持有证据的知识授权 | A 中每个主体都已持有该证据的授权，或本 turn 已经成功向 A 执行了 `information.share` |
+| `holders:<evidenceId>` | 持有证据的知识授权 | A 中每个主体在当前 turn 冻结的 `world.knowledge` 快照中均已持有该证据授权（同 turn 内 `information.share` 的新增授权在下一 turn 生效） |
 | `private:<secretId>` | 秘密 | 永远不可以 |
 
 由多个来源派生的记忆，取全部来源中最严格的一个（名单取交集，遇到 private 即为 private）。receipt 的可披露性跟随它所引用的事件。
@@ -157,11 +157,11 @@ system 模板：
 ```text
 你在为“{{name}}”写一句要对 {{audienceNames}} 说的话。
 规则：
-1. 只能使用【可披露事实】里的信息；不要提到未列出的人物、地点、数量、计划或秘密。
+1. 只能使用【可以说的事实】里的信息；不要提到未列出的人物、地点、数量、计划或秘密。
 2. 意图：{{intentLabel}}；语气：{{toneLabel}}；理由：{{reasonLabel}}。
 3. 涉及行动时以【回执】为准：被拒绝的不要说成做了；已受理但还在进行的，说成“已安排”或“在路上”，不能说成已完成。
 4. 符合这种说话风格：{{speechStyle}}。最多 {{maxChars}} 个字，只说一段话，不加引号和说话人前缀。
-5. 输出 JSON：{"utterance": "...", "citedRefs": ["..."]}，citedRefs 只能填写【可披露事实】中的 ID。
+5. 输出 JSON：{"utterance": "...", "citedRefs": ["..."]}，citedRefs 只能填写【可以说的事实】中的 ID。
 ```
 
 user 消息：
@@ -170,7 +170,7 @@ user 消息：
 【对象】{{audienceLines}}
 【最近的公开对话】
 {{publicHistoryLines}}
-【可披露事实】
+【可以说的事实】
 {{disclosableFactLines}}
 【回执】
 {{receiptLines}}
@@ -179,7 +179,7 @@ user 消息：
 
 - `publicHistoryLines`：只取当前会话里受众全部在场的发言，最多 6 条。
 - `disclosableFactLines`：`factRefs` 与 `subjectRef` 中通过第 3 节判定的资料；没通过的条目不写入，并在 artifact 的剔除报告中记录原因。
-- `receiptLines`：本 turn 内工具产生的 receipt，写成“已受理，进行中，预计 tick 42 完成”或“被拒绝：路线不可用”。
+- `receiptLines`：每行格式为 `- [<receiptId>]，commandStatus=...，taskStatus=...：<detail>`（其中 `detail` 按结果映射为“命令被拒绝。”、“已安排，预计 tick ... 出发。”或“命令已受理。”）。
 
 输出 schema：
 
@@ -193,9 +193,9 @@ const SpeechOutput = z.object({
 宿主校验（按顺序）：
 
 1. JSON 合法且通过 schema；`utterance` 的字符数不超过 `maxChars`（默认 80）。
-2. `citedRefs` 都在【可披露事实】里。
+2. `citedRefs` 都在【可以说的事实】里。
 3. 泄密检查：对说话者持有、而任一受众不持有的每个秘密，`utterance` 中不得出现该秘密的任一 `leakTerms`（见 [内容包](../game/content-pack.md) 第 7 节）。
-4. 状态检查：本 turn 有任务处于 pending/running 时，`utterance` 不得包含 `lexicons.completionClaims` 中的词；有被拒绝的命令时，不得包含 `lexicons.progressClaims` 中的词。这是尽力而为的关键词检查，不代表语义上没有误导。
+4. 状态检查：当本 turn 没有已完成的任务回执（`taskStatus !== "completed"`）时，`utterance` 不得包含 `lexicons.completionClaims` 中的词；有被拒绝的命令时，不得包含 `lexicons.progressClaims` 中的词。这是尽力而为的关键词检查，不代表语义上没有误导。
 
 任一项失败且本轮仍有模型额度时，最多重试一次。额度不足或重试仍失败时，使用安全模板并记录 `speech-fallback` 与原因。通过校验的对白写成 `speech` artifact，再由宿主以 `speech.commit` 提交（`approvedSpeechArtifactRef` 指向它）。探针对白只写入 `probe_results`。
 
@@ -259,7 +259,7 @@ user:
 
 输出 schema：`beliefOps` 最多 5 条，`currentConcerns` 为 1–80 字或 null（null 表示保持规则兜底的内容），`intents` 最多 2 条。
 
-两种整理的输出都由记忆模块校验：证据 ID 存在、属于该 Agent 且在本次整理的 base revision 中可见；`statement` 中出现的角色名必须是存在的角色；`intents.targetId` 必须是存在的主体。校验不通过的条目丢弃，其余条目照常提交，丢弃原因写进 maintenance 记录。
+两种整理的输出都由记忆模块校验：证据 ID 存在、属于该 Agent 且在本次整理的 base revision 中可见；`statement` 中出现的主体 ID（`(player|npc|human|species)-[a-z0-9-]+`）与 `intents.targetId` 必须是存在的主体（当前 M2/M3 的整理提示词在记忆模块源码中构造，尚未迁入 `prompts/zh-CN.yaml`）。校验不通过的条目丢弃，其余条目照常提交，丢弃原因写进 maintenance 记录。
 
 ## 7. 评估探针
 

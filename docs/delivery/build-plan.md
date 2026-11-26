@@ -46,7 +46,7 @@
 | S22 | — | `config/presets/*.yaml` | console：scenario-editor、audit |
 | S24 | — | 定稿已有的剧情替换装配，新增 HUD 和控制台两份替换装配 | client 的 `client.hud.compact`、console 的 `console.observability.lite` 只出现在各自替换装配里 |
 
-`pnpm check:assets` 随资产包入仓加入 `check`，不占构建步骤；它校验 `assets/manifest.json` 与内容包的节点、派系覆盖。
+`pnpm check:assets` 随资产包入仓加入 `check`，不占构建步骤；它校验 `assets/manifest.json` 与内容包的节点、派系覆盖。另有 `pnpm measure:model-evidence` 用于在临时目录实测多轮模型档案落盘规模与恢复查询计划（不进入 `pnpm check`）。当前 S22–S25 中的 `config/presets/*.yaml`、控制台运营/审计页面与 S24 替换装配尚未创建，完整进度见 [IMPLEMENTATION-STATUS.md](../IMPLEMENTATION-STATUS.md)。
 
 装配没有 `agentSlots` 时，服务端宿主不启动 Agent 运行时，也不解析名册里的 `profileRef`/`toolsetRef` 与 RunSpec 的 `modelLayoutRef`（S09–S15 的在线世界没有 NPC 行动）。有 `agentSlots` 时解析 profile/toolset；仅绑定 `agent.model-pool` 时才解析、校验 RunSpec 的 `modelLayoutRef`（S16 虽有 `agentSlots`，仍不读取尚不存在的模型布局文件）。有 `agentSlots` 时，`agent.scheduling` 与 `agent.tools` 成为必需能力；`agentSlots` 中各模块声明的 `requires`（例如 `agent.decision.model` 需要 `agent.model-pool`）也纳入能力闭包检查。
 

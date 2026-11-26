@@ -475,9 +475,7 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
       return report === null ? null : toReportResponse(report);
     },
     experiment(experimentId) {
-      // 实验与 run 的关联目前没有持久化来源：RunSpec 没有实验标识字段，runs 表也没有关联列。
-      // 因此这里不按 seed 文本猜测归组——猜错会把不同实验合并并返回错误标识。
-      // 关联字段补齐后在这里改为读显式字段（见跟踪该工作的 Issue）。
+      // 仅按 RunSpec 显式写入的 `experimentId` 归组，不按 seed 文本猜测。
       const matched = runRows().filter((row) => experimentIdOf(row) === experimentId);
       if (matched.length === 0) return null;
       const runIds = matched

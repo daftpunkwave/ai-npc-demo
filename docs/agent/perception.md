@@ -155,8 +155,8 @@ perception:
 
 1. 宿主按 [领域模型](../architecture/domain-model.md) 第 7 节计算有资格的 Agent 集合（硬 ACL）。玩家不经过感知模块，玩家投影直接按 ACL 构建。
 2. 对每个有资格的 Agent，模块按 11.2 节决定渠道、获知方式、置信度与细度，按 11.3 节决定 `knownAtTick`。
-3. `knownAtTick ≤ 当前 tick` 的观察直接写入 `observations`（分配该 Agent 的下一个 `observationSeq`）；更晚的写成 `perception.deliver` job，到期时再写入。
-4. 同一 tick 内写给同一 Agent 的观察超过 `maxObservationsPerBatch` 时，按优先级保留（自身 > 定向/当事 > 在场 > 派系简报 > 公开通报），其余合并成一条聚合观察（“另有 N 条公开通报：类型与数量”），不含具体内容。
+3. `knownAtTick ≤ event.worldTick` 的观察直接写入 `observations`（分配该 Agent 的下一个 `observationSeq`）；更晚的观察暂存于 `perception_state.state_json.pending` 队列，由消费者在后续 tick 推进时 `flush` 写入（当前不额外调度 `perception.deliver` job）。
+4. 同一 tick 内的 `maxObservationsPerBatch` 批量聚合、`visibleGraphDepth` 邻接摘要与 `retainUncertainCues` 当前在配置 schema 中保留，实现层暂未启用批量合并与邻接扩散。
 5. 推进该 Agent 的 `scanned_through_seq`；没有资格的事件也会推进扫描游标，但不生成任何观察。
 6. 事务提交后，通知记忆摄入与调度器（11.5 节）。
 
@@ -182,7 +182,7 @@ perception:
 
 ### 11.3 获知时间与传播权限
 
-- `occurredAtTick` = 事件的 `worldTick`；`knownAtTick = max(occurredAtTick, payload.deliveries 中本主体的 deliverAtTick（非通信事件取 occurredAtTick）) + extraDelayTicks[该行的键]`（键为 — 时加 0）；`sensedAtTick` 在 local 策略下等于 `knownAtTick`。
+- `occurredAtTick` = 事件的 `worldTick`；`knownAtTick = max(rendered.knownAtTick, nowTick, event.worldTick) + extraDelayTicks[该行的键]`（键为 — 时加 0，其中 `rendered.knownAtTick` 优先取 `payload.deliveries` 中本主体的 `deliverAtTick`）；`sensedAtTick` 在 local 策略下等于 `knownAtTick`。
 - `releasePolicyId` 按 [prompts](prompts.md) 第 3 节赋值：public 与 node 受众为 `public`；principals 受众为 `parties:<排序后的名单>`；faction 受众为 `faction:<factionId>`；证据为 `holders:<evidenceId>`。
 - `ProbeAsked` 特殊使用 `parties:<排序去重后的 askedBy, agentId>`，而不是仅 agentId；只允许回答提问者，不扩展实际事件 audience。
 - 通信事件没有本主体 delivery 时不生成观察；混合受众定向发送的原子拒绝、广播本地子集和逐收件者冻结延迟遵循规则第 9 节，不以最慢接收者统一延迟。
@@ -267,9 +267,9 @@ interface ObservationContent {
 | `ScenarioCompensationApplied` | `剧情卡状态已更新。` |
 | `ScenarioOverrideApplied` | `剧情卡状态已更新。` |
 
-序章程序案交付时，`MotionDecided` 增加观察模板“程序案表决结束，结果已记入议事录。”按公开通报渠道投递，观察只取已经提交的逐席票、结果和议程顺序。参见 [domain-model.md — 事件目录](../architecture/domain-model.md#6-事件目录)。
+序章程序案交付时，`MotionDecided` 已列入 `officialPublicTypes` 公开通报清单，`prompts/zh-CN.yaml` 尚未补充该事件的专用摘要模板（当前按默认通用模板渲染为“事件状态已更新。”）。参见 [domain-model.md — 事件目录](../architecture/domain-model.md#6-事件目录)。
 
-`{termText}` 用 `termTemplates.<kind>` 渲染单个条款，`{termsText}` 是全部条款的渲染结果用“；”连接。各条款模板：
+`{termText}` 当前实现由 `termsText()` 渲染为 `<kind>（<obligorId>）`，`AgreementTermFulfilled`/`AgreementBreached` 中的 `{termText}` 暂取固定占位词 `"条款"`，`{groupName}`/`{roadName}` 暂取聚合 ID；`summary` 细度下 `summaryZh` 统一渲染为 `${eventType} · ${nodeName} · ${name}`。以下是 `termTemplates.<kind>` 契约模板（`{termsText}` 为全部条款以“；”连接）：
 
 | kind | 模板 |
 |---|---|
@@ -302,10 +302,10 @@ interface ObservationContent {
 | 收到定向消息、证据 | `message` |
 | 收到任务邀请 | `task-invite` |
 | 收到协议提案或还价 | `agreement-proposal` |
-| 自己参与的任务失败、自己受伤、与自己派系相关的危机 | `alert` |
+| 自己参与的任务失败、自己受伤、与自己派系相关的危机（当前实现中观察到的 `TaskFailed`、`CharacterInjured`、`RelayDown`、`OrchardCrisis`、`MigrationCrisis` 均会触发，尚未按派系细分危机） | `alert` |
 | `AgentsSummoned` 点名自己 | `scenario` |
 | `ProbeAsked` 问自己 | `probe` |
 
 ### 11.6 状态
 
-`perception_state.state_json` 保存：已投递去重键集合（`eventId:agentId`）、聚合桶、最后已知视图（指标、水闸分配、道路状态、库存等级，各带 `asOfTick`）。最后已知视图就是 decision 上下文“当前局势”段的数据来源（[领域模型](../architecture/domain-model.md) 第 8.2 节）。
+`perception_state.state_json` 当前保存待投递延迟队列 `pending` 与 `lastKnown` 字段（事件去重由 `consumer_inbox` 承担，`lastKnown` 当前在感知消费者中保持原样透传、尚未写入刷新后的指标快照，决策上下文中的“当前局势”由观察与记忆材料装配）。

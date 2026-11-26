@@ -100,7 +100,7 @@
 
 ## 8. 目标请求 API 与通用规则
 
-接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，控制台运营的时钟、存档与恢复在第 5.3 节，席位与运行申请也在第 5.3 节，剧情卡在第 5.4 节。
+接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，控制台运营的时钟、单步、存档与恢复在第 5.3 节；玩家 `/presets` 与 `/run-requests`、控制台三势力席位（`/ops/*`）与剧情卡（`/scenarios/*`）为目标接口，当前尚未注册。
 
 玩家入口与控制台入口都在服务端同一端口；路由前缀区分权限域，不能因为控制台与玩家同源就复用玩家 scope。相同幂等键和 payload 返回原 receipt；相同键不同 payload 返回冲突；可重试失败不锁定幂等键，规则见第 2 节。accepted 只表示已接纳，不等于异步任务 completed。服务端决定 principal/scope，不能信任模型或客户端自报授权身份。
 
@@ -133,7 +133,7 @@
 
 | 时机 | 服务端行为 |
 |---|---|
-| 第一次启动（数据库里没有 `world_aliases('online')`） | 创建 world（内容包 `earth-2964-v1`）、一个 `kind = online` 的分支（时钟 `paused`、`worldTick = 0`）、一个 `mode = live` 的 run，其 RunSpec 取 `config/runs/online-default.yaml`，并用环境变量 `NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 覆盖其中的 `moduleAssemblyRef`、`modelLayoutRef`、`rosterRef`；`seed` 在此时随机生成并写入 RunSpec 与 manifest；`world_aliases('online')` 指向该分支 |
+| 第一次启动（数据库里没有 `world_aliases('online')`） | 创建 world（内容包 `earth-2964-v1`）、一个 `kind = online` 的分支（时钟 `paused`、`worldTick = 0`）、一个 `mode = live` 的 run，其 RunSpec 默认取 `config/runs/online-default.yaml`（装配选用夹具模型传输时自动取 `config/runs/online-model-test.yaml`），并用环境变量 `NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 覆盖其中的 `moduleAssemblyRef`、`modelLayoutRef`、`rosterRef`；`seed` 在此时随机生成并写入 RunSpec 与 manifest；`world_aliases('online')` 指向该分支 |
 | 之后每次启动 | 沿用在线别名指向的分支与 run；时钟一律置为 `paused`（离线不推进），由玩家或运营手动继续 |
 | `campaign.start` 被接受 | 在线分支写入 campaign 与初态；按名册激活 Agent（`agent_activations` 置为 active，计入 15 的配额，配额不足时命令被拒绝，原因码 `budget-exhausted`） |
 | 玩家“重新开局” | `POST /api/v1/campaign/reset`：先存一个快照，再创建新的空在线分支与新的 live run，旧分支设为 archived；玩家随后重新选择开局 |

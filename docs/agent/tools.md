@@ -232,16 +232,16 @@ const ToolTerm = z.object({                   // Term 联合类型的平铺版�
 
 | toolId | 输入 | 执行 | 入模字段 `viewFields` | 给模型的说明（`toolDescriptions`） |
 |---|---|---|---|---|
-| `world.inspect` | `{ nodeId: string \| null }` | 读取冻结 frontier 时的 `AgentWorldView`：`nodeId` 为 null 时返回概况，否则返回该节点的已知情况 | `asOfTick`、`meters`、`allocation`、`roads`（列表）、`characters`（列表）、`stockpileLevels` | 查看你所知道的局势；可指定一个地点。只返回你已知的信息，可能已经过时。 |
+| `world.inspect` | `{ nodeId: string \| null }` | 从本 turn 冻结的 `observations` 还原最后已知概况：`nodeId` 为 null 时返回概况，否则返回该节点情况（`stockpileLevels` 当前返回 `[]`） | `asOfTick`、`meters`、`allocation`、`roads`（列表）、`characters`（列表）、`stockpileLevels` | 查看你所知道的局势；可指定一个地点。只返回你已知的信息，可能已经过时。 |
 | `route.inspect` | `{ fromNodeId, toNodeId, teamId: string \| null }` | 用该 Agent **已知**的道路状态与本派系通行许可求路径，不读实时真值 | `path`、`travelTicks`、`risks`、`blockedRoads` | 按你所知的道路情况查询两地之间的路线与风险。 |
-| `task.inspect` | `{ taskId: string \| null }` | 自己派遣、参与或受邀的任务；null 时列出全部 | `taskId`、`taskType`、`commandStatus`、`taskStatus`、`departTick`、`nominalCompletionTick`、`participants` | 查看你派遣、参与或受邀的任务状态。 |
+| `task.inspect` | `{ taskId: string \| null }` | 从冻结观察读取指定 `taskId` 的可见任务摘要（当前传入 `null` 会返回 `not-found`，且 `commandStatus` 为 `null`、`participants` 省略） | `taskId`、`taskType`、`commandStatus`、`taskStatus`、`departTick`、`nominalCompletionTick`、`participants` | 查看你派遣、参与或受邀的任务状态。 |
 | `conversation.inspect` | `{ conversationId: string \| null, limit: number }` | 受众包含自己的发言，条数不超过 profile 的 `historyTurns`（因此 M0 的 `baseline-current` 返回空列表） | `lines`（列表） | 查看你参与的对话里最近的发言。 |
 | `operation.inspect` | `{ operationId }` | 查询本身份操作的 receipt | `receipt`、`taskStatus` | 查询你本轮发出的某个操作是否已被受理。 |
 | `message.send` | `{ to: string[], intent: { kind, tone, reasonCode, subjectRef: string \| null, factRefs: string[] } }` | 先走对白流程生成并校验正文，再提交 `speech.commit`（channel message；`to` 为 `["public"]` 时为 broadcast，需要 broadcast 权限） | envelope + `messageId`、`deliverAtTick` | 给某人发一条消息。只描述想表达的意图和依据，正文由系统生成。 |
 | `information.share` | `{ evidenceId, audience: string[] }` | 命令 `information.share` | envelope + `shareId`、`deliverAtTick` | 把你持有的一条证据交给指定对象。 |
-| `agreement.propose` | `{ parties: string[], terms: ToolTerm[], expiresInTicks?: number }`（默认 24，范围 1–168） | 命令 `agreement.propose` | envelope + `agreementId` | 提出一份协议。你提出即视为你已同意，其他当事人接受后生效。 |
+| `agreement.propose` | `{ parties: string[], terms: ToolTerm[], expiresInTicks: number \| null }`（null 时默认 24，范围 1–168） | 命令 `agreement.propose` | envelope + `agreementId` | 提出一份协议。你提出即视为你已同意，其他当事人接受后生效。 |
 | `agreement.respond` | `{ agreementId, response: "accept" \| "reject" \| "counter", counterTerms: ToolTerm[] \| null }` | 命令 `agreement.respond` | envelope + `agreementStatus` | 接受、拒绝或还价一份发给你的协议提案。 |
-| `asset.dispatch` | `{ taskType, teamId, invitees: string[], params: DispatchParams, departAfterTicks: number \| null }` | 命令 `task.dispatch` | envelope + `taskId`、`departTick` | 派遣你有权调动的队伍执行运输、护送、救援、修复或侦察，可以邀请角色同行。 |
+| `asset.dispatch` | `{ taskType, teamId, invitees: string[], departAfterTicks: number \| null, ...DispatchParams }`（工具 schema 为平铺字段，网关转成命令 `payload.params`） | 命令 `task.dispatch` | envelope + `taskId`、`departTick` | 派遣你有权调动的队伍执行运输、护送、救援、修复或侦察，可以邀请角色同行。 |
 | `task.respond` | `{ taskId, response: "accept" \| "decline", reasonCode }` | 命令 `task.respond` | envelope | 回复一项任务邀请：参加或拒绝，并说明理由类别。 |
 | `task.cancel` | `{ taskId }` | 命令 `task.cancel` | envelope | 撤销一项由你派遣的任务。 |
 | `policy.set` | `{ key, value }` | 命令 `policy.set` | envelope + `oldValue`、`newValue` | 修改你所在派系掌管的政策（水闸分配或受控道路的通行状态）。 |
@@ -249,7 +249,7 @@ const ToolTerm = z.object({                   // Term 联合类型的平铺版�
 
 envelope 指 `executionStatus`、`commandStatus`、`reasonCode`、`receiptId`、`operationId`、`resultRef`（以及有任务时的 `taskStatus`）。
 
-请求构建时按 binding 收窄 schema：`asset.dispatch.teamId` 写成该 Agent 可派遣队伍的 `enum`，`policy.set.key` 写成该 Agent 拥有的政策键的 `enum`，`information.share.evidenceId` 写成持有证据的 `enum`，`task.respond.taskId` 写成待回复邀请的 `enum`。**收窄后 enum 为空时，本 turn 不提供该工具**（例如没有任何证据的角色不会看到 `information_share`）。收窄结果在 turn 冻结时确定，同一工具循环内不变。
+请求构建时按 binding 收窄 schema：`asset.dispatch.teamId` 写成该 Agent 可派遣队伍的 `enum`，`policy.set.key` 写成该 Agent 拥有的政策键的 `enum`（当前由运行器从该 Agent 掌管的 `road.status:${roadId}` 构造），`information.share.evidenceId` 写成持有证据的 `enum`，`task.respond.taskId` 写成待回复邀请的 `enum`。**收窄后 enum 为空时，本 turn 不提供该工具**（例如没有任何证据的角色不会看到 `information_share`）。收窄结果在 turn 冻结时确定，同一工具循环内不变。当前 `ToolGateway` 运行时主要校验上述 4 类收窄字段与 `message.send` 的收件主体（`messagePrincipalIds` 与 `"public"`），诸如 `agreement-personal`、`agreement-faction`、`cancel-own` 等 `permissionProfile` 规则由对应的 authority 命令处理器最终裁决。
 
 ### 13.2 binding 模板与工具集
 

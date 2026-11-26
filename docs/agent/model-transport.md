@@ -92,15 +92,18 @@ interface ModelTransportError {
 
 interface ModelTransportPort {
   readonly adapterId: string;
-  readonly capabilities: (modelConfig: Json) => ModelCapabilities;
+  readonly capabilities: (modelConfig: Json, model?: string) => ModelCapabilities;
+  validateConnection?(connection: ModelConnectionInput): Promise<{ readonly ok: boolean; readonly error?: string }>;
   complete(request: ModelRequest, credential: string | null, connection: ModelConnectionInput):
     Promise<ModelResponse>; // 失败时抛出 ModelTransportError
-  embed?(input: { externalModel: string; texts: readonly string[]; timeoutMs: number }, credential: string | null):
+  embed?(input: { externalModel: string; texts: readonly string[]; timeoutMs: number }, credential: string | null, connection?: ModelConnectionInput):
     Promise<{ vectors: number[][]; usage: { inputTokens: number | null } }>;
 }
 
 interface ModelConnectionInput {
   readonly endpoint: string | null;
+  readonly capabilities?: Partial<ModelCapabilities>;
+  readonly jsonOutputSuffix?: string;
   readonly fixtures: readonly ModelFixture[];
   readonly signal: AbortSignal;
 }
@@ -135,7 +138,7 @@ models:
     connectionId: openai-compat
     externalModel: env:NPC_OPENAI_COMPAT_MODEL
     parameters: { temperature: 0.6, maxTokensField: max_tokens }
-    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: standard,
+    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: verbatim,
                     contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }
     limits: { maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000, requestTimeoutMs: 30000 }
     maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
@@ -199,8 +202,8 @@ speech 请求体示例（`structuredOutput: json_object`，schema 说明追加�
 |---|---|
 | `choices[0].message.content` | `text`（可能为 null） |
 | `choices[0].message.tool_calls[]` | `toolCalls`：`arguments` 用 `JSON.parse` 解析，失败时为 null 并写 `parseError` |
-| `choices[0].finish_reason` | `stop`→stop，`tool_calls`→tool_calls，`length`→length，`content_filter`→refusal，其他值→stop |
-| `usage.prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens` | `usage`；缺失为 null |
+| `choices[0].finish_reason` | `stop`→stop，`tool_calls`→tool_calls，`length`→length，`content_filter`→refusal（`message.refusal` 非空时同样归为 `refusal`），其他值→stop |
+| `usage.prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens` | `usage`（缓存命中数缺省时回退读 `usage.prompt_cache_hit_tokens`）；缺失为 null |
 | `model`、`id` | `servedModel`、`providerRequestId` |
 | `choices[0].message`（整个对象） | `assistantReplay` 为 `verbatim` 时作为 `providerReplay`，否则 `providerReplay = null` |
 | — | `fallbackUsed = false` |
@@ -229,7 +232,7 @@ models:
     externalModel: claude-opus-5-5
     parameters: { effort: medium, serverSideFallback: default, strictTools: false }
     limits: { maxConcurrent: 2, requestsPerMinute: 30, tokensPerMinute: 200000, requestTimeoutMs: 120000 }
-    maxOutputTokensByPurpose: { decision: 16000, speech: 4000, memory-maintenance: 4000 }
+    maxOutputTokensByPurpose: { decision: 16000 }
 ```
 
 能力由适配器按模型固定给出：工具调用可用，`structuredOutput: json_schema`，`contextWindowTokens: 1000000`，`maxOutputTokens: 128000`，`embedding: false`。`parameters.strictTools` 默认 false：工具 schema 较大、可空字段较多时，严格模式可能触及 API 对 strict schema 的复杂度限制；宿主对每个工具调用都会用原始 Zod schema 校验，不合格的调用返回错误结果让模型重试。`connections.anthropic.endpoint` 可省略，省略时用 SDK 默认地址。
@@ -289,7 +292,7 @@ const response = parameters.serverSideFallback === "off"
 | `response.content` 中的 `text` 块 | 依次拼接为 `text` |
 | `tool_use` 块 | `toolCalls`：`id`、`name`、`arguments = input`、`argumentsRaw = JSON.stringify(input)` |
 | 整个 `response.content` 数组 | `providerReplay`，原样保存，下一轮回放 |
-| `stop_reason` | `end_turn`/`stop_sequence`→stop，`tool_use`→tool_calls，`max_tokens`→length，`refusal`→refusal；`pause_turn` 视为 `protocol` 错误（首版不用服务端工具） |
+| `stop_reason` | `end_turn`/`stop_sequence`→stop，`tool_use`→tool_calls，`max_tokens`/`model_context_window_exceeded`→length，`refusal`→refusal；`pause_turn` 视为 `protocol` 错误（首版不用服务端工具） |
 | `usage` | `inputTokens = input_tokens + (cache_read_input_tokens ?? 0) + (cache_creation_input_tokens ?? 0)`（`input_tokens` 不含缓存部分）、`outputTokens = output_tokens`、`cachedInputTokens = cache_read_input_tokens`；有 `usage.iterations` 时把它原样存进响应 artifact，供核对 fallback 的计费 |
 | `response.model`、`response.id` | `servedModel`、`providerRequestId` |
 | `content` 中存在 `type: "fallback"` 的块，或 `usage.iterations` 中存在 `type: "fallback_message"` 的条目 | `fallbackUsed = true` |
