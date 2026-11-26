@@ -1,7 +1,7 @@
 /**
  * 等待感知与记忆到达可读边界，原子封存 turn 的 frontier、观察和授权世界视图。
  * 就绪判定使用递增的观察水位、不可变记忆 revision 和到期整理记录。
- * 不持事务等待后台 worker，也不以更晚的实时视图补齐已封存的输入。
+ * 等待按指数退避轮询，不持事务等待后台 worker，也不以更晚的实时视图补齐已封存的输入。
  */
 import {
   dialogueSubmittedPayloadSchema,
@@ -147,6 +147,20 @@ function freezeIn(
   return { scope, frontier, observations, triggerObservations, world: readWorld(tx, scope, frontier, invitedTaskIds), degraded };
 }
 
+/** 就绪轮询的首次间隔：短等待仍按秒级以下粒度响应，不拖慢同 tick 内的水位推进。 */
+const waitDelayBaseMs = 25;
+
+/**
+ * 就绪轮询的间隔上限：就绪条件由 tick 推进或事件消费满足，粒度远大于 50 毫秒，
+ * 因此等待期按指数退避把轮询次数降到个位数即可，不必保持高频空转。
+ */
+const waitDelayCeilingMs = 200;
+
+/** 第 n 次等待的间隔：25、50、100、200，之后钳制在 200 毫秒。 */
+function waitDelayMs(pollIndex: number): number {
+  return Math.min(waitDelayCeilingMs, waitDelayBaseMs * 2 ** Math.max(0, pollIndex));
+}
+
 export async function freezeTurnInput(input: {
   readonly storage: StoragePort;
   readonly host: HostServices;
@@ -163,12 +177,14 @@ export async function freezeTurnInput(input: {
     : profile.readiness.waitTimeoutMs;
   const expires = Math.min(turn.deadlineMs, started + timeout);
   let waiting = false;
+  let polls = 0;
   while (true) {
     const result = storage.transact((tx) => {
       const row = leases.require(tx, turn, waiting ? "waiting" : "preparing");
       const readiness = readinessIn(tx, turn, profile.readiness);
       const expired = host.monotonicMs() >= expires;
       if (readiness.kind === "waiting" && !expired) {
+        // 只有首次进入等待才写一次状态；等待期间的轮询不再重复写同一行。
         if (!waiting) tx.rows("turn_runs").put({ ...row, status: "waiting" });
         return null;
       }
@@ -187,10 +203,11 @@ export async function freezeTurnInput(input: {
     if (result !== null) return result;
     waiting = true;
     try {
-      await host.sleep(Math.max(1, Math.min(50, expires - host.monotonicMs())), signal);
+      await host.sleep(Math.max(1, Math.min(waitDelayMs(polls), expires - host.monotonicMs())), signal);
     } catch (error) {
       if (signal.aborted) throw new TurnStopped("cancelled", "runtime-stopped");
       throw error;
     }
+    polls += 1;
   }
 }
