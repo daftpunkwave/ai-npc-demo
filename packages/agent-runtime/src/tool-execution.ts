@@ -20,6 +20,7 @@ import {
 import type { AgentToolViewPort } from "@ai-npc/module-sdk";
 import type { ToolOutcomeStore } from "./tool-outcome-store";
 import {
+  dropNullFields,
   errorMessage,
   resultWithoutRef,
   taskStatusFrom,
@@ -75,7 +76,9 @@ export async function executeQueryTool(
   try {
     const output = await deps.executeQuery({
       toolId: binding.toolId,
-      arguments: args,
+      // 查询执行器只接受显式参数：值为 null 的可选字段代表「调用方没给」，
+      // 上层据此区分缺省与显式 null，因此必须在调用前剔除。
+      arguments: dropNullFields(args),
       turn: input,
     });
     const result = resultWithoutRef({
