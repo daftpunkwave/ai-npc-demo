@@ -8,6 +8,7 @@ import {
   resolveContextTokenLimits,
   type ContextArtifact,
   type ContextBuildRequest,
+  type ContextUserSegmentKind,
   type Json,
   type MemoryBundleItem,
 } from "@ai-npc/contracts";
@@ -15,7 +16,7 @@ import type { AgentContextPort } from "@ai-npc/module-sdk";
 import type { OrderedBlocksContextConfig } from "./definition";
 import { estimateContextTokens, estimateTokens } from "./token-estimate";
 
-type UserSegmentKind = "world" | "task" | "memory" | "history" | "input";
+type UserSegmentKind = ContextUserSegmentKind;
 type ContextSegment = ContextArtifact["segments"][number];
 type Omission = ContextArtifact["omissions"][number];
 

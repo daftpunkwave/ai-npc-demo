@@ -280,6 +280,32 @@ export const wakeupProposalSchema = z
 
 export type WakeupProposal = z.infer<typeof wakeupProposalSchema>;
 
+/**
+ * 上下文档的段名清单：有序段落实现与上下文构建契约共用同一份成员表。
+ * user 段可以按预算裁剪，speech 段的 facts 段单独列出；新增段名必须在这里登记。
+ */
+export const contextUserSegmentKindValues = ["world", "task", "memory", "history", "input"] as const;
+
+export const contextUserSegmentKindSchema = z.enum(contextUserSegmentKindValues);
+
+export type ContextUserSegmentKind = z.infer<typeof contextUserSegmentKindSchema>;
+
+/** 段预算允许的键：user 段 + speech 段的 facts 段。 */
+export const contextSegmentKindValues = [...contextUserSegmentKindValues, "facts"] as const;
+
+export const contextSegmentKindSchema = z.enum(contextSegmentKindValues);
+
+export type ContextSegmentKind = z.infer<typeof contextSegmentKindSchema>;
+
+/**
+ * 段预算映射：键只接受已登记的段名，未知段名在契约入口即被拒绝。
+ * 与 ordered-blocks 模块配置共用 contextSegmentKindSchema，避免一侧开放、一侧收紧。
+ */
+export const contextSegmentBudgetsSchema = z.partialRecord(
+  contextSegmentKindSchema,
+  z.number().int().nonnegative(),
+);
+
 export const contextBuildRequestSchema = z
   .object({
     session: memoryScopeSchema,
@@ -306,7 +332,7 @@ export const contextBuildRequestSchema = z
         reservedOutputTokens: z.number().int().nonnegative(),
         safetyTokens: z.number().int().nonnegative(),
         toolLoopReserveTokens: z.number().int().nonnegative(),
-        segmentBudgets: z.record(z.string().min(1), z.number().int().nonnegative()),
+        segmentBudgets: contextSegmentBudgetsSchema,
         historyTurns: z.number().int().nonnegative(),
         lendUnusedBudget: z.boolean(),
       })

@@ -4,17 +4,24 @@
  * 约束与禁忌：不得读取数据库、模型或会话全局日志。
  */
 import type { ModuleDefinition } from "@ai-npc/contracts";
-import { capabilityIdSchema } from "@ai-npc/contracts";
+import {
+  capabilityIdSchema,
+  contextSegmentBudgetsSchema,
+  contextUserSegmentKindSchema,
+  contextUserSegmentKindValues,
+} from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
-const segmentKind = z.enum(["world", "task", "memory", "history", "input"]);
-const defaultOrder = ["world", "task", "memory", "history", "input"] as const;
+// 段名与段预算键都以公共契约为唯一来源：契约的 ContextBuildRequest 与本模块配置共用同一份成员表，
+// 因此同一份配置在 profile 校验与模块创建两个入口得到一致结论。段序沿用契约的声明顺序。
+const segmentKind = contextUserSegmentKindSchema;
+const defaultOrder = contextUserSegmentKindValues;
 
 const tokenBudget = z.object({
   maxInputTokens: z.number().int().positive(),
   safetyTokens: z.number().int().nonnegative(),
-  segmentBudgets: z.partialRecord(segmentKind.or(z.literal("facts")), z.number().int().nonnegative()),
+  segmentBudgets: contextSegmentBudgetsSchema,
 }).strict();
 
 export const orderedBlocksContextConfigSchema = z

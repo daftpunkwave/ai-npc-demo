@@ -190,6 +190,8 @@ export function estimateTokens(text: string): number {
 
 默认内置分段预算为 `segmentBudgets: { world: 800, task: 500, memory: 1000, history: 800, input: 400 }`；`agent-strategic-default` 会覆盖 `historyTurns: 6` 与 `segmentBudgets: { world: 900, task: 600, memory: 900, history: 600 }`。
 
+`segmentBudgets` 的键是一份封闭的段名清单，由公共契约的 `contextSegmentKindValues` 定义（`world`、`task`、`memory`、`history`、`input` 与 speech 段的 `facts`）。契约的 `ContextBuildRequest.budget.segmentBudgets` 与 ordered-blocks 模块配置共用同一个 `contextSegmentBudgetsSchema`，因此写错段名会在契约入口与模块创建两处得到同样的拒绝结论，不会出现一侧放行、另一侧失败的分叉。
+
 选用模型决策的 run 在启动预检时要求 `decision` 与 `speech` 两个子块齐全；缺失任一子块以 `assembly-incompatible` 拒绝启动，诊断包含 profile 与用途。确定性决策跳过上下文构建，不消费这两个子块，空配置可以省略它们。
 
 有效上限 `L = min(maxInputTokens, 模型窗口 − reservedOutputTokens − safetyTokens)`；decision 首轮请求的目标上限为 `L − toolLoopReserveTokens`，speech 的目标上限为 `L`。若模型窗口不足以容纳 `reservedOutputTokens` 与 `safetyTokens`，`L` 为 0，表示没有可用输入预算，构建直接返回 `over-budget`，不把下限钳制成正数。组装顺序：
