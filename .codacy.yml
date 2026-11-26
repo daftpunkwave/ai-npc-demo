@@ -25,3 +25,6 @@ exclude_paths:
   - "**/__fixtures__/**"
   # 迁移是 SQLite 方言，TSQL 规则会误判；迁移由仓库测试执行验证。
   - "modules/server/platform/storage/sqlite/migrations/**"
+  # .agents 是 Agent 指令素材与随仓库分发的技能包，不参与源码编译、打包与运行时。
+  # 其中的脚本、示例与第三方技能内容由上游维护，本仓库的代码规则不适用。
+  - ".agents/**"
