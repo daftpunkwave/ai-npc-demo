@@ -65,7 +65,7 @@ function policyOf(decide: (request: AccessRequest) => AccessDecision): AccessPol
 function contextWith(policy: AccessPolicy, reported: string[]): RouteContext {
   return {
     options: { accessPolicy: policy },
-    reportInternalError: (message) => {
+    reportInternalError: (message: string) => {
       reported.push(message);
     },
   } as unknown as RouteContext;

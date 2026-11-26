@@ -387,6 +387,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       ? {}
       : { onPlayerConnectionsChanged: options.onPlayerConnectionsChanged }),
     ...(options.maxSessions === undefined ? {} : { maxSessions: options.maxSessions }),
+    ...(options.heartbeatIntervalMs === undefined
+      ? {}
+      : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
+    ...(options.heartbeatTimeoutMs === undefined
+      ? {}
+      : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
     onBranchChanged: (nextBranchId) => {
       branch.branchId = nextBranchId;
       options.onBranchChanged?.(nextBranchId);

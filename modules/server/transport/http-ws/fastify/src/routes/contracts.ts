@@ -372,6 +372,12 @@ export interface ServerAppOptions {
   readonly now?: () => number;
   /** 会话数量上限；缺省沿用流中心默认值。容量满时只淘汰无活动连接的会话。 */
   readonly maxSessions?: number;
+  /**
+   * WS 心跳间隔与存活超时；缺省沿用流中心的默认边界。
+   * 半开连接没有 `close` 事件，只能靠这两个值回收；测试需要缩短窗口时显式覆盖。
+   */
+  readonly heartbeatIntervalMs?: number;
+  readonly heartbeatTimeoutMs?: number;
   /** 已构建控制台静态资源目录；不存在时不注册 /console/* 页面。 */
   readonly consoleStaticDir?: string;
   /**
