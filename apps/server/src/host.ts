@@ -10,7 +10,7 @@ import { DomainError, modelLayoutRoutesResponseSchema, type Json, type StoragePo
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
 import { createHostStartup } from "./host/startup";
-import { disposeInReverse, drainBeforeClose } from "./host/dispose";
+import { disposeInReverse, disposeWithin, drainBeforeClose, type DrainFailure } from "./host/dispose";
 import { logInternalError } from "./host/internal-error-log";
 import { createLifecycle } from "./host/lifecycle";
 import type { LiveRunState } from "./host/live-state";
@@ -32,8 +32,8 @@ import type { EvaluationPort } from "./host/module-catalog";
 import type { HostStartup } from "./host/startup";
 
 export type { HostOptions } from "./host/options";
-export type { DisposalStep, DrainStep } from "./host/dispose";
-export { disposeInReverse, drainBeforeClose } from "./host/dispose";
+export type { DisposalStep, DrainFailure, DrainStep } from "./host/dispose";
+export { disposeInReverse, disposeWithin, drainBeforeClose, settleWithin } from "./host/dispose";
 
 /** 关闭时每级资源排空的默认预算；与租约期限解耦，只用于给关闭一个可终止的边界。 */
 const defaultShutdownDrainMs = 10_000;
@@ -122,14 +122,20 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   }
   // 关闭分两级：先按契约排空（停止新任务、等待提交边界），再逆序释放资源。
   // 排空预算来自宿主配置，未配置时用与租约解耦的默认值，避免单个卡住的 turn 无限拖住退出。
-  const drainResources = async (): Promise<void> => drainBeforeClose(
+  // 整个关闭共享一次预算：每级只拿剩余时间，n 个层级不会累积成 n 倍预算。
+  const shutdownBudgetMs = options.shutdownDrainMs ?? defaultShutdownDrainMs;
+  // 只写标签、本次剩余预算与原因，不写可能含业务正文的整份上下文。
+  const reportClose = (message: string, data: DrainFailure): void => {
+    core.host.logger.warn(message, { label: data.label, deadlineMs: data.deadlineMs, message: data.message });
+  };
+  const drainResources = async (deadlineAt: number): Promise<void> => drainBeforeClose(
     [
       { label: "online Agents", drain: async (deadlineMs) => { await agents?.drain(deadlineMs); } },
       { label: "started modules", drain: (deadlineMs) => core.startedModules.drain(deadlineMs) },
       { label: "storage", drain: (deadlineMs) => core.storageStarted.drain(deadlineMs) },
     ],
-    options.shutdownDrainMs ?? defaultShutdownDrainMs,
-    (message, data) => core.host.logger.warn(message, data),
+    Math.max(0, deadlineAt - Date.now()),
+    reportClose,
   );
   const disposeResources = (transportApp: ServerApp | null): Promise<void> => disposeInReverse([
     { label: "storage", dispose: () => core.storageStarted.dispose() },
@@ -138,8 +144,18 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     ...(transportApp === null ? [] : [{ label: "transport", dispose: () => core.runtime.transport.close(transportApp) }]),
   ]);
   const closeResources = async (transportApp: ServerApp | null): Promise<void> => {
-    await drainResources();
-    await disposeResources(transportApp);
+    const deadlineAt = Date.now() + shutdownBudgetMs;
+    // 先停止接受新请求：关闭传输监听放在排空之前，否则排空边界会被新到达的请求突破。
+    // 传输实例本身仍保留到释放阶段，已建立的读请求可以在预算内收尾。
+    if (transportApp !== null) core.runtime.transport.stopAccepting?.(transportApp);
+    await drainResources(deadlineAt);
+    // 释放同样受同一绝对截止时间约束：被放弃的释放仍在后台继续，不会阻塞进程退出。
+    await disposeWithin(
+      () => disposeResources(transportApp),
+      Math.max(0, deadlineAt - Date.now()),
+      "host resources",
+      reportClose,
+    );
   };
   try {
     await agents?.switch();
@@ -281,8 +297,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     modelLayouts,
     evaluation,
     writes,
-    // 未启动 Agent 运行时（无 Agent 名册）时没有维护队列，健康摘要按 0 展示。
-    ...(agents === null ? {} : { maintenanceQueued: () => agents.exhaustedMaintenance }),
+    // 未启动 Agent 运行时（无 Agent 名册）时没有维护队列，健康摘要按零值展示。
+    ...(agents === null ? {} : { maintenanceQueue: () => agents.maintenanceQueue }),
     disposeOnFailure: () => disposeResources(null),
   });
 

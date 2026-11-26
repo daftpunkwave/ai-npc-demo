@@ -142,7 +142,7 @@ export class TurnWorker {
       timer.unref();
     });
     try {
-      await Promise.race([Promise.all([...this.running]), timeout]);
+      await Promise.race([Promise.all(this.running), timeout]);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
@@ -177,6 +177,20 @@ export class TurnWorker {
       this.runtime.onStateChange?.();
       return null;
     }
+  }
+
+  /**
+   * 组合 turn 级取消信号：运行时停止，或到达 `turn.deadlineMs`。
+   * 定时器 `unref` 且随 turn 结束清除，避免每个 turn 留一个挂起的计时器。
+   */
+  private turnSignal(turn: ClaimedTurn): AbortSignal {
+    const deadline = new AbortController();
+    const remaining = Math.max(1, turn.deadlineMs - this.runtime.host.monotonicMs());
+    const timer = setTimeout(() => { deadline.abort(); }, remaining);
+    timer.unref();
+    const signal = AbortSignal.any([this.signal, deadline.signal]);
+    signal.addEventListener("abort", () => { clearTimeout(timer); }, { once: true });
+    return signal;
   }
 
   private async createSlot<Port>(agentId: string, selected: ResolvedAgentProfile["slots"]["decision"], ports = this.execution.ports) {
@@ -234,9 +248,12 @@ export class TurnWorker {
       const committedMessageIntents = new Set<string>();
       const messagePrincipalIds = new Set([content.index.playerPrincipalId, ...this.runtime.roster.agents.map((entry) => entry.agentId)]);
       messagePrincipalIds.delete(agentId);
+      // turn 级取消信号：运行时停止或 turn 截止任一到达都中止在途模型调用。
+      // 只用运行时信号无法在 `turn.deadlineMs` 到达时打断模型，工具调用挂起会让决策窗口无限延长。
+      const turnSignal = this.turnSignal(turn);
       const model = ports.model === null || this.execution.model == null ? null : new ModelTurn({
         host, pool: this.execution.model, ports: ports.model, content, profile, memory, frozen, turn, evidence,
-        signal: this.signal, artifacts: this.artifacts, assertCurrent: (status) => this.assertCurrent(turn, status),
+        signal: turnSignal, artifacts: this.artifacts, assertCurrent: (status) => this.assertCurrent(turn, status),
         messagePrincipalIds: this.execution.tools.bindingsFor(agentId).some(({ toolId }) => toolId === "message.send")
           ? messagePrincipalIds : new Set(),
       });
@@ -349,7 +366,7 @@ export class TurnWorker {
           },
           taskInvitations: frozen.world.taskInvitations, lexicons: content.locale.lexicons,
           executeTool, deadlineMs: turn.deadlineMs,
-        }, evidence);
+        }, evidence, turn);
         this.assertCurrent(turn, "deciding");
         if (result.status !== "ok") {
           // terminal_reason 优先取细分原因（round-limit、call-budget、context-window、deadline-backpressure 等），
@@ -440,9 +457,10 @@ export class TurnWorker {
     port: AgentDecisionPort<DeterministicDecisionInput>,
     input: Omit<DeterministicDecisionInput, "signal">,
     evidence: TurnEvidence,
+    turn: ClaimedTurn,
   ) {
-    const timer = new AbortController();
-    const signal = AbortSignal.any([timer.signal, this.signal]);
+    // 与模型路径共用同一个 turn 级信号：截止与运行时停止任一到达都中止在途调用。
+    const signal = this.turnSignal(turn);
     const started = this.runtime.host.monotonicMs();
     // 端口自身的 promise 单独持有，用于判断超时后它是否还在后台运行。
     let settled = false;
@@ -458,7 +476,6 @@ export class TurnWorker {
       });
       return await Promise.race([deciding, deadline]);
     } finally {
-      timer.abort();
       // 放弃等待时端口仍未结束：说明取消没有被响应，事实记进证据而不是假装已停止。
       if (!settled) {
         evidence.record("turn.decision-cancel", started, {

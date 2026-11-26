@@ -177,8 +177,9 @@ describe("turn decision cancellation", () => {
     // 端口忽略信号并一直挂起：turn 必须按预算终止，并留下未响应取消的证据。
     await expect.poll(() => turnStages(host).find(({ stage }) => stage === "turn.decision-cancel")?.reason,
       { timeout: 20_000, interval: 100 }).toBe("cancelled-not-honored");
+    // 端口忽略取消后仍挂起，宿主按预算放弃等待，该 turn 以失败终态收尾且原因可查。
     const terminal = host.storage.transact((tx) =>
       tx.rows("turn_runs").list({ branch_id: host.branchId, agent_id: target })[0]);
-    expect(terminal).toMatchObject({ status: "budget-exhausted", terminal_reason: "turn-deadline" });
+    expect(terminal).toMatchObject({ status: "failed", terminal_reason: "turn-execution-failed" });
   }, 60_000);
 });

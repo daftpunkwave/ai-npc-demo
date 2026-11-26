@@ -47,10 +47,10 @@ export interface TransportAppInput {
   /** 评估写入端口；不依赖评估模块，未注入时写入路由返回 not-ready。 */
   readonly writes?: RunWrites;
   /**
-   * 已用尽尝试次数的记忆维护任务数；宿主未启动 Agent 运行时时不提供，
-   * 健康摘要在这种情况下按 0 展示而不是编造数字。
+   * 记忆维护队列计数；宿主未提供数据源时返回零值，而不是编造数字。
+   * `queued` 与 `exhausted` 分别对应「仍会推进」与「已达上限不再推进」。
    */
-  readonly maintenanceQueued?: () => number;
+  readonly maintenanceQueue?: () => { readonly queued: number; readonly exhausted: number };
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
@@ -240,6 +240,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         health: () => {
           const status = lifecycle.healthStatus();
           const summary = healthStorageSummary(runtime.storage, active.branchId);
+          const maintenance = input.maintenanceQueue?.() ?? { queued: 0, exhausted: 0 };
           // createApp 只在全部模块启动成功后创建；能出现在装配集里即表示已就绪。
           const modules = [
             ...input.assembly.modules,
@@ -260,7 +261,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             // turnsRunning、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
             queues: {
               turnsQueued: summary.turnsQueued,
-              maintenanceQueued: input.maintenanceQueued?.() ?? 0,
+              maintenanceQueued: maintenance.queued,
+              maintenanceExhausted: maintenance.exhausted,
             },
             budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),

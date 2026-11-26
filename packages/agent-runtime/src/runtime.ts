@@ -71,6 +71,30 @@ function cycleFailure(failures: readonly CycleStageFailure[]): Error | null {
 }
 
 /**
+ * 在预算内等待一个异步操作，返回是否按时完成；超时后原操作仍在后台推进，其 rejection 已被兜住。
+ * 关闭链路用它给「等待在途工作」一个可终止的边界，避免单个卡住的主体让进程无法退出。
+ */
+async function settleWithin(work: () => Promise<void>, deadlineMs: number): Promise<"done" | "timed-out"> {
+  if (deadlineMs <= 0) {
+    void work().catch(() => undefined);
+    return "timed-out";
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timed-out">((resolve) => {
+    timer = setTimeout(() => resolve("timed-out"), deadlineMs);
+    timer.unref();
+  });
+  const running = work().then(() => "done" as const, (error: unknown) => {
+    throw error;
+  });
+  try {
+    return await Promise.race([running, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
  * 单进程感知、记忆和调度宿主。turn 执行与后台摄入并行运行。
  */
 export class AgentRuntime {
@@ -192,11 +216,11 @@ export class AgentRuntime {
   }
 
   /**
-   * 已用尽尝试次数的记忆维护任务数。
-   * 这些行仍留在队列里但不会再被认领，健康摘要需要照实报告，不能只靠日志体现。
+   * 记忆维护队列计数：`queued` 为仍会推进的行，`exhausted` 为已达尝试上限、不会再被认领的行。
+   * 未启动记忆宿主时两者都为 0，不编造数字。
    */
-  get exhaustedMaintenance(): number {
-    return this.memory?.exhaustedMaintenance() ?? 0;
+  get maintenanceQueue(): { readonly queued: number; readonly exhausted: number } {
+    return this.memory?.maintenanceQueue() ?? { queued: 0, exhausted: 0 };
   }
 
   fenceTurns(reason: string): void {
@@ -225,35 +249,37 @@ export class AgentRuntime {
 
   /**
    * 在截止时间内完成排空；超时只记录，不阻塞调用方继续释放资源。
-   * 排空本身幂等，因此重复关闭会复用同一次排空结果而不是重新推进。
+   *
+   * 排空本身仍会继续在后台推进（重复关闭复用同一次结果），但调用方不会因此被挂住：
+   * 关闭路径已经给了预算，超过预算就说明有主体卡住了，此时继续等待只会让进程无法退出。
    */
   async drainUntil(deadlineMs: number): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<"timed-out">((resolve) => {
-      timer = setTimeout(() => resolve("timed-out"), Math.max(0, deadlineMs));
-      timer.unref();
-    });
-    try {
-      const outcome = await Promise.race([this.drain().then(() => "drained" as const), timeout]);
-      if (outcome === "timed-out") {
-        // 只记数量与预算，不写可能含观察正文的错误消息。
-        this.options.host.logger.warn("Agent runtime drain timed out", { deadlineMs });
-      }
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
+    const outcome = await settleWithin(async () => { await this.drain(); }, deadlineMs);
+    if (outcome === "timed-out") {
+      // 只记预算，不写可能含观察正文的错误消息。
+      this.options.host.logger.warn("Agent runtime drain timed out", { deadlineMs: Math.max(0, deadlineMs) });
     }
   }
 
-  async dispose(): Promise<void> {
+  /**
+   * 释放在途 turn、模块与记忆宿主。
+   * 排空受同一预算约束：超时后不再等待 `this.draining`，直接进入逐项释放，
+   * 否则一个永不结束的轮询周期会让释放阶段也停在原处。
+   */
+  async dispose(deadlineMs?: number): Promise<void> {
     let firstError: unknown;
     try {
-      await this.drain();
+      if (deadlineMs === undefined) {
+        await this.drain();
+      } else {
+        await this.drainUntil(deadlineMs);
+      }
     } catch (error) {
       firstError = error;
     }
     if (this.turns !== null) {
       try {
-        await this.turns.dispose();
+        await this.turns.dispose(deadlineMs);
       } catch (error) {
         firstError ??= error;
       }

@@ -1106,6 +1106,7 @@ describe("服务端宿主", () => {
     // 没有数据来源的队列与水位字段省略，不用 0 冒充；记忆维护队列有真实数据源，照实报告。
     expect(body.queues.turnsRunning).toBeUndefined();
     expect(body.queues.maintenanceQueued).toBe(0);
+    expect(body.queues.maintenanceExhausted).toBe(0);
     expect(body.laggingAgents).toBeUndefined();
     expect(body.modules.every((module) => module.status === "ready")).toBe(true);
   });
@@ -1144,6 +1145,19 @@ describe("服务端宿主", () => {
       headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "researcher" },
     });
     expect(researcherAllowed.statusCode).toBe(200);
+  });
+
+  it("关闭开始后停止接受新请求，健康检查仍可读", async () => {
+    const dataDir = tempDataDir();
+    const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
+    hosts.push(host);
+    // 直接触发传输层的半关闭：新请求按 not-ready 拒绝，健康检查豁免。
+    host.app.stopAccepting();
+    const rejected = await host.app.inject({ method: "GET", url: "/api/v1/world/view" });
+    expect(rejected.statusCode).toBe(503);
+    expect(errorResponseSchema.parse(rejected.json()).error.code).toBe("not-ready");
+    const health = await host.app.inject({ method: "GET", url: "/api/v1/health" });
+    expect(health.statusCode).toBe(200);
   });
 
   it("首次启动生成 seed 与 manifest，重启沿用同一 run、seed 与装配", async () => {

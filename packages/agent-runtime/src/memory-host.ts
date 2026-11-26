@@ -229,9 +229,12 @@ export class MemoryHost {
     return this.requireWatermark(agentId);
   }
 
-  /** 已用尽尝试次数的维护任务数；供健康摘要解释队列里不会再被推进的持久行。 */
-  exhaustedMaintenance(): number {
-    return this.maintenance.exhaustedCount();
+  /**
+   * 维护队列计数：`queued` 为仍会推进的行，`exhausted` 为已达尝试上限、不会再被认领的行。
+   * 供健康摘要分别报告，避免把耗尽任务算进「排队中」。
+   */
+  maintenanceQueue(): { readonly queued: number; readonly exhausted: number } {
+    return this.maintenance.queueSummary();
   }
 
   async dispose(): Promise<void> {

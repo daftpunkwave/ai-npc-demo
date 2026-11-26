@@ -44,7 +44,8 @@ describe("maintenance retry bounds", () => {
       expect(call).toHaveBeenCalledTimes(3);
       const rows = maintenanceRows(harness);
       expect(rows.every((row) => row["status"] === "failed")).toBe(true);
-      expect(host.exhaustedMaintenance()).toBe(rows.length);
+      // 耗尽的任务单独计数，不计入「仍在排队」。
+      expect(host.maintenanceQueue()).toEqual({ queued: 0, exhausted: rows.length });
       // 失败任务不被重新认领：租约代次停在最后一次认领，不再增长。
       const epochs = rows.map((row) => Number(row["lease_epoch"]));
       await host.runDueMaintenance(168);

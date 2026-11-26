@@ -4,18 +4,26 @@
  * 约束与禁忌：禁止启动真实监听端口，也不用真实计时器等待；排空预算通过参数直接给出。
  */
 import { describe, expect, it, vi } from "vitest";
-import { disposeInReverse, drainBeforeClose, type DisposalStep } from "@ai-npc/app-server";
+import { disposeInReverse, disposeWithin, drainBeforeClose, type DisposalStep } from "@ai-npc/app-server";
 
 describe("drainBeforeClose", () => {
-  it("按声明顺序排空并把同一预算传给每一级", async () => {
-    const calls: string[] = [];
+  it("按声明顺序排空，并让后续层级只拿到剩余预算", async () => {
+    const calls: number[] = [];
     const report = vi.fn();
     await drainBeforeClose([
-      { label: "online Agents", drain: async (ms) => { calls.push(`agents:${ms}`); } },
-      { label: "started modules", drain: async (ms) => { calls.push(`modules:${ms}`); } },
-      { label: "storage", drain: async (ms) => { calls.push(`storage:${ms}`); } },
+      {
+        label: "online Agents",
+        // 第一级故意用掉大部分预算，后续层级必须拿到更少的剩余时间。
+        drain: async (ms) => { calls.push(ms); await new Promise((resolve) => { setTimeout(resolve, 40); }); },
+      },
+      { label: "started modules", drain: async (ms) => { calls.push(ms); } },
+      { label: "storage", drain: async (ms) => { calls.push(ms); } },
     ], 5_000, report);
-    expect(calls).toEqual(["agents:5000", "modules:5000", "storage:5000"]);
+    expect(calls).toHaveLength(3);
+    expect(calls[0]).toBeLessThanOrEqual(5_000);
+    // 共享一次预算：第二级与第三级都不会再拿到完整的 5000 毫秒。
+    expect(calls[1]).toBeLessThan(calls[0] as number);
+    expect(calls[2]).toBeLessThanOrEqual(calls[1] as number);
     expect(report).not.toHaveBeenCalled();
   });
 
@@ -41,5 +49,19 @@ describe("drainBeforeClose", () => {
     ], 2_000, () => undefined);
     await expect(disposeInReverse(disposeSteps)).rejects.toThrow(AggregateError);
     expect(steps).toEqual(["drain:agents", "dispose:storage"]);
+  });
+
+  it("释放超时只记录并放行，不把关闭阻塞在卡住的释放上", async () => {
+    const reports: { readonly label: string }[] = [];
+    let finished = false;
+    await disposeWithin(
+      async () => { await new Promise((resolve) => { setTimeout(resolve, 5_000); }); finished = true; },
+      50,
+      "host resources",
+      (_message, data) => { reports.push(data); },
+    );
+    // 已按时返回：释放本身仍在后台，但调用方不再等待。
+    expect(finished).toBe(false);
+    expect(reports).toEqual([{ label: "host resources", deadlineMs: 50, message: "release did not finish in time" }]);
   });
 });
