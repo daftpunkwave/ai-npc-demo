@@ -142,7 +142,7 @@ export class MemoryHost {
       const agentId = String(claim.row["agent_id"]);
       try {
         if (this.requireWatermark(agentId).observationSeqConsumed < claim.observationSeqThrough) {
-          this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch);
+          this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch, worldTick);
           return;
         }
         await publishMaintenance(agentId, claim, this.publication(agentId, claim, worldTick));
@@ -227,6 +227,11 @@ export class MemoryHost {
 
   watermark(agentId: string): MemoryWatermark {
     return this.requireWatermark(agentId);
+  }
+
+  /** 已用尽尝试次数的维护任务数；供健康摘要解释队列里不会再被推进的持久行。 */
+  exhaustedMaintenance(): number {
+    return this.maintenance.exhaustedCount();
   }
 
   async dispose(): Promise<void> {

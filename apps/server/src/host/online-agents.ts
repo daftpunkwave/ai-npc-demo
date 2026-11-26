@@ -44,6 +44,14 @@ export class OnlineAgentHost {
     return !this.failed && !(this.branch?.runtime.degraded ?? false);
   }
 
+  /**
+   * 已用尽尝试次数的记忆维护任务数；未启动 Agent 运行时为 0。
+   * 这些任务不会再被认领，但仍是持久队列里的行，健康摘要必须照实展示。
+   */
+  get exhaustedMaintenance(): number {
+    return this.branch?.runtime.exhaustedMaintenance ?? 0;
+  }
+
   switch(): Promise<void> {
     if (this.changing !== null) return this.changing;
     const changing = this.reconcile().finally(() => { this.changing = null; });

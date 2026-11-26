@@ -262,6 +262,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     modelLayouts,
     evaluation,
     writes,
+    // 未启动 Agent 运行时（无 Agent 名册）时没有维护队列，健康摘要按 0 展示。
+    ...(agents === null ? {} : { maintenanceQueued: () => agents.exhaustedMaintenance }),
     disposeOnFailure: () => disposeResources(null),
   });
 

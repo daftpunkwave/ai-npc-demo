@@ -191,6 +191,14 @@ export class AgentRuntime {
     return this.consecutiveFailures > 0;
   }
 
+  /**
+   * 已用尽尝试次数的记忆维护任务数。
+   * 这些行仍留在队列里但不会再被认领，健康摘要需要照实报告，不能只靠日志体现。
+   */
+  get exhaustedMaintenance(): number {
+    return this.memory?.exhaustedMaintenance() ?? 0;
+  }
+
   fenceTurns(reason: string): void {
     this.scheduler?.cancelActive(reason);
   }

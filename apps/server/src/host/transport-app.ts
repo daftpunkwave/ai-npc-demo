@@ -46,6 +46,11 @@ export interface TransportAppInput {
   readonly evaluation?: EvaluationReadPort;
   /** 评估写入端口；不依赖评估模块，未注入时写入路由返回 not-ready。 */
   readonly writes?: RunWrites;
+  /**
+   * 已用尽尝试次数的记忆维护任务数；宿主未启动 Agent 运行时时不提供，
+   * 健康摘要在这种情况下按 0 展示而不是编造数字。
+   */
+  readonly maintenanceQueued?: () => number;
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
@@ -252,8 +257,11 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             assemblyHash: input.assembly.assemblyHash,
             modules,
             clock: clockView(lifecycle.clockState()),
-            // turnsRunning、maintenanceQueued、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
-            queues: { turnsQueued: summary.turnsQueued },
+            // turnsRunning、modelQueue 与 laggingAgents 尚无数据来源，省略而不是填 0。
+            queues: {
+              turnsQueued: summary.turnsQueued,
+              maintenanceQueued: input.maintenanceQueued?.() ?? 0,
+            },
             budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),
           };
