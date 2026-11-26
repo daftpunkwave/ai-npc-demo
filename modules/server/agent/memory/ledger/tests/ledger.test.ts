@@ -9,12 +9,12 @@ import type {
   AgentObservation,
   Json,
   MemoryChangePlan,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { ledgerConfigSchema, memoryLedgerModuleDefinition } from "../src/definition";
 import { createLedgerPort } from "../src/ledger-port";
 

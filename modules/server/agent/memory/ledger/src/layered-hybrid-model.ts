@@ -5,9 +5,9 @@
  */
 
 import { z } from "zod";
-import type { MemoryRecordView } from "@ai-npc/module-sdk";
-import type { MemoryAgentIdentity } from "@ai-npc/module-sdk";
-import { jsonValueSchema } from "@ai-npc/contracts";
+import type { MemoryRecordView } from "@world-prism/module-sdk";
+import type { MemoryAgentIdentity } from "@world-prism/module-sdk";
+import { jsonValueSchema } from "@world-prism/contracts";
 import { dataOf, numberValue } from "./ledger-model";
 
 export const dailyReviewOutputSchema = z

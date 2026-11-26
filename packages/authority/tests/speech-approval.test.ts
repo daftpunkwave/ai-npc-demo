@@ -4,7 +4,7 @@
  * 禁止在测试中复制一份宽松解析或放宽受众、批准结果引用等约束。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 import { readSpeechCommitPayload } from "../src/speech-approval";
 
 const validPayload = {

@@ -3,7 +3,7 @@
  * 交互契约：依赖 storage、HostServices、artifact store 与 tool-view 端口，只处理已经校验的调用上下文。
  * 约束与禁忌：不得执行命令、改变结果状态或跨主体复用 unsettled/unknown 结果。
  */
-import { checkJsonBudget } from "@ai-npc/contracts";
+import { checkJsonBudget } from "@world-prism/contracts";
 import type {
   HostServices,
   Json,
@@ -12,9 +12,9 @@ import type {
   ToolBinding,
   ToolDefinition,
   ToolExecutionResult,
-} from "@ai-npc/contracts";
-import type { AgentToolViewPort } from "@ai-npc/module-sdk";
-import type { AgentArtifactRecord, AgentArtifactStore } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentToolViewPort } from "@world-prism/module-sdk";
+import type { AgentArtifactRecord, AgentArtifactStore } from "@world-prism/module-sdk";
 import {
   isToolCallIdentity,
   storageNullableString,

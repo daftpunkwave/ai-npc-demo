@@ -4,9 +4,9 @@
  * 依赖 host 子模块与 authority；不启动浏览器端，也不直接引用模块实现。
  * 禁止绕过解析计划引用模块实现、按当前入参重建已冻结的在线 run，或重复实现时钟状态与路由。
  */
-import { Authority } from "@ai-npc/authority";
-import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@ai-npc/agent-runtime";
-import { DomainError, modelLayoutRoutesResponseSchema, type Json, type StoragePort } from "@ai-npc/contracts";
+import { Authority } from "@world-prism/authority";
+import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@world-prism/agent-runtime";
+import { DomainError, modelLayoutRoutesResponseSchema, type Json, type StoragePort } from "@world-prism/contracts";
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
 import { createHostStartup } from "./host/startup";
@@ -25,8 +25,8 @@ import { ModelLayoutAdminPort } from "./host/model-layout-admin";
 import { createEvaluationReadPort } from "./host/evaluation-read";
 import { resolve } from "node:path";
 import { createRunWrites } from "./host/run-writes";
-import { loadRoster } from "@ai-npc/experiment";
-import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
+import { loadRoster } from "@world-prism/experiment";
+import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
 import type { EvaluationPort } from "./host/module-catalog";
 
 import type { HostStartup } from "./host/startup";

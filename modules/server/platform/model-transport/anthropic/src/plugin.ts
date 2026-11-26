@@ -4,8 +4,8 @@
  * 禁止 SDK 重试、继承外部认证头、跟随重定向或记录密钥。
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { DomainError, jsonValueSchema, type ModelTransportPort, type ModuleCreateInput } from "@ai-npc/contracts";
-import { createStatelessModule, modelBaseUrl, modelHttpFailure, modelTransportFailure, parseModelEndpoint } from "@ai-npc/module-sdk";
+import { DomainError, jsonValueSchema, type ModelTransportPort, type ModuleCreateInput } from "@world-prism/contracts";
+import { createStatelessModule, modelBaseUrl, modelHttpFailure, modelTransportFailure, parseModelEndpoint } from "@world-prism/module-sdk";
 import { createAnthropicClientCache } from "./client-cache";
 import { anthropicTransportId } from "./definition";
 import { anthropicParameters, messagesRequest } from "./messages-request";

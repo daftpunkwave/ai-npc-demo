@@ -4,8 +4,8 @@
  * 禁止依赖真实计时器，也不允许把主动关闭当成断线重连。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DomainError, playerProjectionSchema, type HostServices, type ModuleCreateInput, type SessionDescriptor } from "@ai-npc/contracts";
-import type { ApiClient } from "@ai-npc/client-protocol";
+import { DomainError, playerProjectionSchema, type HostServices, type ModuleCreateInput, type SessionDescriptor } from "@world-prism/contracts";
+import type { ApiClient } from "@world-prism/client-protocol";
 import { createWorldViewModule, type WorldViewPort } from "../src/plugin";
 import {
   isSessionInvalidCloseCode,

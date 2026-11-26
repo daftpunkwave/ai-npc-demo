@@ -3,7 +3,7 @@
  * 仅作为边界检查输入，不会被编译或执行。
  * 该写法符合定义文件可被宿主直接导入的约定。
  */
-import type { ModuleDefinition } from "@ai-npc/contracts";
+import type { ModuleDefinition } from "@world-prism/contracts";
 import { z } from "zod";
 
 export const definition = {

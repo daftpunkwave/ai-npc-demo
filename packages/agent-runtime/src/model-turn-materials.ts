@@ -6,9 +6,9 @@
 import {
   cleanJsonSchemaForModel, decisionSubmissionSchema, decisionSubmitWireSchema, dialogueSubmittedPayloadSchema,
   DomainError, type ContextArtifact, type ContextBuildRequest, type Json, type MemoryBundle, type NormalizedTool,
-} from "@ai-npc/contracts";
-import type { ContentPack, ResolvedAgentProfile } from "@ai-npc/experiment";
-import type { DecisionValidation, ModelRoute } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { ContentPack, ResolvedAgentProfile } from "@world-prism/experiment";
+import type { DecisionValidation, ModelRoute } from "@world-prism/module-sdk";
 import { asRecord } from "./runtime-records";
 import type { ToolCallOutcome } from "./tool-gateway-types";
 import type { FrozenTurnInput } from "./turn-input";

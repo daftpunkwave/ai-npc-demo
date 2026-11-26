@@ -9,7 +9,7 @@ import type {
   CommandReceipt,
   DialogueIntent,
   Json,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   DialogueFlow,
   SpeechApprovalIndex,
@@ -17,7 +17,7 @@ import {
   renderSafeSpeech,
   type SpeechApprovalInput,
   type ToolGatewayTurn,
-} from "@ai-npc/agent-runtime";
+} from "@world-prism/agent-runtime";
 import {
   createAgentContextToolsHarness,
   testAgentId,

@@ -234,7 +234,7 @@ function inspectWorkspaceImport(
     );
   }
 
-  if (isHostMechanismFile(file.path) && (isModulePackageName(target.name) || target.name.startsWith("@ai-npc/app-"))) {
+  if (isHostMechanismFile(file.path) && (isModulePackageName(target.name) || target.name.startsWith("@world-prism/app-"))) {
     violations.push(
       violation(
         RULE_HOST_MECHANISM,
@@ -395,7 +395,7 @@ export function inspectImport(
   if (isRelativeSpecifier(record.specifier)) {
     return inspectRelativeImport(file, importer, importerModule, context, record);
   }
-  if (record.specifier.startsWith("@ai-npc/")) {
+  if (record.specifier.startsWith("@world-prism/")) {
     return inspectWorkspaceImport(file, importer, testFile, importerModule, context, record);
   }
   return inspectExternalImport(file, importer, testFile, importerModule, record);

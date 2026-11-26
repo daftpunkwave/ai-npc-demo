@@ -7,9 +7,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   ContributionBoundary,
   type StartedBrowserModules,
-} from "@ai-npc/client-sdk";
-import type { ApiClient } from "@ai-npc/client-protocol";
-import type { ConsoleActiveRole, SessionDescriptor } from "@ai-npc/contracts";
+} from "@world-prism/client-sdk";
+import type { ApiClient } from "@world-prism/client-protocol";
+import type { ConsoleActiveRole, SessionDescriptor } from "@world-prism/contracts";
 import { consoleNavigation } from "./console-navigation";
 
 interface ConsolePortWithTitle {

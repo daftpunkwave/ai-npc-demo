@@ -21,7 +21,7 @@ export async function shutdownServer(input: ShutdownInput): Promise<void> {
     input.setExitCode(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    input.logError(`[ai-npc] 关闭失败：${message}`);
+    input.logError(`[world-prism] 关闭失败：${message}`);
     input.setExitCode(1);
   }
 }

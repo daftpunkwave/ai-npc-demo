@@ -3,8 +3,8 @@
  * 使用冻结的库存点、资源类型、期限和委托余额。
  * 不扣减库存或取代协议提交时的权威校验。
  */
-import type { ResourceAmounts, Term } from "@ai-npc/contracts";
-import type { DeterministicDecisionInput } from "@ai-npc/module-sdk";
+import type { ResourceAmounts, Term } from "@world-prism/contracts";
+import type { DeterministicDecisionInput } from "@world-prism/module-sdk";
 
 export function termsWithinDelegations(terms: readonly Term[], input: DeterministicDecisionInput): boolean {
   const remaining = new Map<string, ResourceAmounts>();

@@ -3,7 +3,7 @@
  * 交互契约：键与投影视图字段（kind + text）绑定，不包含 worldTick 或数组下标；不修改投影事实。
  * 约束与禁忌：不在客户端推断新的提醒，也不让已关闭集合随 tick 或渲染次数增长。
  */
-import { playerNotificationKey, type PlayerNotificationView } from "@ai-npc/contracts";
+import { playerNotificationKey, type PlayerNotificationView } from "@world-prism/contracts";
 
 export const visibleNotificationLimit = 3;
 

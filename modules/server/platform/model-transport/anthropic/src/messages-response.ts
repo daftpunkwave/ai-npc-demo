@@ -4,8 +4,8 @@
  * 禁止交付已拒绝的输出，或把中途放弃的工具调用交给宿主。
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { jsonObjectSchema, jsonValueSchema, type Json, type ModelOutput, type ModelResponse } from "@ai-npc/contracts";
-import { modelTransportFailure, parseModelJsonOutput } from "@ai-npc/module-sdk";
+import { jsonObjectSchema, jsonValueSchema, type Json, type ModelOutput, type ModelResponse } from "@world-prism/contracts";
+import { modelTransportFailure, parseModelJsonOutput } from "@world-prism/module-sdk";
 
 function messageFinish(reason: Anthropic.Message["stop_reason"] | Anthropic.Beta.BetaMessage["stop_reason"]): ModelResponse["finishReason"] {
   switch (reason) {

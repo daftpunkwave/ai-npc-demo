@@ -3,8 +3,8 @@
  * 依赖共享契约、描述符校验与 zod；配置默认值随描述符冻结。
  * 禁止在此创建实例、读取存储或执行模型调用。
  */
-import { agentMemoryRetrievalBudgetSchema, capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { agentMemoryRetrievalBudgetSchema, capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const ledgerRecallConfigSchema = z

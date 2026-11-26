@@ -9,7 +9,7 @@ import {
   contextSegmentKindValues,
   contextUserSegmentKindSchema,
   contextUserSegmentKindValues,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { orderedBlocksContextConfigSchema } from "../src/definition";
 
 /** 已知段名的合法配置：契约与模块配置两侧都必须接受。 */

@@ -4,9 +4,9 @@
  * 禁止写入密钥或凭据，禁止用原始 JSON.stringify、模块 ID 或截断摘要代替规范化哈希。
  * 未声明 Agent 槽位时不解析 profile、toolset 与模型布局，只保留名册选择供运行记录。
  */
-import type { Json } from "@ai-npc/contracts";
-import type { Roster, RunSpec } from "@ai-npc/experiment";
-import { computeConfigHash, type CanonicalHasher } from "@ai-npc/kernel";
+import type { Json } from "@world-prism/contracts";
+import type { Roster, RunSpec } from "@world-prism/experiment";
+import { computeConfigHash, type CanonicalHasher } from "@world-prism/kernel";
 import { canonicalHasher } from "../host-services";
 import type { ResolvedServerAssembly } from "./assembly";
 

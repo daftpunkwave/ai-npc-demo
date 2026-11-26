@@ -16,8 +16,8 @@ import {
   type ToolBinding,
   type ToolDefinition,
   type ToolResultReasonCode,
-} from "@ai-npc/contracts";
-import type { AgentToolViewPort } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentToolViewPort } from "@world-prism/module-sdk";
 import type { ToolOutcomeStore } from "./tool-outcome-store";
 import {
   dropNullFields,

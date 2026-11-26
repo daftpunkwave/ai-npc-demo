@@ -23,7 +23,7 @@ import {
   type BackupOptions,
   type BackupResult,
   type HostServices,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 备份保留上限：成功发布后只保留最近的若干份，避免无界增长。 */
 export const maxRetainedBackups = 20;
@@ -110,7 +110,7 @@ function pruneBackups(backupDir: string, host: HostServices, currentPath: string
   let names: readonly string[];
   try {
     names = readdirSync(backupDir)
-      .filter((name) => /^ai-npc-.*\.db$/.test(name))
+      .filter((name) => /^world-prism-.*\.db$/.test(name))
       .sort()
       .reverse();
   } catch (error) {
@@ -144,7 +144,7 @@ export function backupDatabase(
   const backupDir = resolve(dataDir, "backups");
   mkdirSync(backupDir, { recursive: true });
   const stamp = timestampForFileName(host.nowIso());
-  const baseName = parsed.label === undefined ? `ai-npc-${stamp}` : `ai-npc-${stamp}-${parsed.label}`;
+  const baseName = parsed.label === undefined ? `world-prism-${stamp}` : `world-prism-${stamp}-${parsed.label}`;
   // 暂存目录权限 0700：VACUUM INTO 生成期间的内容不会先以默认权限暴露给其他用户。
   const stagingDirectory = join(backupDir, `${baseName}.${host.ids("backup")}.partial`);
   const stagingPath = join(stagingDirectory, "backup.db");

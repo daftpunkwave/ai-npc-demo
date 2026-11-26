@@ -4,7 +4,7 @@
  * 该写法符合 realm/kind 白名单。
  */
 import { useState } from "react";
-import { packageName } from "@ai-npc/client-sdk";
+import { packageName } from "@world-prism/client-sdk";
 import { z } from "zod";
 
 export const slotSchema = z.object({ slot: z.string() });

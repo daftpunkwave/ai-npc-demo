@@ -16,7 +16,7 @@ import {
   type Json,
   type ModuleCreateInput,
   type StoragePort,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { storageModuleDefinition } from "../src/definition";
 
 /** 捕获的一条宿主日志；测试用它断言迁移与打开事件。 */
@@ -110,7 +110,7 @@ export async function startStorage(dataDir: string, host: FakeHost = createFakeH
 
 /** 创建唯一的临时数据目录；测试结束时由调用方删除。 */
 export function createTempDataDir(): string {
-  return mkdtempSync(join(tmpdir(), "ai-npc-storage-test-"));
+  return mkdtempSync(join(tmpdir(), "world-prism-storage-test-"));
 }
 
 /** 删除临时数据目录及其中的数据库与备份。 */

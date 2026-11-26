@@ -9,7 +9,7 @@ import {
   streamCloseCodes,
   type AuthContext,
   type StreamChannel,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { ReplayStore } from "./replay-store";
 import type { SessionRegistry } from "./session-registry";
 import type { SocketSender } from "./stream-delivery";

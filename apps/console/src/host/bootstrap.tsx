@@ -9,9 +9,9 @@ import {
   memoryPreferencePort,
   startBrowserModules,
   type StartedBrowserModules,
-} from "@ai-npc/client-sdk";
-import { ApiClient, takeHashToken } from "@ai-npc/client-protocol";
-import { DomainError, type ClockView, type ConsoleActiveRole, type SessionDescriptor } from "@ai-npc/contracts";
+} from "@world-prism/client-sdk";
+import { ApiClient, takeHashToken } from "@world-prism/client-protocol";
+import { DomainError, type ClockView, type ConsoleActiveRole, type SessionDescriptor } from "@world-prism/contracts";
 import { consoleModuleDefinitions } from "./module-catalog";
 import { ConsoleShell } from "../ui/console-shell";
 

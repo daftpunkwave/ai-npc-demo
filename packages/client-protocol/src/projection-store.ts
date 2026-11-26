@@ -10,7 +10,7 @@ import {
   type StreamAppendMessage,
   type StreamDeltaMessage,
   type StreamSnapshotMessage,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 export interface ProjectionState {
   readonly worldId: string;

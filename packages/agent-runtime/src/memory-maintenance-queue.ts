@@ -3,14 +3,14 @@
  * 依赖 storage port、宿主时钟与 ID 服务，以及公开的整理任务数据。
  * 禁止执行模块逻辑或发布记忆 revision。
  */
-import { maintenanceTaskSchema } from "@ai-npc/contracts";
+import { maintenanceTaskSchema } from "@world-prism/contracts";
 import type {
   HostServices,
   Json,
   MaintenanceTask,
   StoragePort,
   StorageRow,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 const maxMaintenanceAttempts = 3;
 

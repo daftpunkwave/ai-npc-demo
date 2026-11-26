@@ -10,7 +10,7 @@ import {
   type Json,
   type StoragePort,
   type StorageRow,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 const artifactKinds = ["tool-raw", "tool-view", "speech", "decision", "context", "model-request", "model-response", "export"] as const;
 

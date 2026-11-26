@@ -3,7 +3,7 @@
  * 依赖 module-sdk 的处理器上下文、行动/通信只读端口、内容派系索引与世界 campaign；不写协议状态。
  * 禁止在这里提交事务、把未提交的任务事实当成履约证据或替当事人记忆承诺。
  */
-import { requireGameContent, type GameModulePorts, type HandlerContext, type ShareQuery } from "@ai-npc/module-sdk";
+import { requireGameContent, type GameModulePorts, type HandlerContext, type ShareQuery } from "@world-prism/module-sdk";
 import {
   resolvePrincipalFaction,
   type FulfillmentFactions,

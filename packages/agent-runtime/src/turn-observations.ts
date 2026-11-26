@@ -11,7 +11,7 @@ import type {
   StorageRawRow,
   StorageTransaction,
   StorageValue,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { decodeObservationRow, parseObservation } from "./memory-row-codec";
 
 /** 与 memory-store 的 readObservations 保持同一组列，避免两条路径取回不同形状的行。 */

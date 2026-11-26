@@ -3,7 +3,7 @@
  * 依赖地图端口与内容道路/节点/库存点；只读，不写任务或资源。
  * 禁止在出发时信任派遣时缓存的路线，也禁止把救援拆成不经过群体节点的单段路线。
  */
-import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
+import type { GameContent, GameModulePorts } from "@world-prism/module-sdk";
 import { repairWorkNodeId, rescueDurationDiscount, scoutTravelDiscountPerRoad } from "./faction-bonus";
 import type { DispatchInput } from "./plan-types";
 

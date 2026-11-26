@@ -5,8 +5,8 @@
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
-import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ExperimentDetailResponse, ModuleCreateInput, ModuleInstance, RunReportResponse } from "@ai-npc/contracts";
+import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
+import type { ExperimentDetailResponse, ModuleCreateInput, ModuleInstance, RunReportResponse } from "@world-prism/contracts";
 
 /**
  * 控制台宿主端口：页面只读其中的评估数据读取能力。

@@ -12,14 +12,14 @@ import type {
   Json,
   ModuleDefinition,
   StoragePort,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
-import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+} from "@world-prism/module-sdk";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
 export const memoryWorldId = "wld-000000000001";

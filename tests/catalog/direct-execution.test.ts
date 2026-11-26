@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { isDirectExecution } from "@ai-npc/scripts/direct-execution";
+import { isDirectExecution } from "@world-prism/scripts/direct-execution";
 
 const temporaryRoots: string[] = [];
 

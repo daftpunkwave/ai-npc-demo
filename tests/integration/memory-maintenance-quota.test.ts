@@ -4,9 +4,9 @@
  * 约束与禁忌：禁止直接伪造租约、水位或模型配额决策。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { AgentObservation } from "@ai-npc/contracts";
-import type { RunModelPort } from "@ai-npc/module-sdk";
-import { memoryLayeredHybridModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import type { AgentObservation } from "@world-prism/contracts";
+import type { RunModelPort } from "@world-prism/module-sdk";
+import { memoryLayeredHybridModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import { createMemoryHarness, insertObservation, memoryAgentId, memoryBranchId, memoryIdentity } from "./memory-support";
 import { memoryModelRoute, modelResponse, oneAttemptModel, startVariantHost } from "./memory-variants-support";
 

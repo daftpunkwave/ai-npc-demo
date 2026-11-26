@@ -3,8 +3,8 @@
  * 依赖任务/邀请聚合、预留与委托回补辅助、世界端口与内容索引；不执行完成结算。
  * 禁止让已结束的任务再次取消、跳过失败回滚或把材料结算重复扣减。
  */
-import { commandPayloadOf, type Json } from "@ai-npc/contracts";
-import { effectivePrincipalId, principalsAudience, requireGameContent, type HandlerResult } from "@ai-npc/module-sdk";
+import { commandPayloadOf, type Json } from "@world-prism/contracts";
+import { effectivePrincipalId, principalsAudience, requireGameContent, type HandlerResult } from "@world-prism/module-sdk";
 import { refundDelegation, releaseReserved, settleRepairMaterials } from "./reservations";
 import { readTaskState, type InvitationState } from "./state";
 import { asPorts, taskAudience, type ActionContext } from "./task-shared";

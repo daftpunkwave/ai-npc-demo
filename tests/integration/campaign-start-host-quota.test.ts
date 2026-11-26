@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { startHost, type RunningHost } from "@ai-npc/app-server";
-import type { AuthContext } from "@ai-npc/contracts";
-import { loadRoster } from "@ai-npc/experiment";
+import { startHost, type RunningHost } from "@world-prism/app-server";
+import type { AuthContext } from "@world-prism/contracts";
+import { loadRoster } from "@world-prism/experiment";
 import { gameCommandEnvelope } from "./game-support";
 import { stubStandardModelHttp } from "./standard-model-support";
 
@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 
 function tempDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-host-quota-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-host-quota-"));
   dirs.push(dir);
   return dir;
 }

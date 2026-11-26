@@ -5,11 +5,11 @@
  */
 import {
   estimateModelInputTokens, resolveContextTokenLimits, type AgentTurnStatus, type ContextArtifact, type HostServices, type MemoryBundle,
-} from "@ai-npc/contracts";
-import type { ContentPack, ResolvedAgentProfile } from "@ai-npc/experiment";
+} from "@world-prism/contracts";
+import type { ContentPack, ResolvedAgentProfile } from "@world-prism/experiment";
 import type {
   AgentArtifactStore, AgentCompressionPort, AgentContextPort, ModelCallInput, ModelDecisionPort, ModelWorkScope, RunModelPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { AgentContextPipeline } from "./context-pipeline";
 import type { SpeechGenerator } from "./dialogue-flow";
 import { decisionContext, modelContextBudget, triggerPrincipals, validateModelDecision } from "./model-turn-materials";

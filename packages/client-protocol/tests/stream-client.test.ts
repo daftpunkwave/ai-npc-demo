@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止依赖真实计时器或浏览器 WebSocket，也不得让传输层校验替代领域应用结果。
  */
 import { describe, expect, it, vi } from "vitest";
-import { DomainError, type ServerStreamMessage } from "@ai-npc/contracts";
+import { DomainError, type ServerStreamMessage } from "@world-prism/contracts";
 import { StreamClient, type StreamClientOptions } from "../src/stream-client";
 
 type Listener = (event: { readonly data?: unknown }) => void;

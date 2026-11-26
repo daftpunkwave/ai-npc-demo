@@ -3,10 +3,10 @@
  * 依赖 authority、SQLite 测试助手与公共契约；测试文件只声明场景与断言。
  * 禁止在这里放宽断言或共享测试之间的数据库状态。
  */
-import type { Json } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
 import { z } from "zod";
-import type { RuleContributor } from "@ai-npc/authority";
-import type { ApprovedSpeech } from "@ai-npc/module-sdk";
+import type { RuleContributor } from "@world-prism/authority";
+import type { ApprovedSpeech } from "@world-prism/module-sdk";
 import {
   createAuthorityHarness,
   type AuthorityHarness,

@@ -10,14 +10,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { computeConfigHash } from "@ai-npc/kernel";
+import { computeConfigHash } from "@world-prism/kernel";
 import {
   canonicalHasher,
   migrateOnlineRun,
   restoreOnlineAliasToSourceBranch,
   startHost,
   type RunningHost,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import { stubStandardModelHttp } from "./standard-model-support";
 
@@ -56,7 +56,7 @@ afterEach(async () => {
 });
 
 function tempDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-migration-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-migration-test-"));
   dirs.push(dir);
   return dir;
 }
@@ -65,7 +65,7 @@ function tempDataDir(): string {
 type RunRowSnapshot = Readonly<Record<string, unknown>>;
 
 function readRunRows(dataDir: string): readonly RunRowSnapshot[] {
-  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  const database = new DatabaseSync(join(dataDir, "world-prism.db"));
   try {
     return database.prepare("SELECT * FROM runs ORDER BY created_at, run_id").all() as readonly RunRowSnapshot[];
   } finally {
@@ -74,7 +74,7 @@ function readRunRows(dataDir: string): readonly RunRowSnapshot[] {
 }
 
 function readSingleBranchStatus(dataDir: string, branchId: string): string {
-  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  const database = new DatabaseSync(join(dataDir, "world-prism.db"));
   try {
     return String(
       database.prepare("SELECT status FROM branches WHERE branch_id = ?").get(branchId)?.["status"],
@@ -86,7 +86,7 @@ function readSingleBranchStatus(dataDir: string, branchId: string): string {
 
 /** 直接改写分支状态，用于构造 paused 源分支等无法经公开入口到达的迁移前形态。 */
 function writeBranchStatus(dataDir: string, branchId: string, status: "active" | "paused"): void {
-  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  const database = new DatabaseSync(join(dataDir, "world-prism.db"));
   try {
     database.prepare("UPDATE branches SET status = ? WHERE branch_id = ?").run(status, branchId);
   } finally {
@@ -95,7 +95,7 @@ function writeBranchStatus(dataDir: string, branchId: string, status: "active" |
 }
 
 function readAliasBranchId(dataDir: string): string {
-  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  const database = new DatabaseSync(join(dataDir, "world-prism.db"));
   try {
     return String(
       database.prepare("SELECT branch_id FROM world_aliases WHERE alias = 'online'").get()?.["branch_id"],
@@ -106,7 +106,7 @@ function readAliasBranchId(dataDir: string): string {
 }
 
 function countActiveActivations(dataDir: string, branchId: string): number {
-  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  const database = new DatabaseSync(join(dataDir, "world-prism.db"));
   try {
     const row = database
       .prepare("SELECT COUNT(*) AS total FROM agent_activations WHERE branch_id = ? AND status = 'active'")
@@ -131,7 +131,7 @@ interface LegacyManifest {
  * 但按当前模块目录复算必然失败。
  */
 async function freezeLegacyManifest(dataDir: string): Promise<LegacyManifest> {
-  const databasePath = join(dataDir, "ai-npc.db");
+  const databasePath = join(dataDir, "world-prism.db");
   const database = new DatabaseSync(databasePath);
   let legacy: LegacyManifest;
   try {
@@ -174,7 +174,7 @@ async function freezeLegacyManifest(dataDir: string): Promise<LegacyManifest> {
 
 /** 在旧形态之上覆写冻结 manifest 的单个顶层字段并重算自洽哈希，用于构造非能力闭包差异。 */
 async function overwriteManifestField(dataDir: string, legacy: LegacyManifest, field: string, value: unknown): Promise<LegacyManifest> {
-  const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+  const database = new DatabaseSync(join(dataDir, "world-prism.db"));
   try {
     const manifest = JSON.parse(legacy.manifestJson) as Record<string, unknown>;
     const tampered = { ...manifest, [field]: value };
@@ -247,7 +247,7 @@ describe("在线 run 能力闭包升级迁移", () => {
     hosts.push(migrated);
     expect(migrated.branchId).not.toBe(legacy.branchId);
 
-    const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+    const database = new DatabaseSync(join(dataDir, "world-prism.db"));
     let forkedBranchParent = "";
     let forkedAtWorldSeq: unknown;
     let forkedClockMode = "";
@@ -392,7 +392,7 @@ describe("在线 run 能力闭包升级迁移", () => {
     await first.close();
 
     // 关闭宿主后从存储行重建在线入口，模拟一次已读取但未提交迁移的过时入口。
-    const database = new DatabaseSync(join(dataDir, "ai-npc.db"));
+    const database = new DatabaseSync(join(dataDir, "world-prism.db"));
     let staleEntry: Parameters<typeof migrateOnlineRun>[0]["online"];
     let runSpec: unknown;
     let manifest: unknown;

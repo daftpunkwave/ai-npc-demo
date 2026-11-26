@@ -5,16 +5,16 @@
  */
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCatalogCheckCli } from "@ai-npc/app-server";
+import { runCatalogCheckCli } from "@world-prism/app-server";
 import { isDirectExecution } from "./direct-execution";
 
-export { checkCatalog, runCatalogCheckCli } from "@ai-npc/app-server";
+export { checkCatalog, runCatalogCheckCli } from "@world-prism/app-server";
 export type {
   CatalogCheckOptions,
   CatalogCheckReport,
   CatalogCliOptions,
   CatalogViolation,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 
 if (isDirectExecution(import.meta.url)) {
   process.exitCode = runCatalogCheckCli({ root: resolve(dirname(fileURLToPath(import.meta.url)), "..") });

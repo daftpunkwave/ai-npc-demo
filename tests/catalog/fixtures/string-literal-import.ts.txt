@@ -3,4 +3,4 @@
  * 交互契约：仅作为边界检查输入，不会被编译或执行。
  * 约束与禁忌：字符串内容不是静态 import。
  */
-export const helpText = "import value from '@ai-npc/kernel'";
+export const helpText = "import value from '@world-prism/kernel'";

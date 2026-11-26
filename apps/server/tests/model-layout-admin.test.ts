@@ -18,7 +18,7 @@ describe("模型布局管理端口", () => {
   let port: ModelLayoutAdminPort;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "ai-npc-layout-admin-"));
+    root = mkdtempSync(join(tmpdir(), "world-prism-layout-admin-"));
     directory = join(root, "model-layouts");
     port = new ModelLayoutAdminPort({ configDir: root }, new Set(), () => ({ routes: [] }), () => null);
   });

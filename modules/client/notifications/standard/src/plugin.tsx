@@ -4,9 +4,9 @@
  * 禁止根据客户端时间推断新的紧急事件，也禁止用 tick 或下标冒充提醒身份。
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { ProjectionState } from "@ai-npc/client-protocol";
+import { usePortSubscription, type BrowserViewPort } from "@world-prism/client-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { ProjectionState } from "@world-prism/client-protocol";
 import { dismissNotification, pruneDismissed, visibleNotifications } from "./notification-state";
 
 function NotificationsView(): ReactNode {

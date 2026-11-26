@@ -4,7 +4,7 @@
  * 禁止为 HTTP 入口放宽断言，也禁止让两套 schema 各自演化出不同结论。
  */
 import { describe, expect, it } from "vitest";
-import { loadRunSpec, runSpecSchema } from "@ai-npc/experiment";
+import { loadRunSpec, runSpecSchema } from "@world-prism/experiment";
 
 const loadContext = { configDir: "config" };
 

@@ -16,10 +16,10 @@ import {
   type CapabilityRef,
   type ModuleDefinition,
   type Realm,
-} from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
-import { clockConfigSchema } from "@ai-npc/mod-game-clock-controlled";
-import { checkCatalog, runCatalogCheckCli } from "@ai-npc/scripts/check-catalog";
+} from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
+import { clockConfigSchema } from "@world-prism/mod-game-clock-controlled";
+import { checkCatalog, runCatalogCheckCli } from "@world-prism/scripts/check-catalog";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const temporaryRoots: string[] = [];
@@ -89,7 +89,7 @@ function assembly(input: {
 }
 
 function fixtureRoot(assemblies: Readonly<Record<string, AssemblyDescriptor>>): string {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-catalog-test-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-catalog-test-"));
   temporaryRoots.push(root);
   mkdirSync(join(root, "config/assemblies"), { recursive: true });
   for (const [fileName, value] of Object.entries(assemblies)) {
@@ -216,7 +216,7 @@ describe("catalog 预检", () => {
 
   it("装配 schema 失败时给出代码与字段路径", () => {
     const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
-    const root = mkdtempSync(join(tmpdir(), "ai-npc-catalog-schema-"));
+    const root = mkdtempSync(join(tmpdir(), "world-prism-catalog-schema-"));
     temporaryRoots.push(root);
     mkdirSync(join(root, "config/assemblies"), { recursive: true });
     // 绕开 assembly() 助手直接写文件：schemaVersion 必须是未知版本才会触发 schema 失败。

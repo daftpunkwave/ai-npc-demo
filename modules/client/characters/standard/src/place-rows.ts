@@ -5,7 +5,7 @@
  * 约束与禁忌：只做归类与计数，不筛选节点、不排序、不改写条目；
  *   禁止在此读取世界状态、发起请求或产生副作用。
  */
-import type { CharacterView, PlayerProjection, StockpileView } from "@ai-npc/contracts";
+import type { CharacterView, PlayerProjection, StockpileView } from "@world-prism/contracts";
 import { groupByNodeId } from "./node-index";
 
 /** 地点页签的一行：节点身份、该节点在场人数与库存条目。 */

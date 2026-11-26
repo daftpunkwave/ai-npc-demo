@@ -3,8 +3,8 @@
  * 仅作为边界检查输入，不会被编译或执行。
  * 该写法符合 realm/kind 白名单。
  */
-import { packageName } from "@ai-npc/contracts";
-import { packageName as moduleSdkPackageName } from "@ai-npc/module-sdk";
+import { packageName } from "@world-prism/contracts";
+import { packageName as moduleSdkPackageName } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const configSchema = z.object({});

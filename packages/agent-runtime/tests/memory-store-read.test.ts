@@ -11,7 +11,7 @@ import type {
   StorageRow,
   StorageTransaction,
   StorageValue,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { MemoryStore } from "../src/memory-store";
 
 const host: HostServices = {

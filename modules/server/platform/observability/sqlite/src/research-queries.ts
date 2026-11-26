@@ -29,8 +29,8 @@ import {
   type TraceSpan,
   type TurnDetail,
   type TurnsResponse,
-} from "@ai-npc/contracts";
-import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 import {
   jsonColumn,
   numberColumn,

@@ -9,7 +9,7 @@
 模块目录与包名的映射规则见 [技术栈](../delivery/tech-stack.md) 第 2 节：server 模块在 `modules/server/<group>/<family>/<impl>/`，浏览器模块在 `modules/<client|console>/<family>/<impl>/`，每个目录是一个 workspace 源码包。
 
 ```text
-ai-npc-demo/
+world-prism/
   AGENTS.md  CLAUDE.md            # shared rules and reference entry
   AGENTS.local.md  CLAUDE.local.md # optional local supplements (git-ignored)
   package.json  pnpm-workspace.yaml  tsconfig.base.json  tsconfig.server.json  tsconfig.browser.json
@@ -126,7 +126,7 @@ ai-npc-demo/
 
 ```text
 modules/server/agent/memory/ledger/
-  package.json        # @ai-npc/mod-agent-memory-ledger, exports ./src/index.ts
+  package.json        # @world-prism/mod-agent-memory-ledger, exports ./src/index.ts
   src/
     index.ts          # 只导出 moduleDefinition 与公开类型
     definition.ts     # ModuleDefinition：id/kind/version/apiVersion/scope/state

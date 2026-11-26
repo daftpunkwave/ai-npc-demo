@@ -80,7 +80,7 @@ function spawnManaged(label: string, args: readonly string[]): ManagedProcess {
     windowsHide: true,
   });
   child.on("error", (error) => {
-    console.error("[ai-npc] 子进程启动失败", { label, error });
+    console.error("[world-prism] 子进程启动失败", { label, error });
   });
   return { label, child };
 }
@@ -154,7 +154,7 @@ export async function supervise(processes: readonly ManagedProcess[]): Promise<n
     for (const entry of processes) {
       entry.child.once("exit", (code, signal) => {
         if (!settled) {
-          console.info(`[ai-npc] ${entry.label} 已退出：${signal ?? code ?? "unknown"}`);
+          console.info(`[world-prism] ${entry.label} 已退出：${signal ?? code ?? "unknown"}`);
         }
         finish(code);
       });

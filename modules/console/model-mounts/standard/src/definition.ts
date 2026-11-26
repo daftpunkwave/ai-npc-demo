@@ -3,7 +3,7 @@
  * 交互契约：依赖远端模型池配置能力与浏览器模块宿主。
  * 约束与禁忌：不加载模型 SDK、不直接读取配置或凭据。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const modelMountsPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.model-mounts.standard",

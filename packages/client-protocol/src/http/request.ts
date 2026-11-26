@@ -3,7 +3,7 @@
  * 交互契约：依赖公共角色类型与响应 schema，供浏览器 HTTP 客户端内部装配使用。
  * 约束与禁忌：不保存会话、不执行网络请求，领域方法不指定认证身份。
  */
-import type { ConsoleActiveRole } from "@ai-npc/contracts";
+import type { ConsoleActiveRole } from "@world-prism/contracts";
 import type { z } from "zod";
 
 export interface RequestOptions {

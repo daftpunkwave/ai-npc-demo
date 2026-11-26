@@ -4,7 +4,7 @@
  * 禁止让未登记事件或拼错的事件名在注册阶段静默通过。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError, campaignStartedPayloadSchema, type EventPayloadSchema } from "@ai-npc/contracts";
+import { DomainError, campaignStartedPayloadSchema, type EventPayloadSchema } from "@world-prism/contracts";
 import { RuleRegistry } from "../src/rule-registry";
 
 function expectAssemblyFailure(run: () => void, messagePart: string): void {

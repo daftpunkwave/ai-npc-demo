@@ -17,8 +17,8 @@ import {
   shutdownServer,
   startServer,
   startupLogLines,
-} from "@ai-npc/app-server";
-import type { DeploymentConfig, HostOptions, StartupHost } from "@ai-npc/app-server";
+} from "@world-prism/app-server";
+import type { DeploymentConfig, HostOptions, StartupHost } from "@world-prism/app-server";
 
 vi.mock("node:fs", { spy: true });
 
@@ -40,7 +40,7 @@ const controlledEnvKeys = [
 ] as const;
 
 function tempRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-config-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-config-test-"));
   dirs.push(dir);
   return dir;
 }
@@ -416,9 +416,9 @@ describe("启动编排", () => {
     expect(Object.keys(stored).sort()).toEqual(["consoleToken", "playerToken", "version"]);
     const playerToken = String(stored["playerToken"]);
     const consoleToken = String(stored["consoleToken"]);
-    expect(lines[0]).toBe("[ai-npc] server ready: http://127.0.0.1:3000");
-    expect(lines).toContain(`[ai-npc] player  login: http://127.0.0.1:5173/#token=${encodeURIComponent(playerToken)}`);
-    expect(lines).toContain(`[ai-npc] console login: http://127.0.0.1:3000/console/#token=${encodeURIComponent(consoleToken)}`);
+    expect(lines[0]).toBe("[world-prism] server ready: http://127.0.0.1:3000");
+    expect(lines).toContain(`[world-prism] player  login: http://127.0.0.1:5173/#token=${encodeURIComponent(playerToken)}`);
+    expect(lines).toContain(`[world-prism] console login: http://127.0.0.1:3000/console/#token=${encodeURIComponent(consoleToken)}`);
 
     const reused = resolveCredentials(config, {
       generate: () => {
@@ -486,9 +486,9 @@ describe("登录地址输出", () => {
       generated: ["player", "console"],
     });
     expect(lines).toEqual([
-      "[ai-npc] server ready: http://127.0.0.1:3000",
-      "[ai-npc] player  login: http://127.0.0.1:5173/#token=new-player",
-      "[ai-npc] console login: http://127.0.0.1:3000/console/#token=new-console",
+      "[world-prism] server ready: http://127.0.0.1:3000",
+      "[world-prism] player  login: http://127.0.0.1:5173/#token=new-player",
+      "[world-prism] console login: http://127.0.0.1:3000/console/#token=new-console",
     ]);
   });
 
@@ -500,14 +500,14 @@ describe("登录地址输出", () => {
       tokens: { player: "persisted-player", console: "persisted-console" },
       generated: [],
     });
-    expect(reused).toEqual(["[ai-npc] server ready: http://127.0.0.1:3000"]);
+    expect(reused).toEqual(["[world-prism] server ready: http://127.0.0.1:3000"]);
 
     const playerOnly = startupLogLines({
       config,
       tokens: { player: "new-player", console: "persisted-console" },
       generated: ["player"],
     });
-    expect(playerOnly).toContain("[ai-npc] player  login: http://127.0.0.1:5173/#token=new-player");
+    expect(playerOnly).toContain("[world-prism] player  login: http://127.0.0.1:5173/#token=new-player");
     expect(playerOnly.join("\n")).not.toContain("persisted-console");
     expect(playerOnly.join("\n")).not.toContain("/console/#token=");
   });

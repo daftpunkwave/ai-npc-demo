@@ -3,8 +3,8 @@
  * 依赖公共契约与 module-sdk；具体编排由端口注入。
  * 禁止在此直接写世界表、暂停时钟或调用存档实现。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const operationsConfigSchema = z.object({}).strict();

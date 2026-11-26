@@ -3,8 +3,8 @@
  * 交互契约：阈值与目标比例属于已冻结的 profile 配置。
  * 约束与禁忌：不得改写受保护段、工具配对或当前输入。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const windowCompressionConfigSchema = z

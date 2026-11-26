@@ -3,8 +3,8 @@
  * 保留工具参数原文、可用的 token 用量及同供应商回放所需字段。
  * 禁止执行工具或把无效响应当作完整输出。
  */
-import { jsonObjectSchema, type Json, type ModelOutput, type ModelResponse } from "@ai-npc/contracts";
-import { modelTransportFailure, parseModelJsonOutput } from "@ai-npc/module-sdk";
+import { jsonObjectSchema, type Json, type ModelOutput, type ModelResponse } from "@world-prism/contracts";
+import { modelTransportFailure, parseModelJsonOutput } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const count = z.number().int().nonnegative().nullish();

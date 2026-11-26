@@ -4,7 +4,7 @@
  * 约束与禁忌：不得把「非法值被静默替换为默认值」当成通过，也不得为迁就实现放宽断言。
  */
 import { describe, expect, it } from "vitest";
-import { agentsQuerySchema, timelineQuerySchema } from "@ai-npc/contracts";
+import { agentsQuerySchema, timelineQuerySchema } from "@world-prism/contracts";
 import { normalizeQuery, parseQuery } from "../src/routes/query";
 
 describe("normalizeQuery", () => {

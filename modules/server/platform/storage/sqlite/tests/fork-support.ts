@@ -3,7 +3,7 @@
  * 依赖存储模块测试助手与存储端口；种入覆盖全部分支级表的最小行，供复制与修正断言使用。
  * 禁止让种子数据依赖真实业务内容、共享数据库，或把运行级 turn 当成分支级数据复制。
  */
-import type { BranchKind, StoragePort, StorageRow } from "@ai-npc/contracts";
+import type { BranchKind, StoragePort, StorageRow } from "@world-prism/contracts";
 
 export const SRC = "brn-src";
 export const NOW = "2026-01-01T00:00:00.000Z";

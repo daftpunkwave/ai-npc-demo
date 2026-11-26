@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { serverModuleDefinitions } from "@ai-npc/app-server";
-import type { Json, StoragePort } from "@ai-npc/contracts";
-import type { AgentBudgetPort, AgentModelPoolPort, ModelObservabilityPort, ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
+import { serverModuleDefinitions } from "@world-prism/app-server";
+import type { Json, StoragePort } from "@world-prism/contracts";
+import type { AgentBudgetPort, AgentModelPoolPort, ModelObservabilityPort, ModelRoute, ModelWorkScope } from "@world-prism/module-sdk";
 import { createFakeHost } from "./authority-support";
 
 const roots: string[] = [];
@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 function dataRoot() {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-startup-recovery-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-startup-recovery-"));
   roots.push(root);
   return root;
 }

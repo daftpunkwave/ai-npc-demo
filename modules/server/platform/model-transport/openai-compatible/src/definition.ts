@@ -3,8 +3,8 @@
  * 组合根用这个描述符解析装配并按需加载传输实现。
  * 登记描述符期间禁止访问网络或解析凭据。
  */
-import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 
 export const openAICompatibleTransportId = "platform.model-transport.openai-compatible";
 

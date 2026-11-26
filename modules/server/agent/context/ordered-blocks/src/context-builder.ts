@@ -11,8 +11,8 @@ import {
   type ContextUserSegmentKind,
   type Json,
   type MemoryBundleItem,
-} from "@ai-npc/contracts";
-import type { AgentContextPort } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentContextPort } from "@world-prism/module-sdk";
 import type { OrderedBlocksContextConfig } from "./definition";
 import { estimateContextTokens, estimateTokens } from "./token-estimate";
 

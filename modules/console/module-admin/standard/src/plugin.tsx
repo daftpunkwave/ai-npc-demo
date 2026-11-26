@@ -4,15 +4,15 @@
  * 禁止向浏览器暴露模块工厂、凭据或服务端内存对象。
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
+import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
 import type {
   AssemblyDetailResponse,
   AssemblySource,
   ModuleCreateInput,
   ModuleDescriptorView,
   ModuleInstance,
-} from "@ai-npc/contracts";
-import type { ApiClient } from "@ai-npc/client-protocol";
+} from "@world-prism/contracts";
+import type { ApiClient } from "@world-prism/client-protocol";
 
 interface ConsoleHostPort {
   readonly api: ApiClient;

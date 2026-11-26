@@ -9,7 +9,7 @@ import type {
   StorageRawRow,
   StorageTransaction,
   StorageValue,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { readTurnObservations } from "../src/turn-observations";
 
 const scope: MemoryScope = {

@@ -4,8 +4,8 @@
  * 约束与禁忌：章节评估只允许协议 provider 的章节终点时钟步骤或宿主触发；禁止在此写入地图或库存聚合。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import { DomainError, type ResourceAmounts } from "@ai-npc/contracts";
-import { gameModuleIds, principalsAudience, totalAmount, type AgreementCounts, type GameContent, type GameIdFactory, type GameWorldPort, type ScopedWorldTxFactory } from "@ai-npc/module-sdk";
+import { DomainError, type ResourceAmounts } from "@world-prism/contracts";
+import { gameModuleIds, principalsAudience, totalAmount, type AgreementCounts, type GameContent, type GameIdFactory, type GameWorldPort, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
 import { runChapterEvaluation } from "./settlement";
 import { defaultChapterLengthTicks } from "./definition";
 import { campaignAggregateId, metersAggregateId } from "./port-aggregates";

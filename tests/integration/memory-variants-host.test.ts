@@ -4,9 +4,9 @@
  * 禁止绕过维护队列或直接把失败水位写成成功。
  */
 import { describe, expect, it } from "vitest";
-import type { RunModelPort } from "@ai-npc/module-sdk";
-import { MemoryHost } from "@ai-npc/agent-runtime";
-import { memoryLayeredHybridModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import type { RunModelPort } from "@world-prism/module-sdk";
+import { MemoryHost } from "@world-prism/agent-runtime";
+import { memoryLayeredHybridModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import {
   createMemoryHarness,
   insertObservation,

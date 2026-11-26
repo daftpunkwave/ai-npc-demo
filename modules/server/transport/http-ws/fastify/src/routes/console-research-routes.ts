@@ -25,7 +25,7 @@ import {
   turnReplayResponseSchema,
   turnsQuerySchema,
   turnsResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticate, requireConsoleRole, sendHttpError } from "./context";
@@ -44,7 +44,7 @@ import {
   experimentCreateResponseSchema,
   runControlRequestSchema,
   runControlResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { RouteContext } from "./context";
 import { queryInteger, queryOptionalText, queryText } from "./query";
 

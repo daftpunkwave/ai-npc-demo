@@ -5,9 +5,9 @@
  * 禁止在本文件绕过绑定器直接构造处理器上下文。
  */
 import { describe, expect, it } from "vitest";
-import type { ModuleDefinition } from "@ai-npc/contracts";
-import type { GameContent, GameModulePorts, GamePortBindContext, ModuleBinder } from "@ai-npc/module-sdk";
-import { resolveGameModuleBindings } from "@ai-npc/app-server/host";
+import type { ModuleDefinition } from "@world-prism/contracts";
+import type { GameContent, GameModulePorts, GamePortBindContext, ModuleBinder } from "@world-prism/module-sdk";
+import { resolveGameModuleBindings } from "@world-prism/app-server/host";
 
 /** 记录每次绑定收到的上下文，供断言端口记录内容使用。 */
 const bindContexts: { readonly moduleId: string; readonly context: GamePortBindContext }[] = [];

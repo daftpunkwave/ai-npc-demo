@@ -14,8 +14,8 @@ import {
   type ModulesResponse,
   type ResolvedModuleSet,
   type ModuleCreateInput,
-} from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export interface AdminAssembly {

@@ -4,9 +4,9 @@
  * 禁止用测试夹具替代真实内容包的路径数值。
  */
 import { describe, expect, it } from "vitest";
-import { loadContentPack } from "@ai-npc/experiment";
-import type { GameContent, GameRoad } from "@ai-npc/module-sdk";
-import { createMapPort } from "@ai-npc/mod-game-map-six-nodes";
+import { loadContentPack } from "@world-prism/experiment";
+import type { GameContent, GameRoad } from "@world-prism/module-sdk";
+import { createMapPort } from "@world-prism/mod-game-map-six-nodes";
 import { createMemoryTx, toGameContent } from "./game-support";
 
 function content(roads: GameContent["roads"]): GameContent {

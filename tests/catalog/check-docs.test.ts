@@ -7,10 +7,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { runDocsCheckCli } from "@ai-npc/scripts/check-docs";
+import { runDocsCheckCli } from "@world-prism/scripts/check-docs";
 
 function checkFixture(markdown: readonly string[], serverReadme: readonly string[] = []) {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-docs-check-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-docs-check-"));
   try {
     mkdirSync(join(root, "docs"));
     mkdirSync(join(root, "apps/server"), { recursive: true });

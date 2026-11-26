@@ -4,8 +4,8 @@
  * 禁止绑定监听端口、使用真实凭据或发送网络流量。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openAICompatibleTransportDefinition } from "@ai-npc/mod-platform-model-transport-openai-compatible/definition";
-import type { Json } from "@ai-npc/contracts";
+import { openAICompatibleTransportDefinition } from "@world-prism/mod-platform-model-transport-openai-compatible/definition";
+import type { Json } from "@world-prism/contracts";
 import { modelConnection, modelRequest, statusOutput, transportPort } from "../support/model-transport";
 
 const credential = "contract-test-key";

@@ -5,9 +5,9 @@
  * 禁止直接改写聚合，或用静态样例替代真实投影构建。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { PlayerProjection } from "@ai-npc/contracts";
-import { factionStandingNode, type ApprovedSpeechReader } from "@ai-npc/module-sdk";
-import { buildPlayerProjection } from "@ai-npc/app-server";
+import type { PlayerProjection } from "@world-prism/contracts";
+import { factionStandingNode, type ApprovedSpeechReader } from "@world-prism/module-sdk";
+import { buildPlayerProjection } from "@world-prism/app-server";
 import {
   createGameHarness,
   disposeTrackedGameHarnesses,
@@ -340,7 +340,7 @@ describe("玩家投影", () => {
   });
 
   it("对话、收件箱与笔记按受众与送达 tick 生成，延迟消息到期前不出现", async () => {
-    const speeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
+    const speeches: Record<string, import("@world-prism/module-sdk").ApprovedSpeech> = {
       "art-000000000101": {
         text: "清单在仓里第三排。",
         agentId: "npc-wenyuan",
@@ -474,7 +474,7 @@ describe("玩家投影", () => {
   });
 
   it("其他主体的私密对话与消息、秘密正文、未触发剧情卡与风险抽样都不出现", async () => {
-    const privateSpeeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
+    const privateSpeeches: Record<string, import("@world-prism/module-sdk").ApprovedSpeech> = {
       "art-000000000201": {
         text: "别把水路的事告诉外人。",
         agentId: "species-fauna",
@@ -579,7 +579,7 @@ describe("提醒与收件箱的内容边界", () => {
   it("提交早、送达晚的消息在送达当刻仍出现在收件箱", async () => {
     const remoteText = "早提交但晚送达的确认。";
     const remoteArtifactRef = "art-000000000000";
-    const speeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
+    const speeches: Record<string, import("@world-prism/module-sdk").ApprovedSpeech> = {
       [remoteArtifactRef]: {
         text: remoteText,
         agentId: "species-fauna",

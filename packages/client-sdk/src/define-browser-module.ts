@@ -15,7 +15,7 @@ import {
   type Json,
   type ModuleDefinition,
   type StrictConfigSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 type BrowserRealm = Extract<ModuleDefinition["realm"], "client" | "console">;
 

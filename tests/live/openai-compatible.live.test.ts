@@ -4,7 +4,7 @@
  * 禁止使用项目保存数据或向日志输出连接凭据。
  */
 import { it } from "vitest";
-import { openAICompatibleTransportDefinition } from "@ai-npc/mod-platform-model-transport-openai-compatible/definition";
+import { openAICompatibleTransportDefinition } from "@world-prism/mod-platform-model-transport-openai-compatible/definition";
 import { modelConnection, transportPort } from "../support/model-transport";
 import { verifyModelTransport } from "./model-smoke";
 

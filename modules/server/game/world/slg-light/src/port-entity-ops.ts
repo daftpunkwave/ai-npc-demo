@@ -10,7 +10,7 @@ import {
   type GameContent,
   type GameWorldPort,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { failure, type OpFailure, type OpSuccess } from "./port-result";
 import {
   characterStateSchema,

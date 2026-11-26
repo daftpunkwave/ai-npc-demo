@@ -8,7 +8,7 @@ import {
   emptyModuleConfigSchema,
   type HostServices,
   type ModuleDefinition,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { AgentModuleHandle } from "../src/agent-module-handle";
 
 const host: HostServices = {

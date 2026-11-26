@@ -75,9 +75,9 @@ describe("CLI 入口直接执行与导入行为", () => {
   });
 
   it("check-assets 公开入口不再暴露 isDirectExecution，共享工具保持可用", async () => {
-    const checkAssetsEntry = await import("@ai-npc/scripts/check-assets");
+    const checkAssetsEntry = await import("@world-prism/scripts/check-assets");
     expect("isDirectExecution" in checkAssetsEntry).toBe(false);
-    const sharedDetector = await import("@ai-npc/scripts/direct-execution");
+    const sharedDetector = await import("@world-prism/scripts/direct-execution");
     expect(typeof sharedDetector.isDirectExecution).toBe("function");
   });
 });

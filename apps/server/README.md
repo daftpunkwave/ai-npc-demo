@@ -1,4 +1,4 @@
-# @ai-npc/app-server
+# @world-prism/app-server
 
 服务端宿主与 HTTP/WS 传输层。
 

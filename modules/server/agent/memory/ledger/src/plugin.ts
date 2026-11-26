@@ -3,8 +3,8 @@
  * 依赖 MemoryPort 与模块生命周期辅助。
  * 禁止直接访问 SQLite 或模型传输层。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { ledgerConfigSchema } from "./definition";
 import { createLedgerPort } from "./ledger-port";
 

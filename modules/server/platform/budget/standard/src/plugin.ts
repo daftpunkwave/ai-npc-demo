@@ -3,8 +3,8 @@
  * 每次尝试占用一条账本记录，缺失 usage 按预留估价。
  * 禁止在事务内等待模型、把未知计费记为零或覆盖已结算条目。
  */
-import { DomainError, type ModuleCreateInput, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
-import { createStatelessModule, type AgentBudgetPort, type ModelBudgetReservation, type ModelRoute } from "@ai-npc/module-sdk";
+import { DomainError, type ModuleCreateInput, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
+import { createStatelessModule, type AgentBudgetPort, type ModelBudgetReservation, type ModelRoute } from "@world-prism/module-sdk";
 
 function estimateCost(price: ModelRoute["price"], input: number, output: number): number {
   return (price.inputPerMTok * input + price.outputPerMTok * output) / 1_000_000;

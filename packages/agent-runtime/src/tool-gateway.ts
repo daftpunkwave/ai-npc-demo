@@ -19,9 +19,9 @@ import {
   type ToolDefinition,
   type ToolExecutionResult,
   type ToolResultReasonCode,
-} from "@ai-npc/contracts";
-import type { AgentToolViewPort } from "@ai-npc/module-sdk";
-import { StoredAgentArtifactStore, type AgentArtifactStore } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentToolViewPort } from "@world-prism/module-sdk";
+import { StoredAgentArtifactStore, type AgentArtifactStore } from "@world-prism/module-sdk";
 import { ToolOutcomeStore } from "./tool-outcome-store";
 import { executeCommandTool, executeQueryTool, type ToolExecutionDeps } from "./tool-execution";
 import {
@@ -241,7 +241,7 @@ export class ToolGateway {
     argsHash: string,
     reasonCode: ToolResultReasonCode,
     detail: string,
-    existing: Readonly<Record<string, import("@ai-npc/contracts").StorageCell>> | ToolCallIdentity | null = null,
+    existing: Readonly<Record<string, import("@world-prism/contracts").StorageCell>> | ToolCallIdentity | null = null,
     operationId: string | null = null,
     executionStatus: "error" | "unknown" = "error",
   ): Promise<ToolCallOutcome> {
@@ -318,7 +318,7 @@ export class ToolGateway {
     input: ToolCallExecutionInput,
     toolId: string,
     binding: ToolBinding,
-    existing: Readonly<Record<string, import("@ai-npc/contracts").StorageCell>> | null,
+    existing: Readonly<Record<string, import("@world-prism/contracts").StorageCell>> | null,
   ): boolean {
     const currentId = existing === null ? null : existing["tool_call_id"];
     // 配额只需要「本 turn 该工具已调用几次」，交给 SQL 走 COUNT；list 会把每条历史调用整行解码，

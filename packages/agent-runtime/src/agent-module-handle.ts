@@ -9,8 +9,8 @@ import type {
   ModuleCreateInput,
   ModuleDefinition,
   ModuleInstance,
-} from "@ai-npc/contracts";
-import { resolveModuleConfig } from "@ai-npc/kernel";
+} from "@world-prism/contracts";
+import { resolveModuleConfig } from "@world-prism/kernel";
 
 export class AgentModuleHandle<Port> {
   private constructor(

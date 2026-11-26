@@ -31,7 +31,7 @@ function errorMessage(error: unknown): string {
 function discardStaged(staged: StagedCredentialsFile | null, logError: (line: string) => void): void {
   const cleanupError = staged?.discard() ?? null;
   if (cleanupError !== null) {
-    logError(`[ai-npc] 丢弃凭据暂存文件失败：${cleanupError}`);
+    logError(`[world-prism] 丢弃凭据暂存文件失败：${cleanupError}`);
   }
 }
 
@@ -81,7 +81,7 @@ export async function startServer(options: StartServerOptions): Promise<StartupH
       await running.close();
     } catch (closeError) {
       // 关闭失败不掩盖监听失败；两条错误都进入日志，调用方仍拿到原始监听失败原因。
-      logError(`[ai-npc] 监听失败后关闭宿主失败：${errorMessage(closeError)}`);
+      logError(`[world-prism] 监听失败后关闭宿主失败：${errorMessage(closeError)}`);
     }
     throw new Error(`监听 ${running.transport.host}:${running.transport.port} 失败: ${errorMessage(error)}`);
   }
@@ -98,7 +98,7 @@ export async function startServer(options: StartServerOptions): Promise<StartupH
       try {
         await running.close();
       } catch (closeError) {
-        logError(`[ai-npc] 凭据发布失败后关闭宿主失败：${errorMessage(closeError)}`);
+        logError(`[world-prism] 凭据发布失败后关闭宿主失败：${errorMessage(closeError)}`);
       }
       throw new Error(`凭据文件原子发布失败，启动已终止：${errorMessage(error)}`, { cause: error });
     }

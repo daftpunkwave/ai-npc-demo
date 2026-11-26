@@ -7,9 +7,9 @@ import type { ReactNode } from "react";
 import {
   Slot,
   usePortSubscription,
-} from "@ai-npc/client-sdk";
-import type { SessionDescriptor } from "@ai-npc/contracts";
-import type { ProjectionState } from "@ai-npc/client-protocol";
+} from "@world-prism/client-sdk";
+import type { SessionDescriptor } from "@world-prism/contracts";
+import type { ProjectionState } from "@world-prism/client-protocol";
 
 export function GameShell({ session }: { readonly session: SessionDescriptor }): ReactNode {
   const state = usePortSubscription<ProjectionState | null>("client.world-view");

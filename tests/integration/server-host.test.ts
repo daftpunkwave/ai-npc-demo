@@ -9,7 +9,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { canonicalJson, type AssemblyDescriptor, type AuthContext, type Json, type ModuleDefinition, type StorageCell } from "@ai-npc/contracts";
+import { canonicalJson, type AssemblyDescriptor, type AuthContext, type Json, type ModuleDefinition, type StorageCell } from "@world-prism/contracts";
 import {
   campaignResponseSchema,
   capabilityIdSchema,
@@ -21,18 +21,18 @@ import {
   sessionAssemblyResponseSchema,
   sessionDescriptorSchema,
   snapshotRestoreRequestSchema,
-} from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
-import { clockConfigSchema } from "@ai-npc/mod-game-clock-controlled";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import { transportModuleDefinition } from "@ai-npc/mod-transport-http-ws-fastify";
+} from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
+import { clockConfigSchema } from "@world-prism/mod-game-clock-controlled";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
+import { transportModuleDefinition } from "@world-prism/mod-transport-http-ws-fastify";
 import {
   disposeInReverse,
   loadAssembly,
   serverModuleDefinitions,
   startHost,
   type RunningHost,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import { standardModelTestKey, stubStandardModelHttp } from "./standard-model-support";
 
@@ -72,7 +72,7 @@ afterEach(async () => {
 });
 
 function tempDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-host-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-host-test-"));
   dirs.push(dir);
   return dir;
 }
@@ -1643,7 +1643,7 @@ describe("服务端宿主", () => {
       await first.close();
     }
 
-    const databasePath = join(dataDir, "ai-npc.db");
+    const databasePath = join(dataDir, "world-prism.db");
     // 运行级 runs 行缺失：别名分支上的 run 不存在。
     {
       const database = new DatabaseSync(databasePath);
@@ -1673,14 +1673,14 @@ describe("服务端宿主", () => {
   it("未知装配在打开存储前失败", async () => {
     const dataDir = tempDataDir();
     await expect(startHost({ dataDir, playerToken: "test-player", consoleToken: "test-console", assemblyRef: "missing-assembly" })).rejects.toThrow("未知 server 装配");
-    expect(existsSync(join(dataDir, "ai-npc.db"))).toBe(false);
+    expect(existsSync(join(dataDir, "world-prism.db"))).toBe(false);
   });
 
   it("玩家与控制台令牌相同时拒绝启动且不打开存储", async () => {
     const dataDir = tempDataDir();
     await expect(startHost({ dataDir, playerToken: "same-token", consoleToken: "same-token" }))
       .rejects.toThrow("登录令牌重复");
-    expect(existsSync(join(dataDir, "ai-npc.db"))).toBe(false);
+    expect(existsSync(join(dataDir, "world-prism.db"))).toBe(false);
   });
 
   it("单角色令牌只发放对应控制台角色", async () => {
@@ -2007,7 +2007,7 @@ describe("服务端宿主", () => {
     const missingDir = tempDataDir();
     await expect(startHost({ dataDir: missingDir, playerToken: "p", consoleToken: "c", assembly: missingDependency }))
       .rejects.toThrow(/game\.clock/);
-    expect(existsSync(join(missingDir, "ai-npc.db"))).toBe(false);
+    expect(existsSync(join(missingDir, "world-prism.db"))).toBe(false);
 
     const duplicateBinding = serverOf([
       ...base.realms.server.bindings,
@@ -2016,7 +2016,7 @@ describe("服务端宿主", () => {
     const duplicateDir = tempDataDir();
     await expect(startHost({ dataDir: duplicateDir, playerToken: "p", consoleToken: "c", assembly: duplicateBinding }))
       .rejects.toThrow(/重复绑定/);
-    expect(existsSync(join(duplicateDir, "ai-npc.db"))).toBe(false);
+    expect(existsSync(join(duplicateDir, "world-prism.db"))).toBe(false);
 
     const wrongRealm = serverOf([
       ...base.realms.server.bindings,
@@ -2049,12 +2049,12 @@ describe("服务端宿主", () => {
       assembly: wrongRealm,
       moduleDefinitions: [...serverModuleDefinitions, clientModule],
     })).rejects.toThrow(/realm/);
-    expect(existsSync(join(realmDir, "ai-npc.db"))).toBe(false);
+    expect(existsSync(join(realmDir, "world-prism.db"))).toBe(false);
 
     const invalidConfig = configuredAssembly({ clock: { secondsPerTick: -1 } });
     const configDir = tempDataDir();
     await expect(startHost({ dataDir: configDir, playerToken: "p", consoleToken: "c", assembly: invalidConfig }))
       .rejects.toThrow(/配置校验失败/);
-    expect(existsSync(join(configDir, "ai-npc.db"))).toBe(false);
+    expect(existsSync(join(configDir, "world-prism.db"))).toBe(false);
   }, 30_000);
 });

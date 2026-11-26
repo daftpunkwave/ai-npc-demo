@@ -13,8 +13,8 @@ import {
   type AgentToolViewPort,
   type DeterministicDecisionInput,
   type ModelDecisionPort,
-} from "@ai-npc/module-sdk";
-import type { ResolvedAgentProfile } from "@ai-npc/experiment";
+} from "@world-prism/module-sdk";
+import type { ResolvedAgentProfile } from "@world-prism/experiment";
 import { ModelTurnPorts } from "./model-turn";
 import { AgentModuleHandle } from "./agent-module-handle";
 import type { AgentRuntimeOptions } from "./runtime";

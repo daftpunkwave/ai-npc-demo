@@ -12,7 +12,7 @@ import {
   type Json,
   type ModuleDefinition,
   type Realm,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 计划中引用的能力提供者身份；实例创建后据此取 port。 */
 export interface PortProviderRef {

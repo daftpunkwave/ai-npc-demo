@@ -10,7 +10,7 @@ import type {
   ResourceDelta,
   ResourceId,
   ResourceLevel,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { GameContent } from "./game-content-index";
 
 /** 库存点快照。 */

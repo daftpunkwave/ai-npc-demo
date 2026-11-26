@@ -8,14 +8,14 @@ import type {
   Json,
   ModuleCreateInput,
   ModuleInstance,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createStatelessModule,
   type NewAgentTrigger,
   type PerceptionPort,
   type PerceptionRequest,
   type PerceptionResult,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { perceptionConfigSchema, type PerceptionConfig } from "./definition";
 
 interface ChannelDecision {

@@ -4,7 +4,7 @@
  * 禁止在这里实现注册、事务或权限；authority 在装配时校验重复与所有权。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 函数类型参数名只用于表达调用契约，运行时不会读取。 */
-import type { CommandEnvelope, CommandType, EventEnvelope, EventPayloadSchema, Json } from "@ai-npc/contracts";
+import type { CommandEnvelope, CommandType, EventEnvelope, EventPayloadSchema, Json } from "@world-prism/contracts";
 import type { HandlerContext, HandlerResult } from "./ports";
 
 /** 到期 job 的持久化视图；字段由 authority 从 jobs 表读出。 */

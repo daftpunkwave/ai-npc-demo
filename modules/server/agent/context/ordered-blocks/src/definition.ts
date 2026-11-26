@@ -3,14 +3,14 @@
  * 交互契约：配置只允许已有基线段重排，系统段顺序和内容边界不变。
  * 约束与禁忌：不得读取数据库、模型或会话全局日志。
  */
-import type { ModuleDefinition } from "@ai-npc/contracts";
+import type { ModuleDefinition } from "@world-prism/contracts";
 import {
   capabilityIdSchema,
   contextSegmentBudgetsSchema,
   contextUserSegmentKindSchema,
   contextUserSegmentKindValues,
-} from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 // 段名与段预算键都以公共契约为唯一来源：契约的 ContextBuildRequest 与本模块配置共用同一份成员表，

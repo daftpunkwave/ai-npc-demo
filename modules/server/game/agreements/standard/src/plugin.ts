@@ -3,7 +3,7 @@
  * 依赖无状态生命周期骨架、规则贡献、端口工厂、内容派系索引与组合根已绑定的只读查询端口。
  * 禁止在 create 阶段读取内容、创建协议或订阅事件。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {
   createStatelessModule,
   type AgreementQueryPorts,
@@ -12,7 +12,7 @@ import {
   type GameModulePorts,
   type GamePortBindContext,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { createAgreementsContributor } from "./contributor";
 import { createAgreementsPort } from "./port";
 

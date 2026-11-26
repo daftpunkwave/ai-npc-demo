@@ -4,7 +4,7 @@
  * 约束与禁忌：具体卡状态由剧情模块拥有；禁止在这里实现触发规则。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名表达调用契约。 */
-import type { ScenarioCardStatus } from "@ai-npc/contracts";
+import type { ScenarioCardStatus } from "@world-prism/contracts";
 
 /** 剧情卡查询端口；具体卡状态由剧情模块拥有，词表与公共契约一致。 */
 export interface ScenarioCardView {

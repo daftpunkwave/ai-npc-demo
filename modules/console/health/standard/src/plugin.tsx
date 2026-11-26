@@ -4,14 +4,14 @@
  * 禁止在服务失败时保留过期页面并声称运行正常，也禁止在页面不可见时继续按固定间隔请求。
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
+import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
 import type {
   ClientContentView,
   ConsoleHealthResponse,
   ModuleCreateInput,
   ModuleInstance,
-} from "@ai-npc/contracts";
-import type { ApiClient } from "@ai-npc/client-protocol";
+} from "@world-prism/contracts";
+import type { ApiClient } from "@world-prism/client-protocol";
 import { healthSummary } from "./health-summary";
 import { currentVisibility, onVisibilityChange, shouldPollHealth } from "./polling";
 

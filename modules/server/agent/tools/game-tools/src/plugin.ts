@@ -10,11 +10,11 @@ import {
   type ModuleInstance,
   type ToolBinding,
   type ToolDefinition,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createStatelessModule,
   type AgentToolsPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { z } from "zod";
 import { gameToolsConfigSchema, type GameToolsConfig } from "./definition";
 import { resolveGameToolCommand } from "./command-resolution";

@@ -3,7 +3,7 @@
  * 输入为规范化模型契约、HTTP 元数据或模型返回的文本。
  * 错误字段仅使用固定消息，禁止保留供应商错误正文、地址或密钥。
  */
-import { jsonObjectSchema, type ModelResponse, type ModelTransportError, type ModelTransportErrorKind } from "@ai-npc/contracts";
+import { jsonObjectSchema, type ModelResponse, type ModelTransportError, type ModelTransportErrorKind } from "@world-prism/contracts";
 
 export function isRetryableModelError(kind: ModelTransportErrorKind): boolean {
   return kind === "rate-limited" || kind === "timeout" || kind === "network" || kind === "server";

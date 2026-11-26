@@ -5,7 +5,7 @@
  */
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { loadContentPack, loadRoster, validateRoster } from "@ai-npc/experiment";
+import { loadContentPack, loadRoster, validateRoster } from "@world-prism/experiment";
 
 const content = loadContentPack("content", "earth-2964-v1");
 

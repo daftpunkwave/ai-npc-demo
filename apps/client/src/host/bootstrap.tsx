@@ -8,13 +8,13 @@ import {
   ModuleHostProvider,
   startBrowserModules,
   type StartedBrowserModules,
-} from "@ai-npc/client-sdk";
+} from "@world-prism/client-sdk";
 import {
   ApiClient,
   CommandClient,
   takeHashToken,
-} from "@ai-npc/client-protocol";
-import type { SessionDescriptor } from "@ai-npc/contracts";
+} from "@world-prism/client-protocol";
+import type { SessionDescriptor } from "@world-prism/contracts";
 import { clientModuleDefinitions } from "./module-catalog";
 import { localPreferencePort } from "./preferences";
 import { GameShell } from "../ui/game-shell";

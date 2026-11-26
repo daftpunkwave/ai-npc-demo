@@ -6,15 +6,15 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { DomainError, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall, type ToolExecutionResult } from "@ai-npc/contracts";
+import { DomainError, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall, type ToolExecutionResult } from "@world-prism/contracts";
 import {
   assertToolCallResultPairing,
   StoredAgentArtifactStore,
   ToolGateway,
   type AgentArtifactStore,
   type ToolGatewayTurn,
-} from "@ai-npc/agent-runtime";
-import { toolsetDocumentSchema } from "@ai-npc/mod-agent-tools-game-tools";
+} from "@world-prism/agent-runtime";
+import { toolsetDocumentSchema } from "@world-prism/mod-agent-tools-game-tools";
 import {
   createAgentContextToolsHarness,
   testAgentId,

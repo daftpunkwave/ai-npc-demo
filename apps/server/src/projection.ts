@@ -8,7 +8,7 @@ import {
   playerProjectionSchema,
   type ClockView,
   type PlayerProjection,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   GameActionsPort,
   GameAgreementsPort,
@@ -17,7 +17,7 @@ import type {
   GameMapPort,
   GameResourcesPort,
   GameWorldPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { campaignViewOf } from "./projection/campaign";
 import { metersView } from "./projection/meters";
 import { stockpileViews } from "./projection/resources";

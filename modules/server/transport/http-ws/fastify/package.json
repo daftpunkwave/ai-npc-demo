@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/mod-transport-http-ws-fastify",
+  "name": "@world-prism/mod-transport-http-ws-fastify",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "./definition": "./src/definition.ts"
   },
   "dependencies": {
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/module-sdk": "workspace:*",
+    "@world-prism/contracts": "workspace:*",
+    "@world-prism/module-sdk": "workspace:*",
     "@fastify/cors": "^11",
     "@fastify/rate-limit": "^11.3.0",
     "@fastify/static": "^10",

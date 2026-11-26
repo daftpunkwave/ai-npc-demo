@@ -10,7 +10,7 @@ import {
   type PlayerProjection,
   type StreamDeltaMessage,
   type StreamSnapshotMessage,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { ProjectionStore } from "../src";
 
 function projection(): PlayerProjection {

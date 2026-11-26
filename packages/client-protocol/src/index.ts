@@ -3,7 +3,7 @@
  * 依赖 contracts 中的公共 DTO 与版本化协议定义。
  * 禁止拼装第二份世界状态、直接访问数据库或绕过授权投影。
  */
-export const packageName = "@ai-npc/client-protocol";
+export const packageName = "@world-prism/client-protocol";
 
 export { ApiClient, jsonBody, takeHashToken } from "./http";
 export type { ApiClientOptions, RequestOptions } from "./http";

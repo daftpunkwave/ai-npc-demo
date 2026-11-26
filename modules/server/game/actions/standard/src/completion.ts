@@ -5,7 +5,7 @@
  * 禁止在这里重算风险或把未满足条件的任务标记为成功；伤势只在完成事务内应用并公开。
  */
 /* eslint-disable @typescript-eslint/restrict-plus-operands -- Codacy 缺少 workspace 类型解析，将任务状态字段误判为 unknown。 */
-import type { AudienceSpec, ReasonCode } from "@ai-npc/contracts";
+import type { AudienceSpec, ReasonCode } from "@world-prism/contracts";
 import {
   factionAudience,
   principalsAudience,
@@ -13,7 +13,7 @@ import {
   type GameContent,
   type GameModulePorts,
   type HandlerContext,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import {
   escortSafetyBonus,
   repairBaseStability,

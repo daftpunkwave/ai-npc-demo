@@ -4,7 +4,7 @@
  * 禁止用宽松默认值掩盖非法模块 ID、realm 或配置 schema。
  */
 import { describe, expect, it } from "vitest";
-import { emptyModuleConfigSchema } from "@ai-npc/contracts";
+import { emptyModuleConfigSchema } from "@world-prism/contracts";
 import { defineBrowserModuleDefinition } from "../src/define-browser-module";
 import { expectDomainError } from "./support";
 

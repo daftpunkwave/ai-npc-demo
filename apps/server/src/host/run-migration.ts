@@ -6,7 +6,7 @@
  * 与重新开局的分支让位一致）；迁移事务内校验别名仍指向读取时的源分支，过时入口直接拒绝；
  * 不可迁移的失败（数据损坏、内容版本不一致、非能力闭包差异）不得进入迁移路径。
  */
-import { DomainError, canonicalJson, type HostServices, type Json, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, canonicalJson, type HostServices, type Json, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
 import type { RunManifest } from "./manifest";
 import type { OnlineEntry } from "./online-entry";
 

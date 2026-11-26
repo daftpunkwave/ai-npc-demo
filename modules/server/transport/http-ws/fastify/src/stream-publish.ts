@@ -5,7 +5,7 @@
  * 本模块直接更新传入的游标与基线，但不持有它们。
  * 约束与禁忌：不在投递失败后继续补发同批增量，不在重同步失败时伪造基线，也不读取存储或会话存储。
  */
-import type { PlayerProjection, StreamChannel } from "@ai-npc/contracts";
+import type { PlayerProjection, StreamChannel } from "@world-prism/contracts";
 import type { ReplayStore } from "./replay-store";
 import type { SessionRegistry } from "./session-registry";
 import type { SocketSender } from "./stream-delivery";

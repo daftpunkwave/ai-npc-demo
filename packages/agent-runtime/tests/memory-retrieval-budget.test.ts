@@ -4,8 +4,8 @@
  * 约束与禁忌：不得让检索预算回退到读取 context 槽的私有字段。
  */
 import { describe, expect, it } from "vitest";
-import { memoryRetrievalBudgetDefaults, type Json } from "@ai-npc/contracts";
-import type { ResolvedAgentProfile } from "@ai-npc/experiment";
+import { memoryRetrievalBudgetDefaults, type Json } from "@world-prism/contracts";
+import type { ResolvedAgentProfile } from "@world-prism/experiment";
 import { memoryRetrievalBudget } from "../src/turn-materials";
 
 /** 只填记忆检索预算需要的最小 profile 形态。 */

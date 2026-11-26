@@ -17,7 +17,7 @@ import {
   snapshotListResponseSchema,
   snapshotRestoreRequestSchema,
   snapshotRestoreResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { authenticate, sendHttpError } from "./context";
 import type { RouteContext } from "./context";
 import type { HttpSession } from "./contracts";

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkAssets, runAssetCheckCli } from "@ai-npc/scripts/check-assets";
+import { checkAssets, runAssetCheckCli } from "@world-prism/scripts/check-assets";
 
 interface ManifestFixture {
   schemaVersion: number;

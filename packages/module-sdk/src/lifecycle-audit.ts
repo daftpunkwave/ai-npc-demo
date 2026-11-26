@@ -3,7 +3,7 @@
  * 交互契约：调用方提供活跃的存储事务与事件字段；payload 以规范 JSON 序列化后写入 lifecycle_events 表。
  * 约束与禁忌：不得写入领域事件或调用方事务之外的表；插入失败向上抛出，错误处置策略（吞错或随事务回滚）由调用方决定。
  */
-import { canonicalJson, type Json, type StorageTransaction } from "@ai-npc/contracts";
+import { canonicalJson, type Json, type StorageTransaction } from "@world-prism/contracts";
 
 /**
  * 生命周期审计事件的字段契约；与 lifecycle_events 表列一一对应。

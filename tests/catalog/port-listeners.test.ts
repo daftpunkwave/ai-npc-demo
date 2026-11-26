@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   macOSListenerArgs,
   parseMacOSListeners,
-} from "@ai-npc/scripts/port-listeners";
+} from "@world-prism/scripts/port-listeners";
 
 describe("macOS 端口监听解析", () => {
   it("请求并读取网络名称字段", () => {

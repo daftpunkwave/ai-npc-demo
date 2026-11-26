@@ -18,7 +18,7 @@ import {
   type NormalizedTool,
   type Purpose,
   type ReasonCode,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 一份模块状态的作用域：世界、分支、主体（可空）、模块与状态版本共同确定命名空间。 */
 export interface ScopedStateKey {

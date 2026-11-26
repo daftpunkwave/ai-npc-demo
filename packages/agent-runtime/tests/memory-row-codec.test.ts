@@ -4,7 +4,7 @@
  * 禁止读取数据库或调用记忆模块。
  */
 import { describe, expect, it } from "vitest";
-import type { Json, MemoryChangePlan } from "@ai-npc/contracts";
+import type { Json, MemoryChangePlan } from "@world-prism/contracts";
 import { decodeObservationRow, encodeMemoryRow, parseObservation, parseRecord } from "../src/memory-row-codec";
 
 const inserts: readonly {

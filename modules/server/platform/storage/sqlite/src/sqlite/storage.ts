@@ -19,7 +19,7 @@ import {
   type HostServices,
   type StoragePort,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { StorageConfig } from "../definition";
 import { backupDatabase, type PublishedBackup } from "./backup";
 import { closeDatabase, openDatabase } from "./connection";
@@ -86,7 +86,7 @@ export class SqliteStorage implements StoragePort {
     const dataDir = resolve(this.config.dataDir);
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- 数据库路径由宿主注入的 dataDir 推导，不是请求入参。
     mkdirSync(dataDir, { recursive: true });
-    const databasePath = join(dataDir, "ai-npc.db");
+    const databasePath = join(dataDir, "world-prism.db");
     const database = openDatabase(databasePath);
     try {
       const applied = await applyMigrations(

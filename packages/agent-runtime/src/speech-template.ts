@@ -3,8 +3,8 @@
  * 交互契约：只接收已过滤事实、intent、理由与 receipt 状态。
  * 约束与禁忌：不得拼接未披露秘密、自由文本理由或未来完成承诺。
  */
-import type { DialogueIntent, Json } from "@ai-npc/contracts";
-import type { ContentPack } from "@ai-npc/experiment";
+import type { DialogueIntent, Json } from "@world-prism/contracts";
+import type { ContentPack } from "@world-prism/experiment";
 import type { SpeechFact } from "./disclosure";
 import type { SpeechReceiptState } from "./speech-guards";
 

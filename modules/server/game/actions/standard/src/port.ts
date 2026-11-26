@@ -4,13 +4,13 @@
  * 禁止在查询中改写任务、队伍或资源状态。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import { DomainError, type InvitationView } from "@ai-npc/contracts";
+import { DomainError, type InvitationView } from "@world-prism/contracts";
 import {
   gameModuleIds,
   type GameActionsPort,
   type ScopedWorldTxFactory,
   type TaskView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { readTaskState, type InvitationState, type TaskState } from "./state";
 
 function toView(state: TaskState): TaskView {

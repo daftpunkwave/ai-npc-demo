@@ -11,14 +11,14 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
+import { usePort, usePortSubscription, type BrowserViewPort } from "@world-prism/client-sdk";
 import type {
   ConversationLine,
   ModuleCreateInput,
   ModuleInstance,
   PlayerProjection,
-} from "@ai-npc/contracts";
-import type { ApiClient, ProjectionState } from "@ai-npc/client-protocol";
+} from "@world-prism/contracts";
+import type { ApiClient, ProjectionState } from "@world-prism/client-protocol";
 
 interface Selection {
   readonly kind: "node" | "character" | "team" | "task";

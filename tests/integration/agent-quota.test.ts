@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { activateAgentRoster, activateAgentRosterInTransaction } from "@ai-npc/agent-runtime";
-import type { StoragePort } from "@ai-npc/contracts";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import { activateAgentRoster, activateAgentRosterInTransaction } from "@world-prism/agent-runtime";
+import type { StoragePort } from "@world-prism/contracts";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost, expectDomainCode } from "./authority-support";
 
 const active: { readonly storage: StoragePort; readonly dispose: () => Promise<void> }[] = [];

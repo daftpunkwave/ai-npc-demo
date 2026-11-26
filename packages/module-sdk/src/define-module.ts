@@ -3,7 +3,7 @@
  * 依赖本包 descriptor-validation 的校验与公共契约的模块类型；不加载实现、不创建实例或资源。
  * 禁止提供绕过校验的注册通道，或在返回时丢失调用方描述符的具体类型。
  */
-import type { ModuleDefinition } from "@ai-npc/contracts";
+import type { ModuleDefinition } from "@world-prism/contracts";
 import { validateModuleDefinition } from "./descriptor-validation";
 
 /**

@@ -10,8 +10,8 @@ import type {
   PlayerNotificationView,
   PlayerTaskView,
   TermKind,
-} from "@ai-npc/contracts";
-import type { GameNotificationTexts } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { GameNotificationTexts } from "@world-prism/module-sdk";
 
 /** 协议到期提醒窗口：玩家协议 24 tick 内到期。 */
 const agreementDeadlineWindowTicks = 24;

@@ -463,12 +463,12 @@ export function loginLinks(
 /** 生成启动日志：总是输出就绪地址，只有本次新生成的令牌才附带登录地址。 */
 export function startupLogLines(input: StartupLogInput): readonly string[] {
   const links = loginLinks(input.config);
-  const lines: string[] = [`[ai-npc] server ready: ${links.server}`];
+  const lines: string[] = [`[world-prism] server ready: ${links.server}`];
   if (input.generated.includes("player")) {
-    lines.push(`[ai-npc] player  login: ${links.player}#token=${encodeURIComponent(input.tokens.player)}`);
+    lines.push(`[world-prism] player  login: ${links.player}#token=${encodeURIComponent(input.tokens.player)}`);
   }
   if (input.generated.includes("console")) {
-    lines.push(`[ai-npc] console login: ${links.console}#token=${encodeURIComponent(input.tokens.console)}`);
+    lines.push(`[world-prism] console login: ${links.console}#token=${encodeURIComponent(input.tokens.console)}`);
   }
   return lines;
 }

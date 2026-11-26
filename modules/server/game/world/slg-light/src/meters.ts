@@ -3,8 +3,8 @@
  * 依赖公共契约的指标值与快照类型；只返回应提交的事件，不直接写世界状态。
  * 禁止重复触发已被记录的事件，或把水闸分配当作数值指标处理。
  */
-import type { MeterSnapshot } from "@ai-npc/contracts";
-import type { MetersView } from "@ai-npc/module-sdk";
+import type { MeterSnapshot } from "@world-prism/contracts";
+import type { MetersView } from "@world-prism/module-sdk";
 
 /** 指标阈值事件；value 为触发后的当前值。 */
 export interface MeterThresholdEvent {

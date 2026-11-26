@@ -4,7 +4,7 @@
  * 禁止用猜测的表清单替代迁移推导，也禁止把未登记的运行级表当作分支级表复制。
  */
 import type { DatabaseSync } from "node:sqlite";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 
 /**
  * 分支级表清单与复制顺序：迁移之后新增分支级表时，必须同步更新本清单，

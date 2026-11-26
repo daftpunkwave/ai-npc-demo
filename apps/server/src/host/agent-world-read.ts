@@ -3,9 +3,9 @@
  * 事务和输入时钟由调用方提供，任务状态只针对 Agent 已收到的邀请读取。
  * 不给策略暴露全量游戏状态、其他主体的记忆或秘密正文。
  */
-import type { AgentWorldRead, ReadTurnWorld } from "@ai-npc/agent-runtime";
-import type { StoragePort } from "@ai-npc/contracts";
-import type { GameContent, GameWorldPort } from "@ai-npc/module-sdk";
+import type { AgentWorldRead, ReadTurnWorld } from "@world-prism/agent-runtime";
+import type { StoragePort } from "@world-prism/contracts";
+import type { GameContent, GameWorldPort } from "@world-prism/module-sdk";
 import type { LiveRunState } from "./live-state";
 import type { HostReadPorts } from "./reads";
 

@@ -3,7 +3,7 @@
  * 依赖公共契约的 ModuleDefinition 与 DomainError；不依赖任何具体模块、应用或环境资源。
  * 禁止提供进程级单例、import 时自动注册或按注册顺序决定后续解析结果。
  */
-import { DomainError, type ModuleDefinition } from "@ai-npc/contracts";
+import { DomainError, type ModuleDefinition } from "@world-prism/contracts";
 
 /** 按模块 ID、版本排序的只读目录快照。 */
 export type CatalogSnapshot = readonly ModuleDefinition[];

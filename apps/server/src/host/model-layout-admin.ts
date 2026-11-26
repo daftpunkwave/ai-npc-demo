@@ -19,8 +19,8 @@ import {
   type ModelLayoutValidateResponse,
   type ModelLayoutView,
   type ModelLayoutsResponse,
-} from "@ai-npc/contracts";
-import { LoadingError, loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@ai-npc/experiment";
+} from "@world-prism/contracts";
+import { LoadingError, loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@world-prism/experiment";
 
 const publicEndpointEnvironment = "NPC_OPENAI_COMPAT_BASE_URL";
 const publicModelEnvironment = "NPC_OPENAI_COMPAT_MODEL";

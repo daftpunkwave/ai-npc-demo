@@ -45,14 +45,14 @@ import type {
   TurnDetail,
   TurnReplayResponse,
   TurnsResponse,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { StreamSession, StreamStats } from "../stream-hub";
 import type {
   AccessAction,
   AccessDecision,
   AccessPolicy,
   AccessRequest,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 /**
  * 权限裁决类型沿用 module-sdk 的端口定义，传输层不另行声明结构。

@@ -10,7 +10,7 @@ import {
   moduleKindSchema,
   realmSchema,
   type ModuleDefinition,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   REALM_NAMESPACES,
   descriptorFailure,

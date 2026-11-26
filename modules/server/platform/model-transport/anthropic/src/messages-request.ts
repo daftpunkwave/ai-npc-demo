@@ -4,8 +4,8 @@
  * 禁止改变签名块内容、重排工具历史或增加供应商侧执行的工具。
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { jsonObjectSchema, type Json, type ModelRequest, type NormalizedMessage } from "@ai-npc/contracts";
-import { modelTransportFailure } from "@ai-npc/module-sdk";
+import { jsonObjectSchema, type Json, type ModelRequest, type NormalizedMessage } from "@world-prism/contracts";
+import { modelTransportFailure } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const anthropicParameters = z.object({

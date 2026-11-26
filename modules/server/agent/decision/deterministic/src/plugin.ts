@@ -16,9 +16,9 @@ import {
   type RelationSummary,
   type TaskType,
   type ToolExecutionResult,
-} from "@ai-npc/contracts";
-import { createStatelessModule, type DeterministicDecisionInput, type AgentDecisionPort } from "@ai-npc/module-sdk";
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+} from "@world-prism/contracts";
+import { createStatelessModule, type DeterministicDecisionInput, type AgentDecisionPort } from "@world-prism/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import { termsWithinDelegations } from "./term-capacity";
 
 const noIntent: DialogueIntent = {

@@ -4,7 +4,7 @@
  * 禁止断言注册顺序无法解释的排序结果或绕过冲突检查。
  */
 import { describe, expect, it } from "vitest";
-import type { ContributionRef } from "@ai-npc/contracts";
+import type { ContributionRef } from "@world-prism/contracts";
 import { orderSlotContributions } from "../src/index";
 import { detailsText, expectDomainError } from "./support";
 

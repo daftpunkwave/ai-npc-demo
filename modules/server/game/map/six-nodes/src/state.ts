@@ -3,8 +3,8 @@
  * 依赖 zod 与 module-sdk 的 WorldTx 类型；状态只允许由地图模块写入。
  * 禁止在这里读取静态道路属性或执行路径查询。
  */
-import { DomainError } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { DomainError } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const roadStateSchema = z

@@ -4,7 +4,7 @@
  * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
+import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
 import {
   timelineResponseSchema,
   type AgentInspectorResponse,
@@ -16,8 +16,8 @@ import {
   type TraceResponse,
   type TurnDetail,
   type TurnSummary,
-} from "@ai-npc/contracts";
-import { StreamClient, type ApiClient } from "@ai-npc/client-protocol";
+} from "@world-prism/contracts";
+import { StreamClient, type ApiClient } from "@world-prism/client-protocol";
 
 interface ConsoleHostPort {
   readonly api: ApiClient;

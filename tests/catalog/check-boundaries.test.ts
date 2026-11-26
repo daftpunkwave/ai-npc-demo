@@ -9,7 +9,7 @@ import {
   formatViolation,
   type BoundarySourceFile,
   type BoundaryViolation,
-} from "@ai-npc/scripts/check-boundaries";
+} from "@world-prism/scripts/check-boundaries";
 import {
   MEMORY_MODULE_DIRECTORY,
   MEMORY_MODULE_KIND,
@@ -30,8 +30,8 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
   it("拒绝 workspace 包源码深层导入", () => {
     const violations = checkFixture("packages/authority/src/envelope.ts", "deep-import.ts.txt", {
       packages: packagesWith([
-        packageManifest("@ai-npc/authority", "packages/authority", {
-          dependencies: { "@ai-npc/contracts": "workspace:*" },
+        packageManifest("@world-prism/authority", "packages/authority", {
+          dependencies: { "@world-prism/contracts": "workspace:*" },
         }),
       ]),
     });
@@ -44,7 +44,7 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
   });
 
   it("允许 exports 声明的模块定义子路径入口", () => {
-    const appPackage = packageManifest("@ai-npc/app-server", "apps/server", {
+    const appPackage = packageManifest("@world-prism/app-server", "apps/server", {
       dependencies: { [MEMORY_MODULE_NAME]: "workspace:*" },
     });
     const violations = checkFixture("apps/server/src/host/module-catalog.ts", "deep-import-allowed-exports.ts.txt", {
@@ -63,8 +63,8 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
   it("拒绝只写在 devDependencies 的生产依赖", () => {
     const violations = checkFixture("packages/authority/src/gateway.ts", "workspace-dependency-dev-only.ts.txt", {
       packages: packagesWith([
-        packageManifest("@ai-npc/authority", "packages/authority", {
-          devDependencies: { "@ai-npc/kernel": "workspace:*" },
+        packageManifest("@world-prism/authority", "packages/authority", {
+          devDependencies: { "@world-prism/kernel": "workspace:*" },
         }),
       ]),
     });
@@ -75,8 +75,8 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
   it("re-export 同样受深层导入限制", () => {
     const violations = checkFixture("packages/authority/src/index.ts", "re-export-deep-import.ts.txt", {
       packages: packagesWith([
-        packageManifest("@ai-npc/authority", "packages/authority", {
-          dependencies: { "@ai-npc/contracts": "workspace:*" },
+        packageManifest("@world-prism/authority", "packages/authority", {
+          dependencies: { "@world-prism/contracts": "workspace:*" },
         }),
       ]),
     });
@@ -93,7 +93,7 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
   it("验证用包可以引用模块公开入口", () => {
     const violations = checkFixture("tests/catalog/sample.test.ts", "deep-import-allowed-exports.ts.txt", {
       packages: packagesWith([
-        packageManifest("@ai-npc/tests", "tests", {
+        packageManifest("@world-prism/tests", "tests", {
           dependencies: { [MEMORY_MODULE_NAME]: "workspace:*" },
         }),
         memoryModule(),
@@ -109,12 +109,12 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
     const files: readonly BoundarySourceFile[] = [
       {
         path: "scripts/check-docs.ts",
-        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { readRepository } from \"@ai-npc/kernel\";\nexport const run = (): unknown => readRepository;\n",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { readRepository } from \"@world-prism/kernel\";\nexport const run = (): unknown => readRepository;\n",
       },
     ];
     const violations = checkBoundaries({
       files,
-      packages: packagesWith([packageManifest("@ai-npc/scripts", "scripts", {})]),
+      packages: packagesWith([packageManifest("@world-prism/scripts", "scripts", {})]),
     });
     expectCode(violations, "workspace-dependency-not-declared");
     expectRule(violations, 1);
@@ -129,7 +129,7 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
     ];
     const violations = checkBoundaries({
       files,
-      packages: packagesWith([packageManifest("@ai-npc/scripts", "scripts", {})]),
+      packages: packagesWith([packageManifest("@world-prism/scripts", "scripts", {})]),
     });
     expectCode(violations, "undeclared-third-party-dependency");
     expectRule(violations, 6);
@@ -139,14 +139,14 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
     const files: readonly BoundarySourceFile[] = [
       {
         path: "scripts/check-catalog.ts",
-        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { readRepository } from \"@ai-npc/kernel\";\nimport { parse } from \"yaml\";\nexport const run = (): unknown => [readRepository, parse];\n",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { readRepository } from \"@world-prism/kernel\";\nimport { parse } from \"yaml\";\nexport const run = (): unknown => [readRepository, parse];\n",
       },
     ];
     const violations = checkBoundaries({
       files,
       packages: packagesWith([
-        packageManifest("@ai-npc/scripts", "scripts", {
-          devDependencies: { "@ai-npc/kernel": "workspace:*", yaml: "^2.9.1" },
+        packageManifest("@world-prism/scripts", "scripts", {
+          devDependencies: { "@world-prism/kernel": "workspace:*", yaml: "^2.9.1" },
         }),
       ]),
     });
@@ -157,14 +157,14 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
     const files: readonly BoundarySourceFile[] = [
       {
         path: "packages/authority/src/gateway.ts",
-        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { Kernel } from \"@ai-npc/kernel\";\nexport const kernel = Kernel;\n",
+        content: "/**\n * 核心职责：夹具。\n * 交互契约：仅测试使用。\n * 约束与禁忌：无。\n */\nimport { Kernel } from \"@world-prism/kernel\";\nexport const kernel = Kernel;\n",
       },
     ];
     const violations = checkBoundaries({
       files,
       packages: packagesWith([
-        packageManifest("@ai-npc/authority", "packages/authority", {
-          devDependencies: { "@ai-npc/kernel": "workspace:*" },
+        packageManifest("@world-prism/authority", "packages/authority", {
+          devDependencies: { "@world-prism/kernel": "workspace:*" },
         }),
       ]),
     });
@@ -175,7 +175,7 @@ describe("规则 1：包公开入口与 workspace 依赖声明", () => {
   it("根包拥有仓库根目录下的文件并检查其依赖声明", () => {
     // 根包目录是空串。若按空串拼 `/` 前缀匹配，根目录文件会被判为无归属，
     // 于是根清单的未声明依赖（例如工具链配置里引用的库）全部逃过检查。
-    const rootPackage = packageManifest("ai-npc-demo", "", {
+    const rootPackage = packageManifest("world-prism", "", {
       exports: { ".": "./index.ts" },
       devDependencies: { vitest: "^5" },
     });
@@ -213,8 +213,8 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
   it("server service 只允许契约、模块辅助与校验库", () => {
     const modulePackage = packageManifest(SERVER_SERVICE_PACKAGE, SERVER_SERVICE_DIRECTORY, {
       dependencies: {
-        "@ai-npc/contracts": "workspace:*",
-        "@ai-npc/module-sdk": "workspace:*",
+        "@world-prism/contracts": "workspace:*",
+        "@world-prism/module-sdk": "workspace:*",
         zod: "^4",
       },
     });
@@ -237,35 +237,35 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
 
   it("HTTP 传输 adapter 可以使用 Fastify 及其插件", () => {
     const directory = "modules/server/transport/http-ws/fastify";
-    const modulePackage = packageManifest("@ai-npc/mod-transport-http-ws-fastify", directory, {
+    const modulePackage = packageManifest("@world-prism/mod-transport-http-ws-fastify", directory, {
       dependencies: { fastify: "^5", "@fastify/static": "^10" },
     });
     const violations = checkFixture(`${directory}/src/index.ts`, "module-server-adapter-fastify-valid.ts.txt", {
       packages: packagesWith([modulePackage]),
-      definitionKinds: [{ packageName: "@ai-npc/mod-transport-http-ws-fastify", kind: "adapter" }],
+      definitionKinds: [{ packageName: "@world-prism/mod-transport-http-ws-fastify", kind: "adapter" }],
     });
     expect(violations).toEqual([]);
   });
 
   it("SQLite 存储 adapter 可以使用内置 sqlite", () => {
     const directory = "modules/server/platform/storage/sqlite";
-    const modulePackage = packageManifest("@ai-npc/mod-platform-storage-sqlite", directory);
+    const modulePackage = packageManifest("@world-prism/mod-platform-storage-sqlite", directory);
     const violations = checkFixture(`${directory}/src/index.ts`, "module-server-adapter-sqlite-valid.ts.txt", {
       packages: packagesWith([modulePackage]),
-      definitionKinds: [{ packageName: "@ai-npc/mod-platform-storage-sqlite", kind: "adapter" }],
+      definitionKinds: [{ packageName: "@world-prism/mod-platform-storage-sqlite", kind: "adapter" }],
     });
     expect(violations).toEqual([]);
   });
 
   it("SQLite 存储 adapter 可以使用文件系统读取迁移与库文件", () => {
     const directory = "modules/server/platform/storage/sqlite";
-    const modulePackage = packageManifest("@ai-npc/mod-platform-storage-sqlite", directory);
+    const modulePackage = packageManifest("@world-prism/mod-platform-storage-sqlite", directory);
     const violations = checkFixture(
       `${directory}/src/index.ts`,
       "module-server-adapter-sqlite-filesystem-valid.ts.txt",
       {
         packages: packagesWith([modulePackage]),
-        definitionKinds: [{ packageName: "@ai-npc/mod-platform-storage-sqlite", kind: "adapter" }],
+        definitionKinds: [{ packageName: "@world-prism/mod-platform-storage-sqlite", kind: "adapter" }],
       },
     );
     expect(violations).toEqual([]);
@@ -299,10 +299,10 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
 
   it("adapter 白名单按所属适配器收窄", () => {
     const directory = "modules/server/platform/storage/sqlite";
-    const modulePackage = packageManifest("@ai-npc/mod-platform-storage-sqlite", directory);
+    const modulePackage = packageManifest("@world-prism/mod-platform-storage-sqlite", directory);
     const violations = checkFixture(`${directory}/src/index.ts`, "module-server-adapter-misplaced.ts.txt", {
       packages: packagesWith([modulePackage]),
-      definitionKinds: [{ packageName: "@ai-npc/mod-platform-storage-sqlite", kind: "adapter" }],
+      definitionKinds: [{ packageName: "@world-prism/mod-platform-storage-sqlite", kind: "adapter" }],
     });
     expectCode(violations, "module-forbidden-external-import");
     expectRule(violations, 2);
@@ -324,19 +324,19 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
   it("pixi.js 只允许场景渲染适配器", () => {
     const hudDirectory = "modules/client/hud/standard";
     const hudViolations = checkFixture(`${hudDirectory}/src/index.ts`, "module-client-pixi.ts.txt", {
-      packages: packagesWith([packageManifest("@ai-npc/mod-client-hud-standard", hudDirectory)]),
-      definitionKinds: [{ packageName: "@ai-npc/mod-client-hud-standard", kind: "adapter" }],
+      packages: packagesWith([packageManifest("@world-prism/mod-client-hud-standard", hudDirectory)]),
+      definitionKinds: [{ packageName: "@world-prism/mod-client-hud-standard", kind: "adapter" }],
     });
     expectCode(hudViolations, "module-forbidden-external-import");
 
     const rendererDirectory = "modules/client/scene-renderer/pixi";
     const rendererViolations = checkFixture(`${rendererDirectory}/src/index.ts`, "module-client-pixi.ts.txt", {
       packages: packagesWith([
-        packageManifest("@ai-npc/mod-client-scene-renderer-pixi", rendererDirectory, {
+        packageManifest("@world-prism/mod-client-scene-renderer-pixi", rendererDirectory, {
           dependencies: { "pixi.js": "^8" },
         }),
       ]),
-      definitionKinds: [{ packageName: "@ai-npc/mod-client-scene-renderer-pixi", kind: "adapter" }],
+      definitionKinds: [{ packageName: "@world-prism/mod-client-scene-renderer-pixi", kind: "adapter" }],
     });
     expect(rendererViolations).toEqual([]);
   });
@@ -344,8 +344,8 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
   it("kind 从 definition 源文本读取", () => {
     const modulePackage = packageManifest(SERVER_SERVICE_PACKAGE, SERVER_SERVICE_DIRECTORY, {
       dependencies: {
-        "@ai-npc/contracts": "workspace:*",
-        "@ai-npc/module-sdk": "workspace:*",
+        "@world-prism/contracts": "workspace:*",
+        "@world-prism/module-sdk": "workspace:*",
         zod: "^4",
       },
     });
@@ -365,7 +365,7 @@ describe("规则 2：模块 realm/kind 依赖白名单", () => {
 
   it("无法判定 kind 时明确报错", () => {
     const modulePackage = packageManifest(SERVER_SERVICE_PACKAGE, SERVER_SERVICE_DIRECTORY, {
-      dependencies: { "@ai-npc/contracts": "workspace:*" },
+      dependencies: { "@world-prism/contracts": "workspace:*" },
     });
     const violations = checkFixture(`${SERVER_SERVICE_DIRECTORY}/src/index.ts`, "module-definition-unreadable.ts.txt", {
       packages: packagesWith([modulePackage]),
@@ -387,7 +387,7 @@ describe("规则 2 子规则：definition 文件只含描述符数据", () => {
 
   it("definition 文件不得静态 import 渲染库", () => {
     const directory = "modules/client/scene-renderer/pixi";
-    const modulePackage = packageManifest("@ai-npc/mod-client-scene-renderer-pixi", directory, {
+    const modulePackage = packageManifest("@world-prism/mod-client-scene-renderer-pixi", directory, {
       dependencies: { "pixi.js": "^8" },
     });
     const violations = checkFixture(`${directory}/src/definition.ts`, "definition-static-renderer-import.ts.txt", {
@@ -398,8 +398,8 @@ describe("规则 2 子规则：definition 文件只含描述符数据", () => {
   });
 
   it("definition 文件允许类型导入与动态加载实现", () => {
-    const modulePackage = packageManifest("@ai-npc/mod-agent-memory-ledger", MEMORY_MODULE_DIRECTORY, {
-      dependencies: { "@ai-npc/contracts": "workspace:*", zod: "^4" },
+    const modulePackage = packageManifest("@world-prism/mod-agent-memory-ledger", MEMORY_MODULE_DIRECTORY, {
+      dependencies: { "@world-prism/contracts": "workspace:*", zod: "^4" },
     });
     const violations = checkFixture(`${MEMORY_MODULE_DIRECTORY}/src/definition.ts`, "definition-dynamic-plugin-import.ts.txt", {
       packages: packagesWith([modulePackage]),

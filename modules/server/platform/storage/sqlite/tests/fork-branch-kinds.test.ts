@@ -4,7 +4,7 @@
  * 禁止跳过非法请求断言，或让分支复制在事务外产生部分写入。
  */
 import { describe, expect, it } from "vitest";
-import type { StorageTransaction } from "@ai-npc/contracts";
+import type { StorageTransaction } from "@world-prism/contracts";
 import { SRC, forkInto, seedSourceBranch } from "./fork-support";
 import { expectDomainError, openStorageHarness } from "./support";
 

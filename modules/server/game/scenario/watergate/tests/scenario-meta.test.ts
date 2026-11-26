@@ -4,8 +4,8 @@
  * 禁止在本文件写死具体剧情卡或节点 ID 与夹具脱钩的耦合值。
  */
 import { describe, expect, it } from "vitest";
-import type { CardEffect, Json } from "@ai-npc/contracts";
-import type { GameContent, GameModulePorts, HandlerContext } from "@ai-npc/module-sdk";
+import type { CardEffect, Json } from "@world-prism/contracts";
+import type { GameContent, GameModulePorts, HandlerContext } from "@world-prism/module-sdk";
 import { createScenarioContributor } from "../src/contributor";
 import { invalidEffectReferences } from "../src/effects";
 

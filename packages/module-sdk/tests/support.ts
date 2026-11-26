@@ -15,7 +15,7 @@ import {
   type ModuleCreateInput,
   type ModuleDefinition,
   type ModuleInstance,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 构造带品牌的能力引用，能力 ID 走契约校验。 */
 export function capability(

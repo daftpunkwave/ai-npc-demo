@@ -4,7 +4,7 @@
  * 禁止在测试中复制一份宽松判定，或放宽受众、批准结果引用等约束。
  */
 import { describe, expect, it } from "vitest";
-import type { AuthContext } from "@ai-npc/contracts";
+import type { AuthContext } from "@world-prism/contracts";
 import { isApprovedSpeechUsable, type ApprovedSpeech } from "../src/index";
 
 const branchId = "br-000000000000";

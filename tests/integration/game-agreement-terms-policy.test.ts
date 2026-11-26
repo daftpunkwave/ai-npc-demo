@@ -3,7 +3,7 @@
  * 依赖真实 SQLite、世界/地图/行动/通信/协议模块与 authority；生效写入、持续义务与期限经消费者和 job 推进。
  * 禁止直接修改协议聚合、伪造生效授权或绕过命令网关。
  */
-import type { Term } from "@ai-npc/contracts";
+import type { Term } from "@world-prism/contracts";
 import { describe, expect, it } from "vitest";
 import {
   advanceToWithConsumers,

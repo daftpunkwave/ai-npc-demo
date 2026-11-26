@@ -3,8 +3,8 @@
  * 交互契约：输入不可变 ContextArtifact，输出替代段落、来源映射与 lossReport。
  * 约束与禁忌：不得删除受保护段、工具组或改写 artifact 来源权限。
  */
-import type { ContextArtifact, Json } from "@ai-npc/contracts";
-import type { AgentCompressionPort } from "@ai-npc/module-sdk";
+import type { ContextArtifact, Json } from "@world-prism/contracts";
+import type { AgentCompressionPort } from "@world-prism/module-sdk";
 import type { WindowCompressionConfig } from "./definition";
 import { estimateArtifactTokens, estimateTokens } from "./token-estimate";
 

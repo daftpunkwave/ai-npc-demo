@@ -14,7 +14,7 @@ import {
   type MemoryRecord,
   type TurnDetail,
   type TurnSummary,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 读取非负整数列；存储层返回不合法时拒绝继续，而不是静默归零。 */
 export function numberColumn(row: Readonly<Record<string, unknown>>, key: string): number {

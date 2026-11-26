@@ -4,27 +4,27 @@
  * 禁止在此加载宿主实现、访问文件系统或启动外部进程。
  */
 import { expect, it } from "vitest";
-import { packageName as agentRuntimePackageName } from "@ai-npc/agent-runtime";
-import { packageName as authorityPackageName } from "@ai-npc/authority";
-import { packageName as clientProtocolPackageName } from "@ai-npc/client-protocol";
-import { packageName as clientSdkPackageName } from "@ai-npc/client-sdk";
-import { packageName as contractsPackageName } from "@ai-npc/contracts";
-import { packageName as experimentPackageName } from "@ai-npc/experiment";
-import { packageName as kernelPackageName } from "@ai-npc/kernel";
-import { packageName as moduleSdkPackageName } from "@ai-npc/module-sdk";
-import { packageName as observabilityPackageName } from "@ai-npc/observability";
+import { packageName as agentRuntimePackageName } from "@world-prism/agent-runtime";
+import { packageName as authorityPackageName } from "@world-prism/authority";
+import { packageName as clientProtocolPackageName } from "@world-prism/client-protocol";
+import { packageName as clientSdkPackageName } from "@world-prism/client-sdk";
+import { packageName as contractsPackageName } from "@world-prism/contracts";
+import { packageName as experimentPackageName } from "@world-prism/experiment";
+import { packageName as kernelPackageName } from "@world-prism/kernel";
+import { packageName as moduleSdkPackageName } from "@world-prism/module-sdk";
+import { packageName as observabilityPackageName } from "@world-prism/observability";
 
 /** 共享包目录名与期望包名的固定对照，顺序即断言顺序。 */
 const expectedPackages = [
-  ["contracts", "@ai-npc/contracts"],
-  ["kernel", "@ai-npc/kernel"],
-  ["module-sdk", "@ai-npc/module-sdk"],
-  ["client-sdk", "@ai-npc/client-sdk"],
-  ["client-protocol", "@ai-npc/client-protocol"],
-  ["authority", "@ai-npc/authority"],
-  ["agent-runtime", "@ai-npc/agent-runtime"],
-  ["experiment", "@ai-npc/experiment"],
-  ["observability", "@ai-npc/observability"],
+  ["contracts", "@world-prism/contracts"],
+  ["kernel", "@world-prism/kernel"],
+  ["module-sdk", "@world-prism/module-sdk"],
+  ["client-sdk", "@world-prism/client-sdk"],
+  ["client-protocol", "@world-prism/client-protocol"],
+  ["authority", "@world-prism/authority"],
+  ["agent-runtime", "@world-prism/agent-runtime"],
+  ["experiment", "@world-prism/experiment"],
+  ["observability", "@world-prism/observability"],
 ] as const;
 
 /** 各包当前导出的 packageName，顺序与 expectedPackages 一致。 */
@@ -45,6 +45,6 @@ it("九个共享包的导出包名与目录一致", () => {
 
   expectedPackages.forEach(([directory, expectedName], index) => {
     expect(actualPackageNames[index]).toBe(expectedName);
-    expect(expectedName).toBe(`@ai-npc/${directory}`);
+    expect(expectedName).toBe(`@world-prism/${directory}`);
   });
 });

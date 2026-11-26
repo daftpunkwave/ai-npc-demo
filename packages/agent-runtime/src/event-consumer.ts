@@ -10,9 +10,9 @@ import type {
   HostServices,
   Json,
   StoragePort,
-} from "@ai-npc/contracts";
-import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
-import type { NewAgentTrigger, PerceptionPort, PerceptionRequest } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { ContentPack, ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import type { NewAgentTrigger, PerceptionPort, PerceptionRequest } from "@world-prism/module-sdk";
 import type { AgentModuleHandle } from "./agent-module-handle";
 import { renderObservation } from "./observation-renderer";
 import {
@@ -249,7 +249,7 @@ export class PerceptionEventConsumer {
   }
 
   private writeObservations(
-    tx: import("@ai-npc/contracts").StorageTransaction,
+    tx: import("@world-prism/contracts").StorageTransaction,
     agentId: string,
     observations: readonly AgentObservation[],
   ): void {
@@ -279,9 +279,9 @@ export class PerceptionEventConsumer {
   }
 
   private writeTrigger(
-    tx: import("@ai-npc/contracts").StorageTransaction,
+    tx: import("@world-prism/contracts").StorageTransaction,
     agentId: string,
-    trigger: import("@ai-npc/module-sdk").NewAgentTrigger | AgentTrigger,
+    trigger: import("@world-prism/module-sdk").NewAgentTrigger | AgentTrigger,
   ): void {
     const table = tx.branch(this.input.branchId).table("triggers");
     if (table.list({ dedupe_key: trigger.dedupeKey }, { limit: 1 }).length > 0) return;

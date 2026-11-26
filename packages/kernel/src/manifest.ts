@@ -16,7 +16,7 @@ import {
   type Json,
   type ModuleDefinition,
   type Realm,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { CatalogSnapshot } from "./registry";
 import type { ResolvedRealmPlan } from "./resolve-assembly";
 

@@ -10,9 +10,9 @@ import {
   latestDayPassedSql,
   pendingTriggersSql,
   recoverExpiredTurnsSql,
-} from "@ai-npc/agent-runtime";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import type { StoragePort, StorageTransaction } from "@ai-npc/contracts";
+} from "@world-prism/agent-runtime";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
+import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
 import { createFakeHost } from "./authority-support";
 
 const resources: { readonly dispose: () => Promise<void> }[] = [];

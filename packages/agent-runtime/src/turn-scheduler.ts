@@ -3,9 +3,9 @@
  * 依赖 storage、HostServices、roster/profile 与调度端口。
  * 禁止为 human 控制身份创建 turn，或让过期 turn 永久占用 trigger。
  */
-import type { HostServices, StoragePort } from "@ai-npc/contracts";
-import type { SchedulingPort } from "@ai-npc/module-sdk";
-import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
+import type { HostServices, StoragePort } from "@world-prism/contracts";
+import type { SchedulingPort } from "@world-prism/module-sdk";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/experiment";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
 import { cancelActiveTurnsSql, pendingTriggersSql, recoverExpiredTurnsSql } from "./agent-hot-path-sql";
 import { cancelTurn, terminalTurnStatuses } from "./turn-lease";

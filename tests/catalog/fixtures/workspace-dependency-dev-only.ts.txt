@@ -3,6 +3,6 @@
  * 仅作为边界检查输入，不会被编译或执行。
  * 该写法把生产依赖藏进开发依赖，属于违规样例。
  */
-import { packageName } from "@ai-npc/kernel";
+import { packageName } from "@world-prism/kernel";
 
 export const kernelPackageName = packageName;

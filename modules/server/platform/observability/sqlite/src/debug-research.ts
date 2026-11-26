@@ -16,8 +16,8 @@ import {
   type HostServices,
   type StoragePort,
   type StorageRawRow,
-} from "@ai-npc/contracts";
-import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 import { numberColumn, parseJsonText, stringColumn } from "./research-codec";
 
 function branchEvent(row: StorageRawRow | undefined) {

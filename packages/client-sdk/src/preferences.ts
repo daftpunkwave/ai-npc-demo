@@ -3,7 +3,7 @@
  * 依赖公共契约的 JSON 值类型；不承载世界状态、权限、运行装配或服务端凭据。
  * 禁止把偏好写回世界、改变规则或作为授权判断依据。
  */
-import type { Json } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
 
 /** 已登记的纯展示偏好键；新增键必须先确认它只影响本机展示或输入表达。 */
 export const preferenceKeys = ["language", "display", "camera", "sound", "notifications"] as const;

@@ -3,7 +3,7 @@
  * 交互契约：调用方传入重连次数、随机源、关闭码或传输层错误；函数不建立连接、不读写状态。
  * 约束与禁忌：禁止依赖全局随机源、计时器或浏览器 WebSocket，保持纯函数以便独立验证。
  */
-import { DomainError, isSessionInvalidCloseCode, isTicketInvalidCloseCode } from "@ai-npc/contracts";
+import { DomainError, isSessionInvalidCloseCode, isTicketInvalidCloseCode } from "@world-prism/contracts";
 
 /** 重连与会话失效判定所用的关闭码语义由公共契约统一定义，客户端不再另存一份常量。 */
 export { isSessionInvalidCloseCode, isTicketInvalidCloseCode };

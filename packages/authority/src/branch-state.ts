@@ -10,7 +10,7 @@ import {
   type BranchKind,
   type BranchStatus,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   optionalStorageNumber,
   optionalStorageString,

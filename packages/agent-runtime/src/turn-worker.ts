@@ -6,14 +6,14 @@
 import {
   canonicalJson, DomainError, toModelToolName,
   type AgentTurnStatus, type AuthContext, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall,
-} from "@ai-npc/contracts";
-import type { ResolvedAgentProfile } from "@ai-npc/experiment";
+} from "@world-prism/contracts";
+import type { ResolvedAgentProfile } from "@world-prism/experiment";
 import type {
   AgentDecisionPort,
   DeterministicDecisionInput,
   RunModelPort,
-} from "@ai-npc/module-sdk";
-import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
+import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
 import { DialogueFlow, messageIntentFromArguments, type SpeechApprovalIndex, type SpeechApprovalInput } from "./dialogue-flow";
 import type { MemoryHost } from "./memory-host";
 import { ModelTurn, type ModelTurnPorts } from "./model-turn";

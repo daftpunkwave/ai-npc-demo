@@ -11,8 +11,8 @@ import {
   type MemoryScope,
   type StorageRawRow,
   type StorageRow,
-} from "@ai-npc/contracts";
-import type { MemoryRecordView } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { MemoryRecordView } from "@world-prism/module-sdk";
 
 export interface MemoryWatermark {
   readonly moduleId: string;

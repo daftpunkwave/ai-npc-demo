@@ -3,8 +3,8 @@
  * 依赖公共契约的贡献引用与 kernel 的 slot 排序机制；不执行任何视图代码，也不读取宿主状态。
  * 禁止把注册顺序当作排序依据，或静默接受同一 slot 内重复的扩展 ID。
  */
-import { orderSlotContributions } from "@ai-npc/kernel";
-import type { ContributionRef } from "@ai-npc/contracts";
+import { orderSlotContributions } from "@world-prism/kernel";
+import type { ContributionRef } from "@world-prism/contracts";
 import type { ReactNode } from "react";
 
 /** 宿主解析后的 slot 贡献：契约里的贡献记录加上已绑定到具体视图的渲染入口。 */

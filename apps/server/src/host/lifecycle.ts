@@ -4,16 +4,16 @@
  * 禁止在 worker 失败后继续推进时钟、跳过断线宽限或在关闭时跳过资源释放。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { DomainError, type Json, type StoragePort } from "@ai-npc/contracts";
+import { DomainError, type Json, type StoragePort } from "@world-prism/contracts";
 import {
   clearRuleFailure,
   readRuleFailure,
   workerFailureIdentity,
   writeRuleFailure,
   type Authority,
-} from "@ai-npc/authority";
-import { insertLifecycleAuditEvent, type ClockState } from "@ai-npc/module-sdk";
-import type { HostServices } from "@ai-npc/contracts";
+} from "@world-prism/authority";
+import { insertLifecycleAuditEvent, type ClockState } from "@world-prism/module-sdk";
+import type { HostServices } from "@world-prism/contracts";
 import { advanceSteppingTick, advanceWorldTick, catchUpWorldTick } from "../tick";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";

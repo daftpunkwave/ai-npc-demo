@@ -3,8 +3,8 @@
  * 交互契约：依赖协议端口的协议视图与世界协议计数词表。
  * 约束与禁忌：只输出玩家是当事人的协议；条款状态判定只依据端口已提交事实。
  */
-import type { AgreementView } from "@ai-npc/contracts";
-import type { AgreementView as AgreementPortView, GameAgreementsPort } from "@ai-npc/module-sdk";
+import type { AgreementView } from "@world-prism/contracts";
+import type { AgreementView as AgreementPortView, GameAgreementsPort } from "@world-prism/module-sdk";
 
 function termStatus(agreement: AgreementPortView, index: number): "open" | "fulfilled" | "breached" {
   if (agreement.breachedTerms.includes(index)) {

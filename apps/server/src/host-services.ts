@@ -4,7 +4,7 @@
  * 禁止把 Math.random 用于规则随机或安全凭据，也禁止用原始 JSON.stringify 计算摘要。
  */
 import { createHash, randomBytes } from "node:crypto";
-import { canonicalJson, type HostServices, type Json } from "@ai-npc/contracts";
+import { canonicalJson, type HostServices, type Json } from "@world-prism/contracts";
 import { rngFromHostParts } from "./host/random";
 
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";

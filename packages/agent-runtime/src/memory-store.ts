@@ -16,11 +16,11 @@ import {
   type StoragePort,
   type StorageRow,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import {
   decodeObservationRow,
   encodeMemoryRow,

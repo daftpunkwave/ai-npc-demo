@@ -11,18 +11,18 @@ import {
   emptyModuleConfigSchema,
   type ModuleDefinition,
   type ModuleInstance,
-} from "@ai-npc/contracts";
-import { resolveRealmPlan, type RunningInstance } from "@ai-npc/kernel";
+} from "@world-prism/contracts";
+import { resolveRealmPlan, type RunningInstance } from "@world-prism/kernel";
 import {
   defineModule,
   type GameContent,
   type GameModulePorts,
   type WorldTx,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import {
   resolveGameModuleBindings,
   type GameModulePublicPort,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 import { createFakeHost } from "./authority-support";
 
 function fakeModule(input: {

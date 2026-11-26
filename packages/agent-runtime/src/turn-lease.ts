@@ -5,7 +5,7 @@
  */
 import type {
   AgentTrigger, AgentTurnStatus, AuthContext, HostServices, StoragePort, StorageRow, StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { arrayValue, numberValue, stringValue, triggerFromRow } from "./runtime-records";
 
 /**

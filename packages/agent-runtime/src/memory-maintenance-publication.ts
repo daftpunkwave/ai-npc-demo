@@ -3,7 +3,7 @@
  * 交互契约：接收同一存储事务、已发布 revision、变更计划与宿主时间。
  * 约束与禁忌：禁止单独提交事务，部分结果不得被标记为已完成。
  */
-import { maintenanceTaskSchema, type MemoryChangePlan, type StorageTransaction } from "@ai-npc/contracts";
+import { maintenanceTaskSchema, type MemoryChangePlan, type StorageTransaction } from "@world-prism/contracts";
 import { numberColumn } from "./memory-row-codec";
 
 export function completeMemoryMaintenance(

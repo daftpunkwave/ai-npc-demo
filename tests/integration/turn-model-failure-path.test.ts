@@ -7,8 +7,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startHost, type HostOptions, type RunningHost } from "@ai-npc/app-server";
-import { modelRequestSchema, type AuthContext, type Json, type StorageRow } from "@ai-npc/contracts";
+import { startHost, type HostOptions, type RunningHost } from "@world-prism/app-server";
+import { modelRequestSchema, type AuthContext, type Json, type StorageRow } from "@world-prism/contracts";
 import { gameCommandEnvelope } from "./game-support";
 
 const target = "human-independent";
@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 function rootDir() {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-model-turn-failure-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-model-turn-failure-"));
   roots.push(root);
   return root;
 }

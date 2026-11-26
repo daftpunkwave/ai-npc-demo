@@ -13,15 +13,15 @@ import type {
   MemoryScope,
   ModuleDefinition,
   StoragePort,
-} from "@ai-npc/contracts";
-import { DomainError, loggableErrorDetails } from "@ai-npc/contracts";
+} from "@world-prism/contracts";
+import { DomainError, loggableErrorDetails } from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryPort,
   RevisionView,
   RunModelPort,
-} from "@ai-npc/module-sdk";
-import type { ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
+} from "@world-prism/module-sdk";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/experiment";
 import { MemoryMaintenanceQueue, type ClaimedMaintenance } from "./memory-maintenance-queue";
 import { maintenanceModel } from "./maintenance-model";
 import { AgentModuleHandle } from "./agent-module-handle";

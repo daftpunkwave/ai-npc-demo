@@ -3,8 +3,8 @@
  * 模型布局给出能力与参数，内容包提供弱结构化模式的 JSON 提示语。
  * 禁止注入任意线协议参数，或把连接凭据与宿主上下文写入请求体。
  */
-import { jsonObjectSchema, type Json, type ModelCapabilities, type ModelConnectionInput, type ModelRequest, type NormalizedMessage } from "@ai-npc/contracts";
-import { modelTransportFailure } from "@ai-npc/module-sdk";
+import { jsonObjectSchema, type Json, type ModelCapabilities, type ModelConnectionInput, type ModelRequest, type NormalizedMessage } from "@world-prism/contracts";
+import { modelTransportFailure } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const openAIParameters = z.object({

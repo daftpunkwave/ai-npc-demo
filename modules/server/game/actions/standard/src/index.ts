@@ -3,7 +3,7 @@
  * 依赖定义、端口、处理器与状态文件；宿主只经组合根登记定义。
  * 禁止在这里打开存储或执行任务结算。
  */
-export const packageName = "@ai-npc/mod-game-actions-standard";
+export const packageName = "@world-prism/mod-game-actions-standard";
 
 export { actionsModuleDefinition } from "./definition";
 export { createActionsContributor } from "./contributor";

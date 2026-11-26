@@ -19,7 +19,7 @@ import {
   type ModuleDefinition,
   type ModuleKind,
   type Realm,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { CatalogSnapshot } from "./registry";
 import { resolveModuleConfig } from "./resolve-config";
 import {

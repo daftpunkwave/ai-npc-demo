@@ -9,7 +9,7 @@ import {
   commandReceiptSchema,
   commandTypeSchema,
   conversationResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   authenticate,
   conversationQueryOf,

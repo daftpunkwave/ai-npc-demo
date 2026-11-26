@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { errorResponseSchema, timelineQuerySchema } from "@ai-npc/contracts";
-import { startHost, type RunningHost } from "@ai-npc/app-server";
+import { errorResponseSchema, timelineQuerySchema } from "@world-prism/contracts";
+import { startHost, type RunningHost } from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import { stubStandardModelHttp } from "./standard-model-support";
 
@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 
 function tempDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-console-read-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-console-read-"));
   dirs.push(dir);
   return dir;
 }

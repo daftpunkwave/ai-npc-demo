@@ -15,7 +15,7 @@ import {
   type MetersView,
   type ScopedWorldTxFactory,
   type TeamView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { viewOfMeters } from "./port-meter-ops";
 import { campaignAggregateId, metersAggregateId } from "./port-aggregates";
 import {

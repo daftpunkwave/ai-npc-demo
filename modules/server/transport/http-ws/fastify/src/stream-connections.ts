@@ -4,7 +4,7 @@
  * 本模块只维护连接表与会话连接计数，不计算投影增量、不管理重放缓冲。
  * 约束与禁忌：不注册监听之外的处理逻辑、不在超限时把连接放进连接表、也不吞掉清理失败。
  */
-import { protocolVersion, streamCloseCodes, type StreamChannel } from "@ai-npc/contracts";
+import { protocolVersion, streamCloseCodes, type StreamChannel } from "@world-prism/contracts";
 import type { SessionRegistry } from "./session-registry";
 import type { SocketSender } from "./stream-delivery";
 import { hubLimits, playerChannel, type Connection, type StreamHubOptions, type StreamIdentity, type StreamSession, type StreamSocket } from "./stream-types";

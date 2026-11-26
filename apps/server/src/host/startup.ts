@@ -12,13 +12,13 @@ import {
   type Json,
   type ModuleDefinition,
   type StoragePort,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createConfigDocumentCache,
   loadContentPack,
   type ConfigLoadContext,
-} from "@ai-npc/experiment";
-import { startInstances } from "@ai-npc/kernel";
+} from "@world-prism/experiment";
+import { startInstances } from "@world-prism/kernel";
 import { assertDistinctTokens } from "../config";
 import { createHostServices } from "../host-services";
 import { agentRunModuleIds, startAgentRunModules, type AgentRunModules } from "./agent-run-modules";

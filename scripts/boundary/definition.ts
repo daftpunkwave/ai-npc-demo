@@ -49,7 +49,7 @@ export function checkDefinitionFileImports(
       );
       continue;
     }
-    if (record.specifier.startsWith("@ai-npc/")) {
+    if (record.specifier.startsWith("@world-prism/")) {
       continue;
     }
     const packageBase = packageNameOfSpecifier(record.specifier);

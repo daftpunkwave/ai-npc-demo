@@ -4,7 +4,7 @@
  * 禁止在本文件复现投影 schema 或依赖连接建立流程。
  */
 import { describe, expect, it } from "vitest";
-import type { PlayerProjection } from "@ai-npc/contracts";
+import type { PlayerProjection } from "@world-prism/contracts";
 import { StreamHub } from "../src/stream-hub";
 import type { StreamHubOptions } from "../src/stream-types";
 

@@ -3,9 +3,9 @@
  * 交互契约：只读取冻结 revision 与查询，不调用模型、存储或跨 Agent 数据。
  * 约束与禁忌：禁止关系账本、隐式随机或绕过 maxItems/maxTokens。
  */
-import type { AgentMemoryQuery, MemoryBundle, MemoryChangePlan } from "@ai-npc/contracts";
-import { estimateTokens } from "@ai-npc/contracts";
-import type { MemoryRecordView, RevisionView } from "@ai-npc/module-sdk";
+import type { AgentMemoryQuery, MemoryBundle, MemoryChangePlan } from "@world-prism/contracts";
+import { estimateTokens } from "@world-prism/contracts";
+import type { MemoryRecordView, RevisionView } from "@world-prism/module-sdk";
 import type { StreamReflectionConfig } from "./definition";
 import { compareStrings, numberValue } from "./ledger-model";
 

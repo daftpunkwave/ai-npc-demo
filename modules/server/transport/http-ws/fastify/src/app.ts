@@ -10,7 +10,7 @@ import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
-import { DomainError, type Json, type StreamChannel } from "@ai-npc/contracts";
+import { DomainError, type Json, type StreamChannel } from "@world-prism/contracts";
 import { StreamHub } from "./stream-hub";
 import { channelsFor, registerRequestTraceId, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
 import { registerAuthRoutes } from "./routes/auth-routes";

@@ -7,14 +7,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { StoragePort, StorageRawRow, StorageTransaction } from "@ai-npc/contracts";
+import type { StoragePort, StorageRawRow, StorageTransaction } from "@world-prism/contracts";
 import {
   advanceWorldTick,
   catchUpWorldTick,
   startHost,
   type RunningHost,
   type WorldTickResult,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,
@@ -549,7 +549,7 @@ describe("在线 tick 顺序", () => {
 
 describe("快照排空", () => {
   it("创建快照前先排空当前 tick 的到期 job 与时钟步骤", { timeout: 30_000 }, async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-world-tick-"));
+    const dataDir = mkdtempSync(join(tmpdir(), "world-prism-world-tick-"));
     dirs.push(dataDir);
     const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token", assemblyRef: "local-slg-test-v1" });
     hosts.push(host);

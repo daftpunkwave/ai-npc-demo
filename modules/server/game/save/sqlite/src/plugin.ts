@@ -3,8 +3,8 @@
  * 依赖解析计划注入的 platform.storage 端口与 ID/时间服务。
  * 禁止在 create 阶段创建快照或复制分支。
  */
-import type { ModuleCreateInput, ModuleInstance, StoragePort } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance, StoragePort } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { SqliteSaveService } from "./service";
 
 function isStoragePort(value: unknown): value is StoragePort {

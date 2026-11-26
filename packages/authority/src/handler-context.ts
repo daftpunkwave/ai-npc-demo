@@ -3,9 +3,9 @@
  * 依赖公共契约的认证/宿主类型与 module-sdk 的处理器上下文；不持有连接或跨事务缓存。
  * 禁止把未绑定所有权的 WorldTx、原始存储事务或模型凭据塞进上下文。
  */
-import type { AuthContext } from "@ai-npc/contracts";
-import type { HostServices } from "@ai-npc/contracts";
-import type { ApprovedSpeechReader, HandlerContext } from "@ai-npc/module-sdk";
+import type { AuthContext } from "@world-prism/contracts";
+import type { HostServices } from "@world-prism/contracts";
+import type { ApprovedSpeechReader, HandlerContext } from "@world-prism/module-sdk";
 import type { TransactionWorldTx } from "./world-tx";
 
 /** 构造上下文所需的最小依赖；content 与 modules 由宿主装配决定形状。 */

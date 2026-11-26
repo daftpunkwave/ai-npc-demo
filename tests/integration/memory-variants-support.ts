@@ -3,9 +3,9 @@
  * 交互契约：复用真实 SQLite 夹具，只通过 MemoryHost 发布记忆。
  * 约束与禁忌：禁止直接修改记忆行、revision 或水位来制造预期结果。
  */
-import type { AgentModelCallResult, Json } from "@ai-npc/contracts";
-import type { RunModelPort } from "@ai-npc/module-sdk";
-import { MemoryHost, type MemoryHostOptions } from "@ai-npc/agent-runtime";
+import type { AgentModelCallResult, Json } from "@world-prism/contracts";
+import type { RunModelPort } from "@world-prism/module-sdk";
+import { MemoryHost, type MemoryHostOptions } from "@world-prism/agent-runtime";
 import { memoryAgentId, memoryBranchId, memoryIdentity, memoryRunId, memoryWorldId, type MemoryHarness } from "./memory-support";
 
 export const memoryModelRoute: ReturnType<RunModelPort["route"]> = {

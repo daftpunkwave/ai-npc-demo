@@ -12,17 +12,17 @@ import {
   type MemoryChangePlan,
   type ModuleDefinition,
   type StorageRow,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createStatelessModule,
   defineModule,
   type MemoryPort,
   type MemoryRecordView,
-} from "@ai-npc/module-sdk";
-import { MemoryHost } from "@ai-npc/agent-runtime";
+} from "@world-prism/module-sdk";
+import { MemoryHost } from "@world-prism/agent-runtime";
 import {
   memoryLedgerModuleDefinition,
-} from "@ai-npc/mod-agent-memory-ledger";
+} from "@world-prism/mod-agent-memory-ledger";
 import {
   createMemoryHarness,
   insertObservation,

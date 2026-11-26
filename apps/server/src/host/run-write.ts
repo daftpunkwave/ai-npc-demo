@@ -11,8 +11,8 @@ import {
   type Json,
   type ModuleDefinition,
   type StoragePort,
-} from "@ai-npc/contracts";
-import { runSpecSchema, validateRunSpec, type ContentPack, type LoadedConfig, type Roster, type RunSpec } from "@ai-npc/experiment";
+} from "@world-prism/contracts";
+import { runSpecSchema, validateRunSpec, type ContentPack, type LoadedConfig, type Roster, type RunSpec } from "@world-prism/experiment";
 import { buildRunManifest } from "./manifest";
 import { loadAssembly, resolveServerAssembly, type ResolvedServerAssembly } from "./assembly";
 

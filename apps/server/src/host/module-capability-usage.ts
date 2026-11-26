@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN, type ModuleDefinition } from "@ai-npc/contracts";
+import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN, type ModuleDefinition } from "@world-prism/contracts";
 import { findModuleDirectories, moduleIdentifier, sourceFilesOf, type ModuleSource } from "./module-sources";
 
 

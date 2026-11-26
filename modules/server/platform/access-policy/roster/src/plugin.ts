@@ -3,12 +3,12 @@
  * 依赖定义中的严格配置与频道角色映射表；无存储、无 I/O。
  * 禁止把页面自报角色当作授权来源，也禁止让传输层自行维护角色白名单。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {
   createStatelessModule,
   type AccessDecision,
   type AccessRequest,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { accessPolicyConfigSchema, type AccessPolicyConfig } from "./definition";
 
 const allow = (): AccessDecision => ({ allowed: true, reason: "allowed" });

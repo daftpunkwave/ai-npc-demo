@@ -3,8 +3,8 @@
  * 交互契约：模块配置提供内容包中的工具描述；binding 由调用方在 run 启动阶段冻结。
  * 约束与禁忌：不得在描述符中保存某 Agent 的长期权限或执行世界命令。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const gameToolsConfigSchema = z

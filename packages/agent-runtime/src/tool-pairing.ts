@@ -3,7 +3,7 @@
  * 交互契约：每个 NormalizedToolCall 必须恰好对应一个 ToolCallOutcome。
  * 约束与禁忌：不得补齐伪造结果、重排调用或把另一调用的结果顶替进来。
  */
-import type { NormalizedMessage, NormalizedToolCall } from "@ai-npc/contracts";
+import type { NormalizedMessage, NormalizedToolCall } from "@world-prism/contracts";
 
 export interface PairedToolOutcome {
   readonly providerCallId: string;

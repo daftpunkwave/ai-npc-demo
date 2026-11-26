@@ -10,7 +10,7 @@ import {
   type StorageRow,
   type StorageTransaction,
   type TurnSummary,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { jsonColumn, numberColumn, parseJsonText, stringColumn, summaryFromRow } from "./research-codec";
 
 interface KnownTokens {

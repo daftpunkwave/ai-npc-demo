@@ -3,11 +3,11 @@
  * 只依据观察内容生成行，不改动正式契约。
  * 禁止虚构本次或更早观察中不存在的截止时间。
  */
-import type { AgentObservation, IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
+import type { AgentObservation, IdPrefix, MemoryChangePlan } from "@world-prism/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
   type LedgerBuild,

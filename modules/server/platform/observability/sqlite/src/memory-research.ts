@@ -16,7 +16,7 @@ import {
   type StoragePort,
   type StorageRawRow,
   type StorageRow,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { decodeMemoryRecord, decodeObservation, numberColumn } from "./research-codec";
 
 function readWorldId(storage: StoragePort, branchId: string): string {

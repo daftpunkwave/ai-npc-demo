@@ -3,7 +3,7 @@
  * 交互契约：依赖认证会话与宿主注入的内容端口；任何已认证会话均可读取，响应受客户端内容 schema 约束。
  * 约束与禁忌：未注入内容端口时返回 not-ready，不返回硬编码文案、默认内容或运营数据。
  */
-import { clientContentViewSchema } from "@ai-npc/contracts";
+import { clientContentViewSchema } from "@world-prism/contracts";
 import { authenticate, sendHttpError } from "./context";
 import type { RouteContext } from "./context";
 

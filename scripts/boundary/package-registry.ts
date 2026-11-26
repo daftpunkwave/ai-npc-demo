@@ -20,7 +20,7 @@ export function isRootPackage(pkg: BoundaryPackage): boolean {
 
 /** 验证包只有 tests 与 scripts：它们为验证用途引用依赖，可写在 devDependencies。 */
 export function isVerificationPackage(pkg: BoundaryPackage): boolean {
-  return pkg.name === "@ai-npc/tests" || pkg.name === "@ai-npc/scripts";
+  return pkg.name === "@world-prism/tests" || pkg.name === "@world-prism/scripts";
 }
 
 export function isTestFile(filePath: string, pkg: BoundaryPackage): boolean {
@@ -119,10 +119,10 @@ export function isServerOnlyWorkspacePackage(name: string, context: CheckContext
   if (SERVER_ONLY_WORKSPACE_PACKAGES.has(name)) {
     return true;
   }
-  if (name.startsWith("@ai-npc/app-")) {
+  if (name.startsWith("@world-prism/app-")) {
     return true;
   }
-  if (name.startsWith("@ai-npc/mod-")) {
+  if (name.startsWith("@world-prism/mod-")) {
     const pkg = context.packagesByName.get(name);
     return pkg === undefined || pkg.directory.startsWith("modules/server/");
   }

@@ -4,7 +4,7 @@
  * 禁止读取其他模块聚合、超预留扣减或在失败时留下部分资源变化。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { ReasonCode, ResourceAmounts, ResourceDelta, ResourceId } from "@ai-npc/contracts";
+import type { ReasonCode, ResourceAmounts, ResourceDelta, ResourceId } from "@world-prism/contracts";
 import {
   addAmounts,
   applyDelta,
@@ -22,7 +22,7 @@ import {
   type ResourceLevel,
   type ScopedWorldTxFactory,
   type StockpileView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { readStockpile, stockpileStateSchema, type StockpileState } from "./state";
 
 export interface ResourcesPortOptions {

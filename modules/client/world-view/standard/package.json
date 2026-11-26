@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/mod-client-world-view-standard",
+  "name": "@world-prism/mod-client-world-view-standard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "./definition": "./src/definition.ts"
   },
   "dependencies": {
-    "@ai-npc/client-protocol": "workspace:*",
-    "@ai-npc/client-sdk": "workspace:*",
-    "@ai-npc/contracts": "workspace:*"
+    "@world-prism/client-protocol": "workspace:*",
+    "@world-prism/client-sdk": "workspace:*",
+    "@world-prism/contracts": "workspace:*"
   }
 }

@@ -4,7 +4,7 @@
  * 禁止在查询中改写卡片状态。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名用于表达调用契约；Codacy 缺少 workspace 类型解析时将联合类型误判为 any。 */
-import { gameModuleIds, type ScenarioCardView, type ScopedWorldTxFactory } from "@ai-npc/module-sdk";
+import { gameModuleIds, type ScenarioCardView, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
 import { readCardState, type ScenarioCardState } from "./state";
 
 /** 剧情卡查询形状；控制台与运营 API 复用。 */

@@ -4,11 +4,11 @@
  * 约束与禁忌：不创建存储、网络连接或模块实例；假端口不得执行真实模型调用。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError, type ModelCapabilities, type Purpose } from "@ai-npc/contracts";
+import { DomainError, type ModelCapabilities, type Purpose } from "@world-prism/contracts";
 import {
   agentRequiredModelPurposes, bindAgentModelRoutes, modelDecisionPurposeRequirements,
   resolveAgentModelRoutes, type AgentDecisionModelRoutes, type RunModelPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 const capabilities: ModelCapabilities = {
   toolCalling: true, strictTools: true, structuredOutput: "json_schema", assistantReplay: "verbatim",

@@ -3,7 +3,7 @@
  * 交互契约：仅在调用者的存储事务中处理公共记录及其公开来源观察。
  * 约束与禁忌：禁止发布私有来源、跨分支读取或使用 Agent 局部 revision 作为公共边界。
  */
-import type { MemoryChangePlan, StorageRow, StorageTransaction } from "@ai-npc/contracts";
+import type { MemoryChangePlan, StorageRow, StorageTransaction } from "@world-prism/contracts";
 import { encodeMemoryRow, jsonObject, numberColumn, parseRecord } from "./memory-row-codec";
 
 export const publicMemoryAgentId = "~public";

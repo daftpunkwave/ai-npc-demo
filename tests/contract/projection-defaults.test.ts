@@ -1,12 +1,12 @@
 /**
  * 验证玩家投影在缺省全部可选端口时输出空集合与空指标的公开契约。
- * 经 @ai-npc/app-server 包入口加载纯投影构建函数，不启动宿主、存储或游戏模块。
+ * 经 @world-prism/app-server 包入口加载纯投影构建函数，不启动宿主、存储或游戏模块。
  * 禁止在这里构造真实游戏聚合或访问文件系统。
  */
 import { describe, expect, it } from "vitest";
-import type { ClockView } from "@ai-npc/contracts";
-import type { GameContent, GameMapPort, GameWorldPort } from "@ai-npc/module-sdk";
-import { buildPlayerProjection } from "@ai-npc/app-server";
+import type { ClockView } from "@world-prism/contracts";
+import type { GameContent, GameMapPort, GameWorldPort } from "@world-prism/module-sdk";
+import { buildPlayerProjection } from "@world-prism/app-server";
 
 /** 投影只读这些内容索引字段；缺省端口场景下其余集合不会被访问。 */
 const emptyContent = {

@@ -8,8 +8,8 @@
  * 而 run 级实例会随分支切换反复创建，反而让计分口径分散在多份实例里。
  * 因此本模块不声明平台存储依赖：读取探针与 run 记录是宿主的职责。
  */
-import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 
 export const evaluationModuleDefinition: ModuleDefinition = defineModule({
   id: "platform.evaluation.standard",

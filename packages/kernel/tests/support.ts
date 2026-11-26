@@ -24,7 +24,7 @@ import {
   type ModuleInstance,
   type ModuleKind,
   type Realm,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 构造能力引用，能力 ID 走契约品牌校验。 */
 export function capability(

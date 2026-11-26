@@ -3,8 +3,8 @@
  * 依赖 zod 与 module-sdk 的 WorldTx；只做状态校验、读取与索引键构造。
  * 禁止在这里计算送达、生成事件或写入投影。
  */
-import { DomainError, messageIntentKindSchema } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { DomainError, messageIntentKindSchema } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 /** 通信日志的渠道；reported 是剧情卡以非在地来源下发的传闻。 */

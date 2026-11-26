@@ -4,8 +4,8 @@
  * 禁止依赖存储插入顺序，也禁止让失败扣减留下部分余额。
  */
 import { describe, expect, it } from "vitest";
-import type { ResourceAmounts } from "@ai-npc/contracts";
-import type { GameContent, GameWorldPort } from "@ai-npc/module-sdk";
+import type { ResourceAmounts } from "@world-prism/contracts";
+import type { GameContent, GameWorldPort } from "@world-prism/module-sdk";
 import { createWorldPort } from "../src/port";
 import { createTestHost, TestWorldTx } from "./support";
 

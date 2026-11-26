@@ -9,7 +9,7 @@ import {
   modelLayoutValidateResponseSchema,
   modelLayoutViewSchema,
   modelLayoutsResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { ConsoleRequest } from "./request";
 
 export function createModelLayoutHttp(request: ConsoleRequest) {

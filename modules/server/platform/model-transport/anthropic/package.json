@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/mod-platform-model-transport-anthropic",
+  "name": "@world-prism/mod-platform-model-transport-anthropic",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,8 +7,8 @@
     "./definition": "./src/definition.ts"
   },
   "dependencies": {
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/module-sdk": "workspace:*",
+    "@world-prism/contracts": "workspace:*",
+    "@world-prism/module-sdk": "workspace:*",
     "@anthropic-ai/sdk": "^1.12.0",
     "zod": "^4"
   }

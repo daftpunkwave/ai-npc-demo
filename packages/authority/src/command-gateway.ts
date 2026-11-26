@@ -18,8 +18,8 @@ import {
   type ReasonCode,
   type ScopedBranchStorage,
   type StorageTransaction,
-} from "@ai-npc/contracts";
-import { isApprovedSpeechUsable, type HandlerResult } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { isApprovedSpeechUsable, type HandlerResult } from "@world-prism/module-sdk";
 import { readBranch, readClock, type ClockRecord } from "./branch-state";
 import {
   checkExpectedVersions,

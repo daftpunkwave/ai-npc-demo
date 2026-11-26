@@ -3,13 +3,13 @@
  * 只处理已装配的传输，加载夹具正文并保留路由、摘要与价格版本。
  * 禁止解析密钥正文、自动补挂载或把未验证的 endpoint 写入清单。
  */
-import { canonicalJson, DomainError, type Json } from "@ai-npc/contracts";
+import { canonicalJson, DomainError, type Json } from "@world-prism/contracts";
 import { loadModelFixtures, loadModelLayout, loadModelPricing, resolveModelEnv,
-  type ConfigLoadContext, type ResolvedAgentProfile, type RunSpec } from "@ai-npc/experiment";
-import type { ResolvedRealmPlan } from "@ai-npc/kernel";
+  type ConfigLoadContext, type ResolvedAgentProfile, type RunSpec } from "@world-prism/experiment";
+import type { ResolvedRealmPlan } from "@world-prism/kernel";
 import {
   agentModelPoolCapability, agentRequiredModelPurposes, parseModelEndpoint, type ModelRoute, type ModelRunLimits,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { canonicalHasher } from "../host-services";
 
 const fixtureAdapter = "platform.model-transport.deterministic";

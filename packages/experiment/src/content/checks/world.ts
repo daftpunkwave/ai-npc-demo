@@ -4,7 +4,7 @@
  * 禁止修补缺失引用、跳过错误或在该文件中构建索引。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
-import { sourceIdSchema } from "@ai-npc/contracts";
+import { sourceIdSchema } from "@world-prism/contracts";
 import type {
   ContentCard,
   ContentCharacters,

@@ -83,7 +83,7 @@ function rosterYaml(rosterId: string): string {
 
 /** 建临时配置根目录，测试结束后由调用方删除。 */
 function makeTempConfigDir(): string {
-  return mkdtempSync(join(tmpdir(), "ai-npc-config-"));
+  return mkdtempSync(join(tmpdir(), "world-prism-config-"));
 }
 
 describe("配置加载", () => {
@@ -318,7 +318,7 @@ describe("配置加载", () => {
   });
 
   it("profile 与 toolset 的配置失败类型统一带 code、source 与 path", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-ref-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-ref-"));
     try {
       // profileId 与文件引用不一致：属于引用解析失败，必须能按 code 分类并定位到字段。
       writeFileSync(
@@ -361,7 +361,7 @@ describe("配置加载", () => {
   });
 
   it("profile 继承链成环时报引用与路径", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-cycle-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-cycle-"));
     try {
       writeFileSync(
         join(tempDir, "agent-cycle-a.yaml"),
@@ -383,7 +383,7 @@ describe("配置加载", () => {
   });
 
   it("只有 variant 允许声明 patch，其他 kind 声明即被拒绝", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-patch-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-patch-"));
     try {
       // 非 variant 声明 patch 时，自身 slots 会被 applyPatch 的 `patch ?? document` 静默丢弃。
       writeFileSync(
@@ -410,7 +410,7 @@ describe("配置加载", () => {
   });
 
   it("非 variant profile 省略 parent 时被拒绝", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-parent-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-parent-"));
     try {
       // 只有 variant 可以省略 parent；其余 kind 必须显式写 parent 或 null，
       // 否则继承链起点会变成隐式默认值。
@@ -432,7 +432,7 @@ describe("配置加载", () => {
   });
 
   it("variant 省略 parent 时按继承链起点加载", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-variant-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-variant-"));
     try {
       // 文档中的变体形状不带 parent；省略必须与显式 null 等价，否则照抄示例会被拒绝。
       writeFileSync(
@@ -466,7 +466,7 @@ describe("配置加载", () => {
   });
 
   it("多处 schema 问题时列出全部位置而不是只报第一条", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-schema-multi-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-schema-multi-"));
     try {
       writeFileSync(
         join(tempDir, "multi-bad.yaml"),
@@ -636,7 +636,7 @@ describe("模型布局的环境变量边界", () => {
   ].join("\n");
 
   it("parameters 中的 env: 不会被解析，避免任意环境变量进入模型请求", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-layout-env-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-layout-env-"));
     try {
       writeFileSync(join(tempDir, "env-boundary-layout.yaml"), layoutYaml, "utf8");
       const layout = loadModelLayout("env-boundary-layout", { configDir: tempDir });

@@ -3,7 +3,7 @@
  * 交互契约：这些类型是存档端口与 SQLite 实现共用的数据契约；只声明结构，不含行为。
  * 约束与禁忌：不在此读写存储、不校验业务规则，也不重复定义通用存储单元格类型。
  */
-import type { Json, StorageCell } from "@ai-npc/contracts";
+import type { Json, StorageCell } from "@world-prism/contracts";
 
 export interface SnapshotRecord {
   readonly snapshotId: string;

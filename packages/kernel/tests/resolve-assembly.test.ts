@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { CapabilityRef, ModuleDefinition, Realm } from "@ai-npc/contracts";
+import type { CapabilityRef, ModuleDefinition, Realm } from "@world-prism/contracts";
 import { createModuleRegistry, resolveRealmPlan, type CatalogSnapshot } from "../src/index";
 import { binding, capability, expectDomainError, fakeModule, makeAssembly } from "./support";
 

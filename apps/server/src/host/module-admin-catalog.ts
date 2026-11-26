@@ -4,9 +4,9 @@
  * 同一份内容包与模块定义在全部装配间复用，解析结果只描述配置，不启动模块、不打开存储。
  * 约束与禁忌：不写死装配文件名、不跳过解析失败的装配，也不把服务端配置下发到浏览器 realm。
  */
-import type { AssemblyDescriptor, ModuleDefinition } from "@ai-npc/contracts";
-import type { ContentPack } from "@ai-npc/experiment";
-import { computeCatalogHash, createModuleRegistry } from "@ai-npc/kernel";
+import type { AssemblyDescriptor, ModuleDefinition } from "@world-prism/contracts";
+import type { ContentPack } from "@world-prism/experiment";
+import { computeCatalogHash, createModuleRegistry } from "@world-prism/kernel";
 import { canonicalHasher } from "../host-services";
 import { resolveServerAssembly, resolveSessionAssemblies } from "./assembly";
 import { allModuleDefinitions, serverModuleDefinitions } from "./module-catalog";

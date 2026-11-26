@@ -7,10 +7,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { serverModuleDefinitions } from "@ai-npc/app-server";
-import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
-import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type HostServices, type ModelFixture, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@ai-npc/contracts";
-import { agentModelPoolCapability, bindAgentModelRoutes, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
+import { serverModuleDefinitions } from "@world-prism/app-server";
+import { deterministicModelTransportDefinition } from "@world-prism/mod-platform-model-transport-deterministic/definition";
+import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type HostServices, type ModelFixture, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@world-prism/contracts";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@world-prism/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
@@ -53,7 +53,7 @@ async function poolHarness(
   transport: ModelTransportPort | null = null,
   wrapBudget: (budget: AgentBudgetPort) => AgentBudgetPort = (budget) => budget,
 ) {
-  const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-model-pool-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "world-prism-model-pool-"));
   const timers = new Set<{ at: number; resolve: () => void }>();
   const retryWaits: number[] = [];
   let now = 0;

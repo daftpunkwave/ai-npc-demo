@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { MAX_RULE_ATTEMPTS, listRuleFailures } from "@ai-npc/authority";
+import { MAX_RULE_ATTEMPTS, listRuleFailures } from "@world-prism/authority";
 import {
   createAuthorityHarness,
   readAggregate,

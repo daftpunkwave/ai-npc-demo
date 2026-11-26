@@ -3,13 +3,13 @@
  * 依赖公共契约的模块类型、module-sdk 的描述符校验与 zod；实现由 create 动态加载，避免定义文件引入 SQLite。
  * 禁止在此静态 import 实现、打开数据库、读取环境变量或放宽未知配置键。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 /**
  * 存储适配器配置：数据目录由宿主从部署环境并入，内联 artifact 上限由装配配置块提供。
- * 数据库文件位于 dataDir/ai-npc.db，备份写入 dataDir/backups。
+ * 数据库文件位于 dataDir/world-prism.db，备份写入 dataDir/backups。
  */
 export const storageConfigSchema = z
   .object({

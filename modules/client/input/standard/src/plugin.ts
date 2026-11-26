@@ -3,7 +3,7 @@
  * 依赖模块生命周期与内存订阅；不发送命令、不预测服务器结果。
  * 禁止让选择状态写入授权投影或绕过输入权限。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 
 export type Selection =
   | { readonly kind: "node"; readonly id: string }

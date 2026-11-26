@@ -10,7 +10,7 @@ import {
   moduleIdSchema,
   type AgentSlot,
   type Json,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { crossCheckLoadingError, referenceLoadingError } from "../loading/errors";
 import { loadConfigDocument, type ConfigLoadContext, type LoadedConfig } from "./load-config";
 

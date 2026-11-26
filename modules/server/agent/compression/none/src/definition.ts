@@ -7,8 +7,8 @@ import {
   capabilityIdSchema,
   emptyModuleConfigSchema,
   type ModuleDefinition,
-} from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 
 const definition: ModuleDefinition = {
   id: "agent.compression.none",

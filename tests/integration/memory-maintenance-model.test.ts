@@ -4,10 +4,10 @@
  * 约束与禁忌：禁止伪造成功水位或只检查模型请求而忽略持久化结果。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { ModelWorkScope, RunModelPort } from "@ai-npc/module-sdk";
-import { memoryLedgerModuleDefinition, memoryLayeredHybridModuleDefinition, memoryStreamReflectionModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import type { ModelWorkScope, RunModelPort } from "@world-prism/module-sdk";
+import { memoryLedgerModuleDefinition, memoryLayeredHybridModuleDefinition, memoryStreamReflectionModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import { createMemoryHarness, insertObservation, memoryAgentId, memoryBranchId, memoryQuery } from "./memory-support";
-import { isDisclosable } from "@ai-npc/agent-runtime";
+import { isDisclosable } from "@world-prism/agent-runtime";
 import { memoryModelRoute, modelResponse, oneAttemptModel, startVariantHost } from "./memory-variants-support";
 
 describe("maintenance model persistence", () => {

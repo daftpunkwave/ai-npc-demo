@@ -91,7 +91,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 ### S00 仓库骨架
 
 - **先读**：[技术栈](tech-stack.md) 全文。
-- **产出**：根目录的 `package.json`（只含 0.2 节 S00 行的脚本）、`pnpm-workspace.yaml`、三个 tsconfig、`vitest.config.ts`、`.env.example`；在 `.gitignore` 追加 `data/`、`data-e2e/`、`apps/server/console-static/`、`apps/client/dist/`、`test-results/`、`playwright-report/`；`packages/` 下九个包（`package.json` 与 `src/index.ts`，index 先导出包名常量 `export const packageName = "@ai-npc/<name>"`）；`tests/` 与 `scripts/` 两个包。
+- **产出**：根目录的 `package.json`（只含 0.2 节 S00 行的脚本）、`pnpm-workspace.yaml`、三个 tsconfig、`vitest.config.ts`、`.env.example`；在 `.gitignore` 追加 `data/`、`data-e2e/`、`apps/server/console-static/`、`apps/client/dist/`、`test-results/`、`playwright-report/`；`packages/` 下九个包（`package.json` 与 `src/index.ts`，index 先导出包名常量 `export const packageName = "@world-prism/<name>"`）；`tests/` 与 `scripts/` 两个包。
 - **实现** `scripts/check-docs.ts`：检查项目文档的相对链接、标题锚点与 Markdown 表格列数。扫描范围与用法见 [README.md — 文档维护约定](../README.md#5-文档维护约定)。
 - **测试**：`tests/contract/smoke.test.ts`：断言九个包的 `packageName` 与目录一致。
 - **完成判据**：`pnpm install` 成功，`pnpm check` 通过，文档链接、锚点与表格列数均无错误。
@@ -115,7 +115,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 - **先读**：[模块边界](../architecture/modules.md) 第 4、9 节、[代码目录](../architecture/code-structure.md) 第 2–4、7 节、[技术栈](tech-stack.md) 第 2、7 节。
 - **产出**：`packages/module-sdk`（`defineModule()` 辅助函数，强制填写描述符字段；scoped storage、WorldTx 等端口的类型）；`packages/client-sdk`（`<Slot>` 组件、`usePort()`、`PreferencePort` 接口）；`scripts/check-boundaries.ts`。
 - `check-boundaries` 检查源码引用与包 manifest，按文件所在包及模块 realm/kind 判定（夹具目录只作为检查函数的输入，不作为生产源码扫描）：
-  1. 禁止 `@ai-npc/*/src/...` 深层导入（各包 `exports` 声明的入口除外，例如模块包的 `/definition`）；import 的每个 workspace 包都必须在本包 `dependencies` 中；
+  1. 禁止 `@world-prism/*/src/...` 深层导入（各包 `exports` 声明的入口除外，例如模块包的 `/definition`）；import 的每个 workspace 包都必须在本包 `dependencies` 中；
   2. 模块包的依赖白名单见 [技术栈](tech-stack.md) 第 2 节，不能依赖其他 `mod-*` 包；
   3. `modules/client/**`、`modules/console/**`、`apps/client`、`apps/console`、`packages/client-sdk`、`packages/client-protocol` 不能 import `node:*`、`fs`、`path`、`fastify`、`@anthropic-ai/sdk` 或任何 server 专用包；
   4. `packages/kernel`、`packages/contracts` 不能 import 任何 `mod-*`、`apps/*`、`react`、`pixi.js`、`fastify`；

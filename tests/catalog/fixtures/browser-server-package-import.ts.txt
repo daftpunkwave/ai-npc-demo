@@ -3,6 +3,6 @@
  * 仅作为边界检查输入，不会被编译或执行。
  * 该写法越过浏览器 realm 边界，属于违规样例。
  */
-import { packageName } from "@ai-npc/authority";
+import { packageName } from "@world-prism/authority";
 
 export const authorityPackageName = packageName;

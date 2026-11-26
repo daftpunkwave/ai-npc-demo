@@ -4,10 +4,10 @@
  * 依赖真实 SQLite、内容包、世界/行动/协议模块与 authority；tick 推进经 job、时钟步骤与消费者显式执行。
  * 禁止直接改写协议聚合、放宽任务 schema 或绕过命令网关伪造履约事实。
  */
-import { TransactionWorldTx } from "@ai-npc/authority";
-import { domainEventPayloadSchemas, type AuthContext, type CommandType, type Json, type Term } from "@ai-npc/contracts";
-import { gameModuleIds, type TaskView } from "@ai-npc/module-sdk";
-import { createActionsPort } from "@ai-npc/mod-game-actions-standard";
+import { TransactionWorldTx } from "@world-prism/authority";
+import { domainEventPayloadSchemas, type AuthContext, type CommandType, type Json, type Term } from "@world-prism/contracts";
+import { gameModuleIds, type TaskView } from "@world-prism/module-sdk";
+import { createActionsPort } from "@world-prism/mod-game-actions-standard";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createTrackedGameHarness,

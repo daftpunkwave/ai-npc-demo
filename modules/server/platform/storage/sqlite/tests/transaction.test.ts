@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
-import { DomainError, type ScopedBranchStorage, type StoragePort, type StorageTable, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type ScopedBranchStorage, type StoragePort, type StorageTable, type StorageTransaction } from "@world-prism/contracts";
 import { SqliteStorage } from "../src/sqlite/storage";
 import {
   createFakeHost,

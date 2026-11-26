@@ -4,11 +4,11 @@
  * 禁止在测试中读取真实密钥。
  */
 import { describe, expect, it } from "vitest";
-import type { HostServices, Json, ModuleCreateInput } from "@ai-npc/contracts";
-import { accessPolicyModuleDefinition, type AccessPolicyPort } from "@ai-npc/mod-platform-access-policy-roster";
-import { secretsModuleDefinition, type SecretsPort } from "@ai-npc/mod-platform-secrets-env";
-import { OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
-import { transportModuleDefinition, type TransportPort } from "@ai-npc/mod-transport-http-ws-fastify";
+import type { HostServices, Json, ModuleCreateInput } from "@world-prism/contracts";
+import { accessPolicyModuleDefinition, type AccessPolicyPort } from "@world-prism/mod-platform-access-policy-roster";
+import { secretsModuleDefinition, type SecretsPort } from "@world-prism/mod-platform-secrets-env";
+import { OperationsService, type OperationsDriver } from "@world-prism/mod-platform-operations-standard";
+import { transportModuleDefinition, type TransportPort } from "@world-prism/mod-transport-http-ws-fastify";
 
 const host: HostServices = {
   ids: (prefix) => `${prefix}-000000000000`,

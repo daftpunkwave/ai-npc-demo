@@ -8,9 +8,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dialogueWorldSeqSql } from "@ai-npc/app-server";
-import type { StoragePort, StorageTransaction } from "@ai-npc/contracts";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import { dialogueWorldSeqSql } from "@world-prism/app-server";
+import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost } from "./authority-support";
 
 const baseIso = "2026-01-01T00:00:00.000Z";

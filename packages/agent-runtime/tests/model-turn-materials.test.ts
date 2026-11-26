@@ -5,8 +5,8 @@
  * 禁止在此构造完整 turn、模型调用或存储访问。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError, type Json } from "@ai-npc/contracts";
-import type { ResolvedAgentProfile } from "@ai-npc/experiment";
+import { DomainError, type Json } from "@world-prism/contracts";
+import type { ResolvedAgentProfile } from "@world-prism/experiment";
 import { modelContextBudget } from "../src/model-turn-materials";
 
 const profileId = "agent-strategic-default";

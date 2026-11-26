@@ -10,7 +10,7 @@ import {
   principalIdSchema,
   resourceAmountsSchema,
   taskTypeSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { z } from "zod";
 import {
   contentIdSchema,

@@ -3,12 +3,12 @@
  * 只从已授权观察构建关系修正与行版本。
  * 禁止在冻结观察与全局契约表之外推断事实。
  */
-import type { IdPrefix, MemoryChangePlan } from "@ai-npc/contracts";
-import { roadIdFromPolicyKey } from "@ai-npc/contracts";
+import type { IdPrefix, MemoryChangePlan } from "@world-prism/contracts";
+import { roadIdFromPolicyKey } from "@world-prism/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
   type LedgerBuild,

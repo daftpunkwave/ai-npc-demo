@@ -4,9 +4,9 @@
  * 禁止用真实定时器等待推进，也禁止把内存 workerFailed 当成跨重启状态。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLifecycle, type ServerRuntime } from "@ai-npc/app-server";
-import { listRuleFailures } from "@ai-npc/authority";
-import type { ClockState, GameClockPort } from "@ai-npc/module-sdk";
+import { createLifecycle, type ServerRuntime } from "@world-prism/app-server";
+import { listRuleFailures } from "@world-prism/authority";
+import type { ClockState, GameClockPort } from "@world-prism/module-sdk";
 import { createAuthorityHarness, createFakeHost, type AuthorityHarness } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 

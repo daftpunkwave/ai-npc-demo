@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
-import { checkModuleCapabilityUsage } from "@ai-npc/app-server";
+import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
+import { checkModuleCapabilityUsage } from "@world-prism/app-server";
 
 const temporaryRoots: string[] = [];
 
@@ -53,7 +53,7 @@ function moduleDefinition(input: {
 
 /** 按仓库目录约定写入模块源码目录，返回仓库根路径。 */
 function fixture(files: Readonly<Record<string, string>>): string {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-capability-usage-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-capability-usage-"));
   temporaryRoots.push(root);
   for (const [relativePath, content] of Object.entries(files)) {
     const filePath = join(root, relativePath);

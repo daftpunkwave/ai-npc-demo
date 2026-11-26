@@ -4,7 +4,7 @@
  * 禁止在业务写入之外单独提交结果（时钟控制除外），或让不可重试失败与已提交成功结果被后续重试覆盖。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { DomainError, canonicalJson, type ClockView, type StoragePort } from "@ai-npc/contracts";
+import { DomainError, canonicalJson, type ClockView, type StoragePort } from "@world-prism/contracts";
 import { clockView } from "./clock-view";
 import { switchLiveBranch, type LiveRunState } from "./live-state";
 import type {

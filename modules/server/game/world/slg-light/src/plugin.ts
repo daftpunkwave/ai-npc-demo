@@ -3,14 +3,14 @@
  * 依赖无状态生命周期骨架、规则贡献、端口工厂与模块创建输入。
  * 禁止在 create 阶段读取内容、时钟或初始化 campaign。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {
   createStatelessModule,
   type GameContent,
   type GameIdFactory,
   type GamePortBindContext,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { createWorldContributor } from "./contributor";
 import { worldConfigSchema } from "./definition";
 import { createWorldPort } from "./port";

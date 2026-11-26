@@ -9,7 +9,7 @@ import {
   type Json,
   type PlayerProjection,
   type StreamChannel,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { handleClientMessage } from "./client-messages";
 import { HeartbeatProbe } from "./heartbeat-probe";
 import { ReplayStore } from "./replay-store";

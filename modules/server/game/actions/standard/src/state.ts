@@ -3,8 +3,8 @@
  * 依赖公共契约的资源量与任务类型；只做状态校验与读取。
  * 禁止在这里执行派遣校验、路线计算或风险抽样。
  */
-import { DomainError, jsonValueSchema, resourceAmountsSchema, taskTypeSchema } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { DomainError, jsonValueSchema, resourceAmountsSchema, taskTypeSchema } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 /** 出发时抽样得到的内部风险：只写进任务状态，完成时才应用伤势并公布。 */

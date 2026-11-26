@@ -3,8 +3,8 @@
  * 依赖真实 SQLite、世界/通信/行动/协议模块、内容包与 authority；不启动网络。
  * 禁止用固定任务状态替代规则结算。
  */
-import type { AuthContext, Json, TaskType } from "@ai-npc/contracts";
-import type { GameWorldPort } from "@ai-npc/module-sdk";
+import type { AuthContext, Json, TaskType } from "@world-prism/contracts";
+import type { GameWorldPort } from "@world-prism/module-sdk";
 import { describe, expect, it } from "vitest";
 import {
   acceptTaskInvitation,

@@ -3,8 +3,8 @@
  * 交互契约：只从已授权结果中筛字段、截列表和文本，并返回实际 token 估值。
  * 约束与禁忌：不得执行工具、改写 receipt、重新授权或读取 resultRef。
  */
-import { estimateTokens, type Json, type ToolExecutionResult } from "@ai-npc/contracts";
-import type { AgentToolViewPort } from "@ai-npc/module-sdk";
+import { estimateTokens, type Json, type ToolExecutionResult } from "@world-prism/contracts";
+import type { AgentToolViewPort } from "@world-prism/module-sdk";
 import type { StructuredToolViewConfig } from "./definition";
 
 type RenderInput = Parameters<AgentToolViewPort["render"]>[0];

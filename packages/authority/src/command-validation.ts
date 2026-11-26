@@ -11,8 +11,8 @@ import {
   type CommandType,
   type Json,
   type ScopedBranchStorage,
-} from "@ai-npc/contracts";
-import type { AuthContext } from "@ai-npc/contracts";
+} from "@world-prism/contracts";
+import type { AuthContext } from "@world-prism/contracts";
 import type { BranchRecord } from "./branch-state";
 import { requireStorageNumber } from "./storage-values";
 

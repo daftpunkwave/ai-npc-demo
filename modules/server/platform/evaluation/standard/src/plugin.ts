@@ -3,8 +3,8 @@
  * 交互契约：只接收宿主注入的探针执行结果与 run 元数据；不读存储、不启动实验、不调用模型。
  * 约束与禁忌：禁止在此推进时钟、创建分支或写入世界状态。
  */
-import { createStatelessModule } from "@ai-npc/module-sdk";
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {
   aggregateExperimentCells,
   buildRunReport,

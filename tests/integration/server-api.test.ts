@@ -29,7 +29,7 @@ import {
   type ResolvedModuleSet,
   type StartOption,
   type IdPrefix,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   buildPlayerProjection,
   createServerApp,
@@ -39,19 +39,19 @@ import {
   type ServerAppInjectResponse,
   type ServerAppOptions,
   type TransportAppInput,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 import {
   accessPolicyModuleDefinition,
   type AccessPolicyPort,
-} from "@ai-npc/mod-platform-access-policy-roster";
-import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
+} from "@world-prism/mod-platform-access-policy-roster";
+import type { ApprovedSpeechReader } from "@world-prism/module-sdk";
 import {
   TransportPort,
   httpTransportLimits,
   type ConversationReadPort,
   type ConversationSourceLine,
-} from "@ai-npc/mod-transport-http-ws-fastify";
-import { SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
+} from "@world-prism/mod-transport-http-ws-fastify";
+import { SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,
@@ -839,7 +839,7 @@ describe("服务端 API", () => {
   });
 
   it("GET /conversations/{agentId} 返回真实对白，选择最近一次交换并校验分页", async () => {
-    const speeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
+    const speeches: Record<string, import("@world-prism/module-sdk").ApprovedSpeech> = {
       "art-000000000201": {
         text: "清单在仓里第三排。",
         agentId: "npc-wenyuan",
@@ -1439,7 +1439,7 @@ describe("服务端 API", () => {
   });
 
   it("WS 推送新对白与提醒的 append 帧，未订阅连接收不到", async () => {
-    const speeches: Record<string, import("@ai-npc/module-sdk").ApprovedSpeech> = {
+    const speeches: Record<string, import("@world-prism/module-sdk").ApprovedSpeech> = {
       "art-000000000101": {
         text: "清单在仓里第三排。",
         agentId: "npc-wenyuan",
@@ -2586,7 +2586,7 @@ describe("服务端 API", () => {
   });
 
   it("HTTP 响应带安全头且 HTML 文档附带收窄的 CSP", async () => {    const value = await createTrackedGameHarness(active);
-    const directory = mkdtempSync(join(tmpdir(), "ai-npc-secure-headers-"));
+    const directory = mkdtempSync(join(tmpdir(), "world-prism-secure-headers-"));
     const staticDir = join(directory, "console-static");
     try {
       mkdirSync(staticDir);
@@ -2616,7 +2616,7 @@ describe("服务端 API", () => {
 
   it("控制台构建前注册静态路由，产物出现后无需重启即可提供页面", async () => {
     const value = await createTrackedGameHarness(active);
-    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-"));
+    const directory = mkdtempSync(join(tmpdir(), "world-prism-console-"));
     const staticDir = join(directory, "console-static");
     try {
       mkdirSync(staticDir);
@@ -2638,7 +2638,7 @@ describe("服务端 API", () => {
 
   it("控制台构建后新增的 hash 资产可正常返回，缺失资产返回 404 而不是 200 HTML", async () => {
     const value = await createTrackedGameHarness(active);
-    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-assets-"));
+    const directory = mkdtempSync(join(tmpdir(), "world-prism-console-assets-"));
     const staticDir = join(directory, "console-static");
     try {
       mkdirSync(staticDir);
@@ -2696,7 +2696,7 @@ describe("服务端 API", () => {
   });
 
   it("控制台静态目录创建失败时释放已初始化资源", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-failure-"));
+    const directory = mkdtempSync(join(tmpdir(), "world-prism-console-failure-"));
     const blocker = join(directory, "not-a-directory");
     writeFileSync(blocker, "blocked");
     let disposed = 0;

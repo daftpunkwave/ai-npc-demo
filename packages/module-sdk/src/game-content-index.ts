@@ -10,7 +10,7 @@ import type {
   ResourceAmounts,
   RoadStatus,
   TaskType,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { MetersView } from "./game-world-port";
 
 /** 内容索引中节点视图的最小结构。 */

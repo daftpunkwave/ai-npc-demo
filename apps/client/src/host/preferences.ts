@@ -7,9 +7,9 @@ import type {
   PreferenceKey,
   PreferencePort,
   PreferenceValues,
-} from "@ai-npc/client-sdk";
+} from "@world-prism/client-sdk";
 
-const prefix = "ai-npc.pref.";
+const prefix = "world-prism.pref.";
 
 export function localPreferencePort(): PreferencePort {
   return {

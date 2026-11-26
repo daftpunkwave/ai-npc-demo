@@ -4,8 +4,8 @@
  * 约束与禁忌：禁止伪造水位、租约或健康摘要，也不允许直接改队列行来制造预期结果。
  */
 import { describe, expect, it, vi } from "vitest";
-import type { RunModelPort } from "@ai-npc/module-sdk";
-import { memoryLayeredHybridModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import type { RunModelPort } from "@world-prism/module-sdk";
+import { memoryLayeredHybridModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import { createMemoryHarness, insertObservation, memoryAgentId, memoryBranchId } from "./memory-support";
 import { modelResponse, oneAttemptModel, startVariantHost } from "./memory-variants-support";
 

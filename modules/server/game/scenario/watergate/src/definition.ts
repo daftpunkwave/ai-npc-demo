@@ -3,8 +3,8 @@
  * 依赖公共契约与 module-sdk 描述符校验；实现由 create 动态加载。
  * 禁止在这里读取内容、调度卡片或订阅事件。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const scenarioConfigSchema = z.object({}).strict();

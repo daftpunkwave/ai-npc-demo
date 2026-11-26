@@ -3,7 +3,7 @@
  * 交互契约：只读内容规则的岗位描述符与调用方给出的队伍所属派系；不读写任务或世界状态。
  * 约束与禁忌：纯查询；岗位主体与数值一律来自 content.rules，本文件不得写具体内容 ID。
  */
-import type { GameContent } from "@ai-npc/module-sdk";
+import type { GameContent } from "@world-prism/module-sdk";
 
 /**
  * 参与者里是否有执行队伍所属派系的支持者。

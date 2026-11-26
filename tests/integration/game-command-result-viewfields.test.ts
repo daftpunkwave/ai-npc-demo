@@ -4,9 +4,9 @@
  * 约束与禁忌：不得在测试里手写 viewFields 期望值，也不得绕过命令网关构造回执。
  */
 import { describe, expect, it } from "vitest";
-import type { Term } from "@ai-npc/contracts";
-import { loadContentPack } from "@ai-npc/experiment";
-import { gameToolsModuleDefinition, type GameToolsCatalogPort } from "@ai-npc/mod-agent-tools-game-tools";
+import type { Term } from "@world-prism/contracts";
+import { loadContentPack } from "@world-prism/experiment";
+import { gameToolsModuleDefinition, type GameToolsCatalogPort } from "@world-prism/mod-agent-tools-game-tools";
 import {
   executeCommand,
   playerAuth,

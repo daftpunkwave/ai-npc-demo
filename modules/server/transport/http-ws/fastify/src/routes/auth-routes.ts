@@ -10,7 +10,7 @@ import {
   sessionAssemblyQuerySchema,
   sessionAssemblyResponseSchema,
   type SessionDescriptor,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { findTokenEntry } from "../timing-safe-token";
 import {
   authenticate,

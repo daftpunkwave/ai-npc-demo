@@ -4,7 +4,7 @@
  * 约束与禁忌：不得断言回复状态码映射之外的内部实现，也不得让假 reply 承担真实序列化职责。
  */
 import { describe, expect, it } from "vitest";
-import { errorResponseSchema } from "@ai-npc/contracts";
+import { errorResponseSchema } from "@world-prism/contracts";
 import { registerRequestTraceId, sendHttpError } from "../src/routes/context";
 
 /** 最小 reply 替身：只记录状态码与被 schema 解析后的发送体。 */

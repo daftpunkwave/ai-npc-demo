@@ -3,12 +3,12 @@
  * 从冻结 revision 视图构建使用行与有界容量。
  * 禁止仅因记录被检索到就强化它。
  */
-import type { MemoryChangePlan } from "@ai-npc/contracts";
+import type { MemoryChangePlan } from "@world-prism/contracts";
 import type {
   MemoryPort,
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
   type LedgerBuild,

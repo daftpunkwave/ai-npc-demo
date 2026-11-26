@@ -4,14 +4,14 @@
  * 禁止直接构造端口实现来替代模块实例。
  */
 import { describe, expect, it } from "vitest";
-import { loadContentPack } from "@ai-npc/experiment";
-import type { IdPrefix, ModuleCreateInput } from "@ai-npc/contracts";
-import type { GameContent, WorldTx } from "@ai-npc/module-sdk";
+import { loadContentPack } from "@world-prism/experiment";
+import type { IdPrefix, ModuleCreateInput } from "@world-prism/contracts";
+import type { GameContent, WorldTx } from "@world-prism/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { createMemoryTx, toGameContent } from "./game-support";
-import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
-import { resourcesModuleDefinition } from "@ai-npc/mod-game-resources-light";
-import { worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
+import { mapModuleDefinition } from "@world-prism/mod-game-map-six-nodes";
+import { resourcesModuleDefinition } from "@world-prism/mod-game-resources-light";
+import { worldModuleDefinition } from "@world-prism/mod-game-world-slg-light";
 
 function input(definition: { readonly id: string }, host: ReturnType<typeof createFakeHost>): ModuleCreateInput {
   return {

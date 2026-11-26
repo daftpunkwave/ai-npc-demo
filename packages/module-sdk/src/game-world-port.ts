@@ -12,7 +12,7 @@ import type {
   ResourceAmounts,
   TaskType,
   WatergateAllocation,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { AgreementCounts } from "./game-agreements-port";
 
 /**

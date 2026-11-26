@@ -4,7 +4,7 @@
  * 禁止在此创建第二个写连接、在事务内调用或忽略 PRAGMA 生效失败。
  */
 import { DatabaseSync } from "node:sqlite";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 
 /** 启动时应用的连接级设置：WAL、NORMAL 同步、外键约束与写锁等待上限。 */
 const PRAGMA_STATEMENTS = [

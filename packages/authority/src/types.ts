@@ -15,8 +15,8 @@ import type {
   PrincipalKind,
   StoragePort,
   StorageTransaction,
-} from "@ai-npc/contracts";
-import type { ApprovedSpeechReader, HandlerContext, HandlerResult, ModuleBinder } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { ApprovedSpeechReader, HandlerContext, HandlerResult, ModuleBinder } from "@world-prism/module-sdk";
 
 /** 命令处理器：必须是同步函数，payload 已通过契约 schema 校验。 */
 export type CommandHandler<TModules = unknown, TContent = unknown> = (

@@ -4,8 +4,8 @@
  * 约束与禁忌：不得手工实例化模块或把不可压缩内容伪装为成功。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { ContextArtifact } from "@ai-npc/contracts";
-import { AgentContextPipeline } from "@ai-npc/agent-runtime";
+import type { ContextArtifact } from "@world-prism/contracts";
+import { AgentContextPipeline } from "@world-prism/agent-runtime";
 import { baseContextRequest, createAgentContextToolsHarness, type AgentContextToolsHarness } from "./agent-context-tools-support";
 
 const harnesses: AgentContextToolsHarness[] = [];

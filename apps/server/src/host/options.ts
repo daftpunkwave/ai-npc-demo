@@ -3,7 +3,7 @@
  * 只定义参数结构与字段含义；不校验、不读取环境变量。
  * 禁止在装配已冻结的在线 run 上按这些入参重建运行规格，也禁止把它们写进模块装配配置或冻结摘要。
  */
-import type { AssemblyDescriptor, ModuleDefinition } from "@ai-npc/contracts";
+import type { AssemblyDescriptor, ModuleDefinition } from "@world-prism/contracts";
 
 export interface HostOptions {
   readonly dataDir: string;

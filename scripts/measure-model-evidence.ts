@@ -7,12 +7,12 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { serverModuleDefinitions } from "@ai-npc/app-server";
-import { canonicalJson, type HostServices, type Json, type ModelFixture, type StoragePort } from "@ai-npc/contracts";
-import type { NormalizedMessage } from "@ai-npc/contracts";
-import type { AgentModelPoolPort, ModelCallInput, ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
+import { serverModuleDefinitions } from "@world-prism/app-server";
+import { canonicalJson, type HostServices, type Json, type ModelFixture, type StoragePort } from "@world-prism/contracts";
+import type { NormalizedMessage } from "@world-prism/contracts";
+import type { AgentModelPoolPort, ModelCallInput, ModelRoute, ModelWorkScope } from "@world-prism/module-sdk";
 
-const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-archive-measure-"));
+const dataDir = mkdtempSync(join(tmpdir(), "world-prism-archive-measure-"));
 
 let sequence = 0;
 const host = {

@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止在这里实现寻路规则或读取地图模块之外的聚合。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名表达调用契约。 */
-import type { ReasonCode, RoadStatus } from "@ai-npc/contracts";
+import type { ReasonCode, RoadStatus } from "@world-prism/contracts";
 import type { GameRoad } from "./game-content-index";
 
 /** 一次路径查询的输入；withCargo 为真时每经过一条道路额外加 1 tick。 */

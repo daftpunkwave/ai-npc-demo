@@ -4,7 +4,7 @@
  * 禁止在这里放宽命令校验、吞掉被拒回执或用默认参数替代调用方的条款。
  */
 import { afterEach, expect } from "vitest";
-import type { AuthContext, CommandReceipt, CommandType, Json, Term } from "@ai-npc/contracts";
+import type { AuthContext, CommandReceipt, CommandType, Json, Term } from "@world-prism/contracts";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,

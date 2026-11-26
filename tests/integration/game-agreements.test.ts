@@ -3,9 +3,9 @@
  * 依赖真实 SQLite、世界/行动/协议模块与 authority；消费者显式推进。
  * 禁止直接改协议状态或跳过事件消费者。
  */
-import type { Json, Term } from "@ai-npc/contracts";
-import type { AgreementQueryPorts, TaskView } from "@ai-npc/module-sdk";
-import { createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
+import type { Json, Term } from "@world-prism/contracts";
+import type { AgreementQueryPorts, TaskView } from "@world-prism/module-sdk";
+import { createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
 import { describe, expect, it } from "vitest";
 import {
   acceptAgreement,

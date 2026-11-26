@@ -11,13 +11,13 @@ import type {
   MemoryChangePlan,
   MemoryScope,
   StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryPort,
   RevisionView,
   ScopedModelPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type {
   ClaimedMaintenance,
   MemoryMaintenanceQueue,

@@ -4,20 +4,20 @@
  * 禁止绕过已绑定的模块端口读取领域聚合；回执查询只访问命令网关写入的回执表。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { createScopedWorldTxFactory, systemPrincipalId, type Authority } from "@ai-npc/authority";
+import { createScopedWorldTxFactory, systemPrincipalId, type Authority } from "@world-prism/authority";
 import {
   DomainError,
   commandReceiptSchema,
   type CampaignView,
   type StoragePort,
   type StorageTransaction,
-} from "@ai-npc/contracts";
-import type { GameContent, GameModulePorts } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { GameContent, GameModulePorts } from "@world-prism/module-sdk";
 import type { CommandReceiptReadPort, ConversationReadPort, ServerRuntime } from "./module-catalog";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";
 import { buildPlayerProjection, campaignViewOf } from "../projection";
-import type { HostServices } from "@ai-npc/contracts";
+import type { HostServices } from "@world-prism/contracts";
 
 export interface ReadPortsInput {
   readonly host: HostServices;

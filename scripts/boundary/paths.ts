@@ -71,7 +71,7 @@ export function nodeBuiltinName(specifier: string): string | null {
 }
 
 export function isModulePackageName(name: string): boolean {
-  return name.startsWith("@ai-npc/mod-");
+  return name.startsWith("@world-prism/mod-");
 }
 
 /** vite.config.ts、vitest.config.ts 等工具入口：配置构建与测试工具，不是生产实现。 */

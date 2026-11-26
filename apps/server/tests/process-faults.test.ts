@@ -9,7 +9,7 @@ import {
   faultExitCode,
   installProcessFaultHandlers,
   type ProcessFaultReport,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 
 describe("process fault handlers", () => {
   it("记录未处理 rejection 并以非零退出码走优雅关闭", async () => {

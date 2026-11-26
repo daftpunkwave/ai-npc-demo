@@ -15,7 +15,7 @@ import {
   type ConversationResponse,
   type ErrorCode,
   type StreamChannel,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { StreamHub } from "../stream-hub";
 import type {
   AccessPolicy,

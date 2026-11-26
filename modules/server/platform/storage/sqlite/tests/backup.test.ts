@@ -8,7 +8,7 @@ import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 import { backupDatabase, maxRetainedBackups } from "../src/sqlite/backup";
 import { createFakeHost, createTempDataDir, expectDomainError, openStorageHarness, removeTempDataDir, startStorage } from "./support";
 

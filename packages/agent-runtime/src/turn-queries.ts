@@ -6,9 +6,9 @@
 import {
   dayPassedPayloadSchema, dialogueSubmittedPayloadSchema, DomainError, metersChangedPayloadSchema,
   passageGrantedPayloadSchema, policyChangedPayloadSchema, roadStatusSchema, type Json,
-} from "@ai-npc/contracts";
-import type { ContentPack } from "@ai-npc/experiment";
-import { findRoadPath } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { ContentPack } from "@world-prism/experiment";
+import { findRoadPath } from "@world-prism/module-sdk";
 import { asRecord } from "./runtime-records";
 import type { QueryExecutionInput, ToolCallOutcome } from "./tool-gateway-types";
 import type { FrozenTurnInput } from "./turn-input";

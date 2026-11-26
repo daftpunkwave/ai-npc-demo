@@ -4,7 +4,7 @@
  * 禁止发送真实玩家数据、世界上下文或记录凭据。
  */
 import { expect } from "vitest";
-import type { ModelConnectionInput, ModelRequest, ModelTransportPort } from "@ai-npc/contracts";
+import type { ModelConnectionInput, ModelRequest, ModelTransportPort } from "@world-prism/contracts";
 import { modelRequest, statusOutput } from "../support/model-transport";
 
 export async function verifyModelTransport(

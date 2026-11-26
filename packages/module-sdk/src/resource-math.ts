@@ -3,7 +3,7 @@
  * 依赖公共契约的资源量与资源增减类型；全部为纯函数，不读写世界状态。
  * 禁止在这里引入库存聚合、生成事件或替代各模块自己的资源校验。
  */
-import type { ResourceAmounts, ResourceDelta, ResourceId } from "@ai-npc/contracts";
+import type { ResourceAmounts, ResourceDelta, ResourceId } from "@world-prism/contracts";
 
 /** 三种资源的固定顺序，供遍历与稳定投影使用。 */
 export const resourceIds: readonly ResourceId[] = ["supply", "energy", "medical"];

@@ -5,7 +5,7 @@
  * 返回的 `commit` 只被调用一次；调用方负责在此之前完成全部可能失败的解析。
  * 约束与禁忌：不打开存储、不启动模块、不按当前入参重建已存在的在线 run，也不在事务外写世界状态。
  */
-import type { AssemblyDescriptor, HostServices, Json, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
+import type { AssemblyDescriptor, HostServices, Json, ModuleDefinition, StoragePort } from "@world-prism/contracts";
 import {
   loadRoster,
   loadRunSpec,
@@ -13,8 +13,8 @@ import {
   validateRunSpec,
   type ConfigLoadContext,
   type ContentPack,
-} from "@ai-npc/experiment";
-import type { GameClockPort } from "@ai-npc/module-sdk";
+} from "@world-prism/experiment";
+import type { GameClockPort } from "@world-prism/module-sdk";
 import { resolveAgentConfiguration } from "./agent-configuration";
 import type { ResolvedServerAssembly } from "./assembly";
 import { buildRunManifest } from "./manifest";

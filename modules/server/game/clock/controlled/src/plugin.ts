@@ -3,8 +3,8 @@
  * 依赖公共契约的模块实例与存储端口类型；配置已由宿主校验。
  * 禁止在模块内启动计时器、自动推进 tick 或在事务外缓存时钟写入。
  */
-import { DomainError, type ModuleCreateInput, type ModuleInstance, type StoragePort } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import { DomainError, type ModuleCreateInput, type ModuleInstance, type StoragePort } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { clockConfigSchema } from "./definition";
 import { createClockPort } from "./port";
 

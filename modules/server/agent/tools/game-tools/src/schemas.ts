@@ -8,7 +8,7 @@ import {
   dialogueIntentKindSchema,
   resourceIdSchema,
   watergateAllocationSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { z } from "zod";
 
 const speechIntentKinds = dialogueIntentKindSchema.options.filter((kind) => kind !== "none");

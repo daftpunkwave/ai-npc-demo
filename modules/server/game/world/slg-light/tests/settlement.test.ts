@@ -4,8 +4,8 @@
  * 禁止在本文件写死内容 ID 断言与夹具脱钩的耦合值。
  */
 import { describe, expect, it } from "vitest";
-import type { Json } from "@ai-npc/contracts";
-import type { GameContent, GameModulePorts, WorldTx } from "@ai-npc/module-sdk";
+import type { Json } from "@world-prism/contracts";
+import type { GameContent, GameModulePorts, WorldTx } from "@world-prism/module-sdk";
 import { runChapterEvaluation, runDailySettlement } from "../src/settlement";
 import { campaignAggregateId, metersAggregateId } from "../src/port";
 import { createTestHost, TestWorldTx } from "./support";

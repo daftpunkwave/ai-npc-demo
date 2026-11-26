@@ -3,9 +3,9 @@
  * 交互契约：配置在模块创建时校验，视图转换不访问外部资源。
  * 约束与禁忌：不得缓存原始结果或改变执行事实。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { AgentToolViewPort } from "@ai-npc/module-sdk";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { AgentToolViewPort } from "@world-prism/module-sdk";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { structuredToolViewConfigSchema, type StructuredToolViewConfig } from "./definition";
 import { renderStructuredView } from "./structured-view";
 

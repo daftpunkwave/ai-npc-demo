@@ -13,7 +13,7 @@ import {
   realmQuerySchema,
   timelineQuerySchema,
   timelineResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   authenticate,
   requireConsoleRole,

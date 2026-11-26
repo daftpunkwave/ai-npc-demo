@@ -9,7 +9,7 @@ import {
   modelLayoutValidateResponseSchema,
   modelLayoutsResponseSchema,
   modelLayoutViewSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { authenticate, requireConsoleRole, sendHttpError } from "./context";
 import type { RouteContext } from "./context";
 

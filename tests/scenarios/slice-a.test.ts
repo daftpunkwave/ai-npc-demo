@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startHost, type RunningHost } from "@ai-npc/app-server";
+import { startHost, type RunningHost } from "@world-prism/app-server";
 import {
   agentInspectorResponseSchema,
   artifactResponseSchema,
@@ -21,7 +21,7 @@ import {
   turnDetailSchema,
   turnsResponseSchema,
   type AuthContext,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { gameCommandEnvelope } from "../integration/game-support";
 
 const roots: string[] = [];
@@ -36,7 +36,7 @@ afterEach(async () => {
 });
 
 function dataDir(): string {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-slice-a-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-slice-a-"));
   roots.push(root);
   return root;
 }

@@ -3,7 +3,7 @@
  * 依赖公共模块契约；实现通过动态入口加载，不读取世界数据。
  * 禁止在描述符中创建计时器、订阅或浏览器画布。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const cameraModuleDefinition = defineBrowserModuleDefinition({
   id: "client.camera.standard",

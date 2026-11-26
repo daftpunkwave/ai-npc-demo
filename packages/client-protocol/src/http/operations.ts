@@ -13,7 +13,7 @@ import {
   snapshotRestoreResponseSchema,
   type ClockControlRequest,
   type SnapshotCreateRequest,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { z } from "zod";
 import type { ConsoleRequest } from "./request";
 

@@ -5,15 +5,15 @@
  * 约束与禁忌：不产生对白、不写对白批准索引、不推进逻辑时间；拒绝时整体回滚，不留部分状态。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { Json } from "@ai-npc/contracts";
-import { commandPayloadOf } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
+import { commandPayloadOf } from "@world-prism/contracts";
 import {
   principalsAudience,
   requireGameContent,
   type GameModulePorts,
   type HandlerContext,
   type HandlerResult,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 type ProbeContext = HandlerContext<GameModulePorts, unknown>;
 

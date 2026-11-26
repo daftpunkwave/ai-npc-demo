@@ -4,7 +4,7 @@
  * 禁止在时钟外另起定时器、跳过未注册步骤，或把同一 tick 的多个步骤合并进一个事务；
  * 步骤处理器失败时回滚步骤事务，达到重试上限后记录死信并在本 tick 跳过该步骤；持久时钟停止点由步骤在自身事务内登记，宿主据此补做暂停并拒绝越过终局推进。
  */
-import { DomainError, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type StorageTransaction } from "@world-prism/contracts";
 import { readBranch, readClock, type BranchRecord } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";

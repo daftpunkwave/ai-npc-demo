@@ -10,8 +10,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AssemblyDescriptor, Json, StoragePort } from "@ai-npc/contracts";
-import { startInstances, type ResolvedRealmPlan, type StartedInstances } from "@ai-npc/kernel";
+import type { AssemblyDescriptor, Json, StoragePort } from "@world-prism/contracts";
+import { startInstances, type ResolvedRealmPlan, type StartedInstances } from "@world-prism/kernel";
 import {
   createServerRuntime,
   filterPlan,
@@ -19,10 +19,10 @@ import {
   resolveServerAssembly,
   resolveServerModules,
   serverModuleDefinitions,
-} from "@ai-npc/app-server";
-import { toGameContent } from "@ai-npc/app-server/content";
-import type { GameContent, GameResourcesPort, WorldTx } from "@ai-npc/module-sdk";
-import { loadContentPack } from "@ai-npc/experiment";
+} from "@world-prism/app-server";
+import { toGameContent } from "@world-prism/app-server/content";
+import type { GameContent, GameResourcesPort, WorldTx } from "@world-prism/module-sdk";
+import { loadContentPack } from "@world-prism/experiment";
 import { createFakeHost } from "./authority-support";
 import { createMemoryTx } from "./game-support";
 
@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 function tempDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-assembly-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-assembly-test-"));
   dirs.push(dir);
   return dir;
 }
@@ -68,7 +68,7 @@ function gameContent(): GameContent {
 async function startPlan(plan: ResolvedRealmPlan): Promise<{
   readonly started: StartedInstances;
   readonly storageStarted: StartedInstances;
-  readonly instances: readonly import("@ai-npc/kernel").RunningInstance[];
+  readonly instances: readonly import("@world-prism/kernel").RunningInstance[];
 }> {
   const storageStarted = await startInstances(
     filterPlan(plan, (moduleId) => moduleId === "platform.storage.sqlite"),

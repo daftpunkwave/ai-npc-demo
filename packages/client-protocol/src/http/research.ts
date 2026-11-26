@@ -15,7 +15,7 @@ import {
   traceResponseSchema,
   turnDetailSchema,
   turnsResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { queryString, type ConsoleRequest } from "./request";
 
 export function createResearchHttp(request: ConsoleRequest) {

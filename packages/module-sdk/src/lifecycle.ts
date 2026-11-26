@@ -3,7 +3,7 @@
  * 依赖公共契约的模块创建输入与实例类型；端口由调用方在创建时传入。
  * 禁止在这里启动循环、读取配置或把端口实现耦合进宿主。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 
 /** 构造无后台任务的模块实例；调用方只需提供可选端口。 */
 export function createStatelessModule(input: ModuleCreateInput, port?: unknown): Promise<ModuleInstance> {

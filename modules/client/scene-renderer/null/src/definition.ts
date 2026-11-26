@@ -3,7 +3,7 @@
  * 依赖世界视图、相机、屏幕投影与输入能力；不属于标准视觉装配。
  * 禁止在测试渲染器中显示或持久化未授权数据。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const nullSceneModuleDefinition = defineBrowserModuleDefinition({
   id: "client.scene-renderer.null",

@@ -4,8 +4,8 @@
  * 禁止访问网络、读取真实夹具文件或依赖宿主持久化状态。
  */
 import { describe, expect, it } from "vitest";
-import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
-import type { HostServices, ModelConnectionInput, ModelFixture, ModelRequest, ModelTransportPort } from "@ai-npc/contracts";
+import { deterministicModelTransportDefinition } from "@world-prism/mod-platform-model-transport-deterministic/definition";
+import type { HostServices, ModelConnectionInput, ModelFixture, ModelRequest, ModelTransportPort } from "@world-prism/contracts";
 import { modelRequest, statusOutput } from "../support/model-transport";
 
 const principalIds = ["player-1", "human-independent", "human-earth-alliance", "human-pacifist", "human-alien-accord"];

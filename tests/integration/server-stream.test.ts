@@ -11,8 +11,8 @@ import {
   type Json,
   type PlayerProjection,
   type StreamChannel,
-} from "@ai-npc/contracts";
-import { StreamHub, type StreamSocket } from "@ai-npc/mod-transport-http-ws-fastify";
+} from "@world-prism/contracts";
+import { StreamHub, type StreamSocket } from "@world-prism/mod-transport-http-ws-fastify";
 
 /** 假连接：记录发送帧并按需模拟背压缓冲与关闭事件。 */
 class FakeSocket implements StreamSocket {

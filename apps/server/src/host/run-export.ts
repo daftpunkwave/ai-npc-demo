@@ -10,7 +10,7 @@ import {
   type HostServices,
   type Json,
   type StoragePort,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 导出请求：run 标识与脱敏级别。 */
 export interface ExportRunInput {

@@ -29,7 +29,7 @@ process.once("SIGTERM", () => { void shutdown(); });
 installProcessFaultHandlers(process, createProcessFaultHandlers({
   logFault: (report) => {
     // 只写类型、错误消息与栈，不写可能含观察正文或凭据的整份上下文对象。
-    console.error(`[ai-npc] 未捕获异常（${report.kind}）：${report.message}`);
+    console.error(`[world-prism] 未捕获异常（${report.kind}）：${report.message}`);
     if (report.stack !== null) console.error(report.stack);
   },
   shutdown,

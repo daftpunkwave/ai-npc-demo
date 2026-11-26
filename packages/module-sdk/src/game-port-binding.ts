@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止在这里实现端口行为；模块不得借端口快照读取其他模块的聚合。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
-import type { IdPrefix } from "@ai-npc/contracts";
+import type { IdPrefix } from "@world-prism/contracts";
 import type { WorldTx } from "./ports";
 import type { GameActionsPort } from "./game-actions-port";
 import type { GameAgreementsPort } from "./game-agreements-port";

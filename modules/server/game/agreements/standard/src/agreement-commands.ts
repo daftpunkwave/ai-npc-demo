@@ -3,14 +3,14 @@
  * 依赖条款校验、协议聚合、世界/地图端口与事务上下文；不评估期限后的履约或违约。
  * 禁止替当事人应答、跳过生效前校验，或在写入失败时保留部分生效结果。
  */
-import type { Json, ReasonCode, Term } from "@ai-npc/contracts";
-import { commandPayloadOf } from "@ai-npc/contracts";
+import type { Json, ReasonCode, Term } from "@world-prism/contracts";
+import { commandPayloadOf } from "@world-prism/contracts";
 import {
   effectivePrincipalId,
   principalsAudience,
   requireGameContent,
   type HandlerResult,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { isSustainedTerm } from "./fulfillment";
 import { finishIfFulfilled } from "./agreement-lifecycle";
 import { cancelAgreementJobs, scheduleBreaches, scheduleExpiry } from "./agreement-schedule";

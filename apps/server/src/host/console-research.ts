@@ -17,8 +17,8 @@ import {
   type DebugWakeInput,
   type Json,
   type TurnReplayResponse,
-} from "@ai-npc/contracts";
-import type { GameContent } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { GameContent } from "@world-prism/module-sdk";
 import type { HostReadPorts } from "./reads";
 import type { ServerRuntime } from "./module-catalog";
 

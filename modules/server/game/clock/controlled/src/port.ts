@@ -4,8 +4,8 @@
  * 禁止在 running 之外自行推进 tick、重复打开事务或绕过乐观版本校验。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 方法签名中的参数名只用于表达调用契约。 */
-import { DomainError, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
-import type { ClockState, GameClockPort } from "@ai-npc/module-sdk";
+import { DomainError, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
+import type { ClockState, GameClockPort } from "@world-prism/module-sdk";
 import { requireClockNumber, requireClockString, type ClockConfig } from "./state";
 
 type ControlResult =

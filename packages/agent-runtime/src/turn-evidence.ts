@@ -3,7 +3,7 @@
  * span 只包含状态、配置引用和证据 ID，原始输入与决定正文归 artifact。
  * 观测写入失败时保留运行证据不完整的标记。
  */
-import type { AgentStageEffective, HostServices, Json, StoragePort } from "@ai-npc/contracts";
+import type { AgentStageEffective, HostServices, Json, StoragePort } from "@world-prism/contracts";
 import { arrayValue } from "./runtime-records";
 import { TurnStopped, type ClaimedTurn } from "./turn-lease";
 
