@@ -68,8 +68,9 @@ function assertSameOwnedAggregates(
 ): void {
   const declared = new Set(planned.definition.ownsAggregates ?? []);
   const registered = new Set(contributor.ownsAggregates);
-  const onlyDeclared = [...declared].filter((aggregate) => !registered.has(aggregate)).sort();
-  const onlyRegistered = [...registered].filter((aggregate) => !declared.has(aggregate)).sort();
+  const byName = (left: string, right: string): number => left.localeCompare(right);
+  const onlyDeclared = [...declared].filter((aggregate) => !registered.has(aggregate)).sort(byName);
+  const onlyRegistered = [...registered].filter((aggregate) => !declared.has(aggregate)).sort(byName);
   if (onlyDeclared.length > 0 || onlyRegistered.length > 0) {
     throw new Error(
       `游戏模块 ${planned.moduleId} 的规则贡献与模块定义声明的聚合所有权不一致：` +
