@@ -33,11 +33,29 @@ function isTriggerTickInWindow(triggerAtTick: number, worldTick: number, chapter
   return triggerAtTick > worldTick && triggerAtTick <= worldTick + chapterLengthTicks;
 }
 
+/**
+ * 草稿登记与发布共用同一套窗口判断。
+ * 两处都接受一个触发 tick，规则必须完全一致：分别内联会让其中一处漏改后
+ * 出现「能登记却发布不了」或相反的静默不一致。
+ */
+function triggerTickRejected(context: ScenarioContext, triggerAtTick: number): boolean {
+  return !isTriggerTickInWindow(
+    triggerAtTick,
+    context.tx.worldTick,
+    asPorts(context)["game.world"].chapterLengthTicks(),
+  );
+}
+
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
   return context.modules as GameModulePorts;
 }
 
-function scaledTick(cardTrigger: number, escalating: boolean): number {
+/**
+ * 升级版剧情把卡片触发 tick 按固定倍率前移并向下取整。
+ * 导出供测试直接覆盖取整边界：整章验收只断言「提前了」的相对关系，
+ * 精确的取整语义在实现侧单独验证，避免把公式抄进验收用例。
+ */
+export function scaledTick(cardTrigger: number, escalating: boolean): number {
   return escalating ? Math.floor(cardTrigger * 0.75) : cardTrigger;
 }
 
@@ -144,13 +162,7 @@ function draft(context: ScenarioContext, payload: Json): HandlerResult {
       safeMessage: "该卡片已登记，不能重复创建草稿",
     };
   }
-  if (
-    !isTriggerTickInWindow(
-      input.triggerAtTick,
-      context.tx.worldTick,
-      asPorts(context)["game.world"].chapterLengthTicks(),
-    )
-  ) {
+  if (triggerTickRejected(context, input.triggerAtTick)) {
     return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出发布窗口" };
   }
   const invalidEffect = invalidEffectReferences(requireGameContent(context.content), input.effects);
@@ -182,13 +194,7 @@ function publish(context: ScenarioContext, payload: Json): HandlerResult {
   if (state.version !== input.version) {
     return { kind: "rejected", reasonCode: "version-conflict", safeMessage: "草稿版本与命令不一致" };
   }
-  if (
-    !isTriggerTickInWindow(
-      input.triggerAtTick,
-      context.tx.worldTick,
-      asPorts(context)["game.world"].chapterLengthTicks(),
-    )
-  ) {
+  if (triggerTickRejected(context, input.triggerAtTick)) {
     return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出发布窗口" };
   }
   const published: ScenarioCardState = { ...state, status: "published", triggerAtTick: input.triggerAtTick };

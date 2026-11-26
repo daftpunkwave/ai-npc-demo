@@ -6,7 +6,7 @@
 export const packageName = "@ai-npc/mod-game-scenario-watergate";
 
 export { escalatingScenarioModuleDefinition, scenarioModuleDefinition } from "./definition";
-export { createScenarioContributor } from "./contributor";
+export { createScenarioContributor, scaledTick } from "./contributor";
 export { createScenarioPort } from "./port";
 export type { ScenarioPort } from "./port";
 export {
