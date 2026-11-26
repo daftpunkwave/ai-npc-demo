@@ -47,3 +47,29 @@ export function idleDelayMs(idleCycles: number): number {
   );
   return Math.min(maxIdleDelayMs, baseDelayMs * 2 ** (idle - 1));
 }
+/** 收到世界变化信号后到下一轮的最短延迟：合并同一段时间内的多条提交。 */
+export const wakeDelayMs = 25;
+
+/** 轮询延迟的输入：失败退避、空闲巡检与「有信号等待处理」三者的优先级由此决定。 */
+export interface CycleDelayState {
+  /** 连续失败轮数；大于 0 时故障退避优先，唤醒信号不得缩短重试间隔。 */
+  readonly consecutiveFailures: number;
+  /** 连续空闲轮数：世界 tick 未变化且没有调度产出。 */
+  readonly idleCycles: number;
+  /** 是否已有尚未处理的世界变化信号。 */
+  readonly wakePending: boolean;
+}
+
+/**
+ * 下一轮延迟：失败退避 > 待处理信号 > 空闲巡检。
+ * 失败期间保持退避，避免频繁的世界变化把故障重试放大成负载；
+ * 有信号时按最短延迟重跑，让世界变化后尽早被处理；
+ * 其余情况按空闲计数指数退避，避免世界没有变化时空转。
+ * @param state 失败轮数、空闲轮数与待处理信号标记。
+ * @returns 下一次轮询的延迟毫秒数，范围 `[25, 5000]`。
+ */
+export function nextCycleDelayMs(state: CycleDelayState): number {
+  if (state.consecutiveFailures > 0) return cycleBackoffMs(state.consecutiveFailures);
+  if (state.wakePending) return wakeDelayMs;
+  return idleDelayMs(state.idleCycles + 1);
+}

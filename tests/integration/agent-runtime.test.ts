@@ -756,6 +756,38 @@ describe("Agent runtime 轮询节奏", () => {
   });
 });
 
+/**
+ * 重叠通知：一轮进行中到达的多个世界变化信号合并成一次后续轮次，
+ * 不产生并发轮次，也不重复生成 trigger。
+ */
+describe("Agent runtime 重叠唤醒", () => {
+  it("一轮进行中到达的多个世界变化信号不产生并发轮次", async () => {
+    const value = await fixture();
+    const runtime = await runtimeWithRealPerception(value);
+    try {
+      value.storage.transact((tx) => {
+        tx.branch("br-000000000001").table("domain_events").put(summonEvent(1, "evt-000000000013"));
+      });
+      // 首轮在途时连续发信号：重入保护应让它们合并，不叠加并发轮次。
+      const first = runtime.pump();
+      runtime.notifyWorldChanged();
+      runtime.notifyWorldChanged();
+      runtime.notifyWorldChanged();
+      await first;
+      await runtime.pump();
+
+      expect(value.storage.transact((tx) =>
+        tx.branch("br-000000000001").table("triggers").list({ agent_id: "human-independent" }))).toHaveLength(1);
+      expect(value.storage.transact((tx) =>
+        tx.branch("br-000000000001").table("consumer_offsets").get({ consumer_id: "agent.perception.local" })))
+        .toMatchObject({ last_world_seq: 1 });
+    } finally {
+      await runtime.dispose();
+      resources.pop();
+    }
+  });
+});
+
 /** 轮询等待：只用于观察异步后台轮次是否已提交，不做时序假设。 */
 async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

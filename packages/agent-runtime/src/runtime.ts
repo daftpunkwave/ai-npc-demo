@@ -11,16 +11,9 @@ import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";
 import { AgentModuleHandle } from "./agent-module-handle";
-import { cycleBackoffMs, idleDelayMs } from "./runtime-backoff";
+import { cycleBackoffMs, idleDelayMs, nextCycleDelayMs, wakeDelayMs } from "./runtime-backoff";
 import { TurnScheduler } from "./turn-scheduler";
 import { TurnWorker, type TurnExecutionOptions } from "./turn-worker";
-
-/**
- * 收到世界变化信号后到下一轮的最短延迟。
- * 不取 0：命令与运营操作会成批提交，排到下一个事件循环 tick 可以把同一段时间内的
- * 多个信号合并成一轮，避免为每一条提交各跑一次完整流水线。
- */
-const baseWakeDelayMs = 25;
 
 /** 单个阶段失败的记录：阶段名加原因原文，供聚合错误与日志对账。 */
 interface CycleStageFailure {
@@ -118,6 +111,11 @@ export class AgentRuntime {
   private idleCycles = 0;
   /** 上一轮观察到的世界 tick；变化即代表世界已推进，需要重新摄入与调度。 */
   private lastObservedTick: number | null = null;
+  /**
+   * 是否有尚未处理的世界变化信号。
+   * 信号在一轮进行中到达时只置位，由该轮收尾统一排下一轮；连续失败期间它不缩短退避。
+   */
+  private wakePending = false;
   private consumer: PerceptionEventConsumer | null = null;
   private memory: MemoryHost | null = null;
   private scheduler: TurnScheduler | null = null;
@@ -333,27 +331,32 @@ export class AgentRuntime {
   }
 
   /**
-   * 下一轮延迟：失败退避优先；空闲轮按指数退避到巡检上限，只有世界 tick 变化或收到唤醒信号才提前重跑。
+   * 下一轮延迟：失败退避优先，其次是待处理信号，最后是空闲巡检。
    * 世界每 tick 20 秒推进一次，固定 250 毫秒轮询会把「世界没变化」放大成约 80 倍的空转事务。
    */
   private nextDelayMs(): number {
-    if (this.consecutiveFailures > 0) return cycleBackoffMs(this.consecutiveFailures);
-    return idleDelayMs(this.idleCycles + 1);
+    return nextCycleDelayMs({
+      consecutiveFailures: this.consecutiveFailures,
+      idleCycles: this.idleCycles,
+      wakePending: this.wakePending,
+    });
   }
 
   /**
-   * 收到「世界可能已变化」的信号：重置空闲计数，并把下一轮提前到最短延迟。
+   * 收到「世界可能已变化」的信号：置位待处理标记并重置空闲计数。
    *
-   * 信号只缩短等待，不直接同步起跑：命令提交是一批批到达的，逐条立即重跑会让同一
-   * 段世界变化被反复完整扫描；把重跑挂在同一个计时器上，一轮正在进行时到达的多个
-   * 信号合并成一次后续轮次，既保留「变化后立即处理」的时延，也不产生并发轮次。
+   * 信号不直接起跑，而是缩短下一次排程：
+   * - 一轮正在进行时只置位，由该轮收尾统一排下一轮，重叠到达的多个信号合并成一次；
+   * - 连续失败期间只置位，不改写已有的退避计时器，避免频繁的世界变化把故障重试放大成负载；
+   * - 其余情况按最短延迟重排，让世界变化后尽早被处理。
    * 停止后忽略信号。
    */
   notifyWorldChanged(): void {
+    this.wakePending = true;
     this.idleCycles = 0;
     if (!this.running || this.stopped) return;
-    if (this.cycle !== null) {
-      // 本轮结束后由 runTrackedCycle 的收尾统一排下一轮，届时延迟已按重置后的计数计算。
+    if (this.cycle !== null || this.consecutiveFailures > 0) {
+      // 进行中的轮次会自行收尾排程；失败期间保持既有退避节奏。
       return;
     }
     if (this.timer !== null) {
@@ -364,12 +367,14 @@ export class AgentRuntime {
       void this.runTrackedCycle()
         .catch(() => undefined)
         .finally(() => this.schedule());
-    }, baseWakeDelayMs);
+    }, wakeDelayMs);
     this.timer.unref();
   }
 
   private runTrackedCycle(): Promise<void> {
     if (this.cycle !== null) return this.cycle;
+    // 本轮会重新扫描世界，待处理信号在此消费；本轮之后到达的信号重新置位。
+    this.wakePending = false;
     const cycle = this.runCycle()
       .then(() => this.recordCycleSuccess())
       .catch((error: unknown) => {
