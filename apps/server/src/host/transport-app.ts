@@ -82,10 +82,11 @@ const budgetSummaryLimit = 20;
 
 /**
  * 控制台静态目录的宿主级缺省值：与导入该模块的源文件位置绑定，而不是进程工作目录。
- * 嵌入式宿主（测试、脚本）没有经过部署配置时仍指向仓库内同一个构建输出位置。
+ * 本文件位于 apps/server/src/host/，源文件目录到仓库根要上溯四级（host → src → server → apps → 根），
+ * 再拼上仓库内的相对构建输出位置。嵌入式宿主（测试、脚本）没有经过部署配置时仍指向同一目录。
  */
 function consoleStaticDirFromProjectRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../..", consoleStaticDirRelativeToRoot);
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../..", consoleStaticDirRelativeToRoot);
 }
 
 /**
