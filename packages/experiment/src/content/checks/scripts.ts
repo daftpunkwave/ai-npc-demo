@@ -179,10 +179,23 @@ export function checkScripts(
     if (!index.factions.has(script.start.factionId)) {
       fail(file, "start.factionId", `脚本开局的派系「${script.start.factionId}」不存在`);
     }
+    // 探针 ID 是评估汇总的分组键；重名会让同一 key 下的结果静默合并，分数分母不可信。
+    const probePaths = new Map<string, string>();
+    // 分支名是 RunSpec `script.branch` 的选择键；重名会让分支选择无法唯一确定。
+    const branchIndices = new Map<string, number>();
     script.steps.forEach((step, stepIndex) => {
       checkStep(step, `steps.${stepIndex}`, file);
     });
     script.branches?.forEach((branch, branchIndex) => {
+      const previousBranch = branchIndices.get(branch.name);
+      if (previousBranch !== undefined) {
+        fail(
+          file,
+          `branches.${branchIndex}.name`,
+          `分支名「${branch.name}」在同一脚本内重复，首次出现在 branches.${previousBranch}.name`,
+        );
+      }
+      branchIndices.set(branch.name, branchIndex);
       branch.addSteps.forEach((step, stepIndex) => {
         checkStep(step, `branches.${branchIndex}.addSteps.${stepIndex}`, file);
       });
@@ -204,6 +217,11 @@ export function checkScripts(
         if (!index.principalIds.has(probe.askedBy)) {
           fail(file, `${path}.askedBy`, `提问者「${probe.askedBy}」不存在`);
         }
+        const seen = probePaths.get(probe.probeId);
+        if (seen !== undefined) {
+          fail(file, `${path}.probeId`, `探针 ID「${probe.probeId}」在同一脚本内重复，首次出现在 ${seen}`);
+        }
+        probePaths.set(probe.probeId, path);
       });
     });
   }
