@@ -4,10 +4,14 @@
  * 约束与禁忌：不得在为既有 profile 加默认值时改变其实际检索上限。
  */
 import { describe, expect, it } from "vitest";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadAgentProfile } from "@ai-npc/experiment";
 import { memoryRetrievalBudget } from "../src/turn-materials";
 
-const configDir = new URL("../../../config", import.meta.url).pathname.replace(/^\//u, "");
+// 仓库根由测试文件位置反推，避免依赖进程工作目录；与配置加载测试的取法一致。
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const configDir = resolve(repoRoot, "config");
 
 describe("真实 profile 的记忆检索预算", () => {
   it.each([
