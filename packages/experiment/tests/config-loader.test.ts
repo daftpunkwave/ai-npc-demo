@@ -13,6 +13,7 @@ import {
   LoadingError,
   applyProfilePatch,
   loadAgentProfile,
+  loadAgentToolset,
   loadConfigDocument,
   loadContentPack,
   loadModelFixtures,
@@ -291,16 +292,181 @@ describe("配置加载", () => {
     }
   });
 
+  it("profile 与 toolset 的配置失败类型统一带 code、source 与 path", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-ref-"));
+    try {
+      // profileId 与文件引用不一致：属于引用解析失败，必须能按 code 分类并定位到字段。
+      writeFileSync(
+        join(tempDir, "agent-mismatch.yaml"),
+        [
+          "schemaVersion: 1",
+          "profileId: agent-other",
+          "kind: agent",
+          "parent: null",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const profileError = captureLoadingError(() =>
+        loadAgentProfile("agent-mismatch", { configDir: tempDir }),
+      );
+      expect(profileError.code).toBe("reference");
+      expect(profileError.path).toBe("profileId");
+      expect(profileError.source.endsWith("agent-mismatch.yaml")).toBe(true);
+
+      writeFileSync(
+        join(tempDir, "toolset-mismatch.yaml"),
+        [
+          "schemaVersion: 1",
+          "toolsetId: other-toolset",
+          "tools:",
+          "  - { toolId: world.inspect, version: \"1\", permissionProfile: self-known, budgetProfile: query, viewConstraints: { maxListItems: 5, maxTokens: 300 } }",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const toolsetError = captureLoadingError(() =>
+        loadAgentToolset("toolset-mismatch", { configDir: tempDir }),
+      );
+      expect(toolsetError.code).toBe("reference");
+      expect(toolsetError.path).toBe("toolsetId");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("profile 继承链成环时报引用与路径", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-cycle-"));
+    try {
+      writeFileSync(
+        join(tempDir, "agent-cycle-a.yaml"),
+        ["schemaVersion: 1", "profileId: agent-cycle-a", "kind: agent", "parent: agent-cycle-b", ""].join("\n"),
+        "utf8",
+      );
+      writeFileSync(
+        join(tempDir, "agent-cycle-b.yaml"),
+        ["schemaVersion: 1", "profileId: agent-cycle-b", "kind: agent", "parent: agent-cycle-a", ""].join("\n"),
+        "utf8",
+      );
+      const error = captureLoadingError(() => loadAgentProfile("agent-cycle-a", { configDir: tempDir }));
+      expect(error.code).toBe("reference");
+      expect(error.path).toBe("parent");
+      expect(error.message).toContain("->");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("只有 variant 允许声明 patch，其他 kind 声明即被拒绝", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-patch-"));
+    try {
+      // 非 variant 声明 patch 时，自身 slots 会被 applyPatch 的 `patch ?? document` 静默丢弃。
+      writeFileSync(
+        join(tempDir, "agent-with-patch.yaml"),
+        [
+          "schemaVersion: 1",
+          "profileId: agent-with-patch",
+          "kind: agent",
+          "parent: null",
+          "patch:",
+          "  slots:",
+          "    memory: { module: agent.memory.ledger, config: {} }",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const error = captureLoadingError(() => loadAgentProfile("agent-with-patch", { configDir: tempDir }));
+      expect(error.code).toBe("schema");
+      expect(error.path).toBe("patch");
+      expect(error.message).toContain("variant");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("非 variant profile 省略 parent 时被拒绝", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-parent-"));
+    try {
+      // 只有 variant 可以省略 parent；其余 kind 必须显式写 parent 或 null，
+      // 否则继承链起点会变成隐式默认值。
+      for (const kind of ["platform", "scene", "agent"]) {
+        const profileId = `${kind}-no-parent`;
+        writeFileSync(
+          join(tempDir, `${profileId}.yaml`),
+          ["schemaVersion: 1", `profileId: ${profileId}`, `kind: ${kind}`, ""].join("\n"),
+          "utf8",
+        );
+        const error = captureLoadingError(() => loadAgentProfile(profileId, { configDir: tempDir }));
+        expect(error.code, kind).toBe("schema");
+        expect(error.path, kind).toBe("parent");
+        expect(error.message, kind).toContain("variant");
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("variant 省略 parent 时按继承链起点加载", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-variant-"));
+    try {
+      // 文档中的变体形状不带 parent；省略必须与显式 null 等价，否则照抄示例会被拒绝。
+      writeFileSync(
+        join(tempDir, "variant-omitted-parent.yaml"),
+        [
+          "schemaVersion: 1",
+          "profileId: variant-omitted-parent",
+          "kind: variant",
+          "patch:",
+          "  slots:",
+          "    memory: { module: agent.memory.ledger, config: {} }",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const base = loadAgentProfile("agent-character-default", { configDir });
+      const patched = applyProfilePatch(base, "variant-omitted-parent", { configDir: tempDir });
+      expect(patched.slots.memory?.module).toBe("agent.memory.ledger");
+      // 未改动的槽位继续来自父 profile，不会被 variant 清空。
+      expect(patched.slots.decision?.module).toBe(base.slots.decision?.module);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("未知键被严格拒绝", () => {
     const error = captureLoadingError(() => loadRunSpec("run-unknown-key", { configDir: fixturesConfigDir }));
     expect(error.code).toBe("schema");
     expect(error.source.endsWith("run-unknown-key.yaml")).toBe(true);
     expect(error.message).toContain("unexpected");
   });
+
+  it("多处 schema 问题时列出全部位置而不是只报第一条", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-schema-multi-"));
+    try {
+      writeFileSync(
+        join(tempDir, "multi-bad.yaml"),
+        ["schemaVersion: 1", "assemblyId: 42", "configs: {}", "realms: {}", ""].join("\n"),
+        "utf8",
+      );
+      const error = captureLoadingError(() =>
+        loadConfigDocument(
+          "multi-bad",
+          z.strictObject({ schemaVersion: z.literal(1), assemblyId: z.string(), configs: z.record(z.string(), z.unknown()) }),
+          { configDir: tempDir },
+        ),
+      );
+      expect(error.code).toBe("schema");
+      // 单条问题时保持精确路径；这里有多条，原因里逐条带路径。
+      expect(error.message).toContain("assemblyId");
+      expect(error.message).toContain("realms");
+      expect(error.message).toContain("共 2 处");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
-describe("RunSpec 交叉检查", () => {
-  const content = loadContentPack(contentRoot, "earth-2964-v1");
+describe("RunSpec 交叉检查", () => {  const content = loadContentPack(contentRoot, "earth-2964-v1");
   const run = loadRunSpec("online-default", { configDir }, { seed: "online-seed-test" });
 
   it("宿主可把实际启动选择并入模板并仍按严格 schema 校验", () => {

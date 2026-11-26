@@ -310,6 +310,55 @@ describe("装配解析错误路径", () => {
     );
   });
 
+  it("agentSlots 候选模块未声明槽位能力时报错并指出期望能力", () => {
+    const toolViewModule = fakeModule({
+      id: "agent.tools.game-tools",
+      instanceScope: "agent",
+      provides: [capability("agent.tools", "exactly-one", "run")],
+    });
+    const assembly = makeAssembly({
+      server: { bindings: [], agentSlots: { memory: ["agent.tools.game-tools"] } },
+    });
+    const error = expectDomainError(
+      () => resolveRealmPlan({ assembly, realm: "server", catalog: catalogOf(toolViewModule) }),
+      "assembly-incompatible",
+    );
+    const details = detailsText(error);
+    expect(details).toContain("agent.tools.game-tools");
+    expect(details).toContain("agent.memory");
+    expect(details).toContain("memory");
+  });
+
+  it("agentSlots 候选模块的作用域不是 agent 时报错并指出作用域", () => {
+    const runScoped = fakeModule({
+      id: "agent.memory.none",
+      instanceScope: "run",
+      provides: [capability("agent.memory", "exactly-one", "agent")],
+    });
+    const assembly = makeAssembly({
+      server: { bindings: [], agentSlots: { memory: ["agent.memory.none"] } },
+    });
+    const error = expectDomainError(
+      () => resolveRealmPlan({ assembly, realm: "server", catalog: catalogOf(runScoped) }),
+      "assembly-incompatible",
+    );
+    expect(detailsText(error)).toContain("run");
+  });
+
+  it("toolView 槽位按 agent.tool-view 能力校验而不是槽位同名能力", () => {
+    const structured = fakeModule({
+      id: "agent.tool-view.structured",
+      instanceScope: "agent",
+      provides: [capability("agent.tool-view", "exactly-one", "agent")],
+    });
+    const assembly = makeAssembly({
+      server: { bindings: [], agentSlots: { toolView: ["agent.tool-view.structured"] } },
+    });
+    // toolView 的能力族名与槽位名不同；按槽位名推算会误判，这里断言正确映射下解析通过。
+    const plan = resolveRealmPlan({ assembly, realm: "server", catalog: catalogOf(structured) });
+    expect(plan.agentSlots).toEqual({ toolView: ["agent.tool-view.structured"] });
+  });
+
   it("宿主固定必需能力缺失时报错", () => {
     const assembly = makeAssembly({ server: { bindings: [] } });
     const error = expectDomainError(

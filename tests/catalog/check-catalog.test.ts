@@ -214,6 +214,76 @@ describe("catalog 预检", () => {
     expect(messagesOf(report)).toContain("secondsPerTick");
   });
 
+  it("装配 schema 失败时给出代码与字段路径", () => {
+    const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
+    const root = mkdtempSync(join(tmpdir(), "ai-npc-catalog-schema-"));
+    temporaryRoots.push(root);
+    mkdirSync(join(root, "config/assemblies"), { recursive: true });
+    // 绕开 assembly() 助手直接写文件：schemaVersion 必须是未知版本才会触发 schema 失败。
+    writeFileSync(
+      join(root, "config/assemblies/bad-schema.yaml"),
+      [
+        "schemaVersion: 2",
+        "assemblyId: assembly-bad-schema",
+        "configs: {}",
+        "realms:",
+        "  server: { bindings: [] }",
+        "  client: { bindings: [] }",
+        "  console: { bindings: [] }",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const report = checkCatalog({ root, definitions: [clock], requiredCapabilities: [] });
+    const violation = report.violations.find((entry) => entry.code === "assembly-schema");
+    expect(violation).toBeDefined();
+    expect(violation?.message).toContain("schemaVersion");
+  });
+
+  it("重复 assemblyId 与不可用装配文件在预检阶段失败", () => {
+    const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
+    const duplicateRoot = fixtureRoot({
+      "first.yaml": assembly({ assemblyId: "assembly-dup" }),
+      "second.yaml": assembly({ assemblyId: "assembly-dup" }),
+    });
+    const duplicateReport = checkCatalog({ root: duplicateRoot, definitions: [clock], requiredCapabilities: [] });
+    expect(duplicateReport.violations.some((violation) => violation.code === "assembly-duplicate")).toBe(true);
+
+    // 以 .yaml 结尾的目录必须被拒绝而不是静默跳过：启动路径与 check:catalog 共用同一扫描实现。
+    // 用目录而非符号链接构造，避免测试依赖创建符号链接的管理员权限。
+    const notPlainRoot = fixtureRoot({ "kept.yaml": assembly({ assemblyId: "assembly-kept" }) });
+    mkdirSync(join(notPlainRoot, "config/assemblies/not-a-file.yaml"));
+    const notPlainReport = checkCatalog({ root: notPlainRoot, definitions: [clock], requiredCapabilities: [] });
+    expect(notPlainReport.violations.some((violation) => violation.code === "assembly-unreadable")).toBe(true);
+  });
+
+  it("不可用装配文件与其他装配问题一并累积", () => {
+    const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
+    const root = fixtureRoot({ "kept.yaml": assembly({ assemblyId: "assembly-kept" }) });
+    // 以 .yaml 结尾的目录不可用，但与 schema 失败应同时出现在同一份报告里，
+    // 单文件失败不能中断其余文件的诊断。
+    mkdirSync(join(root, "config/assemblies/not-a-file.yaml"));
+    writeFileSync(
+      join(root, "config/assemblies/bad-schema.yaml"),
+      [
+        "schemaVersion: 2",
+        "assemblyId: assembly-bad-schema",
+        "configs: {}",
+        "realms:",
+        "  server: { bindings: [] }",
+        "  client: { bindings: [] }",
+        "  console: { bindings: [] }",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const report = checkCatalog({ root, definitions: [clock], requiredCapabilities: [] });
+    expect(report.violations.some((violation) => violation.code === "assembly-unreadable")).toBe(true);
+    expect(report.violations.some((violation) => violation.code === "assembly-schema")).toBe(true);
+    // 可用的装配仍然被计入结果，不因同目录的其他失败项而丢失。
+    expect(report.assemblies).toContain("assembly-kept");
+  });
+
   it("CLI 在失败时非零退出并逐项打印原因", () => {
     const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
     const root = fixtureRoot({

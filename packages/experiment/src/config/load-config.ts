@@ -265,9 +265,43 @@ export function loadRunSpec(
   return loaded;
 }
 
+/**
+ * 登记派系领袖座位并拒绝同派系双领袖。
+ * faction 表示以派系身份（AI 党魁）占座，character 表示以支持者身份占座。
+ * 同一派系的支持者可以多名同时上场，真正互斥的是党魁身份与支持者身份。
+ */
+function recordLeaderSeat(
+  seats: Map<string, { agentId: string; index: number; kind: "faction" | "character" }>,
+  source: string,
+  factionId: string,
+  agentId: string,
+  index: number,
+  kind: "faction" | "character",
+): void {
+  const previous = seats.get(factionId);
+  if (previous !== undefined && previous.kind !== kind) {
+    throw new LoadingError({
+      code: "cross-check",
+      source,
+      path: `agents.${index}.agentId`,
+      message:
+        `派系「${factionId}」同时激活了${previous.kind === "faction" ? "党魁" : "支持者"}身份 ` +
+        `「${previous.agentId}」（agents.${previous.index}）与${kind === "faction" ? "党魁" : "支持者"}身份；` +
+        "同一派系在运行时只能有一种领袖身份",
+    });
+  }
+  // 支持者之间不互斥，保留首个占位即可。
+  if (previous === undefined) {
+    seats.set(factionId, { agentId, index, kind });
+  }
+}
+
 /** 校验名册身份存在、类别匹配且不重复。 */
 export function validateRoster(roster: Roster, content: ContentPack, source = `roster:${roster.rosterId}`): void {
   const seen = new Set<string>();
+  // 同一派系只能有一种运行时领袖身份：玩家占席时的支持者或 AI 控制的党魁。
+  // 两者同时激活会产生两个同派系领袖，故在此拒绝而不是留到运行时。
+  const leaderSeats = new Map<string, { agentId: string; index: number; kind: "faction" | "character" }>();
   roster.agents.forEach((agent, index) => {
     if (seen.has(agent.agentId)) {
       throw new LoadingError({
@@ -298,6 +332,7 @@ export function validateRoster(roster: Roster, content: ContentPack, source = `r
           message: `派系「${agent.agentId}」必须以 strategic 身份登记`,
         });
       }
+      recordLeaderSeat(leaderSeats, source, agent.agentId, agent.agentId, index, "faction");
     } else if (character !== undefined && agent.kind !== "character") {
       throw new LoadingError({
         code: "cross-check",
@@ -305,6 +340,9 @@ export function validateRoster(roster: Roster, content: ContentPack, source = `r
         path: `agents.${index}.kind`,
         message: `角色「${agent.agentId}」必须以 character 身份登记`,
       });
+    } else if (character !== undefined) {
+      // 支持者按所属派系占座：同一派系的支持者与党魁不能同时上场。
+      recordLeaderSeat(leaderSeats, source, character.factionId, agent.agentId, index, "character");
     }
   });
 }

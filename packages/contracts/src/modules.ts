@@ -159,7 +159,8 @@ const serverRealmSchema = z
  */
 export const assemblyDescriptorSchema = z
   .object({
-    schemaVersion: z.number().int().positive(),
+    // 装配格式的破坏性变更必须启用新版本号并同步解析器；未知版本不能被静默当成 v1 解释。
+    schemaVersion: z.literal(1),
     assemblyId: z.string().min(1),
     configs: z.record(z.string().min(1), jsonValueSchema),
     realms: z
