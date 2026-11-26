@@ -73,6 +73,14 @@ export class OnlineAgentHost {
   }
 
   /**
+   * 世界可能已变化：让当前分支的 Agent 运行时立即重跑一轮，而不是等下一次空闲巡检。
+   * tick 推进、玩家命令与 turn 完成都会走到这里；未启动分支时由调用方忽略。
+   */
+  notifyWorldChanged(): void {
+    this.branch?.runtime.notifyWorldChanged();
+  }
+
+  /**
    * 停止新 turn 并等待当前分支的运行时排空；截止时间由关闭编排给出。
    * 分支切换本身也受同一预算约束：卡住的切换不能把关闭挡在排空之前，
    * 否则 `drainUntil` 永远不会被调用，关闭重新变成无界等待。

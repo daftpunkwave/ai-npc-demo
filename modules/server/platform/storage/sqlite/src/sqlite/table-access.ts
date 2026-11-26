@@ -1,9 +1,12 @@
 /**
- * 实现表级读写接口：按主键读写、等值过滤、前缀与排他上界范围查询、排序分页与 JSON 编解码，并强制分支 scope。
- * 依赖 node:sqlite 预编译语句、迁移推导的表目录与行编解码；只接受目录内的表名与列名。
- * 禁止跨分支读写、把调用方字符串拼成 SQL、绕过主键完整性检查或在事务外观测到中间状态。
+ * 核心职责：实现表级读写接口，包括按主键读写、等值过滤、前缀与排他上界范围查询、排序分页与 JSON 编解码，
+ * 并强制分支 scope。
+ * 交互契约：依赖连接级共享的预编译语句缓存、迁移推导的表目录与行编解码；只接受目录内的表名与列名。
+ * 缓存由存储适配器持有并在连接关闭时清空，本文件的读写不自行编译或回收语句。
+ * 约束与禁忌：禁止跨分支读写、把调用方字符串拼成 SQL、绕过主键完整性检查、在事务外观测到中间状态，
+ * 或把连接与其他实例共享缓存。
  */
-import type { DatabaseSync } from "node:sqlite";
+import type { StatementSync } from "node:sqlite";
 import {
   DomainError,
   type ScopedBranchStorage,
@@ -16,6 +19,7 @@ import {
 } from "@ai-npc/contracts";
 import { decodeRow, encodeCell, encodeFilterValue, requireColumn } from "./row-codec";
 import { BRANCH_COLUMN, quoteSqlIdentifier, requireBranchTable, type StorageCatalog, type TableInfo } from "./schema";
+import type { StatementCache } from "./statement-cache";
 
 function q(identifier: string): string {
   return quoteSqlIdentifier(identifier);
@@ -64,22 +68,27 @@ function isPrintableAscii(value: string): boolean {
 /** 单张表的读写实现；branchId 为 null 时表示部署级或运行级表。 */
 class TableAccess implements StorageTable {
   readonly table: string;
-  private readonly database: DatabaseSync;
+  private readonly statements: StatementCache;
   private readonly info: TableInfo;
   private readonly branchId: string | null;
   private readonly assertTransactionActive: () => void;
 
   constructor(
-    database: DatabaseSync,
+    statements: StatementCache,
     info: TableInfo,
     branchId: string | null,
     assertTransactionActive: () => void,
   ) {
-    this.database = database;
+    this.statements = statements;
     this.info = info;
     this.table = info.name;
     this.branchId = branchId;
     this.assertTransactionActive = assertTransactionActive;
+  }
+
+  /** 从连接级共享缓存取语句；同一 SQL 跨事务与跨表句柄只预编译一次。 */
+  private prepare(sql: string): StatementSync {
+    return this.statements.prepare(sql);
   }
 
   /** 分支级表由 scope 注入 branch_id，主键的其余列由调用方给出。 */
@@ -169,9 +178,7 @@ class TableAccess implements StorageTable {
     this.assertTransactionActive();
     this.assertKey(key);
     const where = this.buildWhere(key);
-    const raw = this.database
-      .prepare(`SELECT * FROM ${q(this.table)}${this.whereSql(where)} LIMIT 1`)
-      .get(...where.params);
+    const raw = this.prepare(`SELECT * FROM ${q(this.table)}${this.whereSql(where)} LIMIT 1`).get(...where.params);
     return raw === undefined ? null : decodeRow(this.info, raw as Record<string, unknown>);
   }
 
@@ -201,7 +208,7 @@ class TableAccess implements StorageTable {
     const sql = `SELECT * FROM ${q(this.table)}${this.whereSql(full)}${
       orderClauses.length === 0 ? "" : ` ORDER BY ${orderClauses.join(", ")}`
     }${limitClause}`;
-    const rows = this.database.prepare(sql).all(...params);
+    const rows = this.prepare(sql).all(...params);
     return rows.map((row) => decodeRow(this.info, row as Record<string, unknown>));
   }
 
@@ -277,7 +284,7 @@ class TableAccess implements StorageTable {
     const sql = `INSERT INTO ${q(this.table)} (${insertColumns
       .map(q)
       .join(", ")}) VALUES (${insertColumns.map(() => "?").join(", ")}) ON CONFLICT (${conflictTarget}) ${updateSql}`;
-    const result = this.database.prepare(sql).run(...values);
+    const result = this.prepare(sql).run(...values);
     return { changes: Number(result.changes) };
   }
 
@@ -285,18 +292,16 @@ class TableAccess implements StorageTable {
     this.assertTransactionActive();
     this.assertKey(key);
     const where = this.buildWhere(key);
-    const result = this.database
-      .prepare(`DELETE FROM ${q(this.table)}${this.whereSql(where)}`)
-      .run(...where.params);
+    const result = this.prepare(`DELETE FROM ${q(this.table)}${this.whereSql(where)}`).run(...where.params);
     return { changes: Number(result.changes) };
   }
 
   count(filter: StorageFilter = {}): number {
     this.assertTransactionActive();
     const where = this.buildWhere(filter);
-    const row = this.database
-      .prepare(`SELECT COUNT(*) AS ${q("total")} FROM ${q(this.table)}${this.whereSql(where)}`)
-      .get(...where.params);
+    const row = this.prepare(`SELECT COUNT(*) AS ${q("total")} FROM ${q(this.table)}${this.whereSql(where)}`).get(
+      ...where.params,
+    );
     return Number(row?.["total"] ?? 0);
   }
 
@@ -304,9 +309,9 @@ class TableAccess implements StorageTable {
     this.assertTransactionActive();
     requireColumn(this.info, column);
     const where = this.buildWhere(filter);
-    const row = this.database
-      .prepare(`SELECT MAX(${q(column)}) AS ${q("value")} FROM ${q(this.table)}${this.whereSql(where)}`)
-      .get(...where.params);
+    const row = this.prepare(
+      `SELECT MAX(${q(column)}) AS ${q("value")} FROM ${q(this.table)}${this.whereSql(where)}`,
+    ).get(...where.params);
     return toStorageValue(row?.["value"]);
   }
 }
@@ -314,12 +319,12 @@ class TableAccess implements StorageTable {
 /** 绑定一个分支的 scoped 读写入口：只允许访问分支级表。 */
 class BranchAccess implements ScopedBranchStorage {
   readonly branchId: string;
-  private readonly database: DatabaseSync;
+  private readonly statements: StatementCache;
   private readonly catalog: StorageCatalog;
   private readonly assertTransactionActive: () => void;
 
   constructor(
-    database: DatabaseSync,
+    statements: StatementCache,
     catalog: StorageCatalog,
     branchId: string,
     assertTransactionActive: () => void,
@@ -327,7 +332,7 @@ class BranchAccess implements ScopedBranchStorage {
     if (branchId.trim().length === 0) {
       validationFailure("branchId 不能为空", { branchId });
     }
-    this.database = database;
+    this.statements = statements;
     this.catalog = catalog;
     this.branchId = branchId;
     this.assertTransactionActive = assertTransactionActive;
@@ -336,7 +341,7 @@ class BranchAccess implements ScopedBranchStorage {
   table(name: string): StorageTable {
     this.assertTransactionActive();
     return new TableAccess(
-      this.database,
+      this.statements,
       requireBranchTable(this.catalog, name),
       this.branchId,
       this.assertTransactionActive,
@@ -346,20 +351,20 @@ class BranchAccess implements ScopedBranchStorage {
 
 /** 为部署级或运行级表构造表读写入口；分支级表会被拒绝。 */
 export function createUnscopedTable(
-  database: DatabaseSync,
+  statements: StatementCache,
   catalog: StorageCatalog,
   table: TableInfo,
   assertTransactionActive: () => void,
 ): StorageTable {
-  return new TableAccess(database, table, null, assertTransactionActive);
+  return new TableAccess(statements, table, null, assertTransactionActive);
 }
 
 /** 为给定分支构造 scoped 读写入口。 */
 export function createBranchAccess(
-  database: DatabaseSync,
+  statements: StatementCache,
   catalog: StorageCatalog,
   branchId: string,
   assertTransactionActive: () => void,
 ): ScopedBranchStorage {
-  return new BranchAccess(database, catalog, branchId, assertTransactionActive);
+  return new BranchAccess(statements, catalog, branchId, assertTransactionActive);
 }

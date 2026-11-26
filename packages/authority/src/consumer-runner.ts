@@ -1,5 +1,5 @@
 /**
- * 逐消费者推进 worldSeq offset，并在同一事务内调用处理器、写 inbox 与更新 offset。
+ * 按消费者注册顺序推进 worldSeq 游标，在同一事务内调用处理器、写 inbox 与更新 offset。
  * 依赖 domain_events、consumer_offsets/inbox 表、事件信封契约与系统认证。
  * 禁止在事件处理后单独提交 offset、跳过 inbox 去重或在 handler 失败后继续推进；
  * 处理器失败时回滚事务并累计尝试，达到上限后写入 inbox、推进 offset 并记录死信。
@@ -73,7 +73,7 @@ function rawJson(row: StorageRawRow, column: string): Json {
   return parsed.data;
 }
 
-/** 消费者单次运行结果：scanned 含被过滤或去重跳过的事件。 */
+/** 消费者单次运行结果：scanned 含被事件类型或 inbox 去重跳过的事件。 */
 export interface ConsumerRunResult {
   readonly processed: number;
   readonly scanned: number;
@@ -91,7 +91,32 @@ export interface EventConsumerRunnerOptions extends RuleRuntime {
 
 const defaultMaxEvents = 1000;
 
-/** 事件消费者执行器；每个事件一个事务，offset 与 inbox 随处理结果提交。 */
+/**
+ * 消费者选出的下一条待处理事件：SQL 只返回匹配 consumer.eventTypes 的事件。
+ * 事件类型下推到 SQL 后，索引可以直接跳到下一个匹配事件，
+ * 不必像逐条读取那样为每个不相关事件各开一次事务并写一次 offset。
+ */
+function nextEventSql(consumer: StoredEventConsumer): { readonly sql: string; readonly typeParams: readonly string[] } {
+  if (consumer.eventTypes === null) {
+    return {
+      sql: "SELECT * FROM domain_events WHERE branch_id = ? AND world_seq > ? ORDER BY world_seq ASC LIMIT 1",
+      typeParams: [],
+    };
+  }
+  // 按码位排序而不是按语言环境：SQL 文本与参数顺序由此确定，
+  // 同一消费者每次生成的语句逐字相同，才能命中存储层的预编译语句缓存；
+  // localeCompare 会随运行环境改变顺序，既破坏缓存也影响可复现性。
+  const types = [...consumer.eventTypes].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  const placeholders = types.map(() => "?").join(", ");
+  return {
+    sql: `SELECT * FROM domain_events
+           WHERE branch_id = ? AND world_seq > ? AND type IN (${placeholders})
+           ORDER BY world_seq ASC LIMIT 1`,
+    typeParams: types,
+  };
+}
+
+/** 事件消费者执行器；每个匹配事件一个事务，offset 与 inbox 随处理结果提交。 */
 export class EventConsumerRunner {
   private readonly storage: RuleRuntime["storage"];
   private readonly host: RuleRuntime["host"];
@@ -124,10 +149,11 @@ export class EventConsumerRunner {
     let processed = 0;
     let scanned = 0;
     for (const consumer of this.registry.consumerList()) {
+      const selection = nextEventSql(consumer);
       while (scanned < maxEvents) {
         let outcome: number | null;
         try {
-          outcome = this.storage.transact((tx) => this.processNext(tx, branchId, consumer));
+          outcome = this.storage.transact((tx) => this.processNext(tx, branchId, consumer, selection));
         } catch (error) {
           if (!(error instanceof RuleExecutionError)) {
             throw error;
@@ -194,6 +220,7 @@ export class EventConsumerRunner {
     tx: StorageTransaction,
     branchId: string,
     consumer: StoredEventConsumer,
+    selection: { readonly sql: string; readonly typeParams: readonly string[] },
   ): number | null {
     const branch = readBranch(tx, branchId);
     if (branch === null) {
@@ -210,10 +237,7 @@ export class EventConsumerRunner {
     const offsetRow = offsets.get({ consumer_id: consumer.consumerId });
     const lastWorldSeq =
       offsetRow === null ? 0 : requireStorageNumber(offsetRow, "consumer_offsets", "last_world_seq");
-    const events = tx.all(
-      "SELECT * FROM domain_events WHERE branch_id = ? AND world_seq > ? ORDER BY world_seq ASC LIMIT 1",
-      [branchId, lastWorldSeq],
-    );
+    const events = tx.all(selection.sql, [branchId, lastWorldSeq, ...selection.typeParams]);
     const row = events[0];
     if (row === undefined) {
       return null;
@@ -222,10 +246,7 @@ export class EventConsumerRunner {
     const inbox = branchStorage.table("consumer_inbox");
     const alreadyProcessed = inbox.get({ consumer_id: consumer.consumerId, event_id: event.eventId });
     if (alreadyProcessed !== null) {
-      offsets.put({ consumer_id: consumer.consumerId, last_world_seq: event.worldSeq });
-      return 0;
-    }
-    if (consumer.eventTypes !== null && !consumer.eventTypes.has(event.type)) {
+      // 游标丢失后重放：inbox 已记录该事件的执行结果，只需把游标推过去。
       offsets.put({ consumer_id: consumer.consumerId, last_world_seq: event.worldSeq });
       return 0;
     }

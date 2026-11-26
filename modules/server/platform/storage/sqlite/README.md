@@ -28,6 +28,7 @@ inlineArtifactMaxBytes: 65536            # 装配配置块提供
 
 - 连接只在模块 `start` 中打开、`dispose` 中关闭；`create` 不访问文件系统。端口方法在未打开时返回 `not-ready`。
 - 事务回调必须同步；返回 Promise 会回滚并抛错。嵌套事务被拒绝，事务内部分写入使用 `savepoint`。
+- 预编译语句在连接级缓存：原始查询与表级 scope 读写共用同一份缓存，同一 SQL 跨事务只预编译一次；条目上限 256，达到上限时整体清空后重新装入，不做逐条淘汰；连接关闭时缓存随之清空。
 - `backup()` 使用 `VACUUM INTO` 生成一致副本，不能在事务内执行。
 - `forkBranch()` 只写入新 `branches` 行并复制分支级数据；`online`/`experiment` 的 `runs` 行、`online` 别名切换与 Agent 配额激活由存档或宿主编排完成。
 - 原始查询通道（`get`/`all`/`run`）只面向宿主固定机制的跨分支与范围查询；模块状态读写使用分支 scope 表接口，不持有连接。

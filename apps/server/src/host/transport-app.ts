@@ -53,6 +53,11 @@ export interface TransportAppInput {
   readonly maintenanceQueue?: () => { readonly queued: number; readonly exhausted: number };
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
+  /**
+   * 世界可能已变化时回调；宿主用它把「有新提交」的信号转给 Agent 运行时。
+   * 与时间段推送解耦：推送失败不影响该信号，信号也不会因无人订阅而丢。
+   */
+  readonly onWorldCommitted?: () => void;
   /** 创建失败时释放已启动模块与存储；只记日志，保留原始错误。 */
   readonly disposeOnFailure: () => Promise<void>;
 }
@@ -332,6 +337,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       },
       reset: (operationId, principalId) => operations.reset({ operationId, principalId }),
       onBranchChanged: (nextBranchId) => switchLiveBranch(active, nextBranchId),
+      ...(input.onWorldCommitted === undefined ? {} : { onWorldCommitted: input.onWorldCommitted }),
       // 传输层只上报玩家连接数；暂停策略与审计留在宿主。
       onPlayerConnectionsChanged: (connected) => {
         lifecycle.handlePlayerConnections(connected);

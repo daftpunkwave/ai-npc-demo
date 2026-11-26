@@ -1,8 +1,9 @@
 /**
- * 单写 SQLite 存储适配器实现：打开数据目录、执行迁移，提供同步事务、分支复制与备份。
- * 依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/transaction/fork/backup 实现与端口契约。
- * 禁止在事务内 await、向调用方暴露连接、跳过迁移失败、在同一连接上并发提交两个事务，
- * 或在回滚失败后继续复用状态不可信的连接。
+ * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制与备份，并持有连接级预编译语句缓存。
+ * 交互契约：依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/statement-cache/transaction/fork/backup
+ * 实现与端口契约；语句缓存随连接创建，在每次事务之间复用，连接关闭时随之清空。
+ * 约束与禁忌：禁止在事务内 await、向调用方暴露连接、跳过迁移失败、在同一连接上并发提交两个事务、
+ * 跨越连接存活期复用缓存，或在回滚失败后继续复用状态不可信的连接。
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -25,6 +26,7 @@ import { closeDatabase, openDatabase } from "./connection";
 import { forkBranchDatabase } from "./fork-branch";
 import { applyMigrations } from "./migrations";
 import { resolveCatalog, type StorageCatalog } from "./schema";
+import { StatementCache } from "./statement-cache";
 import { SqliteTransaction, isThenable } from "./transaction";
 
 /** 失败原因转成可安全记录的字符串，避免把任意对象塞进日志数据。 */
@@ -38,6 +40,8 @@ export class SqliteStorage implements StoragePort {
   private readonly host: HostServices;
   private database: DatabaseSync | null = null;
   private catalog: StorageCatalog | null = null;
+  /** 与 database 同生共死的语句缓存；连接关闭后必须一并丢弃，避免语句指向已关闭的句柄。 */
+  private statements: StatementCache | null = null;
   private inTransaction = false;
   /** 回滚失败后的连接根因；非空时所有数据访问立即失败，直到关闭并重新打开。 */
   private fatalFailure: { readonly rollbackError: unknown; readonly originalError: unknown } | null = null;
@@ -97,6 +101,7 @@ export class SqliteStorage implements StoragePort {
       const catalog = resolveCatalog(database);
       this.database = database;
       this.catalog = catalog;
+      this.statements = new StatementCache(database);
       this.host.logger.info("存储适配器已打开", { databasePath, appliedMigrations: applied.length });
     } catch (error) {
       try {
@@ -108,7 +113,7 @@ export class SqliteStorage implements StoragePort {
     }
   }
 
-  /** 关闭连接；重复调用安全。关闭失败时保留句柄与不可用标记以便重试。 */
+  /** 关闭连接并清空语句缓存；重复调用安全。关闭失败时保留句柄与不可用标记以便重试。 */
   close(): void {
     this.lifecycleEpoch += 1;
     const database = this.database;
@@ -116,6 +121,10 @@ export class SqliteStorage implements StoragePort {
       return;
     }
     closeDatabase(database);
+    // 连接成功关闭后缓存再无意义：语句绑定在已释放的句柄上，必须一并丢弃。
+    // 关闭失败时保留句柄与缓存，与下面保留 database 以便重试的既有语义一致。
+    this.statements?.clear();
+    this.statements = null;
     this.database = null;
     this.catalog = null;
     this.fatalFailure = null;
@@ -149,16 +158,24 @@ export class SqliteStorage implements StoragePort {
     return this.catalog;
   }
 
+  private requireStatements(): StatementCache {
+    if (this.statements === null) {
+      throw new DomainError("not-ready", "存储适配器尚未打开语句缓存");
+    }
+    return this.statements;
+  }
+
   // eslint-disable-next-line no-unused-vars -- 接口/函数类型签名中的参数名只用于表达调用契约，运行时不会读取。
   transact<T>(fn: (tx: StorageTransaction) => T): T {
     const database = this.requireDatabase();
     const catalog = this.requireCatalog();
+    const statements = this.requireStatements();
     if (this.inTransaction) {
       throw new DomainError("invalid-state", "存储适配器不支持嵌套事务，请使用保存点");
     }
     database.exec("BEGIN IMMEDIATE");
     this.inTransaction = true;
-    const transaction = new SqliteTransaction(database, catalog);
+    const transaction = new SqliteTransaction(database, catalog, statements);
     let committed = false;
     try {
       const result = fn(transaction);

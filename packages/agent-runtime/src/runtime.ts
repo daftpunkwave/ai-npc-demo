@@ -1,6 +1,7 @@
 /**
  * 协调感知消费、延迟发布、租约恢复与 turn 创建。
  * 依赖存储、HostServices、内容包、Agent profile、感知模块与调度端口。
+ * 轮询节奏由世界 tick 变化与宿主唤醒信号驱动；空闲轮退避到有上限的巡检间隔。
  * 禁止在事务内等待模型、执行世界命令或复制第二套 turn loop。
  */
 import type { HostServices, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
@@ -10,7 +11,7 @@ import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";
 import { AgentModuleHandle } from "./agent-module-handle";
-import { cycleBackoffMs } from "./runtime-backoff";
+import { cycleBackoffMs, idleDelayMs, nextCycleDelayMs, wakeDelayMs } from "./runtime-backoff";
 import { TurnScheduler } from "./turn-scheduler";
 import { TurnWorker, type TurnExecutionOptions } from "./turn-worker";
 
@@ -106,6 +107,15 @@ export class AgentRuntime {
   private running = false;
   private stopped = false;
   private consecutiveFailures = 0;
+  /** 连续空闲轮数：世界 tick 没有变化也没有唤醒信号时按指数退避，避免固定高频轮询。 */
+  private idleCycles = 0;
+  /** 上一轮观察到的世界 tick；变化即代表世界已推进，需要重新摄入与调度。 */
+  private lastObservedTick: number | null = null;
+  /**
+   * 是否有尚未处理的世界变化信号。
+   * 信号在一轮进行中到达时只置位，由该轮收尾统一排下一轮；连续失败期间它不缩短退避。
+   */
+  private wakePending = false;
   private consumer: PerceptionEventConsumer | null = null;
   private memory: MemoryHost | null = null;
   private scheduler: TurnScheduler | null = null;
@@ -306,17 +316,65 @@ export class AgentRuntime {
 
   private schedule(): void {
     if (!this.running || this.stopped) return;
+    // 唤醒信号可能在一轮进行中多次到达：先清掉待触发的计时器，保证同一时刻只有一个调度在等。
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
     this.timer = setTimeout(() => {
       // 失败已经由 recordCycleFailure 按轮数分级记录，这里只需吞掉 rejection 以免变成未处理异常。
       void this.runTrackedCycle()
         .catch(() => undefined)
         .finally(() => this.schedule());
-    }, cycleBackoffMs(this.consecutiveFailures));
+    }, this.nextDelayMs());
+    this.timer.unref();
+  }
+
+  /**
+   * 下一轮延迟：失败退避优先，其次是待处理信号，最后是空闲巡检。
+   * 世界每 tick 20 秒推进一次，固定 250 毫秒轮询会把「世界没变化」放大成约 80 倍的空转事务。
+   */
+  private nextDelayMs(): number {
+    return nextCycleDelayMs({
+      consecutiveFailures: this.consecutiveFailures,
+      idleCycles: this.idleCycles,
+      wakePending: this.wakePending,
+    });
+  }
+
+  /**
+   * 收到「世界可能已变化」的信号：置位待处理标记并重置空闲计数。
+   *
+   * 信号不直接起跑，而是缩短下一次排程：
+   * - 一轮正在进行时只置位，由该轮收尾统一排下一轮，重叠到达的多个信号合并成一次；
+   * - 连续失败期间只置位，不改写已有的退避计时器，避免频繁的世界变化把故障重试放大成负载；
+   * - 其余情况按最短延迟重排，让世界变化后尽早被处理。
+   * 停止后忽略信号。
+   */
+  notifyWorldChanged(): void {
+    this.wakePending = true;
+    this.idleCycles = 0;
+    if (!this.running || this.stopped) return;
+    if (this.cycle !== null || this.consecutiveFailures > 0) {
+      // 进行中的轮次会自行收尾排程；失败期间保持既有退避节奏。
+      return;
+    }
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.timer = setTimeout(() => {
+      void this.runTrackedCycle()
+        .catch(() => undefined)
+        .finally(() => this.schedule());
+    }, wakeDelayMs);
     this.timer.unref();
   }
 
   private runTrackedCycle(): Promise<void> {
     if (this.cycle !== null) return this.cycle;
+    // 本轮会重新扫描世界，待处理信号在此消费；本轮之后到达的信号重新置位。
+    this.wakePending = false;
     const cycle = this.runCycle()
       .then(() => this.recordCycleSuccess())
       .catch((error: unknown) => {
@@ -336,6 +394,20 @@ export class AgentRuntime {
     if (this.consecutiveFailures === 0) return;
     this.consecutiveFailures = 0;
     this.options.host.logger.info("Agent runtime recovered", { consecutiveFailures: 0 });
+  }
+
+  /**
+   * 本轮是否只是空转：世界 tick 未变化且没有新的调度产出。
+   * 空转轮只推进退避计数，不改变失败计数，也不产生额外日志。
+   */
+  private recordIdle(worldTick: number, scheduled: number): void {
+    const advanced = this.lastObservedTick !== null && worldTick !== this.lastObservedTick;
+    this.lastObservedTick = worldTick;
+    if (advanced || scheduled > 0) {
+      this.idleCycles = 0;
+      return;
+    }
+    this.idleCycles += 1;
   }
 
   /**
@@ -399,6 +471,7 @@ export class AgentRuntime {
         }
       });
     }
+    this.recordIdle(tick, scheduled.length);
     if (scheduled.length > 0) this.options.onStateChange?.();
     const failure = cycleFailure(failures);
     if (failure !== null) throw failure;
