@@ -4,6 +4,7 @@
  * 约束与禁忌：禁止关系账本、隐式随机或绕过 maxItems/maxTokens。
  */
 import type { AgentMemoryQuery, MemoryBundle, MemoryChangePlan } from "@ai-npc/contracts";
+import { estimateTokens } from "@ai-npc/contracts";
 import type { MemoryRecordView, RevisionView } from "@ai-npc/module-sdk";
 import type { StreamReflectionConfig } from "./definition";
 import { compareStrings, numberValue } from "./ledger-model";
@@ -59,7 +60,7 @@ export function retrieveStreamMemory(
       dropped.push({ memoryId: item.record.memoryId, reason: "dedupe" });
       continue;
     }
-    const itemTokens = Array.from(item.record.content.summaryZh).length;
+    const itemTokens = estimateTokens(item.record.content.summaryZh);
     if (tokenEstimate + itemTokens > query.maxTokens) {
       dropped.push({ memoryId: item.record.memoryId, reason: "budget" });
       continue;

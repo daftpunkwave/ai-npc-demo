@@ -437,7 +437,7 @@ memory:
     maintenanceTrigger: world-period
 ```
 
-检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), memoryId)`）。公共编年史当前接收入 `public` 渠道且 `salience ≥ 0.5` 的观察；每日整理先委派 M1 执行规则段（当前暂未针对他人过期非正式承诺单独补写 `inference` 经历），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进；核心块在尚无活动 `core` 记录时回退到规则摘要，长度截断按字符数执行；检索总条数同时受调用方传入 `maxItems`（turn 材料装配当前传 `8`）约束，候选落选 `dropped` 明细暂未按 `candidateLimit` 截断。
+检索打分与 M1 相同，再加不超过 `jitter` 的确定性扰动（随机源 `rngFor(runSeed, "recall-jitter", agentId, String(worldTick), memoryId)`）。公共编年史当前接收入 `public` 渠道且 `salience ≥ 0.5` 的观察；每日整理先委派 M1 执行规则段（当前暂未针对他人过期非正式承诺单独补写 `inference` 经历），再做模型段；模型段失败时保留规则段结果，`derivedThroughSeq`/`derivedThroughTick` 只在两段都成功（或该 Agent 当天不需要模型段、或模型段被配置关闭）时推进；核心块在尚无活动 `core` 记录时回退到规则摘要，长度按 `coreBlockMaxTokens` 以 estimate-v1 的 token 口径截断（见 [上下文组装](context.md#112-token-估算)）；检索总条数同时受调用方传入 `maxItems`（turn 材料装配当前传 `8`）约束，候选落选 `dropped` 明细暂未按 `candidateLimit` 截断。
 
 ### 11.9 检索查询与自报要点
 

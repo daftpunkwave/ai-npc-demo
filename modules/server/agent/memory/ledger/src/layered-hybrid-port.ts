@@ -3,14 +3,15 @@
  * 交互契约：复用同包账本实现，模型只能返回受校验的认知变更。
  * 约束与禁忌：模型失败不得伪造水位推进；禁止直接存储、跨 Agent 或世界写入。
  */
-import type {
-  WakeupProposal,
-  AgentMemoryQuery,
-  AgentObservation,
-  IdPrefix,
-  MemoryBundle,
-  MemoryChangePlan,
-  MaintenanceTask,
+import {
+  estimateTokens,
+  type WakeupProposal,
+  type AgentMemoryQuery,
+  type AgentObservation,
+  type IdPrefix,
+  type MemoryBundle,
+  type MemoryChangePlan,
+  type MaintenanceTask,
 } from "@ai-npc/contracts";
 import type {
   MemoryPort,
@@ -109,7 +110,7 @@ export class LayeredHybridMemoryPort implements MemoryPort {
     const dropped = [...base.dropped];
     let tokens = 0;
     for (const item of ranked) {
-      const cost = Array.from(item.summaryZh).length;
+      const cost = estimateTokens(item.summaryZh);
       if (tokens + cost > query.maxTokens) {
         dropped.push({ memoryId: item.memoryId, reason: "budget" });
       } else if (items.length < Math.min(query.maxItems, this.config.recall.topK + this.config.chronicle.maxPerRecall)) {
@@ -378,8 +379,19 @@ function dedupeRetires(retires: MemoryChangePlan["retires"]): MemoryChangePlan["
   return [...new Map(retires.map((retire) => [retire.memoryId, retire])).values()];
 }
 
+/**
+ * 按 estimate-v1 口径把核心块裁剪到预算内。
+ * 预算单位是 token 而不是字符：中文每字约 1 token、拉丁文每 4 字符约 1 token，
+ * 因此先按整块估值判断，超限时按比例折算出字符上限再逐步收紧，避免对长文本反复全量估值。
+ */
 function truncate(value: string, maxTokens: number): string {
-  return Array.from(value).slice(0, maxTokens).join("");
+  if (estimateTokens(value) <= maxTokens) return value;
+  const characters = Array.from(value);
+  let keep = Math.min(characters.length, maxTokens);
+  while (keep > 0 && estimateTokens(characters.slice(0, keep).join("")) > maxTokens) {
+    keep = Math.floor(keep * 0.9);
+  }
+  return characters.slice(0, keep).join("");
 }
 
 export function createLayeredHybridPort(config: LayeredHybridConfig, ids: Ids, rng: Rng | null): LayeredHybridMemoryPort {

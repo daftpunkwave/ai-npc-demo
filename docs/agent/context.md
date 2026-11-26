@@ -177,6 +177,10 @@ export function estimateTokens(text: string): number {
 
 估算值记为 `tokenizer: "estimate-v1"`，与供应商实报的 usage 分开记录。
 
+`packages/contracts/src/token-estimate.ts` 是这套口径的唯一实现。窗口压缩、工具视图与记忆账本（M1/M2/M3 的检索预算与核心块截断）都从公共契约引入 `estimateTokens`，不再各自维护一份字符分类。因此同一段文本在上下文段预算、压缩裁剪点与记忆检索上得到相同的估值；调整口径只需要改这一处。
+
+记忆配置里的 `coreBlockMaxTokens` 与检索用的 `AgentMemoryQuery.maxTokens` 都以这套 token 口径计量，不是字符数。
+
 ### 11.3 预算与裁剪
 
 参数来自 context 槽配置的 `decision`/`speech` 子块（默认值见 [配置](../platform/configuration.md) 第 10.2 节），`reservedOutputTokens` 来自 profile 的 `budgets.reserveOutputTokens`（经 `ContextBuildRequest.budget.reservedOutputTokens` 传入）：
