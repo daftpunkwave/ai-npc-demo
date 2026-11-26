@@ -306,6 +306,28 @@ function previousSignificantChar(text: string, index: number): string {
   return cursor < 0 ? "" : (text[cursor] ?? "");
 }
 
+/**
+ * 判断 `[` 之前的接收者是否是成员访问链的终点。
+ *
+ * 除标识符、`)` 与 `]` 外，`ports?.["x"]` 与 `ports.["x"]` 的 `[` 前一个有效字符是 `.`，
+ * `?.` 的可选链写法同理。这些形态都是对已有表达式的属性取用，
+ * 漏判会让同一处能力访问在改写为可选链后静默逃过对账，正是本检查要防的情况。
+ * 单个 `.` 也可能是数字字面量的小数点，但能力访问的接收者不可能是裸数字，
+ * 因此这里按成员访问接受即可。
+ */
+function isMemberAccessReceiver(text: string, bracketIndex: number): boolean {
+  const receiver = previousSignificantChar(text, bracketIndex);
+  if (isIdentifierCharacter(receiver) || receiver === ")" || receiver === "]") {
+    return true;
+  }
+  if (receiver !== ".") {
+    return false;
+  }
+  // `?.` 与 `.` 都算成员访问：再往前一个有效字符是 `?` 时属于可选链，
+  // 否则是普通属性访问，两者对能力对账完全等价。
+  return true;
+}
+
 /** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */
 function capabilityAccesses(file: string): readonly CapabilityAccess[] {
   const text = readFileSync(file, "utf8");
@@ -351,10 +373,10 @@ function capabilityAccesses(file: string): readonly CapabilityAccess[] {
       const literal = readCapabilityString(text, inner.index);
       if (literal !== null) {
         const after = skipTrivia(text, literal.end);
-        const receiver = previousSignificantChar(text, index);
-        const isIndexAccess =
-          text[after.index] === "]" &&
-          (isIdentifierCharacter(receiver) || receiver === ")" || receiver === "]" || receiver === "?");
+        // 只有「成员取用」后的索引才是能力访问：`ports["x"]`、`ports?.["x"]`、`f()["x"]`。
+        // 声明数组与计算属性名的错位写法不在此列，但仍按成员访问判定即可——
+        // 接收者不是表达式时这些形态本就无法编译。
+        const isIndexAccess = text[after.index] === "]" && isMemberAccessReceiver(text, index);
         if (isIndexAccess) {
           accesses.push({ value: literal.capability, line: line + inner.newlines, valid: literal.valid });
           line += inner.newlines + after.newlines;

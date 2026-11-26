@@ -151,6 +151,52 @@ describe("模块能力声明对账", () => {
     ]);
   });
 
+  it("可选链索引访问与普通索引访问等价，都能发现未声明的能力", () => {
+    // 可选链是常见写法；若扫描器把 `?.` 误判成非成员访问，
+    // 同一句能力访问改写后就会静默逃过对账，隐藏依赖只在运行时以 undefined 崩溃暴露。
+    const root = fixture({
+      ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = ports?.[\"game.world\"];\n"),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations).toEqual([
+      expect.objectContaining({ code: "capability-undeclared", file: expect.stringContaining("map/six-nodes") }),
+    ]);
+    expect(violations[0]?.message).toContain("game.world");
+  });
+
+  it("深层接收者的可选链与跨行可选链同样被识别", () => {
+    const root = fixture({
+      ...sourceModule(
+        "game.map.six-nodes",
+        "port.ts",
+        [
+          "export const a = input.ports?.[\"game.world\"];",
+          "export const b = input.ports?.",
+          "  [\"game.world\"];",
+        ].join("\n"),
+      ),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(
+      violations.filter((violation) => violation.code === "capability-undeclared"),
+    ).toHaveLength(2);
+  });
+
+  it("可选链访问已声明的能力时不报违规", () => {
+    // 反向对照：识别范围扩大后不能把合法用例也判成违规。
+    const root = fixture({
+      ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),
+      ...sourceModule(
+        "game.world.slg-light",
+        "port.ts",
+        "export const roads = ports?.[\"game.map\"];\nexport const own = ports?.[\"game.world\"];\n",
+      ),
+    });
+    expect(checkModuleCapabilityUsage({ root, definitions: [map, world] })).toEqual([]);
+  });
+
   it("访问与声明一致时没有违规", () => {
     const root = fixture({
       ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),
