@@ -1103,9 +1103,9 @@ describe("服务端宿主", () => {
     const body = consoleHealthResponseSchema.parse(degradedConsole.json());
     expect(body.status).toBe("degraded");
     expect(body.status).toBe((degradedSystem.json() as { readonly status: string }).status);
-    // 没有数据来源的队列与水位字段省略，不用 0 冒充。
+    // 没有数据来源的队列与水位字段省略，不用 0 冒充；记忆维护队列有真实数据源，照实报告。
     expect(body.queues.turnsRunning).toBeUndefined();
-    expect(body.queues.maintenanceQueued).toBeUndefined();
+    expect(body.queues.maintenanceQueued).toBe(0);
     expect(body.laggingAgents).toBeUndefined();
     expect(body.modules.every((module) => module.status === "ready")).toBe(true);
   });

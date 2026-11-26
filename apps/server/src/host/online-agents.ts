@@ -72,6 +72,20 @@ export class OnlineAgentHost {
     this.branch?.runtime.fenceTurns(reason);
   }
 
+  /**
+   * 停止新 turn 并等待当前分支的运行时排空；截止时间由关闭编排给出。
+   * 排空只等已有工作在期限内收尾，释放仍由 `close` 负责，二者不能合并成一步。
+   */
+  async drain(deadlineMs: number): Promise<void> {
+    this.closing = true;
+    try {
+      await this.changing;
+    } catch {
+      // 分支切换失败已由 requestSwitch 记录；排空不能因此跳过后续释放。
+    }
+    await this.branch?.runtime.drainUntil(deadlineMs);
+  }
+
   async close(): Promise<void> {
     this.closing = true;
     try {

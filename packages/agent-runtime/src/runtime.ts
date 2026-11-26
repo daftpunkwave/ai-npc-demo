@@ -203,6 +203,11 @@ export class AgentRuntime {
     this.scheduler?.cancelActive(reason);
   }
 
+  /**
+   * 停止新任务并等待轮询边界。
+   * 幂等：重复调用返回同一个 Promise，避免关闭路径重复推进或产生第二份状态。
+   * 截止时间由调用方在 dispose 阶段施加，这里不自行截断，以免把「已停止」误报成「已排空」。
+   */
   drain(): Promise<void> {
     if (this.draining !== null) return this.draining;
     this.stopped = true;
@@ -216,6 +221,27 @@ export class AgentRuntime {
       if (this.turns !== null) this.scheduler?.cancelActive("runtime-stopped");
     });
     return this.draining;
+  }
+
+  /**
+   * 在截止时间内完成排空；超时只记录，不阻塞调用方继续释放资源。
+   * 排空本身幂等，因此重复关闭会复用同一次排空结果而不是重新推进。
+   */
+  async drainUntil(deadlineMs: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timed-out">((resolve) => {
+      timer = setTimeout(() => resolve("timed-out"), Math.max(0, deadlineMs));
+      timer.unref();
+    });
+    try {
+      const outcome = await Promise.race([this.drain().then(() => "drained" as const), timeout]);
+      if (outcome === "timed-out") {
+        // 只记数量与预算，不写可能含观察正文的错误消息。
+        this.options.host.logger.warn("Agent runtime drain timed out", { deadlineMs });
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async dispose(): Promise<void> {

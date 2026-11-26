@@ -50,4 +50,9 @@ export interface HostOptions {
    * 缺省拒绝启动并给出迁移指引，不静默修改旧 run。
    */
   readonly migrateOnlineRun?: boolean;
+  /**
+   * 关闭时每级资源排空的预算（毫秒）：先停止新任务并等待提交边界，超时记录后继续释放。
+   * 缺省使用与租约期限解耦的默认值，避免单个卡住的 turn 无限拖住进程退出。
+   */
+  readonly shutdownDrainMs?: number;
 }

@@ -42,6 +42,9 @@ export interface TurnExecutionOptions {
   readonly model?: RunModelPort | null;
 }
 
+/** 关闭时等待在途 turn 的默认上限；与租约期限解耦，避免关闭被单个卡住的 turn 无限拖住。 */
+const turnDisposeDeadlineMs = 10_000;
+
 /** 每 Agent 已装配的 turn 模块端口：model 为模型路径端口组，deterministicDecision 为未挂模型池时的确定性决策端口，二者互斥。 */
 type TurnPorts = { readonly toolView: AgentToolViewPort } & (
   { readonly model: ModelTurnPorts; readonly deterministicDecision: null } |
@@ -109,8 +112,13 @@ export class TurnWorker {
     this.running.add(execution);
   }
 
-  async dispose(): Promise<void> {
-    await Promise.all(this.running);
+  /**
+   * 释放在途 turn 与已装配模块。
+   * 在途 turn 只等到 `deadlineMs`：卡在模型或长计算里的 turn 不能无限拖住进程退出，
+   * 超时后记录仍未结束的 turn 数量并继续释放，让关闭回到有界时间。
+   */
+  async dispose(deadlineMs = turnDisposeDeadlineMs): Promise<void> {
+    await this.settleRunning(deadlineMs);
     let failure: unknown;
     for (const handle of this.disposables.splice(0).reverse()) {
       try {
@@ -120,6 +128,30 @@ export class TurnWorker {
       }
     }
     if (failure !== undefined) throw failure;
+  }
+
+  /**
+   * 等待在途 turn 结束；超过截止时间只记录未排空数量，不抛错也不取消已经写入的终态。
+   * `running` 里的 Promise 自身已带 catch，超时后继续在后台收尾不会产生未处理的 rejection。
+   */
+  private async settleRunning(deadlineMs: number): Promise<void> {
+    if (this.running.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(() => resolve(), Math.max(0, deadlineMs));
+      timer.unref();
+    });
+    try {
+      await Promise.race([Promise.all([...this.running]), timeout]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+    const outstanding = this.running.size;
+    if (outstanding === 0) return;
+    this.runtime.host.logger.warn("Agent turn drain timed out", {
+      outstanding,
+      deadlineMs,
+    });
   }
 
   /**

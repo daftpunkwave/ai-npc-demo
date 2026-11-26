@@ -33,3 +33,33 @@ export async function disposeInReverse(steps: readonly DisposalStep[]): Promise<
     `宿主清理未全部完成：${detail}`,
   );
 }
+
+/** 单个待排空资源：与释放步骤同构，但语义是「不再接受新工作，等待提交边界」。 */
+export interface DrainStep {
+  readonly label: string;
+  readonly drain: (deadlineMs: number) => Promise<void>;
+}
+
+/**
+ * 在关闭前逐级排空资源，每级都有独立的截止时间。
+ * 契约 `ModuleInstance.drain(deadlineMs)` 承诺「停止新任务、设置短租约并等待提交边界」，
+ * 但生产关闭路径此前只调 dispose，于是契约里的截止时间从未被传入，单个卡住的 turn 就能拖住进程退出。
+ * 排空失败（含超过预算未排空）只记录并继续释放：释放必须照常发生，否则进程停在半关闭状态。
+ */
+export async function drainBeforeClose(
+  steps: readonly DrainStep[],
+  deadlineMs: number,
+  report: (message: string, data: { readonly label: string; readonly deadlineMs: number; readonly message: string }) => void,
+): Promise<void> {
+  for (const step of steps) {
+    try {
+      await step.drain(deadlineMs);
+    } catch (error) {
+      report("宿主排空未完成", {
+        label: step.label,
+        deadlineMs,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
