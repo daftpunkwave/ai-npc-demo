@@ -5,6 +5,13 @@
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { MessageIntentKind, ReasonCode } from "@ai-npc/contracts";
+import {
+  deliverAt as routeDeliverAt,
+  deliveries as routeDeliveries,
+  type CommsChannel,
+  type DeliveryRoutingInput,
+} from "./delivery-routing";
+import type { DeliveryRoute } from "./comms-types";
 import { DomainError } from "@ai-npc/contracts";
 import {
   factionStandingNode,
@@ -46,7 +53,7 @@ import {
   type ShareState,
 } from "./state";
 
-type Delivery = { readonly principalId: string; readonly deliverAtTick: number };
+type Delivery = DeliveryRoute;
 
 /** 通信端口实现；每个处理器调用绑定同一 storage transaction。 */
 class StandardCommsPort implements GameCommsPort {
@@ -74,6 +81,29 @@ class StandardCommsPort implements GameCommsPort {
    * 本切片 AI 党魁不参加任务、没有移动路径；将来若允许其移动，必须把位置写入世界状态，
    * 否则这里的派系驻地会与地图位置不一致。未知主体没有位置。
    */
+  /** 投递路由所需的只读回读；每次调用现取当前 tick 与中继状态，不缓存可变事实。 */
+  private routing(): DeliveryRoutingInput {
+    return {
+      worldTick: () => this.tx().worldTick,
+      relayState: () => this.relayState(),
+      principalNode: (principalId) => this.principalNode(principalId),
+      sameNode: (fromId, toId) => this.sameNode(fromId, toId),
+    };
+  }
+
+  deliverAt(channel: CommsChannel, fromId: string, toId: string): number | "relay-down" {
+    return routeDeliverAt(this.routing(), channel, fromId, toId);
+  }
+
+  private deliveries(
+    channel: CommsChannel,
+    fromId: string,
+    recipients: readonly string[],
+    originNodeId?: string | null,
+  ): readonly DeliveryRoute[] | null {
+    return routeDeliveries(this.routing(), channel, fromId, recipients, originNodeId);
+  }
+
   private principalNode(principalId: string): string | null {
     const character = this.world.character(principalId);
     if (character !== null) {
@@ -114,70 +144,6 @@ class StandardCommsPort implements GameCommsPort {
       return "down";
     }
     return value < 30 ? "degraded" : "normal";
-  }
-
-  /** 同节点立即送达；异地按渠道与中继状态延迟，中断时不可达。 */
-  private arrivalAt(channel: "dialogue" | "message" | "broadcast", samePlace: boolean): number | "relay-down" {
-    const tick = this.tx().worldTick;
-    if (samePlace) {
-      return tick;
-    }
-    const state = this.relayState();
-    if (state === "down") {
-      return "relay-down";
-    }
-    if (channel === "dialogue") {
-      return state === "degraded" ? tick + 2 : tick;
-    }
-    return state === "degraded" ? tick + 3 : tick + 1;
-  }
-
-  /** 定向通信：发送者立即回显，其余收件者按同节点与中继状态计算。 */
-  private directedArrival(channel: "dialogue" | "message", fromId: string, toId: string): number | "relay-down" {
-    if (fromId === toId) {
-      return this.tx().worldTick;
-    }
-    return this.arrivalAt(channel, this.sameNode(fromId, toId));
-  }
-
-  /** 广播的同节点判定以发布位置为准；发布位置未知时任何收件者都按异地处理。 */
-  private broadcastArrival(originNodeId: string | null, toId: string): number | "relay-down" {
-    const toNode = this.principalNode(toId);
-    return this.arrivalAt("broadcast", originNodeId !== null && toNode === originNodeId);
-  }
-
-  deliverAt(channel: "dialogue" | "message" | "broadcast", fromId: string, toId: string): number | "relay-down" {
-    if (channel === "broadcast") {
-      return this.broadcastArrival(this.principalNode(fromId), toId);
-    }
-    return this.directedArrival(channel, fromId, toId);
-  }
-
-  /**
-   * 冻结投递名单：按 principalId 排序去重。定向通信中任一收件者不可达就整条返回 null，
-   * 广播则只保留与发布位置同节点的主体。
-   */
-  private deliveries(
-    channel: "dialogue" | "message" | "broadcast",
-    fromId: string,
-    recipients: readonly string[],
-    originNodeId?: string | null,
-  ): readonly Delivery[] | null {
-    const unique = [...new Set([fromId, ...recipients])].sort((left, right) => left.localeCompare(right));
-    const output: Delivery[] = [];
-    for (const principalId of unique) {
-      const at = channel === "broadcast"
-        ? this.broadcastArrival(originNodeId ?? null, principalId)
-        : this.directedArrival(channel, fromId, principalId);
-      if (at === "relay-down") {
-        if (channel !== "broadcast") {
-          return null;
-        }
-        continue;
-      }
-      output.push({ principalId, deliverAtTick: at });
-    }
-    return output;
   }
 
   /**

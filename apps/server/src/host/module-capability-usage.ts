@@ -5,9 +5,11 @@
  * 约束与禁忌：不按模块 ID 猜测实现、不跳过读不到源码的模块，也不把能力访问限制成运行期才暴露的问题；
  * 只识别源码中写死能力 ID 的索引访问与对象键，动态键（如 `ports[variable]`）属于无法静态求值的形式，不在此检查。
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN, type ModuleDefinition } from "@ai-npc/contracts";
+import { findModuleDirectories, moduleIdentifier, sourceFilesOf, type ModuleSource } from "./module-sources";
+
 
 /** 一条源码能力访问与声明不一致的违规。 */
 export interface CapabilityUsageViolation {
@@ -228,75 +230,7 @@ function destructuringKeys(
   return hits;
 }
 
-/** 一个模块源码目录及其对应的登记定义。 */
-interface ModuleSource {
-  readonly directory: string;
-  readonly identifier: string;
-  readonly definitions: readonly ModuleDefinition[];
-  readonly files: readonly string[];
-}
-
-function isSkippedDirectory(name: string): boolean {
-  return name === "node_modules" || name === "tests" || name.startsWith(".");
-}
-
-/** 收集 modules 下所有带 src/definition.ts 的模块目录。 */
-function findModuleDirectories(root: string): string[] {
-  const found: string[] = [];
-  const walk = (relative: string): void => {
-    const absolute = join(root, relative);
-    const entries = readdirSync(absolute, { withFileTypes: true });
-    if (entries.some((entry) => entry.isFile() && entry.name === "definition.ts") && basename(relative) === "src") {
-      found.push(resolve(root, relative, ".."));
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory() && !isSkippedDirectory(entry.name)) {
-        walk(`${relative}/${entry.name}`);
-      }
-    }
-  };
-  const modulesRoot = join(root, "modules");
-  try {
-    statSync(modulesRoot);
-  } catch {
-    return [];
-  }
-  walk("modules");
-  return found.sort((left, right) => left.localeCompare(right));
-}
-
-/** 按 workspace 目录规则把模块目录映射为模块 ID 前缀。 */
-function moduleIdentifier(realm: string, directory: string): string | null {
-  const parts = directory.split(/[\\/]/);
-  const modulesIndex = parts.lastIndexOf("modules");
-  if (modulesIndex === -1 || parts[modulesIndex + 1] !== realm) {
-    return null;
-  }
-  const rest = parts.slice(modulesIndex + 2);
-  const identifier = rest.join(".");
-  return realm === "server" ? identifier : `${realm}.${identifier}`;
-}
-
-/** 读取模块 src 下的全部手写 TypeScript 文件。 */
-function sourceFilesOf(directory: string): readonly string[] {
-  const sourceDirectory = join(directory, "src");
-  const files: string[] = [];
-  const walk = (absolute: string): void => {
-    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
-      const child = join(absolute, entry.name);
-      if (entry.isDirectory()) {
-        if (!isSkippedDirectory(entry.name)) {
-          walk(child);
-        }
-      } else if (entry.isFile() && child.endsWith(".ts")) {
-        files.push(child);
-      }
-    }
-  };
-  walk(sourceDirectory);
-  return files.sort((left, right) => left.localeCompare(right));
-}
-
+/** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */
 /** 返回指定位置之前最近的代码字符，用于区分索引访问与声明数组。 */
 function previousSignificantChar(text: string, index: number): string {
   let cursor = index - 1;
@@ -306,7 +240,6 @@ function previousSignificantChar(text: string, index: number): string {
   return cursor < 0 ? "" : (text[cursor] ?? "");
 }
 
-/** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */
 function capabilityAccesses(file: string): readonly CapabilityAccess[] {
   const text = readFileSync(file, "utf8");
   const accesses: CapabilityAccess[] = [];

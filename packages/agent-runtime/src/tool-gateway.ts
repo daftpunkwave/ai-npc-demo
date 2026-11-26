@@ -23,6 +23,7 @@ import {
 import type { AgentToolViewPort } from "@ai-npc/module-sdk";
 import { StoredAgentArtifactStore, type AgentArtifactStore } from "@ai-npc/module-sdk";
 import { ToolOutcomeStore } from "./tool-outcome-store";
+import { executeCommandTool, executeQueryTool, type ToolExecutionDeps } from "./tool-execution";
 import {
   allowedDynamicValues,
   dynamicFieldName,
@@ -193,203 +194,25 @@ export class ToolGateway {
     }
 
     if (definition.effect === "query") {
-      return this.executeQueryTool(input, binding, definition, argsHash, args, existing);
+      return executeQueryTool(this.execution(), input, binding, definition, argsHash, args, existing);
     }
-    return this.executeCommandTool(input, binding, definition, argsHash, args, existing);
+    return executeCommandTool(this.execution(), input, binding, definition, argsHash, args, existing);
   }
 
-  private async executeQueryTool(
-    input: ToolCallExecutionInput,
-    binding: ToolBinding,
-    definition: ToolDefinition,
-    argsHash: string,
-    args: Json,
-    existing: Readonly<Record<string, import("@ai-npc/contracts").StorageCell>> | null,
-  ): Promise<ToolCallOutcome> {
-    const current = this.store.ensureToolCall(input, binding, argsHash, null, null, existing);
-    if (this.options.executeQuery === undefined) {
-      return this.settleError(input, binding, argsHash, "execution-failed", "Query executor is not configured.", current);
-    }
-    try {
-      const output = await this.options.executeQuery({
-        toolId: binding.toolId,
-        arguments: dropNullFields(args),
-        turn: input,
-      });
-      const result = resultWithoutRef({
-        executionStatus: "ok",
-        commandStatus: null,
-        taskStatus: null,
-        reasonCode: null,
-        receiptId: null,
-        operationId: null,
-        detail: "Query completed.",
-        data: output,
-      });
-      return await this.store.persistOutcome({ input, binding, definition, argsHash, args, command: null, output, partialResult: result, toolCall: current });
-    } catch (error) {
-      return this.settleError(input, binding, argsHash, "execution-unknown", errorMessage(error), current, null, "unknown");
-    }
-  }
-
-  private async executeCommandTool(
-    input: ToolCallExecutionInput,
-    binding: ToolBinding,
-    definition: ToolDefinition,
-    argsHash: string,
-    args: Json,
-    existing: Readonly<Record<string, import("@ai-npc/contracts").StorageCell>> | null,
-  ): Promise<ToolCallOutcome> {
-    const command = this.options.tools.resolveCommand({ toolId: binding.toolId, arguments: args });
-    const resolvedCommand = "error" in command ? null : command;
-    if (resolvedCommand === null && binding.toolId !== "message.send") {
-      const error = "error" in command ? command.error : "Command resolution failed.";
-      return this.settleError(input, binding, argsHash, "invalid-params", error, existing);
-    }
-    const operationId = input.operationId ??
-      (existing === null ? null : existing["operation_id"] as string | null) ??
-      this.options.host.ids("op");
-    const operation = this.options.storage.transact((tx) =>
-      tx.branch(input.session.branchId).table("operations").get({
-        agent_id: input.agentId,
-        operation_id: operationId,
-      }),
-    );
-    if (operation !== null && operation["payload_hash"] !== argsHash) {
-      return this.settleError(input, binding, argsHash, "idempotency-conflict", "operationId was reused with different arguments.", existing, operationId);
-    }
-    const reusable = this.store.findSettledOperation(input, operationId);
-    if (reusable !== null) {
-      const commandId = reusable["command_id"] as string | null;
-      const current = this.store.ensureToolCall(input, binding, argsHash, operationId, commandId, existing);
-      const loaded = await this.store.loadSettled(reusable);
-      this.store.attachArtifactsToCall(current.toolCallId, loaded.rawArtifact, loaded.viewArtifact, loaded.result, operationId, commandId);
-      return { ...loaded, providerCallId: input.providerCallId, toolCallId: current.toolCallId, toolId: binding.toolId };
-    }
-
-    const commandId = operation === null ? this.options.host.ids("cmd") : operation["command_id"] as string;
-    const current = this.store.ensureToolCall(input, binding, argsHash, operationId, commandId, existing);
-    if (operation === null) {
-      this.options.storage.transact((tx) => {
-        tx.branch(input.session.branchId).table("operations").put({
-          agent_id: input.agentId,
-          operation_id: operationId,
-          command_id: commandId,
-          payload_hash: argsHash,
-          created_at: this.options.host.nowIso(),
-        });
-      });
-    }
-    try {
-      if (binding.toolId === "message.send") {
-        return await this.executeMessageTool(input, binding, definition, argsHash, args, current, operationId, commandId);
-      }
-      if (resolvedCommand === null) {
-        return this.settleError(input, binding, argsHash, "invalid-params", "Command resolution failed.", current);
-      }
-      const envelope: CommandEnvelope = {
-        commandId,
-        type: resolvedCommand.commandType,
-        schemaVersion: 1,
-        payload: resolvedCommand.payload,
-      };
-      const receipt = await this.options.executeCommand(input.auth, envelope);
-      return await this.persistReceipt({
-        input,
-        binding,
-        definition,
-        argsHash,
-        args,
-        envelope,
-        receipt,
-        current,
-        operationId,
-      });
-    } catch (error) {
-      if (error instanceof DomainError && error.code === "idempotency-conflict") {
-        return this.settleError(input, binding, argsHash, "idempotency-conflict", error.safeMessage, current, operationId);
-      }
-      return this.settleError(input, binding, argsHash, "execution-unknown", errorMessage(error), current, operationId, "unknown");
-    }
-  }
-
-  private async executeMessageTool(
-    input: ToolCallExecutionInput,
-    binding: ToolBinding,
-    definition: ToolDefinition,
-    argsHash: string,
-    args: Json,
-    current: ToolCallIdentity,
-    operationId: string,
-    commandId: string,
-  ): Promise<ToolCallOutcome> {
-    if (this.options.executeMessage === undefined) {
-      return this.settleError(input, binding, argsHash, "execution-failed", "Message dialogue executor is not configured.", current, operationId);
-    }
-    const prior = this.options.storage.transact((tx) => tx.branch(input.session.branchId)
-      .table("command_receipts").get({ principal_id: input.agentId, command_id: commandId }));
-    const message = prior === null
-      ? await this.options.executeMessage({ arguments: args, turn: input, operationId, commandId, providerCallId: input.providerCallId })
-      : (() => {
-          const receipt = commandReceiptSchema.parse(prior["receipt_json"]);
-          return { receipt, output: receipt.result ?? {} };
-        })();
-    const result = resultWithoutRef({
-      executionStatus: "ok",
-      commandStatus: message.receipt.commandStatus,
-      taskStatus: taskStatusFrom(message.receipt),
-      reasonCode: message.receipt.reasonCode,
-      receiptId: message.receipt.receiptId,
-      operationId,
-      detail: message.receipt.safeMessage ?? (message.receipt.commandStatus === "accepted" ? "Message accepted." : "Message rejected."),
-      data: message.output,
-    });
-    return await this.store.persistOutcome({
-      input,
-      binding,
-      definition,
-      argsHash,
-      args,
-      command: { type: "speech.commit", operationId, commandId },
-      output: message.output,
-      partialResult: result,
-      toolCall: current,
-    });
-  }
-
-  private async persistReceipt(resultInput: {
-    readonly input: ToolCallExecutionInput;
-    readonly binding: ToolBinding;
-    readonly definition: ToolDefinition;
-    readonly argsHash: string;
-    readonly args: Json;
-    readonly envelope: CommandEnvelope;
-    readonly receipt: CommandReceipt;
-    readonly current: ToolCallIdentity;
-    readonly operationId: string;
-  }): Promise<ToolCallOutcome> {
-    const { input, binding, definition, argsHash, args, envelope, receipt, current, operationId } = resultInput;
-    const result = resultWithoutRef({
-      executionStatus: "ok",
-      commandStatus: receipt.commandStatus,
-      taskStatus: taskStatusFrom(receipt),
-      reasonCode: receipt.reasonCode,
-      receiptId: receipt.receiptId,
-      operationId: receipt.operationId ?? operationId,
-      detail: receipt.safeMessage ?? (receipt.commandStatus === "accepted" ? "Command accepted." : "Command rejected."),
-      data: receipt.result ?? {},
-    });
-    return await this.store.persistOutcome({
-      input,
-      binding,
-      definition,
-      argsHash,
-      args,
-      command: envelope as unknown as Json,
-      output: receipt.result ?? {},
-      partialResult: result,
-      toolCall: current,
-    });
+  /** 组装工具效果执行所需的依赖；结算与幂等仍复用本网关的同一套实现。 */
+  private execution(): ToolExecutionDeps {
+    return {
+      storage: this.options.storage,
+      host: this.options.host,
+      tools: this.options.tools,
+      toolView: this.options.toolView,
+      store: this.store,
+      executeQuery: this.options.executeQuery,
+      executeCommand: this.options.executeCommand,
+      executeMessage: this.options.executeMessage,
+      settleError: (input, binding, argsHash, reasonCode, detail, existing, operationId, executionStatus) =>
+        this.settleError(input, binding, argsHash, reasonCode, detail, existing, operationId, executionStatus),
+    };
   }
 
   /**
