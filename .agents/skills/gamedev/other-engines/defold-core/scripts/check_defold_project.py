@@ -307,7 +307,8 @@ class Project:
             archives = []
         for url, _line in self.dependency_urls():
             # Bob stores each fetched library as .internal/lib/<sha1 of the URL>-<etag>.zip.
-            prefix = hashlib.sha1(url.encode("utf-8")).hexdigest() + "-"
+            # This mirrors Bob's file naming, not a security digest.
+            prefix = hashlib.sha1(url.encode("utf-8"), usedforsecurity=False).hexdigest() + "-"
             match = next((a for a in archives if a.startswith(prefix) and a.endswith(".zip")), None)
             if not match or not self.read_library(lib_dir / match):
                 self.unfetched.append(url)
