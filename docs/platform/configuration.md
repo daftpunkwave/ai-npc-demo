@@ -131,7 +131,11 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 
 ## 10. 完整配置文件（首版）
 
-所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找，找不到时仅对装配、模型布局、profile 与工具集（`assembly`、`model-layout`、`profile`、`toolset`）回退查询控制台保存的草稿（`config_drafts`）。`env:NAME` 形式的值在预检时从环境变量解析。
+所有配置都是 YAML，读入后用 `packages/contracts` 中的 Zod schema 严格校验（未知键拒绝）。引用（`*Ref`）先在仓库 `config/` 中查找。
+
+`env:NAME` 形式的值按字段分类解析：`endpoint` 与 `externalModel` 经带白名单的解析器取值，`credentialRef` 保留为引用、由传输适配器在调用时解析，模型 `parameters` 内的 `env:` 不解析（任意环境变量经该字段可直达模型请求）。三条加载路径共用同一管线：装配、RunSpec 与模型布局都先做 env 替换与 schema 校验，再进入交叉检查。
+
+草稿回退尚未接线：`ConfigDraftReader` 已定义、`config_drafts` 已建表，但宿主没有构造点，因此仓库文件找不到时不会回退到控制台草稿，而是直接报引用缺失。该能力属未交付项。
 
 > 本节示例描述首版的目标配置。实际绑定见 [config/assemblies — 装配文件](../../config/assemblies)，交付进度见 [IMPLEMENTATION-STATUS.md — 实现状态与迁移清单](../IMPLEMENTATION-STATUS.md)。
 

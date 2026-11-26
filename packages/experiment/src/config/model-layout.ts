@@ -66,11 +66,20 @@ const pricingSchema = z.object({
 
 export type ModelLayout = z.infer<typeof modelLayoutSchema>;
 
+/**
+ * 加载模型布局，走与其他配置相同的 `loadConfigDocument` 管线。
+ *
+ * 布局里的 `endpoint` 与 `externalModel` 用 `env:` 引用部署环境，`credentialRef`
+ * 保留为引用、不在此解析。这三个字段各自走专用解析（`resolveModelEnv` 带白名单，
+ * 凭据由传输适配器解析），因此共享管线的通用 env 替换不能作用于它们：
+ * 否则任意环境变量都能被写进布局，`parameters` 里的值还会被原样送进模型请求。
+ * 不做通用替换的代价是：`parameters` 中的 `env:` 不会被解析，文档已按此声明。
+ */
 export function loadModelLayout(modelLayoutRef: string, context: ConfigLoadContext): ModelLayout {
-  const ref = resolveConfigReference(modelLayoutRef, context, "model-layout");
-  const source = ref.kind === "file" ? ref.path : ref.configRef;
-  const data = ref.kind === "file" ? parseYamlText(ref.text, source) : ref.value;
-  const parsed = modelLayoutSchema.safeParse(data);
+  const reference = resolveConfigReference(modelLayoutRef, context, "model-layout");
+  const source = reference.kind === "file" ? reference.path : `draft:model-layout:${modelLayoutRef}`;
+  const raw = reference.kind === "file" ? parseYamlText(reference.text, source) : reference.value;
+  const parsed = modelLayoutSchema.safeParse(raw);
   if (!parsed.success) throw schemaLoadingError(source, parsed.error);
   if (parsed.data.layoutId !== modelLayoutRef) {
     throw new LoadingError({ code: "reference", source, message: "模型布局 ID 与文件引用不一致" });

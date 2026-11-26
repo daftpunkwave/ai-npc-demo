@@ -18,6 +18,7 @@ import {
   loadConfigDocument,
   loadContentPack,
   loadModelFixtures,
+  loadModelLayout,
   loadRoster,
   loadRunSpec,
   resolveConfigReference,
@@ -613,5 +614,38 @@ describe("RunSpec 交叉检查", () => {  const content = loadContentPack(conten
 
     // 匹配的组合不被拒绝。
     expect(validateRunSpec({ ...run.value, mode: "live", clock: { kind: "realtime" } }, content)).toBeUndefined();
+  });
+});
+
+describe("模型布局的环境变量边界", () => {
+  const layoutYaml = [
+    "schemaVersion: 1",
+    "layoutId: env-boundary-layout",
+    "connections:",
+    "  fixture:",
+    "    adapterId: platform.model-transport.deterministic",
+    "models:",
+    "  m1:",
+    "    connectionId: fixture",
+    "    externalModel: env:NPC_OPENAI_COMPAT_MODEL",
+    "    parameters: { apiKey: \"env:LEAKED_SECRET\" }",
+    "    capabilities: { toolCalling: true, strictTools: false, structuredOutput: none, assistantReplay: verbatim, contextWindowTokens: 1000, maxOutputTokens: 100, embedding: false, embeddingDimensions: null }",
+    "    limits: { maxConcurrent: 1, requestsPerMinute: 1, tokensPerMinute: 1, requestTimeoutMs: 1000 }",
+    "mounts: []",
+    "",
+  ].join("\n");
+
+  it("parameters 中的 env: 不会被解析，避免任意环境变量进入模型请求", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-layout-env-"));
+    try {
+      writeFileSync(join(tempDir, "env-boundary-layout.yaml"), layoutYaml, "utf8");
+      const layout = loadModelLayout("env-boundary-layout", { configDir: tempDir });
+      // 原样保留为字符串引用；解析它会把密钥经 parameters 送进模型请求。
+      expect(layout.models["m1"]?.parameters).toEqual({ apiKey: "env:LEAKED_SECRET" });
+      // endpoint 与 externalModel 仍是有意为之的例外：由宿主按白名单解析。
+      expect(layout.models["m1"]?.externalModel).toBe("env:NPC_OPENAI_COMPAT_MODEL");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
