@@ -357,6 +357,60 @@ describe("配置加载", () => {
     }
   });
 
+  it("只有 variant 允许声明 patch，其他 kind 声明即被拒绝", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-patch-"));
+    try {
+      // 非 variant 声明 patch 时，自身 slots 会被 applyPatch 的 `patch ?? document` 静默丢弃。
+      writeFileSync(
+        join(tempDir, "agent-with-patch.yaml"),
+        [
+          "schemaVersion: 1",
+          "profileId: agent-with-patch",
+          "kind: agent",
+          "parent: null",
+          "patch:",
+          "  slots:",
+          "    memory: { module: agent.memory.ledger, config: {} }",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const error = captureLoadingError(() => loadAgentProfile("agent-with-patch", { configDir: tempDir }));
+      expect(error.code).toBe("schema");
+      expect(error.path).toBe("patch");
+      expect(error.message).toContain("variant");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("variant 省略 parent 时按继承链起点加载", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-variant-"));
+    try {
+      // 文档中的变体形状不带 parent；省略必须与显式 null 等价，否则照抄示例会被拒绝。
+      writeFileSync(
+        join(tempDir, "variant-omitted-parent.yaml"),
+        [
+          "schemaVersion: 1",
+          "profileId: variant-omitted-parent",
+          "kind: variant",
+          "patch:",
+          "  slots:",
+          "    memory: { module: agent.memory.ledger, config: {} }",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const base = loadAgentProfile("agent-character-default", { configDir });
+      const patched = applyProfilePatch(base, "variant-omitted-parent", { configDir: tempDir });
+      expect(patched.slots.memory?.module).toBe("agent.memory.ledger");
+      // 未改动的槽位继续来自父 profile，不会被 variant 清空。
+      expect(patched.slots.decision?.module).toBe(base.slots.decision?.module);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("未知键被严格拒绝", () => {
     const error = captureLoadingError(() => loadRunSpec("run-unknown-key", { configDir: fixturesConfigDir }));
     expect(error.code).toBe("schema");

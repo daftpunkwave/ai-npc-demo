@@ -70,7 +70,8 @@ const profileDocumentSchema = z
     schemaVersion: z.literal(1),
     profileId: z.string().min(1),
     kind: z.enum(["platform", "scene", "agent", "variant"]),
-    parent: z.string().min(1).nullable(),
+    // variant 常被单独引用为 patch，可以不带父 profile；其余 kind 由加载器保证继承链完整。
+    parent: z.string().min(1).nullable().optional(),
     budgets: budgetSchema.optional(),
     readiness: readinessSchema.optional(),
     speech: z.object({ maxChars: z.number().int().positive() }).strict().optional(),
@@ -90,7 +91,17 @@ const profileDocumentSchema = z
         .strict()
         .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((document, context) => {
+    // patch 只对 variant 有意义：其他 kind 声明 patch 时自身 slots 与预算会被静默丢弃。
+    if (document.patch !== undefined && document.kind !== "variant") {
+      context.addIssue({
+        code: "custom",
+        path: ["patch"],
+        message: `只有 variant 允许声明 patch，${document.kind} 请直接写顶层字段`,
+      });
+    }
+  });
 
 export type AgentProfileDocument = z.infer<typeof profileDocumentSchema>;
 export type AgentModuleSelection = z.infer<typeof moduleSelectionSchema>;
@@ -162,9 +173,11 @@ function chainDocuments(
   }
   active.add(configRef);
   const loaded = loadDocument(configRef, context);
-  const parent = loaded.value.parent === null
+  // 缺省 parent 与显式 null 等价：都是继承链起点，不指向任何父 profile。
+  const parentRef = loaded.value.parent ?? null;
+  const parent = parentRef === null
     ? null
-    : chainDocuments(loaded.value.parent, context, active);
+    : chainDocuments(parentRef, context, active);
   active.delete(configRef);
   if (parent === null) {
     return { sourceChain: [loaded.source], value: loaded.value };

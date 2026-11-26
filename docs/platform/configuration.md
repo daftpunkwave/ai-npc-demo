@@ -305,12 +305,15 @@ variant patch 放在 `config/profiles/variants/`，`memory` 槽的完整参数�
 schemaVersion: 1
 profileId: memory-m1-structured-ledger
 kind: variant
+parent: null                       # variant 可省略 parent，省略与 null 等价
 patch:
   slots:
     memory:
       module: agent.memory.ledger
       config: { }   # copy the full config block from memory.md §11.6 here
 ```
+
+`patch` 只对 `kind: variant` 有效：其他 kind 声明 `patch` 会在加载时被拒绝，避免其自身 `slots` 与预算被静默丢弃。需要覆盖基线时，非 variant profile 直接写顶层字段。
 
 ### 10.3 实验规格 `config/runs/*.yaml`
 
