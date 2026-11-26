@@ -180,6 +180,11 @@ export interface ModelDecisionPort {
     readonly maxCallsPerTurn: number;
     readonly nudgeSubmit: string;
     readonly budgetStop: string;
+    /**
+     * 本 turn 的取消信号；实现应把它并入每次模型调用的工作作用域，让在途请求在 turn 截止时结束。
+     * 不响应它不会改写世界（租约与 fencing 仍拒绝迟到提交），但会继续占用并发与预算。
+     */
+    readonly signal: AbortSignal;
     readonly call: (input: ModelCallInput) => Promise<AgentModelCallResult>;
     readonly executeTool: (call: NormalizedToolCall, round: number) => Promise<{ readonly modelText: string; readonly isError: boolean }>;
     readonly validate: (candidate: Json) => DecisionValidation;

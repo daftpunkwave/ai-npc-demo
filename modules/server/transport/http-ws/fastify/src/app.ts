@@ -430,6 +430,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     if (options.recordSpan !== undefined) {
       registerRequestTraceId(reply, span.traceId);
     }
+    // 关闭已开始：新请求按 not-ready 拒绝，避免排空期间又有命令进入世界。
+    // 健康检查豁免，让关闭期间的探活仍能读到 degraded/closed 事实而不是被误导为连接异常。
+    if (closing && !request.url.startsWith("/api/v1/health")) {
+      sendHttpError(reply, "not-ready", "服务端正在关闭，不再接受新请求");
+      return;
+    }
     const origin = request.headers.origin;
     if (typeof origin === "string" && !allowedOrigins.has(origin)) {
       sendHttpError(reply, "forbidden", "Origin 不被允许");
@@ -478,6 +484,12 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     await app.listen({ host: listenOptions.host, port: listenOptions.port });
   };
 
+  // 关闭开始后置位：onRequest 据此拒绝新请求，已有的处理中请求不受影响。
+  let closing = false;
+  const stopAccepting = (): void => {
+    closing = true;
+  };
+
   const close = async (): Promise<void> => {
     try {
       if (consoleHealthTimer !== null) {
@@ -509,6 +521,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   return {
     listen,
     close,
+    stopAccepting,
     inject,
     // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
     notifyWorldChanged: () => {

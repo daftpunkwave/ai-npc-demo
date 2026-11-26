@@ -30,8 +30,11 @@ export interface LifecycleInput {
   readonly agentHealth?: () => boolean;
   /** 当前在线分支是否已开始 campaign；未开局时不能继续时钟，避免非零 tick 开局。 */
   readonly campaignStarted: () => boolean;
-  /** 关闭时释放存储、模块与传输；传输实例在 attachApp 后可用。 */
-  readonly disposeResources: (app: ServerApp | null) => Promise<void>; // eslint-disable-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
+  /**
+   * 关闭时排空并释放存储、模块与传输；传输实例在 attachApp 后可用。
+   * 实现方必须先排空再释放（见 `drainBeforeClose`），因此这里不再分两级调用。
+   */
+  readonly closeResources: (app: ServerApp | null) => Promise<void>; // eslint-disable-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 ServerApp 判为 any。
 }
 
 /** 宿主生命周期接口；组装完成后由组合根 attachApp 并 start。 */
@@ -390,7 +393,7 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
         }
         clearAutoPauseTimer();
         // 关闭按传输、模块、存储的逆序释放；任一步抛错仍继续，最后汇总错误。
-        await input.disposeResources(app);
+        await input.closeResources(app);
       })();
       return closePromise;
     },

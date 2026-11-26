@@ -2775,6 +2775,9 @@ describe("服务端 API", () => {
       close: async () => {
         calls.push("close");
       },
+      stopAccepting: () => {
+        calls.push("stop-accepting");
+      },
       inject: async () =>
         ({
           statusCode: 204,

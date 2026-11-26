@@ -424,6 +424,11 @@ export interface ServerAppInjectResponse {
 export interface ServerApp {
   listen(options: { readonly host: string; readonly port: number }): Promise<void>;
   close(): Promise<void>;
+  /**
+   * 停止接受新请求并让后续请求按 `not-ready` 拒绝；已有的处理中请求继续完成。
+   * 关闭编排在排空之前调用它，否则排空期间新到达的命令会突破排空边界。
+   */
+  stopAccepting(): void;
   inject(options: ServerAppInjectOptions): Promise<ServerAppInjectResponse>;
   notifyWorldChanged(): void;
   /** 当前监听地址；尚未监听时返回 null，供测试建立真实连接。 */

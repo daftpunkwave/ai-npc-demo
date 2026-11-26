@@ -29,6 +29,11 @@ export class TransportPort {
     await app.listen({ host: this.host, port: this.port });
   }
 
+  /** 停止接受新请求，让关闭编排的排空边界不被新工作突破。 */
+  stopAccepting(app: ServerApp): void {
+    app.stopAccepting();
+  }
+
   /** 关闭应用；宿主只经本端口触发，不直接依赖框架的关闭语义。 */
   async close(app: ServerApp): Promise<void> {
     await app.close();

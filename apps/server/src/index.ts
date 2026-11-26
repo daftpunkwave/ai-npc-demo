@@ -66,12 +66,14 @@ export type {
   WorldTickContext,
   WorldTickResult,
 } from "./tick";
-export { disposeInReverse, startHost } from "./host";
-export type { DisposalStep, HostOptions, RunningHost } from "./host";
+export { disposeInReverse, disposeWithin, drainBeforeClose, settleWithin, startHost } from "./host";
+export type { DrainFailure, DrainStep, DisposalStep, HostOptions, RunningHost } from "./host";
 export { startServer } from "./startup";
 export type { StartServerOptions, StartupHost } from "./startup";
 export { createShutdownHandler, shutdownServer } from "./shutdown";
 export type { ShutdownInput } from "./shutdown";
+export { createProcessFaultHandlers, faultExitCode, installProcessFaultHandlers } from "./process-faults";
+export type { ProcessFaultHandlersInput, ProcessFaultReport } from "./process-faults";
 export { OperationJournal, operationRequestHash } from "./host/operation-journal";
 export type { OperationKey, OperationKind, OperationOutcome } from "./host/operation-journal";
 export { createTransportApp } from "./host/transport-app";

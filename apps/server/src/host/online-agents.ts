@@ -9,7 +9,7 @@ import type { StartedInstances } from "@ai-npc/kernel";
 import { startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import { agentWorldReaders } from "./agent-world-read";
 import type { HostStartup } from "./startup";
-import { disposeInReverse } from "./dispose";
+import { disposeInReverse, settleWithin } from "./dispose";
 import type { LiveRunState } from "./live-state";
 import type { HostReadPorts } from "./reads";
 
@@ -44,6 +44,14 @@ export class OnlineAgentHost {
     return !this.failed && !(this.branch?.runtime.degraded ?? false);
   }
 
+  /**
+   * 记忆维护队列计数；未启动 Agent 运行时两者都为 0。
+   * `queued` 与 `exhausted` 分开上报，健康摘要不把「不会再被推进」的行计入排队数。
+   */
+  get maintenanceQueue(): { readonly queued: number; readonly exhausted: number } {
+    return this.branch?.runtime.maintenanceQueue ?? { queued: 0, exhausted: 0 };
+  }
+
   switch(): Promise<void> {
     if (this.changing !== null) return this.changing;
     const changing = this.reconcile().finally(() => { this.changing = null; });
@@ -64,14 +72,42 @@ export class OnlineAgentHost {
     this.branch?.runtime.fenceTurns(reason);
   }
 
-  async close(): Promise<void> {
+  /**
+   * 停止新 turn 并等待当前分支的运行时排空；截止时间由关闭编排给出。
+   * 分支切换本身也受同一预算约束：卡住的切换不能把关闭挡在排空之前，
+   * 否则 `drainUntil` 永远不会被调用，关闭重新变成无界等待。
+   */
+  async drain(deadlineMs: number): Promise<void> {
     this.closing = true;
+    const deadlineAt = Date.now() + Math.max(0, deadlineMs);
+    if (this.changing !== null) {
+      const settled = await settleWithin(async () => { await this.changing; }, Math.max(0, deadlineAt - Date.now()));
+      if (settled === "timed-out") {
+        this.options.core.host.logger.warn("Online Agent branch change timed out during shutdown", {
+          branchId: this.options.active.branchId,
+          deadlineMs: Math.max(0, deadlineMs),
+        });
+      }
+    }
+    const remaining = Math.max(0, deadlineAt - Date.now());
+    await this.branch?.runtime.drainUntil(remaining);
+  }
+
+  /**
+   * 释放已装配模块与当前分支的运行时。
+   * 分支切换与运行时释放都受同一预算约束：关闭期间卡住的切换或卡住的 turn 都不能把进程留住。
+   */
+  async close(deadlineMs = 10_000): Promise<void> {
+    this.closing = true;
+    const deadlineAt = Date.now() + Math.max(0, deadlineMs);
     try {
-      await this.changing;
+      if (this.changing !== null) {
+        await settleWithin(async () => { await this.changing; }, Math.max(0, deadlineAt - Date.now()));
+      }
     } finally {
       await disposeInReverse([
         { label: "unused Agent modules", dispose: async () => { await this.initialModules?.started.dispose(); } },
-        { label: "active Agent runtime", dispose: () => this.closeBranch() },
+        { label: "active Agent runtime", dispose: () => this.closeBranch(Math.max(0, deadlineAt - Date.now())) },
       ]);
     }
   }
@@ -87,13 +123,14 @@ export class OnlineAgentHost {
     }
   }
 
-  private async closeBranch(): Promise<void> {
+  /** 释放一个分支的模块与运行时；`deadlineMs` 为 0 表示不做额外等待，直接按关闭语义收尾。 */
+  private async closeBranch(deadlineMs?: number): Promise<void> {
     const branch = this.branch;
     this.branch = null;
     if (branch === null) return;
     await disposeInReverse([
       { label: "run Agent modules", dispose: () => branch.modules.dispose() },
-      { label: "Agent runtime", dispose: () => branch.runtime.dispose() },
+      { label: "Agent runtime", dispose: () => branch.runtime.dispose(deadlineMs) },
     ]);
   }
 

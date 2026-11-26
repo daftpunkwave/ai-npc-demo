@@ -314,11 +314,17 @@ export interface AgentDecisionInput {
   readonly maxToolCallsPerTurn: number;
   readonly maxModelCallsPerTurn: number;
   readonly deadlineMs: number;
+  /**
+   * 本 turn 的取消信号：turn 截止或运行时停止时中止。
+   * 端口实现应把它传给在途网络调用，让宿主放弃等待后底层请求也随之结束；
+   * 不响应它不会改变权威结果（租约与 fencing 仍会拒绝迟到提交），但会在证据里记为未响应取消。
+   */
+  readonly signal: AbortSignal;
 }
 
 export interface DeterministicDecisionInput extends Pick<AgentDecisionInput,
   "session" | "runId" | "turnId" | "attemptId" | "frontier" | "profileHash" | "agentTurnIndex" |
-  "triggers" | "observations" | "memory" | "executeTool" | "deadlineMs"
+  "triggers" | "observations" | "memory" | "executeTool" | "deadlineMs" | "signal"
 > {
   readonly runSeed: string;
   readonly self: {

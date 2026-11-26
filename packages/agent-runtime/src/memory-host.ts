@@ -31,22 +31,7 @@ import {
   type MemoryRecordUseRequest,
 } from "./memory-publication";
 import { MemoryStore, type MemoryWatermark } from "./memory-store";
-
-/** 错误名的短标记上限：错误名是运行期类型名，仅作结构化字段，不承载自由文本。 */
-const maxErrorNameChars = 64;
-
-/** 把错误名收敛成可记录的枚举型短标记；不符合形态时统一记 unknown。 */
-function errorNameToken(error: unknown): string {
-  if (!(error instanceof Error)) return "unknown";
-  const name = error.name;
-  if (name.length === 0 || name.length > maxErrorNameChars) return "unknown";
-  for (const char of name) {
-    const code = char.charCodeAt(0);
-    const isAlnum = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-    if (!isAlnum && char !== "-" && char !== "_" && char !== "." && char !== ":" && char !== "/") return "unknown";
-  }
-  return name;
-}
+import { errorNameToken } from "./runtime-records";
 
 export interface MemoryHostOptions {
   readonly storage: StoragePort;
@@ -157,7 +142,7 @@ export class MemoryHost {
       const agentId = String(claim.row["agent_id"]);
       try {
         if (this.requireWatermark(agentId).observationSeqConsumed < claim.observationSeqThrough) {
-          this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch);
+          this.maintenance.defer(claim.maintenanceId, claim.leaseEpoch, worldTick);
           return;
         }
         await publishMaintenance(agentId, claim, this.publication(agentId, claim, worldTick));
@@ -242,6 +227,14 @@ export class MemoryHost {
 
   watermark(agentId: string): MemoryWatermark {
     return this.requireWatermark(agentId);
+  }
+
+  /**
+   * 维护队列计数：`queued` 为仍会推进的行，`exhausted` 为已达尝试上限、不会再被认领的行。
+   * 供健康摘要分别报告，避免把耗尽任务算进「排队中」。
+   */
+  maintenanceQueue(): { readonly queued: number; readonly exhausted: number } {
+    return this.maintenance.queueSummary();
   }
 
   async dispose(): Promise<void> {

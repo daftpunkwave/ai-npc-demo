@@ -229,7 +229,8 @@ describe("Agent memory host", () => {
       ]);
       expect(host.watermark(memoryAgentId).derivedThroughTick).toBe(0);
       await host.ingestAll(24);
-      await host.runDueMaintenance(24);
+      // 首轮延期把任务重排到下一个逻辑 tick，避免未就绪任务在同一 tick 内被反复认领。
+      await host.runDueMaintenance(25);
       const row = harness.storage.transact((tx) =>
         tx.rows("maintenance_runs").list({ branch_id: memoryBranchId }),
       );
