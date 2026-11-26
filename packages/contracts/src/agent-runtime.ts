@@ -113,6 +113,22 @@ export const agentMemoryQuerySchema = z
 
 export type AgentMemoryQuery = z.infer<typeof agentMemoryQuerySchema>;
 
+/**
+ * 记忆检索预算：由 memory 槽位自己的配置声明，宿主不再反查 context 槽的私有字段。
+ * 上限以 estimate-v1 的 token 口径计量，`maxItems` 是本次检索最多返回的条目数。
+ */
+export const agentMemoryRetrievalBudgetSchema = z
+  .object({
+    maxItems: z.number().int().positive(),
+    maxTokens: z.number().int().positive(),
+  })
+  .strict();
+
+export type AgentMemoryRetrievalBudget = z.infer<typeof agentMemoryRetrievalBudgetSchema>;
+
+/** 未声明检索预算的记忆实现（如无记忆模块）使用的默认上限。 */
+export const memoryRetrievalBudgetDefaults: AgentMemoryRetrievalBudget = { maxItems: 8, maxTokens: 1000 };
+
 export const relationSummarySchema = z
   .object({
     targetId: principalIdSchema,

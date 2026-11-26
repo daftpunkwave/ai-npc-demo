@@ -239,7 +239,7 @@ speech: { maxChars: 80 }        # max characters of one utterance (prompts.md §
 failurePolicy: strict
 slots:
   perception:  { module: agent.perception.local, config: { visibleGraphDepth: 0, extraDelayTicks: { broadcast: 0, directed: 0, briefing: 0 }, maxObservationsPerBatch: 12, retainUncertainCues: true } }
-  memory:      { module: agent.memory.ledger, config: {} }
+  memory:      { module: agent.memory.ledger, config: { retrievalBudget: { maxItems: 8, maxTokens: 1000 } } }
   context:
     module: agent.context.ordered-blocks
     config:

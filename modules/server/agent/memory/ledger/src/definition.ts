@@ -3,7 +3,7 @@
  * 依赖共享契约、描述符校验与 zod；配置默认值随描述符冻结。
  * 禁止在此创建实例、读取存储或执行模型调用。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
+import { agentMemoryRetrievalBudgetSchema, capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
 import { defineModule } from "@ai-npc/module-sdk";
 import { z } from "zod";
 
@@ -26,6 +26,7 @@ export const ledgerRecallConfigSchema = z
 
 export const ledgerConfigSchema = z
   .object({
+    retrievalBudget: agentMemoryRetrievalBudgetSchema,
     capacity: z
       .object({
         short: z.number().int().positive(),
@@ -62,6 +63,7 @@ export const ledgerConfigSchema = z
 export type LedgerConfig = z.infer<typeof ledgerConfigSchema>;
 
 export const ledgerConfigDefaults: LedgerConfig = {
+  retrievalBudget: { maxItems: 8, maxTokens: 1000 },
   capacity: { short: 50, long: 120, core: 30 },
   salienceThresholds: { long: 0.5, short: 0.2 },
   decayBaseTicks: { short: 48, long: 480 },
@@ -81,6 +83,7 @@ export const ledgerConfigDefaults: LedgerConfig = {
 };
 export const streamReflectionConfigSchema = z
   .object({
+    retrievalBudget: agentMemoryRetrievalBudgetSchema,
     capacity: z
       .object({
         stream: z.number().int().positive(),
@@ -116,6 +119,7 @@ export const streamReflectionConfigSchema = z
 export type StreamReflectionConfig = z.infer<typeof streamReflectionConfigSchema>;
 
 export const streamReflectionDefaults: StreamReflectionConfig = {
+  retrievalBudget: { maxItems: 8, maxTokens: 1000 },
   capacity: { stream: 300, reflections: 60 },
   retrieval: {
     topK: 6,
@@ -134,6 +138,7 @@ export const streamReflectionDefaults: StreamReflectionConfig = {
 
 export const layeredHybridConfigSchema = z
   .object({
+    retrievalBudget: agentMemoryRetrievalBudgetSchema,
     capacity: z
       .object({
         short: z.number().int().positive(),
@@ -201,6 +206,7 @@ export const layeredHybridConfigSchema = z
 export type LayeredHybridConfig = z.infer<typeof layeredHybridConfigSchema>;
 
 export const layeredHybridDefaults: LayeredHybridConfig = {
+  retrievalBudget: { maxItems: 8, maxTokens: 1000 },
   capacity: { short: 50, long: 120, core: 30, beliefs: 40, prospectiveActive: 20 },
   salienceThresholds: { long: 0.5, short: 0.2 },
   decayBaseTicks: { short: 48, long: 480 },

@@ -16,6 +16,7 @@ export { layeredHybridConfigSchema, layeredHybridDefaults, type LayeredHybridCon
 /** 去掉混合层专属参数，复用结构化账本的 L1、L2、L4 与每日规则。 */
 export function ledgerConfigFromHybrid(config: LayeredHybridConfig): LedgerConfig {
   return ledgerConfigSchema.parse({
+    retrievalBudget: config.retrievalBudget,
     capacity: {
       short: config.capacity.short,
       long: config.capacity.long,

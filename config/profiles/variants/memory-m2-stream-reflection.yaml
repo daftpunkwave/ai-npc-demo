@@ -7,6 +7,7 @@ patch:
     memory:
       module: agent.memory.stream-reflection
       config:
+        retrievalBudget: { maxItems: 8, maxTokens: 1000 }
         capacity: { stream: 300, reflections: 60 }
         retrieval:
           topK: 6
