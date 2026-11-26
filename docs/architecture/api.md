@@ -14,7 +14,7 @@
 | Origin | HTTP 请求与 WS 握手带 `Origin` 时必须匹配部署的来源白名单，否则返回 403。原生连接可省略此头，仍按 Bearer 会话或一次性票据认证 |
 | 跨域允许面 | 只允许 `GET`、`POST`、`OPTIONS` 与 `Authorization`、`Content-Type`、`X-Active-Role` 三个请求头；会话令牌走请求头而非 Cookie，因此不启用 `credentials` |
 | 安全响应头 | 全部响应带 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY` 与 `Referrer-Policy: same-origin`；`text/html` 文档另带 CSP（`default-src 'self'`、`frame-ancestors 'none'`，不放开内联脚本） |
-| 传输上限 | `requestTimeout` 与 `handlerTimeout` 各 30 秒、socket 空闲 30 秒回收、单连接最多 1000 个请求、请求体上限 1 MiB。`handlerTimeout` 超期返回 500 `plugin-failed` 且 `retryable: true`；它只中止本次响应等待，handler 内已发起的异步工作不会被自动取消。收齐请求头的期限沿用 Node 的 `headersTimeout` 默认值，本服务不另行配置 |
+| 传输上限 | `requestTimeout` 与 `handlerTimeout` 各 30 秒、socket 空闲 30 秒回收、单连接最多 1000 个请求、请求体上限 1 MiB。`handlerTimeout` 超期返回 500 `plugin-failed` 且 `retryable: true`；它只中止本次响应等待，handler 内已发起的异步工作不会被自动取消。收齐请求头的期限（`headersTimeout`）同为 30 秒：它长于请求期限时 Node 会按它中断仍在接收的请求，`requestTimeout` 随之失效，因此不沿用 Node 默认的 60 秒。Node 每 30 秒扫描一次在途请求，实际中断落在期限之后的一个扫描周期内 |
 
 | 幂等 | 世界命令用 `commandId`。时钟、快照、接管等控制操作用请求体里的 `operationId`，重复请求复用已记录的结果 |
 | 并发控制 | 控制操作带 `expectedRunVersion` 或 `expectedEpoch`；不一致返回 409 |

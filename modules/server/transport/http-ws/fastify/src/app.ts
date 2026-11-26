@@ -127,10 +127,17 @@ function registerErrorHandling(
 
 /** 构建服务端应用；调用方负责打开存储、装配模块与启动 worker。 */
 export async function createServerApp(options: ServerAppOptions): Promise<ServerApp> {
+  const timeouts = options.timeouts ?? {};
+  const requestTimeout = timeouts.requestTimeoutMs ?? httpTransportLimits.requestTimeoutMs;
   const app = Fastify({
     logger: false,
-    requestTimeout: httpTransportLimits.requestTimeoutMs,
-    connectionTimeout: httpTransportLimits.connectionTimeoutMs,
+    // 请求头期限与检查周期只能经服务器创建参数传入；请求头期限不长于请求期限，请求期限才按自身取值生效。
+    http: {
+      headersTimeout: Math.min(httpTransportLimits.headersTimeoutMs, requestTimeout),
+      connectionsCheckingInterval: timeouts.connectionsCheckingIntervalMs ?? httpTransportLimits.connectionsCheckingIntervalMs,
+    },
+    requestTimeout,
+    connectionTimeout: timeouts.connectionTimeoutMs ?? httpTransportLimits.connectionTimeoutMs,
     handlerTimeout: httpTransportLimits.handlerTimeoutMs,
     maxRequestsPerSocket: httpTransportLimits.maxRequestsPerSocket,
     bodyLimit: httpTransportLimits.bodyLimitBytes,
