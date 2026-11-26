@@ -1,6 +1,6 @@
 /**
  * 传输层的对外契约：应用选项、应用接口、注入类型与宿主/权限/读端口视图。
- * 依赖公共契约的命令、时钟、投影与会话类型，以及流中心会话与统计类型；不依赖 Fastify。
+ * 依赖公共契约的命令、时钟、投影与会话类型、module-sdk 的权限端口类型，以及流中心会话与统计类型；不依赖 Fastify。
  * 禁止在这里实现路由、访问裁决或会话存储，也不把宿主回调写成需要调用方推断的匿名类型。
  */
 /* eslint-disable no-unused-vars -- 本文件是传输层类型契约，未使用参数只出现在接口方法签名中，名称用于表达调用契约。 */
@@ -47,37 +47,25 @@ import type {
   TurnsResponse,
 } from "@ai-npc/contracts";
 import type { StreamSession, StreamStats } from "../stream-hub";
+import type {
+  AccessAction,
+  AccessDecision,
+  AccessPolicy,
+  AccessRequest,
+} from "@ai-npc/module-sdk";
+
+/**
+ * 权限裁决类型沿用 module-sdk 的端口定义，传输层不另行声明结构。
+ * 两份定义曾经各自演化（传输层把 reason 放宽成 string），
+ * 使替换 provider 或按拒绝原因分支时失去编译期约束；这里只做再导出。
+ */
+export type { AccessAction, AccessDecision, AccessPolicy, AccessRequest };
 
 /** 命令网关视图：传输层只提交已解析的命令信封，不依赖 authority 实现包。 */
 export interface AuthorityPort {
   readonly commands: {
     execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt;
   };
-}
-
-/** 需要裁决的动作：玩家入口、命令、控制台接口、控制台会话握手与 WS 频道。 */
-export type AccessAction = "player" | "command" | "console" | "console-session" | "channel";
-
-/**
- * 权限裁决请求：主体与角色始终来自服务端会话，调用方只补充动作与目标。
- * 结构与 platform.access-policy 端口一致，传输层不依赖具体实现包。
- */
-export interface AccessRequest {
-  readonly principalId: string;
-  readonly role: string;
-  readonly action: AccessAction;
-  readonly commandType?: string;
-  readonly channel?: string;
-}
-
-export interface AccessDecision {
-  readonly allowed: boolean;
-  readonly reason: string;
-}
-
-/** 权限端口最小视图；角色白名单由装配的 provider 维护，传输层不内置。 */
-export interface AccessPolicy {
-  authorize(request: AccessRequest): AccessDecision;
 }
 
 /** 存档服务在传输层使用的最小视图；具体实现由宿主组合根绑定。 */
