@@ -97,14 +97,58 @@ describe("控制台研究接口", () => {
     expect(second.statusCode).toBe(429);
   });
 
-  it("内容接口不受限流影响", async () => {
-    const host = await testHost();
+  it("内容接口同样受会话配额约束，不再是无配额的裸读入口", async () => {
+    const host = await testHost({ read: 3, write: 100_000 });
     const session = await login(host, "research-player");
     const auth = { Authorization: `Bearer ${session}` };
-    // 内容是廉价读且位于 /api/v1/ 之外的路由分组；连续请求都应成功。
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    // 内容接口是已鉴权读入口，与其它读接口同一套配额；阈值调低后必须真的被拒，
+    // 而不是靠「前缀不在钩子判定范围内」侥幸通过。
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       const content = await host.app.inject({ method: "GET", url: "/api/v1/content", headers: auth });
-      expect(content.statusCode, `content 第 ${attempt} 次`).toBe(200);
+      statuses.push(content.statusCode);
+    }
+    expect(statuses.slice(0, 3)).toEqual([200, 200, 200]);
+    expect(statuses[3]).toBe(429);
+  });
+
+  it("玩家写入口使用写阈值：命令提交比读入口更早被拒", async () => {
+    const host = await testHost({ read: 100_000, write: 2 });
+    const session = await login(host, "research-player");
+    const headers = { Authorization: `Bearer ${session}` };
+    const receipts = () =>
+      host.storage.transact((tx) => tx.branch(host.branchId).table("command_receipts").list());
+    const before = receipts();
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const response = await host.app.inject({
+        method: "POST",
+        url: "/api/v1/commands",
+        headers,
+        payload: {
+          commandId: `cmd-${String(attempt).padStart(12, "0")}`,
+          type: "campaign.start",
+          schemaVersion: 1,
+          payload: {},
+        },
+      });
+      statuses.push(response.statusCode);
+    }
+
+    // 前两次进入业务处理（未必被接受，但不再是被限流拦下），之后必须是 429。
+    expect(statuses.slice(0, 2).every((status) => status !== 429)).toBe(true);
+    expect(statuses.slice(2)).toEqual([429, 429]);
+    // 被限流的请求不产生回执：限流在业务处理之前生效。
+    expect(receipts()).toHaveLength(before.length + statuses.filter((status) => status === 200).length);
+  });
+
+  it("健康检查不参与请求次数限流，探活不会把自己限死", async () => {
+    const host = await testHost({ read: 1, write: 1 });
+    // 健康检查无鉴权且供探活高频调用；把它纳入限流会让探活本身成为故障源。
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await host.app.inject({ method: "GET", url: "/api/v1/health" });
+      expect(response.statusCode, `health 第 ${attempt} 次`).toBe(200);
     }
   });
 

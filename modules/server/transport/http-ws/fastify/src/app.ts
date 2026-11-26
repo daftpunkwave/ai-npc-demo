@@ -107,6 +107,23 @@ const corsAllowedHeaders = ["authorization", "content-type", "x-active-role"] as
 /** 实际使用的 HTTP 方法：路由只有查询与命令提交两类，预检需要 OPTIONS。 */
 const corsAllowedMethods = ["GET", "POST", "OPTIONS"] as const;
 
+/**
+ * 不参与请求次数限流的路径：健康检查与 WebSocket 升级。
+ *
+ * 健康检查无鉴权且供探活高频调用，限流会让探活本身变成故障源；
+ * WebSocket 升级是长连接，请求次数不代表资源占用，由心跳与连接上限约束。
+ * 其余路径一律限流——用豁免清单而不是白名单，新增路由默认受保护，
+ * 遗漏只会表现为「本可以更宽松」，而不是「本应受保护却裸露」。
+ */
+function isRateLimitExempt(url: string): boolean {
+  return url === "/api/v1/health" || url === "/api/v1/streams";
+}
+
+/** 需要限流的路由：除豁免清单外的全部 API 路径。 */
+function isRateLimitedRoute(url: string): boolean {
+  return url.startsWith("/api/v1/") && !isRateLimitExempt(url);
+}
+
 
 /** ws 在接收帧超过 maxPayload 时抛出带该稳定错误码的 RangeError，并自行以 1009 发起关闭。 */
 function isWebSocketPayloadTooLarge(error: unknown): boolean {
@@ -229,17 +246,32 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     return payload;
   });
-  // 控制台研究/评估接口与登录入口按路由声明配额：读接口 60 次/10 秒、写接口 10 次/10 秒。
-  // 阈值可经 options.rateLimits 覆盖；其他既有路由的限流治理另见跟踪 Issue。
+  /**
+   * 速率限制按路由声明配额，读接口与写接口使用不同阈值。
+   *
+   * 判定分三类，逐路由在 `onRoute` 阶段决定，而不是在各路由注册器里各写一份：
+   * - 写入口（命令、票据、登录、运营变更）：阈值显著低于读入口，这些路径会推进世界状态或消耗会话资源；
+   * - 读入口（会话、内容、投影、回执、会话对白）：按会话主体的稳定窗口配额；
+   * - 不参与限流：健康检查（无鉴权、供探活高频调用）与 WebSocket 升级（连接期内由心跳与连接上限约束）。
+   *
+   * 阈值可经 options.rateLimits 覆盖；分组覆盖项缺省时沿用同一分组的默认阈值，
+   * 避免出现「覆盖了读阈值但写阈值突然变成 0」这类静默失效。
+   */
   const rateLimitFor = (method: string): number =>
     method === "GET" || method === "HEAD"
       ? (options.rateLimits?.read ?? 60)
       : (options.rateLimits?.write ?? 10);
   app.addHook("onRoute", (route) => {
     const url = route.url;
-    const limited = url.startsWith("/api/v1/console") || url === "/api/v1/auth/login";
-    if (!limited) return;
     const methods = Array.isArray(route.method) ? route.method : [route.method];
+    // WebSocket 升级不是可重复的请求-响应交互：连接生命周期内由心跳与连接上限约束，
+    // 按请求次数限流只会在重连抖动时误伤正常恢复。
+    if (route.websocket === true) {
+      return;
+    }
+    if (!isRateLimitedRoute(url)) {
+      return;
+    }
     const write = methods.some((method) => method !== "GET" && method !== "HEAD");
     route.config = {
       ...route.config,
