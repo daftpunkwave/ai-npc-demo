@@ -151,4 +151,5 @@ export const contentIdSchema = z.union([
   secretIdSchema,
   scenarioCardIdSchema,
   sourceIdSchema,
+  probeIdSchema,
 ]);
