@@ -383,4 +383,49 @@ describe("确定性 Agent turn", () => {
     expect(answerTurn).toMatchObject({ status: "completed" });
     expect(readDecision(host, answerTurn)).toMatchObject({ stance, dialogueIntent: { reasonCode: reason } });
   });
+
+  it("认领失败的 turn 落终态并释放触发，不再占用并发名额", async () => {
+    const host = await hostWithAgents();
+    const submit = player();
+    submit(host, "campaign.start", { factionId: "human-neutral" });
+    clock(host, 0, "paused");
+    const queuedId = "turn-000000000001";
+    // 直接写入一个触发绑定已损坏的 queued turn：认领时的 `consumed_by_turn_id` 校验必然失败，
+    // 属不可恢复输入，不需要先制造真实对话。
+    host.storage.transact((tx) => {
+      const branch = tx.branch(host.branchId);
+      const lease = branch.table("controller_leases").get({ agent_id: target });
+      const runId = tx.rows("branches").get({ branch_id: host.branchId })?.["run_id"];
+      if (lease === null || typeof runId !== "string") throw new Error("Missing test Agent lease or run");
+      const triggerId = "trg-000000000001";
+      branch.table("triggers").put({
+        trigger_id: triggerId, agent_id: target, kind: "player-dialogue", priority: 10,
+        source_ref: "evt-000000000001", created_tick: 0, dedupe_key: "dialogue:test",
+        consumed_by_turn_id: "turn-000000000002",
+      });
+      tx.rows("turn_runs").put({
+        turn_id: queuedId, branch_id: host.branchId, run_id: runId, agent_id: target,
+        agent_turn_index: 1, status: "queued", trigger_ids_json: [triggerId],
+        input_frontier_json: null, memory_revision: null, profile_hash: "pending",
+        controller_epoch: Number(lease["controller_epoch"]), turn_lease_epoch: 0, lease_expires_at: null,
+        terminal_reason: null, effective_json: [], created_at: "2026-01-01T00:00:00.000Z", created_tick: 0,
+        started_at: null, ended_at: null,
+      });
+    });
+    clock(host, 0, "running");
+    const failed = await vi.waitFor(() => {
+      const row = host.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: queuedId }));
+      expect(row?.["status"]).toBe("failed");
+      return row;
+    }, { timeout: 8000, interval: 25 });
+    expect(failed).toMatchObject({ status: "failed", terminal_reason: "turn-claim-failed", lease_expires_at: null });
+    expect(failed?.["ended_at"]).toEqual(expect.any(String));
+    // 该行已是终态：后续轮次不得把它重新放回调度，并发名额因此不再被永久占用。
+    clock(host, 1, "running");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(host.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: queuedId })))
+      .toMatchObject({ status: "failed", terminal_reason: "turn-claim-failed" });
+    expect(turns(host).filter((row) => row["turn_id"] === queuedId)).toHaveLength(1);
+    expect(turns(host).filter((row) => row["turn_id"] === queuedId)[0]).toMatchObject({ turn_lease_epoch: 0 });
+  });
 });

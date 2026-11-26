@@ -4,7 +4,7 @@
  * 等待和策略计算在事务外进行。旧租约、暂停和接管不得发布结果。
  */
 import {
-  canonicalJson, toModelToolName,
+  canonicalJson, DomainError, toModelToolName,
   type AgentTurnStatus, type AuthContext, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall,
 } from "@ai-npc/contracts";
 import type { ResolvedAgentProfile } from "@ai-npc/experiment";
@@ -20,11 +20,11 @@ import type { MemoryHost } from "./memory-host";
 import { ModelTurn, type ModelTurnPorts } from "./model-turn";
 import { decisionSubmitTool } from "./model-turn-materials";
 import type { AgentRuntimeOptions } from "./runtime";
-import { asRecord } from "./runtime-records";
+import { asRecord, errorNameToken } from "./runtime-records";
 import { ToolGateway, type ToolCallOutcome, type ToolCatalogPort } from "./tool-gateway";
 import { TurnEvidence, type StageSelection, type TurnSpan } from "./turn-evidence";
 import { freezeTurnInput, type ReadTurnWorld } from "./turn-input";
-import { TurnLeases, TurnStopped, type ClaimedTurn } from "./turn-lease";
+import { TurnLeases, TurnStopped, failClaim, type ClaimedTurn } from "./turn-lease";
 import { checkedDecision, probeQuestion, prospectiveInputs, speechInput, turnMemoryQuery } from "./turn-materials";
 import { turnQueries } from "./turn-queries";
 import { disclosedTurnReceipts } from "./turn-speech-receipts";
@@ -122,6 +122,31 @@ export class TurnWorker {
     if (failure !== undefined) throw failure;
   }
 
+  /**
+   * 认领 turn：把 claim 期间抛出的异常转为该 turn 的终态。
+   * claim 在事务内读取时钟、触发绑定与租约代次，任何一处损坏都会抛错；若让它冒泡，
+   * 该行会停在 `queued` 且租约为空，恢复路径与调度都不会再推进它，于是每轮重复认领并永久占用并发名额。
+   * 因此这里按原因落终态，并把失败交给调用方统一记日志。
+   */
+  private claim(turnId: string, agentId: string, profileHash: string, profile: ResolvedAgentProfile): ClaimedTurn | null {
+    try {
+      return this.leases.claim(turnId, { ...this.runtime, profileHash, maxTurnMs: profile.budgets.maxTurnMs });
+    } catch (error) {
+      const reason = error instanceof TurnStopped ? error.reason : "turn-claim-failed";
+      const failed = failClaim(this.runtime.storage, turnId, reason, this.runtime.host.nowIso());
+      this.runtime.host.logger.error("Agent turn claim failed", {
+        turnId,
+        agentId,
+        reason,
+        // 只记错误类型与领域错误码，不写可能含观察正文的原始消息。
+        errorCode: error instanceof DomainError ? error.code : errorNameToken(error),
+        terminal: failed,
+      });
+      this.runtime.onStateChange?.();
+      return null;
+    }
+  }
+
   private async createSlot<Port>(agentId: string, selected: ResolvedAgentProfile["slots"]["decision"], ports = this.execution.ports) {
     const definition = selected === undefined ? undefined : this.runtime.moduleDefinitions.get(selected.module);
     if (selected === undefined || definition === undefined) throw new Error(`Unresolved turn module for ${agentId}`);
@@ -140,7 +165,7 @@ export class TurnWorker {
     const ports = this.ports.get(agentId);
     if (profileHash === undefined || ports === undefined) throw new Error(`Turn modules missing for ${agentId}`);
     const claimStarted = host.monotonicMs();
-    const turn = this.leases.claim(turnId, { ...this.runtime, profileHash, maxTurnMs: profile.budgets.maxTurnMs });
+    const turn = this.claim(turnId, agentId, profileHash, profile);
     if (turn === null) return;
     const evidence = new TurnEvidence(storage, host, turn, this.execution.recordSpan);
     try {
