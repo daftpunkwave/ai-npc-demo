@@ -88,9 +88,15 @@ export function registerCampaignOperations(
   /**
    * 推送投影变化；业务操作已经提交时，推送失败只安全上报并触发快照重建，
    * 不把成功结果改写成 HTTP 错误，也不让回调自身的异常冒泡。
+   * 同时把「世界已变化」交给宿主回调，玩家命令与 tick 推进共用同一条通知路径。
    */
   const publishProjection = (): void => {
     hub.publishWithResync(context.reportInternalError);
+    try {
+      options.onWorldCommitted?.();
+    } catch (error) {
+      context.reportInternalError("世界变化通知失败", error);
+    }
   };
 
   /** 认证并执行入口守卫；返回 null 表示已写入错误响应。 */

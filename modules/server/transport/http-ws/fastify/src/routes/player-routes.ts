@@ -13,6 +13,7 @@ import {
 import {
   authenticate,
   conversationQueryOf,
+  notifyWorldCommitted,
   defaultConversationLimit,
   readPlayerConversation,
   requireCommand,
@@ -46,7 +47,7 @@ export function registerPlayerRoutes(context: RouteContext): void {
       return;
     }
     const receipt = commandReceiptSchema.parse(options.authority.commands.execute(session.auth, envelope.data));
-    hub.publishWithResync(context.reportInternalError);
+    notifyWorldCommitted(context);
     return receipt;
   });
 

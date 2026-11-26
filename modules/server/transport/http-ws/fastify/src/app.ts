@@ -597,6 +597,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     inject,
     // tick 推进与断线自动暂停都会调用这里；推送失败不能反过来中断世界或打崩进程。
     notifyWorldChanged: () => {
+      // 先通知订阅者再推送：订阅者（Agent 运行时）的重跑与快照推送互相独立，
+      // 推送失败只影响推送自身，不会让世界变化信号丢失。
+      try {
+        options.onWorldCommitted?.();
+      } catch (error) {
+        report("世界变化通知失败", error);
+      }
       hub.publishWithResync(report);
       // 时间线快照的构建包含两笔事务与上百条事件的解析排序，先确认有人订阅再算，
       // 否则控制台未打开时每次世界变化都要为无人接收的数据付费。

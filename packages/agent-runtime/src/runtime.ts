@@ -1,6 +1,7 @@
 /**
  * 协调感知消费、延迟发布、租约恢复与 turn 创建。
  * 依赖存储、HostServices、内容包、Agent profile、感知模块与调度端口。
+ * 轮询节奏由世界 tick 变化与宿主唤醒信号驱动；空闲轮退避到有上限的巡检间隔。
  * 禁止在事务内等待模型、执行世界命令或复制第二套 turn loop。
  */
 import type { HostServices, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
@@ -10,7 +11,7 @@ import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";
 import { AgentModuleHandle } from "./agent-module-handle";
-import { cycleBackoffMs } from "./runtime-backoff";
+import { cycleBackoffMs, idleDelayMs } from "./runtime-backoff";
 import { TurnScheduler } from "./turn-scheduler";
 import { TurnWorker, type TurnExecutionOptions } from "./turn-worker";
 
@@ -106,6 +107,10 @@ export class AgentRuntime {
   private running = false;
   private stopped = false;
   private consecutiveFailures = 0;
+  /** 连续空闲轮数：世界 tick 没有变化也没有唤醒信号时按指数退避，避免固定高频轮询。 */
+  private idleCycles = 0;
+  /** 上一轮观察到的世界 tick；变化即代表世界已推进，需要重新摄入与调度。 */
+  private lastObservedTick: number | null = null;
   private consumer: PerceptionEventConsumer | null = null;
   private memory: MemoryHost | null = null;
   private scheduler: TurnScheduler | null = null;
@@ -306,13 +311,43 @@ export class AgentRuntime {
 
   private schedule(): void {
     if (!this.running || this.stopped) return;
+    // 唤醒信号可能在一轮进行中多次到达：先清掉待触发的计时器，保证同一时刻只有一个调度在等。
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
     this.timer = setTimeout(() => {
       // 失败已经由 recordCycleFailure 按轮数分级记录，这里只需吞掉 rejection 以免变成未处理异常。
       void this.runTrackedCycle()
         .catch(() => undefined)
         .finally(() => this.schedule());
-    }, cycleBackoffMs(this.consecutiveFailures));
+    }, this.nextDelayMs());
     this.timer.unref();
+  }
+
+  /**
+   * 下一轮延迟：失败退避优先；空闲轮按指数退避到巡检上限，只有世界 tick 变化或收到唤醒信号才提前重跑。
+   * 世界每 tick 20 秒推进一次，固定 250 毫秒轮询会把「世界没变化」放大成约 80 倍的空转事务。
+   */
+  private nextDelayMs(): number {
+    if (this.consecutiveFailures > 0) return cycleBackoffMs(this.consecutiveFailures);
+    return idleDelayMs(this.idleCycles + 1);
+  }
+
+  /**
+   * 收到「世界可能已变化」的信号：重置空闲计数并立即推进一轮。
+   * 已在运行中的轮次会被 runTrackedCycle 复用，不产生并发；停止后忽略信号。
+   */
+  notifyWorldChanged(): void {
+    this.idleCycles = 0;
+    if (!this.running || this.stopped) return;
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    void this.runTrackedCycle()
+      .catch(() => undefined)
+      .finally(() => this.schedule());
   }
 
   private runTrackedCycle(): Promise<void> {
@@ -336,6 +371,20 @@ export class AgentRuntime {
     if (this.consecutiveFailures === 0) return;
     this.consecutiveFailures = 0;
     this.options.host.logger.info("Agent runtime recovered", { consecutiveFailures: 0 });
+  }
+
+  /**
+   * 本轮是否只是空转：世界 tick 未变化且没有新的调度产出。
+   * 空转轮只推进退避计数，不改变失败计数，也不产生额外日志。
+   */
+  private recordIdle(worldTick: number, scheduled: number): void {
+    const advanced = this.lastObservedTick !== null && worldTick !== this.lastObservedTick;
+    this.lastObservedTick = worldTick;
+    if (advanced || scheduled > 0) {
+      this.idleCycles = 0;
+      return;
+    }
+    this.idleCycles += 1;
   }
 
   /**
@@ -399,6 +448,7 @@ export class AgentRuntime {
         }
       });
     }
+    this.recordIdle(tick, scheduled.length);
     if (scheduled.length > 0) this.options.onStateChange?.();
     const failure = cycleFailure(failures);
     if (failure !== null) throw failure;

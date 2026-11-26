@@ -730,3 +730,37 @@ describe("Agent runtime 持久状态", () => {
       tx.branch("br-000000000001").table("triggers").list({ agent_id: "human-independent" }))).toHaveLength(1);
   });
 });
+/**
+ * 运行时轮询节奏：空闲轮退避到巡检上限，世界变化信号立即重跑一轮。
+ * 覆盖固定 250 毫秒轮询把「世界没变化」放大成高频事务的问题。
+ */
+describe("Agent runtime 轮询节奏", () => {
+  it("世界变化信号会在后台立即重跑一轮，而不是等下一次空闲巡检", async () => {
+    const value = await fixture();
+    const runtime = await runtimeWithRealPerception(value);
+    try {
+      const offsets = (): unknown => value.storage.transact((tx) =>
+        tx.branch("br-000000000001").table("consumer_offsets").get({ consumer_id: "agent.perception.local" }));
+      expect(offsets()).toBeNull();
+      value.storage.transact((tx) => {
+        tx.branch("br-000000000001").table("domain_events").put(summonEvent(1, "evt-000000000012"));
+      });
+      runtime.notifyWorldChanged();
+      await waitFor(() => offsets() !== null);
+      expect(value.storage.transact((tx) =>
+        tx.branch("br-000000000001").table("triggers").list({ agent_id: "human-independent" }))).toHaveLength(1);
+    } finally {
+      await runtime.dispose();
+      resources.pop();
+    }
+  });
+});
+
+/** 轮询等待：只用于观察异步后台轮次是否已提交，不做时序假设。 */
+async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("等待后台轮询超时");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}

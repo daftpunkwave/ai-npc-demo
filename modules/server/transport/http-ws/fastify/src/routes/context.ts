@@ -45,6 +45,19 @@ function decisionOutcome(
   };
 }
 
+/**
+ * 命令或运营操作提交成功后通知世界变化：推送订阅者，并把信号交给宿主回调。
+ * 玩家命令与 tick 推进走同一条通知路径，否则依赖该信号的订阅者只能等下一次巡检。
+ */
+export function notifyWorldCommitted(context: RouteContext): void {
+  context.hub.publishWithResync(context.reportInternalError);
+  try {
+    context.options.onWorldCommitted?.();
+  } catch (error) {
+    context.reportInternalError("世界变化通知失败", error);
+  }
+}
+
 /** 路由共享的在线入口：分支在恢复或重开后由流中心同步更新。 */
 export interface OnlineBranch {
   branchId: string;

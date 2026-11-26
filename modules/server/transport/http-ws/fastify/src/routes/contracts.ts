@@ -360,6 +360,11 @@ export interface ServerAppOptions {
   readonly tokens: TokenIssuer;
   readonly allowedOrigins?: readonly string[];
   readonly onBranchChanged?: BranchChangedHook;
+  /**
+   * 世界可能已变化时回调：宿主在此把「有新提交」的信号交给订阅者（例如 Agent 运行时）。
+   * 与 {@link ServerApp.notifyWorldChanged} 分开，因为后者还负责向控制台推送时间线。
+   */
+  readonly onWorldCommitted?: () => void;
   /** 玩家 WS 连接数变化；宿主据此在全部玩家断线超时后自动暂停。 */
   readonly onPlayerConnectionsChanged?: (connected: number) => void;
   /**

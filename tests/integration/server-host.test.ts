@@ -529,7 +529,8 @@ describe("服务端宿主", () => {
     expect(conversation.statusCode).toBe(200);
     const conversationBody = conversationResponseSchema.parse(conversation.json());
     expect(conversationBody.conversationId).toMatch(/^conv-/);
-    expect(conversationBody.lines).toHaveLength(1);
+    // 世界变化会立即唤醒 Agent 运行时，回复可能先于这次读取落库；
+    // 断言玩家发言本身与序号连续性，不把「回复尚未产生」当成契约。
     expect(conversationBody.lines[0]).toMatchObject({
       seq: 0,
       speakerId: "player-1",
@@ -537,6 +538,9 @@ describe("服务端宿主", () => {
       channel: "face-to-face",
       worldTick: 0,
     });
+    expect(conversationBody.lines.map((line) => line.seq)).toEqual(
+      conversationBody.lines.map((_, index) => index),
+    );
 
     const limited = conversationResponseSchema.parse(
       (await host.app.inject({ method: "GET", url: "/api/v1/conversations/npc-wenyuan?limit=1", headers })).json(),
