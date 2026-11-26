@@ -148,7 +148,9 @@ export async function executeCommandTool(
   }
   try {
     if (binding.toolId === "message.send") {
-      return await executeMessageTool(deps, input, binding, definition, argsHash, args, current, operationId, commandId);
+      return await executeMessageTool(deps, {
+        input, binding, definition, argsHash, args, current, operationId, commandId,
+      });
     }
     if (resolvedCommand === null) {
       return deps.settleError(input, binding, argsHash, "invalid-params", "Command resolution failed.", current);
@@ -171,18 +173,24 @@ export async function executeCommandTool(
   }
 }
 
+/** 已认领的工具调用：命令分支把解析出的身份一并以本对象传递，避免逐个透传参数。 */
+interface ClaimedCall {
+  readonly input: ToolCallExecutionInput;
+  readonly binding: ToolBinding;
+  readonly definition: ToolDefinition;
+  readonly argsHash: string;
+  readonly args: Json;
+  readonly current: ToolCallIdentity;
+  readonly operationId: string;
+  readonly commandId: string;
+}
+
 /** 对白消息效果：复用已提交的 receipt，未提交时调用注入的消息执行器。 */
 async function executeMessageTool(
   deps: ToolExecutionDeps,
-  input: ToolCallExecutionInput,
-  binding: ToolBinding,
-  definition: ToolDefinition,
-  argsHash: string,
-  args: Json,
-  current: ToolCallIdentity,
-  operationId: string,
-  commandId: string,
+  call: ClaimedCall,
 ): Promise<ToolCallOutcome> {
+  const { input, binding, definition, argsHash, args, current, operationId, commandId } = call;
   if (deps.executeMessage === undefined) {
     return deps.settleError(input, binding, argsHash, "execution-failed", "Message dialogue executor is not configured.", current, operationId);
   }
