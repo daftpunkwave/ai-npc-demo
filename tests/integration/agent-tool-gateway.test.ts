@@ -473,6 +473,36 @@ describe("Tool view and gateway", () => {
     expect(gateway.resultMessages(outcomes).filter((message) => message.role === "tool").map((message) => message.toolCallId)).toEqual(["provider-call-a", "provider-call-b"]);
   });
 
+  it("查询执行器收到的是剔除 null 可选字段后的参数", async () => {
+    // 上层用「字段是否存在」区分「调用方没给」与「显式给 null」，因此 null 可选字段
+    // 不能进入查询执行器；否则缺省与显式 null 会被压成同一种语义。
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let received: Record<string, unknown> | null = null;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => receipt(harness.host, envelope),
+      executeQuery: ({ arguments: queryArguments }) => {
+        received = queryArguments as Record<string, unknown>;
+        return { ok: true };
+      },
+    });
+    await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-null-fields",
+      wireName: "world_inspect",
+      arguments: { nodeId: null },
+      argumentsRaw: "{}",
+    });
+    expect(received).not.toBeNull();
+    expect(received).not.toHaveProperty("nodeId");
+  });
+
   it("重复、缺失和多余 callId 的配对会失败", () => {
     const call: NormalizedToolCall = {
       id: "provider-call-a",

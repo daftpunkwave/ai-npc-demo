@@ -63,102 +63,18 @@ export type {
   TokenIssuer,
 } from "./routes/contracts";
 
-/**
- * 客户端 WS 帧上限：客户端只发送 subscribe/ack/ping，公共 schema 不含文本载荷，
- * 合法帧只有数百字节；64 KiB 为后续可选字段留出余量，同时避免超长帧占用接收缓冲。
- */
-const maxWebSocketPayloadBytes = 64 * 1024;
-
-/**
- * HTTP 时间与连接维度上限。Fastify 默认把这些值设为 0（不限），
- * 本服务要求局部阻塞不扩散为整机不可用，因此逐项显式声明并写明依据。
- * 导出供测试锁定取值，避免后续重构把它们删回框架默认。
- */
-export const httpTransportLimits = {
-  /**
-   * 单请求处理上限：最长合法请求是开局与恢复类命令、配置提交，正常远低于 1 秒。
-   * 30 秒给慢磁盘与高负载留出余量，同时让慢速发送请求体与卡死的 handler 被打断。
-   */
-  requestTimeoutMs: 30_000,
-  /**
-   * socket 空闲上限：底层落到 `server.setTimeout()`（Node 的 socket 空闲超时），
-   * 连接在该时长内没有任何读写活动即被关闭。它不约束「收齐请求头」——
-   * 那由 Node 的 `headersTimeout` 管辖且 Fastify 未暴露为选项，本服务沿用其默认值。
-   * 此处取值目的是让停在半开状态上的连接最终被回收。
-   */
-  connectionTimeoutMs: 30_000,
-  /** handler 执行上限：与请求上限对齐，超时交错误处理器返回 plugin-failed。 */
-  handlerTimeoutMs: 30_000,
-  /**
-   * 单连接请求数上限：本地单玩家场景一个连接远达不到该数量；
-   * 设上限是为了让长连接不能无限复用，避免 keep-alive 连接永不释放。
-   */
-  maxRequestsPerSocket: 1_000,
-  /** 请求体上限：最长的命令与配置提交小于 1 MiB，显式写出以免被误当成可随意放宽。 */
-  bodyLimitBytes: 1024 * 1024,
-} as const;
-
-/**
- * 浏览器可发送的请求头白名单。会话令牌走 Authorization 头而非 Cookie，
- * 控制台角色由 X-Active-Role 声明；其余头不进入跨域允许面。
- */
-const corsAllowedHeaders = ["authorization", "content-type", "x-active-role"] as const;
-
-/** 实际使用的 HTTP 方法：路由只有查询与命令提交两类，预检需要 OPTIONS。 */
-const corsAllowedMethods = ["GET", "POST", "OPTIONS"] as const;
-
-/**
- * 不参与请求次数限流的路径：健康检查与 WebSocket 升级。
- *
- * 健康检查无鉴权且供探活高频调用，限流会让探活本身变成故障源；
- * WebSocket 升级是长连接，请求次数不代表资源占用，由心跳与连接上限约束。
- * 其余路径一律限流——用豁免清单而不是白名单，新增路由默认受保护，
- * 遗漏只会表现为「本可以更宽松」，而不是「本应受保护却裸露」。
- */
-function isRateLimitExempt(url: string): boolean {
-  return url === "/api/v1/health" || url === "/api/v1/streams";
-}
-
-/** 需要限流的路由：除豁免清单外的全部 API 路径。 */
-function isRateLimitedRoute(url: string): boolean {
-  return url.startsWith("/api/v1/") && !isRateLimitExempt(url);
-}
-
-/** 从 Authorization 头取 Bearer 令牌；非该形态一律视为未提供。 */
-function bearerToken(header: string | undefined): string | null {
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) {
-    return null;
-  }
-  return header.slice("Bearer ".length);
-}
-
-
-/** ws 在接收帧超过 maxPayload 时抛出带该稳定错误码的 RangeError，并自行以 1009 发起关闭。 */
-function isWebSocketPayloadTooLarge(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { readonly code?: unknown }).code === "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
-  );
-}
-
-/**
- * 框架级请求超时错误码。Fastify 在 handlerTimeout 触发时抛出该错误，
- * 语义是「本次请求未在期限内完成」，不是服务端缺陷，因此按可重试处理。
- */
-const fastifyHandlerTimeoutCode = "FST_ERR_HANDLER_TIMEOUT";
-
-/**
- * 判定框架请求超时错误。只按稳定错误码判断，不匹配错误文案，
- * 以免框架调整措辞后分类失效。
- */
-function isHandlerTimeoutError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { readonly code?: unknown }).code === fastifyHandlerTimeoutCode
-  );
-}
+import {
+  bearerToken,
+  corsAllowedHeaders,
+  corsAllowedMethods,
+  httpTransportLimits,
+  isHandlerTimeoutError,
+  isRateLimitedRoute,
+  registerRateLimits,
+  isWebSocketPayloadTooLarge,
+  maxWebSocketPayloadBytes,
+} from "./transport-limits";
+export { httpTransportLimits } from "./transport-limits";
 
 /**
  * 统一错误出口：领域错误按自身 code/retryable 映射；请求体解析错误为 400 validation；
@@ -254,82 +170,20 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     }
     return payload;
   });
-  /**
-   * 速率限制按路由声明配额，读接口与写接口使用不同阈值。
-   *
-   * 判定分三类，逐路由在 `onRoute` 阶段决定，而不是在各路由注册器里各写一份：
-   * - 写入口（命令、票据、登录、运营变更）：阈值显著低于读入口，这些路径会推进世界状态或消耗会话资源；
-   * - 读入口（会话、内容、投影、回执、会话对白）：按会话主体的稳定窗口配额；
-   * - 不参与限流：健康检查（无鉴权、供探活高频调用）与 WebSocket 升级（连接期内由心跳与连接上限约束）。
-   *
-   * 阈值可经 options.rateLimits 覆盖；分组覆盖项缺省时沿用同一分组的默认阈值，
-   * 避免出现「覆盖了读阈值但写阈值突然变成 0」这类静默失效。
-   */
-  const rateLimitFor = (method: string): number =>
-    method === "GET" || method === "HEAD"
-      ? (options.rateLimits?.read ?? 60)
-      : (options.rateLimits?.write ?? 10);
-  // 配额键要按已验证的会话主体计，而流中心在本函数后半段才创建。
-  // 这里用一个读取器推迟取值：键生成发生在请求处理期，届时 hub 必然已就绪。
+  // 限流键按已认证会话主体分桶；hub 建立前恒为 null，此时全部归入未认证桶。
   let sessionHub: StreamHub | null = null;
-  const sessionTokenIdentity = (header: string | undefined): string | null => {
-    if (sessionHub === null) {
+  const principalOfSession = (header: string | undefined): string | null => {
+    const hub: StreamHub | null = sessionHub;
+    if (hub === null) {
       return null;
     }
     const token = bearerToken(header);
-    if (token === null) {
-      return null;
-    }
-    // 只返回已验证会话的主体：未认证或过期时返回 null，交给 IP 桶。
-    return sessionHub.authenticate(token)?.auth.principalId ?? null;
+    return token === null ? null : (hub.authenticate(token)?.auth.principalId ?? null);
   };
-  app.addHook("onRoute", (route) => {
-    const url = route.url;
-    const methods = Array.isArray(route.method) ? route.method : [route.method];
-    // WebSocket 升级不是可重复的请求-响应交互：连接生命周期内由心跳与连接上限约束，
-    // 按请求次数限流只会在重连抖动时误伤正常恢复。
-    if (route.websocket === true) {
-      return;
-    }
-    if (!isRateLimitedRoute(url)) {
-      return;
-    }
-    const write = methods.some((method) => method !== "GET" && method !== "HEAD");
-    route.config = {
-      ...route.config,
-      rateLimit: { max: rateLimitFor(write ? "POST" : "GET"), timeWindow: "10 seconds" },
-    };
-  });
-  await app.register(rateLimit, {
-    global: false,
-    max: options.rateLimits?.read ?? 60,
-    timeWindow: "10 seconds",
-    /**
-     * 配额键必须只由服务端能验证的事实构成。
-     *
-     * 旧实现直接取 `Authorization` 头的后 24 个字符。该值在认证之前完全由请求方控制：
-     * 每次换一个无效令牌就能落到新的计数器上，反复发送无效会话的请求永远不会被限流。
-     * 正确做法是先用流中心的会话表验证令牌，只有已验证的会话才按主体计配额——
-     * 此时 `principalId` 由服务端会话给出，伪造令牌换不到新桶。
-     *
-     * 未认证请求（缺失令牌、令牌无效、会话过期）统一落到 IP 桶：
-     * 它们的共同特征是「服务端无法确认调用方是谁」，因此只能按来源地址收敛。
-     */
-    keyGenerator: (request) => {
-      const principalId = sessionTokenIdentity(request.headers.authorization);
-      return principalId === null ? `ip:${request.ip}` : `cred:${principalId}`;
-    },
-    errorResponseBuilder: (_request, context) => ({
-      // 与项目统一错误格式一致：429 走 budget-exhausted，并带 retryAfter 秒数。
-      statusCode: 429,
-      error: {
-        code: "budget-exhausted",
-        retryable: true,
-        safeMessage: `请求过于频繁，请等待 ${Math.ceil(context.ttl / 1000)} 秒`,
-        traceId: null,
-        detailsArtifactRef: null,
-      },
-    }),
+  await registerRateLimits(app, rateLimit, {
+    ...(options.rateLimits?.read === undefined ? {} : { readLimit: options.rateLimits.read }),
+    ...(options.rateLimits?.write === undefined ? {} : { writeLimit: options.rateLimits.write }),
+    sessionPrincipalOf: (header) => principalOfSession(header),
   });
   await app.register(websocket, {
     options: { maxPayload: maxWebSocketPayloadBytes },
@@ -450,18 +304,13 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       ? {}
       : { onPlayerConnectionsChanged: options.onPlayerConnectionsChanged }),
     ...(options.maxSessions === undefined ? {} : { maxSessions: options.maxSessions }),
-    ...(options.heartbeatIntervalMs === undefined
-      ? {}
-      : { heartbeatIntervalMs: options.heartbeatIntervalMs }),
-    ...(options.heartbeatTimeoutMs === undefined
-      ? {}
-      : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
     onBranchChanged: (nextBranchId) => {
       branch.branchId = nextBranchId;
       options.onBranchChanged?.(nextBranchId);
     },
   });
   hub.setBranch(branch.branchId);
+  sessionHub = hub;
   /**
    * 健康摘要定时广播：只在确有订阅者时构造。
    * health() 每次要跑两笔事务并重建模块清单，没有控制台页面打开时这份构造完全无人接收，
@@ -547,9 +396,6 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
   registerConsoleEvaluationRoutes(context);
   registerConsoleOperationsRoutes(context);
   registerErrorHandling(app, report, notFound);
-
-  // 限流键需要按已验证会话的主体生成，hub 在此时才存在；接上后所有请求都能取到主体。
-  sessionHub = hub;
 
   /** 最小接口的监听与关闭由传输适配器实现，宿主不接触具体框架类型。 */
   const listen = async (listenOptions: { readonly host: string; readonly port: number }): Promise<void> => {

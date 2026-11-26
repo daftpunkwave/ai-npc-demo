@@ -9,29 +9,18 @@ import { resolve } from "node:path";
 import {
   assemblyDescriptorSchema,
   type AssemblyDescriptor,
-  type HostServices,
   type Json,
   type ModuleDefinition,
-  type ResolvedModuleSet,
   type StoragePort,
 } from "@ai-npc/contracts";
 import {
+  createConfigDocumentCache,
   loadContentPack,
-  loadRoster,
-  loadRunSpec,
-  runSpecSchema,
-  validateRoster,
-  validateRunSpec,
   type ConfigLoadContext,
-  type ContentPack,
-  type RunSpec,
 } from "@ai-npc/experiment";
-import { startInstances, type StartedInstances } from "@ai-npc/kernel";
-import { computeCatalogHash, createModuleRegistry } from "@ai-npc/kernel";
-import type { GameClockPort, GameContent } from "@ai-npc/module-sdk";
+import { startInstances } from "@ai-npc/kernel";
 import { assertDistinctTokens } from "../config";
-import { canonicalHasher, createHostServices } from "../host-services";
-import { resolveAgentConfiguration, type AgentConfiguration } from "./agent-configuration";
+import { createHostServices } from "../host-services";
 import { agentRunModuleIds, startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import {
   filterPlan,
@@ -41,10 +30,10 @@ import {
   resolveSessionAssemblies,
   type ResolvedServerAssembly,
 } from "./assembly";
-import { disposeInReverse } from "./dispose";
-import { resolveFrozenAssembly } from "./frozen-assembly";
-import { buildRunManifest, readFrozenManifest, type RunManifest } from "./manifest";
-import { usesFixtureModelTransport } from "./model-configuration";
+import { assertStorageCompatible, readOnlineEntry } from "./online-entry";
+import type { HostOptions } from "./options";
+import { restoreOnlineAliasToSourceBranch } from "./run-migration";
+import { resolveModuleAdminCatalog } from "./module-admin-catalog";
 import {
   createServerRuntime,
   parseTransportConfig,
@@ -52,72 +41,27 @@ import {
   allModuleDefinitions,
   serverModuleDefinitions,
   toGameContent,
-  type ServerRuntime,
 } from "./module-catalog";
-import { generateRunSeed } from "./random";
-import { assertStorageCompatible, contentVersionMismatch, readOnlineEntry, type OnlineEntry } from "./online-entry";
-import type { HostOptions } from "./options";
-import {
-  assertMigrationScopeIsCapabilityClosure,
-  migrateOnlineRun,
-  migrationSummary,
-  OnlineRunMigrationRequiredError,
-  restoreOnlineAliasToSourceBranch,
-} from "./run-migration";
+import { prepareFirstRun } from "./startup-first-run";
+import { resumeRun } from "./startup-resume";
+import { StartupResources } from "./startup-resources";
+import type {
+  ActiveRunState,
+  HostStartup,
+  PendingFirstRun,
+  ResumedRunState,
+  SessionAssemblies,
+} from "./startup-types";
 
-/** 本次启动实际使用的世界、装配、RunSpec 与冻结 manifest。 */
-export interface ActiveRunState {
-  readonly worldId: string;
-  readonly branchId: string;
-  readonly assembly: AssemblyDescriptor;
-  readonly resolved: ResolvedServerAssembly;
-  readonly runSpec: RunSpec;
-  readonly manifest: RunManifest;
-  readonly manifestHash: string;
-  readonly agents: AgentConfiguration | null;
-}
-
-/** 恢复或重开后的活动 run 与启动计划；执行迁移时携带源分支标识与原状态供失败补偿。 */
-export interface ResumedRunState {
-  readonly active: ActiveRunState;
-  readonly startup: ResolvedServerAssembly;
-  readonly migratedFromBranchId?: string;
-  /** 迁移前的源分支状态；有 migratedFromBranchId 时必定给出，补偿时原样写回。 */
-  readonly migratedSourceBranchStatus?: "active" | "paused";
-}
-
-/** 首次启动的待提交状态；时钟 provider 启动后再在同一事务内写入在线世界与初始时钟行。 */
-export interface PendingFirstRun {
-  readonly active: ActiveRunState;
-  commit(clock: GameClockPort): void;
-}
-
-/** 浏览器 realm 的会话装配；未接线时由传输层按资源不存在处理。 */
-export interface SessionAssemblies {
-  readonly client: ResolvedModuleSet;
-  readonly console: ResolvedModuleSet;
-}
-
-/** 启动完成后的宿主启动聚合：已启动实例、运行期端口与冻结的在线 run。 */
-export interface HostStartup {
-  readonly host: HostServices;
-  readonly storage: StoragePort;
-  readonly storageStarted: StartedInstances;
-  readonly startedModules: StartedInstances;
-  readonly initialAgentModules: AgentRunModules | null;
-  readonly runtime: ServerRuntime;
-  readonly content: ContentPack;
-  readonly gameContent: GameContent;
-  readonly packId: string;
-  readonly contentVersion: string;
-  readonly loadContext: ConfigLoadContext;
-  readonly active: ActiveRunState;
-  readonly activeStartup: ResolvedServerAssembly;
-  readonly sessionAssembly: SessionAssemblies;
-}
+export type {
+  ActiveRunState,
+  HostStartup,
+  PendingFirstRun,
+  ResumedRunState,
+  SessionAssemblies,
+} from "./startup-types";
 
 const defaultPackId = "earth-2964-v1";
-const defaultRunSpecRef = "online-default";
 const defaultAssemblyRef = "local-slg-standard-v1";
 const defaultRosterRef = "standard-15";
 
@@ -142,12 +86,14 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   const definitions: readonly ModuleDefinition[] = options.moduleDefinitions ?? serverModuleDefinitions;
   const packId = options.packId ?? defaultPackId;
   const configDir = resolve(options.configRoot ?? "config");
-  const loadContext: ConfigLoadContext = { configDir, env: process.env };
+  const loadContext: ConfigLoadContext = { configDir, env: process.env, cache: createConfigDocumentCache() };
+  // 装配目录与当前装配在本函数内被反复使用：整份目录只读一次，当前装配复用同一份解析结果。
+  const assemblies = loadAssemblies();
   const content = loadContentPack(options.contentRoot ?? resolve(process.cwd(), "content"), packId);
   const gameContent = toGameContent(content);
   const contentVersion = content.pack.contentVersion;
   const requestedAssembly = options.assembly === undefined
-    ? loadAssembly(options.assemblyRef ?? defaultAssemblyRef)
+    ? loadAssembly(options.assemblyRef ?? defaultAssemblyRef, process.cwd(), assemblies)
     : assemblyDescriptorSchema.parse(options.assembly);
   const transportConfig = parseTransportConfig({
     host: options.transportHost ?? "127.0.0.1",
@@ -180,219 +126,46 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     throw new Error("存储模块没有暴露 StoragePort");
   }
 
-  /** 首次启动：用当前启动选择生成新 RunSpec、随机 seed 与冻结 manifest；提交函数在时钟 provider 启动后写入在线世界。 */
-  const prepareFirstRun = async (): Promise<PendingFirstRun> => {
-    const roster = loadRoster(options.rosterRef ?? defaultRosterRef, loadContext);
-    validateRoster(roster.value, content);
-    const runSpecRef = options.runSpecRef ?? (usesFixtureModelTransport(requestedResolved.plan) ? "online-model-test" : defaultRunSpecRef);
-    const loaded = loadRunSpec(runSpecRef, loadContext, {
-      seed: generateRunSeed(),
-      moduleAssemblyRef: requestedAssembly.assemblyId,
-      worldPackRef: packId,
-      rosterRef: roster.value.rosterId,
-      ...(options.modelLayoutRef === undefined ? {} : { modelLayoutRef: options.modelLayoutRef }),
-    });
-    validateRunSpec(loaded.value, content, roster);
-    const agents = await resolveAgentConfiguration({
-      assembly: requestedResolved, roster: roster.value, runSpec: loaded.value, loadContext, definitions, content,
-    });
-    const sealed = await buildRunManifest({
-      runSpec: loaded.value,
-      content: { packId, contentVersion },
-      roster: roster.value,
-      resolved: requestedResolved,
-      ...(agents === null ? {} : { agentProfiles: agents.manifest }),
-      ...(agents?.models ? { models: agents.models.manifest } : {}),
-    });
-    const worldId = host.ids("wld");
-    const branchId = host.ids("br");
-    const runId = host.ids("run");
-    const createdAt = host.nowIso();
-    return {
-      active: {
-        worldId,
-        branchId,
-        assembly: requestedAssembly,
-        resolved: requestedResolved,
-        runSpec: loaded.value,
-        manifest: sealed.manifest,
-        manifestHash: sealed.manifestHash,
-        agents,
-      },
-      commit: (clock) => {
-        storage.transact((tx) => {
-          tx.rows("worlds").put({
-            world_id: worldId,
-            pack_id: packId,
-            content_version: contentVersion,
-            created_at: createdAt,
-          });
-          tx.rows("branches").put({
-            branch_id: branchId,
-            world_id: worldId,
-            kind: "online",
-            status: "active",
-            parent_branch_id: null,
-            forked_at_world_seq: null,
-            run_id: runId,
-            profile_hash: null,
-            created_at: createdAt,
-          });
-          tx.rows("runs").put({
-            run_id: runId,
-            world_id: worldId,
-            branch_id: branchId,
-            mode: "live",
-            status: "running",
-            run_spec_json: loaded.value,
-            manifest_json: sealed.manifest as unknown as Json,
-            manifest_hash: sealed.manifestHash,
-            contaminated: 0,
-            evidence_complete: 1,
-            created_at: createdAt,
-            started_at: createdAt,
-            ended_at: null,
-          });
-          // 初始时钟行由 provider 自己的有效配置写入，宿主不解析或构造 clock 行。
-          clock.initializeInTransaction(tx, branchId);
-          tx.rows("world_aliases").put({ alias: "online", branch_id: branchId, updated_at: createdAt });
-        });
-      },
-    };
-  };
-
-  /** 重启：沿用在线别名指向的分支与已冻结 run，不复用当前入参重建 RunSpec。 */
-  const resumeRun = async (online: OnlineEntry): Promise<ResumedRunState> => {
-    // 本次启动执行迁移时记录源分支与其原状态；宿主启动失败时按它恢复在线入口。
-    let migratedSourceBranchId: string | null = null;
-    let migratedSourceBranchStatus: "active" | "paused" | null = null;
-    const run = online.run;
-    const parsed = runSpecSchema.safeParse(run["run_spec_json"]);
-    if (!parsed.success) {
-      throw new Error(`在线 run 的 RunSpec 无法解析：${parsed.error.issues.map((issue) => issue.message).join("；")}`);
-    }
-    const frozenSpec = parsed.data;
-    const manifestValue = run["manifest_json"];
-    if (manifestValue === null || manifestValue === undefined || manifestValue instanceof Uint8Array) {
-      throw new Error("在线 run 缺少冻结 manifest（旧版本数据），拒绝按当前入参重建");
-    }
-    const facts = readFrozenManifest(manifestValue);
-    if (facts.seed !== frozenSpec.seed) {
-      throw new Error("冻结 manifest 的 seed 与 RunSpec 不一致");
-    }
-    if (facts.moduleAssemblyRef !== frozenSpec.moduleAssemblyRef) {
-      throw new Error("冻结 manifest 的装配引用与 RunSpec 不一致");
-    }
-    if (facts.rosterRef !== frozenSpec.rosterRef) {
-      throw new Error("冻结 manifest 的名册引用与 RunSpec 不一致");
-    }
-    if (facts.packId !== packId) {
-      throw new Error(`内容包不一致：在线 run 冻结「${facts.packId}」，当前内容包「${packId}」；拒绝启动`);
-    }
-    if (facts.contentVersion !== contentVersion) {
-      throw contentVersionMismatch(facts.contentVersion, contentVersion, "在线 run");
-    }
-    const worldRow = storage.transact((tx) => tx.rows("worlds").get({ world_id: online.worldId }));
-    if (worldRow === null) {
-      throw new Error(`在线分支引用的 world ${online.worldId} 不存在`);
-    }
-    if (worldRow["pack_id"] !== packId) {
-      throw new Error(`内容包不一致：在线世界「${String(worldRow["pack_id"])}」，当前内容包「${packId}」；拒绝启动`);
-    }
-    const worldVersion = typeof worldRow["content_version"] === "string" ? worldRow["content_version"] : "";
-    if (worldVersion !== contentVersion) {
-      throw contentVersionMismatch(worldVersion, contentVersion, "在线世界");
-    }
-    const storedHash = typeof run["manifest_hash"] === "string" ? run["manifest_hash"] : "";
-    if (storedHash.length === 0) throw new Error("在线 run 缺少 manifest_hash，拒绝按当前入参重建");
-    if (await host.hash(manifestValue as Json) !== storedHash) {
-      throw new Error("冻结 manifest 内容与 manifest_hash 不一致：运行记录被修改");
-    }
-    const currentAssembly = loadAssembly(frozenSpec.moduleAssemblyRef);
-    const compatible = await resolveFrozenAssembly(currentAssembly, definitions, facts);
-    const { assembly } = compatible;
-    const roster = loadRoster(frozenSpec.rosterRef, loadContext);
-    validateRoster(roster.value, content);
-    validateRunSpec(frozenSpec, content, roster);
-    const resolved = await resolveServerAssembly(assembly, compatible.definitions, { content });
-    const startup = await resolveServerAssembly(assembly, compatible.definitions, { configOverrides: deploymentOverrides, content });
-    const agents = await resolveAgentConfiguration({
-      assembly: resolved, roster: roster.value, runSpec: frozenSpec, loadContext, definitions: compatible.definitions,
-      content, legacyDecision: compatible.legacyDecision,
-    });
-    const rebuilt = await buildRunManifest({
-      runSpec: frozenSpec,
-      content: { packId, contentVersion },
-      roster: roster.value,
-      resolved,
-      ...(agents === null ? {} : { agentProfiles: agents.manifest }),
-      ...(agents?.models ? { models: agents.models.manifest } : {}),
-    });
-    if (rebuilt.manifestHash !== storedHash) {
-      // 冻结 manifest 与当前解析结果不一致时，只有装配能力闭包差异（模块绑定集与摘要）允许显式迁移；
-      // seed、RunSpec 选择、内容、名册或 Agent 配置任一差异都意味着这不是升级，拒绝迁移保持拒绝启动。
-      assertMigrationScopeIsCapabilityClosure(manifestValue, rebuilt.manifest);
-      const migrationInput = {
-        storage,
-        host,
-        online,
-        runSpec: frozenSpec as unknown as Json,
-        manifest: rebuilt.manifest,
-        manifestHash: rebuilt.manifestHash,
-      };
-      if (options.migrateOnlineRun !== true) {
-        throw new OnlineRunMigrationRequiredError({
-          runId: online.runId,
-          branchId: online.branchId,
-          detail: `冻结 manifest_hash「${storedHash}」，按当前装配与模块目录复算为「${rebuilt.manifestHash}」`,
-        });
-      }
-      const migrated = migrateOnlineRun(migrationInput);
-      migratedSourceBranchId = online.branchId;
-      migratedSourceBranchStatus = migrated.sourceBranchStatus;
-      host.logger.info(migrationSummary(migrationInput, migrated));
-      return {
-        active: {
-          worldId: online.worldId,
-          branchId: migrated.branchId,
-          assembly,
-          resolved,
-          runSpec: frozenSpec,
-          manifest: rebuilt.manifest,
-          manifestHash: rebuilt.manifestHash,
-          agents,
-        },
-        startup,
-        migratedFromBranchId: migratedSourceBranchId,
-        migratedSourceBranchStatus: migratedSourceBranchStatus ?? undefined,
-      };
-    }
-    return {
-      active: {
-        worldId: online.worldId,
-        branchId: online.branchId,
-        assembly,
-        resolved,
-        runSpec: frozenSpec,
-        manifest: rebuilt.manifest,
-        manifestHash: storedHash,
-        agents,
-      },
-      startup,
-    };
+  const firstRunInput = {
+    host,
+    storage,
+    definitions,
+    content,
+    contentVersion,
+    packId,
+    loadContext,
+    requestedAssembly,
+    requestedResolved,
+    rosterRef: options.rosterRef ?? defaultRosterRef,
+    runSpecRef: options.runSpecRef,
+    modelLayoutRef: options.modelLayoutRef,
+  } satisfies Parameters<typeof prepareFirstRun>[0];
+  const resumeInput = {
+    host,
+    storage,
+    definitions,
+    content,
+    contentVersion,
+    packId,
+    loadContext,
+    assemblies,
+    deploymentOverrides,
+    migrateOnlineRun: options.migrateOnlineRun === true,
   };
 
   // 启动失败路径都以异常结束，因此正常走到这里时五种状态必然已赋值；activeStarted 保留可空用于失败清理。
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，把 StartedInstances 判为 any。
-  let activeStarted: StartedInstances | null = null;
+  let activeStarted: Awaited<ReturnType<typeof startInstances>> | null = null;
   let initialAgentModules: AgentRunModules | null = null;
-  let serverRuntime: ServerRuntime;
+  let serverRuntime: ReturnType<typeof createServerRuntime>;
   let sessionAssemblies: SessionAssemblies;
   let active: ActiveRunState;
   let activeStartup: ResolvedServerAssembly;
   // 本次启动若执行了迁移，记录源分支与其原状态；后续启动失败时按它恢复在线入口，避免失败后别名悬在新 run 上。
-  let migratedSourceBranchId: string | null = null;
-  let migratedSourceBranchStatus: "active" | "paused" | null = null;
+  let migrated: ResumedRunState | null = null;
+  // 逆序清理链在一处完整表达：资源在取得处登记，失败与后续关闭复用同一份清单。
+  const resources = new StartupResources();
+  resources.track("storage", () => storageStarted.dispose());
   try {
     const online = storage.transact(readOnlineEntry);
 
@@ -400,15 +173,14 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     let startup: ResolvedServerAssembly;
     let pendingFirstRun: PendingFirstRun | null = null;
     if (online === null) {
-      pendingFirstRun = await prepareFirstRun();
+      pendingFirstRun = await prepareFirstRun(firstRunInput);
       chosen = pendingFirstRun.active;
       startup = requestedStartup;
     } else {
-      const resumed = await resumeRun(online);
+      const resumed = await resumeRun({ ...resumeInput, online });
       chosen = resumed.active;
       startup = resumed.startup;
-      migratedSourceBranchId = resumed.migratedFromBranchId ?? null;
-      migratedSourceBranchStatus = resumed.migratedSourceBranchStatus ?? null;
+      migrated = resumed;
     }
     assertStorageCompatible(startup.plan, requestedStartup.plan, storageModuleId);
     activeStartup = startup;
@@ -422,6 +194,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
       signal,
       running: storageStarted.instances,
     });
+    resources.track("started modules", () => activeStarted?.dispose() ?? Promise.resolve());
     serverRuntime = createServerRuntime({
       plan: startup.plan,
       instances: [...storageStarted.instances, ...activeStarted.instances],
@@ -429,35 +202,13 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
       host,
     });
     sessionAssemblies = await resolveSessionAssemblies(chosen.assembly, allModuleDefinitions);
-    const moduleRegistry = createModuleRegistry();
-    for (const definition of allModuleDefinitions) {
-      moduleRegistry.register(definition);
-    }
-    const catalogHash = await computeCatalogHash(moduleRegistry.snapshot(), canonicalHasher);
-    const adminAssemblies = [];
-    for (const assembly of loadAssemblies()) {
-      const server = await resolveServerAssembly(assembly, serverModuleDefinitions, { content });
-      const browser = await resolveSessionAssemblies(assembly, allModuleDefinitions);
-      adminAssemblies.push({
-        source: "repo" as const,
-        descriptor: assembly,
-        resolved: {
-          server: server.modules,
-          client: browser.client,
-          console: browser.console,
-        },
-      });
-    }
-    serverRuntime.moduleAdmin.bind({
-      catalogHash,
-      definitions: allModuleDefinitions,
-      assemblies: adminAssemblies,
-    });
+    serverRuntime.moduleAdmin.bind(await resolveModuleAdminCatalog({ assemblies, content }));
     if (chosen.agents !== null) {
       initialAgentModules = await startAgentRunModules({
         plan: startup.plan, configuration: chosen.agents, content, host, scope: { worldId: chosen.worldId, branchId: chosen.branchId },
         running: [...storageStarted.instances, ...activeStarted.instances],
       });
+      resources.track("run Agent modules", () => initialAgentModules?.started.dispose() ?? Promise.resolve());
     }
     if (pendingFirstRun !== null) {
       // 世界、分支、run、别名与初始时钟行在同一事务提交，时钟配置来自 provider。
@@ -473,35 +224,10 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   } catch (error) {
     // 迁移已提交但启动失败：先把在线别名与源分支状态恢复到迁移前，源 run/分支回到可重启状态；
     // 迁移产生的新分支与新 run 留存为孤儿记录。补偿失败只记日志，不掩盖原始启动错误。
-    if (migratedSourceBranchId !== null) {
-      // 源分支状态在迁移结果里给出；缺失说明迁移记录不完整，宁可保留原错误也不猜一个状态写回。
-      if (migratedSourceBranchStatus === null) {
-        host.logger.error("启动失败后缺少迁移源分支状态，跳过在线入口补偿", {
-          branchId: migratedSourceBranchId,
-        });
-      } else {
-        try {
-          restoreOnlineAliasToSourceBranch(storage, host.nowIso(), migratedSourceBranchId, migratedSourceBranchStatus);
-          host.logger.info(`启动失败后已恢复在线入口到源分支 ${migratedSourceBranchId}`);
-        } catch (compensationError) {
-          host.logger.error("启动失败后恢复在线入口失败", {
-            message: compensationError instanceof Error ? compensationError.message : String(compensationError),
-          });
-        }
-      }
-    }
-    // 启动失败时逆序释放已创建实例；清理失败只记日志，保留原始启动错误。
+    restoreMigratedAlias(migrated, storage, host);
+    // 启动失败时逆序释放已登记资源；清理失败只记日志，保留原始启动错误。
     try {
-      await disposeInReverse([
-        { label: "storage", dispose: () => storageStarted.dispose() },
-        {
-          label: "started modules",
-          dispose: async () => {
-            await activeStarted?.dispose();
-          },
-        },
-        { label: "run Agent modules", dispose: async () => { await initialAgentModules?.started.dispose(); } },
-      ]);
+      await resources.releaseAll();
     } catch (cleanupError) {
       host.logger.error("启动失败后的清理未全部完成", {
         message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
@@ -510,12 +236,12 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     throw error;
   }
   // 最后一道运行时防线：类型上均已赋值，避免将来重构漏赋值后静默返回未初始化状态。
-  const runtimeState: readonly unknown[] = [activeStarted, serverRuntime, sessionAssemblies, active, activeStartup];
-  if (runtimeState.some((value) => value === null || value === undefined)) {
-    await disposeInReverse([{ label: "storage", dispose: () => storageStarted.dispose() }]);
+  if ([activeStarted, sessionAssemblies, active, activeStartup, serverRuntime].some((value) => value === undefined)) {
+    await resources.releaseAll();
     throw new Error("宿主运行时未初始化");
   }
-  return {    host,
+  return {
+    host,
     storage,
     storageStarted,
     startedModules: activeStarted,
@@ -530,4 +256,31 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     activeStartup,
     sessionAssembly: sessionAssemblies,
   };
+}
+
+/**
+ * 启动失败后撤销迁移：把在线别名与源分支状态恢复到迁移前，
+ * 让源 run 与分支回到可重启状态；迁移产生的新分支与新 run 留存为孤儿记录。
+ */
+function restoreMigratedAlias(
+  migrated: ResumedRunState | null,
+  storage: StoragePort,
+  host: ReturnType<typeof createHostServices>,
+): void {
+  if (migrated?.migratedFromBranchId === undefined) return;
+  const branchId = migrated.migratedFromBranchId;
+  const status = migrated.migratedSourceBranchStatus;
+  // 源分支状态在迁移结果里给出；缺失说明迁移记录不完整，宁可保留原错误也不猜一个状态写回。
+  if (status === undefined) {
+    host.logger.error("启动失败后缺少迁移源分支状态，跳过在线入口补偿", { branchId });
+    return;
+  }
+  try {
+    restoreOnlineAliasToSourceBranch(storage, host.nowIso(), branchId, status);
+    host.logger.info(`启动失败后已恢复在线入口到源分支 ${branchId}`);
+  } catch (compensationError) {
+    host.logger.error("启动失败后恢复在线入口失败", {
+      message: compensationError instanceof Error ? compensationError.message : String(compensationError),
+    });
+  }
 }

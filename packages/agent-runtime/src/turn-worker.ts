@@ -8,12 +8,11 @@ import {
   type AgentTurnStatus, type AuthContext, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall,
 } from "@ai-npc/contracts";
 import type { ResolvedAgentProfile } from "@ai-npc/experiment";
-import {
-  agentModelPoolCapability, bindAgentModelRoutes,
-  type AgentDecisionPort, type AgentToolViewPort, type AgentContextPort, type AgentCompressionPort,
-  type DeterministicDecisionInput, type ModelDecisionPort, type RunModelPort,
+import type {
+  AgentDecisionPort,
+  DeterministicDecisionInput,
+  RunModelPort,
 } from "@ai-npc/module-sdk";
-import { AgentModuleHandle } from "./agent-module-handle";
 import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
 import { DialogueFlow, messageIntentFromArguments, type SpeechApprovalIndex, type SpeechApprovalInput } from "./dialogue-flow";
 import type { MemoryHost } from "./memory-host";
@@ -25,6 +24,7 @@ import { ToolGateway, type ToolCallOutcome, type ToolCatalogPort } from "./tool-
 import { TurnEvidence, type StageSelection, type TurnSpan } from "./turn-evidence";
 import { freezeTurnInput, type ReadTurnWorld } from "./turn-input";
 import { TurnLeases, TurnStopped, failClaim, type ClaimedTurn } from "./turn-lease";
+import { TurnSlotAssembly, deterministicDecisionPort } from "./turn-worker-assembly";
 import { checkedDecision, probeQuestion, prospectiveInputs, speechInput, turnMemoryQuery } from "./turn-materials";
 import { turnQueries } from "./turn-queries";
 import { disclosedTurnReceipts } from "./turn-speech-receipts";
@@ -45,24 +45,9 @@ export interface TurnExecutionOptions {
 /** 关闭时等待在途 turn 的默认上限；与租约期限解耦，避免关闭被单个卡住的 turn 无限拖住。 */
 const turnDisposeDeadlineMs = 10_000;
 
-/** 每 Agent 已装配的 turn 模块端口：model 为模型路径端口组，deterministicDecision 为未挂模型池时的确定性决策端口，二者互斥。 */
-type TurnPorts = { readonly toolView: AgentToolViewPort } & (
-  { readonly model: ModelTurnPorts; readonly deterministicDecision: null } |
-  { readonly model: null; readonly deterministicDecision: AgentDecisionPort<DeterministicDecisionInput> }
-);
-
-/** 确定性决策端口仅在未挂模型路径的装配下存在；越界访问说明装配与运行时模型配置不一致，显式失败并给出主体上下文。 */
-function deterministicDecisionPort(ports: TurnPorts, agentId: string): AgentDecisionPort<DeterministicDecisionInput> {
-  if (ports.model !== null || ports.deterministicDecision === null) {
-    throw new Error(`Deterministic decision port missing for ${agentId}`);
-  }
-  return ports.deterministicDecision;
-}
-
 export class TurnWorker {
-  private readonly ports = new Map<string, TurnPorts>();
-  private readonly disposables: { dispose(): Promise<void> }[] = [];
   private readonly running = new Set<Promise<void>>();
+  private readonly assembly: TurnSlotAssembly;
   private readonly leases: TurnLeases;
   private readonly artifacts: StoredAgentArtifactStore;
   private readonly dialogue: DialogueFlow;
@@ -74,34 +59,15 @@ export class TurnWorker {
     private readonly signal: AbortSignal,
   ) {
     const { content, host, storage } = runtime;
+    this.assembly = new TurnSlotAssembly(runtime, execution, signal);
     this.leases = new TurnLeases(storage, host, signal);
     this.artifacts = new StoredAgentArtifactStore(storage, host);
     this.dialogue = new DialogueFlow({ host, content, artifacts: this.artifacts, approvals: execution.approvals });
   }
 
+  /** 装配每个 Agent 的 turn 模块；失败即整体启动失败，由宿主统一处理。 */
   async start(): Promise<void> {
-    for (const agent of this.runtime.roster.agents) {
-      const profile = this.requireProfile(agent.agentId);
-      if (!this.execution.profileHashes.has(agent.agentId)) throw new Error(`Missing profile hash for ${agent.agentId}`);
-      const { agentId } = agent;
-      const { slots } = profile;
-      const toolView = (await this.createSlot<AgentToolViewPort>(agentId, slots.toolView)).port;
-      const definition = this.runtime.moduleDefinitions.get(slots.decision?.module ?? "");
-      if (definition?.requires.some(({ capability }) => capability === agentModelPoolCapability)) {
-        const pool = this.execution.model;
-        if (pool == null) throw new Error(`No scoped model pool for ${agentId}`);
-        const decision = (await this.createSlot<ModelDecisionPort>(agentId, slots.decision, {
-          ...this.execution.ports,
-          [agentModelPoolCapability]: bindAgentModelRoutes(pool, agentId),
-        })).port;
-        const context = (await this.createSlot<AgentContextPort>(agentId, slots.context)).port;
-        const compression = (await this.createSlot<AgentCompressionPort>(agentId, slots.compression)).port;
-        this.ports.set(agentId, { deterministicDecision: null, toolView, model: { decision, context, compression } });
-      } else {
-        const decision = (await this.createSlot<AgentDecisionPort<DeterministicDecisionInput>>(agentId, slots.decision)).port;
-        this.ports.set(agentId, { deterministicDecision: decision, toolView, model: null });
-      }
-    }
+    await this.assembly.start();
   }
 
   dispatch(turnId: string, agentId: string): void {
@@ -119,15 +85,7 @@ export class TurnWorker {
    */
   async dispose(deadlineMs = turnDisposeDeadlineMs): Promise<void> {
     await this.settleRunning(deadlineMs);
-    let failure: unknown;
-    for (const handle of this.disposables.splice(0).reverse()) {
-      try {
-        await handle.dispose();
-      } catch (error) {
-        failure ??= error;
-      }
-    }
-    if (failure !== undefined) throw failure;
+    await this.assembly.dispose();
   }
 
   /**
@@ -193,22 +151,12 @@ export class TurnWorker {
     return signal;
   }
 
-  private async createSlot<Port>(agentId: string, selected: ResolvedAgentProfile["slots"]["decision"], ports = this.execution.ports) {
-    const definition = selected === undefined ? undefined : this.runtime.moduleDefinitions.get(selected.module);
-    if (selected === undefined || definition === undefined) throw new Error(`Unresolved turn module for ${agentId}`);
-    const handle = await AgentModuleHandle.create<Port>({
-      ...this.runtime, agentId, moduleId: selected.module, config: selected.config, definition,
-      ports, signal: this.signal,
-    });
-    this.disposables.push(handle);
-    return handle;
-  }
 
   private async run(turnId: string, agentId: string): Promise<void> {
     const { storage, host, content } = this.runtime;
     const profile = this.requireProfile(agentId);
     const profileHash = this.execution.profileHashes.get(agentId);
-    const ports = this.ports.get(agentId);
+    const ports = this.assembly.port(agentId);
     if (profileHash === undefined || ports === undefined) throw new Error(`Turn modules missing for ${agentId}`);
     const claimStarted = host.monotonicMs();
     const turn = this.claim(turnId, agentId, profileHash, profile);

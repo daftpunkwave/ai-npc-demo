@@ -36,6 +36,7 @@ export type {
 } from "./content/schema/index";
 export {
   loadConfigDocument,
+  createConfigDocumentCache,
   loadRoster,
   loadRunSpec,
   resolveConfigReference,
@@ -43,6 +44,7 @@ export {
   validateRunSpec,
 } from "./config/load-config";
 export type {
+  ConfigDocumentCache,
   ConfigDraftKind,
   ConfigDraftReader,
   ConfigLoadContext,

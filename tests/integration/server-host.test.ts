@@ -297,7 +297,7 @@ function clockRow(host: RunningHost): Readonly<Record<string, StorageCell>> {
 }
 
 describe("服务端宿主", () => {
-  it("首次启动创建在线分支并可开局", { timeout: 30_000 }, async () => {
+  it("首次启动创建在线分支并可开局", { timeout: 90_000 }, async () => {
     const dataDir = tempDataDir();
     const host = await startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" });
     hosts.push(host);

@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   LoadingError,
   applyProfilePatch,
+  createConfigDocumentCache,
   loadAgentProfile,
   loadAgentToolset,
   loadConfigDocument,
@@ -165,6 +166,29 @@ describe("配置加载", () => {
       const fromDraft = loadConfigDocument("sample-run", runSpecSchema, { configDir: tempDir, drafts }, "profile");
       expect(fromDraft.value.id).toBe("from-draft");
       expect(fromDraft.source).toBe("draft:profile:sample-run");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("同一上下文内的文档缓存复用解析结果，新上下文重新读取磁盘", () => {
+    const tempDir = makeTempConfigDir();
+    try {
+      const rostersDir = join(tempDir, "rosters");
+      mkdirSync(rostersDir, { recursive: true });
+      const rosterPath = join(rostersDir, "sample-roster.yaml");
+      writeFileSync(rosterPath, rosterYaml("sample-roster"), "utf8");
+      const first = loadRoster("sample-roster", { configDir: tempDir, cache: createConfigDocumentCache() });
+      expect(first.value.rosterId).toBe("sample-roster");
+
+      // 同一缓存内改写磁盘不应被观察：缓存的生命周期与一次启动/预检绑定，不能跨请求复用。
+      const cache = createConfigDocumentCache();
+      loadRoster("sample-roster", { configDir: tempDir, cache });
+      writeFileSync(rosterPath, rosterYaml("stale-roster"), "utf8");
+      expect(loadRoster("sample-roster", { configDir: tempDir, cache }).value.rosterId).toBe("sample-roster");
+
+      // 新建上下文必须重新读取：配置变更在下一轮装配立即生效，不会被缓存掩盖。
+      expect(captureLoadingError(() => loadRoster("sample-roster", { configDir: tempDir })).path).toBe("rosterId");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

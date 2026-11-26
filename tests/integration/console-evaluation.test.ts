@@ -1043,6 +1043,61 @@ describe("控制台评估读取接口", () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it("两个实验共享同一 seed 时仍各自归组，不按 seed 合并", async () => {
+    const host = await testHost();
+    // 同一 seed 字符串下登记两组不同实验标识的 run：归组依据只能是 RunSpec 上的显式 experimentId。
+    const sharedSeed = "shared-seed-without-experiment-hint:rep1";
+    const experimentIds = ["exp-shared-seed-alpha", "exp-shared-seed-beta"];
+    host.storage.transact((tx) => {
+      const worlds = tx.rows("worlds").list();
+      const worldId = String(worlds[0]?.["world_id"]);
+      for (const [index, experimentId] of experimentIds.entries()) {
+        const runId = `run-bbbbbbbbbbb${index}`;
+        const branchId = `br-bbbbbbbbbbb${index}`;
+        const createdAt = new Date().toISOString();
+        tx.rows("branches").put({
+          branch_id: branchId, world_id: worldId, kind: "experiment", status: "active",
+          parent_branch_id: host.branchId, forked_at_world_seq: 0, run_id: runId,
+          profile_hash: null, created_at: createdAt,
+        });
+        tx.rows("runs").put({
+          run_id: runId, world_id: worldId, branch_id: branchId, mode: "closed-loop", status: "completed",
+          run_spec_json: {
+            id: `run-shared-${index}`, experimentId, seed: sharedSeed,
+            variant: { id: "memory-m0-window", profilePatchRefs: ["memory-m0-window"], agentIds: null },
+            script: { scriptRef: "s-promise", branch: "keep" },
+          },
+          manifest_json: {}, manifest_hash: "hash", contaminated: 0, evidence_complete: 1,
+          created_at: createdAt, started_at: createdAt, ended_at: createdAt,
+        });
+      }
+    });
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+
+    const list = await host.app.inject({ method: "GET", url: "/api/v1/console/experiments", headers });
+    expect(list.statusCode).toBe(200);
+    const experiments = (list.json() as {
+      readonly experiments: readonly { readonly experimentId: string; readonly runCount: number }[];
+    }).experiments;
+    // 同一 seed 若被当成实验标识，会合并成一条并把 runCount 记成 2。
+    for (const experimentId of experimentIds) {
+      expect(experiments).toContainEqual({ experimentId, runCount: 1 });
+    }
+
+    for (const experimentId of experimentIds) {
+      const detail = await host.app.inject({
+        method: "GET", url: `/api/v1/console/experiments/${experimentId}`, headers,
+      });
+      expect(detail.statusCode).toBe(200);
+      const parsed = experimentDetailResponseSchema.parse(detail.json());
+      // 每个实验只能看到自己那一条 run，不能把共享 seed 的另一个实验并进来。
+      expect(parsed.runs).toHaveLength(1);
+      expect(parsed.runs[0]?.runId).toBe(
+        `run-bbbbbbbbbbb${experimentIds.indexOf(experimentId)}`,
+      );
+    }
+  });
+
   it("实验详情按显式实验标识归组并给出分组汇总", async () => {
     const host = await testHost();
     // 直接登记两个带实验种子前缀的 run，用于验证归组与汇总读取；不启动真实实验。
