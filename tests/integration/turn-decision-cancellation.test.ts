@@ -178,8 +178,9 @@ describe("turn decision cancellation", () => {
     await expect.poll(() => turnStages(host).find(({ stage }) => stage === "turn.decision-cancel")?.reason,
       { timeout: 20_000, interval: 100 }).toBe("cancelled-not-honored");
     // 端口忽略取消后仍挂起，宿主按预算放弃等待，该 turn 以失败终态收尾且原因可查。
-    const terminal = host.storage.transact((tx) =>
-      tx.rows("turn_runs").list({ branch_id: host.branchId, agent_id: target })[0]);
-    expect(terminal).toMatchObject({ status: "failed", terminal_reason: "turn-execution-failed" });
+    // 取消证据在放弃等待时单独提交，失败终态由随后的收尾事务写入，两者之间有时间差，因此终态同样轮询。
+    await expect.poll(() => host.storage.transact((tx) =>
+      tx.rows("turn_runs").list({ branch_id: host.branchId, agent_id: target })[0]),
+      { timeout: 20_000, interval: 100 }).toMatchObject({ status: "failed", terminal_reason: "turn-execution-failed" });
   }, 60_000);
 });
