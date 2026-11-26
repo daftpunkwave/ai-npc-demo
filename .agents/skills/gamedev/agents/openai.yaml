@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Development"
+  short_description: "Route a game-development request to the minimal bundled skills"
+  default_prompt: "Use $gamedev to route this game-development request to the right bundled skills."
