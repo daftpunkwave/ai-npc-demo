@@ -40,7 +40,7 @@ experimentId: exp-memory-promise-v1   # optional; populated when created from an
 moduleAssemblyRef: local-slg-standard-v1
 worldPackRef: earth-2964-v1
 scenarioRef: watergate-v1
-rosterRef: standard-15
+rosterRef: core-3         # 三个脚本都声明 rosterRef: core-3；与脚本不一致会在预检被拒绝
 modelLayoutRef: shared-model-layout-v1
 seed: run-seed-001
 player:
@@ -48,14 +48,13 @@ player:
   factionId: human-neutral
 mode: closed-loop
 initialState:
-  kind: snapshot
-  snapshotRef: watergate-common-start
+  kind: cold-start
 variant:
   id: structured-ledger
   profilePatchRefs: [memory-m1-structured-ledger]   # applied in order after the agent profiles
   agentIds: null            # null = every agent in the roster
 script:
-  scriptRef: s-promise      # optional; drives external inputs in audit/open-loop/closed-loop modes
+  scriptRef: s-promise      # optional; the script supplies external inputs for this run
   branch: keep
 clock:
   kind: controlled
@@ -346,7 +345,7 @@ repetitions: 3
 runOrder: rotate               # rotate the variant order on each repetition
 ```
 
-实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 取 `cold-start`（从内容包初态开始）、`snapshot`（引用快照）或 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）。在线模板另有 `config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用）。
+实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 当前只接受 `cold-start`（从内容包初态开始）；`snapshot`（引用快照）与 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）依赖尚未实现的实验执行器，预检会拒绝。在线模板另有 `config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用）。
 
 ### 10.4 玩家测试 preset `config/presets/*.yaml`（目标，尚未创建）
 
@@ -364,7 +363,7 @@ runSpecTemplate:
   initialState: { kind: snapshot, snapshotRef: latest }
 ```
 
-玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。
+玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。该 preset 依赖 `initialState.kind: snapshot`，需等实验执行器实现后才可用；当前 schema 会拒绝该取值。
 
 ### 10.5 价目 `config/pricing*.yaml`
 

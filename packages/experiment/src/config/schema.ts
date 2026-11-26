@@ -34,9 +34,8 @@ export type RosterAgent = z.infer<typeof rosterAgentSchema>;
 
 /**
  * run 的初始状态来源。当前只支持冷启动：快照与记忆重建需要实验执行器消费，
- * 而执行器尚未实现（见 IMPLEMENTATION-STATUS 的 S21 与实验执行器条目）。
- * 在这里接受它们会让「声明了 snapshot/rebuild」的配置静默按冷启动跑完，
- * 因此改为显式拒绝，待执行器落地后连同消费路径一起加回。
+ * 而执行器尚未实现。在这里接受它们会让「声明了 snapshot/rebuild」的配置
+ * 静默按冷启动跑完，因此改为显式拒绝，待执行器落地后连同消费路径一起加回。
  */
 const initialStateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cold-start") }).strict(),
