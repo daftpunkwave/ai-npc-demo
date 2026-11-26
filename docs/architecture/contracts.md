@@ -214,6 +214,15 @@ interface UiExtension {
 
 其余受控类型的首版定义：`StrictConfigSchema` 是形状由 `ZodRawShape` 表达的 Zod object schema，类型层只依赖 zod 的公开导出，未知键是否被拒绝由运行期探测判定（见 [插件与生命周期](plugins.md)），控制台用 `z.toJSONSchema()` 由它生成表单；`MigrationPath` 为 `{ fromVersion, toVersion, migrate(state: Json): Json }`；`ContributionRef` 为 `{ extensionId, slot, order, allowedRoles? }`（UI 贡献与控制台页面都用它）；`ExperimentAxis` 为 `{ key, label, values? }`，只用于控制台展示可比较参数。浏览器 realm 握手时只能拿到 `ResolvedModuleSet`，内容包括模块 ID 和版本、能力、协议版本、装配 hash，以及每个模块的已解析配置 `config`。浏览器 realm 没有装配解析器，模块必须用握手下发的 `config` 启动而不是自带的 `defaults`，否则实际行为与装配声明不符且无法用 `configHash` 自证一致；`config` 缺失或未通过模块 `configSchema` 校验时按 `assembly-incompatible` 拒绝启动。`config` 只对 client 与 console 两个 realm 下发：服务端 realm 的实例由宿主自己创建，其配置含内容包下发的提示词、工具描述与部署期覆盖，属服务端内部参数，而 `serverAssembly` 会经 `/api/v1/session` 返回给玩家会话，因此只带 `configHash`。客户端以在下发值基础上补齐 `configSchema` 默认字段的方式构造最终配置，不重新执行 `transform`，保证浏览器实际使用的值与服务端冻结结果一致。它不包含工厂、服务端对象、数据库句柄或密钥。assembly 解析、能力闭包与冲突规则见 [积木组合](composition.md) 和 [模块目录](module-catalog.md)。
 
+### 3.1 哈希口径
+
+哈希有两类口径，选哪一种由比对双方的可用接口决定，不按包归属区分。
+
+- `HostServices.hash`：输入为 JSON 值，先做规范 JSON 序列化再取 SHA-256。装配摘要、manifest、证据与 artifact 摘要走这一条，因此宿主可以替出确定性实现用于测试。
+- 固定 SHA-256：`commandPayloadHash` 直接对规范 JSON 取 SHA-256，不经注入端口。命令幂等键要写进 `command_receipts.payload_hash` 并长期留存，是同一 `commandId` 重复提交时判断内容是否相同的唯一依据；若跟随注入实现变化，更换宿主哈希后同一命令会被判成 `idempotency-conflict`。
+
+固定口径只覆盖命令幂等键一处，其余摘要仍统一走 `host.hash`。
+
 ## 4. 跨端会话与协议
 
 ```ts

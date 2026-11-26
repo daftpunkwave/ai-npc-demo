@@ -412,7 +412,14 @@ export class CommandGateway {
   }
 }
 
-/** 计算命令幂等内容哈希，覆盖 type、schemaVersion、expectedVersions 与 payload。 */
+/**
+ * 计算命令幂等内容哈希，覆盖 type、schemaVersion、expectedVersions 与 payload。
+ *
+ * 这里刻意固定为 SHA-256，而不是走注入的 host.hash：幂等键要写进 command_receipts.payload_hash
+ * 并长期留存，是同一 commandId 重复提交时判断「内容是否相同」的唯一依据。若跟随注入实现变化，
+ * 更换宿主哈希后同一命令会算出不同摘要，被判成 idempotency-conflict 并拒绝合法重放。
+ * manifest、证据与 artifact 的摘要仍走 host.hash，以便测试注入确定性实现。
+ */
 export function commandPayloadHash(envelope: CommandEnvelope): string {
   const canonical = canonicalJson({
     type: envelope.type,
