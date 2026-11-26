@@ -25,9 +25,12 @@ import {
 
 type ScenarioContext = HandlerContext<GameModulePorts, unknown>;
 
-/** 发布窗口：触发 tick 必须晚于当前 tick，且不超过 168 tick 之后。 */
-function isTriggerTickInWindow(triggerAtTick: number, worldTick: number): boolean {
-  return triggerAtTick > worldTick && triggerAtTick <= worldTick + 168;
+/**
+ * 发布窗口：触发 tick 必须晚于当前 tick，且不超过一个章节长度之后。
+ * 章节长度取自世界端口，不内联常量：装配改成非默认长度时窗口必须同步跟随。
+ */
+function isTriggerTickInWindow(triggerAtTick: number, worldTick: number, chapterLengthTicks: number): boolean {
+  return triggerAtTick > worldTick && triggerAtTick <= worldTick + chapterLengthTicks;
 }
 
 function asPorts(context: { readonly modules: unknown }): GameModulePorts {
@@ -141,7 +144,13 @@ function draft(context: ScenarioContext, payload: Json): HandlerResult {
       safeMessage: "该卡片已登记，不能重复创建草稿",
     };
   }
-  if (!isTriggerTickInWindow(input.triggerAtTick, context.tx.worldTick)) {
+  if (
+    !isTriggerTickInWindow(
+      input.triggerAtTick,
+      context.tx.worldTick,
+      asPorts(context)["game.world"].chapterLengthTicks(),
+    )
+  ) {
     return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出发布窗口" };
   }
   const invalidEffect = invalidEffectReferences(requireGameContent(context.content), input.effects);
@@ -173,7 +182,13 @@ function publish(context: ScenarioContext, payload: Json): HandlerResult {
   if (state.version !== input.version) {
     return { kind: "rejected", reasonCode: "version-conflict", safeMessage: "草稿版本与命令不一致" };
   }
-  if (!isTriggerTickInWindow(input.triggerAtTick, context.tx.worldTick)) {
+  if (
+    !isTriggerTickInWindow(
+      input.triggerAtTick,
+      context.tx.worldTick,
+      asPorts(context)["game.world"].chapterLengthTicks(),
+    )
+  ) {
     return { kind: "rejected", reasonCode: "deadline-out-of-range", safeMessage: "触发 tick 超出发布窗口" };
   }
   const published: ScenarioCardState = { ...state, status: "published", triggerAtTick: input.triggerAtTick };

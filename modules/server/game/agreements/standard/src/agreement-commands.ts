@@ -18,8 +18,14 @@ import { asPorts, type AgreementContext } from "./agreement-shared";
 import { readAgreementState, type AgreementState } from "./state";
 import { validateTerms } from "./terms";
 
-/** 协议允许的最长有效期；与公共契约 payload 的允许范围保持一致。 */
-const maxAgreementWindowTicks = 168;
+/**
+ * 协议允许的最长有效期：一个章节的长度，从世界端口读取。
+ * 期限语义就是「一个章节内」，因此跟随装配的章节长度而不是内联常量；
+ * 非默认章节长度的装配下，提案上限与条款截止窗口必须同步变化。
+ */
+function maxAgreementWindowTicks(context: AgreementContext): number {
+  return asPorts(context)["game.world"].chapterLengthTicks();
+}
 
 /**
  * 协议允许的最大版本号。版本在每次还价时加一，限制版本即限制还价次数：
@@ -153,7 +159,7 @@ function activate(context: AgreementContext, state: AgreementState): ActivationR
   return { ok: true, status: finished.status };
 }
 
-/** 提出协议：提出者在当事人内、当事人都是已知主体、条款需通过校验；期限超过 168 tick 时显式拒绝。 */
+/** 提出协议：提出者在当事人内、当事人都是已知主体、条款需通过校验；期限超过一个章节长度时显式拒绝。 */
 export function propose(context: AgreementContext, payload: Json): HandlerResult {
   const input = commandPayloadOf("agreement.propose", payload);
   const proposerId = effectivePrincipalId(context.auth);
@@ -172,11 +178,12 @@ export function propose(context: AgreementContext, payload: Json): HandlerResult
   if (invalid !== null) {
     return { kind: "rejected", reasonCode: invalid, safeMessage: "协议条款不合法" };
   }
-  if (input.expiresInTicks > maxAgreementWindowTicks) {
+  const maxWindowTicks = maxAgreementWindowTicks(context);
+  if (input.expiresInTicks > maxWindowTicks) {
     return {
       kind: "rejected",
       reasonCode: "deadline-out-of-range",
-      safeMessage: `协议有效期不能超过 ${maxAgreementWindowTicks} tick`,
+      safeMessage: `协议有效期不能超过 ${maxWindowTicks} tick`,
     };
   }
   const expiresAtTick = context.tx.worldTick + input.expiresInTicks;

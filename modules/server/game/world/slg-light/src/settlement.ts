@@ -217,7 +217,7 @@ export function runChapterEvaluation(
   tx: WorldTx,
   loadCounts: () => AgreementCounts,
   cityResources: CityResourceAmounts | null,
-  chapterLengthTicks = 168,
+  chapterLengthTicks: number,
 ): { readonly stopClock: true } | undefined {
   const record = readWorldState(tx, "campaign", "campaign", campaignStateSchema);
   if (record === null || record.state.status === "evaluated") {
