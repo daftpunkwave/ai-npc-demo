@@ -1,11 +1,12 @@
 /**
- * 实现 game.map 的只读查询与道路/通行许可写入，包括按规则排序的 Dijkstra 路径。
+ * 实现 game.map 的只读查询与道路/通行许可写入，包括按规则排序的 Dijkstra 路径，
+ * 以及地图拥有的 policy.set 政策键（道路状态）的解析、校验与执行。
  * 依赖内容视图、地图聚合状态与注入的 scoped WorldTx；所有写入与事件都进入调用方事务。
  * 禁止读取其他模块聚合、使用 Math.random 决定路径或在未受控道路上伪造控制权。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { ReasonCode, RoadStatus } from "@world-prism/contracts";
-import { DomainError, roadStatusPolicyKey } from "@world-prism/contracts";
+import { DomainError, roadIdFromPolicyKey, roadStatusPolicyKey, roadStatusSchema } from "@world-prism/contracts";
 import {
   findRoadPath,
   gameModuleIds,
@@ -13,6 +14,7 @@ import {
   type GameIdFactory,
   type GameMapPort,
   type GameRoad,
+  type MapPolicyOutcome,
   type RouteQuery,
   type RouteResult,
   type ScopedWorldTxFactory,
@@ -105,6 +107,26 @@ class SixNodeMapPort implements GameMapPort {
       [{ kind: "public" }],
     );
     return { ok: true };
+  }
+
+  applyPolicy(key: string, value: string, byId: string): MapPolicyOutcome | null {
+    const roadId = roadIdFromPolicyKey(key);
+    if (roadId === null) {
+      return null;
+    }
+    if (!this.content.roads.has(roadId)) {
+      return { ok: false, reasonCode: "unknown-policy", safeMessage: "道路不存在" };
+    }
+    const status = roadStatusSchema.safeParse(value);
+    if (!status.success) {
+      return { ok: false, reasonCode: "unknown-policy", safeMessage: "未知的道路状态" };
+    }
+    const oldValue = this.roadStatus(roadId) ?? "open";
+    const result = this.setRoadStatus(roadId, status.data, byId);
+    if (!result.ok) {
+      return { ok: false, reasonCode: result.reasonCode, safeMessage: "道路状态未改变" };
+    }
+    return { ok: true, oldValue, newValue: status.data };
   }
 
   grantPassage(input: {

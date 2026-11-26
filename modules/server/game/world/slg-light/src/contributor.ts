@@ -4,7 +4,7 @@
  * 禁止在这里直接写地图/库存聚合，或在命令处理器中读取进程时间与随机源。
  */
 import type { Json } from "@world-prism/contracts";
-import { commandPayloadOf, roadIdFromPolicyKey, roadStatusSchema, watergateAllocationSchema } from "@world-prism/contracts";
+import { commandPayloadOf, watergateAllocationSchema } from "@world-prism/contracts";
 import {
   controlsWatergate,
   effectivePrincipalId,
@@ -167,21 +167,12 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
     }
     return { kind: "accepted", result: { oldValue, newValue: allocation.data } };
   }
-  const roadId = roadIdFromPolicyKey(input.key);
-  if (roadId !== null) {
-    if (ports["game.map"].road(roadId) === null) {
-      return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "道路不存在" };
-    }
-    const status = roadStatusSchema.safeParse(input.value);
-    if (!status.success) {
-      return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未知的道路状态" };
-    }
-    const oldValue = ports["game.map"].roadStatus(roadId) ?? "open";
-    const result = ports["game.map"].setRoadStatus(roadId, status.data, principalId);
-    if (!result.ok) {
-      return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "道路状态未改变" };
-    }
-    return { kind: "accepted", result: { oldValue, newValue: status.data } };
+  // 地图拥有的政策键（如道路状态）由地图端口自行解析、校验与执行，world 不了解其键格式与取值域。
+  const mapPolicy = ports["game.map"].applyPolicy(input.key, input.value, principalId);
+  if (mapPolicy !== null) {
+    return mapPolicy.ok
+      ? { kind: "accepted", result: { oldValue: mapPolicy.oldValue, newValue: mapPolicy.newValue } }
+      : { kind: "rejected", reasonCode: mapPolicy.reasonCode, safeMessage: mapPolicy.safeMessage };
   }
   return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未登记的政策键" };
 }
