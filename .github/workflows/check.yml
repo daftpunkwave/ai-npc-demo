@@ -1,22 +1,24 @@
 # 质量门禁：类型检查、测试、边界、模块目录、资源与文档检查。
 #
-# 核心职责：在每次 push 与 pull request 上执行 `pnpm check`，让仓库既有的质量门禁在远端强制执行。
+# 核心职责：在每个 pull request 上执行 `pnpm check`，让仓库既有的质量门禁在合并前于远端强制执行。
 # 交互契约：读取仓库根的 package.json 脚本链、pnpm-lock.yaml 与 pnpm-workspace.yaml；
-#   依赖与开发环境一致的 Node 26.13.1 与仓库锁定的 pnpm@12。
+#   依赖与开发环境一致的 Node 26.13.1 与仓库锁定的 pnpm@12；
+#   依赖 main 规则集把本工作流的 `check` 设为必需检查，并要求 PR 分支合并前与 main 保持最新。
 # 约束与禁忌：禁止在此跳过检查项、放宽阈值或以 `|| true` 吞掉失败；
 #   任何一项检查失败都必须是失败结论。
 name: check
 
+# 只在 pull request 上运行，合并到 main 后不再重跑：
+# main 规则集要求 `check` 通过且分支与 main 保持最新才允许 squash 合并，并禁止直接推送，
+# 合并后 main 的代码树就是 PR 上最后一次通过检查的代码树；`pnpm check` 的输入只有代码树
+# （含锁文件）与固定的 Node 版本，不依赖合并后 main 的额外状态，在 main 上重跑不提供新信息。
 on:
-  push:
-    branches:
-      - main
   pull_request:
 
-# 同一分支的新推送取消上一轮未完成的运行，避免排队浪费。
+# 同一 PR 的新推送取消上一轮未完成的运行，避免排队浪费。
 concurrency:
   group: check-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
