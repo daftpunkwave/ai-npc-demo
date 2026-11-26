@@ -1323,7 +1323,7 @@ describe("服务端宿主", () => {
     }
 
     await expect(startHost(options)).rejects.toThrow(
-      /contentVersion 不一致.*9\.9\.9.*0\.3\.0.*删除 NPC_DATA_DIR 对应的开发数据目录/,
+      /contentVersion 不一致.*9\.9\.9.*0\.3\.0.*删除 WORLD_PRISM_DATA_DIR 对应的开发数据目录/,
     );
   });
 

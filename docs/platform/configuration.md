@@ -151,7 +151,7 @@ assemblyId: local-slg-standard-v1
 configs:                         # named config blocks referenced by bindings
   clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
-  model-secrets: { allowlist: [NPC_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY] }
+  model-secrets: { allowlist: [WORLD_PRISM_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY] }
   # 此处不配置 host、端口与数据目录；服务端宿主从环境变量读取，并在启动时合并到
   # transport.http-ws.fastify 与 platform.storage.sqlite 的配置中。
   # allowedOrigins 通过宿主选项设置，未指定时使用两个本机地址：
@@ -218,7 +218,7 @@ realms:
 
 | 文件 | 与标准装配的差异 |
 |---|---|
-| `local-slg-test-v1.yaml` | model-transport 两行换成一行 `platform.model-transport.deterministic`；`client.scene-renderer` 换成 `client.scene-renderer.null`；省略 `configs.model-secrets` 且 `platform.secrets` 的 `configRef` 为 `null`（模型布局与名册不属于装配：测试时由 RunSpec 或环境变量 `NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3` 选择） |
+| `local-slg-test-v1.yaml` | model-transport 两行换成一行 `platform.model-transport.deterministic`；`client.scene-renderer` 换成 `client.scene-renderer.null`；省略 `configs.model-secrets` 且 `platform.secrets` 的 `configRef` 为 `null`（模型布局与名册不属于装配：测试时由 RunSpec 或环境变量 `WORLD_PRISM_MODEL_LAYOUT=deterministic-model-layout-v1`、`WORLD_PRISM_ROSTER=core-3` 选择） |
 | `local-slg-escalating-v1.yaml` | `game.scenario` 换成 `game.scenario.watergate-escalating`；当前不启用 Agent 运行时与模型池（省略 `agent.*`、`agentSlots`、`platform.budget`、`platform.model-transport`、`configs.model-secrets`），`console.bindings` 也暂不装载 `console.model-mounts` 与 `console.evaluation` |
 | `local-slg-compact-hud-v1.yaml`（目标，尚未创建） | `client.hud` 换成 `client.hud.compact` |
 | `local-slg-obs-lite-v1.yaml`（目标，尚未创建） | `console.observability` 换成 `console.observability.lite` |

@@ -68,7 +68,7 @@ export function readOnlineEntry(tx: StorageTransaction): OnlineEntry | null {
 export function contentVersionMismatch(frozen: string, current: string, scope: string): Error {
   return new Error(
     `内容包 contentVersion 不一致：${scope} 冻结「${frozen}」，当前内容包「${current}」；拒绝启动。` +
-    "开发阶段可在停服后删除 NPC_DATA_DIR 对应的开发数据目录，再重启以创建新 run。",
+    "开发阶段可在停服后删除 WORLD_PRISM_DATA_DIR 对应的开发数据目录，再重启以创建新 run。",
   );
 }
 

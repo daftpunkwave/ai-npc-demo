@@ -547,7 +547,7 @@ describe("确定性模型装配与角色对白", () => {
   it("预检拒绝模型与价目记录指向不同的供应商模型", async () => {
     const restoreFetch = stubStandardModelHttp();
     try {
-      vi.stubEnv("NPC_OPENAI_COMPAT_MODEL", "unpriced-model");
+      vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_MODEL", "unpriced-model");
       await expect(modelHost({ assemblyRef: "local-slg-standard-v1" })).rejects.toThrow(
         "externalModel 与价目记录不一致",
       );

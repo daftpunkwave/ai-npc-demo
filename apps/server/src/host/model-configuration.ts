@@ -35,7 +35,7 @@ function fail(message: string): never {
 }
 
 function endpointOf(value: string, loadContext: ConfigLoadContext): string {
-  const url = parseModelEndpoint(resolveModelEnv(value, loadContext, "NPC_OPENAI_COMPAT_BASE_URL"));
+  const url = parseModelEndpoint(resolveModelEnv(value, loadContext, "WORLD_PRISM_OPENAI_COMPAT_BASE_URL"));
   if (url === null) {
     fail("模型端点必须使用 HTTPS 或回环 HTTP，且不携带凭据、参数或片段");
   }
@@ -99,7 +99,7 @@ export async function resolveModelConfiguration(input: {
       Object.values(model.maxOutputTokensByPurpose).some((limit) => limit > model.capabilities.maxOutputTokens)) {
       fail(`模型 ${modelId} 的输出上限超过能力声明`);
     }
-    const externalModel = resolveModelEnv(model.externalModel, loadContext, "NPC_OPENAI_COMPAT_MODEL");
+    const externalModel = resolveModelEnv(model.externalModel, loadContext, "WORLD_PRISM_OPENAI_COMPAT_MODEL");
     if (price.externalModel !== externalModel) {
       fail(`模型 ${modelId} 的 externalModel 与价目记录不一致`);
     }

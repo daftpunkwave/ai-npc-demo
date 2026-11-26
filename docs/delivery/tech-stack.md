@@ -198,9 +198,9 @@ packages:
 
 服务端默认名册为 `standard-15`，序章开放公社开局。单份名册最多 15 个身份，开局和恢复事务校验部署级活动身份配额。参见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
-部署参数只有这一个来源：主机、两个端口、数据目录、控制台静态产物目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `NPC_DATA_DIR`，控制台静态目录取自 `NPC_CONSOLE_STATIC_DIR`，缺省 `apps/server/console-static`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。相对路径一律按仓库根解析，不按进程工作目录派生，因此从任意工作目录启动服务端都挂载到同一份构建产物。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/world-prism.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
+部署参数只有这一个来源：主机、两个端口、数据目录、控制台静态产物目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `WORLD_PRISM_DATA_DIR`，控制台静态目录取自 `WORLD_PRISM_CONSOLE_STATIC_DIR`，缺省 `apps/server/console-static`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。相对路径一律按仓库根解析，不按进程工作目录派生，因此从任意工作目录启动服务端都挂载到同一份构建产物。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/world-prism.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
 
-开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)；旧在线 run 的能力闭包升级迁移开关 `NPC_MIGRATE_ONLINE_RUN` 见 [operations.md — 能力闭包升级迁移](../platform/operations.md#102-能力闭包升级迁移)。
+开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)；旧在线 run 的能力闭包升级迁移开关 `WORLD_PRISM_MIGRATE_ONLINE_RUN` 见 [operations.md — 能力闭包升级迁移](../platform/operations.md#102-能力闭包升级迁移)。
 
 ## 6. 本地双端拓扑
 
@@ -208,9 +208,9 @@ packages:
 
 ```ts
 // 客户端 Vite 配置（关键部分）；环境变量由 dev/start 脚本提供
-const host = process.env.NPC_SERVER_HOST ?? "127.0.0.1";
-const clientPort = Number(process.env.NPC_CLIENT_PORT ?? 5173);
-const api = { target: `http://${host}:${process.env.NPC_SERVER_PORT ?? 3000}`, ws: true, changeOrigin: false };
+const host = process.env.WORLD_PRISM_SERVER_HOST ?? "127.0.0.1";
+const clientPort = Number(process.env.WORLD_PRISM_CLIENT_PORT ?? 5173);
+const api = { target: `http://${host}:${process.env.WORLD_PRISM_SERVER_PORT ?? 3000}`, ws: true, changeOrigin: false };
 export default defineConfig({
   plugins: [react()],
   server: { host, port: clientPort, strictPort: true, proxy: { "/api": api } },
@@ -230,7 +230,7 @@ export default defineConfig({
 - 客户端通过 :5173 内部的代理访问 `/api`，浏览器视角是同源，不需要 CORS 预检；Vite 的 HMR 复用 :5173。
 - 控制台不跑 Vite dev server，只用 `vite build --watch` 生成静态文件，由服务端 `@fastify/static` 以 wildcard 模式挂到 `/console/`；每个请求按请求路径直接读盘，因此构建后新增的 hash 资产无需重启服务端即可访问，修改后刷新页面即可，没有 HMR。控制台是单页应用，但回退有边界：只有 GET/HEAD、路径以 `/console/` 开头、末段（URL 解码后）无扩展名、且 `index.html` 实际存在时，找不到静态文件才返回 `index.html` 交给前端路由；带扩展名的资产请求缺失时返回 404 统一错误，绝不以 200 `text/html` 冒充 JS/CSS（否则浏览器会把 HTML 当脚本执行并白屏，且状态码掩盖故障）；入口文件缺失期间同样直接 404，不重复回退。`/api/*` 不做这种回退。
 - `strictPort: true` 与 Fastify 的 `listen` 失败即退出，端口被占用时启动失败，不会自动换成 5174 或 3001。
-- 服务端对带 `Origin` 头的请求和 WS 握手校验 Origin 必须是 `http://<NPC_SERVER_HOST>:<NPC_CLIENT_PORT>` 或 `http://<NPC_SERVER_HOST>:<NPC_SERVER_PORT>`（默认即 `http://127.0.0.1:5173` 与 `http://127.0.0.1:3000`）。
+- 服务端对带 `Origin` 头的请求和 WS 握手校验 Origin 必须是 `http://<WORLD_PRISM_SERVER_HOST>:<WORLD_PRISM_CLIENT_PORT>` 或 `http://<WORLD_PRISM_SERVER_HOST>:<WORLD_PRISM_SERVER_PORT>`（默认即 `http://127.0.0.1:5173` 与 `http://127.0.0.1:3000`）。
 
 ## 7. 编码约定
 
@@ -274,4 +274,4 @@ TypeScript/JavaScript 用 JSDoc/TSDoc 块注释（`/** ... */`），Python 用 P
 
 `vitest.config.ts` 放在根目录，`include` 为 `["apps/*/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts", "modules/**/tests/**/*.test.ts", "tests/{contract,integration,catalog,scenarios}/**/*.test.ts"]`。需要真实模型的测试不进入 `pnpm test`，单独放在 `tests/live/`，只在设置了相应 API key 时手动运行。
 
-`playwright.config.ts` 的 `webServer` 固定使用测试环境：`NPC_ASSEMBLY=local-slg-test-v1`、`NPC_MODEL_LAYOUT=deterministic-model-layout-v1`、`NPC_ROSTER=core-3`、`NPC_DATA_DIR=./data-e2e/run-<pid>`、`NPC_SERVER_HOST=127.0.0.1`、`NPC_SERVER_PORT=3000`、`NPC_CLIENT_PORT=5173`、`NPC_PLAYER_TOKEN=e2e-player`、`NPC_CONSOLE_TOKEN=e2e-console`、`NPC_OPERATOR_TOKEN=e2e-operator`、`NPC_RESEARCHER_TOKEN=e2e-researcher`、`NPC_EVALUATOR_TOKEN=e2e-evaluator`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，Playwright 在 webServer 启动前清空该目录，保证全新世界），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。
+`playwright.config.ts` 的 `webServer` 固定使用测试环境：`WORLD_PRISM_ASSEMBLY=local-slg-test-v1`、`WORLD_PRISM_MODEL_LAYOUT=deterministic-model-layout-v1`、`WORLD_PRISM_ROSTER=core-3`、`WORLD_PRISM_DATA_DIR=./data-e2e/run-<pid>`、`WORLD_PRISM_SERVER_HOST=127.0.0.1`、`WORLD_PRISM_SERVER_PORT=3000`、`WORLD_PRISM_CLIENT_PORT=5173`、`WORLD_PRISM_PLAYER_TOKEN=e2e-player`、`WORLD_PRISM_CONSOLE_TOKEN=e2e-console`、`WORLD_PRISM_OPERATOR_TOKEN=e2e-operator`、`WORLD_PRISM_RESEARCHER_TOKEN=e2e-researcher`、`WORLD_PRISM_EVALUATOR_TOKEN=e2e-evaluator`；命令为 `pnpm build && pnpm start`，每次运行使用独立的 `data-e2e/run-<pid>` 目录（以进程号隔离，Playwright 在 webServer 启动前清空该目录，保证全新世界），并以 `GET http://127.0.0.1:3000/api/v1/health` 返回 ready 作为就绪判据。`data-e2e/` 也加入 `.gitignore`。

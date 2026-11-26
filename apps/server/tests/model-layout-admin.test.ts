@@ -127,9 +127,9 @@ describe("模型布局管理端口", () => {
   });
 
   it.each([
-    ["env:NPC_OPENAI_COMPAT_BASE_URL", "env:NPC_OPENAI_COMPAT_BASE_URL"],
+    ["env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL", "env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL"],
     ["env:MODEL_TEST_KEY", `layout:${layoutId}`],
-    ["env:NPC_OPENAI_COMPAT_BASE_URL?value=fixture", `layout:${layoutId}`],
+    ["env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL?value=fixture", `layout:${layoutId}`],
   ])("仅公开允许的端点环境引用 %s", (endpoint, expected) => {
     writeLayout(endpoint);
     expect(port.layout(layoutId).connections["proxy"]).toMatchObject({

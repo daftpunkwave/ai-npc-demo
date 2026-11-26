@@ -218,7 +218,7 @@ describe("在线 run 能力闭包升级迁移", () => {
 
     await expect(
       startHost({ dataDir, playerToken: "player-token", consoleToken: "console-token" }),
-    ).rejects.toThrow(/NPC_MIGRATE_ONLINE_RUN=1/);
+    ).rejects.toThrow(/WORLD_PRISM_MIGRATE_ONLINE_RUN=1/);
 
     const rows = readRunRows(dataDir);
     expect(rows).toHaveLength(1);

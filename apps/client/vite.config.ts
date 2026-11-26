@@ -6,9 +6,9 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const host = process.env.NPC_SERVER_HOST ?? "127.0.0.1";
-const clientPort = Number(process.env.NPC_CLIENT_PORT ?? 5173);
-const serverPort = Number(process.env.NPC_SERVER_PORT ?? 3000);
+const host = process.env.WORLD_PRISM_SERVER_HOST ?? "127.0.0.1";
+const clientPort = Number(process.env.WORLD_PRISM_CLIENT_PORT ?? 5173);
+const serverPort = Number(process.env.WORLD_PRISM_SERVER_PORT ?? 3000);
 const api = {
   target: `http://${host}:${serverPort}`,
   ws: true,

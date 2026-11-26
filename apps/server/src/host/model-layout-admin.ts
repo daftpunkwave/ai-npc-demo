@@ -22,8 +22,8 @@ import {
 } from "@world-prism/contracts";
 import { LoadingError, loadModelLayout, type ConfigLoadContext, type ModelLayout } from "@world-prism/experiment";
 
-const publicEndpointEnvironment = "NPC_OPENAI_COMPAT_BASE_URL";
-const publicModelEnvironment = "NPC_OPENAI_COMPAT_MODEL";
+const publicEndpointEnvironment = "WORLD_PRISM_OPENAI_COMPAT_BASE_URL";
+const publicModelEnvironment = "WORLD_PRISM_OPENAI_COMPAT_MODEL";
 const layoutEndpointPrefix = "layout:";
 const credentialEnvironment = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const maxValidationErrors = 100;

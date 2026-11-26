@@ -21,7 +21,7 @@ export class OnlineRunMigrationRequiredError extends Error {
   constructor(input: { readonly runId: string; readonly branchId: string; readonly detail: string }) {
     super(
       `在线 run ${input.runId} 的冻结 manifest 无法按当前模块目录复算（能力闭包已升级）：${input.detail}。` +
-        "源 run 与分支保持原样，未被修改。设置 NPC_MIGRATE_ONLINE_RUN=1 重启以执行显式迁移" +
+        "源 run 与分支保持原样，未被修改。设置 WORLD_PRISM_MIGRATE_ONLINE_RUN=1 重启以执行显式迁移" +
         "（从源分支派生新分支与新 run，沿用原 seed 与 RunSpec，按当前能力闭包冻结新 manifest），" +
         "或回退到创建该 run 的代码版本。",
     );

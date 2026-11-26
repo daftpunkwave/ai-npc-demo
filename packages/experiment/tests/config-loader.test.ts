@@ -88,19 +88,19 @@ function makeTempConfigDir(): string {
 
 describe("配置加载", () => {
   it("模型环境变量仅接受登记名称并从注入环境的自有字段读取", () => {
-    const env = Object.assign(Object.create({ NPC_OPENAI_COMPAT_MODEL: "outside-config" }) as Record<string, string>, {
-      NPC_OPENAI_COMPAT_BASE_URL: "http://127.0.0.1:11434/v1",
-      NPC_OPENAI_COMPAT_MODEL: "fixture-model",
+    const env = Object.assign(Object.create({ WORLD_PRISM_OPENAI_COMPAT_MODEL: "outside-config" }) as Record<string, string>, {
+      WORLD_PRISM_OPENAI_COMPAT_BASE_URL: "http://127.0.0.1:11434/v1",
+      WORLD_PRISM_OPENAI_COMPAT_MODEL: "fixture-model",
     });
-    expect(resolveModelEnv("env:NPC_OPENAI_COMPAT_MODEL", { configDir, env })).toBe("fixture-model");
-    for (const ref of ["env:INHERITED_KEY", "env:NPC_OPENAI_COMPAT_MODEL\n", "env:"]) {
+    expect(resolveModelEnv("env:WORLD_PRISM_OPENAI_COMPAT_MODEL", { configDir, env })).toBe("fixture-model");
+    for (const ref of ["env:INHERITED_KEY", "env:WORLD_PRISM_OPENAI_COMPAT_MODEL\n", "env:"]) {
       expect(captureLoadingError(() => resolveModelEnv(ref, { configDir, env })).code).toBe("env");
     }
     const inheritedOnly = Object.create({
-      NPC_OPENAI_COMPAT_MODEL: "outside-config",
+      WORLD_PRISM_OPENAI_COMPAT_MODEL: "outside-config",
     }) as Record<string, string>;
     expect(captureLoadingError(() =>
-      resolveModelEnv("env:NPC_OPENAI_COMPAT_MODEL", { configDir, env: inheritedOnly })).code,
+      resolveModelEnv("env:WORLD_PRISM_OPENAI_COMPAT_MODEL", { configDir, env: inheritedOnly })).code,
     ).toBe("env");
   });
 
@@ -229,7 +229,7 @@ describe("配置加载", () => {
 
     const loaded = loadConfigDocument("env-sample", schema, {
       configDir: fixturesConfigDir,
-      env: { NPC_TEST_VALUE: "resolved-value", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
+      env: { WORLD_PRISM_TEST_VALUE: "resolved-value", WORLD_PRISM_TEST_ENDPOINT: "http://127.0.0.1:3000" },
     });
     expect(loaded.value.sampleValue).toBe("resolved-value");
     expect(loaded.value.label).toBe("plain");
@@ -238,7 +238,7 @@ describe("配置加载", () => {
     const missing = captureLoadingError(() =>
       loadConfigDocument("env-sample", schema, {
         configDir: fixturesConfigDir,
-        env: { NPC_TEST_VALUE: "resolved-value" },
+        env: { WORLD_PRISM_TEST_VALUE: "resolved-value" },
       }),
     );
     expect(missing.code).toBe("env");
@@ -247,7 +247,7 @@ describe("配置加载", () => {
     const empty = captureLoadingError(() =>
       loadConfigDocument("env-sample", schema, {
         configDir: fixturesConfigDir,
-        env: { NPC_TEST_VALUE: "", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
+        env: { WORLD_PRISM_TEST_VALUE: "", WORLD_PRISM_TEST_ENDPOINT: "http://127.0.0.1:3000" },
       }),
     );
     expect(empty.code).toBe("env");
@@ -627,7 +627,7 @@ describe("模型布局的环境变量边界", () => {
     "models:",
     "  m1:",
     "    connectionId: fixture",
-    "    externalModel: env:NPC_OPENAI_COMPAT_MODEL",
+    "    externalModel: env:WORLD_PRISM_OPENAI_COMPAT_MODEL",
     "    parameters: { apiKey: \"env:LEAKED_SECRET\" }",
     "    capabilities: { toolCalling: true, strictTools: false, structuredOutput: none, assistantReplay: verbatim, contextWindowTokens: 1000, maxOutputTokens: 100, embedding: false, embeddingDimensions: null }",
     "    limits: { maxConcurrent: 1, requestsPerMinute: 1, tokensPerMinute: 1, requestTimeoutMs: 1000 }",
@@ -643,7 +643,7 @@ describe("模型布局的环境变量边界", () => {
       // 原样保留为字符串引用；解析它会把密钥经 parameters 送进模型请求。
       expect(layout.models["m1"]?.parameters).toEqual({ apiKey: "env:LEAKED_SECRET" });
       // endpoint 与 externalModel 仍是有意为之的例外：由宿主按白名单解析。
-      expect(layout.models["m1"]?.externalModel).toBe("env:NPC_OPENAI_COMPAT_MODEL");
+      expect(layout.models["m1"]?.externalModel).toBe("env:WORLD_PRISM_OPENAI_COMPAT_MODEL");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

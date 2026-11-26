@@ -89,7 +89,7 @@ export function loadModelPricing(context: ConfigLoadContext, ref = "pricing") {
   return loadConfigDocument(ref, pricingSchema, context).value;
 }
 
-const publicModelEnv = ["NPC_OPENAI_COMPAT_BASE_URL", "NPC_OPENAI_COMPAT_MODEL"] as const;
+const publicModelEnv = ["WORLD_PRISM_OPENAI_COMPAT_BASE_URL", "WORLD_PRISM_OPENAI_COMPAT_MODEL"] as const;
 
 export function resolveModelEnv(value: string, context: ConfigLoadContext, allowed?: typeof publicModelEnv[number]): string {
   if (!value.startsWith("env:")) return value;
