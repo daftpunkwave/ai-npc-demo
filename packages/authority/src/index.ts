@@ -8,6 +8,7 @@ export const packageName = "@world-prism/authority";
 export { Authority } from "./authority";
 export type { AuthorityOptions } from "./authority";
 export { CommandGateway, commandPayloadHash } from "./command-gateway";
+export type { CommandExecuteOptions } from "./command-gateway";
 export { createScopedWorldTxFactory } from "./module-binding";
 export type { ModuleBindingInput, ModuleScopeInput } from "./module-binding";
 export { ClockStepRunner } from "./clock-steps";

@@ -317,6 +317,42 @@ describe("Tool view and gateway", () => {
     expect(second.toolCallId).not.toBe(first.toolCallId);
   });
 
+  it("把本次工具调用的 operationId 交给命令执行器，结果与 tool_calls 记录同一取值", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const submitted: string[] = [];
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope, operationId) => {
+        submitted.push(operationId);
+        return { ...receipt(harness.host, envelope), operationId };
+      },
+    });
+    const args = dispatchArguments("team-allowed");
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-operation-id",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+      operationId: "op-00000000000e",
+    });
+    expect(submitted).toEqual(["op-00000000000e"]);
+    expect(outcome.result.operationId).toBe("op-00000000000e");
+    const row = harness.storage.transact((tx) => tx.rows("tool_calls").list({
+      run_id: testRunId,
+      turn_id: testTurnId,
+      attempt_id: testAttemptId,
+      provider_call_id: "provider-call-operation-id",
+    })[0]);
+    expect(row?.["operation_id"]).toBe("op-00000000000e");
+  });
+
   it("未知执行结果重试时复用 commandId 并重新核验", async () => {
     const harness = await createAgentContextToolsHarness();
     harnesses.push(harness);

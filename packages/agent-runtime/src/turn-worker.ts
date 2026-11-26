@@ -36,7 +36,8 @@ export interface TurnExecutionOptions {
   readonly approvals: SpeechApprovalIndex;
   readonly readWorld: ReadTurnWorld;
   readonly recordSpan: (span: TurnSpan) => void;
-  readonly executeCommand: (auth: AuthContext, envelope: CommandEnvelope) => CommandReceipt;
+  /** operationId 由工具调用的副作用操作提供，写入回执；对白回复等非 operation 提交不传。 */
+  readonly executeCommand: (auth: AuthContext, envelope: CommandEnvelope, operationId?: string) => CommandReceipt;
   readonly probeScriptId?: string;
   readonly ports: Readonly<Record<string, unknown>>;
   readonly model?: RunModelPort | null;
@@ -218,7 +219,7 @@ export class TurnWorker {
         executeQuery: turnQueries({
           frozen, content, toolCalls, historyTurns: Number(asRecord(profile.slots.context?.config)["historyTurns"]),
         }),
-        executeCommand: (auth, envelope) => this.commit(turn, "executing", auth, envelope),
+        executeCommand: (auth, envelope, operationId) => this.commit(turn, "executing", auth, envelope, operationId),
         executeMessage: async (message) => {
           const intent = messageIntentFromArguments(message.arguments);
           const allowed = model === null ? undefined : new Set([...messagePrincipalIds, "public"]);
@@ -230,7 +231,7 @@ export class TurnWorker {
           const channel = intent.audience[0] === "public" ? "broadcast" : "message";
           const approved = await this.dialogue.approve(prepareSpeech(intent, channel), model?.speech("executing"), message.commandId, model === null);
           try {
-            const receipt = this.commit(turn, "executing", turn.auth, approved.commitEnvelope);
+            const receipt = this.commit(turn, "executing", turn.auth, approved.commitEnvelope, message.operationId);
             return { receipt, output: receipt.result ?? {} };
           } finally {
             this.execution.approvals.remove(approved.artifact.artifactId);
@@ -437,9 +438,15 @@ export class TurnWorker {
     this.runtime.storage.transact((tx) => this.leases.require(tx, turn, status));
   }
 
-  private commit(turn: ClaimedTurn, status: AgentTurnStatus, auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
+  private commit(
+    turn: ClaimedTurn,
+    status: AgentTurnStatus,
+    auth: AuthContext,
+    envelope: CommandEnvelope,
+    operationId?: string,
+  ): CommandReceipt {
     this.assertCurrent(turn, status);
-    return this.execution.executeCommand(auth, envelope);
+    return this.execution.executeCommand(auth, envelope, operationId);
   }
 
   private requireProfile(agentId: string): ResolvedAgentProfile {

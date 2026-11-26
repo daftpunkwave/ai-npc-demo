@@ -169,7 +169,7 @@ export class OnlineAgentHost {
           runSeed: core.active.runSpec.seed, profileHashes: agents.profileHashes, tools,
           approvals, readWorld: read.decision, ports, model,
           recordSpan: (span) => core.runtime.observability.recordSpan(span),
-          executeCommand: (auth, envelope) => authority.commands.execute(auth, envelope),
+          executeCommand: (auth, envelope, operationId) => authority.commands.execute(auth, envelope, { operationId }),
         },
       });
       await runtime.start();

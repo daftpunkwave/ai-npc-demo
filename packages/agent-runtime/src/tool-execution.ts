@@ -41,7 +41,7 @@ export interface ToolExecutionDeps {
   readonly toolView: AgentToolViewPort;
   readonly store: ToolOutcomeStore;
   readonly executeQuery?: (input: QueryExecutionInput) => Json | Promise<Json>;
-  readonly executeCommand: (auth: ToolCallExecutionInput["auth"], envelope: CommandEnvelope) =>
+  readonly executeCommand: (auth: ToolCallExecutionInput["auth"], envelope: CommandEnvelope, operationId: string) =>
     CommandReceipt | Promise<CommandReceipt>;
   readonly executeMessage?: (input: MessageExecutionInput) =>
     MessageExecutionResult | Promise<MessageExecutionResult>;
@@ -164,7 +164,7 @@ export async function executeCommandTool(
       schemaVersion: 1,
       payload: resolvedCommand.payload,
     };
-    const receipt = await deps.executeCommand(input.auth, envelope);
+    const receipt = await deps.executeCommand(input.auth, envelope, operationId);
     return await persistReceipt(deps, {
       input, binding, definition, argsHash, args, envelope, receipt, current, operationId,
     });
@@ -228,7 +228,7 @@ async function executeMessageTool(
   });
 }
 
-/** 把命令回执结算为工具结果；operationId 以回执自带的为准。 */
+/** 把命令回执结算为工具结果；operationId 以回执自带的为准，旧回执未记录时沿用本次操作 ID。 */
 async function persistReceipt(
   deps: ToolExecutionDeps,
   resultInput: {

@@ -71,7 +71,9 @@ export interface ToolGatewayOptions {
   readonly toolView: AgentToolViewPort;
   readonly artifacts?: AgentArtifactStore;
   readonly executeQuery?: (input: QueryExecutionInput) => Json | Promise<Json>;
-  readonly executeCommand: (auth: AuthContext, envelope: CommandEnvelope) => CommandReceipt | Promise<CommandReceipt>;
+  /** 第三个参数是本次工具调用的 operationId，执行器应把它写入命令回执。 */
+  readonly executeCommand: (auth: AuthContext, envelope: CommandEnvelope, operationId: string) =>
+    CommandReceipt | Promise<CommandReceipt>;
   readonly executeMessage?: (input: MessageExecutionInput) => MessageExecutionResult | Promise<MessageExecutionResult>;
 }
 

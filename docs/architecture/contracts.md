@@ -90,7 +90,7 @@ JSON 载荷另有结构性输入预算：容器嵌套深度上限 200 层，节�
 
 CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文或宿主附加。模型不能靠自报 author 取得权限。
 
-CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、acceptedEventIds、operationId 与 resultingVersions。commandStatus 只有 accepted 或 rejected 两个值，是不可变的提交回执；accepted 不代表异步任务已经完成。幂等键和 payloadHash 都相同的请求返回原 receipt，不重复执行；键相同但内容不同的请求拒绝。
+CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、acceptedEventIds、operationId 与 resultingVersions。命令经副作用操作提交时（如 Agent 工具调用），网关把该操作的 operationId 写入回执；玩家直接提交的命令为 null。operationId 不参与幂等内容哈希，同一 commandId 重放返回首次回执。commandStatus 只有 accepted 或 rejected 两个值，是不可变的提交回执；accepted 不代表异步任务已经完成。幂等键和 payloadHash 都相同的请求返回原 receipt，不重复执行；键相同但内容不同的请求拒绝。
 
 异步任务投影使用独立的 taskStatus：pending、running、completed、failed、cancelled。ToolResult 使用 executionStatus：ok、error、unknown。ok 表示网关拿到了确定的合法响应，响应里仍可能带 commandStatus=rejected；unknown 表示副作用结果未确认，必须去查 receipt。工具视图不得把这几个层次的状态混成一个 status，也不能省略失败。没有任务的只读结果不伪造 taskStatus。这三个状态枚举与 receipt 共用同一份 schema 定义，工具结果不另写内联枚举。工具结果的 reasonCode 接受命令原因码与执行侧专用码 execution-failed、execution-unknown 的并集，后者只描述执行器缺失与结果未确认，不进入 receipt 的业务拒绝理由表。
 

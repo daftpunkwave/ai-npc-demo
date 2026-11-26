@@ -95,7 +95,7 @@ interface CommandReceipt {
   reasonCode: string | null;         // 见领域模型 §9；受理时为 null
   safeMessage: string | null;
   acceptedEventIds: string[];
-  operationId: string | null;
+  operationId: string | null;        // 经副作用操作提交时为该操作 ID（如 Agent 工具调用）；玩家直接提交为 null
   resultingVersions: Record<string, number>;
   result: Json | null;               // 例如 task.dispatch 返回 { taskId }，agreement.propose 返回 { agreementId }
   worldTick: number;
