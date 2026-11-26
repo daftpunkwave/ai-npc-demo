@@ -6,10 +6,10 @@
 import type { Json } from "@world-prism/contracts";
 import { commandPayloadOf, roadIdFromPolicyKey, roadStatusSchema, watergateAllocationSchema } from "@world-prism/contracts";
 import {
+  controlsWatergate,
   effectivePrincipalId,
   factionAudience,
   gameModuleIds,
-  holdsOperationalSeat,
   principalsAudience,
   requireGameContent,
   type GameContent,
@@ -21,7 +21,6 @@ import {
 import { runDailySettlement } from "./settlement";
 import { campaignAggregateId, metersAggregateId } from "./port";
 import {
-  campaignStateSchema,
   characterStateSchema,
   readWorldState,
   teamStateSchema,
@@ -147,30 +146,14 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
   return { kind: "accepted", result: { campaignId } };
 }
 
-/**
- * 判断当前主体是否掌握公社水闸政策：持有公社席的派系主体直接命中（AI 公社党魁以派系 ID 行动），
- * 玩家则按已开局 campaign 的 playerId 与 factionId 裁决，不信任命令自报身份。
- * 公社席由内容规则参数声明，规则层不写具体派系 ID。
- */
-function controlsWatergate(context: WorldContext, principalId: string): boolean {
-  const content = requireGameContent(context.content);
-  if (holdsOperationalSeat(content, principalId)) {
-    return true;
-  }
-  const record = readWorldState(context.tx, "campaign", campaignAggregateId, campaignStateSchema);
-  return (
-    record !== null &&
-    record.state.playerId === context.auth.principalId &&
-    holdsOperationalSeat(content, record.state.factionId)
-  );
-}
-
 function policySet(context: WorldContext, payload: Json): HandlerResult {
   const input = commandPayloadOf("policy.set", payload);
   const principalId = effectivePrincipalId(context.auth);
   const ports = asPorts(context);
   if (input.key === "watergate.allocation") {
-    if (!controlsWatergate(context, principalId)) {
+    // 主体取自认证上下文，不信任命令自报身份；判定与协议水闸条款共用同一实现。
+    const content = requireGameContent(context.content);
+    if (!controlsWatergate(content, ports["game.world"].campaign(), principalId)) {
       return { kind: "rejected", reasonCode: "no-authority", safeMessage: "只有占公社席的党魁可以修改水闸分配" };
     }
     const allocation = watergateAllocationSchema.safeParse(input.value);

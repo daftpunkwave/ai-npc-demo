@@ -1,11 +1,11 @@
 /**
- * 验证内容视图辅助的结构断言与运营席判定。
+ * 验证内容视图辅助的结构断言、运营席判定与水闸控制权判定。
  * 依赖合成的最小内容视图；不加载真实内容包，也不访问世界状态。
  * 禁止在本文件复制内容 schema 或写死具体内容包的 ID。
  */
 import { describe, expect, it } from "vitest";
 import type { GameContent } from "@world-prism/module-sdk";
-import { holdsOperationalSeat, requireGameContent } from "../src/content-view";
+import { controlsWatergate, holdsOperationalSeat, requireGameContent } from "../src/content-view";
 
 /** 构造通过结构断言的最小内容视图；派系表与公社席规则可定制。 */
 function contentWith(options: {
@@ -69,5 +69,31 @@ describe("holdsOperationalSeat", () => {
       factions: [{ factionId: "faction-a", playerSeat: "seat.relocated" }],
     });
     expect(holdsOperationalSeat(content, "faction-a")).toBe(true);
+  });
+});
+
+describe("controlsWatergate", () => {
+  const content = contentWith({
+    seatId: "seat.commune",
+    factions: [
+      { factionId: "faction-seat", playerSeat: "seat.commune" },
+      { factionId: "faction-other" },
+    ],
+  });
+
+  it("持有公社席的派系主体不依赖 campaign 即掌握水闸", () => {
+    expect(controlsWatergate(content, null, "faction-seat")).toBe(true);
+    expect(controlsWatergate(content, { playerId: "player-1", factionId: "faction-other" }, "faction-seat")).toBe(true);
+  });
+
+  it("campaign 玩家只在其派系持有公社席时掌握水闸", () => {
+    expect(controlsWatergate(content, { playerId: "player-1", factionId: "faction-seat" }, "player-1")).toBe(true);
+    expect(controlsWatergate(content, { playerId: "player-1", factionId: "faction-other" }, "player-1")).toBe(false);
+  });
+
+  it("既不持席也不是 campaign 玩家的主体不掌握水闸，未开局时玩家也不掌握", () => {
+    expect(controlsWatergate(content, { playerId: "player-1", factionId: "faction-seat" }, "faction-other")).toBe(false);
+    expect(controlsWatergate(content, { playerId: "player-1", factionId: "faction-seat" }, "player-2")).toBe(false);
+    expect(controlsWatergate(content, null, "player-1")).toBe(false);
   });
 });
