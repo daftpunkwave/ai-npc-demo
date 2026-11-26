@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { closeDatabase, openDatabase } from "../src/sqlite/connection";
 import { applyMigrations, loadMigrations, MIGRATIONS_DIRECTORY } from "../src/sqlite/migrations";
 import { resolveCatalog } from "../src/sqlite/schema";
+import { StatementCache } from "../src/sqlite/statement-cache";
 import { SqliteTransaction } from "../src/sqlite/transaction";
 import { createFakeHost, createTempDataDir } from "./support";
 
@@ -170,7 +171,11 @@ describe("通信聚合索引化迁移", () => {
 
       // 升级后的行满足通信端口的索引查询契约：主体前缀、会话前缀、送达上界与降序分页
       // 都能定位迁移后的行（与通信模块 WorldTx.list 的读取方式一致）。
-      const storageTx = new SqliteTransaction(upgraded, resolveCatalog(upgraded));
+      const storageTx = new SqliteTransaction(
+        upgraded,
+        resolveCatalog(upgraded),
+        new StatementCache(upgraded),
+      );
       const aggregates = storageTx.branch(BRANCH).table("aggregate_state");
       expect(
         aggregates

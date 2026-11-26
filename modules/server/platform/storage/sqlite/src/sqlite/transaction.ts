@@ -1,7 +1,9 @@
 /**
- * 事务内存储视图：原始查询、表级 scope 访问与 SAVEPOINT，并拒绝返回 Promise 的回调。
- * 依赖 node:sqlite 预编译语句、迁移推导的表目录、表读写实现与端口契约。
- * 禁止在事务结束后继续使用、执行嵌套 BEGIN、暴露连接或忽略保存点回滚失败。
+ * 核心职责：提供事务内存储视图，包括原始查询、表级 scope 访问与 SAVEPOINT，并拒绝返回 Promise 的回调。
+ * 交互契约：依赖 node:sqlite 连接、连接级共享的预编译语句缓存、迁移推导的表目录、表读写实现与端口契约；
+ * 语句缓存由存储适配器持有并在连接关闭时清空，事务只借用，结束后不再影响缓存内容。
+ * 约束与禁忌：禁止在事务结束后继续使用、执行嵌套 BEGIN、暴露连接、清空或替换共享语句缓存，
+ * 或忽略保存点回滚失败。
  */
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import {
@@ -14,6 +16,7 @@ import {
   type StorageWriteResult,
 } from "@ai-npc/contracts";
 import { requireUnscopedTable, type StorageCatalog } from "./schema";
+import type { StatementCache } from "./statement-cache";
 import { createBranchAccess, createUnscopedTable } from "./table-access";
 
 const SAVEPOINT_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
@@ -57,18 +60,19 @@ function toRawRow(raw: Readonly<Record<string, unknown>>): StorageRawRow {
 export class SqliteTransaction implements StorageTransaction {
   private readonly database: DatabaseSync;
   private readonly catalog: StorageCatalog;
-  private readonly statements = new Map<string, StatementSync>();
+  /** 连接级共享缓存，生命周期由存储适配器掌握；事务结束不回收其中的语句。 */
+  private readonly statements: StatementCache;
   private active = true;
 
-  constructor(database: DatabaseSync, catalog: StorageCatalog) {
+  constructor(database: DatabaseSync, catalog: StorageCatalog, statements: StatementCache) {
     this.database = database;
     this.catalog = catalog;
+    this.statements = statements;
   }
 
-  /** 由事务包装器在提交或回滚后调用；重复调用安全。 */
+  /** 由事务包装器在提交或回滚后调用；重复调用安全。共享语句缓存不属于本对象，故不清空。 */
   close(): void {
     this.active = false;
-    this.statements.clear();
   }
 
   /** 事务是否仍可访问；分支复制等跨模块操作用它拒绝已结束的事务对象。 */
@@ -82,14 +86,9 @@ export class SqliteTransaction implements StorageTransaction {
     }
   }
 
+  /** 取连接级共享缓存中的语句；同一 SQL 跨多次事务只预编译一次。 */
   private statement(sql: string): StatementSync {
-    const cached = this.statements.get(sql);
-    if (cached !== undefined) {
-      return cached;
-    }
-    const prepared = this.database.prepare(sql);
-    this.statements.set(sql, prepared);
-    return prepared;
+    return this.statements.prepare(sql);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
@@ -114,7 +113,7 @@ export class SqliteTransaction implements StorageTransaction {
   rows(table: string): StorageTable {
     this.assertActive();
     return createUnscopedTable(
-      this.database,
+      this.statements,
       this.catalog,
       requireUnscopedTable(this.catalog, table),
       () => {
@@ -125,7 +124,7 @@ export class SqliteTransaction implements StorageTransaction {
 
   branch(branchId: string): ScopedBranchStorage {
     this.assertActive();
-    return createBranchAccess(this.database, this.catalog, branchId, () => {
+    return createBranchAccess(this.statements, this.catalog, branchId, () => {
       this.assertActive();
     });
   }
