@@ -436,6 +436,124 @@ describe("宿主 worker 恢复", () => {
   });
 });
 
+describe("断线自动暂停的计时边界", () => {
+  /**
+   * 用可控计时器覆盖全部四个判定点。真实 HTTP/WS 版本在并行负载下会把
+   * 「重连握手是否来得及」当成取消计时失败，这里的时间推进完全由用例决定，
+   * 断言的是阈值内取消、阈值后暂停、暂停后不补算，而不是机器快慢。
+   */
+  function setupFor(
+    harness: AuthorityHarness,
+    autoPauseAfterDisconnectMs: number,
+  ): {
+    readonly lifecycle: ReturnType<typeof createLifecycle>;
+    readonly fakeClock: ReturnType<typeof createFakeClock>;
+  } {
+    const fakeClock = createFakeClock({
+      worldTick: 0,
+      mode: "running",
+      secondsPerTick: 1,
+      runVersion: 1,
+      stepTargetTick: null,
+    });
+    const lifecycle = createLifecycle({
+      host: createFakeHost(),
+      storage: harness.storage,
+      runtime: { clock: fakeClock.port } as unknown as ServerRuntime,
+      authority: harness.authority,
+      active: { branchId: harness.branchId, worldId: harness.worldId },
+      autoPauseAfterDisconnectMs,
+      campaignStarted: () => true,
+      disposeResources: async () => {},
+    });
+    return { lifecycle, fakeClock };
+  }
+
+  it("阈值内重连取消计时，时钟继续运行", async () => {
+    vi.useFakeTimers();
+    const harness = await createAuthorityHarness();
+    harnesses.push(harness);
+    const { lifecycle, fakeClock } = setupFor(harness, 600);
+    try {
+      lifecycle.handlePlayerConnections(1);
+      lifecycle.handlePlayerConnections(0);
+      // 阈值内推进到 599ms：计时不应触发。
+      vi.advanceTimersByTime(599);
+      expect(fakeClock.state()).toMatchObject({ mode: "running" });
+      // 重连发生在阈值内：计时被取消。
+      lifecycle.handlePlayerConnections(1);
+      vi.advanceTimersByTime(5_000);
+      expect(fakeClock.state()).toMatchObject({ mode: "running" });
+    } finally {
+      vi.useRealTimers();
+      await lifecycle.close();
+    }
+  });
+
+  it("阈值后无人重连即自动暂停", async () => {
+    vi.useFakeTimers();
+    const harness = await createAuthorityHarness();
+    harnesses.push(harness);
+    const { lifecycle, fakeClock } = setupFor(harness, 600);
+    try {
+      lifecycle.handlePlayerConnections(1);
+      lifecycle.handlePlayerConnections(0);
+      vi.advanceTimersByTime(600);
+      expect(fakeClock.state()).toMatchObject({ mode: "paused" });
+    } finally {
+      vi.useRealTimers();
+      await lifecycle.close();
+    }
+  });
+
+  it("暂停后不补算离线时间，时钟停在该 tick", async () => {
+    vi.useFakeTimers();
+    const harness = await createAuthorityHarness();
+    harnesses.push(harness);
+    const { lifecycle, fakeClock } = setupFor(harness, 600);
+    try {
+      lifecycle.handlePlayerConnections(1);
+      lifecycle.handlePlayerConnections(0);
+      vi.advanceTimersByTime(600);
+      const pausedAt = fakeClock.state().worldTick;
+      // 长时间离线不推进时钟：自动暂停是终态，不是暂停一段再补算。
+      vi.advanceTimersByTime(60_000);
+      expect(fakeClock.state()).toMatchObject({ mode: "paused", worldTick: pausedAt });
+    } finally {
+      vi.useRealTimers();
+      await lifecycle.close();
+    }
+  });
+
+  it("自动暂停只写一条审计记录", async () => {
+    vi.useFakeTimers();
+    const harness = await createAuthorityHarness();
+    harnesses.push(harness);
+    const { lifecycle } = setupFor(harness, 600);
+    try {
+      lifecycle.handlePlayerConnections(1);
+      lifecycle.handlePlayerConnections(0);
+      vi.advanceTimersByTime(600);
+      // 计时器只安排一次：重复的断线信号不应产生重复审计。
+      vi.advanceTimersByTime(60_000);
+      const audit = harness.storage.transact((tx) =>
+        tx.all(
+          "SELECT type, payload_json FROM lifecycle_events WHERE branch_id = ? AND type = 'ClockAutoPaused'",
+          [harness.branchId],
+        ),
+      );
+      expect(audit).toHaveLength(1);
+      expect(JSON.parse(String(audit[0]?.["payload_json"]))).toMatchObject({
+        reason: "players-disconnected",
+        afterMs: 600,
+      });
+    } finally {
+      vi.useRealTimers();
+      await lifecycle.close();
+    }
+  });
+});
+
 describe("宿主运营审计", () => {
   it("审计写入失败只记日志，不覆盖自动暂停的业务结果", async () => {
     vi.useFakeTimers();
