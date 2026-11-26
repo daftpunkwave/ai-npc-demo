@@ -62,7 +62,7 @@ export function createOperationsHost(input: OperationsHostInput): ReturnType<Ope
         ],
       };
     },
-    reset: () => primitives.resetOnline(),
+    reset: (createdBy) => primitives.resetOnline(createdBy),
     idempotent,
   });
 }

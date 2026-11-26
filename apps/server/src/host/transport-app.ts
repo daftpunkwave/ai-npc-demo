@@ -335,7 +335,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
           }),
         validateRestore: (snapshotId) => operations.validateRestore(snapshotId),
       },
-      reset: (operationId, principalId) => operations.reset({ operationId, principalId }),
+      reset: (operationId, principalId) => operations.reset(principalId, { operationId, principalId }),
       onBranchChanged: (nextBranchId) => switchLiveBranch(active, nextBranchId),
       ...(input.onWorldCommitted === undefined ? {} : { onWorldCommitted: input.onWorldCommitted }),
       // 传输层只上报玩家连接数；暂停策略与审计留在宿主。

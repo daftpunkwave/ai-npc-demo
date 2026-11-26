@@ -63,7 +63,7 @@ export interface OperationsPrimitives {
     readonly createdBy: string;
   }): ReturnType<ServerRuntime["save"]["createSnapshot"]>;
   resetInTransaction(tx: StorageTransaction, createdBy: string): { readonly branchId: string; readonly clock: ClockView };
-  resetOnline(): { readonly branchId: string; readonly clock: ClockView };
+  resetOnline(createdBy: string): { readonly branchId: string; readonly clock: ClockView };
   validateRestoreSource(inspection: ReturnType<ServerRuntime["save"]["inspectRestore"]>): void;
   activateRestoredRoster(tx: StorageTransaction, branchId: string): void;
   restoreOnlineRun(input: {
@@ -187,7 +187,7 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
    * 重开：先把当前在线世界存为快照，再在同一事务内创建新的空在线分支与 live run、
    * 结束旧 run、归档旧分支并切换在线别名；重启后从别名选中新分支。
    */
-  const resetOnline = (): { readonly branchId: string; readonly clock: ClockView } => {
+  const resetOnline = (createdBy: string): { readonly branchId: string; readonly clock: ClockView } => {
     const online = storage.transact(readOnlineEntry);
     if (online === null) {
       throw new DomainError("invalid-state", "没有 world_aliases('online')，拒绝重开");
@@ -199,7 +199,7 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
       );
     }
     prepareSnapshot();
-    const result = storage.transact((tx) => resetInTransaction(tx, "operator-1"));
+    const result = storage.transact((tx) => resetInTransaction(tx, createdBy));
     switchLiveBranch(active, result.branchId);
     return result;
   };
