@@ -4,7 +4,7 @@
  * 禁止写死装配文件名或只断言异常存在而不核对原因。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -212,6 +212,59 @@ describe("catalog 预检", () => {
     expect(report.violations.some((violation) => violation.code === "assembly-incompatible")).toBe(true);
     expect(messagesOf(report)).toContain("配置校验失败");
     expect(messagesOf(report)).toContain("secondsPerTick");
+  });
+
+  it("装配 schema 失败时给出代码与字段路径", () => {
+    const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
+    const root = mkdtempSync(join(tmpdir(), "ai-npc-catalog-schema-"));
+    temporaryRoots.push(root);
+    mkdirSync(join(root, "config/assemblies"), { recursive: true });
+    // 绕开 assembly() 助手直接写文件：schemaVersion 必须是未知版本才会触发 schema 失败。
+    writeFileSync(
+      join(root, "config/assemblies/bad-schema.yaml"),
+      [
+        "schemaVersion: 2",
+        "assemblyId: assembly-bad-schema",
+        "configs: {}",
+        "realms:",
+        "  server: { bindings: [] }",
+        "  client: { bindings: [] }",
+        "  console: { bindings: [] }",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const report = checkCatalog({ root, definitions: [clock], requiredCapabilities: [] });
+    const violation = report.violations.find((entry) => entry.code === "assembly-schema");
+    expect(violation).toBeDefined();
+    expect(violation?.message).toContain("schemaVersion");
+  });
+
+  it("重复 assemblyId 与越界符号链接在预检阶段失败", () => {
+    const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
+    const duplicateRoot = fixtureRoot({
+      "first.yaml": assembly({ assemblyId: "assembly-dup" }),
+      "second.yaml": assembly({ assemblyId: "assembly-dup" }),
+    });
+    const duplicateReport = checkCatalog({ root: duplicateRoot, definitions: [clock], requiredCapabilities: [] });
+    expect(duplicateReport.violations.some((violation) => violation.code === "assembly-duplicate")).toBe(true);
+
+    // 指向装配目录外的符号链接必须被拒绝：启动路径与 check:catalog 共用同一扫描实现。
+    const linkRoot = fixtureRoot({ "kept.yaml": assembly({ assemblyId: "assembly-kept" }) });
+    const outside = join(linkRoot, "outside.yaml");
+    writeFileSync(outside, stringify(assembly({ assemblyId: "assembly-outside" })), "utf8");
+    try {
+      symlinkSync(outside, join(linkRoot, "config/assemblies/linked.yaml"));
+    } catch {
+      // 无权限创建符号链接的环境跳过该半段断言，重复 ID 已覆盖扫描失败路径。
+      return;
+    }
+    const linkReport = checkCatalog({ root: linkRoot, definitions: [clock], requiredCapabilities: [] });
+    expect(
+      linkReport.violations.some(
+        (violation) => violation.code === "assembly-unreadable" || violation.code === "assembly-duplicate",
+      ),
+    ).toBe(true);
   });
 
   it("CLI 在失败时非零退出并逐项打印原因", () => {

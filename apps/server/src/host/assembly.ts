@@ -1,6 +1,7 @@
 /**
  * 加载并解析 server 装配：严格读取装配目录，按 kernel 解析计划校验绑定、能力闭包、作用域、
  * 拓扑与模块配置，并计算规范化摘要；部署期配置覆盖只用于启动计划，不进入冻结摘要。
+ * 装配目录的扫描是启动路径与 check:catalog 的唯一实现，文件级约束只在这里维护一份。
  * 依赖 yaml、契约 schema、kernel 解析/摘要与组合根模块定义；不启动模块、不打开存储。
  * 禁止接受任意路径、未登记模块，也禁止用模块 ID、原始 JSON.stringify 或截断摘要代替规范化哈希。
  */
@@ -9,6 +10,7 @@
 import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
+import type { LoadingError } from "@ai-npc/experiment";
 import {
   assemblyDescriptorSchema,
   protocolVersion,
@@ -37,9 +39,36 @@ function assemblyDirectory(root: string = process.cwd()): string {
   return resolve(root, "config/assemblies");
 }
 
-/** 读取装配目录内的全部 YAML；每个文件必须是普通文件并通过严格 schema。 */
-export function loadAssemblies(root: string = process.cwd()): readonly AssemblyDescriptor[] {
+/** 装配文件枚举与逐文件诊断：只报告文件名与原因，由调用方决定是抛出还是累积。 */
+export interface AssemblyScanFailure {
+  readonly file: string;
+  readonly code: "assemblies-unreadable" | "assembly-unreadable" | "assembly-schema" | "assembly-duplicate";
+  readonly message: string;
+  /** schema 失败时保留原始加载错误，启动路径据此抛出带字段路径的错误。 */
+  readonly error?: LoadingError;
+}
+
+/** 装配目录中的一份成功解析的装配及其来源文件名。 */
+export interface ScannedAssembly {
+  readonly fileName: string;
+  readonly assembly: AssemblyDescriptor;
+}
+
+/** 装配目录扫描结果：成功解析的装配按文件顺序排列，失败项逐条记录。 */
+export interface AssemblyScan {
+  readonly directory: string;
+  readonly assemblies: readonly ScannedAssembly[];
+  readonly failures: readonly AssemblyScanFailure[];
+}
+
+/**
+ * 扫描并解析装配目录，是启动路径与 check:catalog 共用的唯一实现。
+ * 文件级约束（目录可读、普通文件、realpath 不越界、schema、assemblyId 唯一）都在这里生效，
+ * 避免两条路径对同一目录给出不同结论。
+ */
+export function scanAssemblyDirectory(root: string = process.cwd()): AssemblyScan {
   const directory = assemblyDirectory(root);
+  const failures: AssemblyScanFailure[] = [];
   let fileNames: string[];
   try {
     fileNames = readdirSync(directory, { withFileTypes: true })
@@ -47,39 +76,76 @@ export function loadAssemblies(root: string = process.cwd()): readonly AssemblyD
       .map((entry) => entry.name)
       .sort();
   } catch (error) {
-    throw new Error(`无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`);
+    failures.push({
+      file: directory,
+      code: "assemblies-unreadable",
+      message: `无法读取装配目录 ${directory}：${error instanceof Error ? error.message : String(error)}`,
+    });
+    return { directory, assemblies: [], failures };
   }
-  const assemblies: AssemblyDescriptor[] = [];
+  const assemblies: ScannedAssembly[] = [];
   const realDirectory = realpathSync(directory);
+  const seenAssemblyIds = new Map<string, string>();
   for (const fileName of fileNames) {
     const filePath = join(directory, fileName);
-    // 拒绝符号链接与越界路径：realpath 必须仍位于固定的装配目录内，且目标是普通文件。
-    const realFile = realpathSync(filePath);
+    let realFile: string;
+    try {
+      // 拒绝符号链接与越界路径：realpath 必须仍位于固定的装配目录内，且目标是普通文件。
+      realFile = realpathSync(filePath);
+    } catch (error) {
+      failures.push({ file: fileName, code: "assembly-unreadable", message: String(error) });
+      continue;
+    }
     if (!realFile.startsWith(`${realDirectory}${sep}`) || !statSync(realFile).isFile()) {
-      throw new Error(`装配文件越出目录或不是普通文件: ${fileName}`);
+      failures.push({
+        file: fileName,
+        code: "assembly-unreadable",
+        message: `装配文件越出目录或不是普通文件: ${fileName}`,
+      });
+      continue;
     }
     const text = readFileSync(realFile, "utf8");
     let parsed: unknown;
     try {
       parsed = parse(text);
     } catch (error) {
-      throw new Error(`装配文件 ${fileName} 不是合法 YAML：${error instanceof Error ? error.message : String(error)}`);
+      failures.push({
+        file: fileName,
+        code: "assembly-unreadable",
+        message: `装配文件 ${fileName} 不是合法 YAML：${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
     }
     const result = assemblyDescriptorSchema.safeParse(parsed);
     if (!result.success) {
       // 装配文件是配置边界：失败原因必须带字段路径，并与其它配置加载器共用同一错误类型。
-      throw schemaLoadingError(fileName, result.error);
+      const error = schemaLoadingError(fileName, result.error);
+      failures.push({ file: fileName, code: "assembly-schema", message: error.message, error });
+      continue;
     }
-    assemblies.push(result.data);
-  }
-  const ids = new Set<string>();
-  for (const assembly of assemblies) {
-    if (ids.has(assembly.assemblyId)) {
-      throw new Error(`装配目录中存在重复 assemblyId=${assembly.assemblyId}`);
+    const previous = seenAssemblyIds.get(result.data.assemblyId);
+    if (previous !== undefined) {
+      failures.push({
+        file: fileName,
+        code: "assembly-duplicate",
+        message: `装配目录中存在重复 assemblyId=${result.data.assemblyId}，另一处在 ${previous}`,
+      });
+      continue;
     }
-    ids.add(assembly.assemblyId);
+    seenAssemblyIds.set(result.data.assemblyId, fileName);
+    assemblies.push({ fileName, assembly: result.data });
   }
-  return assemblies;
+  return { directory, assemblies, failures };
+}
+
+/** 读取装配目录内的全部 YAML；任一文件不可用即失败，不静默跳过。 */
+export function loadAssemblies(root: string = process.cwd()): readonly AssemblyDescriptor[] {
+  const scan = scanAssemblyDirectory(root);
+  const [first] = scan.failures;
+  if (first !== undefined) {
+    throw first.error ?? new Error(first.message);
+  }
+  return scan.assemblies.map((entry) => entry.assembly);
 }
 
 /**
