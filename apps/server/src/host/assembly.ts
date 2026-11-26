@@ -19,7 +19,7 @@ import {
   type ModuleRef,
   type ResolvedModuleSet,
 } from "@ai-npc/contracts";
-import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
+import { loadContentPack, schemaLoadingError, type ContentPack } from "@ai-npc/experiment";
 import {
   computeAssemblyHash,
   computeCatalogHash,
@@ -67,9 +67,8 @@ export function loadAssemblies(root: string = process.cwd()): readonly AssemblyD
     }
     const result = assemblyDescriptorSchema.safeParse(parsed);
     if (!result.success) {
-      throw new Error(
-        `装配文件 ${fileName} 不符合装配 schema：${result.error.issues.map((issue) => issue.message).join("；")}`,
-      );
+      // 装配文件是配置边界：失败原因必须带字段路径，并与其它配置加载器共用同一错误类型。
+      throw schemaLoadingError(fileName, result.error);
     }
     assemblies.push(result.data);
   }

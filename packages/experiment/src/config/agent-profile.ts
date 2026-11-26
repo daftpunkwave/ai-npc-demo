@@ -11,6 +11,7 @@ import {
   type AgentSlot,
   type Json,
 } from "@ai-npc/contracts";
+import { crossCheckLoadingError, referenceLoadingError } from "../loading/errors";
 import { loadConfigDocument, type ConfigLoadContext, type LoadedConfig } from "./load-config";
 
 const moduleSelectionSchema = z
@@ -111,7 +112,11 @@ function loadDocument(
 ): LoadedConfig<AgentProfileDocument> {
   const loaded = loadConfigDocument(configRef, profileDocumentSchema, context, "profile");
   if (loaded.value.profileId !== configRef) {
-    throw new Error(`profileId「${loaded.value.profileId}」与引用「${configRef}」不一致`);
+    throw referenceLoadingError(
+      loaded.source,
+      "profileId",
+      `profileId「${loaded.value.profileId}」与引用「${configRef}」不一致`,
+    );
   }
   return loaded;
 }
@@ -149,7 +154,11 @@ function chainDocuments(
   readonly value: AgentProfileDocument;
 } {
   if (active.has(configRef)) {
-    throw new Error(`Agent profile 继承链存在环：${[...active, configRef].join(" -> ")}`);
+    throw referenceLoadingError(
+      configRef,
+      "parent",
+      `Agent profile 继承链存在环：${[...active, configRef].join(" -> ")}`,
+    );
   }
   active.add(configRef);
   const loaded = loadDocument(configRef, context);
@@ -180,11 +189,19 @@ export function loadAgentProfile(
     value.failurePolicy === undefined ||
     value.scheduling === undefined
   ) {
-    throw new Error(`Agent profile「${configRef}」缺少预算、就绪、对白、失败策略或调度配置`);
+    throw crossCheckLoadingError(
+      `profile:${configRef}`,
+      "budgets",
+      `Agent profile「${configRef}」缺少预算、就绪、对白、失败策略或调度配置`,
+    );
   }
   for (const slot of ["perception", "memory", "context", "compression", "toolView", "decision"] as const) {
     if (value.slots?.[slot] === undefined) {
-      throw new Error(`Agent profile「${configRef}」缺少必需槽位 ${slot}`);
+      throw crossCheckLoadingError(
+        `profile:${configRef}`,
+        `slots.${slot}`,
+        `Agent profile「${configRef}」缺少必需槽位 ${slot}`,
+      );
     }
   }
   return {
@@ -207,7 +224,11 @@ export function applyProfilePatch(
 ): ResolvedAgentProfile {
   const loaded = loadDocument(patchRef, context);
   if (loaded.value.kind !== "variant" || loaded.value.patch === undefined) {
-    throw new Error(`profile patch「${patchRef}」必须是带 patch 的 variant`);
+    throw crossCheckLoadingError(
+      loaded.source,
+      "kind",
+      `profile patch「${patchRef}」必须是带 patch 的 variant`,
+    );
   }
   const baseDocument: AgentProfileDocument = {
     schemaVersion: 1,
@@ -242,10 +263,18 @@ export function validateProfileSelection(
   for (const slot of agentSlots) {
     const selected = profile.slots[slot];
     if (selected === undefined) {
-      throw new Error(`profile「${profile.profileId}」缺少槽位 ${slot}`);
+      throw crossCheckLoadingError(
+        `profile:${profile.profileId}`,
+        `slots.${slot}`,
+        `profile「${profile.profileId}」缺少槽位 ${slot}`,
+      );
     }
     if (!(slots[slot] ?? []).includes(selected.module)) {
-      throw new Error(`profile「${profile.profileId}」的 ${slot} 选择了未装配模块 ${selected.module}`);
+      throw crossCheckLoadingError(
+        `profile:${profile.profileId}`,
+        `slots.${slot}.module`,
+        `profile「${profile.profileId}」的 ${slot} 选择了未装配模块 ${selected.module}`,
+      );
     }
   }
 }

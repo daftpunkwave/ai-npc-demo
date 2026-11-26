@@ -13,6 +13,7 @@ import {
   LoadingError,
   applyProfilePatch,
   loadAgentProfile,
+  loadAgentToolset,
   loadConfigDocument,
   loadContentPack,
   loadModelFixtures,
@@ -291,16 +292,105 @@ describe("配置加载", () => {
     }
   });
 
+  it("profile 与 toolset 的配置失败类型统一带 code、source 与 path", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-ref-"));
+    try {
+      // profileId 与文件引用不一致：属于引用解析失败，必须能按 code 分类并定位到字段。
+      writeFileSync(
+        join(tempDir, "agent-mismatch.yaml"),
+        [
+          "schemaVersion: 1",
+          "profileId: agent-other",
+          "kind: agent",
+          "parent: null",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const profileError = captureLoadingError(() =>
+        loadAgentProfile("agent-mismatch", { configDir: tempDir }),
+      );
+      expect(profileError.code).toBe("reference");
+      expect(profileError.path).toBe("profileId");
+      expect(profileError.source.endsWith("agent-mismatch.yaml")).toBe(true);
+
+      writeFileSync(
+        join(tempDir, "toolset-mismatch.yaml"),
+        [
+          "schemaVersion: 1",
+          "toolsetId: other-toolset",
+          "tools:",
+          "  - { toolId: world.inspect, version: \"1\", permissionProfile: self-known, budgetProfile: query, viewConstraints: { maxListItems: 5, maxTokens: 300 } }",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const toolsetError = captureLoadingError(() =>
+        loadAgentToolset("toolset-mismatch", { configDir: tempDir }),
+      );
+      expect(toolsetError.code).toBe("reference");
+      expect(toolsetError.path).toBe("toolsetId");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("profile 继承链成环时报引用与路径", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-cycle-"));
+    try {
+      writeFileSync(
+        join(tempDir, "agent-cycle-a.yaml"),
+        ["schemaVersion: 1", "profileId: agent-cycle-a", "kind: agent", "parent: agent-cycle-b", ""].join("\n"),
+        "utf8",
+      );
+      writeFileSync(
+        join(tempDir, "agent-cycle-b.yaml"),
+        ["schemaVersion: 1", "profileId: agent-cycle-b", "kind: agent", "parent: agent-cycle-a", ""].join("\n"),
+        "utf8",
+      );
+      const error = captureLoadingError(() => loadAgentProfile("agent-cycle-a", { configDir: tempDir }));
+      expect(error.code).toBe("reference");
+      expect(error.path).toBe("parent");
+      expect(error.message).toContain("->");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("未知键被严格拒绝", () => {
     const error = captureLoadingError(() => loadRunSpec("run-unknown-key", { configDir: fixturesConfigDir }));
     expect(error.code).toBe("schema");
     expect(error.source.endsWith("run-unknown-key.yaml")).toBe(true);
     expect(error.message).toContain("unexpected");
   });
+
+  it("多处 schema 问题时列出全部位置而不是只报第一条", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-schema-multi-"));
+    try {
+      writeFileSync(
+        join(tempDir, "multi-bad.yaml"),
+        ["schemaVersion: 1", "assemblyId: 42", "configs: {}", "realms: {}", ""].join("\n"),
+        "utf8",
+      );
+      const error = captureLoadingError(() =>
+        loadConfigDocument(
+          "multi-bad",
+          z.strictObject({ schemaVersion: z.literal(1), assemblyId: z.string(), configs: z.record(z.string(), z.unknown()) }),
+          { configDir: tempDir },
+        ),
+      );
+      expect(error.code).toBe("schema");
+      // 单条问题时保持精确路径；这里有多条，原因里逐条带路径。
+      expect(error.message).toContain("assemblyId");
+      expect(error.message).toContain("realms");
+      expect(error.message).toContain("共 2 处");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
-describe("RunSpec 交叉检查", () => {
-  const content = loadContentPack(contentRoot, "earth-2964-v1");
+describe("RunSpec 交叉检查", () => {  const content = loadContentPack(contentRoot, "earth-2964-v1");
   const run = loadRunSpec("online-default", { configDir }, { seed: "online-seed-test" });
 
   it("宿主可把实际启动选择并入模板并仍按严格 schema 校验", () => {
