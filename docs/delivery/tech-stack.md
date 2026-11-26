@@ -189,7 +189,9 @@ packages:
 
 `.github/workflows/check.yml` 在每个 pull request 上以 `pnpm install --frozen-lockfile` 安装依赖并运行 `pnpm check`，因此上表的检查在远端强制执行，而不只依赖本地执行。工作流固定 Node `26.13.1`（与本机验证一致，满足 `engines.node >= 24` 下限），由 `pnpm/action-setup` 读取 `packageManager` 字段确定 pnpm 版本，并对同一 PR 的新推送取消上一轮未完成的运行。
 
-`main` 的仓库规则集禁止直接推送、只允许 squash 合并，并把该工作流的 `check` 设为必需检查，要求 PR 分支合并前与 `main` 保持最新。合并后 `main` 的代码树因此就是 PR 上最后一次通过检查的代码树；`pnpm check` 的输入只有代码树（含锁文件）与固定的 Node 版本，不依赖合并后 `main` 的额外状态，所以该工作流不在合并后的 `main` 上重复运行。PR 落后于 `main` 时，需要先更新分支，等 `check` 在新提交上通过后再合并。仓库启用的 CodeQL 默认配置仍在 `main` 的 push 上分析：默认分支的分析结果是告警列表与 PR 增量对比的基线，与 PR 上的分析职责不同。
+`main` 的仓库规则集禁止直接推送、只允许 squash 合并，并把该工作流的 `check` 设为必需检查，要求 PR 分支合并前与 `main` 保持最新。合并后 `main` 的代码树因此就是 PR 最终 head 上通过 `check` 的代码树；除运行器镜像等外部环境外，`pnpm check` 只取决于代码树（含锁文件）与固定的 Node 版本，不依赖合并后 `main` 的额外状态，所以该工作流不在合并后的 `main` 上重复运行。PR 落后于 `main` 时，需要先更新分支（网页上的 Update branch 或 `gh pr update-branch`），等 `check` 在新提交上通过后再合并。`pull_request` 的默认事件类型不含 `edited`，修改 PR 目标分支不会触发重跑；把目标分支改为 `main` 后，需要推送新提交或关闭再重开 PR，让 `check` 在 `main` 之上重新运行。
+
+工作流的作业名 `check` 就是规则集中的必需检查名：改名或给触发器加 `paths` 过滤会让 PR 一直等待该检查；作业级 `if` 跳过的运行会被必需检查当作通过，因此不用它跳过检查。仓库启用的 CodeQL 默认配置仍在 `main` 的 push 上分析，并每周定时分析：默认分支的分析结果是告警列表与 PR 增量对比的基线，与 PR 上的分析职责不同。
 
 `.codacy.yml` 只声明分析范围（排除测试、夹具、锁文件与已发布迁移），与工作流不重复；工作流负责仓库自有的六项检查，Codacy 负责外部静态分析。新增检查项时加入 `pnpm check` 脚本链即可同时进入本地与远端门禁，无需改工作流。
 
