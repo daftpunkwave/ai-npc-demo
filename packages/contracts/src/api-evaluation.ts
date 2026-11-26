@@ -193,9 +193,14 @@ export const experimentIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "实验标识只能由字母、数字、点、下划线与连字符组成");
 
+/**
+ * 实验创建请求：内联规格或实验规格的配置引用。
+ * 内联规格的字段集由宿主按实验规格 schema 校验（与文件加载共用同一份 schema）；
+ * 配置引用是规格文件的基名，与配置加载器接受的引用语法一致，不接受路径分隔符或扩展名。
+ */
 export const experimentCreateRequestSchema = z.union([
   z.object({ experimentSpec: z.record(z.string().min(1), jsonValueSchema) }).strict(),
-  z.object({ experimentRef: z.string().min(1) }).strict(),
+  z.object({ experimentRef: experimentIdSchema }).strict(),
 ]);
 
 /**

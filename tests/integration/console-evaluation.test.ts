@@ -634,6 +634,29 @@ describe("控制台评估读取接口", () => {
     })).json()).runs.length;
     expect(after).toBe(before);
   });
+  it("空规格、含未知字段的规格与路径形态的 experimentRef 都以 validation 拒绝且不创建 run", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const before = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    const payloads = [
+      { experimentSpec: {} },
+      { experimentSpec: { ...testExperimentSpec({ experimentId: "exp-unknown-field-v1", variants: ["memory-m0-window"] }), notes: "typo" } },
+      // 引用写规格文件基名；带目录或扩展名的路径与配置加载器的引用语法不一致，在请求层拒绝。
+      { experimentRef: "config/experiments/exp-memory-promise-v1.yaml" },
+    ];
+    for (const payload of payloads) {
+      const response = await host.app.inject({ method: "POST", url: "/api/v1/console/experiments", headers, payload });
+      expect(response.statusCode).toBe(400);
+      expect(errorResponseSchema.parse(response.json()).error.code).toBe("validation");
+    }
+    const after = runsResponseSchema.parse((await host.app.inject({
+      method: "GET", url: "/api/v1/console/runs", headers,
+    })).json()).runs.length;
+    expect(after).toBe(before);
+  });
+
   it("不存在的 experimentRef 返回 400 而不是内部错误", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

@@ -42,7 +42,7 @@
 | S18 | — | `shared-model-layout-v1.yaml`、`claude-model-layout-v1.yaml` | 标准装配加 `agent.model-pool.shared`、`platform.budget.standard`、`platform.model-transport.openai-compatible`、`platform.model-transport.anthropic`，`agentSlots.decision` 加 `agent.decision.model`；标准 run 移除过渡用 decision patch |
 | S19 | — | `memory-m1-structured-ledger` variant | console：model-mounts、faction-ops、debug |
 | S20 | — | 其余四个记忆 variant 文件（`memory-m0-window`、`memory-m0-current`、`memory-m2-stream-reflection`、`memory-m3-layered-hybrid`） | `agentSlots.memory` 加 stream-reflection、layered-hybrid |
-| S21 | — | `config/runs/exp-*.yaml` | server：`platform.evaluation.standard`；console：evaluation |
+| S21 | — | `config/experiments/exp-*.yaml` | server：`platform.evaluation.standard`；console：evaluation |
 | S22 | — | `config/presets/*.yaml` | console：scenario-editor、audit |
 | S24 | — | 定稿已有的剧情替换装配，新增 HUD 和控制台两份替换装配 | client 的 `client.hud.compact`、console 的 `console.observability.lite` 只出现在各自替换装配里 |
 
@@ -264,7 +264,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S21 实验、探针与评估页面
 
 - **先读**：[评估](../platform/evaluation.md) 全文、[配置](../platform/configuration.md) 第 3、10.3 节、[内容包](../game/content-pack.md) 第 11 节、[存储](../architecture/storage.md) 第 3 节、本文 0.3 节 S21 行。
-- **产出**：`packages/experiment` 与 `platform.evaluation.standard`（RunSpec 预检、manifest 冻结、冷启动与快照两种建分支方式、受控时钟驱动脚本、实验展开与顺序执行、探针沙盒（只激活被提问的 Agent）、计分、报告）；`console.evaluation.standard`；`config/runs/exp-memory-promise-v1.yaml`、`exp-memory-rumor-v1.yaml`、`exp-memory-secret-v1.yaml`（格式见配置第 10.3 节）。
+- **产出**：`packages/experiment` 与 `platform.evaluation.standard`（RunSpec 预检、manifest 冻结、冷启动与快照两种建分支方式、受控时钟驱动脚本、实验展开与顺序执行、探针沙盒（只激活被提问的 Agent）、计分、报告）；`console.evaluation.standard`；`config/experiments/exp-memory-promise-v1.yaml`、`exp-memory-rumor-v1.yaml`、`exp-memory-secret-v1.yaml`（格式见配置第 10.3 节）。
 - **测试**：同一 RunSpec 两次预检得到相同 manifest hash；两个 run 的分支互不串读；探针在沙盒中运行且不改变实验分支；四种探针 kind 的计分用例；没有对白的探针记为无效；`exp-memory-promise-v1` 换成测试装配、确定性模型布局与 `commonPatchRefs: [decision-deterministic]` 运行，tick 60 岑雁的立场必须是：
 
 | 记忆组 | break 分支 | keep 分支 |

@@ -416,4 +416,4 @@ interface TurnDetail extends TurnSummary {
 }
 ```
 
-`POST /api/v1/console/experiments` 的 `experimentSpec` 与 `config/runs/*.yaml` 的格式相同（[配置](../platform/configuration.md) 第 10.3 节）；也可以传 `{ experimentRef }` 引用仓库里的文件。`POST /api/v1/console/runs` 的 `runSpec` 是 [配置](../platform/configuration.md) 第 3 节的 RunSpec。
+`POST /api/v1/console/experiments` 的 `experimentSpec` 与 `config/experiments/*.yaml` 的格式相同（[配置](../platform/configuration.md) 第 10.3 节），宿主按同一份实验规格 schema 校验，空对象或含未知字段时返回 400 `validation`；也可以传 `{ experimentRef }` 引用仓库里的规格文件，引用写文件基名（如 `exp-memory-promise-v1`），不接受路径或扩展名。`POST /api/v1/console/runs` 的 `runSpec` 是 [配置](../platform/configuration.md) 第 3 节的 RunSpec。

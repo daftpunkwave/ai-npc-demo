@@ -324,7 +324,7 @@ patch:
 
 `patch` 只对 `kind: variant` 有效：其他 kind 声明 `patch` 会在加载时被拒绝，避免其自身 `slots` 与预算被静默丢弃。需要覆盖基线时，非 variant profile 直接写顶层字段。`parent` 只有 variant 可以省略；其余 kind 必须显式写 `parent` 或 `parent: null`，继承链起点不靠省略表达。
 
-### 10.3 实验规格 `config/runs/*.yaml`
+### 10.3 实验规格 `config/experiments/*.yaml`
 
 ```yaml
 schemaVersion: 1
@@ -350,7 +350,7 @@ repetitions: 3
 runOrder: rotate               # rotate the variant order on each repetition
 ```
 
-实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 当前只接受 `cold-start`（从内容包初态开始）；`snapshot`（引用快照）与 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）依赖尚未实现的实验执行器，预检会拒绝。在线模板另有 `config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用）。
+实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 当前只接受 `cold-start`（从内容包初态开始）；`snapshot`（引用快照）与 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）依赖尚未实现的实验执行器，预检会拒绝。在线 RunSpec 模板放在 `config/runs/`：`config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用），与实验规格分目录存放。
 
 ### 10.4 玩家测试 preset `config/presets/*.yaml`（目标，尚未创建）
 

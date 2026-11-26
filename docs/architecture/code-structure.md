@@ -92,7 +92,8 @@ world-prism/
     model-layouts/               # shared-, claude-, deterministic-model-layout-v1
     toolsets/                    # character-default, character-broadcaster, strategic-default
     # presets/                   # 玩家测试申请预设目录为后续目标，尚未创建
-    runs/                        # RunSpec and experiment examples
+    runs/                        # online RunSpec templates
+    experiments/                 # experiment specs (variants × script branches × repetitions)
     pricing.yaml  pricing-live.yaml
   content/
     world-packs/earth-2964-v1/   # see docs/game/content-pack.md
