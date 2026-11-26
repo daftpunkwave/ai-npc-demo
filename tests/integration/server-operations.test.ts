@@ -523,6 +523,54 @@ describe("运营失败记录的重试语义", () => {
     expect((conflict as DomainError).code).toBe("idempotency-conflict");
   }, 30_000);
 
+  it("每次可重试失败写入生命周期审计，幂等记录被覆盖后仍可查到首次失败的请求与时间", async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",
+      rateLimits: { read: 100_000, write: 100_000 },
+    });
+    hosts.push(host);
+    const times = ["2026-11-21T00:00:01.000Z", "2026-11-21T00:00:02.000Z", "2026-11-21T00:00:03.000Z"];
+    let clockIndex = 0;
+    const journal = new OperationJournal(host.storage, () => times[clockIndex++] ?? "2026-11-21T00:00:09.000Z", () => {});
+    const operationId = "op-000000000074";
+    const first = pauseKey(host, operationId, 0);
+    const second = pauseKey(host, operationId, 1);
+    journal.recordFailure(first, new DomainError("invalid-state", "时钟暂停暂时失败", { retryable: true }));
+    journal.recordFailure(second, new DomainError("not-ready", "时钟仍不可用", { retryable: true }));
+    const clock: Json = { worldTick: 0, mode: "paused", secondsPerTick: 20, runVersion: 2, stepTargetTick: null };
+    journal.recordSuccessStandalone(pauseKey(host, operationId, 2), clock);
+    // 不可重试失败与写在终态记录上的失败不进入这条审计。
+    journal.recordFailure(pauseKey(host, "op-000000000075", 0), new DomainError("version-conflict", "时钟版本冲突"));
+    journal.recordFailure(pauseKey(host, operationId, 3), new DomainError("invalid-state", "终态后不再记录", { retryable: true }));
+
+    expect(idempotencyRow(host, operationId)).toMatchObject({ status: "succeeded" });
+    const audits = host.storage.transact((tx) => tx.all(
+      "SELECT subject_id, payload_json, created_at FROM lifecycle_events WHERE type = 'OperationAttemptFailed' ORDER BY seq",
+    ));
+    expect(audits.map((row) => ({
+      subjectId: row["subject_id"],
+      payload: JSON.parse(String(row["payload_json"])) as unknown,
+      createdAt: row["created_at"],
+    }))).toEqual([
+      {
+        subjectId: "player-1",
+        payload: {
+          worldId: host.worldId, operationId, operationKind: "pause", requestHash: first.requestHash,
+          errorCode: "invalid-state", safeMessage: "时钟暂停暂时失败",
+        },
+        createdAt: "2026-11-21T00:00:01.000Z",
+      },
+      {
+        subjectId: "player-1",
+        payload: {
+          worldId: host.worldId, operationId, operationKind: "pause", requestHash: second.requestHash,
+          errorCode: "not-ready", safeMessage: "时钟仍不可用",
+        },
+        createdAt: "2026-11-21T00:00:02.000Z",
+      },
+    ]);
+  }, 30_000);
+
   it("不可重试失败保持终态：重放同一错误、换 payload 仍冲突，且失败记录不覆盖成功结果", async () => {
     const host = await startHost({
       dataDir: tempDataDir(), playerToken: "player-token", consoleToken: "console-token",

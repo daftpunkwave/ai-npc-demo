@@ -1,7 +1,8 @@
 /**
  * 运营幂等日志：按世界、认证主体与 operationId 读取首次结果，或在业务事务内写入结果与失败原因。
- * 依赖存储事务、规范 JSON 与运营结果解码；跨分支切换与进程重启仍有效，不参与分支复制。
+ * 依赖存储事务、规范 JSON、运营结果解码与生命周期审计写入；跨分支切换与进程重启仍有效，不参与分支复制。
  * 可重试失败视为尚未产生已提交结果，允许同一 operationId 重新执行并覆盖；不可重试失败与成功结果保持终态。
+ * 可重试失败在覆盖前另写一条生命周期审计，幂等记录只保留最近一次尝试，审计保留每次失败的请求哈希与时间。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { createHash } from "node:crypto";
@@ -18,6 +19,7 @@ import {
   type StorageRow,
   type StorageTransaction,
 } from "@world-prism/contracts";
+import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 
 /** 运营操作种类；与 operation_idempotency.operation_kind 的约束一致。 */
 export type OperationKind = "pause" | "resume" | "step" | "snapshot" | "restore" | "reset";
@@ -41,6 +43,12 @@ export interface OperationKey {
 export type OperationOutcome =
   | { readonly status: "succeeded"; readonly result: Json }
   | { readonly status: "failed"; readonly code: ErrorCode; readonly retryable: boolean; readonly safeMessage: string };
+
+/**
+ * 可重试失败的生命周期审计类型。幂等记录会被同一 operationId 的后续尝试覆盖，
+ * 这条审计在同一事务内写入，保留每次失败尝试的操作者、请求哈希、原因与时间。
+ */
+const operationAttemptFailedEventType = "OperationAttemptFailed";
 
 /** 部署级幂等表；不含 branch_id，因此跨在线别名切换与进程重启仍然有效。 */
 const operationIdempotencyTable = "operation_idempotency";
@@ -232,7 +240,7 @@ export class OperationJournal {
   }
 
   /**
-   * 记录本次执行的失败原因。可重试失败允许被后续重试替换或更新；
+   * 记录本次执行的失败原因。可重试失败允许被后续重试替换或更新，因此同一事务内另写一条生命周期审计；
    * 已提交的成功结果与不可重试失败是终态，不被覆盖；记录写入失败只记日志。
    */
   recordFailure(key: OperationKey, error: unknown): void {
@@ -247,6 +255,25 @@ export class OperationJournal {
         if (existing !== null && !isRetryableFailureRow(existing)) {
           return;
         }
+        const now = this.nowIso();
+        if (published.retryable) {
+          // 幂等记录是部署级的，不属于某个 run 或分支；审计同样以 null 归属记录。
+          insertLifecycleAuditEvent(tx, {
+            runId: null,
+            branchId: null,
+            type: operationAttemptFailedEventType,
+            subjectId: key.principalId,
+            payload: {
+              worldId: key.worldId,
+              operationId: key.operationId,
+              operationKind: key.kind,
+              requestHash: key.requestHash,
+              errorCode: published.code,
+              safeMessage: published.safeMessage,
+            },
+            createdAt: now,
+          });
+        }
         tx.rows(operationIdempotencyTable).put({
           world_id: key.worldId,
           principal_id: key.principalId,
@@ -258,7 +285,7 @@ export class OperationJournal {
           error_code: published.code,
           error_retryable: published.retryable ? 1 : 0,
           error_safe_message: published.safeMessage,
-          created_at: this.nowIso(),
+          created_at: now,
         });
       });
     } catch (recordError) {
