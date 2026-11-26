@@ -1,7 +1,7 @@
 /**
  * 核心职责：验证记忆维护任务在反复失败与持续未就绪时的终止边界。
  * 交互契约：使用真实 SQLite 与 MemoryHost，只通过宿主公开方法观察队列行。
- * 约束与禁忘：禁止伪造水位、租约或健康摘要，也不允许直接改队列行来制造预期结果。
+ * 约束与禁忌：禁止伪造水位、租约或健康摘要，也不允许直接改队列行来制造预期结果。
  */
 import { describe, expect, it, vi } from "vitest";
 import type { RunModelPort } from "@ai-npc/module-sdk";

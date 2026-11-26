@@ -349,7 +349,7 @@ export class TurnWorker {
           },
           taskInvitations: frozen.world.taskInvitations, lexicons: content.locale.lexicons,
           executeTool, deadlineMs: turn.deadlineMs,
-        });
+        }, evidence);
         this.assertCurrent(turn, "deciding");
         if (result.status !== "ok") {
           // terminal_reason 优先取细分原因（round-limit、call-budget、context-window、deadline-backpressure 等），
@@ -431,20 +431,40 @@ export class TurnWorker {
     }
   }
 
-  private async decideBeforeDeadline(port: AgentDecisionPort<DeterministicDecisionInput>, input: DeterministicDecisionInput) {
+  /**
+   * 在截止时间前完成决策：超时、运行时停止与正常完成三者竞争。
+   * 截止时把取消传给端口，让在途网络调用随之结束；端口不响应取消时，
+   * 迟到的决策仍会被租约与 fencing 拒绝，但会继续占用并发与预算，因此事实要记进证据。
+   */
+  private async decideBeforeDeadline(
+    port: AgentDecisionPort<DeterministicDecisionInput>,
+    input: Omit<DeterministicDecisionInput, "signal">,
+    evidence: TurnEvidence,
+  ) {
     const timer = new AbortController();
     const signal = AbortSignal.any([timer.signal, this.signal]);
+    const started = this.runtime.host.monotonicMs();
+    // 端口自身的 promise 单独持有，用于判断超时后它是否还在后台运行。
+    let settled = false;
+    const deciding = port.decide({ ...input, signal });
+    void deciding.then(() => { settled = true; }, () => { settled = true; });
     try {
-      const remaining = Math.max(0, input.deadlineMs - this.runtime.host.monotonicMs());
+      const remaining = Math.max(0, input.deadlineMs - started);
       const deadline = this.runtime.host.sleep(remaining, signal).then(() => {
         throw new TurnStopped("budget-exhausted", "turn-deadline");
       }, (error: unknown) => {
         if (this.signal.aborted) throw new TurnStopped("cancelled", "runtime-stopped");
         throw error;
       });
-      return await Promise.race([port.decide(input), deadline]);
+      return await Promise.race([deciding, deadline]);
     } finally {
       timer.abort();
+      // 放弃等待时端口仍未结束：说明取消没有被响应，事实记进证据而不是假装已停止。
+      if (!settled) {
+        evidence.record("turn.decision-cancel", started, {
+          status: "skipped", reason: "cancelled-not-honored", effective: { deadlineMs: input.deadlineMs },
+        });
+      }
     }
   }
 

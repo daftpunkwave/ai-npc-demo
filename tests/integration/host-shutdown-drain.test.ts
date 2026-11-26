@@ -1,7 +1,7 @@
 /**
  * 核心职责：验证生产关闭路径先排空再释放，且卡住的 turn 不会让关闭无限挂起。
  * 交互契约：使用真实 SQLite 与宿主装配；用自定义决策模块把 turn 卡在决策阶段。
- * 约束与禁忘：禁止启动真实监听端口，也不依赖真实计时器长等待；关闭预算由宿主选项显式给出。
+ * 约束与禁忌：禁止启动真实监听端口，也不依赖真实计时器长等待；关闭预算由宿主选项显式给出。
  */
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -490,6 +490,7 @@ describe("模型决策终态归因", () => {
       nudgeSubmit: "请提交决定", budgetStop: "预算已用尽",
       call, executeTool: async () => ({ modelText: "查询完成", isError: false }),
       validate: (candidate) => candidate === null ? { reasons: ["缺少提交"] } : { decision: validSubmission },
+      signal: new AbortController().signal,
       ...overrides,
     };
   }

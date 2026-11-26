@@ -1,7 +1,7 @@
 /**
  * 核心职责：验证关闭编排的两级语义——先按截止时间排空，再逆序释放，且排空失败不阻断释放。
  * 交互契约：只依赖 `drainBeforeClose` 与 `disposeInReverse` 的公开签名与注入的日志回调。
- * 约束与禁忘：禁止启动真实监听端口，也不用真实计时器等待；排空预算通过参数直接给出。
+ * 约束与禁忌：禁止启动真实监听端口，也不用真实计时器等待；排空预算通过参数直接给出。
  */
 import { describe, expect, it, vi } from "vitest";
 import { disposeInReverse, drainBeforeClose, type DisposalStep } from "@ai-npc/app-server";

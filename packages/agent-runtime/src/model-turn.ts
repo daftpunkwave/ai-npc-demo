@@ -106,6 +106,8 @@ export class ModelTurn {
       },
       executeTool: input.executeTool,
       validate,
+      // 把 turn 取消信号交给决策模块，使其在截止或停止时中止在途模型调用。
+      signal: this.options.signal,
     });
     if (result.status !== "ok") return result;
     const checked = validate(result.decision);

@@ -51,6 +51,8 @@ const modelDecision: ModelDecisionPort = {
     let awaitingBudgetStop = false;
     let budgetStopReason: "call-budget" | "context-window" = "call-budget";
     for (let round = 1; round <= input.maxRounds; round += 1) {
+      // turn 截止或运行时停止后不再发起新一轮模型调用：继续调用会占用并发与预算且结果必被丢弃。
+      if (input.signal.aborted) return fail("model-failed", "deadline-backpressure");
       let response;
       try {
         ({ response } = await input.call({
