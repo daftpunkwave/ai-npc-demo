@@ -3,8 +3,8 @@
  * 请求和响应经凭据扫描后写入不可变 artifact，尝试行关联同一工作的 trace。
  * 归档失败时标记运行证据不完整，禁止把敏感正文写入日志。
  */
-import type { HostServices, Json, ModelRequest, ModelResponse, ModelTransportError, StoragePort } from "@ai-npc/contracts";
-import { insertLifecycleAuditEvent, StoredAgentArtifactStore, type ModelObservabilityPort, type ModelRoute, type ModelWorkScope } from "@ai-npc/module-sdk";
+import type { HostServices, Json, ModelRequest, ModelResponse, ModelTransportError, StoragePort } from "@world-prism/contracts";
+import { insertLifecycleAuditEvent, StoredAgentArtifactStore, type ModelObservabilityPort, type ModelRoute, type ModelWorkScope } from "@world-prism/module-sdk";
 
 export type AttemptStatus = "succeeded" | "failed" | "superseded" | "cancelled";
 

@@ -1,5 +1,5 @@
 {
-    "name": "ai-npc-demo",
+    "name": "world-prism",
     "version": "0.1.0",
     "private": true,
     "type": "module",
@@ -25,8 +25,8 @@
         "measure:model-evidence": "tsx scripts/measure-model-evidence.ts"
     },
     "devDependencies": {
-        "@ai-npc/app-server": "workspace:*",
-        "@ai-npc/contracts": "workspace:*",
+        "@world-prism/app-server": "workspace:*",
+        "@world-prism/contracts": "workspace:*",
         "@types/node": "^26",
         "@types/react": "^19",
         "@types/react-dom": "^19",

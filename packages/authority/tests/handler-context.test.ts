@@ -4,8 +4,8 @@
  * 禁止在规则模块里读取全局 seed 或让随机源绕过 runSeed。
  */
 import { describe, expect, it } from "vitest";
-import type { AuthContext, HostServices } from "@ai-npc/contracts";
-import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
+import type { AuthContext, HostServices } from "@world-prism/contracts";
+import type { ApprovedSpeechReader } from "@world-prism/module-sdk";
 import { createHandlerContext } from "../src/handler-context";
 
 const auth: AuthContext = {

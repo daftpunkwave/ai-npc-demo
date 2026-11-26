@@ -17,9 +17,9 @@ import {
   type Json,
   type MemoryBundle,
   type ToolExecutionResult,
-} from "@ai-npc/contracts";
-import type { ContentPack, ResolvedAgentProfile } from "@ai-npc/experiment";
-import type { DeterministicDecisionInput, MemoryRecordView } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { ContentPack, ResolvedAgentProfile } from "@world-prism/experiment";
+import type { DeterministicDecisionInput, MemoryRecordView } from "@world-prism/module-sdk";
 import type { SpeechApprovalInput } from "./dialogue-flow";
 import { isDisclosable, type SpeechFact } from "./disclosure";
 import { asRecord } from "./runtime-records";

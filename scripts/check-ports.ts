@@ -141,18 +141,18 @@ function childEnvironment(): NodeJS.ProcessEnv {
   rmSync(dataDir, { recursive: true, force: true });
   return {
     ...process.env,
-    NPC_SERVER_HOST: "127.0.0.1",
-    NPC_SERVER_PORT: "3000",
-    NPC_CLIENT_PORT: "5173",
-    NPC_DATA_DIR: dataDir,
-    NPC_ASSEMBLY: "local-slg-test-v1",
-    NPC_MODEL_LAYOUT: "deterministic-model-layout-v1",
-    NPC_ROSTER: "core-3",
-    NPC_PLAYER_TOKEN: "ports-player",
-    NPC_CONSOLE_TOKEN: "ports-console",
-    NPC_OPERATOR_TOKEN: "ports-operator",
-    NPC_RESEARCHER_TOKEN: "ports-researcher",
-    NPC_EVALUATOR_TOKEN: "ports-evaluator",
+    WORLD_PRISM_SERVER_HOST: "127.0.0.1",
+    WORLD_PRISM_SERVER_PORT: "3000",
+    WORLD_PRISM_CLIENT_PORT: "5173",
+    WORLD_PRISM_DATA_DIR: dataDir,
+    WORLD_PRISM_ASSEMBLY: "local-slg-test-v1",
+    WORLD_PRISM_MODEL_LAYOUT: "deterministic-model-layout-v1",
+    WORLD_PRISM_ROSTER: "core-3",
+    WORLD_PRISM_PLAYER_TOKEN: "ports-player",
+    WORLD_PRISM_CONSOLE_TOKEN: "ports-console",
+    WORLD_PRISM_OPERATOR_TOKEN: "ports-operator",
+    WORLD_PRISM_RESEARCHER_TOKEN: "ports-researcher",
+    WORLD_PRISM_EVALUATOR_TOKEN: "ports-evaluator",
   };
 }
 

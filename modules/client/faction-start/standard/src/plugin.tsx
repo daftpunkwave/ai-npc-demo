@@ -4,8 +4,8 @@
  * 禁止在命令失败后关闭开局页或伪造进入游戏。
  */
 import { useState, type ReactNode } from "react";
-import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { CampaignResponse, ClientContentView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
+import type { CampaignResponse, ClientContentView, ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 
 interface WorldViewLike {
   getCampaign(): CampaignResponse | null;

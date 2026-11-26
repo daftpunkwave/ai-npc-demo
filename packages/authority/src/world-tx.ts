@@ -14,9 +14,9 @@ import {
   type Json,
   type StorageTable,
   type StorageTransaction,
-} from "@ai-npc/contracts";
-import type { HostServices } from "@ai-npc/contracts";
-import type { AggregateEntry, AggregateListOptions, AggregateRecord, WorldTx } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { HostServices } from "@world-prism/contracts";
+import type { AggregateEntry, AggregateListOptions, AggregateRecord, WorldTx } from "@world-prism/module-sdk";
 import { type ContributorScope } from "./types";
 import { isThenable, readJsonCell, requireStorageNumber, requireStorageString } from "./storage-values";
 

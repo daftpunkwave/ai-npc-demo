@@ -4,9 +4,9 @@
  * 禁止用侧栏列表补造投影中不存在的地点、参数或协议。
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ClientContentView, ModuleCreateInput, ModuleInstance, PlayerProjection } from "@ai-npc/contracts";
-import type { ProjectionState } from "@ai-npc/client-protocol";
+import { usePort, usePortSubscription, type BrowserViewPort } from "@world-prism/client-sdk";
+import type { ClientContentView, ModuleCreateInput, ModuleInstance, PlayerProjection } from "@world-prism/contracts";
+import type { ProjectionState } from "@world-prism/client-protocol";
 import { placeRows } from "./place-rows";
 
 type Tab = "characters" | "places" | "tasks" | "agreements" | "notebook";

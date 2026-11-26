@@ -10,7 +10,7 @@ import {
   type StoragePort,
   type StorageRow,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { requireStorageNumber, requireStorageString } from "./storage-values";
 
 /** 单个主体允许的失败尝试上限；达到后保留记录并停止重试。 */

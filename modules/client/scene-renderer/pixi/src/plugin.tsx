@@ -5,9 +5,9 @@
  */
 import { Application, Container } from "pixi.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { usePort, usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ClientContentView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { ProjectionState } from "@ai-npc/client-protocol";
+import { usePort, usePortSubscription, type BrowserViewPort } from "@world-prism/client-sdk";
+import type { ClientContentView, ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { ProjectionState } from "@world-prism/client-protocol";
 import { SceneApplicationSession, bindSceneResize, sceneApplicationOptions } from "./application";
 import { SceneFailureNotice } from "./scene-failure-notice";
 import { SceneView } from "./scene-view";

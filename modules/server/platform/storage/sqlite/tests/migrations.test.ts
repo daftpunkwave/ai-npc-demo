@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { StoragePort } from "@ai-npc/contracts";
+import type { StoragePort } from "@world-prism/contracts";
 import { BRANCH_TABLES, OPERATION_IDEMPOTENCY_TABLE } from "../src/sqlite/schema";
 import { closeDatabase, openDatabase } from "../src/sqlite/connection";
 import {

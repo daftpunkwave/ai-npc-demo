@@ -4,8 +4,8 @@
  * 绑定器按计划的拓扑顺序构造端口，处理器只得到自身能力与 requires 声明的端口。
  * 约束与禁忌：禁止按模块 ID 挑选实现、跳过 requires 限制或把全部端口交给任意处理器。
  */
-import { DomainError, type HostServices } from "@ai-npc/contracts";
-import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@ai-npc/kernel";
+import { DomainError, type HostServices } from "@world-prism/contracts";
+import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@world-prism/kernel";
 import {
   gamePortCapabilities,
   type GameContent,
@@ -15,7 +15,7 @@ import {
   type GameRuleContributor,
   type ModuleBinder,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 /** 模块实例公开端口的最小结构：事务绑定器与可选的规则贡献。 */
 export interface GameModulePublicPort {

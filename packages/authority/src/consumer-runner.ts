@@ -12,7 +12,7 @@ import {
   type Json,
   type StorageRawRow,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";

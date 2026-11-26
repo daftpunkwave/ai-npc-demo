@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/app-console",
+  "name": "@world-prism/app-console",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,16 +8,16 @@
     "watch": "vite build --config vite.config.ts --watch"
   },
   "dependencies": {
-    "@ai-npc/client-protocol": "workspace:*",
-    "@ai-npc/client-sdk": "workspace:*",
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/mod-console-health-standard": "workspace:*",
-    "@ai-npc/mod-console-module-admin-standard": "workspace:*",
-    "@ai-npc/mod-console-model-mounts-standard": "workspace:*",
-    "@ai-npc/mod-console-faction-ops-standard": "workspace:*",
-    "@ai-npc/mod-console-debug-standard": "workspace:*",
-    "@ai-npc/mod-console-observability-standard": "workspace:*",
-    "@ai-npc/mod-console-evaluation-standard": "workspace:*",
+    "@world-prism/client-protocol": "workspace:*",
+    "@world-prism/client-sdk": "workspace:*",
+    "@world-prism/contracts": "workspace:*",
+    "@world-prism/mod-console-health-standard": "workspace:*",
+    "@world-prism/mod-console-module-admin-standard": "workspace:*",
+    "@world-prism/mod-console-model-mounts-standard": "workspace:*",
+    "@world-prism/mod-console-faction-ops-standard": "workspace:*",
+    "@world-prism/mod-console-debug-standard": "workspace:*",
+    "@world-prism/mod-console-observability-standard": "workspace:*",
+    "@world-prism/mod-console-evaluation-standard": "workspace:*",
     "react": "^19",
     "react-dom": "^19"
   },

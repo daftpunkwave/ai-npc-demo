@@ -3,12 +3,12 @@
  * 依赖调用方提供的已筛选 trigger 与 Agent 状态。
  * 禁止在暂停态调度普通 trigger，或为 human 控制的身份创建 turn。
  */
-import type { AgentTrigger, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { AgentTrigger, ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {
   createStatelessModule,
   type SchedulingInput,
   type SchedulingPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { schedulingConfigSchema, type SchedulingConfig } from "./definition";
 
 const unrestrictedKinds = new Set(["player-dialogue", "debug", "probe"]);

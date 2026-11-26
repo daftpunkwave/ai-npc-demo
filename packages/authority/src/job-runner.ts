@@ -4,7 +4,7 @@
  * 禁止重复执行已完成 job、跳过幂等键、在分支冻结后继续推进，或吞掉 handler 异常只标完成；
  * 处理器失败时回滚事务、记录尝试次数与最后错误，达到上限后标记 failed 并继续后续 job。
  */
-import { DomainError, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type StorageTransaction } from "@world-prism/contracts";
 import { readBranch, readClock } from "./branch-state";
 import { createHandlerContext } from "./handler-context";
 import { bindModulePorts } from "./module-binding";

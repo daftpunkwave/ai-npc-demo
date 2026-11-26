@@ -4,8 +4,8 @@
  * 禁止读取其他模块聚合、使用 Math.random 决定路径或在未受控道路上伪造控制权。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { ReasonCode, RoadStatus } from "@ai-npc/contracts";
-import { DomainError, roadStatusPolicyKey } from "@ai-npc/contracts";
+import type { ReasonCode, RoadStatus } from "@world-prism/contracts";
+import { DomainError, roadStatusPolicyKey } from "@world-prism/contracts";
 import {
   findRoadPath,
   gameModuleIds,
@@ -16,7 +16,7 @@ import {
   type RouteQuery,
   type RouteResult,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { passageGrantStateSchema, readMapState, roadStateSchema, type PassageGrantState } from "./state";
 
 /** 地图端口实现；生命周期随一次处理器调用，构造后不跨事务复用。 */

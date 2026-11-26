@@ -1,4 +1,4 @@
-# ai-npc-demo
+# world-prism
 
 一个单玩家轻数值 SLG 与研究控制台。现行玩家端是 TypeScript 2.5D 网页灰盒，原生目标为采用全新 3D 表现的 Godot C# 玩家端。NPC 根据自己的立场、感知与经历行动；研究者可以追溯行为所依据的观察、记忆、工具结果和模型调用。
 
@@ -206,7 +206,7 @@ flowchart LR
 ## 目标仓库结构
 
 ```text
-ai-npc-demo/
+world-prism/
 ├── apps/                       # 组合根与宿主壳
 │   ├── server/                 # :3000 API 与控制台资源
 │   ├── client/                 # :5173 玩家端

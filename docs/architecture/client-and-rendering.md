@@ -116,7 +116,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 
 ### 8.3 客户端模块之间的端口与当前实现边界
 
-下表为首版设计端口模型；当前代码里浏览器模块统一通过 `@ai-npc/client-sdk` 的 `BrowserViewPort` 与宿主上下文暴露状态与渲染贡献（例如 `client.world-view.standard` 提供 `getSnapshot(): ProjectionState | null`、`subscribe`、`getContent`、`getConnectionState` 与命令/运营方法；`client.input.standard` 与 `client.camera.standard` 使用 `getSnapshot()`；`client.scene-renderer.null` 向 `window.__aiNpcSceneLog` 记录 `{ projection }`）。
+下表为首版设计端口模型；当前代码里浏览器模块统一通过 `@world-prism/client-sdk` 的 `BrowserViewPort` 与宿主上下文暴露状态与渲染贡献（例如 `client.world-view.standard` 提供 `getSnapshot(): ProjectionState | null`、`subscribe`、`getContent`、`getConnectionState` 与命令/运营方法；`client.input.standard` 与 `client.camera.standard` 使用 `getSnapshot()`；`client.scene-renderer.null` 向 `window.__worldPrismSceneLog` 记录 `{ projection }`）。
 
 | 端口 | 提供者 | 接口 |
 |---|---|---|
@@ -126,7 +126,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 | `CameraPort` | `client.camera.standard` | `getSnapshot(): { x, y, zoom }`、`pan(dx, dy)`、`zoomTo(z)`、`follow(entityId)`、`subscribe` |
 | `ScreenProjectionPort` | `client.screen-projection.isometric` | `worldToScreen(x, y, h)`、`screenToWorld(px, py)`，公式见第 5 节，`tileWidth = 64`、`tileHeight = 32` |
 | `SceneRenderer` | `client.scene-renderer.*` | 通过 `BrowserViewPort.renderContribution()` 挂载画布或测试日志 |
-| `PreferencePort` | 宿主 | `get(key)`、`set(key, value)`，存于 `localStorage`，键前缀 `ai-npc.pref.` |
+| `PreferencePort` | 宿主 | `get(key)`、`set(key, value)`，存于 `localStorage`，键前缀 `world-prism.pref.` |
 
 `SceneView` 由 world-view 从投影派生：节点、道路（含当前状态）、角色与队伍的位置、在途任务（路线与出发/到达 tick）、当前选择。
 
@@ -146,7 +146,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 
 图形对象设置 `eventMode = "static"`，点击时向 `SelectionPort` 发出实体/地点选择；拖拽平移与滚轮缩放（0.5–2.0）目前通过 `client.settings.standard` 的缩放滑块与 `CameraPort` 调整，画布手势平移/滚轮尚未接入。
 
-`client.scene-renderer.null` 不绘制画面，只把最近一次收到的投影（`{ projection }`）保存在 `window.__aiNpcSceneLog`，供无渲染回归读取。
+`client.scene-renderer.null` 不绘制画面，只把最近一次收到的投影（`{ projection }`）保存在 `window.__worldPrismSceneLog`，供无渲染回归读取。
 
 ### 8.5 交互到命令
 

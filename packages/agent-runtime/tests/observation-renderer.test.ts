@@ -6,8 +6,8 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { PerceptionRequest } from "@ai-npc/module-sdk";
-import { loadContentPack } from "@ai-npc/experiment";
+import type { PerceptionRequest } from "@world-prism/module-sdk";
+import { loadContentPack } from "@world-prism/experiment";
 import { renderObservation } from "../src/observation-renderer";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");

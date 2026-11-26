@@ -4,7 +4,7 @@
  * 禁止把未接入的队列/水位字段当作 0，也禁止降级时仍显示 ready。
  */
 import { describe, expect, it } from "vitest";
-import type { ConsoleHealthResponse } from "@ai-npc/contracts";
+import type { ConsoleHealthResponse } from "@world-prism/contracts";
 import { healthSummary } from "../src/health-summary";
 
 function health(overrides: Partial<ConsoleHealthResponse> = {}): ConsoleHealthResponse {

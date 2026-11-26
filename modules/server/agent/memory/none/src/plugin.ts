@@ -3,8 +3,8 @@
  * 只依赖 MemoryPort 与模块生命周期辅助。
  * 禁止保存长期记录、创建整理任务或推断隐藏历史。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule, type MemoryPort } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule, type MemoryPort } from "@world-prism/module-sdk";
 
 class NoneMemoryPort implements MemoryPort {
   prepareIngest(

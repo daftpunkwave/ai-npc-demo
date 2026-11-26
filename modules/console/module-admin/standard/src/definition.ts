@@ -3,7 +3,7 @@
  * 依赖远端模块管理能力；不直接读配置文件或执行模块工厂。
  * 禁止在浏览器端保存或热套用未经预检的装配。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const moduleAdminPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.module-admin.standard",

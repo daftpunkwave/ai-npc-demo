@@ -4,7 +4,7 @@
  * 禁止用未授权候选伪造观察。
  */
 import { describe, expect, it } from "vitest";
-import type { PerceptionRequest } from "@ai-npc/module-sdk";
+import type { PerceptionRequest } from "@world-prism/module-sdk";
 import { perceive } from "../src/plugin";
 import type { PerceptionConfig } from "../src/definition";
 

@@ -3,7 +3,7 @@
  * 交互契约：依赖远端的 `platform.evaluation` 能力读取计分与报告；不读取原始模型密钥，也不改变实验。
  * 约束与禁忌：页面只读；创建实验与导出仍须经服务端角色与 scope 校验，不能由页面绕过。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const evaluationPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.evaluation.standard",

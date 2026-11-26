@@ -1,4 +1,4 @@
 schemaVersion: 1
-sampleValue: env:NPC_TEST_VALUE
+sampleValue: env:WORLD_PRISM_TEST_VALUE
 label: plain
-nested: { endpoint: env:NPC_TEST_ENDPOINT }
+nested: { endpoint: env:WORLD_PRISM_TEST_ENDPOINT }

@@ -3,7 +3,7 @@
  * 依赖玩家投影和 campaign 视图；不直接创建世界或绕过命令网关。
  * 禁止把未启用派系伪装成可选开局。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const factionStartModuleDefinition = defineBrowserModuleDefinition({
   id: "client.faction-start.standard",

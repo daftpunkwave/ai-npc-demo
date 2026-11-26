@@ -1,6 +1,6 @@
 # platform.storage.sqlite
 
-单写 SQLite 存储适配器。首版只有一个数据库文件 `dataDir/ai-npc.db`，由本模块独占；其他模块只经 `platform.storage` 端口访问，不持有连接。
+单写 SQLite 存储适配器。首版只有一个数据库文件 `dataDir/world-prism.db`，由本模块独占；其他模块只经 `platform.storage` 端口访问，不持有连接。
 
 ## 能力与端口
 
@@ -16,7 +16,7 @@ dataDir: ./data                          # 宿主从部署环境并入
 inlineArtifactMaxBytes: 65536            # 装配配置块提供
 ```
 
-数据库文件为 `dataDir/ai-npc.db`，备份写入 `dataDir/backups`。打开时应用 `journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`。
+数据库文件为 `dataDir/world-prism.db`，备份写入 `dataDir/backups`。打开时应用 `journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`。
 
 ## 迁移
 

@@ -3,7 +3,7 @@
  * 依赖运营模块的服务工厂、基础操作与幂等执行；不直接操作传输、路由或存储表。
  * 禁止改写幂等语义、跳过暂停排空或绕过 operationId 重放首次结果。
  */
-import { DomainError, type RestoreDryRunResponse } from "@ai-npc/contracts";
+import { DomainError, type RestoreDryRunResponse } from "@world-prism/contracts";
 import type { OperationsFactory } from "./module-catalog";
 import type { OperationJournal } from "./operation-journal";
 import { createIdempotentOperations } from "./operations-idempotent";

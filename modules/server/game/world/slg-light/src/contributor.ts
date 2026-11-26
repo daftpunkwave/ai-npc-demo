@@ -3,8 +3,8 @@
  * 依赖世界端口、地图/资源端口、内容索引与 authority 的处理器上下文。
  * 禁止在这里直接写地图/库存聚合，或在命令处理器中读取进程时间与随机源。
  */
-import type { Json } from "@ai-npc/contracts";
-import { commandPayloadOf, roadIdFromPolicyKey, roadStatusSchema, watergateAllocationSchema } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
+import { commandPayloadOf, roadIdFromPolicyKey, roadStatusSchema, watergateAllocationSchema } from "@world-prism/contracts";
 import {
   effectivePrincipalId,
   factionAudience,
@@ -17,7 +17,7 @@ import {
   type GameRuleContributor,
   type HandlerContext,
   type HandlerResult,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { runDailySettlement } from "./settlement";
 import { campaignAggregateId, metersAggregateId } from "./port";
 import {

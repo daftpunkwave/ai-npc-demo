@@ -4,7 +4,7 @@
  * 禁止在这里引入 Fastify、读写会话存储或按连接做 I/O。
  */
 /* eslint-disable no-unused-vars -- 本文件的未使用参数只出现在 StreamSocket/StreamHubOptions 等接口签名中，名称用于表达调用契约。 */
-import { DomainError, playerNotificationKey } from "@ai-npc/contracts";
+import { DomainError, playerNotificationKey } from "@world-prism/contracts";
 import type {
   AuthContext,
   ConversationLine,
@@ -13,7 +13,7 @@ import type {
   PlayerNotificationView,
   PlayerProjection,
   StreamChannel,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 推送目标的最小视图；Fastify/ws 的 WebSocket 满足该结构，测试可注入假实现。 */
 export interface StreamSocket {

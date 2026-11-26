@@ -4,7 +4,7 @@
  * 禁止在业务 rejected receipt 上伪造重试，或每次网络失败后改变幂等键。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError, type CommandEnvelope, type CommandReceipt } from "@ai-npc/contracts";
+import { DomainError, type CommandEnvelope, type CommandReceipt } from "@world-prism/contracts";
 import { CommandClient } from "../src";
 
 const receipt: CommandReceipt = {

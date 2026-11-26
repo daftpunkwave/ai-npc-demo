@@ -5,7 +5,7 @@
  */
 import { Container } from "pixi.js";
 import { describe, expect, it } from "vitest";
-import type { PlayerProjection } from "@ai-npc/contracts";
+import type { PlayerProjection } from "@world-prism/contracts";
 import { SceneView, cameraTransform } from "../src/scene-view";
 
 function projection(nodeName: string): PlayerProjection {

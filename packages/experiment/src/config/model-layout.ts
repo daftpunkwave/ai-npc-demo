@@ -6,7 +6,7 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
-import { jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@ai-npc/contracts";
+import { jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@world-prism/contracts";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { envReferenceName, loadConfigDocument, type ConfigLoadContext } from "./load-config";
 import { configRefSchema } from "./schema";
@@ -89,7 +89,7 @@ export function loadModelPricing(context: ConfigLoadContext, ref = "pricing") {
   return loadConfigDocument(ref, pricingSchema, context).value;
 }
 
-const publicModelEnv = ["NPC_OPENAI_COMPAT_BASE_URL", "NPC_OPENAI_COMPAT_MODEL"] as const;
+const publicModelEnv = ["WORLD_PRISM_OPENAI_COMPAT_BASE_URL", "WORLD_PRISM_OPENAI_COMPAT_MODEL"] as const;
 
 export function resolveModelEnv(value: string, context: ConfigLoadContext, allowed?: typeof publicModelEnv[number]): string {
   if (!value.startsWith("env:")) return value;

@@ -3,9 +3,9 @@
  * 交互契约：超过目标预算时返回 cannot-fit，否则返回 not-triggered 并保留原始段落。
  * 约束与禁忌：不得静默裁剪、调用模型或写回 artifact。
  */
-import type { Json, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { AgentCompressionPort } from "@ai-npc/module-sdk";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { Json, ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { AgentCompressionPort } from "@world-prism/module-sdk";
+import { createStatelessModule } from "@world-prism/module-sdk";
 
 class NoneCompressionPort implements AgentCompressionPort {
   compress(input: Parameters<AgentCompressionPort["compress"]>[0]): ReturnType<AgentCompressionPort["compress"]> {

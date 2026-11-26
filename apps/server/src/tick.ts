@@ -4,8 +4,8 @@
  * 每个阶段各自提交事务；时钟读写只经模块端口，禁止在这里解析或改写 clock 行。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名用于表达调用契约。 */
-import { DomainError, type HostServices, type StoragePort } from "@ai-npc/contracts";
-import type { ClockState } from "@ai-npc/module-sdk";
+import { DomainError, type HostServices, type StoragePort } from "@world-prism/contracts";
+import type { ClockState } from "@world-prism/module-sdk";
 
 /** 一次 tick 需要的 authority 入口；结构类型让宿主与测试共用同一顺序。 */
 export interface TickAuthority {

@@ -12,8 +12,8 @@ import {
   type Json,
   type ReasonCode,
   type ScopedBranchStorage,
-} from "@ai-npc/contracts";
-import type { HostServices } from "@ai-npc/contracts";
+} from "@world-prism/contracts";
+import type { HostServices } from "@world-prism/contracts";
 import { issuesOf } from "./command-validation";
 
 /** 回执的全部业务字段；payloadHash 与写入时间由写入方补齐。 */

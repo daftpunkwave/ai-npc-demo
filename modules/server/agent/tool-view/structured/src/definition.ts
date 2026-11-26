@@ -3,8 +3,8 @@
  * 交互契约：提供 agent 级 agent.tool-view 能力，配置只降低展示细度。
  * 约束与禁忌：不得改变执行状态、receipt、失败原因或权限集合。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const structuredToolViewConfigSchema = z

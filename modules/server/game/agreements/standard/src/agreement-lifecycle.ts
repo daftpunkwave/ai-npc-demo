@@ -3,7 +3,7 @@
  * 依赖协议聚合状态、履约辅助与公共受众类型；不读取命令载荷、不安排 job。
  * 禁止把已记录的违约回退为履约、在义务期未结束时整体标为 fulfilled，或基于旧状态覆盖新状态。
  */
-import { principalsAudience } from "@ai-npc/module-sdk";
+import { principalsAudience } from "@world-prism/module-sdk";
 import type { AgreementState } from "./state";
 import { hasOpenSustainedObligation, isSustainedTerm } from "./fulfillment";
 import { cancelAgreementJobs } from "./agreement-schedule";

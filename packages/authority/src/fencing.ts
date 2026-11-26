@@ -3,7 +3,7 @@
  * 依赖分支级 controller_leases、运行级 turn_runs 与认证上下文；只读取，不修改租约。
  * 禁止在测试开关之外放过缺失或过期代次，也禁止把 turn 终态当作仍可提交。
  */
-import type { AuthContext, ReasonCode, StorageTransaction } from "@ai-npc/contracts";
+import type { AuthContext, ReasonCode, StorageTransaction } from "@world-prism/contracts";
 import { optionalStorageString, requireStorageNumber, requireStorageString } from "./storage-values";
 
 /** fencing 校验结果：失败只返回 receipt 原因码，不抛通用异常。 */

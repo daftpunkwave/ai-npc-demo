@@ -5,7 +5,7 @@
  */
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, type CommandEnvelope } from "@ai-npc/contracts";
+import { canonicalJson, type CommandEnvelope } from "@world-prism/contracts";
 import { commandPayloadHash } from "../src/command-gateway";
 
 const envelope: CommandEnvelope = {

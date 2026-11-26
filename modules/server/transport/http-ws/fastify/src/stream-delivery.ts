@@ -3,7 +3,7 @@
  * 依赖注入的投影读取、序号读取与推送缓冲阈值；不持有连接集合、不决定订阅。
  * 禁止绕过背压阈值堆积推送、把发送异常抛给调用方，或向未确认订阅的连接补发快照。
  */
-import type { Json, PlayerProjection, StreamChannel } from "@ai-npc/contracts";
+import type { Json, PlayerProjection, StreamChannel } from "@world-prism/contracts";
 import { playerChannel, type Connection, type StreamSocket } from "./stream-types";
 
 /**

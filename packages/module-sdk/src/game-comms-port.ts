@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止在这里实现送达计算或读取通信模块之外的聚合。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
-import type { MessageIntentKind } from "@ai-npc/contracts";
+import type { MessageIntentKind } from "@world-prism/contracts";
 import type { GameWorldPort } from "./game-world-port";
 
 /**

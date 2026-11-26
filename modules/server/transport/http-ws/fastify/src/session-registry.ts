@@ -3,7 +3,7 @@
  * 依赖注入的 ID/令牌生成、时钟与活动连接查询；不持有连接、不发送消息，撤销会话时只回调宿主清理。
  * 禁止无限保留过期会话或未消费票据，禁止在认证时改写票据状态，也禁止为腾位驱逐有活动连接的会话。
  */
-import { DomainError, type IdPrefix } from "@ai-npc/contracts";
+import { DomainError, type IdPrefix } from "@world-prism/contracts";
 import type { StreamIdentity, StreamSession, StreamTicket } from "./stream-types";
 import { timingSafeTokenEquals, tokenDigest } from "./timing-safe-token";
 

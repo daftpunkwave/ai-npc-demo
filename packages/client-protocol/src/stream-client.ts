@@ -10,7 +10,7 @@ import {
   serverStreamMessageSchema,
   type ServerStreamMessage,
   type StreamChannel,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 客户端主动 ping 的间隔；服务端以 pong 应答，用来证明发送方向仍通。 */
 const clientPingIntervalMs = 20_000;

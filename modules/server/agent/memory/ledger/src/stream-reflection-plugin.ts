@@ -3,8 +3,8 @@
  * 交互契约：依赖已校验配置、模块生命周期辅助与注入 ID 服务。
  * 约束与禁忌：禁止直接访问 SQLite、模型传输层或跨 Agent 状态。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { streamReflectionConfigSchema } from "./definition";
 import { createStreamReflectionPort } from "./stream-reflection-port";
 

@@ -3,7 +3,7 @@
  * 依赖公共契约的能力/贡献语义、React context 与本包的偏好与 slot 类型；不创建网络、存储或服务端对象。
  * 禁止伪造未注册 port，也禁止把世界权威状态、运营权限或凭据放进 context。
  */
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 import { createContext, useSyncExternalStore, useContext, type ReactNode } from "react";
 import type { PreferencePort } from "./preferences";
 import type { SlotContribution } from "./slots";

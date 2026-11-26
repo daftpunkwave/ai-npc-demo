@@ -3,8 +3,8 @@
  * 依赖单调时钟，按模型并发和账号的 60 秒滑动窗口预留。
  * 不持久化模型消息，不绕过 deadline、取消或控制权 fencing。
  */
-import { DomainError, type HostServices } from "@ai-npc/contracts";
-import type { ModelRoute, ModelWorkScope } from "@ai-npc/module-sdk";
+import { DomainError, type HostServices } from "@world-prism/contracts";
+import type { ModelRoute, ModelWorkScope } from "@world-prism/module-sdk";
 
 type Group = "interactive" | "maintenance" | "evaluation";
 type Request = {

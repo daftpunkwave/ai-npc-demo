@@ -3,7 +3,7 @@
  * 交互契约：直接调用履约判定纯函数，注入派系 ID 集合与 campaign 快照，不依赖存储、端口或事务。
  * 约束与禁忌：禁止放宽普通角色的自身主体语义，也不得让普通角色代表其所属派系。
  */
-import type { CampaignView } from "@ai-npc/module-sdk";
+import type { CampaignView } from "@world-prism/module-sdk";
 import { describe, expect, it } from "vitest";
 import { actorRepresentsObligor, resolvePrincipalFaction } from "../src/fulfillment";
 

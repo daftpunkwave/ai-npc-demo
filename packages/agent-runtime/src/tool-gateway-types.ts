@@ -12,9 +12,9 @@ import {
   type StorageCell,
   type ToolBinding,
   type ToolExecutionResult,
-} from "@ai-npc/contracts";
-import type { AgentToolsPort } from "@ai-npc/module-sdk";
-import type { AgentArtifactRecord } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentToolsPort } from "@world-prism/module-sdk";
+import type { AgentArtifactRecord } from "@world-prism/module-sdk";
 import type { ToolNarrowingValues } from "./tool-narrowing";
 
 export interface ToolCatalogPort extends AgentToolsPort {

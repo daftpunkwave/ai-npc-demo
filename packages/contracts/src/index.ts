@@ -3,7 +3,7 @@
  * 依赖各主题源文件的 Zod schema 与类型；不引入任何宿主机制或功能实现。
  * 禁止在此追加实现逻辑，包入口只做再导出并保留包名常量。
  */
-export const packageName = "@ai-npc/contracts";
+export const packageName = "@world-prism/contracts";
 
 export * from "./json";
 export * from "./ids";

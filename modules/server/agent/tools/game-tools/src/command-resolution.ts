@@ -13,8 +13,8 @@ import {
   taskRespondPayloadSchema,
   termSchema,
   type Json,
-} from "@ai-npc/contracts";
-import type { AgentToolsPort } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentToolsPort } from "@world-prism/module-sdk";
 import { gameToolInputSchemas, type GameToolId } from "./schemas";
 
 type ResolveResult = ReturnType<AgentToolsPort["resolveCommand"]>;

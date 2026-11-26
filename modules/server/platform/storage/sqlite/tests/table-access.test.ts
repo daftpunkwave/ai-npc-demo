@@ -5,7 +5,7 @@
  * 禁止绕过 scoped 分支接口直接访问分支级表，或让测试依赖未声明的默认行序。
  */
 import { describe, expect, it } from "vitest";
-import type { StoragePort, StorageRow } from "@ai-npc/contracts";
+import type { StoragePort, StorageRow } from "@world-prism/contracts";
 import { expectDomainError, openStorageHarness } from "./support";
 
 const BRANCH_A = "brn-a";

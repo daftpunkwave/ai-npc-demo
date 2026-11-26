@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止在这里实现规则或读取行动模块之外的聚合。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名表达调用契约。 */
-import type { InvitationView, TaskStatus, TaskType } from "@ai-npc/contracts";
+import type { InvitationView, TaskStatus, TaskType } from "@world-prism/contracts";
 
 /** 任务查询端口；任务聚合由行动模块拥有。 */
 export interface TaskView {

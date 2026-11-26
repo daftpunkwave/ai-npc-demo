@@ -3,8 +3,8 @@
  * 交互契约：只导出 definition 描述符与配置 schema，依赖 contracts 与 module-sdk。
  * 约束与禁忌：不在此实现调度算法、加载实例或持有状态。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const schedulingConfigSchema = z

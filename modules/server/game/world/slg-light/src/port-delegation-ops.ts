@@ -3,7 +3,7 @@
  * 交互契约：依赖注入的 scoped WorldTx、ID 生成器与查询片段的委托查找。
  * 约束与禁忌：禁止按主体与库存点重新查找已扣减委托；回补不得超过委托上限。
  */
-import type { ResourceAmounts } from "@ai-npc/contracts";
+import type { ResourceAmounts } from "@world-prism/contracts";
 import {
   factionAudience,
   gameModuleIds,
@@ -15,7 +15,7 @@ import {
   type GameIdFactory,
   type GameWorldPort,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { failure, type OpFailure, type OpSuccess } from "./port-result";
 import type { WorldQueries } from "./port-queries";
 import {

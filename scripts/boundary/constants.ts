@@ -62,21 +62,21 @@ export const BROWSER_REALM_DIRECTORY_PREFIXES = [
 
 export const HOST_MECHANISM_DIRECTORY_PREFIXES = ["packages/kernel/", "packages/contracts/"];
 
-export const SERVER_MODULE_WORKSPACE_DEPENDENCIES = ["@ai-npc/contracts", "@ai-npc/module-sdk"] as const;
+export const SERVER_MODULE_WORKSPACE_DEPENDENCIES = ["@world-prism/contracts", "@world-prism/module-sdk"] as const;
 
 export const BROWSER_MODULE_WORKSPACE_DEPENDENCIES = [
-  "@ai-npc/contracts",
-  "@ai-npc/client-sdk",
-  "@ai-npc/client-protocol",
+  "@world-prism/contracts",
+  "@world-prism/client-sdk",
+  "@world-prism/client-protocol",
 ] as const;
 
 export const SERVER_ONLY_WORKSPACE_PACKAGES = new Set([
-  "@ai-npc/authority",
-  "@ai-npc/agent-runtime",
-  "@ai-npc/module-sdk",
-  "@ai-npc/experiment",
-  "@ai-npc/observability",
-  "@ai-npc/app-server",
+  "@world-prism/authority",
+  "@world-prism/agent-runtime",
+  "@world-prism/module-sdk",
+  "@world-prism/experiment",
+  "@world-prism/observability",
+  "@world-prism/app-server",
 ]);
 
 export const BROWSER_FORBIDDEN_EXTERNALS = new Set([

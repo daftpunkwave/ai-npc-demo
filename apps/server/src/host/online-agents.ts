@@ -3,9 +3,9 @@
  * 使用已冻结配置、已启动的依赖端口和权威命令网关。
  * 分支切换后，旧实例及其租约不得继续提交世界动作或对白。
  */
-import { AgentRuntime, type SpeechApprovalIndex } from "@ai-npc/agent-runtime";
-import type { Authority } from "@ai-npc/authority";
-import type { StartedInstances } from "@ai-npc/kernel";
+import { AgentRuntime, type SpeechApprovalIndex } from "@world-prism/agent-runtime";
+import type { Authority } from "@world-prism/authority";
+import type { StartedInstances } from "@world-prism/kernel";
 import { startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import { agentWorldReaders } from "./agent-world-read";
 import type { HostStartup } from "./startup";

@@ -4,7 +4,7 @@
  * 禁止在这里写任务聚合、扣资源或发事件；禁止把队伍状态、权限或受邀者可用性判断提前到参数校验之前。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将模块端口泛型误判为 any。 */
-import type { ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
+import type { ReasonCode, ResourceAmounts } from "@world-prism/contracts";
 import {
   addAmounts,
   coversAmounts,
@@ -17,7 +17,7 @@ import {
   type GameContent,
   type GameModulePorts,
   type HandlerContext,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { isEnergyOnlyRepairTeam, repairWorkNodeId, teamTransportCapacity } from "./faction-bonus";
 import type { DispatchInput } from "./plan-types";
 import { computeTaskRoute } from "./routes";

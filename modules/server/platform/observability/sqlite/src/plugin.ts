@@ -29,8 +29,8 @@ import {
   type TraceResponse,
   type TurnDetail,
   type TurnsResponse,
-} from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 import { ResearchQueries } from "./research-queries";
 

@@ -38,11 +38,11 @@ const generatedTokenRoles: readonly TokenRole[] = ["player", "console"];
 
 /** 各令牌来源的环境变量名。 */
 export const tokenEnvNames: Readonly<Record<TokenRole, string>> = {
-  player: "NPC_PLAYER_TOKEN",
-  console: "NPC_CONSOLE_TOKEN",
-  operator: "NPC_OPERATOR_TOKEN",
-  researcher: "NPC_RESEARCHER_TOKEN",
-  evaluator: "NPC_EVALUATOR_TOKEN",
+  player: "WORLD_PRISM_PLAYER_TOKEN",
+  console: "WORLD_PRISM_CONSOLE_TOKEN",
+  operator: "WORLD_PRISM_OPERATOR_TOKEN",
+  researcher: "WORLD_PRISM_RESEARCHER_TOKEN",
+  evaluator: "WORLD_PRISM_EVALUATOR_TOKEN",
 };
 
 /** 一次部署的固定拓扑、数据目录、运行时选择与已配置令牌。 */
@@ -169,20 +169,20 @@ export function assertDistinctTokens(entries: readonly NamedToken[]): void {
 
 /** 解析部署配置；只接受固定主机、固定双端口与约定的运行时选择。 */
 export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentConfig {
-  const host = readText(input.env, "NPC_SERVER_HOST") ?? fixedServerHost;
+  const host = readText(input.env, "WORLD_PRISM_SERVER_HOST") ?? fixedServerHost;
   if (host !== fixedServerHost) {
-    throw new Error(`NPC_SERVER_HOST 必须是 ${fixedServerHost}（只允许回环监听），收到 "${host}"`);
+    throw new Error(`WORLD_PRISM_SERVER_HOST 必须是 ${fixedServerHost}（只允许回环监听），收到 "${host}"`);
   }
-  const serverPort = readFixedPort(input.env, "NPC_SERVER_PORT", fixedServerPort);
-  const clientPort = readFixedPort(input.env, "NPC_CLIENT_PORT", fixedClientPort);
-  const dataDirValue = readText(input.env, "NPC_DATA_DIR") ?? defaultDataDir;
+  const serverPort = readFixedPort(input.env, "WORLD_PRISM_SERVER_PORT", fixedServerPort);
+  const clientPort = readFixedPort(input.env, "WORLD_PRISM_CLIENT_PORT", fixedClientPort);
+  const dataDirValue = readText(input.env, "WORLD_PRISM_DATA_DIR") ?? defaultDataDir;
   const dataDir = isAbsolute(dataDirValue) ? resolve(dataDirValue) : resolve(input.projectRoot, dataDirValue);
   // 控制台静态目录与数据目录同一条规则：相对量一律按项目根解析，绝不按 process.cwd()。
-  const consoleStaticDirValue = readText(input.env, "NPC_CONSOLE_STATIC_DIR") ?? consoleStaticDirRelativeToRoot;
+  const consoleStaticDirValue = readText(input.env, "WORLD_PRISM_CONSOLE_STATIC_DIR") ?? consoleStaticDirRelativeToRoot;
   const consoleStaticDir = isAbsolute(consoleStaticDirValue)
     ? resolve(consoleStaticDirValue)
     : resolve(input.projectRoot, consoleStaticDirValue);
-  const assemblyRef = readText(input.env, "NPC_ASSEMBLY") ?? defaultAssemblyRef;
+  const assemblyRef = readText(input.env, "WORLD_PRISM_ASSEMBLY") ?? defaultAssemblyRef;
   const configuredTokens: Partial<Record<TokenRole, string>> = {};
   for (const role of tokenRoles) {
     const credential = readText(input.env, tokenEnvNames[role]);
@@ -202,10 +202,10 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     dataDir,
     consoleStaticDir,
     assemblyRef,
-    modelLayoutRef: readText(input.env, "NPC_MODEL_LAYOUT") ??
+    modelLayoutRef: readText(input.env, "WORLD_PRISM_MODEL_LAYOUT") ??
       (assemblyRef === "local-slg-test-v1" ? "deterministic-model-layout-v1" : defaultModelLayoutRef),
-    rosterRef: readText(input.env, "NPC_ROSTER") ?? defaultRosterRef,
-    migrateOnlineRun: readBooleanFlag(input.env, "NPC_MIGRATE_ONLINE_RUN"),
+    rosterRef: readText(input.env, "WORLD_PRISM_ROSTER") ?? defaultRosterRef,
+    migrateOnlineRun: readBooleanFlag(input.env, "WORLD_PRISM_MIGRATE_ONLINE_RUN"),
     configuredTokens,
   };
 }
@@ -463,12 +463,12 @@ export function loginLinks(
 /** 生成启动日志：总是输出就绪地址，只有本次新生成的令牌才附带登录地址。 */
 export function startupLogLines(input: StartupLogInput): readonly string[] {
   const links = loginLinks(input.config);
-  const lines: string[] = [`[ai-npc] server ready: ${links.server}`];
+  const lines: string[] = [`[world-prism] server ready: ${links.server}`];
   if (input.generated.includes("player")) {
-    lines.push(`[ai-npc] player  login: ${links.player}#token=${encodeURIComponent(input.tokens.player)}`);
+    lines.push(`[world-prism] player  login: ${links.player}#token=${encodeURIComponent(input.tokens.player)}`);
   }
   if (input.generated.includes("console")) {
-    lines.push(`[ai-npc] console login: ${links.console}#token=${encodeURIComponent(input.tokens.console)}`);
+    lines.push(`[world-prism] console login: ${links.console}#token=${encodeURIComponent(input.tokens.console)}`);
   }
   return lines;
 }

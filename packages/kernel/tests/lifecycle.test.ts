@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { HostServices, ModuleScope } from "@ai-npc/contracts";
+import type { HostServices, ModuleScope } from "@world-prism/contracts";
 import {
   createModuleRegistry,
   resolveRealmPlan,

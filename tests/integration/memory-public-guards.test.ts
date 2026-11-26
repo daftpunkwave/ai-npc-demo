@@ -4,9 +4,9 @@
  * 约束与禁忌：禁止直接写入记忆行或绕过事务回滚断言。
  */
 import { describe, expect, it } from "vitest";
-import type { MemoryChangePlan, ModuleDefinition } from "@ai-npc/contracts";
-import type { MemoryPort } from "@ai-npc/module-sdk";
-import { memoryLayeredHybridModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import type { MemoryChangePlan, ModuleDefinition } from "@world-prism/contracts";
+import type { MemoryPort } from "@world-prism/module-sdk";
+import { memoryLayeredHybridModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import { createMemoryHarness, insertObservation, memoryAgentId, memoryBranchId } from "./memory-support";
 import { startVariantHost } from "./memory-variants-support";
 

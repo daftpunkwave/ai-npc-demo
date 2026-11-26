@@ -3,15 +3,15 @@
  * 依赖世界/地图/资源/通信端口、内容索引与 authority 事务；效果写入同一事务。
  * 禁止修改指标或道路状态（覆盖效果除外），也禁止调用模型生成正文。
  */
-import type { AudienceSpec, CardEffect, OverrideEffect, ResourceDelta, ResourceId } from "@ai-npc/contracts";
+import type { AudienceSpec, CardEffect, OverrideEffect, ResourceDelta, ResourceId } from "@world-prism/contracts";
 import {
   principalsAudience,
   requireGameContent,
   type GameContent,
   type GameModulePorts,
   type HandlerContext,
-} from "@ai-npc/module-sdk";
-import { DomainError } from "@ai-npc/contracts";
+} from "@world-prism/module-sdk";
+import { DomainError } from "@world-prism/contracts";
 
 type EffectContext = HandlerContext<GameModulePorts, unknown>;
 

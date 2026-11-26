@@ -4,7 +4,7 @@
  * 禁止把其它节点的人员或库存算到当前节点上，也不得因建索引而丢条目。
  */
 import { describe, expect, it } from "vitest";
-import { playerProjectionSchema, type PlayerProjection } from "@ai-npc/contracts";
+import { playerProjectionSchema, type PlayerProjection } from "@world-prism/contracts";
 import { placeRows } from "../src/place-rows";
 
 function stockpile(stockpileId: string, nodeId: string, supply: "scarce" | "adequate" | "surplus"): PlayerProjection["stockpiles"][number] {

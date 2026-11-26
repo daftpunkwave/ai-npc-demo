@@ -37,7 +37,7 @@ import {
   type SessionDescriptor,
   type SnapshotCreateRequest,
   type SnapshotRestoreRequest,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { z } from "zod";
 import { createDebugHttp } from "./http/debug";
 import { createModelLayoutHttp } from "./http/model-layouts";
@@ -47,7 +47,7 @@ import { queryString, type ConsoleRequest, type RequestOptions } from "./http/re
 
 export type { RequestOptions } from "./http/request";
 
-const sessionStorageKey = "ai-npc.session-token";
+const sessionStorageKey = "world-prism.session-token";
 
 export interface ApiClientOptions {
   readonly baseUrl?: string;

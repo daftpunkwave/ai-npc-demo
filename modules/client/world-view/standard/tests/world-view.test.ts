@@ -10,8 +10,8 @@ import {
   type HostServices,
   type ModuleCreateInput,
   type SessionDescriptor,
-} from "@ai-npc/contracts";
-import type { ApiClient } from "@ai-npc/client-protocol";
+} from "@world-prism/contracts";
+import type { ApiClient } from "@world-prism/client-protocol";
 import { createWorldViewModule, type WorldViewPort } from "../src/plugin";
 
 const receipt: CommandReceipt = {

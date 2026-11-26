@@ -10,7 +10,7 @@ import {
   catchUpWorldTick,
   type AdvanceSteppingInput,
   type SteppingTickResult,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,

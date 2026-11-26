@@ -3,7 +3,7 @@ assemblyId: local-slg-standard-v1
 configs:
   clock: { secondsPerTick: 20, maxStepTicks: 24, autoPauseAfterDisconnectMs: 60000 }
   storage: { inlineArtifactMaxBytes: 65536 }
-  model-secrets: { allowlist: [NPC_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY] }
+  model-secrets: { allowlist: [WORLD_PRISM_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY] }
 realms:
   server:
     bindings:

@@ -4,9 +4,9 @@
  * 禁止启动 turn worker、模型或网络资源，也不直接改写记忆水位。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { MemoryScope } from "@ai-npc/contracts";
-import { readTurnObservations } from "@ai-npc/agent-runtime";
-import { memoryLedgerModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import type { MemoryScope } from "@world-prism/contracts";
+import { readTurnObservations } from "@world-prism/agent-runtime";
+import { memoryLedgerModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import {
   createMemoryHarness,
   insertObservation,

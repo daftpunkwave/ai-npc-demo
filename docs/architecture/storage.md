@@ -1,6 +1,6 @@
 # 存储：SQLite 表结构、分支复制与事务规则
 
-> 状态：实现规范。首版只有一个 SQLite 文件 `data/ai-npc.db`，由 `platform.storage.sqlite` 适配器独占；其他模块只能经 storage port 访问自己拥有的表。逻辑语义（幂等、水位、快照一致性）见 [事件与状态](events-and-state.md)，聚合所有权见 [领域模型](domain-model.md) 第 3 节。
+> 状态：实现规范。首版只有一个 SQLite 文件 `data/world-prism.db`，由 `platform.storage.sqlite` 适配器独占；其他模块只能经 storage port 访问自己拥有的表。逻辑语义（幂等、水位、快照一致性）见 [事件与状态](events-and-state.md)，聚合所有权见 [领域模型](domain-model.md) 第 3 节。
 
 ## 1. 连接与事务规则
 
@@ -649,7 +649,7 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 | 从快照恢复在线世界 | `forkBranch(snap, new, 'online')` → 预检 → 在同一事务中：先将旧在线分支设为 archived、其激活状态置为 dormant，再按名册预留配额并把新分支名册内 Agent 置为 active，最后切换 `world_aliases('online')`（配额不足则整个事务回滚，旧分支与别名保持不变） |
 | 创建实验 run | 冷启动：新建空分支（时钟 paused、tick 0），由运行器以 `player-1` 身份提交 `campaign.start`；从快照：`forkBranch(snap, exp, 'experiment', runId)`，再按名册激活。每个 run 一个分支 |
 | 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入 |
-| 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `ai-npc-<UTC时间>[-<label>].<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `ai-npc-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
+| 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `world-prism-<UTC时间>[-<label>].<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `world-prism-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
 
 ## 4. 常用查询
 

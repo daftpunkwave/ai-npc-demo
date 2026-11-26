@@ -4,7 +4,7 @@
  * 禁止让同一提醒因 tick 变化重新出现，也禁止关闭集合无界增长。
  */
 import { describe, expect, it } from "vitest";
-import { playerNotificationKey, type PlayerNotificationView } from "@ai-npc/contracts";
+import { playerNotificationKey, type PlayerNotificationView } from "@world-prism/contracts";
 import {
   dismissNotification,
   pruneDismissed,

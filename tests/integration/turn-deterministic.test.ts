@@ -7,11 +7,11 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@ai-npc/app-server";
+import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@world-prism/app-server";
 import {
   conversationResponseSchema, decisionSubmissionSchema, type AuthContext, type CommandType, type Json, type StorageRow,
-} from "@ai-npc/contracts";
-import type { AgentDecisionPort, DeterministicDecisionInput } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentDecisionPort, DeterministicDecisionInput } from "@world-prism/module-sdk";
 import { gameCommandEnvelope } from "./game-support";
 
 const target = "human-independent";
@@ -30,7 +30,7 @@ afterEach(async () => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-npc-turn-"));
+  const directory = mkdtempSync(join(tmpdir(), "world-prism-turn-"));
   dirs.push(directory);
   return directory;
 }

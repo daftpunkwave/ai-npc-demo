@@ -5,8 +5,8 @@
  * 禁止访问真实存储、装配完整分支或发起模型调用。
  */
 import { describe, expect, it } from "vitest";
-import type { HostServices, StoragePort, StorageRow, StorageTransaction } from "@ai-npc/contracts";
-import { TurnLeases, TurnStopped, type ClaimedTurn } from "@ai-npc/agent-runtime";
+import type { HostServices, StoragePort, StorageRow, StorageTransaction } from "@world-prism/contracts";
+import { TurnLeases, TurnStopped, type ClaimedTurn } from "@world-prism/agent-runtime";
 
 const nowIso = "2026-01-01T00:00:10.000Z";
 const monotonicMs = 10_000;

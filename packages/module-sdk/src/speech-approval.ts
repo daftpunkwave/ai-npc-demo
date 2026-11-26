@@ -3,7 +3,7 @@
  * 依赖公共契约的认证上下文与 speech.commit payload 类型，以及本包的已批准对白类型；只做同步只读判断。
  * 禁止生成或改写对白、扩大受众，也禁止在批准结果写入后放宽分支、主体、turn 与受众的一致性要求。
  */
-import type { AuthContext, SpeechCommitPayload } from "@ai-npc/contracts";
+import type { AuthContext, SpeechCommitPayload } from "@world-prism/contracts";
 import type { ApprovedSpeech } from "./ports";
 
 function normalizedAudience(values: readonly string[]): readonly string[] {

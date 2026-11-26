@@ -22,8 +22,8 @@ import type {
   ToolExecutionResult,
   TaskType,
   WakeupProposal,
-} from "@ai-npc/contracts";
-import type { MemoryScope } from "@ai-npc/contracts";
+} from "@world-prism/contracts";
+import type { MemoryScope } from "@world-prism/contracts";
 import type { DelegationView } from "./game-ports";
 import type { AgentDecisionStatus } from "./model-ports";
 import type { ScopedModelPort } from "./ports";
@@ -271,7 +271,7 @@ export interface AgentDecisionInput {
   readonly runId: string;
   readonly turnId: string;
   readonly attemptId: string;
-  readonly frontier: import("@ai-npc/contracts").InputFrontier;
+  readonly frontier: import("@world-prism/contracts").InputFrontier;
   readonly profileHash: string;
   readonly templateVersion: string;
   readonly agentTurnIndex: number;

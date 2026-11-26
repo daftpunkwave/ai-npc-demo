@@ -4,7 +4,7 @@
  * 禁止在本文件写死岗位主体或数值断言与夹具脱钩的耦合值。
  */
 import { describe, expect, it } from "vitest";
-import type { GameContent } from "@ai-npc/module-sdk";
+import type { GameContent } from "@world-prism/module-sdk";
 import {
   escortSafetyBonus,
   isEnergyOnlyRepairTeam,

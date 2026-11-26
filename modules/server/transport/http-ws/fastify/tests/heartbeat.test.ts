@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止只断言「发出了 ping」而不验证失联连接被清理与计数下降。
  */
 import { describe, expect, it } from "vitest";
-import type { PlayerProjection } from "@ai-npc/contracts";
+import type { PlayerProjection } from "@world-prism/contracts";
 import { StreamHub } from "../src/stream-hub";
 import type { StreamHubOptions, StreamSocket } from "../src/stream-types";
 

@@ -14,7 +14,7 @@ import {
   type StorageTransaction,
   type StorageValue,
   type StorageWriteResult,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { requireUnscopedTable, type StorageCatalog } from "./schema";
 import type { StatementCache } from "./statement-cache";
 import { createBranchAccess, createUnscopedTable } from "./table-access";

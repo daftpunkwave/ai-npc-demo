@@ -3,7 +3,7 @@
  * 依赖定义、计分与报告文件；宿主只经组合根取用模块定义，其余以纯函数形式供测试直接调用。
  * 禁止在此启动运行时、读取环境变量或隐藏计分失败。
  */
-export const packageName = "@ai-npc/mod-platform-evaluation-standard";
+export const packageName = "@world-prism/mod-platform-evaluation-standard";
 
 export { evaluationModuleDefinition } from "./definition";
 export { createEvaluationModule } from "./plugin";

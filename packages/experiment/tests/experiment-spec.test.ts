@@ -17,7 +17,7 @@ import {
   loadRunSpec,
   validateExperimentSpec,
   type ExperimentSpec,
-} from "@ai-npc/experiment";
+} from "@world-prism/experiment";
 
 const configDir = resolve("config");
 const roots: string[] = [];
@@ -28,7 +28,7 @@ afterEach(() => {
 
 /** 在临时目录里写一份实验规格；只复制必要的 config 结构用于覆盖非法字段。 */
 function specWith(mutate: (spec: Record<string, unknown>) => void, name = "exp-temp"): ExperimentSpec {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-experiment-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-experiment-"));
   roots.push(root);
   const spec = {
     schemaVersion: 1,
@@ -282,7 +282,7 @@ describe("实验规格交叉校验", () => {
   });
 
   it("未知字段被严格拒绝", () => {
-    const root = mkdtempSync(join(tmpdir(), "ai-npc-experiment-"));
+    const root = mkdtempSync(join(tmpdir(), "world-prism-experiment-"));
     roots.push(root);
     // base 必须完整，否则 schema 会先报缺字段，测不到「拒绝未知字段」这一条。
     writeFileSync(join(root, "exp-extra.yaml"), JSON.stringify({
@@ -301,7 +301,7 @@ describe("实验规格交叉校验", () => {
   });
 
   it("实验 ID 与文件引用不一致时拒绝", () => {
-    const root = mkdtempSync(join(tmpdir(), "ai-npc-experiment-"));
+    const root = mkdtempSync(join(tmpdir(), "world-prism-experiment-"));
     roots.push(root);
     // base 完整，使加载走到 ID 比对而不是先被 schema 拒绝。
     writeFileSync(join(root, "exp-renamed.yaml"), JSON.stringify({

@@ -3,7 +3,7 @@
  * 依赖无状态生命周期骨架、规则贡献、端口工厂与组合根已绑定的世界只读端口。
  * 禁止在 create 阶段读取内容、生成会话或发送消息。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {
   createStatelessModule,
   type CommsWorldFacts,
@@ -11,7 +11,7 @@ import {
   type GameIdFactory,
   type GamePortBindContext,
   type ScopedWorldTxFactory,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { createCommsContributor } from "./contributor";
 import { createCommsPort } from "./port";
 

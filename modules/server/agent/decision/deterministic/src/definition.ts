@@ -3,8 +3,8 @@
  * 组合根通过此描述符登记决策能力，运行时按需加载策略。
  * 描述符不持有运行状态或模型连接。
  */
-import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 
 export const deterministicDecisionModuleDefinition: ModuleDefinition = defineModule({
   id: "agent.decision.deterministic",

@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/mod-agent-model-pool-shared",
+  "name": "@world-prism/mod-agent-model-pool-shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "./definition": "./src/definition.ts"
   },
   "dependencies": {
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/module-sdk": "workspace:*"
+    "@world-prism/contracts": "workspace:*",
+    "@world-prism/module-sdk": "workspace:*"
   }
 }

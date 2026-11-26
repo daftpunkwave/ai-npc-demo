@@ -4,7 +4,7 @@
  * 禁止复制运行级数据、遗漏分支级表、跳过 trigger 释放或让新分支沿用源分支的控制 epoch。
  */
 import type { DatabaseSync } from "node:sqlite";
-import { DomainError, type BranchKind, type BranchStatus, type ForkBranchRequest, type ForkBranchResult } from "@ai-npc/contracts";
+import { DomainError, type BranchKind, type BranchStatus, type ForkBranchRequest, type ForkBranchResult } from "@world-prism/contracts";
 import { BRANCH_COLUMN, quoteSqlIdentifier, type StorageCatalog } from "./schema";
 
 function q(identifier: string): string {

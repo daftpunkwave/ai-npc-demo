@@ -3,8 +3,8 @@
  * 依赖 zod 与公共契约的剧情卡效果 schema；只做状态校验与读取。
  * 禁止在这里执行卡片效果、计算触发 tick 或裁决命令。
  */
-import { cardEffectSchema, overrideEffectSchema, scenarioCardStatusSchema } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { cardEffectSchema, overrideEffectSchema, scenarioCardStatusSchema } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const cardEffectListSchema = z.array(cardEffectSchema);

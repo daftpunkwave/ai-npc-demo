@@ -13,7 +13,7 @@ import {
   type ErrorCode,
   type Realm,
   type StrictConfigSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 各 realm 可用的模块 ID 与本地能力命名空间；server 的四个职能族与浏览器两族固定。 */
 export const REALM_NAMESPACES: Readonly<Record<Realm, readonly string[]>> = {
@@ -26,7 +26,7 @@ export const REALM_NAMESPACES: Readonly<Record<Realm, readonly string[]>> = {
 const REMOTE_NAMESPACES: readonly string[] = REALM_NAMESPACES["server"];
 
 /** 探测配置 schema 是否拒绝未知键的哨兵键；它不会出现在任何真实配置里。 */
-const UNKNOWN_CONFIG_PROBE_KEY = "ai-npc-sdk-unknown-config-key";
+const UNKNOWN_CONFIG_PROBE_KEY = "world-prism-sdk-unknown-config-key";
 
 /** 统一的描述符校验失败出口：错误码、字段与原因都进入 details，便于定位模块作者笔误。 */
 export function descriptorFailure(

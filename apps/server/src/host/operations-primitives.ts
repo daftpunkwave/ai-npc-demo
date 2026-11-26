@@ -14,11 +14,11 @@ import {
   type StoragePort,
   type StorageRow,
   type StorageTransaction,
-} from "@ai-npc/contracts";
-import type { HostServices } from "@ai-npc/contracts";
-import type { ConfigLoadContext, ContentPack, RunSpec } from "@ai-npc/experiment";
-import { loadRoster, runSpecSchema, validateRoster, validateRunSpec } from "@ai-npc/experiment";
-import type { ClockState } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { HostServices } from "@world-prism/contracts";
+import type { ConfigLoadContext, ContentPack, RunSpec } from "@world-prism/experiment";
+import { loadRoster, runSpecSchema, validateRoster, validateRunSpec } from "@world-prism/experiment";
+import type { ClockState } from "@world-prism/module-sdk";
 import { loadAssembly } from "./assembly";
 import { clockView } from "./clock-view";
 import { switchLiveBranch, type LiveRunState } from "./live-state";

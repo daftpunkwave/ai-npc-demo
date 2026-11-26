@@ -14,10 +14,10 @@ import {
   type CapabilityRef,
   type ModuleDefinition,
   type Realm,
-} from "@ai-npc/contracts";
-import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@ai-npc/kernel";
-import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
-import { REALM_NAMESPACES, validateModuleDefinition } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@world-prism/kernel";
+import { loadContentPack, type ContentPack } from "@world-prism/experiment";
+import { REALM_NAMESPACES, validateModuleDefinition } from "@world-prism/module-sdk";
 import {
   allModuleDefinitions,
   clientRequiredCapabilities,

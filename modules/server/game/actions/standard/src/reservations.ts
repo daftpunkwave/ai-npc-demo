@@ -4,8 +4,8 @@
  * 命令处理器返回 rejected 后由命令网关回滚整个 SAVEPOINT，job 处理器必须抛 DomainError 让 job 事务回滚。
  * 禁止用统一的 from/to 假设处理不同任务资源，也禁止重复扣减已结算的修复材料。
  */
-import type { ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
-import { coversAmounts, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
+import type { ReasonCode, ResourceAmounts } from "@world-prism/contracts";
+import { coversAmounts, type GameModulePorts, type HandlerContext } from "@world-prism/module-sdk";
 import type { TaskState } from "./state";
 
 type ActionContext = HandlerContext<GameModulePorts, unknown>;

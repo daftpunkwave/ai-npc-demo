@@ -4,10 +4,10 @@
  * 交互契约：启动编排与它的各步骤模块共享这些类型；实现模块只依赖类型，不互相导入实现。
  * 约束与禁忌：不包含任何运行逻辑，也不在此读取配置、存储或模块目录。
  */
-import type { AssemblyDescriptor, HostServices, ResolvedModuleSet, StoragePort } from "@ai-npc/contracts";
-import type { ConfigLoadContext, ContentPack, RunSpec } from "@ai-npc/experiment";
-import type { StartedInstances } from "@ai-npc/kernel";
-import type { GameClockPort, GameContent } from "@ai-npc/module-sdk";
+import type { AssemblyDescriptor, HostServices, ResolvedModuleSet, StoragePort } from "@world-prism/contracts";
+import type { ConfigLoadContext, ContentPack, RunSpec } from "@world-prism/experiment";
+import type { StartedInstances } from "@world-prism/kernel";
+import type { GameClockPort, GameContent } from "@world-prism/module-sdk";
 import type { AgentConfiguration } from "./agent-configuration";
 import type { AgentRunModules } from "./agent-run-modules";
 import type { ResolvedServerAssembly } from "./assembly";

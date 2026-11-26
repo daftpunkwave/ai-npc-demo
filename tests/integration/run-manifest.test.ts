@@ -4,15 +4,15 @@
  * 禁止用原始 JSON.stringify 或截断摘要作为期望值，也禁止把随机 ID 混入随机输入。
  */
 import { describe, expect, it } from "vitest";
-import type { AssemblyDescriptor, Json } from "@ai-npc/contracts";
-import { loadContentPack, loadRoster, loadRunSpec } from "@ai-npc/experiment";
+import type { AssemblyDescriptor, Json } from "@world-prism/contracts";
+import { loadContentPack, loadRoster, loadRunSpec } from "@world-prism/experiment";
 import {
   buildRunManifest,
   loadAssembly,
   resolveServerAssembly,
   rngFor,
   serverModuleDefinitions,
-} from "@ai-npc/app-server";
+} from "@world-prism/app-server";
 
 const loadContext = { configDir: "config" };
 const content = loadContentPack("content", "earth-2964-v1");

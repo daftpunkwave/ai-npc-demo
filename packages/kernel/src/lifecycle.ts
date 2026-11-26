@@ -12,7 +12,7 @@ import {
   type ModuleCreateInput,
   type ModuleInstance,
   type ModuleScope,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { PlannedModule, ResolvedRealmPlan } from "./resolve-assembly";
 
 /** 启动实例所需的外部输入：宿主服务、状态作用域与协作式取消信号。 */

@@ -3,8 +3,8 @@
  * 交互契约：依赖公共契约的投影视图类型与 module-sdk 的 campaign 状态；开局缺失时按派系 ID 兜底。
  * 约束与禁忌：不读取任务风险、私有记忆或领域事件流。
  */
-import type { CampaignView } from "@ai-npc/contracts";
-import { CampaignView as WorldCampaignView, type GameContent } from "@ai-npc/module-sdk";
+import type { CampaignView } from "@world-prism/contracts";
+import { CampaignView as WorldCampaignView, type GameContent } from "@world-prism/module-sdk";
 
 export function campaignViewOf(campaign: WorldCampaignView, content: GameContent): CampaignView {
   return {

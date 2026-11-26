@@ -3,8 +3,8 @@
  * 依赖契约与 module-sdk 描述符校验；实现由 create 加载。
  * 禁止在这里访问存储或执行分支复制。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const saveConfigSchema = z.object({}).strict();

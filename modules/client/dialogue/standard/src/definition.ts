@@ -3,7 +3,7 @@
  * 依赖玩家授权投影和选择端口；不持有 Agent 私有决策上下文。
  * 禁止把模型流式 token、未提交台词或控制台真值展示给玩家。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const dialogueModuleDefinition = defineBrowserModuleDefinition({
   id: "client.dialogue.standard",

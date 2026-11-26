@@ -12,18 +12,18 @@ import type {
   Json,
   ModuleDefinition,
   StoragePort,
-} from "@ai-npc/contracts";
-import { capabilityIdSchema } from "@ai-npc/contracts";
-import { createModuleRegistry, resolveRealmPlan, startInstances, type ResolvedRealmPlan, type StartedInstances } from "@ai-npc/kernel";
-import type { AgentCompressionPort, AgentContextPort, AgentToolViewPort } from "@ai-npc/module-sdk";
-import type { ContentPack } from "@ai-npc/experiment";
-import { loadContentPack } from "@ai-npc/experiment";
-import { orderedBlocksContextDefinition } from "@ai-npc/mod-agent-context-ordered-blocks";
-import { compressionNoneModuleDefinition } from "@ai-npc/mod-agent-compression-none";
-import { compressionWindowModuleDefinition } from "@ai-npc/mod-agent-compression-window";
-import { structuredToolViewModuleDefinition } from "@ai-npc/mod-agent-tool-view-structured";
-import { gameToolsModuleDefinition, type GameToolsCatalogPort } from "@ai-npc/mod-agent-tools-game-tools";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+} from "@world-prism/contracts";
+import { capabilityIdSchema } from "@world-prism/contracts";
+import { createModuleRegistry, resolveRealmPlan, startInstances, type ResolvedRealmPlan, type StartedInstances } from "@world-prism/kernel";
+import type { AgentCompressionPort, AgentContextPort, AgentToolViewPort } from "@world-prism/module-sdk";
+import type { ContentPack } from "@world-prism/experiment";
+import { loadContentPack } from "@world-prism/experiment";
+import { orderedBlocksContextDefinition } from "@world-prism/mod-agent-context-ordered-blocks";
+import { compressionNoneModuleDefinition } from "@world-prism/mod-agent-compression-none";
+import { compressionWindowModuleDefinition } from "@world-prism/mod-agent-compression-window";
+import { structuredToolViewModuleDefinition } from "@world-prism/mod-agent-tool-view-structured";
+import { gameToolsModuleDefinition, type GameToolsCatalogPort } from "@world-prism/mod-agent-tools-game-tools";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
 export const testWorldId = "wld-000000000001";

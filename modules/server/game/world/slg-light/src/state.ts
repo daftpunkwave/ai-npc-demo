@@ -3,9 +3,9 @@
  * 依赖 zod 与公共契约的领域值；所有状态只允许世界模块写入。
  * 禁止在这里执行 campaign 初始化、每日结算或任务规则。
  */
-import { cityResourceAmountsSchema, numericMeterIdSchema, resourceAmountsSchema, taskTypeSchema, watergateAllocationSchema } from "@ai-npc/contracts";
-import { DomainError } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { cityResourceAmountsSchema, numericMeterIdSchema, resourceAmountsSchema, taskTypeSchema, watergateAllocationSchema } from "@world-prism/contracts";
+import { DomainError } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const campaignStateSchema = z

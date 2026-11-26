@@ -3,7 +3,7 @@
  * 依赖定义文件与端口实现；宿主只经组合根登记定义，测试可构造事务内端口。
  * 禁止在这里静态打开存储或注册全局处理器。
  */
-export const packageName = "@ai-npc/mod-game-map-six-nodes";
+export const packageName = "@world-prism/mod-game-map-six-nodes";
 
 export { mapModuleDefinition } from "./definition";
 export { createMapContributor } from "./contributor";

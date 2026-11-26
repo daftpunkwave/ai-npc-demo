@@ -3,11 +3,11 @@
  * 支持调用方取消、请求超时及无凭据的回环端点，返回规范化结果或安全错误。
  * 禁止读取环境、追随重定向、发送供应商私有上下文或自行重试。
  */
-import { DomainError, jsonValueSchema, type Json, type ModelTransportPort, type ModuleCreateInput } from "@ai-npc/contracts";
+import { DomainError, jsonValueSchema, type Json, type ModelTransportPort, type ModuleCreateInput } from "@world-prism/contracts";
 import {
   createStatelessModule, isLoopbackModelEndpoint, modelEndpointUrl, modelHttpFailure,
   modelTransportFailure, parseModelEndpoint,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { z } from "zod";
 import { chatRequest, openAIParameters } from "./chat-request";
 import { chatResponse } from "./chat-response";

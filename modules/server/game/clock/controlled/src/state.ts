@@ -3,7 +3,7 @@
  * 依赖公共契约的存储行标量类型；只做类型收窄，不访问数据库。
  * 禁止在行读取时填补缺失值或猜测模式。
  */
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 
 /**
  * 时钟配置；与模块描述符的 strict schema 对齐。

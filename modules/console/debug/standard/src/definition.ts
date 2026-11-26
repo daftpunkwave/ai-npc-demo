@@ -3,7 +3,7 @@
  * 交互契约：依赖远端观测能力与研究员浏览器宿主。
  * 约束与禁忌：不直接创建 trigger、读取存储或调用模型。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const debugPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.debug.standard",

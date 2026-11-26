@@ -3,7 +3,7 @@
  * 依赖玩家投影与本地偏好端口；不改变世界规则、权限或当前模块装配。
  * 禁止把偏好保存当作服务端存档，也禁止从设置入口读取后台配置。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const settingsModuleDefinition = defineBrowserModuleDefinition({
   id: "client.settings.standard",

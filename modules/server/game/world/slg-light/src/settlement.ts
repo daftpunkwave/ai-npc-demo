@@ -5,9 +5,9 @@
  * 由时钟步骤事务回滚，DayPassed 不提交，调用方可重试或停止。
  * 禁止重复结算同一 tick、在事务内调用模型或把未达标的指标算作均衡。
  */
-import { DomainError, type CityResourceAmounts, type Json, type MeterChange, type MeterChangeCause, type NumericMeterId, type ResourceId } from "@ai-npc/contracts";
-import type { GameModulePorts, GameSettlementRules, HandlerContext, AgreementCounts, WorldTx } from "@ai-npc/module-sdk";
-import { requireGameContent, type MetersView } from "@ai-npc/module-sdk";
+import { DomainError, type CityResourceAmounts, type Json, type MeterChange, type MeterChangeCause, type NumericMeterId, type ResourceId } from "@world-prism/contracts";
+import type { GameModulePorts, GameSettlementRules, HandlerContext, AgreementCounts, WorldTx } from "@world-prism/module-sdk";
+import { requireGameContent, type MetersView } from "@world-prism/module-sdk";
 import { clampMeter, metersSnapshot, thresholdEvents } from "./meters";
 import {
   campaignStateSchema,

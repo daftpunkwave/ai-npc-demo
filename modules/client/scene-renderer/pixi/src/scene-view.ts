@@ -4,7 +4,7 @@
  * 约束与禁忌：相机与画布尺寸变化不重建显示对象，也不启动持续渲染循环；渲染结果不构成世界事实。
  */
 import { Container, Graphics, Text, type FederatedPointerEvent } from "pixi.js";
-import type { PlayerProjection } from "@ai-npc/contracts";
+import type { PlayerProjection } from "@world-prism/contracts";
 
 export interface SceneCamera {
   readonly x: number;

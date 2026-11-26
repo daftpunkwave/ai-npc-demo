@@ -4,9 +4,9 @@
  * 约束与禁忌：禁止直接写入公共记忆或绕过记忆提交路径。
  */
 import { describe, expect, it } from "vitest";
-import { estimateTokens, type AgentObservation } from "@ai-npc/contracts";
-import type { RunModelPort } from "@ai-npc/module-sdk";
-import { memoryLayeredHybridModuleDefinition, memoryLedgerModuleDefinition, memoryStreamReflectionModuleDefinition } from "@ai-npc/mod-agent-memory-ledger";
+import { estimateTokens, type AgentObservation } from "@world-prism/contracts";
+import type { RunModelPort } from "@world-prism/module-sdk";
+import { memoryLayeredHybridModuleDefinition, memoryLedgerModuleDefinition, memoryStreamReflectionModuleDefinition } from "@world-prism/mod-agent-memory-ledger";
 import { createMemoryHarness, insertObservation, memoryAgentId, memoryBranchId, memoryIdentity, memoryQuery } from "./memory-support";
 import { modelResponse, startVariantHost } from "./memory-variants-support";
 

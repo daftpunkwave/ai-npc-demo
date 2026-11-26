@@ -4,7 +4,7 @@
  * 禁止在本文件复制内容 schema 或写死具体内容包的 ID。
  */
 import { describe, expect, it } from "vitest";
-import type { GameContent } from "@ai-npc/module-sdk";
+import type { GameContent } from "@world-prism/module-sdk";
 import { holdsOperationalSeat, requireGameContent } from "../src/content-view";
 
 /** 构造通过结构断言的最小内容视图；派系表与公社席规则可定制。 */

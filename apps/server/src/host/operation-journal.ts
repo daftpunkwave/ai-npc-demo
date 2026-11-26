@@ -17,7 +17,7 @@ import {
   type StoragePort,
   type StorageRow,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 /** 运营操作种类；与 operation_idempotency.operation_kind 的约束一致。 */
 export type OperationKind = "pause" | "resume" | "step" | "snapshot" | "restore" | "reset";

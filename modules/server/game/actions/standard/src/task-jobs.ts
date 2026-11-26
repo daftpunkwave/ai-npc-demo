@@ -4,8 +4,8 @@
  * 禁止在 job 中改写已失败的既有任务状态、忽略可失败写入的返回值，或用真实时间推进。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions, @typescript-eslint/restrict-plus-operands -- 任务/路线字段在运行期均为 number，静态分析缺少 workspace 类型解析时把它们视为 unknown。 */
-import type { ReasonCode, ResourceAmounts } from "@ai-npc/contracts";
-import { principalsAudience, requireGameContent } from "@ai-npc/module-sdk";
+import type { ReasonCode, ResourceAmounts } from "@world-prism/contracts";
+import { principalsAudience, requireGameContent } from "@world-prism/module-sdk";
 import { completeTask, failTask } from "./completion";
 import { repairWorkNodeId, teamTransportCapacity } from "./faction-bonus";
 import { refundDelegation, releaseReserved, settleRepairMaterials } from "./reservations";

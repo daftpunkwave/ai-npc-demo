@@ -3,7 +3,7 @@
  * 依赖公共契约的 ModuleDefinition、JSON 值校验与 DomainError，不接触任何模块实现。
  * 禁止放宽 schema、静默丢弃未知键或在失败时返回部分配置。
  */
-import { DomainError, jsonValueSchema, type Json, type ModuleDefinition } from "@ai-npc/contracts";
+import { DomainError, jsonValueSchema, type Json, type ModuleDefinition } from "@world-prism/contracts";
 
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
 function isJsonObject(value: Json | undefined): value is { readonly [key: string]: Json } {

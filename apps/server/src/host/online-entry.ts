@@ -3,8 +3,8 @@
  * 依赖存储行视图、规范 JSON 与 kernel 解析计划；不创建分支、不修改别名。
  * 禁止在别名缺失之外静默新建或改选其他分支，也禁止接受状态不一致的在线记录继续启动。
  */
-import { canonicalJson, type StorageRow, type StorageTransaction } from "@ai-npc/contracts";
-import type { ResolvedRealmPlan } from "@ai-npc/kernel";
+import { canonicalJson, type StorageRow, type StorageTransaction } from "@world-prism/contracts";
+import type { ResolvedRealmPlan } from "@world-prism/kernel";
 
 /** 在线入口：world_aliases('online') 指向的唯一在线分支及其绑定的 live run。 */
 export interface OnlineEntry {
@@ -68,7 +68,7 @@ export function readOnlineEntry(tx: StorageTransaction): OnlineEntry | null {
 export function contentVersionMismatch(frozen: string, current: string, scope: string): Error {
   return new Error(
     `内容包 contentVersion 不一致：${scope} 冻结「${frozen}」，当前内容包「${current}」；拒绝启动。` +
-    "开发阶段可在停服后删除 NPC_DATA_DIR 对应的开发数据目录，再重启以创建新 run。",
+    "开发阶段可在停服后删除 WORLD_PRISM_DATA_DIR 对应的开发数据目录，再重启以创建新 run。",
   );
 }
 

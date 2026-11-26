@@ -7,9 +7,9 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@ai-npc/app-server";
-import type { AuthContext, CommandType, Json, StorageRow } from "@ai-npc/contracts";
-import type { AgentDecisionPort, DeterministicDecisionInput } from "@ai-npc/module-sdk";
+import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@world-prism/app-server";
+import type { AuthContext, CommandType, Json, StorageRow } from "@world-prism/contracts";
+import type { AgentDecisionPort, DeterministicDecisionInput } from "@world-prism/module-sdk";
 import { gameCommandEnvelope } from "./game-support";
 
 const target = "human-independent";
@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 function rootDir(): string {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-shutdown-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-shutdown-"));
   roots.push(root);
   return root;
 }

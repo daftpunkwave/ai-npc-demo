@@ -4,8 +4,8 @@
  * 禁止联网、依赖真实认证环境或从模拟响应推断在线模型表现。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { anthropicTransportDefinition } from "@ai-npc/mod-platform-model-transport-anthropic/definition";
-import type { Json } from "@ai-npc/contracts";
+import { anthropicTransportDefinition } from "@world-prism/mod-platform-model-transport-anthropic/definition";
+import type { Json } from "@world-prism/contracts";
 import { modelConnection, modelRequest, statusOutput, transportPort } from "../support/model-transport";
 
 const apiKey = "test-anthropic-key";

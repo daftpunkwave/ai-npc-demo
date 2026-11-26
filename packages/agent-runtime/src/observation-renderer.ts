@@ -3,9 +3,9 @@
  * 依赖内容索引、prompts 模板、locale 名称与受众声明。
  * 禁止读取未发布卡片、他人秘密或把 summary 的明细字段重新补回。
  */
-import type { ContentPack, ContentLocale } from "@ai-npc/experiment";
-import { probeAskedPayloadSchema, type Json } from "@ai-npc/contracts";
-import type { PerceptionRequest } from "@ai-npc/module-sdk";
+import type { ContentPack, ContentLocale } from "@world-prism/experiment";
+import { probeAskedPayloadSchema, type Json } from "@world-prism/contracts";
+import type { PerceptionRequest } from "@world-prism/module-sdk";
 
 type JsonObject = Readonly<Record<string, Json>>;
 

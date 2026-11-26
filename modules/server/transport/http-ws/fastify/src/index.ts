@@ -3,7 +3,7 @@
  * 交互契约：导出定义、配置 schema、TransportPort、createServerApp、StreamHub 与相关公开类型。
  * 约束与禁忌：不创建 Fastify 实例、不监听端口。
  */
-export const packageName = "@ai-npc/mod-transport-http-ws-fastify";
+export const packageName = "@world-prism/mod-transport-http-ws-fastify";
 
 export { transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";

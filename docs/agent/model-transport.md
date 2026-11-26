@@ -130,13 +130,13 @@ interface ModelCapabilities {
 connections:
   openai-compat:
     adapterId: platform.model-transport.openai-compatible
-    endpoint: env:NPC_OPENAI_COMPAT_BASE_URL     # e.g. https://api.deepseek.com/v1 or http://127.0.0.1:11434/v1
-    credentialRef: env:NPC_OPENAI_COMPAT_API_KEY # empty value allowed for local servers
+    endpoint: env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL     # e.g. https://api.deepseek.com/v1 or http://127.0.0.1:11434/v1
+    credentialRef: env:WORLD_PRISM_OPENAI_COMPAT_API_KEY # empty value allowed for local servers
     rateLimitKey: openai-compat-account
 models:
   npc-chat:
     connectionId: openai-compat
-    externalModel: env:NPC_OPENAI_COMPAT_MODEL
+    externalModel: env:WORLD_PRISM_OPENAI_COMPAT_MODEL
     parameters: { temperature: 0.6, maxTokensField: max_tokens }
     capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: verbatim,
                     contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }

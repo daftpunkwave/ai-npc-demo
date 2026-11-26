@@ -3,8 +3,8 @@
  * 依赖严格配置与最小应用接口；宿主只经本端口监听与关闭，不接触具体框架类型。
  * 禁止在此放宽 Origin、绕过最小接口直接操作框架实例或让宿主依赖 Fastify。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { transportConfigSchema, type TransportConfig } from "./definition";
 import { createServerApp, type ServerApp, type ServerAppOptions } from "./app";
 

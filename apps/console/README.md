@@ -1,4 +1,4 @@
-# @ai-npc/app-console
+# @world-prism/app-console
 
 控制台浏览器宿主，静态资源由服务端 `127.0.0.1:3000/console/` 提供，不新增监听端口。
 

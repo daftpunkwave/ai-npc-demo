@@ -3,8 +3,8 @@
  * 依赖协议聚合、履约判定、履约事实读取与世界/地图端口；不写任务或分享事实。
  * 禁止用未提交的异步消费者状态提前判定、把已记录的违约改回履约，或对已关闭协议重复处理。
  */
-import { principalsAudience } from "@ai-npc/module-sdk";
-import type { Term } from "@ai-npc/contracts";
+import { principalsAudience } from "@world-prism/module-sdk";
+import type { Term } from "@world-prism/contracts";
 import { isTermSatisfied } from "./fulfillment";
 import { finishIfFulfilled, fulfillTerm, markBreach } from "./agreement-lifecycle";
 import { asPorts, fulfillmentFacts, type AgreementContext } from "./agreement-shared";

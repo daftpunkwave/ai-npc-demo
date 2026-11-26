@@ -10,8 +10,8 @@ import {
   type ContextArtifact,
   type ContextBuildRequest,
   type Json,
-} from "@ai-npc/contracts";
-import type { AgentCompressionPort, AgentContextPort } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentCompressionPort, AgentContextPort } from "@world-prism/module-sdk";
 
 export interface ContextPipelineOptions {
   readonly context: AgentContextPort;

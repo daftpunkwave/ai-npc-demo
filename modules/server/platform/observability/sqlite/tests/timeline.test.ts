@@ -4,7 +4,7 @@
  * 约束与禁忌：不打开 SQLite 或读取生产数据。
  */
 import { describe, expect, it } from "vitest";
-import type { StoragePort, StorageTransaction, StorageValue } from "@ai-npc/contracts";
+import type { StoragePort, StorageTransaction, StorageValue } from "@world-prism/contracts";
 import { ObservabilityPort } from "../src/plugin";
 
 interface QueryCall {

@@ -4,12 +4,12 @@
  * 禁止在测试日志中写入 Agent 私密记忆、凭据或未授权事件。
  */
 import { useEffect, type ReactNode } from "react";
-import { usePortSubscription, type BrowserViewPort } from "@ai-npc/client-sdk";
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { ProjectionState } from "@ai-npc/client-protocol";
+import { usePortSubscription, type BrowserViewPort } from "@world-prism/client-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { ProjectionState } from "@world-prism/client-protocol";
 
 interface SceneLogWindow {
-  __aiNpcSceneLog?: {
+  __worldPrismSceneLog?: {
     readonly projection: ProjectionState["projection"] | null;
   };
 }
@@ -23,7 +23,7 @@ function NullScene(): ReactNode {
   useEffect(() => {
     const current = sceneLogWindow();
     if (current !== null) {
-      current.__aiNpcSceneLog = { projection: state?.projection ?? null };
+      current.__worldPrismSceneLog = { projection: state?.projection ?? null };
     }
   }, [state]);
   return (
@@ -49,7 +49,7 @@ export function createNullSceneModule(input: ModuleCreateInput): Promise<ModuleI
     dispose: async () => {
       const current = sceneLogWindow();
       if (current !== null) {
-        delete current.__aiNpcSceneLog;
+        delete current.__worldPrismSceneLog;
       }
     },
     port,

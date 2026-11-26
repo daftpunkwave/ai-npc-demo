@@ -7,17 +7,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { serverModuleDefinitions } from "@ai-npc/app-server";
-import type { Json, StoragePort } from "@ai-npc/contracts";
-import { insertLifecycleAuditEvent } from "@ai-npc/module-sdk";
-import type { ObservabilityPort } from "@ai-npc/mod-platform-observability-sqlite";
+import { serverModuleDefinitions } from "@world-prism/app-server";
+import type { Json, StoragePort } from "@world-prism/contracts";
+import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
+import type { ObservabilityPort } from "@world-prism/mod-platform-observability-sqlite";
 import { createFakeHost } from "./authority-support";
 
 const branchId = "br-000000000042";
 
 /** 用真实存储与观测模块装配审计契约的最小验证环境。 */
 async function auditHarness() {
-  const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-lifecycle-audit-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "world-prism-lifecycle-audit-"));
   const host = createFakeHost();
   const signal = new AbortController().signal;
   const create = (

@@ -3,11 +3,11 @@
  * 依赖冻结 revision 视图与确定性记忆计划契约。
  * 禁止调用模型，或在宿主 actor 事务外发布状态。
  */
-import type { IdPrefix, MaintenanceTask, MemoryChangePlan } from "@ai-npc/contracts";
+import type { IdPrefix, MaintenanceTask, MemoryChangePlan } from "@world-prism/contracts";
 import type {
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
   type LedgerBuild,

@@ -3,8 +3,8 @@
  * 使用旧目录的精确摘要和模型段落判断历史装配形态，完整清单在启动时再次复算。
  * 禁止修改存档、替换 provider 或接受未经确认的历史目录。
  */
-import type { AssemblyDescriptor, ModuleDefinition } from "@ai-npc/contracts";
-import { computeCatalogHash, createModuleRegistry } from "@ai-npc/kernel";
+import type { AssemblyDescriptor, ModuleDefinition } from "@world-prism/contracts";
+import { computeCatalogHash, createModuleRegistry } from "@world-prism/kernel";
 import { canonicalHasher } from "../host-services";
 import type { FrozenManifestFacts } from "./manifest";
 import { serverAgentModuleDefinitions, serverLiveModelTransportDefinitions, serverModelModuleDefinitions } from "./module-catalog";

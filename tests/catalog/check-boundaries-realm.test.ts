@@ -17,7 +17,7 @@ import {
 
 describe("规则 3：浏览器 realm 边界", () => {
   it("浏览器宿主不能引用 Node 内置模块", () => {
-    const appPackage = packageManifest("@ai-npc/app-client", "apps/client");
+    const appPackage = packageManifest("@world-prism/app-client", "apps/client");
     const violations = checkFixture("apps/client/src/main.tsx", "browser-node-import.ts.txt", {
       packages: packagesWith([appPackage]),
     });
@@ -26,8 +26,8 @@ describe("规则 3：浏览器 realm 边界", () => {
   });
 
   it("浏览器包不能引用服务端固定机制包", () => {
-    const clientSdkPackage = packageManifest("@ai-npc/client-sdk", "packages/client-sdk", {
-      dependencies: { "@ai-npc/authority": "workspace:*" },
+    const clientSdkPackage = packageManifest("@world-prism/client-sdk", "packages/client-sdk", {
+      dependencies: { "@world-prism/authority": "workspace:*" },
     });
     const violations = checkFixture("packages/client-sdk/src/transport.ts", "browser-server-package-import.ts.txt", {
       packages: packagesWith([clientSdkPackage]),
@@ -38,16 +38,16 @@ describe("规则 3：浏览器 realm 边界", () => {
 
   it("浏览器模块允许 React 与客户端辅助库", () => {
     const directory = "modules/client/hud/standard";
-    const modulePackage = packageManifest("@ai-npc/mod-client-hud-standard", directory, {
+    const modulePackage = packageManifest("@world-prism/mod-client-hud-standard", directory, {
       dependencies: {
-        "@ai-npc/client-sdk": "workspace:*",
+        "@world-prism/client-sdk": "workspace:*",
         react: "^19",
         zod: "^4",
       },
     });
     const violations = checkFixture(`${directory}/src/index.ts`, "module-client-service-valid.ts.txt", {
       packages: packagesWith([modulePackage]),
-      definitionKinds: [{ packageName: "@ai-npc/mod-client-hud-standard", kind: "service" }],
+      definitionKinds: [{ packageName: "@world-prism/mod-client-hud-standard", kind: "service" }],
     });
     expect(violations).toEqual([]);
   });
@@ -72,7 +72,7 @@ describe("规则 4：kernel 与 contracts 的依赖限制", () => {
 
 describe("规则 5：宿主应用组合根", () => {
   it("组合根之外不能引用模块包", () => {
-    const appPackage = packageManifest("@ai-npc/app-server", "apps/server", {
+    const appPackage = packageManifest("@world-prism/app-server", "apps/server", {
       dependencies: { [MEMORY_MODULE_NAME]: "workspace:*" },
     });
     const violations = checkFixture("apps/server/src/main.ts", "app-module-import-outside-catalog.ts.txt", {

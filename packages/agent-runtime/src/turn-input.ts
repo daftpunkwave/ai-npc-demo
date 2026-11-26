@@ -13,9 +13,9 @@ import {
   type MemoryScope,
   type StoragePort,
   type StorageTransaction,
-} from "@ai-npc/contracts";
-import type { ResolvedAgentProfile } from "@ai-npc/experiment";
-import type { DeterministicDecisionInput, DelegationView } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { DeterministicDecisionInput, DelegationView } from "@world-prism/module-sdk";
 import { parseWatermark } from "./memory-row-codec";
 import { asRecord, numberValue } from "./runtime-records";
 import { TurnStopped, type ClaimedTurn, type TurnLeases } from "./turn-lease";

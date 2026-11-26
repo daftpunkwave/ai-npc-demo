@@ -3,7 +3,7 @@
  * 依赖本包 define-module 与 ports 的实现及公共契约类型，不加载任何模块实现或宿主资源。
  * 禁止在此创建存储/网络连接、注册全局单例或提供万能执行入口。
  */
-export const packageName = "@ai-npc/module-sdk";
+export const packageName = "@world-prism/module-sdk";
 
 export { defineModule } from "./define-module";
 export { validateModuleDefinition } from "./descriptor-validation";

@@ -18,10 +18,10 @@ import {
   type Json,
   type ModuleCreateInput,
   type StoragePort,
-} from "@ai-npc/contracts";
-import { Authority } from "@ai-npc/authority";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import type { ApprovedSpeechReader } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { Authority } from "@world-prism/authority";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
+import type { ApprovedSpeechReader } from "@world-prism/module-sdk";
 
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
 const startIso = "2026-01-01T00:00:00.000Z";
@@ -116,7 +116,7 @@ export interface AuthorityHarnessOptions {
 
 /** 启动真实存储并初始化一个在线分支与时钟。 */
 export async function createAuthorityHarness(options: AuthorityHarnessOptions = {}): Promise<AuthorityHarness> {
-  const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-authority-test-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "world-prism-authority-test-"));
   const host = createFakeHost();
   const worldId = "wld-000000000000";
   const branchId = "br-000000000000";

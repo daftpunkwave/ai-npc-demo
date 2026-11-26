@@ -6,7 +6,7 @@
 import { expect } from "vitest";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DomainError, type ErrorCode } from "@ai-npc/contracts";
+import { DomainError, type ErrorCode } from "@world-prism/contracts";
 import {
   ModuleHostProvider,
   type ModuleHostValue,

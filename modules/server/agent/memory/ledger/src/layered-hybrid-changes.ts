@@ -3,8 +3,8 @@
  * 交互契约：只接收冻结 revision、已验证证据与注入 ID，不调用存储或模型。
  * 约束与禁忌：未知证据、未知主体和非法 belief 操作必须丢弃并留下可审计原因。
  */
-import type { IdPrefix, MemoryChangePlan, MaintenanceTask } from "@ai-npc/contracts";
-import type { MemoryRecordView, RevisionView } from "@ai-npc/module-sdk";
+import type { IdPrefix, MemoryChangePlan, MaintenanceTask } from "@world-prism/contracts";
+import type { MemoryRecordView, RevisionView } from "@world-prism/module-sdk";
 import type { DailyReviewOutput } from "./layered-hybrid-model";
 import type { LayeredHybridConfig } from "./layered-hybrid-config";
 import { compareStrings, mergeReleasePolicies } from "./ledger-model";

@@ -127,7 +127,7 @@ export function checkModuleManifests(
     const allowlist = dependencyAllowlist(moduleInfo.path, moduleInfo.kind);
     const manifestPath = `${pkg.directory}/package.json`;
     for (const dependencyName of Object.keys(pkg.dependencies)) {
-      if (dependencyName.startsWith("@ai-npc/")) {
+      if (dependencyName.startsWith("@world-prism/")) {
         if (isModulePackageName(dependencyName)) {
           violations.push(
             violation(

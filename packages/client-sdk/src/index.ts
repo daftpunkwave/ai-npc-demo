@@ -3,7 +3,7 @@
  * 依赖本包 context、slot、preferences 的导出与契约类型；不执行服务端规则或直接访问后端。
  * 禁止在此创建 Node 资源、伪造未注册 port 或绕过授权投影读取世界状态。
  */
-export const packageName = "@ai-npc/client-sdk";
+export const packageName = "@world-prism/client-sdk";
 
 export {
   ModuleHostProvider,

@@ -3,8 +3,8 @@
  * 依赖公共契约与 module-sdk；应用实现由宿主组合。
  * 禁止在此读取环境变量、监听端口或绕过 Origin 校验。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const transportConfigSchema = z

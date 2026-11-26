@@ -4,7 +4,7 @@
  * 禁止用 defaults 静默替代装配配置，也禁止把 schema 失败降级成原始 ZodError。
  */
 import { describe, expect, it } from "vitest";
-import type { ModuleCreateInput, ModuleDefinition, ModuleInstance, ResolvedModuleSet } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleDefinition, ModuleInstance, ResolvedModuleSet } from "@world-prism/contracts";
 import { z } from "zod";
 import { startBrowserModules } from "../src/index";
 
@@ -38,7 +38,7 @@ function cameraModule(received: Json[]): ModuleDefinition {
   };
 }
 
-type Json = import("@ai-npc/contracts").Json;
+type Json = import("@world-prism/contracts").Json;
 
 function resolvedWith(config: Json): ResolvedModuleSet {
   return {

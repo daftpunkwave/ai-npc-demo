@@ -8,8 +8,8 @@ import {
   usePort,
   usePreferencePort,
   type BrowserViewPort,
-} from "@ai-npc/client-sdk";
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+} from "@world-prism/client-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 
 interface CameraLike {
   zoomTo(zoom: number): void;

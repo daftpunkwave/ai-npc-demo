@@ -11,13 +11,13 @@ import {
   type MemoryBundle,
   type MemoryChangePlan,
   type MaintenanceTask,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryPort,
   MemoryRecordView,
   RevisionView,
   ScopedModelPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { z } from "zod";
 import type { StreamReflectionConfig } from "./definition";
 import { retrieveStreamMemory } from "./stream-reflection-retrieval";

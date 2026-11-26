@@ -3,8 +3,8 @@
  * 从冻结 revision 视图构建确定性摄入行。
  * 禁止绕过记忆宿主，或从未观察的事件推断记录。
  */
-import type { AgentObservation, IdPrefix } from "@ai-npc/contracts";
-import type { RevisionView } from "@ai-npc/module-sdk";
+import type { AgentObservation, IdPrefix } from "@world-prism/contracts";
+import type { RevisionView } from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
   type LedgerBuild,

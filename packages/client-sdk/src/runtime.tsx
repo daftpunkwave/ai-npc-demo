@@ -11,7 +11,7 @@ import {
   type ModuleDefinition,
   type ModuleInstance,
   type ResolvedModuleSet,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { ReactNode } from "react";
 import type { PreferencePort } from "./preferences";
 import type { SlotContribution } from "./slots";

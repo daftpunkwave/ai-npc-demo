@@ -133,7 +133,7 @@
 
 | 时机 | 服务端行为 |
 |---|---|
-| 第一次启动（数据库里没有 `world_aliases('online')`） | 创建 world（内容包 `earth-2964-v1`）、一个 `kind = online` 的分支（时钟 `paused`、`worldTick = 0`）、一个 `mode = live` 的 run，其 RunSpec 默认取 `config/runs/online-default.yaml`（装配选用夹具模型传输时自动取 `config/runs/online-model-test.yaml`），并用环境变量 `NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 覆盖其中的 `moduleAssemblyRef`、`modelLayoutRef`、`rosterRef`；`seed` 在此时随机生成并写入 RunSpec 与 manifest；`world_aliases('online')` 指向该分支 |
+| 第一次启动（数据库里没有 `world_aliases('online')`） | 创建 world（内容包 `earth-2964-v1`）、一个 `kind = online` 的分支（时钟 `paused`、`worldTick = 0`）、一个 `mode = live` 的 run，其 RunSpec 默认取 `config/runs/online-default.yaml`（装配选用夹具模型传输时自动取 `config/runs/online-model-test.yaml`），并用环境变量 `WORLD_PRISM_ASSEMBLY`、`WORLD_PRISM_MODEL_LAYOUT`、`WORLD_PRISM_ROSTER` 覆盖其中的 `moduleAssemblyRef`、`modelLayoutRef`、`rosterRef`；`seed` 在此时随机生成并写入 RunSpec 与 manifest；`world_aliases('online')` 指向该分支 |
 | 之后每次启动 | 沿用在线别名指向的分支与 run；时钟一律置为 `paused`（离线不推进），由玩家或运营手动继续 |
 | `campaign.start` 被接受 | 在线分支写入 campaign 与初态；按名册激活 Agent（`agent_activations` 置为 active，计入 15 的配额，配额不足时命令被拒绝，原因码 `budget-exhausted`） |
 | 玩家“重新开局” | `POST /api/v1/campaign/reset`：先存一个快照，再创建新的空在线分支与新的 live run，旧分支设为 archived；玩家随后重新选择开局 |
@@ -167,12 +167,12 @@ failurePolicy: online-fallback
 
 在线 run 冻结的 `contentVersion` 与当前内容包不一致时，服务端在监听前拒绝启动。正式发布前，可以删除开发数据后重新开局。
 
-1. 停止服务，删除 `NPC_DATA_DIR` 指向的 Demo 开发数据目录（默认 `./data`）。该目录包含开发存档和自动生成的本地令牌。
+1. 停止服务，删除 `WORLD_PRISM_DATA_DIR` 指向的 Demo 开发数据目录（默认 `./data`）。该目录包含开发存档和自动生成的本地令牌。
 2. 执行 `pnpm dev:server`。服务端使用当前内容包重新建库并创建在线世界和 run。
 
 ### 10.2 能力闭包升级迁移
 
-代码升级后模块目录或装配的能力闭包发生变化时，旧在线 run 的冻结 manifest 无法按当前模块目录复算，服务端在监听前拒绝启动并保持源 run 与分支原样。错误信息给出两条出路：回退到创建该 run 的代码版本，或设置 `NPC_MIGRATE_ONLINE_RUN=1` 执行显式迁移。
+代码升级后模块目录或装配的能力闭包发生变化时，旧在线 run 的冻结 manifest 无法按当前模块目录复算，服务端在监听前拒绝启动并保持源 run 与分支原样。错误信息给出两条出路：回退到创建该 run 的代码版本，或设置 `WORLD_PRISM_MIGRATE_ONLINE_RUN=1` 执行显式迁移。
 
 只有装配能力闭包差异（模块绑定集与其摘要）允许迁移：seed、RunSpec 选择、内容版本、名册或 Agent 配置与当前解析不一致时属于非升级差异，即使开关打开也拒绝迁移并保持拒绝启动。内容版本不一致、seed 或引用不一致、`manifest_hash` 校验失败同样不进入迁移。
 

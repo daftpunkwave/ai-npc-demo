@@ -3,8 +3,8 @@
  * 交互契约：只接收字符串，返回非负整数且不依赖供应商 tokenizer。
  * 约束与禁忌：不得读取环境、模型能力或实际 usage。
  */
-import { estimateSystemAndUserTokens } from "@ai-npc/contracts";
-export { estimateTokens } from "@ai-npc/contracts";
+import { estimateSystemAndUserTokens } from "@world-prism/contracts";
+export { estimateTokens } from "@world-prism/contracts";
 
 export function estimateContextTokens(system: string, userSegments: readonly string[]): number {
   return estimateSystemAndUserTokens(system, userSegments.join("\n\n"));

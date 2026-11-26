@@ -81,7 +81,7 @@ Godot C# 原生玩家端及正式 3D 美术处于规划状态。当前玩家端�
 
 ### 3.1 身份配额
 
-状态：配额已交付。部署级共享配额在开局和恢复事务内执行，活动或暂停分支上的活动身份共用 15 个名额，归档分支退出计数。实验规格与 run 展开、`probe.ask` 命令与沙盒分支的暂停豁免、探针计分与报告组装均已就绪。**剩余缺口**是按展开结果创建实验分支与沙盒分支、驱动受控时钟并执行脚本的**实验执行器**；该工作由 [Issue #313](https://github.com/daftpunkwave/ai-npc-demo/issues/313) 单独跟踪，未在本分支改动的 `apps/server/src/host/` 执行器与 `experiment_results` 写入路径内实现。
+状态：配额已交付。部署级共享配额在开局和恢复事务内执行，活动或暂停分支上的活动身份共用 15 个名额，归档分支退出计数。实验规格与 run 展开、`probe.ask` 命令与沙盒分支的暂停豁免、探针计分与报告组装均已就绪。**剩余缺口**是按展开结果创建实验分支与沙盒分支、驱动受控时钟并执行脚本的**实验执行器**；该工作由 [Issue #313](https://github.com/daftpunkwave/world-prism/issues/313) 单独跟踪，未在本分支改动的 `apps/server/src/host/` 执行器与 `experiment_results` 写入路径内实现。
 
 ### 3.2 t168 资源交接
 
@@ -111,7 +111,7 @@ Godot C# 原生玩家端及正式 3D 美术处于规划状态。当前玩家端�
 
 ### 3.7 冻结装配能力升级
 
-状态：已交付。代码已实现显式迁移：能力闭包差异经 `NPC_MIGRATE_ONLINE_RUN=1` 在单个存储事务内派生后继在线分支、沿用源 RunSpec 与 seed、按当前能力闭包重新冻结 manifest、归档源分支并原子切换在线别名；非能力差异与校验失败保持拒绝启动，源 run 与 manifest 不改写。验收由 `tests/integration/online-run-migration.test.ts` 覆盖，操作语义见 [operations.md — 能力闭包升级迁移](platform/operations.md#102-能力闭包升级迁移)。
+状态：已交付。代码已实现显式迁移：能力闭包差异经 `WORLD_PRISM_MIGRATE_ONLINE_RUN=1` 在单个存储事务内派生后继在线分支、沿用源 RunSpec 与 seed、按当前能力闭包重新冻结 manifest、归档源分支并原子切换在线别名；非能力差异与校验失败保持拒绝启动，源 run 与 manifest 不改写。验收由 `tests/integration/online-run-migration.test.ts` 覆盖，操作语义见 [operations.md — 能力闭包升级迁移](platform/operations.md#102-能力闭包升级迁移)。
 
 ### 3.8 剩余表现与 Agent 管线
 

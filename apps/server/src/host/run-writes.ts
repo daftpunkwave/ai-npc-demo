@@ -3,8 +3,8 @@
  * 交互契约：依赖宿主服务、存储、内容包、装配定义、配置加载上下文与 artifact 存储；各写操作各自独立完成。
  * 约束与禁忌：不启动 Agent 运行时、不推进时钟步进循环、不写世界状态；失败时不留下半个 run 或半个 artifact。
  */
-import type { HostServices, Json, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
-import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster } from "@ai-npc/experiment";
+import type { HostServices, Json, ModuleDefinition, StoragePort } from "@world-prism/contracts";
+import type { ConfigLoadContext, ContentPack, LoadedConfig, Roster } from "@world-prism/experiment";
 import { createRun, type RunCreateResult } from "./run-write";
 import { exportRun } from "./run-export";
 import { createExperiment, type ExperimentCreateResult } from "./experiment-write";

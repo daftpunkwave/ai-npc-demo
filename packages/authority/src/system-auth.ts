@@ -3,7 +3,7 @@
  * 依赖公共契约的认证上下文类型；只表达 system:world 身份，不携带租约或 turn。
  * 禁止用系统上下文冒充玩家、运营或 Agent，也禁止把它传给需要 fencing 的命令入口。
  */
-import type { AuthContext } from "@ai-npc/contracts";
+import type { AuthContext } from "@world-prism/contracts";
 
 /** 系统主体 ID；规则 job、时钟步骤与订阅使用同一身份。 */
 export const systemPrincipalId = "system:world";

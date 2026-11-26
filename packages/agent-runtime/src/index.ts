@@ -3,7 +3,7 @@
  * 依赖 contracts、kernel 与注入的端口，不直接持有具体认知模块实现。
  * 禁止复制第二套 loop，或让模块绕过证据、预算与 fencing 边界。
  */
-export const packageName = "@ai-npc/agent-runtime";
+export const packageName = "@world-prism/agent-runtime";
 
 export { agentDeploymentQuota, activateAgentRoster, activateAgentRosterInTransaction } from "./activation";
 export type { ActivationResult, ActivateAgentRosterInput, RosterActivationInput, RosterActivationOutcome } from "./activation";
@@ -31,8 +31,8 @@ export type { MemoryHostOptions } from "./memory-host";
 export type { MemoryRecordUseRequest } from "./memory-publication";
 export { memoryIdentityForAgent } from "./memory-identity";
 
-export { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
-export type { AgentArtifactKind, AgentArtifactRecord, AgentArtifactStore, PutAgentArtifactInput } from "@ai-npc/module-sdk";
+export { StoredAgentArtifactStore } from "@world-prism/module-sdk";
+export type { AgentArtifactKind, AgentArtifactRecord, AgentArtifactStore, PutAgentArtifactInput } from "@world-prism/module-sdk";
 export { ToolGateway } from "./tool-gateway";
 export type {
   MessageExecutionInput,
@@ -72,7 +72,7 @@ export type {
   SpeechHistoryLine,
   SpeechPreparation,
 } from "./dialogue-flow";
-export { estimateSystemAndUserTokens, estimateTokens } from "@ai-npc/contracts";
+export { estimateSystemAndUserTokens, estimateTokens } from "@world-prism/contracts";
 export { decisionSystem, decisionSubmitTool, modelContextBudget } from "./model-turn-materials";
 export { AgentContextPipeline } from "./context-pipeline";
 export type { ContextPipelineOptions, PreparedContext } from "./context-pipeline";

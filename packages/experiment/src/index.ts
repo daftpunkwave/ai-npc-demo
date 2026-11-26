@@ -3,7 +3,7 @@
  * 依赖加载器、schema 与内容索引；调用方只经此处访问，不导入内部文件。
  * 禁止在此启动运行时、读取默认环境变量或隐藏加载失败。
  */
-export const packageName = "@ai-npc/experiment";
+export const packageName = "@world-prism/experiment";
 export * from "./config/model-layout";
 
 export {

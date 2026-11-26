@@ -3,9 +3,9 @@
  * 交互契约：配置在创建时校验，每次压缩只读取指定 artifact。
  * 约束与禁忌：不得缓存上下文或改写已发送 artifact。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { AgentCompressionPort } from "@ai-npc/module-sdk";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { AgentCompressionPort } from "@world-prism/module-sdk";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { windowCompressionConfigSchema, type WindowCompressionConfig } from "./definition";
 import { compressWindow } from "./window-compression";
 

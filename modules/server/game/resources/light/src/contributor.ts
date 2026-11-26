@@ -8,7 +8,7 @@ import {
   requireGameContent,
   type GameModulePorts,
   type GameRuleContributor,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 /** 资源模块在 campaign.start 后初始化库存；不产生额外的公开事件。 */
 export function createResourcesContributor(): GameRuleContributor<GameModulePorts, unknown> {

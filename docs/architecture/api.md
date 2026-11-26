@@ -24,20 +24,20 @@
 
 ## 2. 认证、会话与健康检查
 
-本地 Demo 用启动令牌登录。服务端读取 `NPC_PLAYER_TOKEN`、`NPC_CONSOLE_TOKEN` 与可选的单角色控制台令牌。玩家和控制台令牌缺省时优先复用数据目录中的 `dev-tokens.json`。首次生成的令牌由 32 字节随机数据编码，保存后可跨重启复用，登录地址仅在生成当次打印。令牌文件先写入同目录暂存文件并刷新到磁盘，服务监听成功且登录地址输出后才原子改名为 `dev-tokens.json`；暂存写入失败时不进入监听，发布失败时关闭宿主并终止启动，已有令牌文件保持原样，因此不会留下截断的 JSON 文件。
+本地 Demo 用启动令牌登录。服务端读取 `WORLD_PRISM_PLAYER_TOKEN`、`WORLD_PRISM_CONSOLE_TOKEN` 与可选的单角色控制台令牌。玩家和控制台令牌缺省时优先复用数据目录中的 `dev-tokens.json`。首次生成的令牌由 32 字节随机数据编码，保存后可跨重启复用，登录地址仅在生成当次打印。令牌文件先写入同目录暂存文件并刷新到磁盘，服务监听成功且登录地址输出后才原子改名为 `dev-tokens.json`；暂存写入失败时不进入监听，发布失败时关闭宿主并终止启动，已有令牌文件保持原样，因此不会留下截断的 JSON 文件。
 
 ```text
-[ai-npc] player  login: http://127.0.0.1:5173/#token=<player token>
-[ai-npc] console login: http://127.0.0.1:3000/console/#token=<console token>
+[world-prism] player  login: http://127.0.0.1:5173/#token=<player token>
+[world-prism] console login: http://127.0.0.1:3000/console/#token=<console token>
 ```
 
 现行浏览器宿主从 URL 片段取得登录令牌，将会话令牌存入按 origin 隔离的 `sessionStorage` 后清除片段。原生玩家端目标使用本机部署提供的玩家令牌，在进程内保存登录返回的会话令牌。
 
 | 令牌 | principalId | 角色 |
 |---|---|---|
-| `NPC_PLAYER_TOKEN` | `player-1` | `player` |
-| `NPC_CONSOLE_TOKEN` | `console-admin` | `operator`、`researcher`、`evaluator` |
-| `NPC_OPERATOR_TOKEN` 等（可选） | `console-operator` 等 | 对应单一角色 |
+| `WORLD_PRISM_PLAYER_TOKEN` | `player-1` | `player` |
+| `WORLD_PRISM_CONSOLE_TOKEN` | `console-admin` | `operator`、`researcher`、`evaluator` |
+| `WORLD_PRISM_OPERATOR_TOKEN` 等（可选） | `console-operator` 等 | 对应单一角色 |
 
 | 方法与路径 | 请求 | 响应 | 说明 |
 |---|---|---|---|

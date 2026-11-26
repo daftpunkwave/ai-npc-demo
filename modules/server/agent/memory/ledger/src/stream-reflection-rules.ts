@@ -3,8 +3,8 @@
  * 交互契约：只操作冻结 revision、观察与注入 ID，不调用模型或存储。
  * 约束与禁忌：禁止把关系账本、承诺账本或未校验的外部结果写入计划。
  */
-import type { AgentObservation, IdPrefix, MemoryChangePlan, MaintenanceTask } from "@ai-npc/contracts";
-import type { MemoryRecordView, RevisionView } from "@ai-npc/module-sdk";
+import type { AgentObservation, IdPrefix, MemoryChangePlan, MaintenanceTask } from "@world-prism/contracts";
+import type { MemoryRecordView, RevisionView } from "@world-prism/module-sdk";
 import type { StreamReflectionConfig } from "./definition";
 import { baseSalience, dataOf, eventFromObservation, numberValue, tagsFor } from "./ledger-model";
 import { importanceOf } from "./stream-reflection-retrieval";

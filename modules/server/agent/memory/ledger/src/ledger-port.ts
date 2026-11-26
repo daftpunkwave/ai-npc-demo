@@ -10,12 +10,12 @@ import {
   type IdPrefix,
   type MemoryBundle,
   type MemoryChangePlan,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryPort,
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 import {
   type LedgerBuild,
@@ -362,7 +362,7 @@ export class LedgerMemoryPort implements MemoryPort {
     const obligorId = entry.kind === "promise-by-other" ? entry.aboutId : view.scope.agentId;
     const kind = isPromise ? "prospective" : "episodic";
     const salience = entry.kind === "request" ? 0.3 : 0.5;
-    const data: Record<string, import("@ai-npc/contracts").Json> = {
+    const data: Record<string, import("@world-prism/contracts").Json> = {
       dueTick: entry.dueTick,
       // 持久化后供本模块跨 turn 去重；宿主的来源校验只读插入行的 sourceTurnId。
       noteworthyTurnId: input.turnId,

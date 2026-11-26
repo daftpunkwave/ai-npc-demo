@@ -4,7 +4,7 @@
  *   事务内入口返回明确结果，供命令钩子据此拒绝整条命令，直接入口按 budget-exhausted 抛出领域错误。
  * 约束与禁忌：禁止跨事务预占、把冻结分支计入配额或静默允许第 16 个身份。
  */
-import { DomainError, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
 
 /** 部署级活动 gameplay 身份上限；在线、实验与探针分支共用。 */
 export const agentDeploymentQuota = 15;

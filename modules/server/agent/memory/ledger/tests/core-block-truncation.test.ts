@@ -4,7 +4,7 @@
  * 约束与禁忌：不得按字符数断言预算，也不得接受短于最长可容纳前缀的结果。
  */
 import { describe, expect, it } from "vitest";
-import { estimateTokens } from "@ai-npc/contracts";
+import { estimateTokens } from "@world-prism/contracts";
 import { truncateCoreBlock } from "../src/layered-hybrid-port";
 
 describe("核心块按 token 预算裁剪", () => {

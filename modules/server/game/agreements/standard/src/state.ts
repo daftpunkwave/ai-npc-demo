@@ -3,8 +3,8 @@
  * 依赖公共契约的条款 schema；只做状态校验与读取。
  * 禁止在这里执行条款有效性检查或履约订阅。
  */
-import { termSchema } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { termSchema } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const agreementStateSchema = z

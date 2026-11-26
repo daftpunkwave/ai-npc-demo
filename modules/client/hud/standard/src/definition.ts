@@ -3,7 +3,7 @@
  * 依赖玩家授权投影；不计算库存、结算或任务完成。
  * 禁止用本地按钮状态代替服务端时钟，或隐藏失败并伪造保存成功。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const hudModuleDefinition = defineBrowserModuleDefinition({
   id: "client.hud.standard",

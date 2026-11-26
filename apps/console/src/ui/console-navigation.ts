@@ -3,8 +3,8 @@
  * 交互契约：依赖宿主的页面贡献与当前角色，相同 order 保持贡献顺序。
  * 约束与禁忌：不渲染贡献，不调用服务端或替代接口授权。
  */
-import { selectSlotContributions, type SlotContribution } from "@ai-npc/client-sdk";
-import type { ConsoleActiveRole } from "@ai-npc/contracts";
+import { selectSlotContributions, type SlotContribution } from "@world-prism/client-sdk";
+import type { ConsoleActiveRole } from "@world-prism/contracts";
 
 export function consoleNavigation(
   contributions: readonly SlotContribution[],

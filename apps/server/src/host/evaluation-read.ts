@@ -10,7 +10,7 @@ import type {
   RunSummary,
   StoragePort,
   StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   EvaluationPort,
   ProbeExecution,

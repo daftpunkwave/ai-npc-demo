@@ -3,6 +3,6 @@
  * 仅作为边界检查输入，不会被编译或执行。
  * 该写法绕过唯一装配清单，属于违规样例。
  */
-import { definition } from "@ai-npc/mod-agent-memory-ledger";
+import { definition } from "@world-prism/mod-agent-memory-ledger";
 
 export const moduleCatalogEntry = definition;

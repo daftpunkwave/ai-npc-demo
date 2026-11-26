@@ -9,7 +9,7 @@ import type {
   AgentTriggerKind,
   EventEnvelope,
   Json,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 export function asRecord(value: unknown): Readonly<Record<string, Json>> {
   return typeof value === "object" && value !== null && !Array.isArray(value)

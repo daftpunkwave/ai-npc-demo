@@ -12,7 +12,7 @@ import {
   type BoundaryPackage,
   type BoundaryViolation,
   type ModuleKindOverride,
-} from "@ai-npc/scripts/check-boundaries";
+} from "@world-prism/scripts/check-boundaries";
 
 const fixturesDirectory = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
@@ -38,11 +38,11 @@ export function packageManifest(name: string, directory: string, options: Packag
   };
 }
 
-export const MEMORY_MODULE_NAME = "@ai-npc/mod-agent-memory-ledger";
+export const MEMORY_MODULE_NAME = "@world-prism/mod-agent-memory-ledger";
 export const MEMORY_MODULE_DIRECTORY = "modules/server/agent/memory/ledger";
 export const MEMORY_MODULE_KIND: ModuleKindOverride = { packageName: MEMORY_MODULE_NAME, kind: "service" };
 export const SERVER_SERVICE_DIRECTORY = "modules/server/game/world/slg-light";
-export const SERVER_SERVICE_PACKAGE = "@ai-npc/mod-game-world-slg-light";
+export const SERVER_SERVICE_PACKAGE = "@world-prism/mod-game-world-slg-light";
 export const SERVER_SERVICE_KIND: ModuleKindOverride = { packageName: SERVER_SERVICE_PACKAGE, kind: "service" };
 
 /** 记忆模块清单需要同时导出模块定义入口。 */
@@ -53,14 +53,14 @@ export function memoryModule(): BoundaryPackage {
 }
 
 const basePackages: readonly BoundaryPackage[] = [
-  packageManifest("@ai-npc/contracts", "packages/contracts"),
-  packageManifest("@ai-npc/kernel", "packages/kernel"),
-  packageManifest("@ai-npc/module-sdk", "packages/module-sdk"),
-  packageManifest("@ai-npc/client-sdk", "packages/client-sdk"),
-  packageManifest("@ai-npc/client-protocol", "packages/client-protocol"),
-  packageManifest("@ai-npc/authority", "packages/authority"),
-  packageManifest("@ai-npc/experiment", "packages/experiment"),
-  packageManifest("@ai-npc/observability", "packages/observability"),
+  packageManifest("@world-prism/contracts", "packages/contracts"),
+  packageManifest("@world-prism/kernel", "packages/kernel"),
+  packageManifest("@world-prism/module-sdk", "packages/module-sdk"),
+  packageManifest("@world-prism/client-sdk", "packages/client-sdk"),
+  packageManifest("@world-prism/client-protocol", "packages/client-protocol"),
+  packageManifest("@world-prism/authority", "packages/authority"),
+  packageManifest("@world-prism/experiment", "packages/experiment"),
+  packageManifest("@world-prism/observability", "packages/observability"),
 ];
 
 /** 合并基线包清单与用例覆盖项，同名包以后者为准。 */

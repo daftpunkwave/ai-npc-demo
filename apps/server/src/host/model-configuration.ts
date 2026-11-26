@@ -3,13 +3,13 @@
  * 只处理已装配的传输，加载夹具正文并保留路由、摘要与价格版本。
  * 禁止解析密钥正文、自动补挂载或把未验证的 endpoint 写入清单。
  */
-import { canonicalJson, DomainError, type Json } from "@ai-npc/contracts";
+import { canonicalJson, DomainError, type Json } from "@world-prism/contracts";
 import { loadModelFixtures, loadModelLayout, loadModelPricing, resolveModelEnv,
-  type ConfigLoadContext, type ResolvedAgentProfile, type RunSpec } from "@ai-npc/experiment";
-import type { ResolvedRealmPlan } from "@ai-npc/kernel";
+  type ConfigLoadContext, type ResolvedAgentProfile, type RunSpec } from "@world-prism/experiment";
+import type { ResolvedRealmPlan } from "@world-prism/kernel";
 import {
   agentModelPoolCapability, agentRequiredModelPurposes, parseModelEndpoint, type ModelRoute, type ModelRunLimits,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { canonicalHasher } from "../host-services";
 
 const fixtureAdapter = "platform.model-transport.deterministic";
@@ -35,7 +35,7 @@ function fail(message: string): never {
 }
 
 function endpointOf(value: string, loadContext: ConfigLoadContext): string {
-  const url = parseModelEndpoint(resolveModelEnv(value, loadContext, "NPC_OPENAI_COMPAT_BASE_URL"));
+  const url = parseModelEndpoint(resolveModelEnv(value, loadContext, "WORLD_PRISM_OPENAI_COMPAT_BASE_URL"));
   if (url === null) {
     fail("模型端点必须使用 HTTPS 或回环 HTTP，且不携带凭据、参数或片段");
   }
@@ -99,7 +99,7 @@ export async function resolveModelConfiguration(input: {
       Object.values(model.maxOutputTokensByPurpose).some((limit) => limit > model.capabilities.maxOutputTokens)) {
       fail(`模型 ${modelId} 的输出上限超过能力声明`);
     }
-    const externalModel = resolveModelEnv(model.externalModel, loadContext, "NPC_OPENAI_COMPAT_MODEL");
+    const externalModel = resolveModelEnv(model.externalModel, loadContext, "WORLD_PRISM_OPENAI_COMPAT_MODEL");
     if (price.externalModel !== externalModel) {
       fail(`模型 ${modelId} 的 externalModel 与价目记录不一致`);
     }

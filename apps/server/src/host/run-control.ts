@@ -6,7 +6,7 @@
  * 约束与禁忌：不写世界状态、不推进 tick、不创建分支；
  * 状态不符或缺时钟时返回领域错误而不是静默跳过，避免持久化出不一致状态。
  */
-import { DomainError, type HostServices, type Json, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
+import { DomainError, type HostServices, type Json, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
 
 /** run 控制所需的依赖。 */
 export interface RunControlInput {

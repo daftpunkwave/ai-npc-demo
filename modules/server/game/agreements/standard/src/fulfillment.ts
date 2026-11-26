@@ -6,8 +6,8 @@
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名用于表达调用契约。 */
 /* eslint-disable security/detect-object-injection -- cargo 的键来自受限枚举 ResourceId，任务参数已由调用方按条款收窄。 */
-import type { ResourceId, Term } from "@ai-npc/contracts";
-import type { CampaignView, ShareQuery, TaskView } from "@ai-npc/module-sdk";
+import type { ResourceId, Term } from "@world-prism/contracts";
+import type { CampaignView, ShareQuery, TaskView } from "@world-prism/module-sdk";
 import type { AgreementState } from "./state";
 
 /** 协议主体与队伍到派系的映射；履约判定只在下列两个函数里解释「谁代表谁」。 */

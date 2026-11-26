@@ -3,7 +3,7 @@
  * 通过工具归档的命令 ID 找回权威 receipt，并逐项校验它关联的提交事件。
  * 禁止用模型声明代替回执或向受众提供未知披露范围的操作明细。
  */
-import { audienceSpecSchema, commandReceiptSchema, jsonValueSchema, taskDispatchedPayloadSchema, type StoragePort } from "@ai-npc/contracts";
+import { audienceSpecSchema, commandReceiptSchema, jsonValueSchema, taskDispatchedPayloadSchema, type StoragePort } from "@world-prism/contracts";
 import type { SpeechApprovalInput } from "./dialogue-flow";
 import { isDisclosable, type SpeechFact } from "./disclosure";
 import { observationReleasePolicy } from "./observation-renderer";

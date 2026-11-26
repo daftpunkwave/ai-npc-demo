@@ -3,7 +3,7 @@
  * 交互契约：`estimateTokens` 直接复用公共契约，本文件只补充按段拼接的请求估值。
  * 约束与禁忌：不得调用供应商计数接口，也不得在这里保留第二套字符分类。
  */
-import { estimateSystemAndUserTokens, estimateTokens } from "@ai-npc/contracts";
+import { estimateSystemAndUserTokens, estimateTokens } from "@world-prism/contracts";
 
 export { estimateTokens };
 

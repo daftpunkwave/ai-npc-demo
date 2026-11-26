@@ -4,8 +4,8 @@
  * 禁止为暂停态普通 trigger 或无活动身份的 trigger 创建计划。
  */
 import { describe, expect, it } from "vitest";
-import type { AgentTrigger } from "@ai-npc/contracts";
-import type { SchedulingInput } from "@ai-npc/module-sdk";
+import type { AgentTrigger } from "@world-prism/contracts";
+import type { SchedulingInput } from "@world-prism/module-sdk";
 import { planSchedule } from "../src/plugin";
 import type { SchedulingConfig } from "../src/definition";
 

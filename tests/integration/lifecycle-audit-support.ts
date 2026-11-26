@@ -3,7 +3,7 @@
  * 依赖真实 StoragePort 透传其余读写与备份；不改变表结构或事务语义。
  * 禁止用该包装模拟审计路径之外的故障，或在包装内吞掉错误。
  */
-import type { StoragePort, StorageTransaction } from "@ai-npc/contracts";
+import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
 
 /**
  * 包装存储端口：事务内 tx.run 命中 lifecycle_events 表时抛出指定错误，

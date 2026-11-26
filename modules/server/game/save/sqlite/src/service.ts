@@ -17,7 +17,7 @@ import {
   type StoragePort,
   type StorageRow,
   type StorageTransaction,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   assertExpectedSource,
   campaignBranchIds,

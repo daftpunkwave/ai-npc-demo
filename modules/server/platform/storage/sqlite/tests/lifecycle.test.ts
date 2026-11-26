@@ -4,7 +4,7 @@
  * 禁止泄漏连接、允许已取消的启动成功，或让并发打开创建多个写连接。
  */
 import { describe, expect, it } from "vitest";
-import type { ModuleCreateInput, StoragePort } from "@ai-npc/contracts";
+import type { ModuleCreateInput, StoragePort } from "@world-prism/contracts";
 import { storageModuleDefinition } from "../src/definition";
 import { SqliteStorage } from "../src/sqlite/storage";
 import {

@@ -8,8 +8,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DomainError, type HostLogger, type Json } from "@ai-npc/contracts";
-import type { GameContent } from "@ai-npc/module-sdk";
+import { DomainError, type HostLogger, type Json } from "@world-prism/contracts";
+import type { GameContent } from "@world-prism/module-sdk";
 import type { ServerApp } from "../src/host/module-catalog";
 import { logInternalError } from "../src/host/internal-error-log";
 import { createTransportApp, type TransportAppInput } from "../src/host/transport-app";
@@ -94,7 +94,7 @@ describe("传输应用的内部错误接线", () => {
       close: async () => {},
       inject: async () => ({ statusCode: 200, headers: {}, body: "", json: () => null }),
     } as unknown as ServerApp;
-    const directory = mkdtempSync(join(tmpdir(), "ai-npc-transport-log-"));
+    const directory = mkdtempSync(join(tmpdir(), "world-prism-transport-log-"));
     dirs.push(directory);
     const input = {
       host: { logger },

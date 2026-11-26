@@ -15,9 +15,9 @@ import {
   snapshotListResponseSchema,
   type Json,
   type StorageCell,
-} from "@ai-npc/contracts";
-import { OperationJournal, operationRequestHash, startHost, type RunningHost } from "@ai-npc/app-server";
-import type { OperationKey } from "@ai-npc/app-server";
+} from "@world-prism/contracts";
+import { OperationJournal, operationRequestHash, startHost, type RunningHost } from "@world-prism/app-server";
+import type { OperationKey } from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import { stubStandardModelHttp } from "./standard-model-support";
 
@@ -57,7 +57,7 @@ afterEach(async () => {
 });
 
 function tempDataDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ai-npc-operations-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "world-prism-operations-test-"));
   dirs.push(dir);
   return dir;
 }

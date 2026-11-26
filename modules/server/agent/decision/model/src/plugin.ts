@@ -5,10 +5,10 @@
  */
 import {
   canonicalJson, DomainError, estimateModelInputTokens, type Json, type ModuleCreateInput, type NormalizedMessage,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createStatelessModule, modelDecisionPurposeRequirements, resolveAgentModelRoutes, type ModelDecisionPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 type DecisionResult = Awaited<ReturnType<ModelDecisionPort["decide"]>>;
 type ToolResult = Extract<NormalizedMessage, { role: "tool" }>;

@@ -3,8 +3,8 @@
  * 依赖公共模块与装配契约；不提供草稿写入、热替换或绕过预检的入口。
  * 禁止在描述符阶段扫描文件系统或读取模块实现。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const definition: ModuleDefinition = {

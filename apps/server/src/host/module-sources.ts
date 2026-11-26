@@ -5,7 +5,7 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import type { ModuleDefinition } from "@ai-npc/contracts";
+import type { ModuleDefinition } from "@world-prism/contracts";
 
 /** 一个模块源码目录及其对应的登记定义。 */
 export interface ModuleSource {

@@ -3,8 +3,8 @@
  * 依赖内容包索引的人物与 locale 词条。
  * 禁止向记忆模块暴露密钥、prompt 或可变内容对象。
  */
-import type { MemoryAgentIdentity } from "@ai-npc/module-sdk";
-import type { ContentPack } from "@ai-npc/experiment";
+import type { MemoryAgentIdentity } from "@world-prism/module-sdk";
+import type { ContentPack } from "@world-prism/experiment";
 
 export function memoryIdentityForAgent(
   content: ContentPack,

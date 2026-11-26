@@ -3,7 +3,7 @@
  * 依赖内容道路、行动巡护查询与宿主注入的 rng；结果只写入任务内部状态。
  * 禁止使用 Math.random，禁止把 taskId 或随机 ID 放进随机种子。
  */
-import { requireGameContent, type GameModulePorts, type HandlerContext } from "@ai-npc/module-sdk";
+import { requireGameContent, type GameModulePorts, type HandlerContext } from "@world-prism/module-sdk";
 import type { TaskState } from "./state";
 
 export interface RiskResult {

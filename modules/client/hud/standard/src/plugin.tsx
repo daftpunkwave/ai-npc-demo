@@ -8,9 +8,9 @@ import {
   usePort,
   usePortSubscription,
   type BrowserViewPort,
-} from "@ai-npc/client-sdk";
-import type { ClientContentView, ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import type { ProjectionState } from "@ai-npc/client-protocol";
+} from "@world-prism/client-sdk";
+import type { ClientContentView, ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import type { ProjectionState } from "@world-prism/client-protocol";
 
 interface WorldViewConnectionState {
   readonly kind: "connecting" | "connected" | "reconnecting" | "session-expired";

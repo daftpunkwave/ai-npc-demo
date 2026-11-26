@@ -175,10 +175,10 @@ importers:
 
   .:
     devDependencies:
-      '@ai-npc/app-server':
+      '@world-prism/app-server':
         specifier: workspace:*
         version: link:apps/server
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:packages/contracts
       '@playwright/test':
@@ -208,49 +208,49 @@ importers:
 
   apps/client:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@ai-npc/mod-client-camera-standard':
+      '@world-prism/mod-client-camera-standard':
         specifier: workspace:*
         version: link:../../modules/client/camera/standard
-      '@ai-npc/mod-client-characters-standard':
+      '@world-prism/mod-client-characters-standard':
         specifier: workspace:*
         version: link:../../modules/client/characters/standard
-      '@ai-npc/mod-client-dialogue-standard':
+      '@world-prism/mod-client-dialogue-standard':
         specifier: workspace:*
         version: link:../../modules/client/dialogue/standard
-      '@ai-npc/mod-client-faction-start-standard':
+      '@world-prism/mod-client-faction-start-standard':
         specifier: workspace:*
         version: link:../../modules/client/faction-start/standard
-      '@ai-npc/mod-client-hud-standard':
+      '@world-prism/mod-client-hud-standard':
         specifier: workspace:*
         version: link:../../modules/client/hud/standard
-      '@ai-npc/mod-client-input-standard':
+      '@world-prism/mod-client-input-standard':
         specifier: workspace:*
         version: link:../../modules/client/input/standard
-      '@ai-npc/mod-client-notifications-standard':
+      '@world-prism/mod-client-notifications-standard':
         specifier: workspace:*
         version: link:../../modules/client/notifications/standard
-      '@ai-npc/mod-client-scene-renderer-null':
+      '@world-prism/mod-client-scene-renderer-null':
         specifier: workspace:*
         version: link:../../modules/client/scene-renderer/null
-      '@ai-npc/mod-client-scene-renderer-pixi':
+      '@world-prism/mod-client-scene-renderer-pixi':
         specifier: workspace:*
         version: link:../../modules/client/scene-renderer/pixi
-      '@ai-npc/mod-client-screen-projection-isometric':
+      '@world-prism/mod-client-screen-projection-isometric':
         specifier: workspace:*
         version: link:../../modules/client/screen-projection/isometric
-      '@ai-npc/mod-client-settings-standard':
+      '@world-prism/mod-client-settings-standard':
         specifier: workspace:*
         version: link:../../modules/client/settings/standard
-      '@ai-npc/mod-client-world-view-standard':
+      '@world-prism/mod-client-world-view-standard':
         specifier: workspace:*
         version: link:../../modules/client/world-view/standard
       react:
@@ -275,34 +275,34 @@ importers:
 
   apps/console:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@ai-npc/mod-console-debug-standard':
+      '@world-prism/mod-console-debug-standard':
         specifier: workspace:*
         version: link:../../modules/console/debug/standard
-      '@ai-npc/mod-console-evaluation-standard':
+      '@world-prism/mod-console-evaluation-standard':
         specifier: workspace:*
         version: link:../../modules/console/evaluation/standard
-      '@ai-npc/mod-console-faction-ops-standard':
+      '@world-prism/mod-console-faction-ops-standard':
         specifier: workspace:*
         version: link:../../modules/console/faction-ops/standard
-      '@ai-npc/mod-console-health-standard':
+      '@world-prism/mod-console-health-standard':
         specifier: workspace:*
         version: link:../../modules/console/health/standard
-      '@ai-npc/mod-console-model-mounts-standard':
+      '@world-prism/mod-console-model-mounts-standard':
         specifier: workspace:*
         version: link:../../modules/console/model-mounts/standard
-      '@ai-npc/mod-console-module-admin-standard':
+      '@world-prism/mod-console-module-admin-standard':
         specifier: workspace:*
         version: link:../../modules/console/module-admin/standard
-      '@ai-npc/mod-console-observability-standard':
+      '@world-prism/mod-console-observability-standard':
         specifier: workspace:*
         version: link:../../modules/console/observability/standard
       react:
@@ -327,178 +327,178 @@ importers:
 
   apps/server:
     dependencies:
-      '@ai-npc/agent-runtime':
+      '@world-prism/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
-      '@ai-npc/authority':
+      '@world-prism/authority':
         specifier: workspace:*
         version: link:../../packages/authority
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@ai-npc/experiment':
+      '@world-prism/experiment':
         specifier: workspace:*
         version: link:../../packages/experiment
-      '@ai-npc/kernel':
+      '@world-prism/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
-      '@ai-npc/mod-agent-compression-none':
+      '@world-prism/mod-agent-compression-none':
         specifier: workspace:*
         version: link:../../modules/server/agent/compression/none
-      '@ai-npc/mod-agent-compression-window':
+      '@world-prism/mod-agent-compression-window':
         specifier: workspace:*
         version: link:../../modules/server/agent/compression/window
-      '@ai-npc/mod-agent-context-ordered-blocks':
+      '@world-prism/mod-agent-context-ordered-blocks':
         specifier: workspace:*
         version: link:../../modules/server/agent/context/ordered-blocks
-      '@ai-npc/mod-agent-decision-deterministic':
+      '@world-prism/mod-agent-decision-deterministic':
         specifier: workspace:*
         version: link:../../modules/server/agent/decision/deterministic
-      '@ai-npc/mod-agent-decision-model':
+      '@world-prism/mod-agent-decision-model':
         specifier: workspace:*
         version: link:../../modules/server/agent/decision/model
-      '@ai-npc/mod-agent-memory-ledger':
+      '@world-prism/mod-agent-memory-ledger':
         specifier: workspace:*
         version: link:../../modules/server/agent/memory/ledger
-      '@ai-npc/mod-agent-memory-none':
+      '@world-prism/mod-agent-memory-none':
         specifier: workspace:*
         version: link:../../modules/server/agent/memory/none
-      '@ai-npc/mod-agent-model-pool-shared':
+      '@world-prism/mod-agent-model-pool-shared':
         specifier: workspace:*
         version: link:../../modules/server/agent/model-pool/shared
-      '@ai-npc/mod-agent-perception-local':
+      '@world-prism/mod-agent-perception-local':
         specifier: workspace:*
         version: link:../../modules/server/agent/perception/local
-      '@ai-npc/mod-agent-scheduling-fair':
+      '@world-prism/mod-agent-scheduling-fair':
         specifier: workspace:*
         version: link:../../modules/server/agent/scheduling/fair
-      '@ai-npc/mod-agent-tool-view-structured':
+      '@world-prism/mod-agent-tool-view-structured':
         specifier: workspace:*
         version: link:../../modules/server/agent/tool-view/structured
-      '@ai-npc/mod-agent-tools-game-tools':
+      '@world-prism/mod-agent-tools-game-tools':
         specifier: workspace:*
         version: link:../../modules/server/agent/tools/game-tools
-      '@ai-npc/mod-client-camera-standard':
+      '@world-prism/mod-client-camera-standard':
         specifier: workspace:*
         version: link:../../modules/client/camera/standard
-      '@ai-npc/mod-client-characters-standard':
+      '@world-prism/mod-client-characters-standard':
         specifier: workspace:*
         version: link:../../modules/client/characters/standard
-      '@ai-npc/mod-client-dialogue-standard':
+      '@world-prism/mod-client-dialogue-standard':
         specifier: workspace:*
         version: link:../../modules/client/dialogue/standard
-      '@ai-npc/mod-client-faction-start-standard':
+      '@world-prism/mod-client-faction-start-standard':
         specifier: workspace:*
         version: link:../../modules/client/faction-start/standard
-      '@ai-npc/mod-client-hud-standard':
+      '@world-prism/mod-client-hud-standard':
         specifier: workspace:*
         version: link:../../modules/client/hud/standard
-      '@ai-npc/mod-client-input-standard':
+      '@world-prism/mod-client-input-standard':
         specifier: workspace:*
         version: link:../../modules/client/input/standard
-      '@ai-npc/mod-client-notifications-standard':
+      '@world-prism/mod-client-notifications-standard':
         specifier: workspace:*
         version: link:../../modules/client/notifications/standard
-      '@ai-npc/mod-client-scene-renderer-null':
+      '@world-prism/mod-client-scene-renderer-null':
         specifier: workspace:*
         version: link:../../modules/client/scene-renderer/null
-      '@ai-npc/mod-client-scene-renderer-pixi':
+      '@world-prism/mod-client-scene-renderer-pixi':
         specifier: workspace:*
         version: link:../../modules/client/scene-renderer/pixi
-      '@ai-npc/mod-client-screen-projection-isometric':
+      '@world-prism/mod-client-screen-projection-isometric':
         specifier: workspace:*
         version: link:../../modules/client/screen-projection/isometric
-      '@ai-npc/mod-client-settings-standard':
+      '@world-prism/mod-client-settings-standard':
         specifier: workspace:*
         version: link:../../modules/client/settings/standard
-      '@ai-npc/mod-client-world-view-standard':
+      '@world-prism/mod-client-world-view-standard':
         specifier: workspace:*
         version: link:../../modules/client/world-view/standard
-      '@ai-npc/mod-console-debug-standard':
+      '@world-prism/mod-console-debug-standard':
         specifier: workspace:*
         version: link:../../modules/console/debug/standard
-      '@ai-npc/mod-console-evaluation-standard':
+      '@world-prism/mod-console-evaluation-standard':
         specifier: workspace:*
         version: link:../../modules/console/evaluation/standard
-      '@ai-npc/mod-console-faction-ops-standard':
+      '@world-prism/mod-console-faction-ops-standard':
         specifier: workspace:*
         version: link:../../modules/console/faction-ops/standard
-      '@ai-npc/mod-console-health-standard':
+      '@world-prism/mod-console-health-standard':
         specifier: workspace:*
         version: link:../../modules/console/health/standard
-      '@ai-npc/mod-console-model-mounts-standard':
+      '@world-prism/mod-console-model-mounts-standard':
         specifier: workspace:*
         version: link:../../modules/console/model-mounts/standard
-      '@ai-npc/mod-console-module-admin-standard':
+      '@world-prism/mod-console-module-admin-standard':
         specifier: workspace:*
         version: link:../../modules/console/module-admin/standard
-      '@ai-npc/mod-console-observability-standard':
+      '@world-prism/mod-console-observability-standard':
         specifier: workspace:*
         version: link:../../modules/console/observability/standard
-      '@ai-npc/mod-game-actions-standard':
+      '@world-prism/mod-game-actions-standard':
         specifier: workspace:*
         version: link:../../modules/server/game/actions/standard
-      '@ai-npc/mod-game-agreements-standard':
+      '@world-prism/mod-game-agreements-standard':
         specifier: workspace:*
         version: link:../../modules/server/game/agreements/standard
-      '@ai-npc/mod-game-clock-controlled':
+      '@world-prism/mod-game-clock-controlled':
         specifier: workspace:*
         version: link:../../modules/server/game/clock/controlled
-      '@ai-npc/mod-game-comms-standard':
+      '@world-prism/mod-game-comms-standard':
         specifier: workspace:*
         version: link:../../modules/server/game/comms/standard
-      '@ai-npc/mod-game-map-six-nodes':
+      '@world-prism/mod-game-map-six-nodes':
         specifier: workspace:*
         version: link:../../modules/server/game/map/six-nodes
-      '@ai-npc/mod-game-resources-light':
+      '@world-prism/mod-game-resources-light':
         specifier: workspace:*
         version: link:../../modules/server/game/resources/light
-      '@ai-npc/mod-game-save-sqlite':
+      '@world-prism/mod-game-save-sqlite':
         specifier: workspace:*
         version: link:../../modules/server/game/save/sqlite
-      '@ai-npc/mod-game-scenario-watergate':
+      '@world-prism/mod-game-scenario-watergate':
         specifier: workspace:*
         version: link:../../modules/server/game/scenario/watergate
-      '@ai-npc/mod-game-world-slg-light':
+      '@world-prism/mod-game-world-slg-light':
         specifier: workspace:*
         version: link:../../modules/server/game/world/slg-light
-      '@ai-npc/mod-platform-access-policy-roster':
+      '@world-prism/mod-platform-access-policy-roster':
         specifier: workspace:*
         version: link:../../modules/server/platform/access-policy/roster
-      '@ai-npc/mod-platform-budget-standard':
+      '@world-prism/mod-platform-budget-standard':
         specifier: workspace:*
         version: link:../../modules/server/platform/budget/standard
-      '@ai-npc/mod-platform-evaluation-standard':
+      '@world-prism/mod-platform-evaluation-standard':
         specifier: workspace:*
         version: link:../../modules/server/platform/evaluation/standard
-      '@ai-npc/mod-platform-model-transport-anthropic':
+      '@world-prism/mod-platform-model-transport-anthropic':
         specifier: workspace:*
         version: link:../../modules/server/platform/model-transport/anthropic
-      '@ai-npc/mod-platform-model-transport-deterministic':
+      '@world-prism/mod-platform-model-transport-deterministic':
         specifier: workspace:*
         version: link:../../modules/server/platform/model-transport/deterministic
-      '@ai-npc/mod-platform-model-transport-openai-compatible':
+      '@world-prism/mod-platform-model-transport-openai-compatible':
         specifier: workspace:*
         version: link:../../modules/server/platform/model-transport/openai-compatible
-      '@ai-npc/mod-platform-module-admin-standard':
+      '@world-prism/mod-platform-module-admin-standard':
         specifier: workspace:*
         version: link:../../modules/server/platform/module-admin/standard
-      '@ai-npc/mod-platform-observability-sqlite':
+      '@world-prism/mod-platform-observability-sqlite':
         specifier: workspace:*
         version: link:../../modules/server/platform/observability/sqlite
-      '@ai-npc/mod-platform-operations-standard':
+      '@world-prism/mod-platform-operations-standard':
         specifier: workspace:*
         version: link:../../modules/server/platform/operations/standard
-      '@ai-npc/mod-platform-secrets-env':
+      '@world-prism/mod-platform-secrets-env':
         specifier: workspace:*
         version: link:../../modules/server/platform/secrets/env
-      '@ai-npc/mod-platform-storage-sqlite':
+      '@world-prism/mod-platform-storage-sqlite':
         specifier: workspace:*
         version: link:../../modules/server/platform/storage/sqlite
-      '@ai-npc/mod-transport-http-ws-fastify':
+      '@world-prism/mod-transport-http-ws-fastify':
         specifier: workspace:*
         version: link:../../modules/server/transport/http-ws/fastify
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
       yaml:
@@ -507,22 +507,22 @@ importers:
 
   modules/client/camera/standard:
     dependencies:
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
 
   modules/client/characters/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -531,13 +531,13 @@ importers:
 
   modules/client/dialogue/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -546,10 +546,10 @@ importers:
 
   modules/client/faction-start/standard:
     dependencies:
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -558,13 +558,13 @@ importers:
 
   modules/client/hud/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -573,22 +573,22 @@ importers:
 
   modules/client/input/standard:
     dependencies:
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
 
   modules/client/notifications/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -597,13 +597,13 @@ importers:
 
   modules/client/scene-renderer/null:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -612,13 +612,13 @@ importers:
 
   modules/client/scene-renderer/pixi:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       pixi.js:
@@ -630,19 +630,19 @@ importers:
 
   modules/client/screen-projection/isometric:
     dependencies:
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
 
   modules/client/settings/standard:
     dependencies:
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -651,25 +651,25 @@ importers:
 
   modules/client/world-view/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
 
   modules/console/debug/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -678,10 +678,10 @@ importers:
 
   modules/console/evaluation/standard:
     dependencies:
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -690,13 +690,13 @@ importers:
 
   modules/console/faction-ops/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -705,13 +705,13 @@ importers:
 
   modules/console/health/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -720,13 +720,13 @@ importers:
 
   modules/console/model-mounts/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -735,13 +735,13 @@ importers:
 
   modules/console/module-admin/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -750,13 +750,13 @@ importers:
 
   modules/console/observability/standard:
     dependencies:
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../../../../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../../../../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../packages/contracts
       react:
@@ -765,19 +765,19 @@ importers:
 
   modules/server/agent/compression/none:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/agent/compression/window:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -786,10 +786,10 @@ importers:
 
   modules/server/agent/context/ordered-blocks:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -798,28 +798,28 @@ importers:
 
   modules/server/agent/decision/deterministic:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/agent/decision/model:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/agent/memory/ledger:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -828,28 +828,28 @@ importers:
 
   modules/server/agent/memory/none:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/agent/model-pool/shared:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/agent/perception/local:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -858,10 +858,10 @@ importers:
 
   modules/server/agent/scheduling/fair:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -870,10 +870,10 @@ importers:
 
   modules/server/agent/tool-view/structured:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -882,10 +882,10 @@ importers:
 
   modules/server/agent/tools/game-tools:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -894,10 +894,10 @@ importers:
 
   modules/server/game/actions/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -906,10 +906,10 @@ importers:
 
   modules/server/game/agreements/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -918,10 +918,10 @@ importers:
 
   modules/server/game/clock/controlled:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -930,10 +930,10 @@ importers:
 
   modules/server/game/comms/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -942,10 +942,10 @@ importers:
 
   modules/server/game/map/six-nodes:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -954,10 +954,10 @@ importers:
 
   modules/server/game/resources/light:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -966,10 +966,10 @@ importers:
 
   modules/server/game/save/sqlite:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -978,10 +978,10 @@ importers:
 
   modules/server/game/scenario/watergate:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -990,10 +990,10 @@ importers:
 
   modules/server/game/world/slg-light:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1002,10 +1002,10 @@ importers:
 
   modules/server/platform/access-policy/roster:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1014,28 +1014,28 @@ importers:
 
   modules/server/platform/budget/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/platform/evaluation/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/platform/model-transport/anthropic:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       '@anthropic-ai/sdk':
@@ -1047,19 +1047,19 @@ importers:
 
   modules/server/platform/model-transport/deterministic:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
 
   modules/server/platform/model-transport/openai-compatible:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1068,10 +1068,10 @@ importers:
 
   modules/server/platform/module-admin/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1080,10 +1080,10 @@ importers:
 
   modules/server/platform/observability/sqlite:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1092,10 +1092,10 @@ importers:
 
   modules/server/platform/operations/standard:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1104,10 +1104,10 @@ importers:
 
   modules/server/platform/secrets/env:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1116,10 +1116,10 @@ importers:
 
   modules/server/platform/storage/sqlite:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       zod:
@@ -1128,10 +1128,10 @@ importers:
 
   modules/server/transport/http-ws/fastify:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../../../../../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../../../../../packages/module-sdk
       '@fastify/cors':
@@ -1155,31 +1155,31 @@ importers:
 
   packages/agent-runtime:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@ai-npc/experiment':
+      '@world-prism/experiment':
         specifier: workspace:*
         version: link:../experiment
-      '@ai-npc/kernel':
+      '@world-prism/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../module-sdk
 
   packages/authority:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../module-sdk
 
   packages/client-protocol:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
       zod:
@@ -1188,10 +1188,10 @@ importers:
 
   packages/client-sdk:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@ai-npc/kernel':
+      '@world-prism/kernel':
         specifier: workspace:*
         version: link:../kernel
       react:
@@ -1219,7 +1219,7 @@ importers:
 
   packages/experiment:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
       yaml:
@@ -1231,7 +1231,7 @@ importers:
 
   packages/kernel:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
       zod:
@@ -1240,7 +1240,7 @@ importers:
 
   packages/module-sdk:
     dependencies:
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
@@ -1252,13 +1252,13 @@ importers:
 
   scripts:
     dependencies:
-      '@ai-npc/app-server':
+      '@world-prism/app-server':
         specifier: workspace:*
         version: link:../apps/server
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../packages/module-sdk
       fast-xml-parser:
@@ -1270,115 +1270,115 @@ importers:
 
   tests:
     dependencies:
-      '@ai-npc/agent-runtime':
+      '@world-prism/agent-runtime':
         specifier: workspace:*
         version: link:../packages/agent-runtime
-      '@ai-npc/app-server':
+      '@world-prism/app-server':
         specifier: workspace:*
         version: link:../apps/server
-      '@ai-npc/authority':
+      '@world-prism/authority':
         specifier: workspace:*
         version: link:../packages/authority
-      '@ai-npc/client-protocol':
+      '@world-prism/client-protocol':
         specifier: workspace:*
         version: link:../packages/client-protocol
-      '@ai-npc/client-sdk':
+      '@world-prism/client-sdk':
         specifier: workspace:*
         version: link:../packages/client-sdk
-      '@ai-npc/contracts':
+      '@world-prism/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
-      '@ai-npc/experiment':
+      '@world-prism/experiment':
         specifier: workspace:*
         version: link:../packages/experiment
-      '@ai-npc/kernel':
+      '@world-prism/kernel':
         specifier: workspace:*
         version: link:../packages/kernel
-      '@ai-npc/mod-agent-compression-none':
+      '@world-prism/mod-agent-compression-none':
         specifier: workspace:*
         version: link:../modules/server/agent/compression/none
-      '@ai-npc/mod-agent-compression-window':
+      '@world-prism/mod-agent-compression-window':
         specifier: workspace:*
         version: link:../modules/server/agent/compression/window
-      '@ai-npc/mod-agent-context-ordered-blocks':
+      '@world-prism/mod-agent-context-ordered-blocks':
         specifier: workspace:*
         version: link:../modules/server/agent/context/ordered-blocks
-      '@ai-npc/mod-agent-memory-ledger':
+      '@world-prism/mod-agent-memory-ledger':
         specifier: workspace:*
         version: link:../modules/server/agent/memory/ledger
-      '@ai-npc/mod-agent-memory-none':
+      '@world-prism/mod-agent-memory-none':
         specifier: workspace:*
         version: link:../modules/server/agent/memory/none
-      '@ai-npc/mod-agent-perception-local':
+      '@world-prism/mod-agent-perception-local':
         specifier: workspace:*
         version: link:../modules/server/agent/perception/local
-      '@ai-npc/mod-agent-tool-view-structured':
+      '@world-prism/mod-agent-tool-view-structured':
         specifier: workspace:*
         version: link:../modules/server/agent/tool-view/structured
-      '@ai-npc/mod-agent-tools-game-tools':
+      '@world-prism/mod-agent-tools-game-tools':
         specifier: workspace:*
         version: link:../modules/server/agent/tools/game-tools
-      '@ai-npc/mod-game-actions-standard':
+      '@world-prism/mod-game-actions-standard':
         specifier: workspace:*
         version: link:../modules/server/game/actions/standard
-      '@ai-npc/mod-game-agreements-standard':
+      '@world-prism/mod-game-agreements-standard':
         specifier: workspace:*
         version: link:../modules/server/game/agreements/standard
-      '@ai-npc/mod-game-clock-controlled':
+      '@world-prism/mod-game-clock-controlled':
         specifier: workspace:*
         version: link:../modules/server/game/clock/controlled
-      '@ai-npc/mod-game-comms-standard':
+      '@world-prism/mod-game-comms-standard':
         specifier: workspace:*
         version: link:../modules/server/game/comms/standard
-      '@ai-npc/mod-game-map-six-nodes':
+      '@world-prism/mod-game-map-six-nodes':
         specifier: workspace:*
         version: link:../modules/server/game/map/six-nodes
-      '@ai-npc/mod-game-resources-light':
+      '@world-prism/mod-game-resources-light':
         specifier: workspace:*
         version: link:../modules/server/game/resources/light
-      '@ai-npc/mod-game-save-sqlite':
+      '@world-prism/mod-game-save-sqlite':
         specifier: workspace:*
         version: link:../modules/server/game/save/sqlite
-      '@ai-npc/mod-game-scenario-watergate':
+      '@world-prism/mod-game-scenario-watergate':
         specifier: workspace:*
         version: link:../modules/server/game/scenario/watergate
-      '@ai-npc/mod-game-world-slg-light':
+      '@world-prism/mod-game-world-slg-light':
         specifier: workspace:*
         version: link:../modules/server/game/world/slg-light
-      '@ai-npc/mod-platform-access-policy-roster':
+      '@world-prism/mod-platform-access-policy-roster':
         specifier: workspace:*
         version: link:../modules/server/platform/access-policy/roster
-      '@ai-npc/mod-platform-model-transport-anthropic':
+      '@world-prism/mod-platform-model-transport-anthropic':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/anthropic
-      '@ai-npc/mod-platform-model-transport-deterministic':
+      '@world-prism/mod-platform-model-transport-deterministic':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/deterministic
-      '@ai-npc/mod-platform-model-transport-openai-compatible':
+      '@world-prism/mod-platform-model-transport-openai-compatible':
         specifier: workspace:*
         version: link:../modules/server/platform/model-transport/openai-compatible
-      '@ai-npc/mod-platform-observability-sqlite':
+      '@world-prism/mod-platform-observability-sqlite':
         specifier: workspace:*
         version: link:../modules/server/platform/observability/sqlite
-      '@ai-npc/mod-platform-operations-standard':
+      '@world-prism/mod-platform-operations-standard':
         specifier: workspace:*
         version: link:../modules/server/platform/operations/standard
-      '@ai-npc/mod-platform-secrets-env':
+      '@world-prism/mod-platform-secrets-env':
         specifier: workspace:*
         version: link:../modules/server/platform/secrets/env
-      '@ai-npc/mod-platform-storage-sqlite':
+      '@world-prism/mod-platform-storage-sqlite':
         specifier: workspace:*
         version: link:../modules/server/platform/storage/sqlite
-      '@ai-npc/mod-transport-http-ws-fastify':
+      '@world-prism/mod-transport-http-ws-fastify':
         specifier: workspace:*
         version: link:../modules/server/transport/http-ws/fastify
-      '@ai-npc/module-sdk':
+      '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../packages/module-sdk
-      '@ai-npc/observability':
+      '@world-prism/observability':
         specifier: workspace:*
         version: link:../packages/observability
-      '@ai-npc/scripts':
+      '@world-prism/scripts':
         specifier: workspace:*
         version: link:../scripts
       '@playwright/test':

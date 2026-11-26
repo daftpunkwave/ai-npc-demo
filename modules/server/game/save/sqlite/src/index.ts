@@ -3,7 +3,7 @@
  * 只导出装配与调用方需要的符号。
  * 禁止在这里执行存储或分支操作。
  */
-export const packageName = "@ai-npc/mod-game-save-sqlite";
+export const packageName = "@world-prism/mod-game-save-sqlite";
 
 export { saveModuleDefinition } from "./definition";
 export { createSaveModule } from "./plugin";

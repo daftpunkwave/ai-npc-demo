@@ -6,8 +6,8 @@
  * 禁止用改写快照行或别名的方式伪造恢复成功，也禁止用假存储替代回滚验证。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { DomainError, type ErrorCode, type Json, type StoragePort, type StorageTable, type StorageTransaction } from "@ai-npc/contracts";
-import { SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
+import { DomainError, type ErrorCode, type Json, type StoragePort, type StorageTable, type StorageTransaction } from "@world-prism/contracts";
+import { SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,

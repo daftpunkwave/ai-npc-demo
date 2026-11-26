@@ -10,9 +10,9 @@ const externalModel = "deepseek-flash";
 export const standardModelTestKey = "integration-test-api-key";
 
 export function stubStandardModelHttp(): () => void {
-  vi.stubEnv("NPC_OPENAI_COMPAT_BASE_URL", `${origin}/v1`);
-  vi.stubEnv("NPC_OPENAI_COMPAT_MODEL", externalModel);
-  vi.stubEnv("NPC_OPENAI_COMPAT_API_KEY", standardModelTestKey);
+  vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_BASE_URL", `${origin}/v1`);
+  vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_MODEL", externalModel);
+  vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_API_KEY", standardModelTestKey);
   vi.stubEnv("ANTHROPIC_API_KEY", undefined);
   const originalFetch = globalThis.fetch;
   const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {

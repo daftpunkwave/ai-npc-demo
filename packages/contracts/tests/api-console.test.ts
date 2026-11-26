@@ -118,7 +118,7 @@ const limits = { maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000
 
 const modelConfig = {
   connectionId: "openai-compat",
-  externalModel: "env:NPC_OPENAI_COMPAT_MODEL",
+  externalModel: "env:WORLD_PRISM_OPENAI_COMPAT_MODEL",
   parameters: { temperature: 0.6 },
   capabilities,
   limits,
@@ -131,8 +131,8 @@ const modelLayoutDraft = {
   connections: {
     "openai-compat": {
       adapterId: "platform.model-transport.openai-compatible",
-      endpoint: "env:NPC_OPENAI_COMPAT_BASE_URL",
-      credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY",
+      endpoint: "env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL",
+      credentialRef: "env:WORLD_PRISM_OPENAI_COMPAT_API_KEY",
       rateLimitKey: "openai-compat-account",
     },
   },
@@ -213,10 +213,10 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   [
     "模型连接视图",
     modelConnectionViewSchema,
-    { adapterId: "platform.model-transport.openai-compatible", endpointRef: "env:NPC_OPENAI_COMPAT_BASE_URL", endpointHost: "api.deepseek.com", credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" },
+    { adapterId: "platform.model-transport.openai-compatible", endpointRef: "env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL", endpointHost: "api.deepseek.com", credentialRef: "env:WORLD_PRISM_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" },
     { adapterId: "openai", endpointRef: null, endpointHost: null, credentialRef: null, rateLimitKey: null },
   ],
-  ["模型布局视图", modelLayoutViewSchema, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "platform.model-transport.openai-compatible", endpointRef: "env:NPC_OPENAI_COMPAT_BASE_URL", endpointHost: "api.deepseek.com", credentialRef: "env:NPC_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" } } }, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "bad" } } }],
+  ["模型布局视图", modelLayoutViewSchema, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "platform.model-transport.openai-compatible", endpointRef: "env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL", endpointHost: "api.deepseek.com", credentialRef: "env:WORLD_PRISM_OPENAI_COMPAT_API_KEY", rateLimitKey: "openai-compat-account" } } }, { ...modelLayoutDraft, connections: { "openai-compat": { adapterId: "bad" } } }],
   ["模型布局列表", modelLayoutsResponseSchema, { layouts: [{ layoutId: "shared-model-layout-v1", source: "repo" }] }, { layouts: [{ layoutId: "x", source: "cache" }] }],
   ["模型路由", modelLayoutRoutesResponseSchema, { routes: [{ agentId: "npc-cenyan", purpose: "decision", modelId: "npc-chat", connectionId: "openai-compat", adapterId: "platform.model-transport.openai-compatible", externalModel: "deepseek-chat" }] }, { routes: [{ agentId: "npc-cenyan", purpose: "chat", modelId: "npc-chat", connectionId: "openai-compat", adapterId: "platform.model-transport.openai-compatible", externalModel: "deepseek-chat" }] }],
   ["布局校验请求", modelLayoutValidateRequestSchema, { layout: null }, {}],

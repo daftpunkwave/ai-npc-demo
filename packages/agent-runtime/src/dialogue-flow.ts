@@ -18,10 +18,10 @@ import {
   type MemoryScope,
   type ModelOutput,
   type SpeechArtifact,
-} from "@ai-npc/contracts";
-import type { AgentArtifactStore, ApprovedSpeech, ApprovedSpeechReader } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentArtifactStore, ApprovedSpeech, ApprovedSpeechReader } from "@world-prism/module-sdk";
 import type { MessageExecutionInput, MessageExecutionResult } from "./tool-gateway";
-import type { ContentPack } from "@ai-npc/experiment";
+import type { ContentPack } from "@world-prism/experiment";
 import {
   filterDisclosableFacts,
   type SpeechFact,

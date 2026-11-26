@@ -4,14 +4,14 @@
  * 禁止在这里执行条款效果或自动修正非法条款。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将端口泛型误判为 any。 */
-import type { ReasonCode, Term } from "@ai-npc/contracts";
+import type { ReasonCode, Term } from "@world-prism/contracts";
 import {
   coversAmounts,
   holdsOperationalSeat,
   requireGameContent,
   type GameModulePorts,
   type HandlerContext,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 
 type TermContext = HandlerContext<GameModulePorts, unknown>;
 

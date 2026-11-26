@@ -41,7 +41,7 @@ export function checkDependencyGraph(
     const verificationWorkspaceExempt = isVerificationPackage(pkg) && !isRootPackage(pkg);
     const imported = productionImports.get(pkg.name) ?? new Set<string>();
     for (const dependencyName of Object.keys(pkg.dependencies)) {
-      const isWorkspaceDependency = dependencyName.startsWith("@ai-npc/");
+      const isWorkspaceDependency = dependencyName.startsWith("@world-prism/");
       const exempt = verificationWorkspaceExempt && isWorkspaceDependency;
       if (!exempt && !imported.has(dependencyName)) {
         violations.push(

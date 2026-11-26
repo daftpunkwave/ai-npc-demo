@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { startHost, type RunningHost } from "@ai-npc/app-server";
+import { startHost, type RunningHost } from "@world-prism/app-server";
 import {
   agentInspectorResponseSchema,
   artifactResponseSchema,
@@ -16,9 +16,9 @@ import {
   modelLayoutRoutesResponseSchema,
   modelLayoutValidateResponseSchema,
   modelLayoutsResponseSchema,
-} from "@ai-npc/contracts";
-import { loadContentPack } from "@ai-npc/experiment";
-import { StoredAgentArtifactStore } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { loadContentPack } from "@world-prism/experiment";
+import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
 import { createFakeHost } from "./authority-support";
 
 const hosts: RunningHost[] = [];
@@ -30,7 +30,7 @@ afterEach(async () => {
 });
 
 async function testHost(rateLimits?: { readonly read?: number; readonly write?: number }): Promise<RunningHost> {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-console-research-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-console-research-"));
   roots.push(root);
   const host = await startHost({
     dataDir: root,

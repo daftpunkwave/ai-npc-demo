@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadAgentProfile } from "@ai-npc/experiment";
+import { loadAgentProfile } from "@world-prism/experiment";
 import { memoryRetrievalBudget } from "../src/turn-materials";
 
 // 仓库根由测试文件位置反推，避免依赖进程工作目录；与配置加载测试的取法一致。

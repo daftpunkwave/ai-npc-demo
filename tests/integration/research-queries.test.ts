@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { canonicalJson, type Json, type ModuleInstance, type StoragePort, type StorageTransaction } from "@ai-npc/contracts";
-import { ObservabilityPort } from "@ai-npc/mod-platform-observability-sqlite";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import { canonicalJson, type Json, type ModuleInstance, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
+import { ObservabilityPort } from "@world-prism/mod-platform-observability-sqlite";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost } from "./authority-support";
 
 const worldId = "wld-observability";
@@ -45,7 +45,7 @@ describe("研究查询与审计端口", () => {
     observability.debugWake({ branchId, agentId, reason, operationId, principalId });
 
   beforeEach(async () => {
-    dataDir = mkdtempSync(join(tmpdir(), "ai-npc-research-port-"));
+    dataDir = mkdtempSync(join(tmpdir(), "world-prism-research-port-"));
     const host = createFakeHost();
     const signal = new AbortController().signal;
     instance = await storageModuleDefinition.create({

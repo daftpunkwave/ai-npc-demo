@@ -10,8 +10,8 @@ import {
   type CommandType,
   type EventPayloadSchema,
   type Json,
-} from "@ai-npc/contracts";
-import type { HandlerContext } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { HandlerContext } from "@world-prism/module-sdk";
 import type {
   AfterCommandHook,
   ClockStepRegistration,

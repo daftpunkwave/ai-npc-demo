@@ -3,7 +3,7 @@
  * 交互契约：输入任意文本/JSON 列的行记录，返回强类型值；缺失或类型不符时返回 null 或回退值。
  * 约束与禁忌：不执行查询、不写存储，也不把缺失值当成合法值返回。
  */
-import type { Json, RunSummary } from "@ai-npc/contracts";
+import type { Json, RunSummary } from "@world-prism/contracts";
 
 /** 从 run 行读取字符串列；缺失时返回 null，避免把 undefined 当成合法值。 */
 export function stringCell(row: Readonly<Record<string, unknown>>, column: string): string | null {

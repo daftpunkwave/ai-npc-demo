@@ -3,7 +3,7 @@
  * 依赖模块生命周期与纯算术；不读取相机、地图规则或世界状态。
  * 禁止用投影结果决定可达性、路径或服务器已接受的位置。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 
 export interface ScreenPoint {
   readonly x: number;

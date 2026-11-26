@@ -3,7 +3,7 @@
  * 测试经模块的公开描述符创建实例，依赖注入的传输替身或人工提供的凭据。
  * 禁止在测试准备阶段发请求、访问存档或读取模型密钥。
  */
-import type { HostServices, ModelCapabilities, ModelConnectionInput, ModelRequest, ModelTransportPort, ModuleDefinition } from "@ai-npc/contracts";
+import type { HostServices, ModelCapabilities, ModelConnectionInput, ModelRequest, ModelTransportPort, ModuleDefinition } from "@world-prism/contracts";
 
 export const statusOutput = {
   kind: "json", schemaName: "status", schema: {

@@ -3,8 +3,8 @@
  * 依赖公共模块契约与 module-sdk 描述符校验。
  * 禁止在定义文件加载插件实现或读取内容包。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const perceptionConfigSchema = z

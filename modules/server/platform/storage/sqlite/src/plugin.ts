@@ -3,7 +3,7 @@
  * 依赖配置 schema、SqliteStorage 实现与公共契约的模块实例类型。
  * 禁止在 create 阶段访问文件系统、启动后台循环，或把数据库连接暴露到端口之外。
  */
-import { DomainError, type ModuleCreateInput, type ModuleInstance } from "@ai-npc/contracts";
+import { DomainError, type ModuleCreateInput, type ModuleInstance } from "@world-prism/contracts";
 import { storageConfigSchema } from "./definition";
 import { SqliteStorage } from "./sqlite/storage";
 

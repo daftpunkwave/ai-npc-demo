@@ -6,15 +6,15 @@
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 /* eslint-disable no-unused-vars -- 宿主端口方法参数名只表达调用契约，Codacy 未能解析。 */
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { usePort, type BrowserViewPort } from "@ai-npc/client-sdk";
+import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
 import type {
   ClockView,
   ModuleCreateInput,
   ModuleInstance,
   SessionDescriptor,
   SnapshotView,
-} from "@ai-npc/contracts";
-import type { ApiClient } from "@ai-npc/client-protocol";
+} from "@world-prism/contracts";
+import type { ApiClient } from "@world-prism/client-protocol";
 
 interface ConsoleHostPort {
   readonly api: ApiClient;

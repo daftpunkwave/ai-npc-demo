@@ -3,8 +3,8 @@
  * 组合根通过此描述符解析能力依赖并按需启动实现。
  * 禁止在登记时执行模型调用或操作持久化状态。
  */
-import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { agentModelPoolCapability, defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { agentModelPoolCapability, defineModule } from "@world-prism/module-sdk";
 
 export const sharedModelPoolDefinition: ModuleDefinition = defineModule({
   id: "agent.model-pool.shared",

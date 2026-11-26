@@ -7,25 +7,25 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentRuntime } from "@ai-npc/agent-runtime";
+import { AgentRuntime } from "@world-prism/agent-runtime";
 import {
   capabilityIdSchema,
   emptyModuleConfigSchema,
   type ModuleDefinition,
   type StoragePort,
   type StorageRow,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createStatelessModule,
   defineModule,
   type PerceptionPort,
   type PerceptionRequest,
   type SchedulingPort,
-} from "@ai-npc/module-sdk";
-import { loadContentPack, type ResolvedAgentProfile, type Roster } from "@ai-npc/experiment";
-import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none";
-import { perceptionModuleDefinition } from "@ai-npc/mod-agent-perception-local";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+} from "@world-prism/module-sdk";
+import { loadContentPack, type ResolvedAgentProfile, type Roster } from "@world-prism/experiment";
+import { memoryNoneModuleDefinition } from "@world-prism/mod-agent-memory-none";
+import { perceptionModuleDefinition } from "@world-prism/mod-agent-perception-local";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
 const resources: { readonly dispose: () => Promise<void> }[] = [];

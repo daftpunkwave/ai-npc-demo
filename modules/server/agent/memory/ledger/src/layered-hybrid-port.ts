@@ -12,12 +12,12 @@ import {
   type MemoryBundle,
   type MemoryChangePlan,
   type MaintenanceTask,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryPort,
   RevisionView,
   ScopedModelPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { createLedgerPort } from "./ledger-port";
 import { applyUsage, capacityRetirements } from "./ledger-usage";
 import { ledgerConfigFromHybrid, type LayeredHybridConfig } from "./layered-hybrid-config";

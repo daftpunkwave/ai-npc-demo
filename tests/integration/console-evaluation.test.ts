@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { startHost, type RunningHost } from "@ai-npc/app-server";
+import { startHost, type RunningHost } from "@world-prism/app-server";
 import {
   errorResponseSchema,
   experimentDetailResponseSchema,
@@ -18,7 +18,7 @@ import {
   exportResponseSchema,
   experimentCreateResponseSchema,
   runControlResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 const hosts: RunningHost[] = [];
 const roots: string[] = [];
@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 async function testHost(): Promise<RunningHost> {
-  const root = mkdtempSync(join(tmpdir(), "ai-npc-console-evaluation-"));
+  const root = mkdtempSync(join(tmpdir(), "world-prism-console-evaluation-"));
   roots.push(root);
   const host = await startHost({
     dataDir: root,

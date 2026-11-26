@@ -4,7 +4,7 @@
  * 约束与禁忌：时钟控制不属于规则事务内的写入路径；禁止在这里提交或回滚调用方事务。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口参数名表达调用契约。 */
-import type { StorageTransaction } from "@ai-npc/contracts";
+import type { StorageTransaction } from "@world-prism/contracts";
 
 /** 时钟读数；runVersion 用作控制接口的乐观版本。 */
 export interface ClockState {

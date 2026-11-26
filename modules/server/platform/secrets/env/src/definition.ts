@@ -3,8 +3,8 @@
  * 依赖公共契约与 module-sdk；环境读取只在插件内发生。
  * 禁止在此读取环境变量或把密钥写入日志/快照。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const secretsConfigSchema = z

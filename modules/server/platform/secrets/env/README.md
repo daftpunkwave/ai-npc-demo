@@ -5,7 +5,7 @@
 ## 配置
 
 ```yaml
-allowlist: [NPC_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY]
+allowlist: [WORLD_PRISM_OPENAI_COMPAT_API_KEY, ANTHROPIC_API_KEY]
 ```
 
 ## 行为

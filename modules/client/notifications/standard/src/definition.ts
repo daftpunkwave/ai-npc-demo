@@ -3,7 +3,7 @@
  * 依赖玩家投影；不把日志、错误或控制台事件当作游戏提醒。
  * 禁止用渲染器本地计时器生成世界事实。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const notificationsModuleDefinition = defineBrowserModuleDefinition({
   id: "client.notifications.standard",

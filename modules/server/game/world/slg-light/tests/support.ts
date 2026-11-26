@@ -8,8 +8,8 @@ import type {
   HostServices,
   Json,
   ModuleCreateInput,
-} from "@ai-npc/contracts";
-import type { AggregateEntry, AggregateRecord, WorldTx } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AggregateEntry, AggregateRecord, WorldTx } from "@world-prism/module-sdk";
 import { worldModuleDefinition } from "../src/definition";
 
 interface StoredCell {

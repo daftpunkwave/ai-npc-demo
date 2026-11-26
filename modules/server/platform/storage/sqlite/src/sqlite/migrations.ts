@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
-import { DomainError, type HostLogger, type HostServices, type Json } from "@ai-npc/contracts";
+import { DomainError, type HostLogger, type HostServices, type Json } from "@world-prism/contracts";
 
 /** 迁移文件目录：与本模块源码一起交付，不读环境变量或用户目录。 */
 export const MIGRATIONS_DIRECTORY = fileURLToPath(new URL("../../migrations/", import.meta.url));

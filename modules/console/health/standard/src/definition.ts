@@ -3,7 +3,7 @@
  * 依赖远端观测与运营能力；不直接连接数据库或读取模型凭据。
  * 禁止把页面隐藏当作服务端授权，也不让评估角色进入运营视图。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const healthPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.health.standard",

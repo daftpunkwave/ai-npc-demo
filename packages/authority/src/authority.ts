@@ -3,8 +3,8 @@
  * 依赖注册表、四个固定机制与宿主/存储端口；所有机制共享同一 registry 与作用域规则。
  * 禁止在组装时启动后台循环、自动扫描模块或把 allowDirectAgentCommands 带进生产默认值。
  */
-import type { CommandType } from "@ai-npc/contracts";
-import type { ModuleBinder } from "@ai-npc/module-sdk";
+import type { CommandType } from "@world-prism/contracts";
+import type { ModuleBinder } from "@world-prism/module-sdk";
 import { CommandGateway } from "./command-gateway";
 import { ClockStepRunner } from "./clock-steps";
 import { EventConsumerRunner } from "./consumer-runner";

@@ -8,12 +8,12 @@ import type {
   AgentMemoryQuery,
   Json,
   MemoryChangePlan,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryRecordView,
   RevisionView,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { LedgerConfig } from "./definition";
 
 export function requireSameScope(

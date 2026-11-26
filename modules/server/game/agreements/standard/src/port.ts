@@ -11,7 +11,7 @@ import {
   type GameAgreementsPort,
   type OwnWorldTxFactory,
   type ShareQuery,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { isAgreementSatisfied, resolvePrincipalFaction, type FulfillmentFacts } from "./fulfillment";
 import { readAgreementState, type AgreementState } from "./state";
 

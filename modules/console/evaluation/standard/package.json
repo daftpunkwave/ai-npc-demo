@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/mod-console-evaluation-standard",
+  "name": "@world-prism/mod-console-evaluation-standard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "./definition": "./src/definition.ts"
   },
   "dependencies": {
-    "@ai-npc/client-sdk": "workspace:*",
-    "@ai-npc/contracts": "workspace:*",
+    "@world-prism/client-sdk": "workspace:*",
+    "@world-prism/contracts": "workspace:*",
     "react": "^19"
   }
 }

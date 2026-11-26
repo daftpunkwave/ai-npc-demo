@@ -3,7 +3,7 @@
  * 依赖真实 SQLite、世界/地图/行动/通信/协议模块与 authority；任务与期限都经 job 推进，履约证据经消费者处理。
  * 禁止直接修改协议聚合、绕过命令网关或放宽条款校验。
  */
-import type { Json } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
 import { describe, expect, it } from "vitest";
 import {
   acceptAgreement,

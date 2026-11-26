@@ -83,24 +83,24 @@ function rosterYaml(rosterId: string): string {
 
 /** 建临时配置根目录，测试结束后由调用方删除。 */
 function makeTempConfigDir(): string {
-  return mkdtempSync(join(tmpdir(), "ai-npc-config-"));
+  return mkdtempSync(join(tmpdir(), "world-prism-config-"));
 }
 
 describe("配置加载", () => {
   it("模型环境变量仅接受登记名称并从注入环境的自有字段读取", () => {
-    const env = Object.assign(Object.create({ NPC_OPENAI_COMPAT_MODEL: "outside-config" }) as Record<string, string>, {
-      NPC_OPENAI_COMPAT_BASE_URL: "http://127.0.0.1:11434/v1",
-      NPC_OPENAI_COMPAT_MODEL: "fixture-model",
+    const env = Object.assign(Object.create({ WORLD_PRISM_OPENAI_COMPAT_MODEL: "outside-config" }) as Record<string, string>, {
+      WORLD_PRISM_OPENAI_COMPAT_BASE_URL: "http://127.0.0.1:11434/v1",
+      WORLD_PRISM_OPENAI_COMPAT_MODEL: "fixture-model",
     });
-    expect(resolveModelEnv("env:NPC_OPENAI_COMPAT_MODEL", { configDir, env })).toBe("fixture-model");
-    for (const ref of ["env:INHERITED_KEY", "env:NPC_OPENAI_COMPAT_MODEL\n", "env:"]) {
+    expect(resolveModelEnv("env:WORLD_PRISM_OPENAI_COMPAT_MODEL", { configDir, env })).toBe("fixture-model");
+    for (const ref of ["env:INHERITED_KEY", "env:WORLD_PRISM_OPENAI_COMPAT_MODEL\n", "env:"]) {
       expect(captureLoadingError(() => resolveModelEnv(ref, { configDir, env })).code).toBe("env");
     }
     const inheritedOnly = Object.create({
-      NPC_OPENAI_COMPAT_MODEL: "outside-config",
+      WORLD_PRISM_OPENAI_COMPAT_MODEL: "outside-config",
     }) as Record<string, string>;
     expect(captureLoadingError(() =>
-      resolveModelEnv("env:NPC_OPENAI_COMPAT_MODEL", { configDir, env: inheritedOnly })).code,
+      resolveModelEnv("env:WORLD_PRISM_OPENAI_COMPAT_MODEL", { configDir, env: inheritedOnly })).code,
     ).toBe("env");
   });
 
@@ -229,7 +229,7 @@ describe("配置加载", () => {
 
     const loaded = loadConfigDocument("env-sample", schema, {
       configDir: fixturesConfigDir,
-      env: { NPC_TEST_VALUE: "resolved-value", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
+      env: { WORLD_PRISM_TEST_VALUE: "resolved-value", WORLD_PRISM_TEST_ENDPOINT: "http://127.0.0.1:3000" },
     });
     expect(loaded.value.sampleValue).toBe("resolved-value");
     expect(loaded.value.label).toBe("plain");
@@ -238,7 +238,7 @@ describe("配置加载", () => {
     const missing = captureLoadingError(() =>
       loadConfigDocument("env-sample", schema, {
         configDir: fixturesConfigDir,
-        env: { NPC_TEST_VALUE: "resolved-value" },
+        env: { WORLD_PRISM_TEST_VALUE: "resolved-value" },
       }),
     );
     expect(missing.code).toBe("env");
@@ -247,7 +247,7 @@ describe("配置加载", () => {
     const empty = captureLoadingError(() =>
       loadConfigDocument("env-sample", schema, {
         configDir: fixturesConfigDir,
-        env: { NPC_TEST_VALUE: "", NPC_TEST_ENDPOINT: "http://127.0.0.1:3000" },
+        env: { WORLD_PRISM_TEST_VALUE: "", WORLD_PRISM_TEST_ENDPOINT: "http://127.0.0.1:3000" },
       }),
     );
     expect(empty.code).toBe("env");
@@ -318,7 +318,7 @@ describe("配置加载", () => {
   });
 
   it("profile 与 toolset 的配置失败类型统一带 code、source 与 path", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-ref-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-ref-"));
     try {
       // profileId 与文件引用不一致：属于引用解析失败，必须能按 code 分类并定位到字段。
       writeFileSync(
@@ -361,7 +361,7 @@ describe("配置加载", () => {
   });
 
   it("profile 继承链成环时报引用与路径", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-cycle-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-cycle-"));
     try {
       writeFileSync(
         join(tempDir, "agent-cycle-a.yaml"),
@@ -383,7 +383,7 @@ describe("配置加载", () => {
   });
 
   it("只有 variant 允许声明 patch，其他 kind 声明即被拒绝", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-patch-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-patch-"));
     try {
       // 非 variant 声明 patch 时，自身 slots 会被 applyPatch 的 `patch ?? document` 静默丢弃。
       writeFileSync(
@@ -410,7 +410,7 @@ describe("配置加载", () => {
   });
 
   it("非 variant profile 省略 parent 时被拒绝", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-parent-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-parent-"));
     try {
       // 只有 variant 可以省略 parent；其余 kind 必须显式写 parent 或 null，
       // 否则继承链起点会变成隐式默认值。
@@ -432,7 +432,7 @@ describe("配置加载", () => {
   });
 
   it("variant 省略 parent 时按继承链起点加载", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-variant-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-profile-variant-"));
     try {
       // 文档中的变体形状不带 parent；省略必须与显式 null 等价，否则照抄示例会被拒绝。
       writeFileSync(
@@ -466,7 +466,7 @@ describe("配置加载", () => {
   });
 
   it("多处 schema 问题时列出全部位置而不是只报第一条", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-schema-multi-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-schema-multi-"));
     try {
       writeFileSync(
         join(tempDir, "multi-bad.yaml"),
@@ -627,7 +627,7 @@ describe("模型布局的环境变量边界", () => {
     "models:",
     "  m1:",
     "    connectionId: fixture",
-    "    externalModel: env:NPC_OPENAI_COMPAT_MODEL",
+    "    externalModel: env:WORLD_PRISM_OPENAI_COMPAT_MODEL",
     "    parameters: { apiKey: \"env:LEAKED_SECRET\" }",
     "    capabilities: { toolCalling: true, strictTools: false, structuredOutput: none, assistantReplay: verbatim, contextWindowTokens: 1000, maxOutputTokens: 100, embedding: false, embeddingDimensions: null }",
     "    limits: { maxConcurrent: 1, requestsPerMinute: 1, tokensPerMinute: 1, requestTimeoutMs: 1000 }",
@@ -636,14 +636,14 @@ describe("模型布局的环境变量边界", () => {
   ].join("\n");
 
   it("parameters 中的 env: 不会被解析，避免任意环境变量进入模型请求", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-layout-env-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "world-prism-layout-env-"));
     try {
       writeFileSync(join(tempDir, "env-boundary-layout.yaml"), layoutYaml, "utf8");
       const layout = loadModelLayout("env-boundary-layout", { configDir: tempDir });
       // 原样保留为字符串引用；解析它会把密钥经 parameters 送进模型请求。
       expect(layout.models["m1"]?.parameters).toEqual({ apiKey: "env:LEAKED_SECRET" });
       // endpoint 与 externalModel 仍是有意为之的例外：由宿主按白名单解析。
-      expect(layout.models["m1"]?.externalModel).toBe("env:NPC_OPENAI_COMPAT_MODEL");
+      expect(layout.models["m1"]?.externalModel).toBe("env:WORLD_PRISM_OPENAI_COMPAT_MODEL");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

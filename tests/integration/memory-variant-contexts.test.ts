@@ -9,8 +9,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startHost, type HostOptions, type RunningHost } from "@ai-npc/app-server";
-import type { AuthContext, Json } from "@ai-npc/contracts";
+import { startHost, type HostOptions, type RunningHost } from "@world-prism/app-server";
+import type { AuthContext, Json } from "@world-prism/contracts";
 import { gameCommandEnvelope } from "./game-support";
 
 const target = "human-independent";
@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "ai-npc-memory-variants-"));
+  const directory = mkdtempSync(join(tmpdir(), "world-prism-memory-variants-"));
   dirs.push(directory);
   return directory;
 }

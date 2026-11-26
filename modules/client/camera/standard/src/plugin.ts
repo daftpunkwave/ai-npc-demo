@@ -3,7 +3,7 @@
  * 依赖模块生命周期与浏览器内存状态；不读取世界权威或提交移动命令。
  * 禁止把相机变化解释为游戏世界位置变化。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 
 export interface CameraState {
   readonly x: number;

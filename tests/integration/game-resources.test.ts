@@ -4,8 +4,8 @@
  * 禁止把资源 ID 当作无校验对象索引。
  */
 import { describe, expect, it } from "vitest";
-import { loadContentPack } from "@ai-npc/experiment";
-import { createResourcesPort } from "@ai-npc/mod-game-resources-light";
+import { loadContentPack } from "@world-prism/experiment";
+import { createResourcesPort } from "@world-prism/mod-game-resources-light";
 import { createMemoryTx, toGameContent } from "./game-support";
 
 const content = toGameContent(loadContentPack("content", "earth-2964-v1"));

@@ -3,9 +3,9 @@
  * 交互契约：依赖内容索引、世界端口与委托视图；内容包没有角色定义的人类 AI 党魁由派系驻地补位。
  * 约束与禁忌：禁止暴露委托之外的队伍内部状态或角色的私有事实。
  */
-import type { CharacterView, TeamView } from "@ai-npc/contracts";
-import { factionStandingNode } from "@ai-npc/module-sdk";
-import type { GameContent, GameWorldPort } from "@ai-npc/module-sdk";
+import type { CharacterView, TeamView } from "@world-prism/contracts";
+import { factionStandingNode } from "@world-prism/module-sdk";
+import type { GameContent, GameWorldPort } from "@world-prism/module-sdk";
 
 /** 队伍：位置、所属与状态公开；仍有效的玩家委托覆盖的队伍标 delegatedToMe。 */
 export function teamViews(input: {

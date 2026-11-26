@@ -3,8 +3,8 @@
  * 依赖公共契约与 module-sdk；规则实现由 create 动态加载。
  * 禁止在此读取环境变量、打开存储或放宽未知配置键。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const accessPolicyConfigSchema = z

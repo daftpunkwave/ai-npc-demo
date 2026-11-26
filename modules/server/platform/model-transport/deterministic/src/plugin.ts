@@ -7,8 +7,8 @@ import {
   canonicalJson, estimateModelInputTokens, estimateTokens,
   type Json, type ModelFixture, type ModelRequest, type ModelTransportError,
   type ModelTransportPort, type ModuleCreateInput,
-} from "@ai-npc/contracts";
-import { createStatelessModule, isRetryableModelError } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import { createStatelessModule, isRetryableModelError } from "@world-prism/module-sdk";
 
 const adapterId = "platform.model-transport.deterministic";
 const capabilities = {

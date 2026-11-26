@@ -3,14 +3,14 @@
  * 依赖 module-sdk 的处理器上下文与公共受众类型；不持有状态、不读写聚合。
  * 禁止在这里提交事务、吞掉端口失败或绕过内容索引补默认派系。
  */
-import { DomainError, type AudienceSpec, type Json, type ReasonCode } from "@ai-npc/contracts";
+import { DomainError, type AudienceSpec, type Json, type ReasonCode } from "@world-prism/contracts";
 import {
   factionAudience,
   principalsAudience,
   requireGameContent,
   type GameModulePorts,
   type HandlerContext,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import type { TaskState } from "./state";
 
 /** 行动模块处理器上下文；端口集合固定为服务端游戏端口。 */

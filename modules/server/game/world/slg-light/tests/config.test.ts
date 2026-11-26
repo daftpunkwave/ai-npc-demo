@@ -4,8 +4,8 @@
  * 禁止绕过模块创建过程断言配置后的章节边界，或让非协议调用方触发章节评估。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError, type IdPrefix } from "@ai-npc/contracts";
-import type { GameContent, GamePortBindContext, GameWorldPort } from "@ai-npc/module-sdk";
+import { DomainError, type IdPrefix } from "@world-prism/contracts";
+import type { GameContent, GamePortBindContext, GameWorldPort } from "@world-prism/module-sdk";
 import { campaignStateSchema, metersStateSchema } from "../src/state";
 import { worldConfigSchema, worldModuleDefinition } from "../src/definition";
 import { createTestHost, createWorldModuleInput, TestWorldTx } from "./support";

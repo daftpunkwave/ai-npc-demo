@@ -3,7 +3,7 @@
  * 依赖公共契约的命令类型与主体类型；只做授权矩阵查询，不解析 payload。
  * 禁止在命令处理器内重复放宽发行者，也禁止让玩家会话取得控制台或 Agent 专属命令。
  */
-import type { AuthContext, CommandType, PrincipalKind } from "@ai-npc/contracts";
+import type { AuthContext, CommandType, PrincipalKind } from "@world-prism/contracts";
 import { effectivePrincipalKind } from "./types";
 
 /**

@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/client-sdk",
+  "name": "@world-prism/client-sdk",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "./define-browser-module": "./src/define-browser-module.ts"
   },
   "dependencies": {
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/kernel": "workspace:*",
+    "@world-prism/contracts": "workspace:*",
+    "@world-prism/kernel": "workspace:*",
     "react": "^19"
   },
   "devDependencies": {

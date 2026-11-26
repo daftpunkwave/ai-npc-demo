@@ -3,9 +3,9 @@
  * 依赖真实 SQLite 游戏环境、服务端 tick 顺序与确定性宿主随机源。
  * 禁止绕过命令网关或宿主顺序手写 job/时钟/消费者调用，也禁止让墙钟时间影响结果。
  */
-import type { AuthContext, CommandReceipt, CommandType, Json } from "@ai-npc/contracts";
-import { advanceWorldTick } from "@ai-npc/app-server";
-import { defaultChapterLengthTicks } from "@ai-npc/mod-game-world-slg-light";
+import type { AuthContext, CommandReceipt, CommandType, Json } from "@world-prism/contracts";
+import { advanceWorldTick } from "@world-prism/app-server";
+import { defaultChapterLengthTicks } from "@world-prism/mod-game-world-slg-light";
 import {
   createTrackedGameHarness,
   gameCommandEnvelope,

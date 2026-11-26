@@ -4,10 +4,10 @@
  * 禁止直接调用投影或跳过中继状态。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts, GameCommsPort } from "@ai-npc/module-sdk";
-import type { AuthContext, Json } from "@ai-npc/contracts";
-import { createSystemAuth } from "@ai-npc/authority";
-import { createCommsPort } from "@ai-npc/mod-game-comms-standard";
+import type { ApprovedSpeech, ApprovedSpeechReader, CommsWorldFacts, GameCommsPort } from "@world-prism/module-sdk";
+import type { AuthContext, Json } from "@world-prism/contracts";
+import { createSystemAuth } from "@world-prism/authority";
+import { createCommsPort } from "@world-prism/mod-game-comms-standard";
 import {
   createGameHarness,
   createMemoryTx,

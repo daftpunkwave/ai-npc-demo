@@ -9,7 +9,7 @@ import {
   type Json,
   type StorageCell,
   type StorageValue,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { TableInfo } from "./schema";
 
 function invalidValue(message: string, details: Json): never {

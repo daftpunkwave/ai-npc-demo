@@ -3,7 +3,7 @@
  * 依赖各固定机制实现与公共类型；调用方只经此入口装配，不导入内部事务细节。
  * 禁止在此启动运行时、创建存储连接或隐藏处理器注册失败。
  */
-export const packageName = "@ai-npc/authority";
+export const packageName = "@world-prism/authority";
 
 export { Authority } from "./authority";
 export type { AuthorityOptions } from "./authority";

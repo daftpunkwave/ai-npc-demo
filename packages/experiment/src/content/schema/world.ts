@@ -3,7 +3,7 @@
  * 依赖公共契约的领域值与 schema 共用辅助；只描述字段形状，不做跨文件引用检查。
  * 禁止在此读取文件或放宽未知键。
  */
-import { principalIdSchema, roadStatusSchema, taskTypeSchema } from "@ai-npc/contracts";
+import { principalIdSchema, roadStatusSchema, taskTypeSchema } from "@world-prism/contracts";
 import { z } from "zod";
 import {
   contentIdSchema,

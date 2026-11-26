@@ -4,9 +4,9 @@
  * 禁止直接写卡片聚合代替领域命令，也不跳过 scenario.card job。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { CommandReceipt, CommandType, Json, ModuleCreateInput, StoragePort } from "@ai-npc/contracts";
-import { scenarioRunStateSchema, type ScenarioRunState } from "@ai-npc/mod-game-scenario-watergate";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+import type { CommandReceipt, CommandType, Json, ModuleCreateInput, StoragePort } from "@world-prism/contracts";
+import { scenarioRunStateSchema, type ScenarioRunState } from "@world-prism/mod-game-scenario-watergate";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost } from "./authority-support";
 import {
   createTrackedGameHarness,

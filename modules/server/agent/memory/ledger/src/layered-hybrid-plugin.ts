@@ -3,8 +3,8 @@
  * 交互契约：依赖已校验配置、模块生命周期辅助与宿主公开端口。
  * 约束与禁忌：禁止读取存储、模型传输层或其他记忆模块实例。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { layeredHybridConfigSchema } from "./layered-hybrid-config";
 import { createLayeredHybridPort } from "./layered-hybrid-port";
 

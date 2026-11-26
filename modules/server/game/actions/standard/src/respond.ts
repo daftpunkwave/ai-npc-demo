@@ -3,9 +3,9 @@
  * 依赖任务邀请聚合、任务状态读取、主体解析与事务上下文；不改变队伍或资源。
  * 禁止替他人应答、接受已关闭的邀请或重复写入同一邀请。
  */
-import type { Json } from "@ai-npc/contracts";
-import { commandPayloadOf } from "@ai-npc/contracts";
-import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@ai-npc/module-sdk";
+import type { Json } from "@world-prism/contracts";
+import { commandPayloadOf } from "@world-prism/contracts";
+import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@world-prism/module-sdk";
 import { readTaskState, type InvitationState } from "./state";
 import type { ActionContext } from "./task-shared";
 

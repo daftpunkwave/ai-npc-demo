@@ -4,16 +4,16 @@
  * 禁止用失真的夹具替代内容包，也不把未执行 job 的 tick 当作已结算。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { DomainError, type Json } from "@ai-npc/contracts";
-import { Authority, createScopedWorldTxFactory, createSystemAuth } from "@ai-npc/authority";
-import { gameModuleIds, type GameModulePorts, type GameResourcesPort, type ModuleBinder } from "@ai-npc/module-sdk";
-import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
-import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
-import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
-import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
-import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
-import { createScenarioContributor, createScenarioPort } from "@ai-npc/mod-game-scenario-watergate";
-import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
+import { DomainError, type Json } from "@world-prism/contracts";
+import { Authority, createScopedWorldTxFactory, createSystemAuth } from "@world-prism/authority";
+import { gameModuleIds, type GameModulePorts, type GameResourcesPort, type ModuleBinder } from "@world-prism/module-sdk";
+import { createActionsContributor, createActionsPort } from "@world-prism/mod-game-actions-standard";
+import { createAgreementsContributor, createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
+import { createCommsContributor, createCommsPort } from "@world-prism/mod-game-comms-standard";
+import { createMapContributor, createMapPort } from "@world-prism/mod-game-map-six-nodes";
+import { createResourcesContributor, createResourcesPort } from "@world-prism/mod-game-resources-light";
+import { createScenarioContributor, createScenarioPort } from "@world-prism/mod-game-scenario-watergate";
+import { createWorldContributor, createWorldPort } from "@world-prism/mod-game-world-slg-light";
 import {
   createGameHarness,
   createMemoryTx,

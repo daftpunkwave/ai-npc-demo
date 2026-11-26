@@ -3,7 +3,7 @@
  * 依赖公共模块契约；不直接发送命令或宣布游戏行动成功。
  * 禁止在描述符阶段绑定 DOM 事件或读取私有世界状态。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const inputModuleDefinition = defineBrowserModuleDefinition({
   id: "client.input.standard",

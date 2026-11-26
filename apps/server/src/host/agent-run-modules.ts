@@ -3,11 +3,11 @@
  * 使用已解析计划及已启动的依赖 provider，返回本次 run 拥有的实例。
  * 启动失败时释放实例，避免保存一份无法启动的在线配置。
  */
-import { decisionSubmitTool, decisionSystem, modelContextBudget } from "@ai-npc/agent-runtime";
-import { DomainError, estimateModelInputTokens, resolveContextTokenLimits, toModelToolName, type HostServices, type ModuleScope } from "@ai-npc/contracts";
-import type { ContentPack } from "@ai-npc/experiment";
-import { startInstances, type ResolvedRealmPlan, type RunningInstance, type StartedInstances } from "@ai-npc/kernel";
-import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type AgentToolsPort, type RunModelPort, type SchedulingPort } from "@ai-npc/module-sdk";
+import { decisionSubmitTool, decisionSystem, modelContextBudget } from "@world-prism/agent-runtime";
+import { DomainError, estimateModelInputTokens, resolveContextTokenLimits, toModelToolName, type HostServices, type ModuleScope } from "@world-prism/contracts";
+import type { ContentPack } from "@world-prism/experiment";
+import { startInstances, type ResolvedRealmPlan, type RunningInstance, type StartedInstances } from "@world-prism/kernel";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type AgentToolsPort, type RunModelPort, type SchedulingPort } from "@world-prism/module-sdk";
 import type { AgentConfiguration } from "./agent-configuration";
 import { plannedModuleForCapability, serverAgentRequiredCapabilities } from "./module-catalog";
 

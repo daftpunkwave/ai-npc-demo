@@ -4,7 +4,7 @@
  * 禁止原地 UPDATE 记忆内容列；历史视图必须由追加的行版本重建。
  */
 import { describe, expect, it } from "vitest";
-import type { StoragePort, StorageRow } from "@ai-npc/contracts";
+import type { StoragePort, StorageRow } from "@world-prism/contracts";
 import { openStorageHarness } from "./support";
 
 const BRANCH_ID = "brn-memory";

@@ -4,7 +4,7 @@
  * 禁止绕过命令网关或宿主顺序手写 job/时钟/消费者调用，也禁止让墙钟时间影响结果。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { createSaveService } from "@ai-npc/app-server";
+import { createSaveService } from "@world-prism/app-server";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,

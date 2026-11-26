@@ -3,8 +3,8 @@
  * 依赖公共契约的模块类型与 module-sdk 的描述符校验；实现由 create 动态加载。
  * 禁止在这里读取内容包、访问存储或注册规则处理器。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const mapConfigSchema = z

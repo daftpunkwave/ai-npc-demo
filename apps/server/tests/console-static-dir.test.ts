@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import type { GameContent } from "@ai-npc/module-sdk";
+import type { GameContent } from "@world-prism/module-sdk";
 import type { ServerApp } from "../src/host/module-catalog";
 import { createTransportApp, type TransportAppInput } from "../src/host/transport-app";
 
@@ -64,7 +64,7 @@ describe("控制台静态目录的宿主缺省值", () => {
   });
 
   it("调用方显式配置时以调用方为准，缺省值被覆盖", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "ai-npc-console-static-"));
+    const directory = mkdtempSync(join(tmpdir(), "world-prism-console-static-"));
     createdDirs.push(directory);
     expect(await capturedConsoleStaticDir(directory)).toBe(resolve(directory));
   });

@@ -9,8 +9,8 @@ import {
   type NormalizedTool,
   type ToolBinding,
   type ToolDefinition,
-} from "@ai-npc/contracts";
-import type { AgentToolsPort } from "@ai-npc/module-sdk";
+} from "@world-prism/contracts";
+import type { AgentToolsPort } from "@world-prism/module-sdk";
 
 export interface ToolNarrowingValues {
   readonly messagePrincipalIds?: ReadonlySet<string>;

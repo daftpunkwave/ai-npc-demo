@@ -5,7 +5,7 @@
  * 禁止在本文件复现投影 schema，也禁止用连接级单标志替代按频道的补发语义。
  */
 import { describe, expect, it } from "vitest";
-import type { Json, PlayerProjection, StreamChannel } from "@ai-npc/contracts";
+import type { Json, PlayerProjection, StreamChannel } from "@world-prism/contracts";
 import { StreamHub } from "../src/stream-hub";
 import type { StreamHubOptions, StreamSocket } from "../src/stream-types";
 

@@ -9,7 +9,7 @@ import {
   checkSourceFile,
   formatViolation,
   type BoundarySourceFile,
-} from "@ai-npc/scripts/check-boundaries";
+} from "@world-prism/scripts/check-boundaries";
 import {
   checkFixture,
   checkHeader,
@@ -19,7 +19,7 @@ import {
   packagesWith,
   readFixture,
 } from "./check-boundaries-support";
-import { scanRepository } from "@ai-npc/scripts/check-boundaries";
+import { scanRepository } from "@world-prism/scripts/check-boundaries";
 
 describe("规则 6：依赖图与动态加载", () => {
   it("字面量动态导入按普通 import 检查", () => {
@@ -40,7 +40,7 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("拒绝把生产依赖写进 devDependencies", () => {
-    const authorityPackage = packageManifest("@ai-npc/authority", "packages/authority", {
+    const authorityPackage = packageManifest("@world-prism/authority", "packages/authority", {
       devDependencies: { yaml: "^2" },
     });
     const violations = checkFixture("packages/authority/src/loader.ts", "undeclared-third-party.ts.txt", {
@@ -51,8 +51,8 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("拒绝未使用的 workspace 依赖声明", () => {
-    const authorityPackage = packageManifest("@ai-npc/authority", "packages/authority", {
-      dependencies: { "@ai-npc/contracts": "workspace:*" },
+    const authorityPackage = packageManifest("@world-prism/authority", "packages/authority", {
+      dependencies: { "@world-prism/contracts": "workspace:*" },
     });
     const violations = checkFixture("packages/authority/src/index.ts", "no-imports.ts.txt", {
       packages: packagesWith([authorityPackage]),
@@ -62,7 +62,7 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("拒绝未使用的第三方依赖声明", () => {
-    const authorityPackage = packageManifest("@ai-npc/authority", "packages/authority", {
+    const authorityPackage = packageManifest("@world-prism/authority", "packages/authority", {
       dependencies: { yaml: "^2" },
     });
     const violations = checkFixture("packages/authority/src/index.ts", "no-imports.ts.txt", {
@@ -73,7 +73,7 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("拒绝根清单声明生产依赖", () => {
-    const rootPackage = packageManifest("ai-npc-demo", "", {
+    const rootPackage = packageManifest("world-prism", "", {
       dependencies: { fastify: "^5" },
     });
     const violations = checkBoundaries({ files: [], packages: [rootPackage] });
@@ -83,7 +83,7 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("验证包生产源码导入第三方仍须自身声明", () => {
-    const scriptsPackage = packageManifest("@ai-npc/scripts", "scripts", {
+    const scriptsPackage = packageManifest("@world-prism/scripts", "scripts", {
       exports: { "./check-boundaries": "./check-boundaries.ts" },
     });
     const violations = checkFixture("scripts/check-sample.ts", "undeclared-third-party.ts.txt", {
@@ -94,7 +94,7 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("工具配置文件导入 devDependencies 构建工具不报违规", () => {
-    const appClientPackage = packageManifest("@ai-npc/app-client", "apps/client", {
+    const appClientPackage = packageManifest("@world-prism/app-client", "apps/client", {
       devDependencies: { vite: "^8" },
     });
     const violations = checkFixture("apps/client/vite.config.ts", "tool-config-import.ts.txt", {
@@ -104,7 +104,7 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("工具配置文件导入未声明的库仍报违规", () => {
-    const appClientPackage = packageManifest("@ai-npc/app-client", "apps/client", {});
+    const appClientPackage = packageManifest("@world-prism/app-client", "apps/client", {});
     const violations = checkFixture("apps/client/vite.config.ts", "tool-config-import.ts.txt", {
       packages: [appClientPackage],
     });
@@ -113,12 +113,12 @@ describe("规则 6：依赖图与动态加载", () => {
   });
 
   it("拒绝生产 JSX 文件未声明 react", () => {
-    const modulePackage = packageManifest("@ai-npc/fake-client", "modules/client/fake/standard", {
-      dependencies: { "@ai-npc/client-sdk": "workspace:*" },
+    const modulePackage = packageManifest("@world-prism/fake-client", "modules/client/fake/standard", {
+      dependencies: { "@world-prism/client-sdk": "workspace:*" },
     });
     const violations = checkFixture("modules/client/fake/standard/src/plugin.tsx", "jsx-plugin.ts.txt", {
       packages: [modulePackage],
-      definitionKinds: [{ packageName: "@ai-npc/fake-client", kind: "service" }],
+      definitionKinds: [{ packageName: "@world-prism/fake-client", kind: "service" }],
     });
     expectCode(violations, "undeclared-third-party-dependency");
     expectRule(violations, 6);
@@ -129,18 +129,18 @@ describe("规则 6：依赖图与动态加载", () => {
     const scanned = scanRepository(process.cwd());
     const rootPackage = scanned.packages.find((pkg) => pkg.directory === "");
     expect(rootPackage).toBeDefined();
-    expect(rootPackage?.name).toBe("ai-npc-demo");
+    expect(rootPackage?.name).toBe("world-prism");
     // 真实根清单不声明生产依赖；一旦引入，依赖图规则会立即报未使用。
     expect(Object.keys(rootPackage?.dependencies ?? {})).toEqual([]);
   });
 
   it("拒绝包依赖环", () => {
     const cyclePackages = [
-      packageManifest("@ai-npc/cycle-a", "packages/cycle-a", {
-        dependencies: { "@ai-npc/cycle-b": "workspace:*" },
+      packageManifest("@world-prism/cycle-a", "packages/cycle-a", {
+        dependencies: { "@world-prism/cycle-b": "workspace:*" },
       }),
-      packageManifest("@ai-npc/cycle-b", "packages/cycle-b", {
-        dependencies: { "@ai-npc/cycle-a": "workspace:*" },
+      packageManifest("@world-prism/cycle-b", "packages/cycle-b", {
+        dependencies: { "@world-prism/cycle-a": "workspace:*" },
       }),
     ];
     const files: readonly BoundarySourceFile[] = [
@@ -151,8 +151,8 @@ describe("规则 6：依赖图与动态加载", () => {
     expectCode(violations, "cyclic-package-dependency");
     expectRule(violations, 6);
     const cycleViolation = violations.find((item) => item.code === "cyclic-package-dependency");
-    expect(cycleViolation?.message).toContain("@ai-npc/cycle-a");
-    expect(cycleViolation?.message).toContain("@ai-npc/cycle-b");
+    expect(cycleViolation?.message).toContain("@world-prism/cycle-a");
+    expect(cycleViolation?.message).toContain("@world-prism/cycle-b");
   });
 });
 

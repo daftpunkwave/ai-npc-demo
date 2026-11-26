@@ -1,5 +1,5 @@
 {
-  "name": "@ai-npc/mod-agent-context-ordered-blocks",
+  "name": "@world-prism/mod-agent-context-ordered-blocks",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
     "./definition": "./src/definition.ts"
   },
   "dependencies": {
-    "@ai-npc/contracts": "workspace:*",
-    "@ai-npc/module-sdk": "workspace:*",
+    "@world-prism/contracts": "workspace:*",
+    "@world-prism/module-sdk": "workspace:*",
     "zod": "^4"
   }
 }

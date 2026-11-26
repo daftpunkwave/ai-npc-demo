@@ -10,13 +10,13 @@ import type {
   AgentModelCallResult,
   Json,
   MemoryChangePlan,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type {
   MemoryAgentIdentity,
   MemoryRecordView,
   RevisionView,
   ScopedModelPort,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import {
   layeredHybridConfigSchema,
   layeredHybridDefaults,

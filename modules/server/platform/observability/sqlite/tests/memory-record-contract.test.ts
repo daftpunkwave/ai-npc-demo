@@ -4,7 +4,7 @@
  * 禁止让 revision 变成视图水位、也不允许契约保留存储里没有落列的字段。
  */
 import { describe, expect, it } from "vitest";
-import { memoryRecordSchema } from "@ai-npc/contracts";
+import { memoryRecordSchema } from "@world-prism/contracts";
 import { decodeMemoryRecord } from "../src/research-codec";
 
 const scope = { worldId: "wld-000000000001", branchId: "br-000000000001", agentId: "npc-guard" };

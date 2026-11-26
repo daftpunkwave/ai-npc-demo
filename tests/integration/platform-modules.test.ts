@@ -4,11 +4,11 @@
  * 禁止在测试中读取真实密钥。
  */
 import { describe, expect, it } from "vitest";
-import type { HostServices, Json, ModuleCreateInput } from "@ai-npc/contracts";
-import { accessPolicyModuleDefinition, type AccessPolicyPort } from "@ai-npc/mod-platform-access-policy-roster";
-import { secretsModuleDefinition, type SecretsPort } from "@ai-npc/mod-platform-secrets-env";
-import { OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
-import { transportModuleDefinition, type TransportPort } from "@ai-npc/mod-transport-http-ws-fastify";
+import type { HostServices, Json, ModuleCreateInput } from "@world-prism/contracts";
+import { accessPolicyModuleDefinition, type AccessPolicyPort } from "@world-prism/mod-platform-access-policy-roster";
+import { secretsModuleDefinition, type SecretsPort } from "@world-prism/mod-platform-secrets-env";
+import { OperationsService, type OperationsDriver } from "@world-prism/mod-platform-operations-standard";
+import { transportModuleDefinition, type TransportPort } from "@world-prism/mod-transport-http-ws-fastify";
 
 const host: HostServices = {
   ids: (prefix) => `${prefix}-000000000000`,
@@ -117,18 +117,18 @@ describe("platform 模块", () => {
   });
 
   it("只解析 allowlist 中的环境变量", async () => {
-    process.env.NPC_TEST_SECRET = "test-secret";
-    process.env.NPC_EMPTY_SECRET = "";
+    process.env.WORLD_PRISM_TEST_SECRET = "test-secret";
+    process.env.WORLD_PRISM_EMPTY_SECRET = "";
     try {
-      const instance = await secretsModuleDefinition.create(input("platform.secrets.env", { allowlist: ["NPC_TEST_SECRET", "NPC_EMPTY_SECRET"] }));
+      const instance = await secretsModuleDefinition.create(input("platform.secrets.env", { allowlist: ["WORLD_PRISM_TEST_SECRET", "WORLD_PRISM_EMPTY_SECRET"] }));
       const port = instance.port as SecretsPort;
-      expect(port.resolve("NPC_TEST_SECRET")).toBe("test-secret");
-      expect(port.resolve("NPC_EMPTY_SECRET")).toBeNull();
+      expect(port.resolve("WORLD_PRISM_TEST_SECRET")).toBe("test-secret");
+      expect(port.resolve("WORLD_PRISM_EMPTY_SECRET")).toBeNull();
       expect(port.resolve("PATH")).toBeNull();
       expect(port.resolve("__proto__")).toBeNull();
     } finally {
-      delete process.env.NPC_TEST_SECRET;
-      delete process.env.NPC_EMPTY_SECRET;
+      delete process.env.WORLD_PRISM_TEST_SECRET;
+      delete process.env.WORLD_PRISM_EMPTY_SECRET;
     }
   });
 });

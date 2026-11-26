@@ -3,7 +3,7 @@
  * 依赖任务命令/job 处理器与 module-sdk 的贡献类型；不实现规则、不读写存储。
  * 禁止在这里改写任务状态、改变命令类型或绕过处理器直接调度 job。
  */
-import { gameModuleIds, type GameModulePorts, type GameRuleContributor } from "@ai-npc/module-sdk";
+import { gameModuleIds, type GameModulePorts, type GameRuleContributor } from "@world-prism/module-sdk";
 import { cancel } from "./cancel";
 import { dispatch } from "./dispatch";
 import { respond } from "./respond";

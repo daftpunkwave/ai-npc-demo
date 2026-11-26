@@ -7,11 +7,11 @@ import {
   DomainError, estimateModelInputTokens, estimateTokens, modelRequestSchema, modelResponseSchema, modelTransportErrorSchema,
   type AgentModelCallResult, type ModelRequest, type ModelResponse, type ModelTransportError,
   type ModelTransportPort, type ModuleCreateInput, type Purpose, type StoragePort,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   createStatelessModule, isRetryableModelError, modelTransportFailure, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput,
   type ModelObservabilityPort, type ModelRoute, type ModelRunLimits, type ModelWorkScope,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { AttemptEvidence, modelSubstituted } from "./attempt-evidence";
 import { sharedModelPoolDefinition } from "./definition";
 import { backpressure, currentWork, hasRequestHeadroom, ModelAdmission } from "./admission";

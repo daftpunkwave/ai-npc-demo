@@ -3,8 +3,8 @@
  * 交互契约：依赖内容索引与通信端口；只保留已按冻结投递名单送达玩家的记录。
  * 约束与禁忌：秘密与其他非证据知识不进入笔记；不伪造事件摘要或消息来源。
  */
-import type { ConversationLine, InboxItemView, NotebookEntryView } from "@ai-npc/contracts";
-import type { GameCommsPort, GameContent } from "@ai-npc/module-sdk";
+import type { ConversationLine, InboxItemView, NotebookEntryView } from "@world-prism/contracts";
+import type { GameCommsPort, GameContent } from "@world-prism/module-sdk";
 
 /** 会话对白与收件箱的保留条数；取最近 50 条。 */
 const conversationLineLimit = 50;

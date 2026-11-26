@@ -8,7 +8,7 @@ import {
   debugWakeRequestSchema,
   debugWakeResponseSchema,
   turnReplayResponseSchema,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import type { ConsoleRequest } from "./request";
 
 export function createDebugHttp(request: ConsoleRequest) {

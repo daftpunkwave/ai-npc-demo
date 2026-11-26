@@ -4,7 +4,7 @@
  * 约束与禁忌：不改变共享测试世界，不以固定延时制造竞态。
  */
 import { expect, test, type Page } from "@playwright/test";
-import { consoleHealthResponseSchema, type ErrorCode } from "@ai-npc/contracts";
+import { consoleHealthResponseSchema, type ErrorCode } from "@world-prism/contracts";
 import { deferred } from "./deferred";
 
 const snapshotsApi = "**/api/v1/console/campaign/snapshots";

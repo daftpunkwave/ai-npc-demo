@@ -3,8 +3,8 @@
  * 交互契约：依赖注入的 scoped WorldTx、指标阈值规则与水门配额词表。
  * 约束与禁忌：禁止写入地图或库存聚合；阈值事件与钳制规则以 meters.ts 为准。
  */
-import { type MeterChange, type MeterChangeCause, type NumericMeterId, type WatergateAllocation } from "@ai-npc/contracts";
-import { gameModuleIds, type GameWorldPort, type MetersView, type ScopedWorldTxFactory } from "@ai-npc/module-sdk";
+import { type MeterChange, type MeterChangeCause, type NumericMeterId, type WatergateAllocation } from "@world-prism/contracts";
+import { gameModuleIds, type GameWorldPort, type MetersView, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
 import { clampMeter, thresholdEvents } from "./meters";
 import { metersAggregateId } from "./port-aggregates";
 import { failure, type OpFailure, type OpSuccess } from "./port-result";

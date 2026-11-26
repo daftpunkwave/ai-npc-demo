@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { Json } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
 import type { AssetViolation } from "./report-types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

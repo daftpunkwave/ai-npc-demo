@@ -3,8 +3,8 @@
  * 依赖内存事务夹具、公共契约的 DomainError 与最小内容索引桩。
  * 禁止在这里绕过权限校验构造评估结果或访问真实存储。
  */
-import { DomainError } from "@ai-npc/contracts";
-import type { AgreementCounts, GameContent } from "@ai-npc/module-sdk";
+import { DomainError } from "@world-prism/contracts";
+import type { AgreementCounts, GameContent } from "@world-prism/module-sdk";
 import { describe, expect, it } from "vitest";
 import { createWorldPort } from "../src/port";
 import { TestWorldTx, createTestHost } from "./support";

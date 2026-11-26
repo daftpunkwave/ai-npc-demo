@@ -3,7 +3,7 @@
  * 交互契约：输入已通过 consoleHealthResponseSchema 校验的响应；不发起请求、不保留状态。
  * 约束与禁忌：禁止把缺失的队列或水位字段当作 0，也禁止在响应为 degraded 时输出 ready。
  */
-import type { ConsoleHealthResponse } from "@ai-npc/contracts";
+import type { ConsoleHealthResponse } from "@world-prism/contracts";
 
 export interface HealthSummaryView {
   /** 与接口响应一致的整体状态文案。 */

@@ -1,4 +1,4 @@
-# @ai-npc/app-client
+# @world-prism/app-client
 
 玩家浏览器宿主，固定由 Vite 在 `127.0.0.1:5173` 提供。
 

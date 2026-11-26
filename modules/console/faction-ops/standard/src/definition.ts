@@ -3,7 +3,7 @@
  * 交互契约：依赖远端运营能力；页面不直接修改世界或数据库。
  * 约束与禁忌：不向研究员、评估者或玩家角色开放。
  */
-import { defineBrowserModuleDefinition } from "@ai-npc/client-sdk/define-browser-module";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk/define-browser-module";
 
 export const factionOpsPageModuleDefinition = defineBrowserModuleDefinition({
   id: "console.faction-ops.standard",

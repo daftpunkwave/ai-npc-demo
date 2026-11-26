@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止启动真实监听端口，也不用真实计时器等待；排空预算通过参数直接给出。
  */
 import { describe, expect, it, vi } from "vitest";
-import { disposeInReverse, disposeWithin, drainBeforeClose, type DisposalStep } from "@ai-npc/app-server";
+import { disposeInReverse, disposeWithin, drainBeforeClose, type DisposalStep } from "@world-prism/app-server";
 
 describe("drainBeforeClose", () => {
   it("按声明顺序排空，并让后续层级只拿到剩余预算", async () => {

@@ -14,4 +14,4 @@ export * from "./game-scenario-port";
 export * from "./game-comms-port";
 export * from "./game-port-binding";
 
-export type { ResourceLevel, ScenarioCardStatus } from "@ai-npc/contracts";
+export type { ResourceLevel, ScenarioCardStatus } from "@world-prism/contracts";

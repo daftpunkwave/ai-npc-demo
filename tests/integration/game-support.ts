@@ -15,10 +15,10 @@ import type {
   ModuleCreateInput,
   StoragePort,
   StorageRawRow,
-} from "@ai-npc/contracts";
-import { domainEventPayloadSchemas } from "@ai-npc/contracts";
-import { Authority, TransactionWorldTx } from "@ai-npc/authority";
-import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
+} from "@world-prism/contracts";
+import { domainEventPayloadSchemas } from "@world-prism/contracts";
+import { Authority, TransactionWorldTx } from "@world-prism/authority";
+import { loadContentPack, type ContentPack } from "@world-prism/experiment";
 import {
   gameModuleIds,
   type AggregateListOptions,
@@ -29,16 +29,16 @@ import {
   type ModuleBinder,
   type ScopedWorldTxFactory,
   type WorldTx,
-} from "@ai-npc/module-sdk";
-import { createClockPort } from "@ai-npc/mod-game-clock-controlled";
-import { createMapContributor, createMapPort } from "@ai-npc/mod-game-map-six-nodes";
-import { createCommsContributor, createCommsPort } from "@ai-npc/mod-game-comms-standard";
-import { createActionsContributor, createActionsPort } from "@ai-npc/mod-game-actions-standard";
-import { createAgreementsContributor, createAgreementsPort } from "@ai-npc/mod-game-agreements-standard";
-import { createScenarioContributor, createScenarioPort } from "@ai-npc/mod-game-scenario-watergate";
-import { createResourcesContributor, createResourcesPort } from "@ai-npc/mod-game-resources-light";
-import { createWorldContributor, createWorldPort } from "@ai-npc/mod-game-world-slg-light";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
+} from "@world-prism/module-sdk";
+import { createClockPort } from "@world-prism/mod-game-clock-controlled";
+import { createMapContributor, createMapPort } from "@world-prism/mod-game-map-six-nodes";
+import { createCommsContributor, createCommsPort } from "@world-prism/mod-game-comms-standard";
+import { createActionsContributor, createActionsPort } from "@world-prism/mod-game-actions-standard";
+import { createAgreementsContributor, createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
+import { createScenarioContributor, createScenarioPort } from "@world-prism/mod-game-scenario-watergate";
+import { createResourcesContributor, createResourcesPort } from "@world-prism/mod-game-resources-light";
+import { createWorldContributor, createWorldPort } from "@world-prism/mod-game-world-slg-light";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 
 /** 按 SQLite BINARY 的字典序比较聚合 ID；测试 ID 均为 ASCII，码点序与字节序一致。 */
@@ -116,7 +116,7 @@ export interface GameHarness {
 }
 
 /** 把已校验内容包收窄为游戏端口视图；复用服务端宿主的唯一适配器。 */
-import { toGameContent } from "@ai-npc/app-server/content";
+import { toGameContent } from "@world-prism/app-server/content";
 export { toGameContent };
 
 /** 绑定全部游戏端口；集成测试与投影读取共用同一组实现。 */
@@ -181,7 +181,7 @@ function seedBranch(storage: StoragePort, host: FakeHost, worldId: string, branc
 
 /** 启动真实存储、加载内容、绑定模块端口并注册游戏处理器。 */
 export async function createGameHarness(options: {
-  readonly approvedSpeech?: import("@ai-npc/module-sdk").ApprovedSpeechReader;
+  readonly approvedSpeech?: import("@world-prism/module-sdk").ApprovedSpeechReader;
   readonly scenarioEscalating?: boolean;
   /** 可选 runSeed；给出时 authority 会把它绑定为 host.rng 的第一个参数。 */
   readonly runSeed?: string;
@@ -200,7 +200,7 @@ export async function createGameHarness(options: {
    */
   readonly withCommsContributor?: boolean;
 } = {}): Promise<GameHarness> {
-  const dataDir = mkdtempSync(join(tmpdir(), "ai-npc-game-test-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "world-prism-game-test-"));
   const baseHost = createFakeHost();
   const host: FakeHost =
     options.onRng === undefined

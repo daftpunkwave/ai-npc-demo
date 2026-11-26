@@ -4,7 +4,7 @@
  * 禁止在测试中直接改内存时钟或绕过 runVersion。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { createClockPort } from "@ai-npc/mod-game-clock-controlled";
+import { createClockPort } from "@world-prism/mod-game-clock-controlled";
 import { createGameHarness, type GameHarness } from "./game-support";
 
 const active: GameHarness[] = [];

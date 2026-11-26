@@ -3,8 +3,8 @@
  * 依赖模块定义、规则贡献与 module-sdk 的无状态生命周期骨架。
  * 禁止在 create 阶段读取内容、打开存储或缓存跨事务状态。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { createMapContributor } from "./contributor";
 import { createMapPort } from "./port";
 

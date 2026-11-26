@@ -3,7 +3,7 @@
  * 交互契约：输入已过滤的可披露引用、受限秘密与当前 turn receipt 状态。
  * 约束与禁忌：不得用关键词检查宣称语义完全安全，也不得修改候选正文。
  */
-import { speechOutputSchema, type Json } from "@ai-npc/contracts";
+import { speechOutputSchema, type Json } from "@world-prism/contracts";
 
 export interface SpeechGenerationOutput {
   readonly utterance: string;

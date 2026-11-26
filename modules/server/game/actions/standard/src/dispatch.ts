@@ -3,8 +3,8 @@
  * 依赖计划校验、世界/资源端口、内容索引与事务上下文；不执行 job，也不在失败时保留预留。
  * 禁止越过资源预留直接结算、使用真实时间或自造成随机种子。
  */
-import { commandPayloadOf, type Json } from "@ai-npc/contracts";
-import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@ai-npc/module-sdk";
+import { commandPayloadOf, type Json } from "@world-prism/contracts";
+import { effectivePrincipalId, principalsAudience, type HandlerResult } from "@world-prism/module-sdk";
 import { planDispatch } from "./plan";
 import type { DelegationDraw, InvitationState, TaskState } from "./state";
 import { asPorts, taskAudience, taskEnvelope, teamOwnerFaction, type ActionContext } from "./task-shared";

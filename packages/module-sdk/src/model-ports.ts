@@ -3,11 +3,11 @@
  * 模型池绑定不可变路由，宿主为每个工作和用途注入独立的调用句柄。
  * 禁止通过这些端口获取凭据、执行世界命令或更改冻结路由。
  */
-import { capabilityIdSchema, DomainError, modelCapabilitiesSchema } from "@ai-npc/contracts";
+import { capabilityIdSchema, DomainError, modelCapabilitiesSchema } from "@world-prism/contracts";
 import type {
   AgentModelCallResult, CapabilityId, DecisionSubmission, Json, MemoryScope, ModelCapabilities, ModelFixture, ModelOutput,
   NormalizedMessage, NormalizedTool, NormalizedToolCall, Purpose,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 export interface ModelCallInput {
   readonly system: string;

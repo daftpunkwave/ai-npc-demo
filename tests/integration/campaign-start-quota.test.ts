@@ -4,7 +4,7 @@
  * 禁止让配额不足的命令写入 campaign 或激活行，也禁止把拒绝延后成事件消费阶段的重放失败。
  */
 import { describe, expect, it } from "vitest";
-import { createCampaignStartActivationHook } from "@ai-npc/agent-runtime";
+import { createCampaignStartActivationHook } from "@world-prism/agent-runtime";
 import {
   campaignStartEnvelope,
   countBranchRows,

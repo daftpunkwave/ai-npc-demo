@@ -4,8 +4,8 @@
  *   名册身份与确定性时间来源由宿主注入。
  * 约束与禁忌：禁止自行开启事务、把激活延后到事件消费阶段，或吞掉配额拒绝继续提交命令。
  */
-import type { AuthContext, StorageTransaction } from "@ai-npc/contracts";
-import type { HandlerResult } from "@ai-npc/module-sdk";
+import type { AuthContext, StorageTransaction } from "@world-prism/contracts";
+import type { HandlerResult } from "@world-prism/module-sdk";
 import { activateAgentRosterInTransaction } from "./activation";
 
 /** 宿主后续钩子在事务内可用的上下文；与命令网关的宿主钩子入参保持结构兼容。 */

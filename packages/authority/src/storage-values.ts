@@ -8,7 +8,7 @@ import {
   jsonValueSchema,
   type Json,
   type StorageRow,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 
 function invalidRow(table: string, column: string, reason: string): never {
   throw new DomainError("invalid-state", `存储表 ${table} 的列 ${column} ${reason}`, {

@@ -3,7 +3,7 @@
  * 交互契约：输入存储事务与快照标识，返回强类型视图；数据不一致时抛出 invalid-state 并给出字段。
  * 约束与禁忌：不写存储、不做业务裁决，也不在字段缺失时用默认值兜底。
  */
-import { DomainError, canonicalJson, type Json, type StorageCell, type StorageTransaction, type StorageRow } from "@ai-npc/contracts";
+import { DomainError, canonicalJson, type Json, type StorageCell, type StorageTransaction, type StorageRow } from "@world-prism/contracts";
 import type {
   FrozenSnapshot,
   RestoreExpectation,

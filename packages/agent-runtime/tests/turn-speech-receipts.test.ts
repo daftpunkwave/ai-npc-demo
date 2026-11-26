@@ -4,8 +4,8 @@
  * 禁止把工具归档里的自由文本或私有预留作为对白素材。
  */
 import { describe, expect, it } from "vitest";
-import type { CommandReceipt, StoragePort, StorageTransaction } from "@ai-npc/contracts";
-import type { AgentArtifactRecord } from "@ai-npc/module-sdk";
+import type { CommandReceipt, StoragePort, StorageTransaction } from "@world-prism/contracts";
+import type { AgentArtifactRecord } from "@world-prism/module-sdk";
 import type { SpeechApprovalInput } from "../src/dialogue-flow";
 import type { ToolCallOutcome } from "../src/tool-gateway-types";
 import { disclosedTurnReceipts } from "../src/turn-speech-receipts";

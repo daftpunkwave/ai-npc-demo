@@ -4,8 +4,8 @@ pricingRef: pricing-live
 connections:
   openai-compat:
     adapterId: platform.model-transport.openai-compatible
-    endpoint: env:NPC_OPENAI_COMPAT_BASE_URL
-    credentialRef: env:NPC_OPENAI_COMPAT_API_KEY
+    endpoint: env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL
+    credentialRef: env:WORLD_PRISM_OPENAI_COMPAT_API_KEY
     rateLimitKey: openai-compat-account
   anthropic:
     adapterId: platform.model-transport.anthropic
@@ -14,7 +14,7 @@ connections:
 models:
   npc-chat:
     connectionId: openai-compat
-    externalModel: env:NPC_OPENAI_COMPAT_MODEL
+    externalModel: env:WORLD_PRISM_OPENAI_COMPAT_MODEL
     parameters: { temperature: 0.6, maxTokensField: max_tokens }
     capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: verbatim, contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }
     limits: { maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000, requestTimeoutMs: 30000 }

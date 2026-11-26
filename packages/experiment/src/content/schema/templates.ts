@@ -14,7 +14,7 @@ import {
   type DialogueIntentKind,
   type MeterChangeCause,
   type TermKind,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { z } from "zod";
 import { exactRecord, textSchema } from "./common";
 

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { FastifyReply } from "fastify";
-import type { AccessDecision, AccessPolicy, AccessRequest } from "@ai-npc/module-sdk";
+import type { AccessDecision, AccessPolicy, AccessRequest } from "@world-prism/module-sdk";
 import { requireCommand, requireConsole, requirePlayer, type RouteContext } from "../src/routes/context";
 import type { HttpSession } from "../src/routes/contracts";
 

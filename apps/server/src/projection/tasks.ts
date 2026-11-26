@@ -3,8 +3,8 @@
  * 交互契约：依赖行动端口与世界端口；队伍路线只从行动端口读取。
  * 约束与禁忌：其他任务不暴露任务类型、参数、参与者与内部风险。
  */
-import type { PlayerTaskView } from "@ai-npc/contracts";
-import type { GameActionsPort, GameWorldPort, TaskView } from "@ai-npc/module-sdk";
+import type { PlayerTaskView } from "@world-prism/contracts";
+import type { GameActionsPort, GameWorldPort, TaskView } from "@world-prism/module-sdk";
 
 /** 自己的任务给出完整参数与两个状态列；参数由投影 schema 按 taskType 复核。 */
 function ownTaskView(task: TaskView): PlayerTaskView {

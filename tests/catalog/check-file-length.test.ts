@@ -9,7 +9,7 @@ import {
   checkSourceFileLengths,
   countSourceLines,
   lengthExemptions,
-} from "@ai-npc/scripts/check-boundaries";
+} from "@world-prism/scripts/check-boundaries";
 
 /** 生成指定行数的文件内容，每行是一条无害语句。 */
 function lines(count: number): string {

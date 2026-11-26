@@ -3,8 +3,8 @@
  * 依赖无状态生命周期骨架、处理器工厂与端口工厂。
  * 禁止在 create 阶段读取内容、触发卡片或启动订阅。
  */
-import type { ModuleCreateInput, ModuleInstance } from "@ai-npc/contracts";
-import { createStatelessModule } from "@ai-npc/module-sdk";
+import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
+import { createStatelessModule } from "@world-prism/module-sdk";
 import { createScenarioContributor } from "./contributor";
 import { createScenarioPort } from "./port";
 

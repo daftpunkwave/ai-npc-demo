@@ -14,14 +14,14 @@ import {
   type SnapshotCreateRequest,
   type ModuleCreateInput,
   type ModuleInstance,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import {
   CommandClient,
   ProjectionStore,
   StreamClient,
   type ApiClient,
   type ProjectionState,
-} from "@ai-npc/client-protocol";
+} from "@world-prism/client-protocol";
 import {
   isSessionInvalidCloseCode,
   isSessionInvalidError,

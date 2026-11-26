@@ -4,9 +4,9 @@
  * 轮询节奏由世界 tick 变化与宿主唤醒信号驱动；空闲轮退避到有上限的巡检间隔。
  * 禁止在事务内等待模型、执行世界命令或复制第二套 turn loop。
  */
-import type { HostServices, ModuleDefinition, StoragePort } from "@ai-npc/contracts";
-import type { PerceptionPort, SchedulingPort } from "@ai-npc/module-sdk";
-import type { ContentPack, ResolvedAgentProfile, Roster } from "@ai-npc/experiment";
+import type { HostServices, ModuleDefinition, StoragePort } from "@world-prism/contracts";
+import type { PerceptionPort, SchedulingPort } from "@world-prism/module-sdk";
+import type { ContentPack, ResolvedAgentProfile, Roster } from "@world-prism/experiment";
 import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";

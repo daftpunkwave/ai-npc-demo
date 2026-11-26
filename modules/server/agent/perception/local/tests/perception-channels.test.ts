@@ -4,7 +4,7 @@
  * 约束与禁忌：每行断言必须对应规格渠道表的同一行，禁止用其它行放行通过；未授权候选不得伪造观察。
  */
 import { describe, expect, it } from "vitest";
-import type { PerceptionRequest } from "@ai-npc/module-sdk";
+import type { PerceptionRequest } from "@world-prism/module-sdk";
 import type { PerceptionConfig } from "../src/definition";
 import { perceive } from "../src/plugin";
 

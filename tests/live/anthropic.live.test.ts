@@ -4,7 +4,7 @@
  * 禁止读取或写入游戏存档、记录凭据或对请求做自动重试。
  */
 import { it } from "vitest";
-import { anthropicTransportDefinition } from "@ai-npc/mod-platform-model-transport-anthropic/definition";
+import { anthropicTransportDefinition } from "@world-prism/mod-platform-model-transport-anthropic/definition";
 import { modelConnection, transportPort } from "../support/model-transport";
 import { verifyModelTransport } from "./model-smoke";
 

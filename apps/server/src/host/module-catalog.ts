@@ -10,90 +10,90 @@ import {
   type HostServices,
   type InstanceScope,
   type StoragePort,
-} from "@ai-npc/contracts";
-import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@ai-npc/kernel";
+} from "@world-prism/contracts";
+import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@world-prism/kernel";
 import type {
   GameClockPort,
   GameContent,
   GameModulePorts,
   GameRuleContributor,
   ModuleBinder,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { resolveGameModuleBindings } from "./game-port-binder";
-import { compressionNoneModuleDefinition } from "@ai-npc/mod-agent-compression-none/definition";
-import { compressionWindowModuleDefinition } from "@ai-npc/mod-agent-compression-window/definition";
-import { orderedBlocksContextDefinition } from "@ai-npc/mod-agent-context-ordered-blocks/definition";
-import { deterministicDecisionModuleDefinition } from "@ai-npc/mod-agent-decision-deterministic/definition";
-import { modelDecisionDefinition } from "@ai-npc/mod-agent-decision-model/definition";
-import { sharedModelPoolDefinition } from "@ai-npc/mod-agent-model-pool-shared/definition";
+import { compressionNoneModuleDefinition } from "@world-prism/mod-agent-compression-none/definition";
+import { compressionWindowModuleDefinition } from "@world-prism/mod-agent-compression-window/definition";
+import { orderedBlocksContextDefinition } from "@world-prism/mod-agent-context-ordered-blocks/definition";
+import { deterministicDecisionModuleDefinition } from "@world-prism/mod-agent-decision-deterministic/definition";
+import { modelDecisionDefinition } from "@world-prism/mod-agent-decision-model/definition";
+import { sharedModelPoolDefinition } from "@world-prism/mod-agent-model-pool-shared/definition";
 import {
   memoryLayeredHybridModuleDefinition,
   memoryLedgerModuleDefinition,
   memoryStreamReflectionModuleDefinition,
-} from "@ai-npc/mod-agent-memory-ledger/definition";
-import { memoryNoneModuleDefinition } from "@ai-npc/mod-agent-memory-none/definition";
-import { perceptionModuleDefinition } from "@ai-npc/mod-agent-perception-local/definition";
-import { schedulingModuleDefinition } from "@ai-npc/mod-agent-scheduling-fair/definition";
-import { structuredToolViewModuleDefinition } from "@ai-npc/mod-agent-tool-view-structured/definition";
-import { gameToolsModuleDefinition } from "@ai-npc/mod-agent-tools-game-tools/definition";
-import { storageModuleDefinition } from "@ai-npc/mod-platform-storage-sqlite";
-import { clockConfigSchema, clockModuleDefinition, type ClockConfig } from "@ai-npc/mod-game-clock-controlled";
-import { mapModuleDefinition } from "@ai-npc/mod-game-map-six-nodes";
-import { resourcesModuleDefinition } from "@ai-npc/mod-game-resources-light";
-import { worldConfigSchema, worldModuleDefinition } from "@ai-npc/mod-game-world-slg-light";
-import { commsModuleDefinition } from "@ai-npc/mod-game-comms-standard";
-import { actionsModuleDefinition } from "@ai-npc/mod-game-actions-standard";
-import { agreementsModuleDefinition } from "@ai-npc/mod-game-agreements-standard";
+} from "@world-prism/mod-agent-memory-ledger/definition";
+import { memoryNoneModuleDefinition } from "@world-prism/mod-agent-memory-none/definition";
+import { perceptionModuleDefinition } from "@world-prism/mod-agent-perception-local/definition";
+import { schedulingModuleDefinition } from "@world-prism/mod-agent-scheduling-fair/definition";
+import { structuredToolViewModuleDefinition } from "@world-prism/mod-agent-tool-view-structured/definition";
+import { gameToolsModuleDefinition } from "@world-prism/mod-agent-tools-game-tools/definition";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
+import { clockConfigSchema, clockModuleDefinition, type ClockConfig } from "@world-prism/mod-game-clock-controlled";
+import { mapModuleDefinition } from "@world-prism/mod-game-map-six-nodes";
+import { resourcesModuleDefinition } from "@world-prism/mod-game-resources-light";
+import { worldConfigSchema, worldModuleDefinition } from "@world-prism/mod-game-world-slg-light";
+import { commsModuleDefinition } from "@world-prism/mod-game-comms-standard";
+import { actionsModuleDefinition } from "@world-prism/mod-game-actions-standard";
+import { agreementsModuleDefinition } from "@world-prism/mod-game-agreements-standard";
 import {
   escalatingScenarioModuleDefinition,
   scenarioModuleDefinition,
-} from "@ai-npc/mod-game-scenario-watergate";
-import { saveModuleDefinition, SqliteSaveService } from "@ai-npc/mod-game-save-sqlite";
+} from "@world-prism/mod-game-scenario-watergate";
+import { saveModuleDefinition, SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
 import {
   accessPolicyModuleDefinition,
   type AccessPolicyPort,
-} from "@ai-npc/mod-platform-access-policy-roster";
-import { secretsModuleDefinition } from "@ai-npc/mod-platform-secrets-env";
-import { modelBudgetDefinition } from "@ai-npc/mod-platform-budget-standard/definition";
-import { evaluationModuleDefinition } from "@ai-npc/mod-platform-evaluation-standard/definition";
-import { anthropicTransportDefinition } from "@ai-npc/mod-platform-model-transport-anthropic/definition";
-import { deterministicModelTransportDefinition } from "@ai-npc/mod-platform-model-transport-deterministic/definition";
-import { openAICompatibleTransportDefinition } from "@ai-npc/mod-platform-model-transport-openai-compatible/definition";
-import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@ai-npc/mod-platform-operations-standard";
+} from "@world-prism/mod-platform-access-policy-roster";
+import { secretsModuleDefinition } from "@world-prism/mod-platform-secrets-env";
+import { modelBudgetDefinition } from "@world-prism/mod-platform-budget-standard/definition";
+import { evaluationModuleDefinition } from "@world-prism/mod-platform-evaluation-standard/definition";
+import { anthropicTransportDefinition } from "@world-prism/mod-platform-model-transport-anthropic/definition";
+import { deterministicModelTransportDefinition } from "@world-prism/mod-platform-model-transport-deterministic/definition";
+import { openAICompatibleTransportDefinition } from "@world-prism/mod-platform-model-transport-openai-compatible/definition";
+import { operationsModuleDefinition, OperationsService, type OperationsDriver } from "@world-prism/mod-platform-operations-standard";
 import {
   observabilityModuleDefinition,
   ObservabilityPort,
-} from "@ai-npc/mod-platform-observability-sqlite";
+} from "@world-prism/mod-platform-observability-sqlite";
 import {
   moduleAdminModuleDefinition,
   ModuleAdminPort,
-} from "@ai-npc/mod-platform-module-admin-standard";
+} from "@world-prism/mod-platform-module-admin-standard";
 import {
   transportModuleDefinition,
   transportConfigSchema,
   createServerApp,
   type TransportConfig,
   type TransportPort,
-} from "@ai-npc/mod-transport-http-ws-fastify";
-import { cameraModuleDefinition } from "@ai-npc/mod-client-camera-standard/definition";
-import { charactersModuleDefinition } from "@ai-npc/mod-client-characters-standard/definition";
-import { dialogueModuleDefinition } from "@ai-npc/mod-client-dialogue-standard/definition";
-import { factionStartModuleDefinition } from "@ai-npc/mod-client-faction-start-standard/definition";
-import { hudModuleDefinition } from "@ai-npc/mod-client-hud-standard/definition";
-import { inputModuleDefinition } from "@ai-npc/mod-client-input-standard/definition";
-import { notificationsModuleDefinition } from "@ai-npc/mod-client-notifications-standard/definition";
-import { nullSceneModuleDefinition } from "@ai-npc/mod-client-scene-renderer-null/definition";
-import { pixiSceneModuleDefinition } from "@ai-npc/mod-client-scene-renderer-pixi/definition";
-import { projectionModuleDefinition } from "@ai-npc/mod-client-screen-projection-isometric/definition";
-import { settingsModuleDefinition } from "@ai-npc/mod-client-settings-standard/definition";
-import { worldViewModuleDefinition } from "@ai-npc/mod-client-world-view-standard/definition";
-import { healthPageModuleDefinition } from "@ai-npc/mod-console-health-standard/definition";
-import { moduleAdminPageModuleDefinition } from "@ai-npc/mod-console-module-admin-standard/definition";
-import { modelMountsPageModuleDefinition } from "@ai-npc/mod-console-model-mounts-standard/definition";
-import { factionOpsPageModuleDefinition } from "@ai-npc/mod-console-faction-ops-standard/definition";
-import { debugPageModuleDefinition } from "@ai-npc/mod-console-debug-standard/definition";
-import { observabilityPageModuleDefinition } from "@ai-npc/mod-console-observability-standard/definition";
-import { evaluationPageModuleDefinition } from "@ai-npc/mod-console-evaluation-standard/definition";
+} from "@world-prism/mod-transport-http-ws-fastify";
+import { cameraModuleDefinition } from "@world-prism/mod-client-camera-standard/definition";
+import { charactersModuleDefinition } from "@world-prism/mod-client-characters-standard/definition";
+import { dialogueModuleDefinition } from "@world-prism/mod-client-dialogue-standard/definition";
+import { factionStartModuleDefinition } from "@world-prism/mod-client-faction-start-standard/definition";
+import { hudModuleDefinition } from "@world-prism/mod-client-hud-standard/definition";
+import { inputModuleDefinition } from "@world-prism/mod-client-input-standard/definition";
+import { notificationsModuleDefinition } from "@world-prism/mod-client-notifications-standard/definition";
+import { nullSceneModuleDefinition } from "@world-prism/mod-client-scene-renderer-null/definition";
+import { pixiSceneModuleDefinition } from "@world-prism/mod-client-scene-renderer-pixi/definition";
+import { projectionModuleDefinition } from "@world-prism/mod-client-screen-projection-isometric/definition";
+import { settingsModuleDefinition } from "@world-prism/mod-client-settings-standard/definition";
+import { worldViewModuleDefinition } from "@world-prism/mod-client-world-view-standard/definition";
+import { healthPageModuleDefinition } from "@world-prism/mod-console-health-standard/definition";
+import { moduleAdminPageModuleDefinition } from "@world-prism/mod-console-module-admin-standard/definition";
+import { modelMountsPageModuleDefinition } from "@world-prism/mod-console-model-mounts-standard/definition";
+import { factionOpsPageModuleDefinition } from "@world-prism/mod-console-faction-ops-standard/definition";
+import { debugPageModuleDefinition } from "@world-prism/mod-console-debug-standard/definition";
+import { observabilityPageModuleDefinition } from "@world-prism/mod-console-observability-standard/definition";
+import { evaluationPageModuleDefinition } from "@world-prism/mod-console-evaluation-standard/definition";
 
 export { toGameContent } from "./content-adapter";
 export {
@@ -107,7 +107,7 @@ export function parseTransportConfig(config: unknown): TransportConfig {
 }
 
 export type { OperationsDriver, TransportPort };
-export type { EvaluationPort } from "@ai-npc/mod-platform-evaluation-standard";
+export type { EvaluationPort } from "@world-prism/mod-platform-evaluation-standard";
 export type {
   ProbeExecution,
   ReportBehavior,
@@ -115,7 +115,7 @@ export type {
   ReportLatency,
   ReportMemory,
   RunReport,
-} from "@ai-npc/mod-platform-evaluation-standard";
+} from "@world-prism/mod-platform-evaluation-standard";
 export type {
   IdempotentOperationsDriver,
   OperationRequest,
@@ -123,7 +123,7 @@ export type {
   RestoreOutcome,
   SnapshotInput,
   SnapshotView,
-} from "@ai-npc/mod-platform-operations-standard";
+} from "@world-prism/mod-platform-operations-standard";
 export { transportModuleDefinition, operationsModuleDefinition, createServerApp };
 export type {
   AuthorityPort,
@@ -132,8 +132,8 @@ export type {
   ServerAppInjectResponse,
   ServerAppOptions,
   ServerIdentity,
-} from "@ai-npc/mod-transport-http-ws-fastify";
-export type { ConversationReadPort, ConversationReadQuery, ConversationSourceLine } from "@ai-npc/mod-transport-http-ws-fastify";
+} from "@world-prism/mod-transport-http-ws-fastify";
+export type { ConversationReadPort, ConversationReadQuery, ConversationSourceLine } from "@world-prism/mod-transport-http-ws-fastify";
 
 /** 创建存档领域服务；宿主只经组合根引用具体实现。 */
 export function createSaveService(storage: StoragePort, host: HostServices): SqliteSaveService {

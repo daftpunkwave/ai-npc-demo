@@ -3,8 +3,8 @@
  * 依赖 zod 与 module-sdk 的 WorldTx；状态只能由资源模块写入。
  * 禁止在这里执行预留、扣减或计算展示等级。
  */
-import { DomainError, resourceAmountsSchema } from "@ai-npc/contracts";
-import type { WorldTx } from "@ai-npc/module-sdk";
+import { DomainError, resourceAmountsSchema } from "@world-prism/contracts";
+import type { WorldTx } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 export const stockpileStateSchema = z

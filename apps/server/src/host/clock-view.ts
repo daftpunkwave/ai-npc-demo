@@ -3,8 +3,8 @@
  * 依赖公共契约的时钟状态与视图类型；不读取存储、不推进时钟。
  * 禁止在这里补默认值或把内部时钟字段直接暴露给客户端。
  */
-import type { ClockView } from "@ai-npc/contracts";
-import type { ClockState } from "@ai-npc/module-sdk";
+import type { ClockView } from "@world-prism/contracts";
+import type { ClockState } from "@world-prism/module-sdk";
 
 /** 把内部时钟状态转换为对外视图；day/hour 由 worldTick 派生。 */
 export function clockView(clock: ClockState): ClockView {

@@ -3,7 +3,7 @@
  * 依赖定义文件、端口实现与状态 schema；宿主只经组合根登记定义。
  * 禁止在这里静态打开存储或初始化库存。
  */
-export const packageName = "@ai-npc/mod-game-resources-light";
+export const packageName = "@world-prism/mod-game-resources-light";
 
 export { resourcesModuleDefinition } from "./definition";
 export { createResourcesContributor } from "./contributor";

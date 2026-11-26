@@ -3,8 +3,8 @@
  * 依赖平台存储能力；具体 SQL 与 JSON 解码由动态实现负责。
  * 禁止在此读取环境变量、直接打开数据库或向玩家域暴露真值。
  */
-import { capabilityIdSchema, type ModuleDefinition } from "@ai-npc/contracts";
-import { defineModule } from "@ai-npc/module-sdk";
+import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";
+import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
 const configSchema = z

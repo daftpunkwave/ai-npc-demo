@@ -4,8 +4,8 @@
  * 禁止在这里直接写世界状态、绕过已批准对白或把秘密当作可分享证据；批准结果须经共享判定校验后才能消费。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { Json } from "@ai-npc/contracts";
-import { commandPayloadOf } from "@ai-npc/contracts";
+import type { Json } from "@world-prism/contracts";
+import { commandPayloadOf } from "@world-prism/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
@@ -17,7 +17,7 @@ import {
   type GameRuleContributor,
   type HandlerContext,
   type HandlerResult,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import { messageDeliveryKey, type MessageState } from "./state";
 import { probeAsk, probeRequestAggregate } from "./probe";
 

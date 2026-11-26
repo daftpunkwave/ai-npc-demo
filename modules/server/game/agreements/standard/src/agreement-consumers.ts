@@ -3,8 +3,8 @@
  * 依赖协议聚合、行动/通信只读端口、履约判定辅助与状态转换；不修改任务或分享事实。
  * 禁止用消费时钟判断时效、在生效前的事实上记履约，或让后一次写入覆盖前一次违约。
  */
-import type { EventEnvelope, Term } from "@ai-npc/contracts";
-import { roadStatusPolicyKey } from "@ai-npc/contracts";
+import type { EventEnvelope, Term } from "@world-prism/contracts";
+import { roadStatusPolicyKey } from "@world-prism/contracts";
 import type { AgreementState } from "./state";
 import { actorRepresentsObligor, cargoAmount, taskMatchesTerm, taskServesObligor } from "./fulfillment";
 import { fulfillTerm, markBreach } from "./agreement-lifecycle";

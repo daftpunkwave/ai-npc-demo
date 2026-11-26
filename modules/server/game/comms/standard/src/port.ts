@@ -4,7 +4,7 @@
  * 禁止绕过中继状态、向未授权主体投递、改写已冻结的投递名单或读取其他模块的私有聚合。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
-import type { MessageIntentKind, ReasonCode } from "@ai-npc/contracts";
+import type { MessageIntentKind, ReasonCode } from "@world-prism/contracts";
 import {
   deliverAt as routeDeliverAt,
   deliveries as routeDeliveries,
@@ -12,7 +12,7 @@ import {
   type DeliveryRoutingInput,
 } from "./delivery-routing";
 import type { DeliveryRoute } from "./comms-types";
-import { DomainError } from "@ai-npc/contracts";
+import { DomainError } from "@world-prism/contracts";
 import {
   factionStandingNode,
   principalsAudience,
@@ -25,7 +25,7 @@ import {
   type GameIdFactory,
   type OwnWorldTxFactory,
   type ShareQuery,
-} from "@ai-npc/module-sdk";
+} from "@world-prism/module-sdk";
 import {
   conversationMembershipStateSchema,
   conversationStateSchema,

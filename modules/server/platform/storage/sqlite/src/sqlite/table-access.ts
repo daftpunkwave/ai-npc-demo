@@ -16,7 +16,7 @@ import {
   type StorageTable,
   type StorageValue,
   type StorageWriteResult,
-} from "@ai-npc/contracts";
+} from "@world-prism/contracts";
 import { decodeRow, encodeCell, encodeFilterValue, requireColumn } from "./row-codec";
 import { BRANCH_COLUMN, quoteSqlIdentifier, requireBranchTable, type StorageCatalog, type TableInfo } from "./schema";
 import type { StatementCache } from "./statement-cache";

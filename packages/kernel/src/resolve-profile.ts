@@ -4,7 +4,7 @@
  * 禁止深合并槽内配置、按文件加载顺序决定优先级，或放过继承环与非法 variant 声明。
  */
 import { z } from "zod";
-import { DomainError, jsonValueSchema, type Json } from "@ai-npc/contracts";
+import { DomainError, jsonValueSchema, type Json } from "@world-prism/contracts";
 
 /** profile 的层级类别：基线、场景、Agent 配方与实验 variant。 */
 export const profileKindSchema = z.enum(["platform", "scene", "agent", "variant"]);

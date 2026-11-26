@@ -4,7 +4,7 @@
  * 禁止在协议版本不匹配时静默继续启动。
  */
 import { describe, expect, it } from "vitest";
-import type { ResolvedModuleSet } from "@ai-npc/contracts";
+import type { ResolvedModuleSet } from "@world-prism/contracts";
 import { startBrowserModules } from "../src/index";
 
 function resolved(protocolVersion: string): ResolvedModuleSet {

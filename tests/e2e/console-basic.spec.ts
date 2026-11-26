@@ -4,7 +4,7 @@
  * 禁止把隐藏按钮或静态占位页当作授权通过。
  */
 import { expect, test, type WebSocketRoute } from "@playwright/test";
-import { agentInspectorResponseSchema } from "@ai-npc/contracts";
+import { agentInspectorResponseSchema } from "@world-prism/contracts";
 
 test("控制台显示运行总览并在评估角色下禁用装配页", async ({ page }) => {
   await page.goto("http://127.0.0.1:3000/console/#token=e2e-console");

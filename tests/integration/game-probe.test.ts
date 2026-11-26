@@ -4,8 +4,8 @@
  * 约束与禁忌：禁止用测试内自建命令处理器替代真实注册；断言必须覆盖发行者、分支种类与事件受众三条边界。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { createSystemAuth } from "@ai-npc/authority";
-import type { Json } from "@ai-npc/contracts";
+import { createSystemAuth } from "@world-prism/authority";
+import type { Json } from "@world-prism/contracts";
 import {
   createGameHarness,
   gameCommandEnvelope,

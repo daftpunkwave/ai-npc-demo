@@ -10,7 +10,7 @@
 import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
-import type { LoadingError } from "@ai-npc/experiment";
+import type { LoadingError } from "@world-prism/experiment";
 import {
   assemblyDescriptorSchema,
   protocolVersion,
@@ -20,8 +20,8 @@ import {
   type ModuleDefinition,
   type ModuleRef,
   type ResolvedModuleSet,
-} from "@ai-npc/contracts";
-import { loadContentPack, schemaLoadingError, type ContentPack } from "@ai-npc/experiment";
+} from "@world-prism/contracts";
+import { loadContentPack, schemaLoadingError, type ContentPack } from "@world-prism/experiment";
 import {
   computeAssemblyHash,
   computeCatalogHash,
@@ -30,7 +30,7 @@ import {
   resolveRealmPlan,
   type CanonicalHasher,
   type ResolvedRealmPlan,
-} from "@ai-npc/kernel";
+} from "@world-prism/kernel";
 import { canonicalHasher } from "../host-services";
 import { clientRequiredCapabilities, serverAgentRequiredCapabilities, serverRequiredCapabilities } from "./module-catalog";
 

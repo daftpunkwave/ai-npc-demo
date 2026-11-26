@@ -3,7 +3,7 @@
  * 依赖公共契约的 ContributionRef 与 DomainError；不执行任何 UI 或模块实现。
  * 禁止让注册顺序无声明地决定排序，或静默接受重复扩展 ID、非整数顺序值。
  */
-import { DomainError, type ContributionRef } from "@ai-npc/contracts";
+import { DomainError, type ContributionRef } from "@world-prism/contracts";
 
 interface OrderedContribution<T extends ContributionRef> {
   readonly value: T;

@@ -4,7 +4,7 @@
  * 交互契约：输入已读取的行集合与必要的存储事务，返回控制台报告字段；缺失字段按契约回退，不编造值。
  * 约束与禁忌：不执行查询以外的工作、不写存储，也不为缺失的触发器或立场填默认值。
  */
-import type { Json, StorageTransaction } from "@ai-npc/contracts";
+import type { Json, StorageTransaction } from "@world-prism/contracts";
 import type {
   ReportBehavior,
   ReportCost,

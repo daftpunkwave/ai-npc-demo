@@ -1,4 +1,4 @@
-# @ai-npc/app-server
+# @world-prism/app-server
 
 服务端宿主与 HTTP/WS 传输层。
 
@@ -12,7 +12,7 @@
 - `buildPlayerProjection`：从世界/地图端口与内容索引构建严格玩家投影；缺失指标时拒绝构建，不合成数值。
 - `module-catalog` 显式登记服务端模块与浏览器描述符，宿主按解析计划启动 provider 并取得公开端口与规则贡献。
 - 宿主通过 `transport.http-ws.fastify` 的 `createApp/listen` 获取应用与监听，通过 `platform.operations.standard` 的快照/恢复/重开编排调用存档。
-- `pnpm dev:server`：先加载项目根 `.env`（进程环境中的同名变量优先），再读取 `NPC_SERVER_HOST`、`NPC_SERVER_PORT`、`NPC_CLIENT_PORT`、`NPC_DATA_DIR`、`NPC_ASSEMBLY`、`NPC_MODEL_LAYOUT`、`NPC_ROSTER` 与角色令牌；只监听 `127.0.0.1:3000`，玩家登录地址使用 `5173`，控制台登录地址使用 `3000/console/`。缺省的玩家与控制台令牌生成后写入 `<NPC_DATA_DIR>/dev-tokens.json`，只在生成当次打印带令牌的登录地址。
+- `pnpm dev:server`：先加载项目根 `.env`（进程环境中的同名变量优先），再读取 `WORLD_PRISM_SERVER_HOST`、`WORLD_PRISM_SERVER_PORT`、`WORLD_PRISM_CLIENT_PORT`、`WORLD_PRISM_DATA_DIR`、`WORLD_PRISM_ASSEMBLY`、`WORLD_PRISM_MODEL_LAYOUT`、`WORLD_PRISM_ROSTER` 与角色令牌；只监听 `127.0.0.1:3000`，玩家登录地址使用 `5173`，控制台登录地址使用 `3000/console/`。缺省的玩家与控制台令牌生成后写入 `<WORLD_PRISM_DATA_DIR>/dev-tokens.json`，只在生成当次打印带令牌的登录地址。
 - WS 玩家频道：订阅快照、命令后的顶层 delta、按 `fromStreamSeq` 补发最近 200 条增量；缺口回退快照。
 - 控制台研究与评估接口：健康总览、模块目录、仓库装配详情、模型布局只读与静态校验、世界时间线、Agent 检查器、记忆/观察、turn 证据、artifact、trace、分支事件对比、调试（队列、turn 摘要校验、调试唤醒）、run/实验列表与创建、run 启停/报告及脱敏导出；`/console/*` 静态资源由同一服务端监听提供。
 - `console.health` 每 2 秒推送快照，`console.timeline` 在世界变化后推送，二者使用独立频道序号。
@@ -27,9 +27,9 @@
 
 ## 运行标准装配
 
-首次启动前，复制 `.env.example` 为 `.env`，填写 `NPC_OPENAI_COMPAT_BASE_URL`、`NPC_OPENAI_COMPAT_MODEL` 和 `NPC_OPENAI_COMPAT_API_KEY`，然后运行 `pnpm dev`。回环 OpenAI 兼容端点的密钥可以留空。示例配置使用 DeepSeek Flash，更换兼容供应商或型号时需核对布局能力、限流和价目。参见 [模型传输](../../docs/agent/model-transport.md#3-openai-兼容适配器)、[模型池价目](../../docs/agent/model-pool.md#124-预算与费用)。
+首次启动前，复制 `.env.example` 为 `.env`，填写 `WORLD_PRISM_OPENAI_COMPAT_BASE_URL`、`WORLD_PRISM_OPENAI_COMPAT_MODEL` 和 `WORLD_PRISM_OPENAI_COMPAT_API_KEY`，然后运行 `pnpm dev`。回环 OpenAI 兼容端点的密钥可以留空。示例配置使用 DeepSeek Flash，更换兼容供应商或型号时需核对布局能力、限流和价目。参见 [模型传输](../../docs/agent/model-transport.md#3-openai-兼容适配器)、[模型池价目](../../docs/agent/model-pool.md#124-预算与费用)。
 
-将 `NPC_MODEL_LAYOUT` 设为 `claude-model-layout-v1` 并设置 `ANTHROPIC_API_KEY`，可以把决策交给 Claude Opus 5.5。对白仍由兼容端点生成。已有存档按冻结布局重启。希望新建使用不同布局的运行时，请指定独立的 `NPC_DATA_DIR`。
+将 `WORLD_PRISM_MODEL_LAYOUT` 设为 `claude-model-layout-v1` 并设置 `ANTHROPIC_API_KEY`，可以把决策交给 Claude Opus 5.5。对白仍由兼容端点生成。已有存档按冻结布局重启。希望新建使用不同布局的运行时，请指定独立的 `WORLD_PRISM_DATA_DIR`。
 
 配置好真实凭据后，可以运行 `pnpm exec vitest run --config tests/live/vitest.config.ts`，用合成数据验证两个供应商的工具往返与结构化输出。缺少各自密钥的用例会跳过。
 
@@ -38,10 +38,10 @@
 要观察岑雁的两轮模型决策，可使用测试装配启动双端。向岑雁发送含“护送”的话，夹具先查询局势，下一轮提交决定，随后由独立的对白模型调用生成回复。使用专用数据目录可以保留其他运行的冻结装配及存档。
 
 ```powershell
-$env:NPC_ASSEMBLY = "local-slg-test-v1"
-$env:NPC_MODEL_LAYOUT = "deterministic-model-layout-v1"
-$env:NPC_ROSTER = "core-3"
-$env:NPC_DATA_DIR = "./data/model-test"
+$env:WORLD_PRISM_ASSEMBLY = "local-slg-test-v1"
+$env:WORLD_PRISM_MODEL_LAYOUT = "deterministic-model-layout-v1"
+$env:WORLD_PRISM_ROSTER = "core-3"
+$env:WORLD_PRISM_DATA_DIR = "./data/model-test"
 pnpm dev
 ```
 

@@ -3,9 +3,9 @@
  * 交互契约：依赖内容索引、资源端口与世界端口委托视图；资源聚合未初始化时输出空集合。
  * 约束与禁忌：精确数量与委托余额只给仍持有委托的玩家，禁止按内容初值伪造资源事实。
  */
-import type { StockpileView } from "@ai-npc/contracts";
-import { addAmounts } from "@ai-npc/module-sdk";
-import type { GameContent, GameResourcesPort, GameWorldPort } from "@ai-npc/module-sdk";
+import type { StockpileView } from "@world-prism/contracts";
+import { addAmounts } from "@world-prism/module-sdk";
+import type { GameContent, GameResourcesPort, GameWorldPort } from "@world-prism/module-sdk";
 
 /**
  * 库存点：等级公开；精确数量与委托余额只给当前仍持有该库存点委托的玩家。
