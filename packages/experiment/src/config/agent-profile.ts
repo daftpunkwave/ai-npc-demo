@@ -70,7 +70,8 @@ const profileDocumentSchema = z
     schemaVersion: z.literal(1),
     profileId: z.string().min(1),
     kind: z.enum(["platform", "scene", "agent", "variant"]),
-    // variant 常被单独引用为 patch，可以不带父 profile；其余 kind 由加载器保证继承链完整。
+    // variant 常被单独引用为 patch，可以不带父 profile；其余 kind 必须显式给出 parent 或 null，
+    // 避免继承链起点被省略成隐式默认值。
     parent: z.string().min(1).nullable().optional(),
     budgets: budgetSchema.optional(),
     readiness: readinessSchema.optional(),
@@ -99,6 +100,14 @@ const profileDocumentSchema = z
         code: "custom",
         path: ["patch"],
         message: `只有 variant 允许声明 patch，${document.kind} 请直接写顶层字段`,
+      });
+    }
+    // 只有 variant 可以省略 parent：其余 kind 必须显式写 parent 或 null，继承链起点不靠省略表达。
+    if (document.parent === undefined && document.kind !== "variant") {
+      context.addIssue({
+        code: "custom",
+        path: ["parent"],
+        message: `只有 variant 允许省略 parent，${document.kind} 必须显式写 parent 或 null`,
       });
     }
   });
@@ -173,7 +182,7 @@ function chainDocuments(
   }
   active.add(configRef);
   const loaded = loadDocument(configRef, context);
-  // 缺省 parent 与显式 null 等价：都是继承链起点，不指向任何父 profile。
+  // variant 可省略 parent；其余 kind 经 schema 保证字段存在，缺省与 null 都表示继承链起点。
   const parentRef = loaded.value.parent ?? null;
   const parent = parentRef === null
     ? null

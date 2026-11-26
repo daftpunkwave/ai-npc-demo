@@ -257,6 +257,33 @@ describe("catalog 预检", () => {
     expect(notPlainReport.violations.some((violation) => violation.code === "assembly-unreadable")).toBe(true);
   });
 
+  it("不可用装配文件与其他装配问题一并累积", () => {
+    const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
+    const root = fixtureRoot({ "kept.yaml": assembly({ assemblyId: "assembly-kept" }) });
+    // 以 .yaml 结尾的目录不可用，但与 schema 失败应同时出现在同一份报告里，
+    // 单文件失败不能中断其余文件的诊断。
+    mkdirSync(join(root, "config/assemblies/not-a-file.yaml"));
+    writeFileSync(
+      join(root, "config/assemblies/bad-schema.yaml"),
+      [
+        "schemaVersion: 2",
+        "assemblyId: assembly-bad-schema",
+        "configs: {}",
+        "realms:",
+        "  server: { bindings: [] }",
+        "  client: { bindings: [] }",
+        "  console: { bindings: [] }",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const report = checkCatalog({ root, definitions: [clock], requiredCapabilities: [] });
+    expect(report.violations.some((violation) => violation.code === "assembly-unreadable")).toBe(true);
+    expect(report.violations.some((violation) => violation.code === "assembly-schema")).toBe(true);
+    // 可用的装配仍然被计入结果，不因同目录的其他失败项而丢失。
+    expect(report.assemblies).toContain("assembly-kept");
+  });
+
   it("CLI 在失败时非零退出并逐项打印原因", () => {
     const clock = fakeModule({ id: "game.clock.controlled", provides: ["game.clock"] });
     const root = fixtureRoot({

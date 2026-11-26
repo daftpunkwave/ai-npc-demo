@@ -384,6 +384,28 @@ describe("配置加载", () => {
     }
   });
 
+  it("非 variant profile 省略 parent 时被拒绝", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-parent-"));
+    try {
+      // 只有 variant 可以省略 parent；其余 kind 必须显式写 parent 或 null，
+      // 否则继承链起点会变成隐式默认值。
+      for (const kind of ["platform", "scene", "agent"]) {
+        const profileId = `${kind}-no-parent`;
+        writeFileSync(
+          join(tempDir, `${profileId}.yaml`),
+          ["schemaVersion: 1", `profileId: ${profileId}`, `kind: ${kind}`, ""].join("\n"),
+          "utf8",
+        );
+        const error = captureLoadingError(() => loadAgentProfile(profileId, { configDir: tempDir }));
+        expect(error.code, kind).toBe("schema");
+        expect(error.path, kind).toBe("parent");
+        expect(error.message, kind).toContain("variant");
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("variant 省略 parent 时按继承链起点加载", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "ai-npc-profile-variant-"));
     try {
