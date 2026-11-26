@@ -6,6 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { DomainError, jsonValueSchema, type ModelTransportPort, type ModuleCreateInput } from "@ai-npc/contracts";
 import { createStatelessModule, modelBaseUrl, modelHttpFailure, modelTransportFailure, parseModelEndpoint } from "@ai-npc/module-sdk";
+import { createAnthropicClientCache } from "./client-cache";
 import { anthropicTransportId } from "./definition";
 import { anthropicParameters, messagesRequest } from "./messages-request";
 import { messagesResponse } from "./messages-response";
@@ -13,6 +14,14 @@ import { messagesResponse } from "./messages-response";
 const defaultBaseUrl = "https://api.anthropic.com";
 const supportedModel = "claude-opus-5-5";
 const serverFallbackBeta = "server-side-fallback-2026-07-01";
+
+/**
+ * 客户端缓存条目上限。
+ * 当前 ModelRoute 在 bindRun 时冻结，端点与凭据在一次运行内不变化，缓存通常只命中一个条目；
+ * 上限是为将来允许路由热更新时兜底——缓存必须与 StreamHub/SessionRegistry 一样有界，
+ * 否则每换一个端点就永久多留一个 SDK 客户端与其连接池。
+ */
+const maxCachedClients = 16;
 
 function resolveEndpoint(endpoint: string | null, hasCredential: boolean): URL {
   const url = parseModelEndpoint(endpoint ?? defaultBaseUrl);
@@ -31,24 +40,23 @@ function classify(error: unknown) {
 }
 
 export function createAnthropicTransport(input: ModuleCreateInput, fetcher = globalThis.fetch) {
-  const clients = new Map<string, { readonly credential: string; readonly client: Anthropic }>();
+  // 键同时包含端点与凭据：任一项变化都必须重建客户端。只按端点做键会让轮换后的凭据复用
+  // 旧客户端（携带旧 apiKey），而只按凭据做键会让同一凭据下的多端点互相覆盖。
+  const clients = createAnthropicClientCache(maxCachedClients, (baseURL, credential) => new Anthropic({
+    apiKey: credential, baseURL, webhookKey: null, maxRetries: 0, logLevel: "off", openTelemetry: false,
+    // authorization 显式置 null：SDK 会据此删除该头，凭据只经 x-api-key 传递，
+    // 避免默认头把密钥复制到第二个请求头，也避免外部 authorization 被继承。
+    defaultHeaders: { authorization: null, "x-api-key": credential },
+    fetch: (url, init) => {
+      const sdkHeaders = new Headers(init?.headers);
+      const headers = new Headers({ "Content-Type": "application/json", "anthropic-version": "2026-10-21", "x-api-key": credential });
+      if (sdkHeaders.get("anthropic-beta") === serverFallbackBeta) headers.set("anthropic-beta", serverFallbackBeta);
+      return fetcher(url, { ...init, headers, redirect: "error" });
+    },
+  }));
 
   function clientFor(endpoint: URL, credential: string): Anthropic {
-    const baseURL = modelBaseUrl(endpoint);
-    const existing = clients.get(baseURL);
-    if (existing?.credential === credential) return existing.client;
-    const client = new Anthropic({
-      apiKey: credential, baseURL, webhookKey: null, maxRetries: 0, logLevel: "off", openTelemetry: false,
-      defaultHeaders: { authorization: null, "x-api-key": credential },
-      fetch: (url, init) => {
-        const sdkHeaders = new Headers(init?.headers);
-        const headers = new Headers({ "Content-Type": "application/json", "anthropic-version": "2026-10-21", "x-api-key": credential });
-        if (sdkHeaders.get("anthropic-beta") === serverFallbackBeta) headers.set("anthropic-beta", serverFallbackBeta);
-        return fetcher(url, { ...init, headers, redirect: "error" });
-      },
-    });
-    clients.set(baseURL, { credential, client });
-    return client;
+    return clients.clientFor(modelBaseUrl(endpoint), credential);
   }
 
   const port: ModelTransportPort = {

@@ -16,6 +16,8 @@ export const fixedServerHost = "127.0.0.1";
 export const fixedServerPort = 3000;
 /** 双端拓扑固定的客户端端口。 */
 export const fixedClientPort = 5173;
+/** 控制台构建产物相对仓库根的固定位置，与 apps/console/vite.config.ts 的 outDir 指向同一目录。 */
+export const consoleStaticDirRelativeToRoot = "apps/server/console-static";
 /** 自动生成令牌的持久化文件名，位于数据目录下。 */
 export const credentialsFileName = "dev-tokens.json";
 
@@ -52,6 +54,12 @@ export interface DeploymentConfig {
   readonly clientPort: number;
   /** 已按项目根解析为绝对路径的数据目录。 */
   readonly dataDir: string;
+  /**
+   * 已按项目根解析为绝对路径的控制台静态产物目录。
+   * 默认取仓库内的构建输出位置，不按进程工作目录派生：部署参数只认环境变量与项目根，
+   * 从仓库根以外的工作目录启动服务端时行为必须一致。
+   */
+  readonly consoleStaticDir: string;
   readonly assemblyRef: string;
   readonly modelLayoutRef: string;
   readonly rosterRef: string;
@@ -169,6 +177,11 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
   const clientPort = readFixedPort(input.env, "NPC_CLIENT_PORT", fixedClientPort);
   const dataDirValue = readText(input.env, "NPC_DATA_DIR") ?? defaultDataDir;
   const dataDir = isAbsolute(dataDirValue) ? resolve(dataDirValue) : resolve(input.projectRoot, dataDirValue);
+  // 控制台静态目录与数据目录同一条规则：相对量一律按项目根解析，绝不按 process.cwd()。
+  const consoleStaticDirValue = readText(input.env, "NPC_CONSOLE_STATIC_DIR") ?? consoleStaticDirRelativeToRoot;
+  const consoleStaticDir = isAbsolute(consoleStaticDirValue)
+    ? resolve(consoleStaticDirValue)
+    : resolve(input.projectRoot, consoleStaticDirValue);
   const assemblyRef = readText(input.env, "NPC_ASSEMBLY") ?? defaultAssemblyRef;
   const configuredTokens: Partial<Record<TokenRole, string>> = {};
   for (const role of tokenRoles) {
@@ -187,6 +200,7 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     serverPort,
     clientPort,
     dataDir,
+    consoleStaticDir,
     assemblyRef,
     modelLayoutRef: readText(input.env, "NPC_MODEL_LAYOUT") ??
       (assemblyRef === "local-slg-test-v1" ? "deterministic-model-layout-v1" : defaultModelLayoutRef),

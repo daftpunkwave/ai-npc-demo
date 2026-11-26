@@ -54,6 +54,7 @@ export async function startServer(options: StartServerOptions): Promise<StartupH
   try {
     running = await launchHost({
       dataDir: config.dataDir,
+      consoleStaticDir: config.consoleStaticDir,
       assemblyRef: config.assemblyRef,
       rosterRef: config.rosterRef,
       modelLayoutRef: config.modelLayoutRef,

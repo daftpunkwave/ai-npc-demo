@@ -65,10 +65,17 @@ export function parseJsonText(value: unknown): Json {
   }
 }
 
-/** 把存储的记忆行转换为对外记录；scope 由调用方从世界与分支上下文补齐。 */
+/**
+ * 把存储的记忆行转换为对外记录；scope 由调用方从世界与分支上下文补齐。
+ *
+ * revision 取该行的 row_version，而不是查询用的视图 revision：memory_records 是追加式行版本表，
+ * 同一 memoryId 的每次改写都新增一行并让 row_version 加 1，冻结视图的 revision 则是整个 Agent
+ * 记忆水位。两者语义不同，对外契约要的是「这条记录的第几次改写」，因此必须来自行版本；
+ * 否则同一记录在不同视图下会显示成不同的「版本」，而真正被改写过的记录反而看起来没变。
+ */
 export function decodeMemoryRecord(
   row: Readonly<Record<string, unknown>>,
-  input: { readonly worldId: string; readonly branchId: string; readonly agentId: string; readonly revision: number },
+  input: { readonly worldId: string; readonly branchId: string; readonly agentId: string },
 ): MemoryRecord {
   return memoryRecordSchema.parse({
     memoryId: stringColumn(row, "memory_id"),
@@ -78,14 +85,13 @@ export function decodeMemoryRecord(
       agentId: input.agentId,
     },
     sourceObservationIds: row["source_observation_ids_json"],
-    contentRefs: [],
     kind: stringColumn(row, "kind"),
     status: stringColumn(row, "status"),
     epistemic: stringColumn(row, "epistemic"),
     releasePolicyId: stringColumn(row, "release_policy_id"),
     validFromTick: numberColumn(row, "valid_from_tick"),
     validUntilTick: row["valid_until_tick"] === null ? null : numberColumn(row, "valid_until_tick"),
-    revision: input.revision,
+    revision: numberColumn(row, "row_version"),
     content: jsonColumn(row["content_json"]),
   });
 }
