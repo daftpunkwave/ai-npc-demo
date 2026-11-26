@@ -50,14 +50,21 @@ export interface HostReadPorts {
  */
 export function dialogueWorldSeqSql(dialogueCount: number): string {
   const placeholders = Array.from({ length: dialogueCount }, () => "?").join(", ");
-  return `SELECT json_extract(payload_json, '$.dialogueId') AS dialogue_id,
+  return `SELECT ${dialogueIdExpression} AS dialogue_id,
                  MAX(world_seq) AS world_seq
             FROM domain_events
            WHERE branch_id = ?
              AND type = 'DialogueSubmitted'
-             AND json_extract(payload_json, '$.dialogueId') IN (${placeholders})
+             AND ${dialogueIdExpression} IN (${placeholders})
            GROUP BY dialogue_id`;
 }
+
+/**
+ * 从事件载荷取出对白 ID 的表达式，与迁移 0019 的索引列逐字一致。
+ * 先做 json_valid 守卫再取值：表达式索引对每一行求值，历史上的非法 JSON 文本
+ * 会让裸 json_extract 在写入与建索引时失败；JSON 合法时守卫不改变取值的类型。
+ */
+const dialogueIdExpression = "CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.dialogueId') END";
 
 /** 构造宿主只读端口；每个方法自行开启只读事务绑定已授权的模块端口。 */
 export function createReadPorts(input: ReadPortsInput): HostReadPorts {

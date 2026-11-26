@@ -76,6 +76,23 @@ describe("对白提交事件的查询计划", () => {
     expect(plan).not.toContain("USE TEMP B-TREE");
   });
 
+  it("载荷不是合法 JSON 时仍能写入，且不会让索引求值失败", async () => {
+    const storage = await openStorage();
+    // 表达式索引对每一行求值；没有 json_valid 守卫时这条写入会因为索引求值抛错。
+    storage.transact((tx) => {
+      putEvent(tx, 1, "DialogueSubmitted", { dialogueId: "dlg-000000000001" });
+      tx.run("UPDATE domain_events SET payload_json = ? WHERE branch_id = ? AND world_seq = 1", [
+        "{incomplete",
+        branchId,
+      ]);
+      putEvent(tx, 2, "DialogueSubmitted", { dialogueId: "dlg-000000000002" });
+    });
+    const rows = storage.transact((tx) => tx.all(dialogueWorldSeqSql(1), [branchId, "dlg-000000000002"]));
+    expect(rows.map((row) => [String(row["dialogue_id"]), Number(row["world_seq"])])).toEqual([
+      ["dlg-000000000002", 2],
+    ]);
+  });
+
   it("同一分支的对白事件与其他事件并存时只返回命中对白的最新序号", async () => {
     const storage = await openStorage();
     storage.transact((tx) => {
