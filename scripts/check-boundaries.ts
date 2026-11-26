@@ -6,6 +6,12 @@
 import { runCliIfDirectExecution } from "./boundary/cli";
 
 export { checkBoundaries, checkSourceFile } from "./boundary/checker";
+export {
+  checkSourceFileLengths,
+  countSourceLines,
+  lengthExemptions,
+  SOURCE_FILE_LINE_LIMIT,
+} from "./boundary/file-length";
 export { checkRepository, scanRepository } from "./boundary/repository";
 export { formatViolation } from "./boundary/cli";
 export type {
