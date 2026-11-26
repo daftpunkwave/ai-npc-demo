@@ -86,12 +86,17 @@ export function loadAssemblies(root: string = process.cwd()): readonly AssemblyD
 /**
  * 按 assemblyId 在装配目录中读取唯一装配。
  * 目录内每个 YAML 都必须通过装配 schema；损坏文件直接报告文件名，不静默跳过。
+ * 已读到整份目录的调用方传入 `assemblies` 复用结果，避免同一次启动重复扫描与解析。
  */
-export function loadAssembly(ref: string, root: string = process.cwd()): AssemblyDescriptor {
+export function loadAssembly(
+  ref: string,
+  root: string = process.cwd(),
+  assemblies?: readonly AssemblyDescriptor[],
+): AssemblyDescriptor {
   if (ref.trim().length === 0 || ref.includes("/") || ref.includes("\\")) {
     throw new Error(`未知 server 装配: ${ref}`);
   }
-  const matches = loadAssemblies(root).filter((assembly) => assembly.assemblyId === ref);
+  const matches = (assemblies ?? loadAssemblies(root)).filter((assembly) => assembly.assemblyId === ref);
   if (matches.length === 0) {
     throw new Error(`未知 server 装配: ${ref}`);
   }
@@ -106,6 +111,16 @@ export interface ResolveServerAssemblyOptions {
   readonly hash?: CanonicalHasher;
   readonly configOverrides?: Readonly<Record<string, Json>>;
   readonly content?: ContentPack;
+}
+
+/**
+ * 装配是否把内容包的工具描述注入 `agent.tools` 配置。
+ * 预检只对这类装配读取内容包；其余装配（含测试用的自定义目录）不需要内容包就能完成解析。
+ */
+export function needsContentPack(assembly: AssemblyDescriptor): boolean {
+  return assembly.realms.server.bindings.some(
+    (binding) => binding.capability === "agent.tools" && binding.moduleId === "agent.tools.game-tools",
+  );
 }
 
 /** 服务端启动与目录检查使用同一组内容注入和条件能力要求。 */

@@ -16,6 +16,7 @@ import {
   type StoragePort,
 } from "@ai-npc/contracts";
 import {
+  createConfigDocumentCache,
   loadContentPack,
   loadRoster,
   loadRunSpec,
@@ -142,12 +143,14 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   const definitions: readonly ModuleDefinition[] = options.moduleDefinitions ?? serverModuleDefinitions;
   const packId = options.packId ?? defaultPackId;
   const configDir = resolve(options.configRoot ?? "config");
-  const loadContext: ConfigLoadContext = { configDir, env: process.env };
+  const loadContext: ConfigLoadContext = { configDir, env: process.env, cache: createConfigDocumentCache() };
+  // 装配目录与当前装配在本函数内被反复使用：整份目录只读一次，当前装配复用同一份解析结果。
+  const assemblies = loadAssemblies();
   const content = loadContentPack(options.contentRoot ?? resolve(process.cwd(), "content"), packId);
   const gameContent = toGameContent(content);
   const contentVersion = content.pack.contentVersion;
   const requestedAssembly = options.assembly === undefined
-    ? loadAssembly(options.assemblyRef ?? defaultAssemblyRef)
+    ? loadAssembly(options.assemblyRef ?? defaultAssemblyRef, process.cwd(), assemblies)
     : assemblyDescriptorSchema.parse(options.assembly);
   const transportConfig = parseTransportConfig({
     host: options.transportHost ?? "127.0.0.1",
@@ -308,7 +311,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     if (await host.hash(manifestValue as Json) !== storedHash) {
       throw new Error("冻结 manifest 内容与 manifest_hash 不一致：运行记录被修改");
     }
-    const currentAssembly = loadAssembly(frozenSpec.moduleAssemblyRef);
+    const currentAssembly = loadAssembly(frozenSpec.moduleAssemblyRef, process.cwd(), assemblies);
     const compatible = await resolveFrozenAssembly(currentAssembly, definitions, facts);
     const { assembly } = compatible;
     const roster = loadRoster(frozenSpec.rosterRef, loadContext);
@@ -435,7 +438,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     }
     const catalogHash = await computeCatalogHash(moduleRegistry.snapshot(), canonicalHasher);
     const adminAssemblies = [];
-    for (const assembly of loadAssemblies()) {
+    for (const assembly of assemblies) {
       const server = await resolveServerAssembly(assembly, serverModuleDefinitions, { content });
       const browser = await resolveSessionAssemblies(assembly, allModuleDefinitions);
       adminAssemblies.push({

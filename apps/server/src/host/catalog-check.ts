@@ -19,6 +19,7 @@ import {
   type Realm,
 } from "@ai-npc/contracts";
 import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@ai-npc/kernel";
+import { loadContentPack, type ContentPack } from "@ai-npc/experiment";
 import { REALM_NAMESPACES, validateModuleDefinition } from "@ai-npc/module-sdk";
 import {
   allModuleDefinitions,
@@ -26,7 +27,7 @@ import {
   serverRequiredCapabilities,
 } from "./module-catalog";
 import { checkModuleCapabilityUsage } from "./module-capability-usage";
-import { serverAssemblyInputs } from "./assembly";
+import { serverAssemblyInputs, needsContentPack } from "./assembly";
 
 /** 一条装配预检失败：文件、稳定代码与可直接定位的原因。 */
 export interface CatalogViolation {
@@ -56,6 +57,9 @@ export interface CatalogCliOptions extends CatalogCheckOptions {
 }
 
 const realms: readonly Realm[] = ["server", "client", "console"];
+
+/** 预检读取的内容包：与宿主启动使用同一固定包，工具描述注入据此与运行时一致。 */
+const defaultPackId = "earth-2964-v1";
 
 function leadingNamespace(value: string): string {
   const separator = value.indexOf(".");
@@ -218,6 +222,11 @@ function checkTopology(
   }
 }
 
+/** 内容包是按需加载的：只有把工具描述注入 agent.tools 的装配才需要它。 */
+interface ContentPackSource {
+  readonly pack: () => ContentPack;
+}
+
 /** 校验一个已通过 schema 的装配：三个 realm 各自解析，失败原因带文件与 realm。 */
 function checkAssembly(
   root: string,
@@ -226,6 +235,7 @@ function checkAssembly(
   definitions: readonly ModuleDefinition[],
   definitionsById: ReadonlyMap<string, ModuleDefinition>,
   requiredCapabilities: Readonly<Record<Realm, readonly CapabilityRef[]>>,
+  content: ContentPackSource,
   violations: CatalogViolation[],
 ): void {
   const registry = createModuleRegistry();
@@ -245,7 +255,13 @@ function checkAssembly(
         assembly,
         realm,
         catalog: snapshot,
-        ...(realm === "server" ? serverAssemblyInputs(assembly, requiredCapabilities.server, {}, root)
+        ...(realm === "server"
+          ? serverAssemblyInputs(
+            assembly,
+            requiredCapabilities.server,
+            needsContentPack(assembly) ? { content: content.pack() } : {},
+            root,
+          )
           : { requiredCapabilities: requiredCapabilities[realm] }),
       });
       checkTopology(file, plan, violations);
@@ -309,6 +325,15 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
 
   const assemblies: string[] = [];
   const seenAssemblyIds = new Map<string, string>();
+  // 内容包只影响 server 装配的工具描述注入：整轮预检加载一次并复用，逐装配重复读取会按装配数量倍数放大成本。
+  // 没有装配需要它时（如只校验模块目录的自定义夹具）保持不读盘。
+  let loadedContent: ContentPack | null = null;
+  const content: ContentPackSource = {
+    pack: () => {
+      loadedContent ??= loadContentPack(resolve(root, "content"), defaultPackId);
+      return loadedContent;
+    },
+  };
   for (const fileName of fileNames) {
     const file = join(directory, fileName);
     let text: string;
@@ -353,6 +378,7 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
       [...definitionsById.values()],
       definitionsById,
       requiredCapabilities,
+      content,
       violations,
     );
   }
