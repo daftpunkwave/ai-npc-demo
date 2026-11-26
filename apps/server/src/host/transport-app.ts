@@ -5,11 +5,13 @@
  */
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Authority } from "@ai-npc/authority";
 import { listRuleFailures, type RuleFailureRecord } from "@ai-npc/authority";
 import type { AuthContext, ClientContentView, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@ai-npc/contracts";
 import type { GameContent } from "@ai-npc/module-sdk";
+import { consoleStaticDirRelativeToRoot } from "../config";
 import { clockView } from "./clock-view";
 import { logInternalError } from "./internal-error-log";
 import type { HostLifecycle } from "./lifecycle";
@@ -77,6 +79,14 @@ function recentFailures(storage: StoragePort, branchId: string) {
 
 /** 预算摘要条目上限：按用途聚合后取用量最大的若干条，避免列表随用途数无界增长。 */
 const budgetSummaryLimit = 20;
+
+/**
+ * 控制台静态目录的宿主级缺省值：与导入该模块的源文件位置绑定，而不是进程工作目录。
+ * 嵌入式宿主（测试、脚本）没有经过部署配置时仍指向仓库内同一个构建输出位置。
+ */
+function consoleStaticDirFromProjectRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../..", consoleStaticDirRelativeToRoot);
+}
 
 /**
  * 在一次事务内读取健康摘要需要的队列计数与预算聚合。
@@ -187,8 +197,10 @@ export function serverIdentities(options: HostOptions, active: LiveRunState): re
 /** 创建传输应用；调用方负责之后监听端口并在关闭时释放。 */
 export async function createTransportApp(input: TransportAppInput): Promise<ServerApp> {
   const { host, options, runtime, active, authority, reads, operations, lifecycle, gameContent, evaluation, writes } = input;
+  // 静态目录必须由部署参数给出：调用方缺省时按项目根下的固定构建输出位置解析，
+  // 不读 process.cwd()，否则从仓库根以外的工作目录启动会挂载到一个空的 console-static。
   const consoleStaticDir = resolve(
-    input.consoleStaticDir ?? resolve(process.cwd(), "apps/server/console-static"),
+    input.consoleStaticDir ?? options.consoleStaticDir ?? consoleStaticDirFromProjectRoot(),
   );
   try {
     // 开发宿主与控制台构建并行启动：目录先存在，静态路由按请求路径读盘，构建完成后无需重启服务端。
