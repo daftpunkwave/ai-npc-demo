@@ -66,7 +66,12 @@
 - `.gitattributes` 将 `.agents/skills/**` 标记为 `linguist-vendored`，其中示例代码不计入 GitHub 语言统计。
 - `.codacy.yml` 排除 `.agents/**`，本目录不参与 Codacy 静态分析。
 - skill 流程与 `AGENTS.md` 冲突时以 `AGENTS.md` 为准。
-- skill 默认向 `docs/` 写文件（例如 `dev-workflow` 的阶段产物、`project-docs` 的文档集、`gamedev` 内 `game-docs` 的设计文档），在本项目改为写入 `docs.local/`。该目录已被 `.gitignore` 忽略，用于存放本地审阅、审计与过程性文档，不进提交；只有明确需要随仓库交付的文档才写入 `docs/`。
+- 会产出文档的 skill 默认写入 `docs.local/`，`docs/` 只放明确需要随仓库交付的文档：
+  - `dev-workflow`：阶段产物写入 `docs.local/<feature>/01-需求理解.md` 等，归档到 `docs.local/<feature>/archive/`。
+  - `project-docs`：9 篇文档集与 `.project-map.md` 写入 `docs.local/`。
+  - `gamedev` 内 `game-docs`：新建 GDD 时写入 `docs.local/`；项目已有 GDD 或其他既定文档目录时，沿用它原来的位置与命名。
+  - `docs.local/` 已被 `.gitignore` 的 `*.local/` 规则整体忽略，用于本地审阅、审计与过程性文档，不进提交。
+  - 这三处是对上游 skill 的就地改写；上游更新覆盖时需重新套用，否则会退回写入 `docs/`。
 - 上游更新时按目录覆盖，不要就地改写内容，否则下次同步难以比对。
   - `gamedev` 来自 `gamedev-skills/awesome-gamedev-agent-skills`：覆盖前需拍平为 `<分类>/<技能名>/SKILL.md`（去掉上游多出的 `skills/` 一层），把 `SKILL.md` 与 `references/` 里的 `skills/<分类>/` 改写为 `<分类>/`，剔除上游仓库根目录的 `LICENSE`、`NOTICE`、`CHANGELOG.md`、`CONTRIBUTING.md`、`.claude-plugin/` 与分类级 `README.md`，并保留 `ebitengine-game/assets/starter/licenses/Go-Fonts.txt`（模板内第三方字体授权）。
   - 其余技能来自 `anbeime/skill`：多数是 `<目录>/<同名子目录>/SKILL.md` 的嵌套结构，覆盖前需拍平为 `<目录>/SKILL.md`，并剔除 `__MACOSX`、`.DS_Store`、`.github` 与上游自带的协议文件；`diagram-design` 的内层多一层 `skills/`。

@@ -18,7 +18,7 @@ Run only when the user asked for game design docs, or when the project already h
 ## Workflow
 
 1. **Look before writing.**
-   - Find the existing docs: `GDD.md`, `*design*`, `*spec*`, `docs/`, `design/`, a wiki folder, `specs/` (GitHub spec-kit) or `.kiro/specs/` (Kiro). Keep their folder, file names, language and format.
+   - Find the existing docs: `GDD.md`, `*design*`, `*spec*`, `docs.local/`, `design/`, a wiki folder, `specs/` (GitHub spec-kit) or `.kiro/specs/` (Kiro). Keep their folder, file names, language and format.
    - Read the conversation (a planning chat is your main source) and, when code exists, the repo and `git diff`/`git log`. Never ask what the repo or the chat already answers.
    - Sort the project into one of three cases. This decides everything below:
      - **No GDD.** Only a request for a GDD starts one.
@@ -67,7 +67,7 @@ Write more only when the user asks for it. A plan for code that doesn't exist ye
 - **A plain GDD got restructured.** The user asked to "update the dash in our GDD" and the agent added a feature index or folders, often to clear checker messages. Edit the GDD where it is; the checker's `gdd-no-index` is only a note.
 - **"Record this decision" started a doc set.** With no GDD, add the decision where the project keeps notes; mode F says where.
 - **Asking for numbers that are already in the code.** Playtest tuning often lands in code before the docs. In modes C and D, read the diff first, and set `changed — code pending` only when the code really lacks the change.
-- **The agent stalls on questions.** Three rounds of interview, or a "where should the docs go?" stop. Use `docs/` (or the existing folder), name it in the handoff, and ask one round at most.
+- **The agent stalls on questions.** Three rounds of interview, or a "where should the docs go?" stop. Use `docs.local/` (or the existing folder), name it in the handoff, and ask one round at most.
 - **A ticked criterion the test doesn't prove.** The test's name was trusted, not its assertions. Read the test body and tick only the proven part ([proof annotations](references/doc-rules.md#proof-annotations)).
 - **Two docs disagree on a number.** It was copied. Each fact has one home; everything else links to it.
 - **Feature docs beside a spec tool.** If the project uses spec-kit (`specs/NNN-name/spec.md`) or Kiro specs (`.kiro/specs/<name>/`), those are the feature docs. Link them from the GDD index instead of writing `features/` copies.
