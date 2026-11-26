@@ -19,7 +19,8 @@ import {
   type HandlerResult,
 } from "@world-prism/module-sdk";
 import { messageDeliveryKey, type MessageState } from "./state";
-import { probeAsk, probeRequestAggregate } from "./probe";
+import { probeAsk } from "./probe";
+import { commsOwnedAggregates } from "./definition";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -280,16 +281,7 @@ function recordRumor(context: CommsContext, payload: Json): void {
 export function createCommsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.comms,
-    ownsAggregates: [
-      "conversation",
-      "conversation-line",
-      "conversation-membership",
-      "knowledge-grant",
-      "share",
-      "message",
-      "message-delivery",
-      probeRequestAggregate,
-    ],
+    ownsAggregates: commsOwnedAggregates,
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },
       { type: "broadcast.say", handler: (context, payload) => broadcastSay(context as CommsContext, payload) },

@@ -48,3 +48,19 @@ export function factionStandingNode(
 export function holdsOperationalSeat(content: GameContent, principalId: string): boolean {
   return content.factions.get(principalId)?.playerSeat === content.rules.watergateSeatId;
 }
+
+/**
+ * 判断主体是否掌握公社水闸政策：持有公社席的派系主体直接命中（AI 党魁以派系 ID 行动）；
+ * 玩家按已开局 campaign 的 playerId 与 factionId 裁决，campaign 由调用方从世界端口读取。
+ * 世界的 `policy.set` 与协议的水闸条款校验共用这一份判定，避免两处口径分叉。
+ */
+export function controlsWatergate(
+  content: GameContent,
+  campaign: { readonly playerId: string; readonly factionId: string } | null,
+  principalId: string,
+): boolean {
+  if (holdsOperationalSeat(content, principalId)) {
+    return true;
+  }
+  return campaign !== null && campaign.playerId === principalId && holdsOperationalSeat(content, campaign.factionId);
+}

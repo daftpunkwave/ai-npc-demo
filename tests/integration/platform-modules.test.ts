@@ -71,16 +71,17 @@ describe("platform 模块", () => {
         calls.push(`restore:${input.snapshotId}:${input.runId ?? "default"}`);
         return { branchId: "br-1" };
       },
-      reset: () => {
-        calls.push("reset");
+      reset: (createdBy) => {
+        calls.push(`reset:${createdBy}`);
         return { branchId: "br-2", clock };
       },
     };
     const service = new OperationsService(driver);
     expect(service.snapshot("manual", "operator-1")).toMatchObject({ snapshotId: "snap-1" });
     expect(calls).toEqual(["pause:3", "snapshot:manual"]);
-    expect(service.reset()).toMatchObject({ branchId: "br-2" });
-    expect(calls).toContain("reset");
+    // 非幂等重开同样记录调用方主体，不使用固定的操作者 ID。
+    expect(service.reset("operator-7")).toMatchObject({ branchId: "br-2" });
+    expect(calls).toContain("reset:operator-7");
     expect(service.restore("snap-1", "operator-1", "run-9")).toMatchObject({ branchId: "br-1" });
     expect(calls).toContain("restore:snap-1:run-9");
   });

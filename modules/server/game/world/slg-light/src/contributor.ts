@@ -4,12 +4,12 @@
  * 禁止在这里直接写地图/库存聚合，或在命令处理器中读取进程时间与随机源。
  */
 import type { Json } from "@world-prism/contracts";
-import { commandPayloadOf, roadIdFromPolicyKey, roadStatusSchema, watergateAllocationSchema } from "@world-prism/contracts";
+import { commandPayloadOf, watergateAllocationSchema } from "@world-prism/contracts";
 import {
+  controlsWatergate,
   effectivePrincipalId,
   factionAudience,
   gameModuleIds,
-  holdsOperationalSeat,
   principalsAudience,
   requireGameContent,
   type GameContent,
@@ -21,7 +21,6 @@ import {
 import { runDailySettlement } from "./settlement";
 import { campaignAggregateId, metersAggregateId } from "./port";
 import {
-  campaignStateSchema,
   characterStateSchema,
   readWorldState,
   teamStateSchema,
@@ -30,6 +29,7 @@ import {
   type GroupState,
   type TeamState,
 } from "./state";
+import { worldOwnedAggregates } from "./definition";
 
 type WorldContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -146,30 +146,14 @@ function initializeCampaign(context: WorldContext, factionId: string): HandlerRe
   return { kind: "accepted", result: { campaignId } };
 }
 
-/**
- * 判断当前主体是否掌握公社水闸政策：持有公社席的派系主体直接命中（AI 公社党魁以派系 ID 行动），
- * 玩家则按已开局 campaign 的 playerId 与 factionId 裁决，不信任命令自报身份。
- * 公社席由内容规则参数声明，规则层不写具体派系 ID。
- */
-function controlsWatergate(context: WorldContext, principalId: string): boolean {
-  const content = requireGameContent(context.content);
-  if (holdsOperationalSeat(content, principalId)) {
-    return true;
-  }
-  const record = readWorldState(context.tx, "campaign", campaignAggregateId, campaignStateSchema);
-  return (
-    record !== null &&
-    record.state.playerId === context.auth.principalId &&
-    holdsOperationalSeat(content, record.state.factionId)
-  );
-}
-
 function policySet(context: WorldContext, payload: Json): HandlerResult {
   const input = commandPayloadOf("policy.set", payload);
   const principalId = effectivePrincipalId(context.auth);
   const ports = asPorts(context);
   if (input.key === "watergate.allocation") {
-    if (!controlsWatergate(context, principalId)) {
+    // 主体取自认证上下文，不信任命令自报身份；判定与协议水闸条款共用同一实现。
+    const content = requireGameContent(context.content);
+    if (!controlsWatergate(content, ports["game.world"].campaign(), principalId)) {
       return { kind: "rejected", reasonCode: "no-authority", safeMessage: "只有占公社席的党魁可以修改水闸分配" };
     }
     const allocation = watergateAllocationSchema.safeParse(input.value);
@@ -183,21 +167,12 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
     }
     return { kind: "accepted", result: { oldValue, newValue: allocation.data } };
   }
-  const roadId = roadIdFromPolicyKey(input.key);
-  if (roadId !== null) {
-    if (ports["game.map"].road(roadId) === null) {
-      return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "道路不存在" };
-    }
-    const status = roadStatusSchema.safeParse(input.value);
-    if (!status.success) {
-      return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未知的道路状态" };
-    }
-    const oldValue = ports["game.map"].roadStatus(roadId) ?? "open";
-    const result = ports["game.map"].setRoadStatus(roadId, status.data, principalId);
-    if (!result.ok) {
-      return { kind: "rejected", reasonCode: result.reasonCode, safeMessage: "道路状态未改变" };
-    }
-    return { kind: "accepted", result: { oldValue, newValue: status.data } };
+  // 地图拥有的政策键（如道路状态）由地图端口自行解析、校验与执行，world 不了解其键格式与取值域。
+  const mapPolicy = ports["game.map"].applyPolicy(input.key, input.value, principalId);
+  if (mapPolicy !== null) {
+    return mapPolicy.ok
+      ? { kind: "accepted", result: { oldValue: mapPolicy.oldValue, newValue: mapPolicy.newValue } }
+      : { kind: "rejected", reasonCode: mapPolicy.reasonCode, safeMessage: mapPolicy.safeMessage };
   }
   return { kind: "rejected", reasonCode: "unknown-policy", safeMessage: "未登记的政策键" };
 }
@@ -206,15 +181,7 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
 export function createWorldContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.world,
-    ownsAggregates: [
-      "campaign",
-      "meters",
-      "character",
-      "team",
-      "group",
-      "delegation",
-      "evidence-placement",
-    ],
+    ownsAggregates: worldOwnedAggregates,
     commands: [
       {
         type: "campaign.start",

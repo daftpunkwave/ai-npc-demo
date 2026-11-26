@@ -49,6 +49,56 @@ export interface PersistToolOutcomeInput {
   readonly toolCall: ToolCallIdentity;
 }
 
+/**
+ * 构造原始结果 artifact。模型参数会经 input、argumentsRaw 与命令载荷写进 artifact，
+ * 嵌进外层结构后深度与节点数都比参数本身更大：只检查参数本身时，贴近上限的合法参数会在这里二次超限，
+ * 工具调用就无法按 invalid-params 等可控结果结算。因此按整份 artifact 能否放进 JSON 输入预算决定是否原样记录参数；
+ * 放不下时这几处改记预算拒绝标记（argumentsRaw 置空），argsHash 仍可定位原始参数。
+ * 其余字段（output、result、binding 等）由可信执行器产出；替换参数后仍超预算说明执行器违反了输出约束，
+ * 此时直接抛错，不把无法规范化序列化的结构交给 artifact store。
+ */
+function rawArtifactValue(input: PersistToolOutcomeInput, result: ToolExecutionResult): RawToolArtifactValue {
+  const build = (recordArguments: boolean): RawToolArtifactValue => ({
+    kind: "tool-call-raw",
+    toolCallId: input.toolCall.toolCallId,
+    providerCallId: input.input.providerCallId,
+    toolId: input.binding.toolId,
+    toolVersion: input.binding.version,
+    input: recordArguments ? input.args : { rejected: OVER_BUDGET_INPUT_MARKER },
+    argumentsRaw: recordArguments ? input.input.argumentsRaw : "",
+    scope: input.input.session,
+    phase: input.input.phase,
+    audience: [...input.input.audience],
+    binding: {
+      bindingId: input.binding.bindingId,
+      permissionProfile: input.binding.permissionProfile,
+      viewConstraints: input.binding.viewConstraints,
+    },
+    command: recordArguments ? input.command : withoutCommandPayload(input.command),
+    output: input.output,
+    result,
+    argsHash: input.argsHash,
+  });
+  const verbatim = build(true);
+  if (checkJsonBudget(verbatim) === null) {
+    return verbatim;
+  }
+  const reduced = build(false);
+  const violation = checkJsonBudget(reduced);
+  if (violation !== null) {
+    throw new TypeError(`工具调用 artifact 超出 JSON 输入预算：${violation.message}`);
+  }
+  return reduced;
+}
+
+/** 命令载荷由模型参数解析而来，与参数一起改记预算拒绝标记；命令类型与 ID 等身份字段保留。 */
+function withoutCommandPayload(command: Json | null): Json | null {
+  if (command === null || typeof command !== "object" || Array.isArray(command) || !("payload" in command)) {
+    return command;
+  }
+  return { ...command, payload: { rejected: OVER_BUDGET_INPUT_MARKER } };
+}
+
 export class ToolOutcomeStore {
   constructor(private readonly options: ToolOutcomeStoreOptions) {}
 
@@ -116,36 +166,7 @@ export class ToolOutcomeStore {
   async persistOutcome(input: PersistToolOutcomeInput): Promise<ToolCallOutcome> {
     const rawArtifactId = this.options.host.ids("art");
     const result: ToolExecutionResult = { ...input.partialResult, resultRef: rawArtifactId };
-    // 参数超出 JSON 输入预算时不再落库原始结构：它既无法规范化序列化，也不是有价值的审计内容。
-    // 改记预算拒绝标记，让 artifact 仍可定位「模型提交了超预算参数」这一事实。
-    const overBudget = checkJsonBudget(input.args) !== null;
-    const rawValue: RawToolArtifactValue = {
-      kind: "tool-call-raw",
-      toolCallId: input.toolCall.toolCallId,
-      providerCallId: input.input.providerCallId,
-      toolId: input.binding.toolId,
-      toolVersion: input.binding.version,
-      input: overBudget ? { rejected: OVER_BUDGET_INPUT_MARKER } : input.args,
-      argumentsRaw: overBudget ? "" : input.input.argumentsRaw,
-      scope: input.input.session,
-      phase: input.input.phase,
-      audience: [...input.input.audience],
-      binding: {
-        bindingId: input.binding.bindingId,
-        permissionProfile: input.binding.permissionProfile,
-        viewConstraints: input.binding.viewConstraints,
-      },
-      command: input.command,
-      output: input.output,
-      result,
-      argsHash: input.argsHash,
-    };
-    // 整体预算校验：替换掉 input 后，其余字段（output、result、binding 等）叠加仍可能超预算，
-    // 因此按最终写入值再检查一次，避免把无法序列化的结构交给 artifact store。
-    const rawBudget = checkJsonBudget(rawValue);
-    if (rawBudget !== null) {
-      throw new TypeError(`工具调用 artifact 超出 JSON 输入预算：${rawBudget.message}`);
-    }
+    const rawValue = rawArtifactValue(input, result);
     const rawArtifact = await this.options.artifacts.put({
       artifactId: rawArtifactId,
       runId: input.input.runId,

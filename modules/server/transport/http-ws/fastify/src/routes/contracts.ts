@@ -318,6 +318,15 @@ export interface ServerAppOptions {
    * 按请求分组给出「窗口内允许次数」，未给出的分组沿用默认阈值。
    */
   readonly rateLimits?: { readonly read?: number; readonly write?: number };
+  /**
+   * HTTP 时间上限覆盖；测试在真实监听端口上验证 socket 层超时时收紧，生产使用 httpTransportLimits 的默认值。
+   * 只开放请求期限、连接空闲期限与请求期限的扫描周期三项。
+   */
+  readonly timeouts?: {
+    readonly requestTimeoutMs?: number;
+    readonly connectionTimeoutMs?: number;
+    readonly connectionsCheckingIntervalMs?: number;
+  };
   /** 装配的权限端口；玩家、控制台与 WS 频道的裁决都经此端口。 */
   readonly accessPolicy: AccessPolicy;
   /** 命令回执只读查询端口；传输层不直接访问存储。 */

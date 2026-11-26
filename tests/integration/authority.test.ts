@@ -37,6 +37,56 @@ describe("authority command gateway", () => {
     });
   });
 
+  it("writes the submitting operationId into accepted and rejected receipts and keeps it on replay", async () => {
+    await withHarness(async (harness) => {
+      const accepted = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000001", "cmd-00000000000a"),
+        { operationId: "op-00000000000a" },
+      );
+      expect(accepted.commandStatus).toBe("accepted");
+      expect(accepted.operationId).toBe("op-00000000000a");
+      const rejected = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000004", "cmd-00000000000b"),
+        { operationId: "op-00000000000b" },
+      );
+      expect(rejected.commandStatus).toBe("rejected");
+      expect(rejected.operationId).toBe("op-00000000000b");
+
+      // 持久化的回执与返回值一致；重放同一 commandId 返回首次回执，不因缺省 operationId 改写。
+      const stored = harness.storage.transact((tx) => tx.branch(harness.branchId).table("command_receipts").get({
+        principal_id: playerAuth(harness).principalId,
+        command_id: "cmd-00000000000a",
+      }));
+      expect((stored?.["receipt_json"] as { readonly operationId?: unknown } | undefined)?.operationId).toBe("op-00000000000a");
+      const replayed = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000001", "cmd-00000000000a"),
+      );
+      expect(replayed).toEqual(accepted);
+    });
+  });
+
+  it("records a null operationId for direct submissions and rejects a malformed one before any write", async () => {
+    await withHarness(async (harness) => {
+      const direct = harness.authority.commands.execute(
+        playerAuth(harness),
+        taskCancelEnvelope(harness, "task-000000000001", "cmd-00000000000c"),
+      );
+      expect(direct.operationId).toBeNull();
+      expectDomainCode(
+        () => harness.authority.commands.execute(
+          playerAuth(harness),
+          taskCancelEnvelope(harness, "task-000000000001", "cmd-00000000000d"),
+          { operationId: "operation-1" },
+        ),
+        "validation",
+      );
+      expect(countBranchRows(harness, "command_receipts")).toBe(1);
+    });
+  });
+
   it("rejects a reused commandId with a different payload", async () => {
     await withHarness(async (harness) => {
       const commandId = "cmd-000000000002";

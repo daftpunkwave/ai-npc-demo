@@ -25,6 +25,8 @@ export interface ReceiptInput {
   readonly reasonCode: ReasonCode | null;
   readonly safeMessage: string | null;
   readonly acceptedEventIds: readonly string[];
+  /** 发起该命令的副作用操作；不经 operation 执行（如玩家直接提交）时为 null。 */
+  readonly operationId: string | null;
   readonly resultingVersions: Readonly<Record<string, number>>;
   // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Codacy 的 Node10 解析无法识别 workspace 包的 exports 入口，把导入类型判成 any；实际类型不是 any。
   readonly result: Json | null;
@@ -43,7 +45,7 @@ export function buildReceipt(host: ReceiptHost, input: ReceiptInput): CommandRec
     reasonCode: input.reasonCode,
     safeMessage: input.safeMessage,
     acceptedEventIds: [...input.acceptedEventIds],
-    operationId: null,
+    operationId: input.operationId,
     resultingVersions: input.resultingVersions,
     result: input.result,
     worldTick: input.worldTick,

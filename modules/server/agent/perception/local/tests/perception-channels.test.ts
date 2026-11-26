@@ -140,7 +140,7 @@ describe("感知渠道表逐行断言", () => {
     expect(channelOf(withEvent(input, {
       type: "ProbeAsked",
       principalId: "system:world",
-      payload: { probeId: "prb-000000000001", agentId, askedBy: "player-1", question: "你记得什么？" },
+      payload: { probeId: "p-recall-promise", agentId, askedBy: "player-1", question: "你记得什么？" },
     }))).toEqual({
       channel: "probe", epistemic: "reported", confidence: 0.6, detail: "full", knownAtTick: 10,
     });

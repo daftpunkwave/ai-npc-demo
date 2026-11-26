@@ -108,7 +108,8 @@ export interface DialogueFlowOptions {
   readonly artifacts: AgentArtifactStore;
   readonly approvals: SpeechApprovalIndex;
   readonly content: ContentPack;
-  readonly executeCommand?: (auth: AuthContext, envelope: CommandEnvelope) => CommandReceipt | Promise<CommandReceipt>;
+  readonly executeCommand?: (auth: AuthContext, envelope: CommandEnvelope, operationId?: string) =>
+    CommandReceipt | Promise<CommandReceipt>;
 }
 
 export function messageIntentFromArguments(value: Json): DialogueIntent | null {
@@ -372,10 +373,11 @@ export class DialogueFlow {
     input: SpeechApprovalInput,
     commandId: string,
     generator?: SpeechGenerator,
+    operationId?: string,
   ): Promise<SpeechCommitResult> {
     const approved = await this.approve(input, generator, commandId);
     if (this.options.executeCommand === undefined) throw new Error("speech.commit executor is not configured");
-    const receipt = await this.options.executeCommand(input.auth, approved.commitEnvelope);
+    const receipt = await this.options.executeCommand(input.auth, approved.commitEnvelope, operationId);
     return { ...approved, receipt };
   }
 
@@ -396,7 +398,7 @@ export class DialogueFlow {
       ? "broadcast"
       : "message";
     const speech: SpeechApprovalInput = { ...input.speech, intent: messageIntent, channel };
-    const committed = await this.commitWithCommandId(speech, input.commandId, input.generator);
+    const committed = await this.commitWithCommandId(speech, input.commandId, input.generator, input.operationId);
     return { receipt: committed.receipt, output: committed.receipt.result ?? {} };
   }
 

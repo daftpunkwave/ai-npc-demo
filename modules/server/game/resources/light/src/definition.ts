@@ -19,6 +19,11 @@ export const resourcesConfigSchema = z
     }
   });
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const resourcesOwnedAggregates = ["stockpile"] as const;
+
 const resourcesDefinition: ModuleDefinition = {
   id: "game.resources.light",
   realm: "server",
@@ -38,7 +43,7 @@ const resourcesDefinition: ModuleDefinition = {
   configSchema: resourcesConfigSchema,
   defaults: { scarceRatio: 0.3, surplusRatio: 1.2 },
   stateSchemaVersion: 1,
-  ownsAggregates: ["stockpile"],
+  ownsAggregates: resourcesOwnedAggregates,
   migrationPaths: [],
   create: async (input) => {
     const { createResourcesModule } = await import("./plugin");

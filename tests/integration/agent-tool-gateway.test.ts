@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { DomainError, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall, type ToolExecutionResult } from "@world-prism/contracts";
+import { DomainError, checkJsonBudget, jsonInputBudget, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall, type ToolExecutionResult } from "@world-prism/contracts";
 import {
   assertToolCallResultPairing,
   StoredAgentArtifactStore,
@@ -56,6 +56,13 @@ function dispatchArguments(teamId: string): Json {
     nodeId: null,
     departAfterTicks: null,
   } as Json;
+}
+
+/** 按 JSON 输入预算的口径计节点数：标量与容器各计 1 个。 */
+function jsonNodeCount(value: Json): number {
+  if (value === null || typeof value !== "object") return 1;
+  const children: readonly Json[] = Array.isArray(value) ? value : Object.values(value);
+  return children.reduce<number>((total, child) => total + jsonNodeCount(child), 1);
 }
 
 function turn(teamIds: readonly string[]): ToolGatewayTurn {
@@ -315,6 +322,42 @@ describe("Tool view and gateway", () => {
     expect(first.rawArtifact.kind).toBe("tool-raw");
     expect(first.viewArtifact.kind).toBe("tool-view");
     expect(second.toolCallId).not.toBe(first.toolCallId);
+  });
+
+  it("把本次工具调用的 operationId 交给命令执行器，结果与 tool_calls 记录同一取值", async () => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    const submitted: string[] = [];
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope, operationId) => {
+        submitted.push(operationId);
+        return { ...receipt(harness.host, envelope), operationId };
+      },
+    });
+    const args = dispatchArguments("team-allowed");
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: "provider-call-operation-id",
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: JSON.stringify(args),
+      operationId: "op-00000000000e",
+    });
+    expect(submitted).toEqual(["op-00000000000e"]);
+    expect(outcome.result.operationId).toBe("op-00000000000e");
+    const row = harness.storage.transact((tx) => tx.rows("tool_calls").list({
+      run_id: testRunId,
+      turn_id: testTurnId,
+      attempt_id: testAttemptId,
+      provider_call_id: "provider-call-operation-id",
+    })[0]);
+    expect(row?.["operation_id"]).toBe("op-00000000000e");
   });
 
   it("未知执行结果重试时复用 commandId 并重新核验", async () => {
@@ -648,6 +691,59 @@ describe("Tool view and gateway", () => {
     expect(stored["input"]).toEqual({ rejected: "json-input-budget" });
     expect(stored["argumentsRaw"]).toBe("");
     expect(outcome.rawArtifact.byteSize).toBeLessThan(4_096);
+  });
+
+  it.each([
+    ["嵌套深度恰为上限", (): Json => {
+      // 参数根对象占第 1 层，额外字段里再嵌套 maxDepth - 1 层数组，整体深度恰为上限。
+      let deep: Json = null;
+      for (let index = 0; index < jsonInputBudget.maxDepth - 1; index += 1) {
+        deep = [deep];
+      }
+      return { ...(dispatchArguments("team-allowed") as Record<string, Json>), extra: deep };
+    }],
+    ["节点数恰为上限", (): Json => {
+      // 参数根对象、各字段与额外数组本身都计节点；数组元素补足到整体恰好等于节点上限。
+      const base = { ...(dispatchArguments("team-allowed") as Record<string, Json>), extra: [] as Json[] };
+      const fill = jsonInputBudget.maxNodes - jsonNodeCount(base);
+      return { ...base, extra: Array.from({ length: fill }, () => null) };
+    }],
+  ] as const)("参数%s时仍按参数非法结算并写入 artifact，不因外层结构二次超限", async (_label, argsOf) => {
+    const harness = await createAgentContextToolsHarness();
+    harnesses.push(harness);
+    const document = toolset("character-default");
+    harness.tools.bindAgentToolset({ agentId: testAgentId, toolsetId: document.toolsetId, tools: document.tools });
+    let calls = 0;
+    const gateway = new ToolGateway({
+      storage: harness.storage,
+      host: harness.host,
+      tools: harness.tools,
+      toolView: harness.toolView,
+      executeCommand: (_auth, envelope) => {
+        calls += 1;
+        return receipt(harness.host, envelope);
+      },
+    });
+    const args = argsOf();
+    // 参数本身恰好在预算内：能算出参数摘要，进入正常的 schema 校验与结算路径。
+    expect(checkJsonBudget(args)).toBeNull();
+    const outcome = await gateway.executeCall({
+      ...turn(["team-allowed"]),
+      providerCallId: `provider-call-boundary-${_label}`,
+      wireName: "asset_dispatch",
+      arguments: args,
+      argumentsRaw: "[]",
+    });
+    expect(outcome.result).toMatchObject({ executionStatus: "error", reasonCode: "invalid-params" });
+    expect(calls).toBe(0);
+    // 嵌进 artifact 外层后超出预算：参数改记拒绝标记，结算结果与 artifact 仍完整写入。
+    const stored = JSON.parse(JSON.stringify(outcome.rawArtifact.value)) as { readonly [key: string]: Json };
+    expect(stored["input"]).toEqual({ rejected: "json-input-budget" });
+    expect(stored["argumentsRaw"]).toBe("");
+    expect(stored["argsHash"]).toEqual(expect.any(String));
+    const row = harness.storage.transact((tx) => tx.rows("tool_calls").get({ tool_call_id: outcome.toolCallId }));
+    expect(row?.["status"]).toBe("settled");
+    expect(row?.["raw_artifact_id"]).toBe(outcome.rawArtifact.artifactId);
   });
 
   it("已结算调用不会被后续超预算参数覆盖", async () => {

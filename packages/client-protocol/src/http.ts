@@ -21,7 +21,6 @@ import {
   errorResponseSchema,
   loginResponseSchema,
   modulesResponseSchema,
-  presetsResponseSchema,
   resolvedModuleSetSchema,
   sessionDescriptorSchema,
   snapshotCreateResponseSchema,
@@ -230,10 +229,6 @@ export class ApiClient {
       method: "POST",
       body: request,
     });
-  }
-
-  presets() {
-    return this.request(presetsResponseSchema, "/api/v1/presets");
   }
 
   consoleHealth(signal?: AbortSignal) {

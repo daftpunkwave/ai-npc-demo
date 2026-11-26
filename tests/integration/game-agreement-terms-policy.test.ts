@@ -268,6 +268,38 @@ describe("协议条款履约", () => {
   });
 });
 
+describe("水闸控制权判定一致性", () => {
+  it("协议水闸条款与 policy.set 对同一主体给出相同的水闸控制权结论", async () => {
+    const value = await harness();
+    // 持席派系（非 campaign 玩家）、campaign 玩家（派系持席）、既不持席也不是玩家的派系主体。
+    const principals = ["human-neutral", "player-1", "human-pacifist"] as const;
+    const termVerdicts = principals.map((obligorId) => {
+      const counterparty = obligorId === "player-1" ? "human-neutral" : obligorId;
+      return proposeAgreementCommand(value, playerAuth(value), ["player-1", counterparty], [
+        waterTermFor(obligorId, "rotation"),
+      ]).commandStatus;
+    });
+
+    setGameClock(value, { worldTick: 5, mode: "running" });
+    // 每次改成与当前不同的取值，避免「分配未改变」掩盖权限结论。
+    const policyVerdicts = [
+      executeCommand(value, strategicAuth(value, "human-neutral"), "policy.set", {
+        key: "watergate.allocation",
+        value: "rotation",
+      }),
+      executeCommand(value, playerAuth(value), "policy.set", { key: "watergate.allocation", value: "harbor-first" }),
+      executeCommand(value, strategicAuth(value, "human-pacifist"), "policy.set", {
+        key: "watergate.allocation",
+        value: "rotation",
+      }),
+    ];
+
+    expect(termVerdicts).toEqual(["accepted", "accepted", "rejected"]);
+    expect(policyVerdicts.map((receipt) => receipt.commandStatus)).toEqual(termVerdicts);
+    expect(policyVerdicts[2]?.reasonCode).toBe("no-authority");
+  });
+});
+
 describe("条款校验边界", () => {
   it("非 delegate 条款的 byTick 与 untilTick 必须晚于当前 tick 且不超过当前 +168", async () => {
     const value = await harness();

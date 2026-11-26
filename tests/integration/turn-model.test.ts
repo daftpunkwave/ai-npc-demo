@@ -338,6 +338,16 @@ describe("确定性模型装配与角色对白", () => {
     expect(host.storage.transact((tx) => tx.branch(host.branchId).table("domain_events")
       .list({ type: "MessageSent", principal_id: target }))).toHaveLength(1);
     expect(replies(host)).toHaveLength(0);
+    // 工具消息经真实命令网关提交：回执记录的 operationId 与该工具调用的 operation 一致。
+    const messageCall = host.storage.transact((tx) => tx.rows("tool_calls").list({ turn_id: turnId }))
+      .find((row) => row["tool_id"] === "message.send");
+    expect(messageCall?.["operation_id"]).toEqual(expect.stringMatching(/^op-/));
+    const stored = host.storage.transact((tx) => tx.branch(host.branchId).table("command_receipts").get({
+      principal_id: target,
+      command_id: String(messageCall?.["command_id"]),
+    }));
+    expect((stored?.["receipt_json"] as { readonly operationId?: unknown } | undefined)?.operationId)
+      .toBe(messageCall?.["operation_id"]);
   });
 
   it("对白只带受众可见资料，引用校验两次失败后使用安全模板", async () => {

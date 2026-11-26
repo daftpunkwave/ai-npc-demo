@@ -22,6 +22,7 @@ import {
   type ScenarioContamination,
   type ScenarioRunState,
 } from "./state";
+import { scenarioOwnedAggregates } from "./definition";
 
 type ScenarioContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -304,7 +305,7 @@ export function createScenarioContributor(options: { readonly escalating: boolea
     : [];
   return {
     moduleId: options.escalating ? gameModuleIds.scenarioEscalating : gameModuleIds.scenario,
-    ownsAggregates: ["scenario-card", "scenario-run"],
+    ownsAggregates: scenarioOwnedAggregates,
     commands: [
       { type: "scenario.draft", handler: (context, payload) => draft(context as ScenarioContext, payload) },
       { type: "scenario.publish", handler: (context, payload) => publish(context as ScenarioContext, payload) },

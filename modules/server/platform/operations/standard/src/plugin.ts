@@ -65,7 +65,8 @@ export interface OperationsDriver {
   readonly snapshot: (input: SnapshotInput) => SnapshotView;
   readonly restore: (input: RestoreInput) => RestoreOutcome;
   readonly validateRestore?: (snapshotId: string) => RestoreDryRunResponse;
-  readonly reset: () => { readonly branchId: string; readonly clock: ClockView };
+  /** 重开在线世界；createdBy 是发起重开的认证主体，写入重开前快照的创建者。 */
+  readonly reset: (createdBy: string) => { readonly branchId: string; readonly clock: ClockView };
   /** 可选的幂等执行入口；提供后运营服务按 operationId 转发。 */
   readonly idempotent?: IdempotentOperationsDriver;
 }
@@ -129,7 +130,7 @@ export class OperationsService {
     return this.driver.validateRestore(snapshotId);
   }
 
-  reset(operation?: OperationRequest): {
+  reset(createdBy: string, operation?: OperationRequest): {
     readonly branchId: string;
     readonly clock: ClockView;
     readonly applied?: boolean;
@@ -137,7 +138,7 @@ export class OperationsService {
     if (operation !== undefined && this.driver.idempotent !== undefined) {
       return this.driver.idempotent.reset(operation);
     }
-    return this.driver.reset();
+    return this.driver.reset(createdBy);
   }
 }
 

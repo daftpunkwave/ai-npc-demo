@@ -23,6 +23,19 @@ export const worldConfigSchema = z
 /** 应用默认值后的世界模块配置。 */
 export type WorldConfig = z.infer<typeof worldConfigSchema>;
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const worldOwnedAggregates = [
+  "campaign",
+  "meters",
+  "character",
+  "team",
+  "group",
+  "delegation",
+  "evidence-placement",
+] as const;
+
 const worldDefinition: ModuleDefinition = {
   id: "game.world.slg-light",
   realm: "server",
@@ -53,15 +66,7 @@ const worldDefinition: ModuleDefinition = {
   configSchema: worldConfigSchema,
   defaults: { chapterLengthTicks: defaultChapterLengthTicks },
   stateSchemaVersion: 1,
-  ownsAggregates: [
-    "campaign",
-    "meters",
-    "character",
-    "team",
-    "group",
-    "delegation",
-    "evidence-placement",
-  ],
+  ownsAggregates: worldOwnedAggregates,
   migrationPaths: [],
   create: async (input) => {
     const { createWorldModule } = await import("./plugin");

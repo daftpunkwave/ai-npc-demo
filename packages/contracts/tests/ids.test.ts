@@ -109,6 +109,7 @@ describe("内容 ID", () => {
     ["sec", "sec-flora-evacuation"],
     ["card", "card-relay-alarm"],
     ["src", "src-trader"],
+    ["p", "p-recall-promise"],
   ] as const)("内容 ID %s 接受 %s", (kind, id) => {
     expectValid(contentIdSchemas[kind], id);
     expectValid(contentIdSchema, id);
@@ -119,6 +120,8 @@ describe("内容 ID", () => {
     expectInvalid(contentIdSchemas.r, "gh-wg");
     expectInvalid(contentIdSchemas.sp, "sp-");
     expectInvalid(contentIdSchemas.card, "card-");
+    // 运行中探针结果 ID 不是探针 ID：两个命名空间不能混用。
+    expectInvalid(contentIdSchemas.p, "prb-k3j9x0a1b2c3");
     expectInvalid(contentIdSchema, "Unknown-ID");
   });
 

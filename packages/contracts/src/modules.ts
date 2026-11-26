@@ -251,8 +251,6 @@ export interface HostServices {
   hash(value: Json): Promise<string>;
   logger: HostLogger;
   tracer: HostTracer;
-  storage?: unknown;
-  model?: unknown;
 }
 
 /** 模块实例作用域标识。 */

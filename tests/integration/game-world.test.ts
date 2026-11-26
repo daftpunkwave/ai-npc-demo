@@ -446,7 +446,7 @@ describe("世界核心", () => {
     });
     const receipt = value.authority.commands.execute(
       createSystemAuth(value.worldId, sandboxBranchId),
-      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000001", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
+      gameCommandEnvelope("probe.ask", { probeId: "p-probe-1", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("accepted");
     expect(receipt.acceptedEventIds.length).toBeGreaterThan(0);
@@ -477,7 +477,7 @@ describe("世界核心", () => {
     const before = readGameAggregate(value, "character", "npc-wenzhao");
     const receipt = value.authority.commands.execute(
       createSystemAuth(value.worldId, sandboxBranchId),
-      gameCommandEnvelope("probe.ask", { probeId: "prb-000000000002", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
+      gameCommandEnvelope("probe.ask", { probeId: "p-probe-2", agentId: "npc-wenzhao", askedBy: "player-1", question: "测试" }, value.host.ids("cmd")),
     );
     expect(receipt.commandStatus).toBe("rejected");
     expect(readGameAggregate(value, "character", "npc-wenzhao")).toEqual(before);
@@ -511,7 +511,7 @@ describe("世界核心", () => {
         createSystemAuth(value.worldId, sandboxBranchId),
         gameCommandEnvelope(
           "probe.ask",
-          { probeId: "prb-000000000003", agentId: "npc-wenzhao", askedBy: "player-1", question: "越权写入" },
+          { probeId: "p-probe-3", agentId: "npc-wenzhao", askedBy: "player-1", question: "越权写入" },
           value.host.ids("cmd"),
         ),
       ),

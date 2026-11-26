@@ -8,6 +8,7 @@ import {
   cityResourceAmountsSchema,
   commandRequestSchema,
   principalIdSchema,
+  probeIdSchema,
   resourceAmountsSchema,
   taskTypeSchema,
 } from "@world-prism/contracts";
@@ -299,7 +300,7 @@ export const contentScriptSchema = z
             .array(
               z
                 .object({
-                  probeId: textSchema,
+                  probeId: probeIdSchema,
                   agentId: principalIdSchema,
                   askedBy: principalIdSchema,
                   question: textSchema,

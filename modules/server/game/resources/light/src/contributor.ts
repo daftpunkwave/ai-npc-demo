@@ -9,12 +9,13 @@ import {
   type GameModulePorts,
   type GameRuleContributor,
 } from "@world-prism/module-sdk";
+import { resourcesOwnedAggregates } from "./definition";
 
 /** 资源模块在 campaign.start 后初始化库存；不产生额外的公开事件。 */
 export function createResourcesContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
     moduleId: gameModuleIds.resources,
-    ownsAggregates: ["stockpile"],
+    ownsAggregates: resourcesOwnedAggregates,
     afterCommands: [
       {
         type: "campaign.start",

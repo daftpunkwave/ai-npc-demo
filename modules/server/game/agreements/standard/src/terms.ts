@@ -6,8 +6,8 @@
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将端口泛型误判为 any。 */
 import type { ReasonCode, Term } from "@world-prism/contracts";
 import {
+  controlsWatergate,
   coversAmounts,
-  holdsOperationalSeat,
   requireGameContent,
   type GameModulePorts,
   type HandlerContext,
@@ -21,20 +21,6 @@ export function termDeadline(term: Term): number {
     return term.untilTick;
   }
   return term.byTick;
-}
-
-/**
- * 水闸义务人必须是当前 campaign 中占公社席的党魁；AI 公社党魁以其派系 ID 承担，
- * 玩家则以 campaign.playerId 承担，不能用其他派系或未开局身份代签。
- * 公社席由内容规则参数声明，校验层不写具体派系 ID。
- */
-function controlsWatergate(context: TermContext, obligorId: string): boolean {
-  const content = requireGameContent(context.content);
-  if (holdsOperationalSeat(content, obligorId)) {
-    return true;
-  }
-  const campaign = context.modules["game.world"].campaign();
-  return campaign !== null && campaign.playerId === obligorId && holdsOperationalSeat(content, campaign.factionId);
 }
 
 /** 校验单条条款；合法返回 null。 */
@@ -86,7 +72,8 @@ export function validateTerm(context: TermContext, term: Term, parties: readonly
       return "invalid-terms";
     }
   } else if (term.kind === "water-allocation") {
-    if (!controlsWatergate(context, term.obligorId)) {
+    // 水闸义务人必须掌握水闸政策：与世界 policy.set 共用同一判定，不能用其他派系或未开局身份代签。
+    if (!controlsWatergate(content, ports["game.world"].campaign(), term.obligorId)) {
       return "invalid-terms";
     }
   } else if (term.kind === "delegate") {

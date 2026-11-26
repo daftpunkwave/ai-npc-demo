@@ -9,6 +9,11 @@ import { z } from "zod";
 
 const scenarioConfigSchema = z.object({}).strict();
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const scenarioOwnedAggregates = ["scenario-card", "scenario-run"] as const;
+
 function definition(id: string): ModuleDefinition {
   const requirements = ["game.world", "game.map", "game.resources", "game.comms"] as const;
   return {
@@ -34,7 +39,7 @@ function definition(id: string): ModuleDefinition {
     configSchema: scenarioConfigSchema,
     defaults: {},
     stateSchemaVersion: 1,
-    ownsAggregates: ["scenario-card", "scenario-run"],
+    ownsAggregates: scenarioOwnedAggregates,
     migrationPaths: [],
     create: async (input) => {
       const { createScenarioModule } = await import("./plugin");

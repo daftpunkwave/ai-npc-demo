@@ -167,7 +167,7 @@ const validPayloads: Record<EventType, unknown> = {
     cardId: "card-council",
   },
   ProbeAsked: {
-    probeId: "prb-k3j9x0a1b2c3",
+    probeId: "p-recall-promise",
     agentId: "npc-cenyan",
     askedBy: "system:world",
     question: "你还记得上次的承诺吗？",

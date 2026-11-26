@@ -6,6 +6,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -275,6 +276,8 @@ function conversationPort(harness: GameHarness): ConversationReadPort {
 }
 
 interface AppOverrides {
+  /** 收紧 HTTP 时间上限，用于在真实监听端口上触发 socket 层超时。 */
+  readonly timeouts?: NonNullable<Parameters<typeof createServerApp>[0]["timeouts"]>;
   readonly projection?: () => PlayerProjection;
   /** 战役轻量读取端口；验证 GET /campaign 走它并在未接线时回退完整投影。 */
   readonly campaign?: () => CampaignView | null;
@@ -361,6 +364,7 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
     // 测试会密集发送请求验证幂等与并发语义，放宽限流阈值；
     // 限流本身的触发行为在专门的用例里验证。
     rateLimits: { read: 100_000, write: 100_000 },
+    ...(overrides.timeouts === undefined ? {} : { timeouts: overrides.timeouts }),
     authority: harness.authority,
     accessPolicy,
     receipts: overrides.receipts ?? receiptsPortFor(harness),
@@ -538,6 +542,24 @@ function connectStream(url: string): StreamClient {
   };
   clients.push(client);
   return client;
+}
+
+/**
+ * 建立一条裸 TCP 连接并收集服务端写回的字节；以 close 事件为结束信号，不靠固定等待。
+ * 服务端主动销毁连接时客户端可能收到 ECONNRESET，这里吞掉错误事件，只观察关闭与已收数据。
+ */
+async function openRawSocket(port: number): Promise<{
+  readonly stream: Socket;
+  readonly closed: Promise<void>;
+  readonly received: () => string;
+}> {
+  const stream = connect({ host: "127.0.0.1", port });
+  const chunks: Buffer[] = [];
+  stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+  stream.on("error", () => {});
+  const closed = new Promise<void>((resolve) => stream.once("close", () => resolve()));
+  await new Promise<void>((resolve) => stream.once("connect", () => resolve()));
+  return { stream, closed, received: () => Buffer.concat(chunks).toString("latin1") };
 }
 
 async function listen(app: Awaited<ReturnType<typeof createServerApp>>): Promise<number> {
@@ -2731,6 +2753,57 @@ describe("服务端 API", () => {
     expect(httpTransportLimits.handlerTimeoutMs).toBeLessThanOrEqual(
       httpTransportLimits.requestTimeoutMs,
     );
+    expect(httpTransportLimits.connectionsCheckingIntervalMs).toBeGreaterThan(0);
+    // 请求头期限长于请求期限时，Node 按请求头期限中断在途请求，请求期限会被静默放宽。
+    expect(httpTransportLimits.headersTimeoutMs).toBeLessThanOrEqual(httpTransportLimits.requestTimeoutMs);
+  });
+
+  it("慢速发送请求体超过 requestTimeout 时，服务端按请求期限关闭真实连接", async () => {
+    const value = await createTrackedGameHarness(active);
+    const requestTimeoutMs = 200;
+    // 只收紧请求期限、连接空闲期限保持默认：持续发送字节让连接始终活跃，能中断它的只有整段请求的期限。
+    // 请求头期限沿用默认取值并由应用按请求期限收紧；若仍是 Node 默认的 60 秒，本用例会超时失败。
+    const app = await appFor(value, { timeouts: { requestTimeoutMs, connectionsCheckingIntervalMs: 50 } });
+    const port = await listen(app);
+    try {
+      const socket = await openRawSocket(port);
+      socket.stream.write(
+        "POST /api/v1/auth/login HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n" +
+          "Content-Length: 4096\r\n\r\n{",
+      );
+      const headersSentAt = performance.now();
+      const trickle = setInterval(() => {
+        if (!socket.stream.destroyed) socket.stream.write(" ");
+      }, 20);
+      try {
+        await socket.closed;
+      } finally {
+        clearInterval(trickle);
+      }
+      // 请求头已收齐、连接持续活跃，能关闭连接的只有请求期限；关闭不早于该期限（留出计时器粒度余量）。
+      expect(performance.now() - headersSentAt).toBeGreaterThanOrEqual(requestTimeoutMs - 50);
+      // Fastify 写出 408 后立即销毁 socket，客户端可能收到 408，也可能来不及收到任何字节；不会是业务响应。
+      expect(socket.received()).toMatch(/^(HTTP\/1\.1 408 [\s\S]*)?$/);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("建立连接后不发送请求头超过 connectionTimeout 时，真实连接被关闭且不返回任何数据", async () => {
+    const value = await createTrackedGameHarness(active);
+    const connectionTimeoutMs = 200;
+    const app = await appFor(value, { timeouts: { connectionTimeoutMs } });
+    const port = await listen(app);
+    try {
+      const socket = await openRawSocket(port);
+      const connectedAt = performance.now();
+      await socket.closed;
+      // 关闭只能由空闲期限触发：不早于期限（留出计时器粒度余量），且服务端没有写出任何响应。
+      expect(performance.now() - connectedAt).toBeGreaterThanOrEqual(connectionTimeoutMs - 50);
+      expect(socket.received()).toBe("");
+    } finally {
+      await app.close();
+    }
   });
 
   it("框架请求超时映射为可重试失败并记录超时诊断", async () => {

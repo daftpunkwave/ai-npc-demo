@@ -149,4 +149,36 @@ describe("内容包地图", () => {
       travelTicks: 9,
     });
   });
+
+  it("地图政策键由地图端口独立解析、校验与执行，返回变更前后的取值", () => {
+    const tx = createMemoryTx();
+    const map = createMapPort(() => tx, gameContent, (prefix) => `${prefix}-000000000006`);
+    expect(map.applyPolicy("road.status:r-gh-ps", "restricted", "human-independent")).toEqual({
+      ok: true,
+      oldValue: "open",
+      newValue: "restricted",
+    });
+    expect(map.roadStatus("r-gh-ps")).toBe("restricted");
+  });
+
+  it("地图政策的非法道路、非法取值、越权与未变化分别给出原因码", () => {
+    const tx = createMemoryTx();
+    const map = createMapPort(() => tx, gameContent, (prefix) => `${prefix}-000000000007`);
+    expect(map.applyPolicy("road.status:r-missing", "closed", "human-independent"))
+      .toEqual({ ok: false, reasonCode: "unknown-policy", safeMessage: "道路不存在" });
+    expect(map.applyPolicy("road.status:r-gh-ps", "half-open", "human-independent"))
+      .toEqual({ ok: false, reasonCode: "unknown-policy", safeMessage: "未知的道路状态" });
+    expect(map.applyPolicy("road.status:r-gh-ps", "closed", "human-neutral"))
+      .toMatchObject({ ok: false, reasonCode: "no-authority" });
+    expect(map.applyPolicy("road.status:r-gh-ps", "open", "human-independent"))
+      .toMatchObject({ ok: false, reasonCode: "no-change" });
+    expect(map.roadStatus("r-gh-ps")).toBe("open");
+  });
+
+  it("不属于地图的政策键返回 null 且不写入任何状态", () => {
+    const tx = createMemoryTx();
+    const map = createMapPort(() => tx, gameContent, (prefix) => `${prefix}-000000000008`);
+    expect(map.applyPolicy("watergate.allocation", "rotation", "human-neutral")).toBeNull();
+    expect(tx.list("road")).toEqual([]);
+  });
 });

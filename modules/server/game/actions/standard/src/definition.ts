@@ -9,6 +9,11 @@ import { z } from "zod";
 
 const actionsConfigSchema = z.object({}).strict();
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const actionsOwnedAggregates = ["task", "task-invitation"] as const;
+
 const actionsDefinition: ModuleDefinition = {
   id: "game.actions.standard",
   realm: "server",
@@ -33,7 +38,7 @@ const actionsDefinition: ModuleDefinition = {
   configSchema: actionsConfigSchema,
   defaults: {},
   stateSchemaVersion: 1,
-  ownsAggregates: ["task", "task-invitation"],
+  ownsAggregates: actionsOwnedAggregates,
   migrationPaths: [],
   create: async (input) => {
     const { createActionsModule } = await import("./plugin");

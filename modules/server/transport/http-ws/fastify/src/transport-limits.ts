@@ -28,11 +28,21 @@ export const httpTransportLimits = {
   requestTimeoutMs: 30_000,
   /**
    * socket 空闲上限：底层落到 `server.setTimeout()`（Node 的 socket 空闲超时），
-   * 连接在该时长内没有任何读写活动即被关闭。它不约束「收齐请求头」——
-   * 那由 Node 的 `headersTimeout` 管辖且 Fastify 未暴露为选项，本服务沿用其默认值。
+   * 连接在该时长内没有任何读写活动即被关闭。它不约束「收齐请求头」，那由下面的请求头期限管辖。
    * 此处取值目的是让停在半开状态上的连接最终被回收。
    */
   connectionTimeoutMs: 30_000,
+  /**
+   * 收齐请求头的期限，不得长于请求期限。请求头期限更长时，Node 按请求头期限中断仍在接收的请求，
+   * 请求期限随之失效；Fastify 在创建服务器之后才写入 requestTimeout，Node 默认的 60 秒请求头期限
+   * 会把 30 秒的请求期限放宽到 60 秒。因此显式取与请求期限相同的值，经服务器创建参数传入。
+   */
+  headersTimeoutMs: 30_000,
+  /**
+   * Node 检查请求期限的扫描周期：请求期限不是逐请求计时器，而是按该周期扫描在途连接后中断，
+   * 实际中断落在 [期限, 期限 + 本周期] 之间。取值等于 Node 默认值，显式写出以便覆盖。
+   */
+  connectionsCheckingIntervalMs: 30_000,
   /** handler 执行上限：与请求上限对齐，超时交错误处理器返回 plugin-failed。 */
   handlerTimeoutMs: 30_000,
   /**

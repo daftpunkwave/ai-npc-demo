@@ -10,6 +10,7 @@ import {
   canonicalJson,
   commandEnvelopeSchema,
   commandRequestSchema,
+  idSchemas,
   isSupportedCommandEnvelopeSchemaVersion,
   type AuthContext,
   type CommandEnvelope,
@@ -53,6 +54,23 @@ class CommandRejected extends Error {
   }
 }
 
+/**
+ * 一次命令执行的附加上下文。operationId 关联发起该命令的副作用操作（如 Agent 工具调用），
+ * 只写入回执、不参与幂等内容哈希：同一 commandId 重放时返回首次回执，其中的 operationId 也保持首次取值。
+ */
+export interface CommandExecuteOptions {
+  readonly operationId?: string;
+}
+
+/** 一次执行内写回执所需的固定身份；拒绝与接受两条路径共用。 */
+interface ReceiptScope {
+  readonly branchStorage: ScopedBranchStorage;
+  readonly auth: AuthContext;
+  readonly envelope: CommandEnvelope;
+  readonly payloadHash: string;
+  readonly operationId: string | null;
+}
+
 /** 固定命令网关；每次 execute 在单写事务内完成固定流程。 */
 export class CommandGateway {
   private readonly storage: CommandGatewayOptions["storage"];
@@ -77,7 +95,7 @@ export class CommandGateway {
     this.runSeed = options.runSeed;
   }
 
-  execute(auth: AuthContext, envelope: CommandEnvelope): CommandReceipt {
+  execute(auth: AuthContext, envelope: CommandEnvelope, options: CommandExecuteOptions = {}): CommandReceipt {
     const parsedAuth = authContextSchema.safeParse(auth);
     if (!parsedAuth.success) {
       throw new DomainError("validation", "认证上下文不合法", { details: { issues: issuesOf(parsedAuth.error) } });
@@ -88,9 +106,13 @@ export class CommandGateway {
         details: { issues: issuesOf(parsedEnvelope.error) },
       });
     }
+    const operationId = options.operationId ?? null;
+    if (operationId !== null && !idSchemas.op.safeParse(operationId).success) {
+      throw new DomainError("validation", "operationId 不合法", { details: { operationId } });
+    }
     const payloadHash = commandPayloadHash(parsedEnvelope.data);
     return this.storage.transact((tx) =>
-      this.executeInTransaction(tx, parsedAuth.data, parsedEnvelope.data, payloadHash),
+      this.executeInTransaction(tx, parsedAuth.data, parsedEnvelope.data, payloadHash, operationId),
     );
   }
 
@@ -99,8 +121,10 @@ export class CommandGateway {
     auth: AuthContext,
     envelope: CommandEnvelope,
     payloadHash: string,
+    operationId: string | null,
   ): CommandReceipt {
     const branchStorage = tx.branch(auth.branchId);
+    const scope: ReceiptScope = { branchStorage, auth, envelope, payloadHash, operationId };
     const existing = branchStorage.table("command_receipts").get({
       principal_id: auth.principalId,
       command_id: envelope.commandId,
@@ -133,71 +157,32 @@ export class CommandGateway {
     const clock = readClock(tx, auth.branchId);
     const type = parseCommandType(envelope.type);
     if (type === null) {
-      return this.rejectionReceipt(branchStorage, auth, envelope, payloadHash, clock, "invalid-params", "命令类型未登记");
+      return this.rejectionReceipt(scope, clock, "invalid-params", "命令类型未登记");
     }
     if (!isCommandIssuerAllowed(type, auth)) {
-      return this.rejectionReceipt(
-        branchStorage,
-        auth,
-        envelope,
-        payloadHash,
-        clock,
-        "no-authority",
-        "当前主体不能发行该命令",
-      );
+      return this.rejectionReceipt(scope, clock, "no-authority", "当前主体不能发行该命令");
     }
     // 分支种类限制独立于暂停状态：运行中的正式世界也不能接受沙盒专用命令。
     if (!isCommandBranchAllowed(type, branch)) {
-      return this.rejectionReceipt(
-        branchStorage,
-        auth,
-        envelope,
-        payloadHash,
-        clock,
-        "no-authority",
-        "该命令只能在沙盒分支发行",
-      );
+      return this.rejectionReceipt(scope, clock, "no-authority", "该命令只能在沙盒分支发行");
     }
     const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso());
     if (!fencing.ok) {
-      return this.rejectionReceipt(
-        branchStorage,
-        auth,
-        envelope,
-        payloadHash,
-        clock,
-        fencing.reasonCode,
-        fencing.reasonCode === "stale-controller" ? "控制权已变更，请刷新后再试" : "turn 租约已失效",
-      );
+      const safeMessage = fencing.reasonCode === "stale-controller" ? "控制权已变更，请刷新后再试" : "turn 租约已失效";
+      return this.rejectionReceipt(scope, clock, fencing.reasonCode, safeMessage);
     }
     if (!isPauseExempt(type, auth, branch) && clock.mode !== "running" && clock.mode !== "stepping") {
-      return this.rejectionReceipt(branchStorage, auth, envelope, payloadHash, clock, "paused", "世界时钟当前不可推进");
+      return this.rejectionReceipt(scope, clock, "paused", "世界时钟当前不可推进");
     }
     if (!isSupportedCommandEnvelopeSchemaVersion(envelope.schemaVersion)) {
-      return this.rejectionReceipt(
-        branchStorage,
-        auth,
-        envelope,
-        payloadHash,
-        clock,
-        "invalid-params",
-        "不支持的命令 schema 版本",
-      );
+      return this.rejectionReceipt(scope, clock, "invalid-params", "不支持的命令 schema 版本");
     }
     const parsedRequest = commandRequestSchema.safeParse({ type, payload: envelope.payload });
     if (!parsedRequest.success) {
-      return this.rejectionReceipt(branchStorage, auth, envelope, payloadHash, clock, "invalid-params", "命令参数不合法");
+      return this.rejectionReceipt(scope, clock, "invalid-params", "命令参数不合法");
     }
     if (!checkExpectedVersions(branchStorage, envelope)) {
-      return this.rejectionReceipt(
-        branchStorage,
-        auth,
-        envelope,
-        payloadHash,
-        clock,
-        "version-conflict",
-        "聚合版本已变化，请刷新后再试",
-      );
+      return this.rejectionReceipt(scope, clock, "version-conflict", "聚合版本已变化，请刷新后再试");
     }
     const registration = this.registry.command(type);
     if (registration === undefined) {
@@ -211,15 +196,7 @@ export class CommandGateway {
     if (speechPayload !== null) {
       const speech = this.approvedSpeech.read(speechPayload.approvedSpeechArtifactRef);
       if (!isApprovedSpeechUsable(speech, auth, speechPayload)) {
-        return this.rejectionReceipt(
-          branchStorage,
-          auth,
-          envelope,
-          payloadHash,
-          clock,
-          "speech-not-approved",
-          "已批准对白不可用或与提交内容不匹配",
-        );
+        return this.rejectionReceipt(scope, clock, "speech-not-approved", "已批准对白不可用或与提交内容不匹配");
       }
     }
     const speechArtifactRef = speechPayload?.approvedSpeechArtifactRef ?? null;
@@ -306,15 +283,7 @@ export class CommandGateway {
     }
 
     if (rejection !== null) {
-      return this.rejectionReceipt(
-        branchStorage,
-        auth,
-        envelope,
-        payloadHash,
-        clock,
-        rejection.reasonCode,
-        rejection.safeMessage,
-      );
+      return this.rejectionReceipt(scope, clock, rejection.reasonCode, rejection.safeMessage);
     }
     if (acceptedResult === null) {
       throw new DomainError("invalid-state", "命令处理器未返回可提交的结果");
@@ -327,6 +296,7 @@ export class CommandGateway {
       reasonCode: null,
       safeMessage: null,
       acceptedEventIds: collector.eventIds,
+      operationId,
       resultingVersions: collector.versions,
       result: requireJsonResult(accepted.result),
       worldTick: clock.worldTick,
@@ -389,26 +359,24 @@ export class CommandGateway {
 
   /** 写拒绝回执；世界 tick 取当前时钟，缺失时按 0 记录。 */
   private rejectionReceipt(
-    branchStorage: ScopedBranchStorage,
-    auth: AuthContext,
-    envelope: CommandEnvelope,
-    payloadHash: string,
+    scope: ReceiptScope,
     clock: ClockRecord | null,
     reasonCode: ReasonCode,
     safeMessage: string,
   ): CommandReceipt {
     const input: ReceiptInput = {
-      auth,
-      envelope,
+      auth: scope.auth,
+      envelope: scope.envelope,
       commandStatus: "rejected",
       reasonCode,
       safeMessage,
       acceptedEventIds: [],
+      operationId: scope.operationId,
       resultingVersions: {},
       result: null,
       worldTick: clock?.worldTick ?? 0,
     };
-    return writeReceipt(this.host, branchStorage, input, payloadHash);
+    return writeReceipt(this.host, scope.branchStorage, input, scope.payloadHash);
   }
 }
 

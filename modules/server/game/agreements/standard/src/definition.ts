@@ -9,6 +9,11 @@ import { z } from "zod";
 
 const agreementsConfigSchema = z.object({}).strict();
 
+/**
+ * 本模块独占写入的聚合类型；模块定义（进入 manifest 摘要）与规则贡献（authority 写权限）共用这一份声明。
+ */
+export const agreementsOwnedAggregates = ["agreement"] as const;
+
 const agreementsDefinition: ModuleDefinition = {
   id: "game.agreements.standard",
   realm: "server",
@@ -33,7 +38,7 @@ const agreementsDefinition: ModuleDefinition = {
   configSchema: agreementsConfigSchema,
   defaults: {},
   stateSchemaVersion: 1,
-  ownsAggregates: ["agreement"],
+  ownsAggregates: agreementsOwnedAggregates,
   migrationPaths: [],
   create: async (input) => {
     const { createAgreementsModule } = await import("./plugin");
