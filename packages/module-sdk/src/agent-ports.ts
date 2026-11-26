@@ -91,6 +91,11 @@ export interface PerceptionPort {
 
 export interface MemoryRecordView {
   readonly memoryId: string;
+  /**
+   * 行版本：同一 memoryId 每写入一个新版本行就加 1，从 1 开始。
+   * 它标识「这条记录的第几次改写」，与冻结视图的 revision（水位）不是同一个量，
+   * 因此对外记录把它映射到 MemoryRecord.revision，而不是直接复用 revision 的名字。
+   */
   readonly rowVersion: number;
   readonly kind: "episodic" | "relation" | "belief" | "prospective" | "core" | "public";
   readonly tier: "short" | "long" | "core" | "none";

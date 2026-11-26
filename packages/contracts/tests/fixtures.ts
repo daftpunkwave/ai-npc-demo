@@ -90,7 +90,6 @@ export function memoryRecordFixture(): MemoryRecord {
     scope: memoryScopeFixture(),
     kind: "episodic",
     sourceObservationIds: ["obs-k3j9x0a1b2c3"],
-    contentRefs: [{ contentId: "ev-flood-log", contentVersion: "1" }],
     status: "active",
     epistemic: "verified-event",
     releasePolicyId: "public",

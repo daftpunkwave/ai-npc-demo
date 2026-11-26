@@ -62,13 +62,12 @@ test("Agent 检查器显示实际位置和第九条记忆", async ({ page }) => 
       scope: { worldId: "wld-console-fixture", branchId, agentId: inspector.agentId },
       kind: "episodic",
       sourceObservationIds: [],
-      contentRefs: [],
       status: "active",
       epistemic: "verified-event",
       releasePolicyId: "policy-1",
       validFromTick: 0,
       validUntilTick: null,
-      revision: inspector.memoryRevision,
+      revision: index + 1,
       content: { summary: `记忆记录 ${index + 1}` },
     }));
     await route.fulfill({ response, json: { ...inspector, location: "node-console-fixture", memoryRecords } });

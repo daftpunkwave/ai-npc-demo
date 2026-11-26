@@ -66,22 +66,21 @@ interface MemoryRecord {
   readonly scope: MemoryScope;
   readonly kind: "episodic" | "relation" | "belief" | "prospective" | "core" | "public";
   readonly sourceObservationIds: readonly string[];
-  readonly contentRefs: readonly ContentRef[];
   readonly status: "active" | "superseded" | "expired" | "evicted" | "retracted";
   readonly epistemic: "verified-event" | "reported-claim" | "inference"; // 证据地位
   readonly releasePolicyId: string;
   readonly validFromTick: number;
   readonly validUntilTick: number | null;
-  readonly revision: number;
+  readonly revision: number;                              // 该记录自身改写次数，取 row_version
   readonly content: Json;
 }
 ```
 
-`AgentObservation.epistemic` 与 `MemoryRecord.epistemic` 是两个不同的枚举：前者表示获知方式（亲历/转述/推断），后者表示记忆的证据地位（已验证事件/声称/推断）。两者不能互换，也不能合并成一个字符串；传播权限另由 `releasePolicyId` 表达。scope 和事件 envelope 由服务端赋值或验证，worldSeq 在 branch 内排序。来源 ID 必须存在，并且落在合法的知识边界内。版本化的身份和 lore 用独立 contentRef 表达，不能拿来伪造观察来源。
+`AgentObservation.epistemic` 与 `MemoryRecord.epistemic` 是两个不同的枚举：前者表示获知方式（亲历/转述/推断），后者表示记忆的证据地位（已验证事件/声称/推断）。两者不能互换，也不能合并成一个字符串；传播权限另由 `releasePolicyId` 表达。scope 和事件 envelope 由服务端赋值或验证，worldSeq 在 branch 内排序。来源 ID 必须存在，并且落在合法的知识边界内。`MemoryRecord.revision` 是这条记录自身的改写次数，来自 `memory_records.row_version`（同一 `memoryId` 每写一版加 1，从 1 开始），与冻结视图水位 `MemoryBundle.revision` 语义不同，不能相互替代。记忆记录不带内容引用：`memory_records` 没有对应列，版本化的身份与 lore 由内容包索引表达，不拿来伪造观察来源。
 
 InputFrontier 由 scope 绑定，是每个 Agent 的冻结边界；多主体快照按身份各存一份 frontier map。同一个 worldSeq 下，延迟观察也可能稍后送达，所以必须同时冻结 observationSeq、perceptionRevision 和 knowledgeGrantRevision，只比较世界序号不够。memoryRevision 指向满足边界的不可变视图；conversationCursor 限定该主体有权使用的会话日志。
 
-时间顺序上，occurredAtTick 不晚于 sensedAtTick，sensedAtTick 不晚于 knownAtTick；confidence 必须是 0 到 1 的有限数，channel 从已注册渠道解析。运行中经历到的观察，来源不能为空；contentRefs 只用于版本化背景，不能替代经历证据。JSON 只是传输形态，实际 payload 按 type 和 schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
+时间顺序上，occurredAtTick 不晚于 sensedAtTick，sensedAtTick 不晚于 knownAtTick；confidence 必须是 0 到 1 的有限数，channel 从已注册渠道解析。运行中经历到的观察，来源不能为空；背景材料不能替代经历证据。JSON 只是传输形态，实际 payload 按 type 和 schemaVersion 查 schema registry；未知命令、未知字段、错误版本都拒绝。
 
 命令载荷的文本与数组边界由公共 schema 统一约束：对白正文 1–300 字，席位发言 1–200 字，侦察问题与剧情卡说明不超过 300 字，政策键不超过 120 字；主体名单（协议当事人、通信受众、席位收件人）不超过 20 个，协议提案与还价的条款各不超过 20 条。超出上限的载荷在 schema 层被拒绝，返回 `invalid-params`，不进入处理器，也不产生状态、事件或 job。
 
