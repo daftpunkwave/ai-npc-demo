@@ -7,7 +7,7 @@
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runReportResponseSchema, type AuthContext, type Json } from "@world-prism/contracts";
+import { experimentDetailResponseSchema, runReportResponseSchema, type AuthContext, type Json } from "@world-prism/contracts";
 import type { RunningHost } from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import {
@@ -150,6 +150,62 @@ describe("实验执行器的配额与失败路径", () => {
     expect(report.invalidProbeCounts["turn-failed"]).toBe(1);
     expect(report.metrics.find(({ metric }) => metric === "recall-accuracy")).toMatchObject({ denominator: null, value: null });
     expect(report.validity).toMatchObject({ valid: false, invalidReasons: ["all-probes-invalid"] });
+  }, 120_000);
+
+  it("实验分支上的 turn 失败时 run 照常完成，但报告与汇总把它记为无效样本", async () => {
+    const host = await experimentHost(resources, {
+      configRoot: fixtureConfig([
+        // 探针在前：它的输入里也有第 60 tick 的请求，必须先按探针问题匹配，让探针本身有效。
+        {
+          id: "probe-answers",
+          match: { purpose: "decision", inputIncludes: ["做到了吗"] },
+          response: { finishReason: "tool_calls", toolCalls: [{ name: "decision_submit", arguments: {
+            stance: "none",
+            dialogueIntent: { kind: "acknowledge", audience: ["player-1"], tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] },
+            noteworthy: [], citedMemoryIds: [], decisionNote: "",
+          } }] },
+        },
+        {
+          id: "escort-plea-rejected",
+          match: { purpose: "decision", inputIncludes: ["护送隘口"] },
+          response: { error: { kind: "bad-request" } },
+        },
+      ]),
+    });
+    const headers = await researcherHeaders(host);
+    const experimentId = "exp-runner-agent-turn-failure-v1";
+    const [runId] = await createExperimentRuns(host, headers, experimentSpec({
+      experimentId, commonPatchRefs: [], variants: ["memory-m0-window"],
+    }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    const branchId = branchOf(host, runId);
+    await startRun(host, headers, runId, "op-000000000651");
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
+    // 第 60 tick 的请求触发的 turn 失败：触发已被消费，该输入没有得到决策。
+    const failedTurns = host.storage.transact((tx) => tx.all(
+      "SELECT agent_id, created_tick FROM turn_runs WHERE branch_id = ? AND status IN ('failed', 'budget-exhausted')",
+      [branchId],
+    ));
+    expect(failedTurns).toContainEqual({ agent_id: "human-independent", created_tick: 60 });
+    expect(probeResults(host, runId)[0]).toMatchObject({ valid: 1, invalid_reason: null });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.validity).toMatchObject({ valid: false, evidenceComplete: true, invalidReasons: ["agent-turn-failed"] });
+    expect(report.metrics.find(({ metric }) => metric === "recall-accuracy")?.denominator).toBe(1);
+    const results = host.storage.transact((tx) => tx.rows("experiment_results").list({ run_id: runId }));
+    expect(results.length).toBeGreaterThan(0);
+    for (const row of results) {
+      expect(row["details_json"]).toMatchObject({ validity: { valid: false, invalidReasons: ["agent-turn-failed"] } });
+    }
+    expect(experimentAudit(host, branchId).at(-1)).toMatchObject({ type: "ExperimentRunCompleted", payload: { valid: false } });
+    // 失败保留在总样本中：汇总把这个 run 的指标计为无效样本，而不是有效样本或无机会。
+    const detail = experimentDetailResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/experiments/${experimentId}`, headers,
+    })).json());
+    expect(detail.cells[0]?.metrics.find(({ metric }) => metric === "recall-accuracy"))
+      .toMatchObject({ validSamples: 0, invalidSamples: 1 });
   }, 120_000);
 
   it("运行中停止会暂停时钟并释放名册，恢复后从当前 tick 继续且不重复注入脚本命令", async () => {

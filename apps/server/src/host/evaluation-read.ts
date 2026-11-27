@@ -35,6 +35,7 @@ import {
   behaviorOf,
   commandTypesOf,
   costOf,
+  failedTurnCountOf,
   latencyOf,
   memoryOf,
   turnDurationsOf,
@@ -203,9 +204,13 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
     const archivedEvidenceComplete = booleanCell(run, "evidence_complete");
     // 有探针记录却缺脚本声明时无法计分，这说明证据不完整，不能当成「没有探针」放过。
     const evidenceComplete = archivedEvidenceComplete && probeResult.undeclaredProbeCount === 0;
+    const turns = tx.rows("turn_runs").list({ run_id: runId });
+    // 分支上有 turn 失败或预算耗尽时，某个输入没有得到完成的决策：轨迹不完整，run 计为无效样本而不是从样本里消失。
+    const failedTurns = failedTurnCountOf(turns, branchId);
     const invalidReasons = [
       ...(booleanCell(run, "contaminated") ? ["contaminated"] : []),
       ...(probeResult.undeclaredProbeCount === 0 ? [] : ["undeclared-probes"]),
+      ...(failedTurns === 0 ? [] : ["agent-turn-failed"]),
     ];
     return evaluation.report({
       runId,
@@ -213,13 +218,13 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
       scriptId: selection?.scriptRef ?? "unknown",
       scriptBranch: selection?.branch ?? "none",
       validity: {
-        valid: evidenceComplete && !booleanCell(run, "contaminated"),
+        valid: evidenceComplete && !booleanCell(run, "contaminated") && failedTurns === 0,
         contaminated: booleanCell(run, "contaminated"),
         evidenceComplete,
         invalidReasons,
       },
       probes: probeResult.probes,
-      behavior: behaviorOf({ tx, turns: tx.rows("turn_runs").list({ run_id: runId }), fileBodies }),
+      behavior: behaviorOf({ tx, turns, fileBodies }),
       memory: memoryOf({
         records: branchId.length === 0 ? [] : tx.branch(branchId).table("memory_records").list(),
         // maintenance_runs 是部署级表（主键为 maintenance_id），只能经非分支接口按 run 读取；
@@ -228,7 +233,7 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
       }),
       // 价目版本以该 run 冻结的模型配置为准；实验 run 可能选用与在线世界不同的模型布局。
       cost: costOf({ rows: tx.rows("budget_ledger").list({ run_id: runId }), pricingVersion: frozenPricingVersionOf(run) ?? input.pricingVersion }),
-      latency: latencyOf(turnDurationsOf(tx.rows("turn_runs").list({ run_id: runId }))),
+      latency: latencyOf(turnDurationsOf(turns)),
       lexicons: input.lexicons,
     });
   };

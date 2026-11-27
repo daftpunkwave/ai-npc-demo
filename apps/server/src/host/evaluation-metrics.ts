@@ -54,6 +54,18 @@ export function turnDurationsOf(turns: readonly Readonly<Record<string, unknown>
   return durations;
 }
 
+/**
+ * run 自己分支上以失败或预算耗尽结束的 turn 数。
+ * 这类 turn 的触发已被消费却没有完成决策（取消的 turn 会释放触发并重新调度，不在此列），
+ * run 的轨迹因此不完整。只计 run 绑定的分支：探针沙盒里的 turn 失败已由探针的无效原因单列。
+ */
+export function failedTurnCountOf(turns: readonly Readonly<Record<string, unknown>>[], branchId: string): number {
+  return turns.filter((turn) => {
+    const status = stringCell(turn, "status");
+    return stringCell(turn, "branch_id") === branchId && (status === "failed" || status === "budget-exhausted");
+  }).length;
+}
+
 /** 延迟快照：按 turn 时长取 p50 与 p95；没有样本时为 null。 */
 export function latencyOf(durationsMs: readonly number[]): ReportLatency {
   if (durationsMs.length === 0) return { turnP50Ms: null, turnP95Ms: null };
