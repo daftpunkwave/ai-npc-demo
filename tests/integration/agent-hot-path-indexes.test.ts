@@ -25,12 +25,25 @@ const resources: { readonly dispose: () => Promise<void> }[] = [];
 const dataDirs: string[] = [];
 
 // 先释放存储实例关闭连接，再删除目录：Windows 上仍被打开的数据库文件无法删除。
+// 每个实例与目录都要尝试清理，失败先收集、最后一并抛出：任一步失败都不能让其余目录留在磁盘上，也不能吞掉失败。
 afterEach(async () => {
+  const failures: unknown[] = [];
   for (const resource of resources.splice(0)) {
-    await resource.dispose();
+    try {
+      await resource.dispose();
+    } catch (error) {
+      failures.push(error);
+    }
   }
   for (const dir of dataDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "热路径测试的存储清理失败");
   }
 });
 
