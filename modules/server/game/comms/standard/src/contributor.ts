@@ -194,6 +194,11 @@ function seatSay(context: CommsContext, payload: Json): HandlerResult {
   return { kind: "accepted" };
 }
 
+/** 是否为本内容包里的真实主体：玩家主体、角色或派系。分享受众与知识送达任务共用这一口径。 */
+function isKnownPrincipal(content: ReturnType<typeof requireGameContent>, principalId: string): boolean {
+  return principalId === content.playerPrincipalId || content.characters.has(principalId) || content.factions.has(principalId);
+}
+
 function informationShare(context: CommsContext, payload: Json): HandlerResult {
   const input = commandPayloadOf("information.share", payload);
   const content = requireGameContent(context.content);
@@ -210,9 +215,7 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
   }
   // 受众必须是真实主体：不存在的 ID（例如模型把角色显示名当成主体 ID）若被受理，会排进知识送达任务，
   // 到送达 tick 才在建索引键时失败，让整条任务连同推进它的 tick 一起出错。与 dialogue.say 同口径在提交时拒绝。
-  const unknownAudience = input.audience.filter((principalId) =>
-    principalId !== content.playerPrincipalId && !content.characters.has(principalId) && !content.factions.has(principalId));
-  if (unknownAudience.length > 0) {
+  if (input.audience.some((principalId) => !isKnownPrincipal(content, principalId))) {
     return { kind: "rejected", reasonCode: "unknown-target", safeMessage: "分享对象中有不存在的主体" };
   }
   if (!allDeliverable(context, "message", fromId, input.audience)) {
@@ -311,6 +314,11 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
         kind: "comms.knowledge-delivery",
         handler: (context, job) => {
           const input = job.payload as { readonly principalId: string; readonly itemId: string };
+          // 分享命令校验受众之前受理的分享，可能在存档里留下指向不存在主体的送达任务；
+          // 这类任务没有可授权的对象，跳过而不是在建索引键时抛错，避免卡住推进该 tick 的任务队列。
+          if (!isKnownPrincipal(requireGameContent((context as CommsContext).content), input.principalId)) {
+            return;
+          }
           asPorts(context)["game.comms"].grantKnowledge({
             principalId: input.principalId,
             itemId: input.itemId,
