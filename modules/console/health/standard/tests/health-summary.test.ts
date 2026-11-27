@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ConsoleHealthResponse } from "@world-prism/contracts";
-import { healthSummary } from "../src/health-summary";
+import { formatDurationMs, healthSummary } from "../src/health-summary";
 
 function health(overrides: Partial<ConsoleHealthResponse> = {}): ConsoleHealthResponse {
   return {
@@ -45,5 +45,36 @@ describe("控制台健康摘要", () => {
     expect(summary.queuedText).toBe("4");
     expect(summary.queueDetail).toBe("turns 1 / maintenance 3 / running 1 / model 0");
     expect(summary.laggingText).toBe("4");
+  });
+
+  it("宿主未提供热路径耗时时不生成空行，提供时按条目输出次数与延迟", () => {
+    expect(healthSummary(health()).hotPaths).toBeNull();
+    const summary = healthSummary(
+      health({
+        hotPaths: [
+          { name: "player-projection.build", count: 12, errors: 0, samples: 12, lastMs: 1.5, p50Ms: 1.875, p95Ms: 2.25, maxMs: 3 },
+          { name: "player-stream.publish", count: 9, errors: 1, samples: 9, lastMs: 12.5, p50Ms: 9.5, p95Ms: 12.5, maxMs: 40.25 },
+        ],
+      }),
+    );
+    expect(summary.hotPaths).toEqual([
+      {
+        name: "player-projection.build",
+        countText: "12 次",
+        latencyText: "p50 1.88 ms · p95 2.25 ms · 最大 3.00 ms（近 12 次）",
+      },
+      {
+        name: "player-stream.publish",
+        countText: "9 次 · 失败 1",
+        latencyText: "p50 9.50 ms · p95 12.5 ms · 最大 40.3 ms（近 9 次）",
+      },
+    ]);
+  });
+
+  it("毫秒文案十毫秒以内保留两位小数，以上保留一位", () => {
+    expect(formatDurationMs(0.0625)).toBe("0.06 ms");
+    expect(formatDurationMs(9.999)).toBe("10.00 ms");
+    expect(formatDurationMs(10)).toBe("10.0 ms");
+    expect(formatDurationMs(123.456)).toBe("123.5 ms");
   });
 });
