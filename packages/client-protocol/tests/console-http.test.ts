@@ -69,3 +69,27 @@ it("领域请求复用响应校验和身份过期后的清理", async () => {
   await expect(api.consoleTurns()).rejects.toMatchObject({ code: "unauthenticated", safeMessage: "会话已过期" });
   expect(api.token).toBeNull();
 });
+
+it("研究读取把调用方取消传给底层请求，页面卸载后不再占用连接", async () => {
+  const fetchImpl = vi.fn<typeof fetch>((_, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+  }));
+  const api = new ApiClient({ baseUrl, fetchImpl, storage: null, activeRole: "researcher" });
+  const caller = new AbortController();
+
+  const reads = [
+    api.consoleTimeline({ branchId: "br-fixture" }, caller.signal),
+    api.consoleAgents("br-fixture", caller.signal),
+    api.consoleInspector("agent-fixture", "br-fixture", caller.signal),
+    api.consoleTurns({ branchId: "br-fixture" }, caller.signal),
+    api.consoleTurn("turn-fixture", caller.signal),
+    api.consoleTrace("trc-fixture", caller.signal),
+  ].map((read) => read.then(() => "resolved", (cause: unknown) => cause));
+  expect(fetchImpl).toHaveBeenCalledTimes(reads.length);
+  caller.abort();
+
+  for (const outcome of await Promise.all(reads)) {
+    expect(outcome).toMatchObject({ name: "AbortError" });
+  }
+  expect(fetchImpl.mock.calls.map(([, init]) => init?.signal?.aborted)).toEqual(reads.map(() => true));
+});

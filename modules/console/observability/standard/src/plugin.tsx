@@ -1,7 +1,7 @@
 /**
  * 核心职责：呈现世界时间线、Agent 检查器、turn 证据与 trace 树。
  * 交互契约：依赖 console API、当前会话与 React；所有数据经服务端授权查询。
- * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据。
+ * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据；离开页面或切换分支、Agent、turn 时中止对应的在途读取。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
@@ -82,10 +82,12 @@ function ObservabilityPage(): ReactNode {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackRequested = false;
     let connectionGeneration = 0;
+    // 卸载或切换分支时中止回退读取，不让离开的页面继续占用请求配额。
+    const fallbackRequests = new AbortController();
     const requestFallback = (): void => {
       if (fallbackRequested || cancelled) return;
       fallbackRequested = true;
-      void host.api.consoleTimeline({ branchId, fromSeq: 0, limit: 100, order: "desc" })
+      void host.api.consoleTimeline({ branchId, fromSeq: 0, limit: 100, order: "desc" }, fallbackRequests.signal)
         .then((timeline) => {
           if (cancelled) return;
           setEvents(timeline.events);
@@ -163,37 +165,38 @@ function ObservabilityPage(): ReactNode {
     return () => {
       cancelled = true;
       connectionGeneration += 1;
+      fallbackRequests.abort();
       clearReconnect();
       stream?.close();
     };
   }, [host.api, branchId]);
 
   useEffect(() => {
-    let cancelled = false;
-    void host.api.consoleAgents(branchId).then((response) => {
-      if (cancelled) return;
+    const request = new AbortController();
+    void host.api.consoleAgents(branchId, request.signal).then((response) => {
+      if (request.signal.aborted) return;
       setAgents(response.agents);
       setSelectedAgent((current) => current ?? response.agents[0]?.agentId ?? null);
       setAgentError(null);
     }).catch((cause: unknown) => {
-      if (!cancelled) setAgentError(String(cause));
+      if (!request.signal.aborted) setAgentError(String(cause));
     });
-    return () => { cancelled = true; };
+    return () => { request.abort(); };
   }, [host.api, branchId]);
 
   useEffect(() => {
     if (selectedAgent === null) return;
-    let cancelled = false;
+    const request = new AbortController();
     setInspector(null);
     setTurns([]);
     setSelectedTurn(null);
     setTurnDetail(null);
     setTrace(null);
     void Promise.all([
-      host.api.consoleInspector(selectedAgent, branchId),
-      host.api.consoleTurns({ agentId: selectedAgent, branchId, limit: 20 }),
+      host.api.consoleInspector(selectedAgent, branchId, request.signal),
+      host.api.consoleTurns({ agentId: selectedAgent, branchId, limit: 20 }, request.signal),
     ]).then(([nextInspector, nextTurns]) => {
-      if (cancelled) return;
+      if (request.signal.aborted) return;
       setInspector(nextInspector);
       const branchTurns = nextTurns.turns.filter((turn) => turn.branchId === branchId);
       setTurns(branchTurns);
@@ -203,9 +206,9 @@ function ObservabilityPage(): ReactNode {
           : branchTurns[0]?.turnId ?? null);
       setDetailError(null);
     }).catch((cause: unknown) => {
-      if (!cancelled) setDetailError(String(cause));
+      if (!request.signal.aborted) setDetailError(String(cause));
     });
-    return () => { cancelled = true; };
+    return () => { request.abort(); };
   }, [host.api, branchId, selectedAgent, refreshVersion]);
 
   useEffect(() => {
@@ -220,9 +223,9 @@ function ObservabilityPage(): ReactNode {
     }
     setTurnDetail(null);
     setTrace(null);
-    let cancelled = false;
-    void host.api.consoleTurn(selectedTurn).then(async (detail) => {
-      if (cancelled) return;
+    const request = new AbortController();
+    void host.api.consoleTurn(selectedTurn, request.signal).then(async (detail) => {
+      if (request.signal.aborted) return;
       setTurnDetail(detail);
       setDetailError(null);
       if (detail.traceId === null) {
@@ -230,15 +233,15 @@ function ObservabilityPage(): ReactNode {
         return;
       }
       try {
-        const nextTrace = await host.api.consoleTrace(detail.traceId);
-        if (!cancelled) setTrace(nextTrace);
+        const nextTrace = await host.api.consoleTrace(detail.traceId, request.signal);
+        if (!request.signal.aborted) setTrace(nextTrace);
       } catch (cause) {
-        if (!cancelled) setDetailError(String(cause));
+        if (!request.signal.aborted) setDetailError(String(cause));
       }
     }).catch((cause: unknown) => {
-      if (!cancelled) setDetailError(String(cause));
+      if (!request.signal.aborted) setDetailError(String(cause));
     });
-    return () => { cancelled = true; };
+    return () => { request.abort(); };
   }, [host.api, selectedTurn]);
 
   const selectedAgentView = useMemo(
