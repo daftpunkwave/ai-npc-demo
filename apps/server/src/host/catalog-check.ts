@@ -1,7 +1,8 @@
 /**
  * 校验 server 组合根与 config/assemblies 目录下的全部装配：模块目录、realm/kind 白名单、
- * 能力名与绑定匹配、运行时 requires 闭包、作用域/重复绑定、拓扑顺序、模块配置 schema 与必需能力。
- * 依赖 kernel 的统一解析器、module-sdk 描述符校验与组合根模块目录；不启动服务、不打开存储。
+ * 能力名与绑定匹配、运行时 requires 闭包、作用域/重复绑定、拓扑顺序、模块配置 schema 与必需能力；
+ * 配置 schema 对自身输出幂等既随逐装配解析核对，也用每个模块的默认配置核对一次。
+ * 依赖 kernel 的统一解析器与描述符校验、组合根模块目录；不启动服务、不打开存储。
  * 装配目录的枚举与文件级约束复用启动路径的扫描实现，这里只在其上追加逐装配的解析检查。
  * 禁止写死装配文件名、放宽 schema 或用首错掩盖同一次预检中的其他失败项。
  */
@@ -16,9 +17,15 @@ import {
   type ModuleDefinition,
   type Realm,
 } from "@world-prism/contracts";
-import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@world-prism/kernel";
+import {
+  REALM_NAMESPACES,
+  createModuleRegistry,
+  resolveModuleConfig,
+  resolveRealmPlan,
+  validateModuleDefinition,
+  type ResolvedRealmPlan,
+} from "@world-prism/kernel";
 import { loadContentPack } from "@world-prism/experiment";
-import { REALM_NAMESPACES, validateModuleDefinition } from "@world-prism/module-sdk";
 import {
   allModuleDefinitions,
   clientRequiredCapabilities,
@@ -73,7 +80,28 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** 收集模块目录自身的问题：重复 ID、描述符字段、realm 命名空间与 kind 白名单。 */
+/**
+ * 用模块自带默认值解析一次配置，核对 configSchema 对自身输出幂等。
+ * 装配只覆盖被绑定的模块与配置；未进装配的模块（如 Agent 槽位候选）也要在目录层面守住这条契约。
+ * 默认值本身不足以通过 schema 的模块必须由装配或 profile 提供配置，交给逐装配解析与运行期解析覆盖。
+ */
+function checkDefaultConfig(definition: ModuleDefinition, violations: CatalogViolation[]): void {
+  if (!definition.configSchema.safeParse(definition.defaults ?? {}).success) {
+    return;
+  }
+  try {
+    resolveModuleConfig(definition, undefined);
+  } catch (error) {
+    violations.push({
+      // eslint-disable-next-line xss/no-mixed-html -- "<module-catalog>" 是预检诊断的占位文件名，不是 HTML 片段。
+      file: "<module-catalog>",
+      code: errorCode(error),
+      message: `模块 ${definition.id} 的默认配置：${errorMessage(error)}`,
+    });
+  }
+}
+
+/** 收集模块目录自身的问题：重复 ID、描述符字段、默认配置、realm 命名空间与 kind 白名单。 */
 function checkDefinitions(
   definitions: readonly ModuleDefinition[],
   violations: CatalogViolation[],
@@ -82,6 +110,7 @@ function checkDefinitions(
   for (const definition of definitions) {
     try {
       validateModuleDefinition(definition);
+      checkDefaultConfig(definition, violations);
     } catch (error) {
       violations.push({
         // eslint-disable-next-line xss/no-mixed-html -- "<module-catalog>" 是预检诊断的占位文件名，不是 HTML 片段。

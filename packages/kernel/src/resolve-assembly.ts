@@ -1,7 +1,9 @@
 /**
  * 按装配描述符与已注册模块目录解析一个 realm 的实例计划：校验模块、realm、能力绑定、
- * 实例作用域与能力依赖闭包，合并部署期配置覆盖，输出依赖拓扑顺序的模块配置与 port 装配关系。
- * 依赖公共契约的模块与装配类型、DomainError，以及本包 registry、resolve-config、capability-requirements。
+ * 能力命名空间、实例作用域、能力依赖闭包与浏览器段对 server 段的远端依赖，合并部署期配置覆盖，
+ * 输出依赖拓扑顺序的模块配置与 port 装配关系。
+ * 依赖公共契约的模块与装配类型、DomainError，以及本包 descriptor-constraints、registry、remote-capabilities、
+ * resolve-config、capability-requirements。
  * 禁止创建实例或存储/模型/网络资源，也禁止在多个候选实现之间静默挑选或忽略降级。
  */
 import {
@@ -20,7 +22,9 @@ import {
   type ModuleKind,
   type Realm,
 } from "@world-prism/contracts";
+import { REALM_NAMESPACES, leadingNamespace } from "./descriptor-constraints";
 import type { CatalogSnapshot } from "./registry";
+import { assertRemoteCapabilities, serverBoundCapabilities } from "./remote-capabilities";
 import { resolveModuleConfig } from "./resolve-config";
 import {
   resolveCapabilityUse,
@@ -317,6 +321,14 @@ export function resolveRealmPlan(input: ResolveRealmInput): ResolvedRealmPlan {
   const providersByCapability = new Map<CapabilityId, BindingResolution[]>();
 
   for (const binding of bindings) {
+    // 能力图只能由本 realm 命名空间的能力组成：跨 realm 的绑定即使模块恰好声明了该能力，
+    // 也会让浏览器段冒充服务端能力（或反之），必须在解析阶段拒绝，而不是只靠离线目录检查兜底。
+    // eslint-disable-next-line security/detect-object-injection -- realm 来自 zod 受限枚举。
+    if (!REALM_NAMESPACES[realm].includes(leadingNamespace(binding.capability))) {
+      throw new DomainError("realm-violation", `能力 ${binding.capability} 不属于 ${realm} realm 的能力命名空间`, {
+        details: { capability: binding.capability, moduleId: binding.moduleId, realm },
+      });
+    }
     if (binding.fallbackModuleIds !== undefined && binding.fallbackModuleIds.length > 0) {
       throw new DomainError("assembly-incompatible", `能力 ${binding.capability} 的 fallback 绑定尚未支持，必须显式指定唯一实现`, {
         details: {
@@ -419,6 +431,11 @@ export function resolveRealmPlan(input: ResolveRealmInput): ResolvedRealmPlan {
   }
   for (const ref of input.requiredCapabilities ?? []) {
     resolveCapabilityUse(ref, providersByCapability, { kind: "host", moduleId: null }, realm);
+  }
+  if (realm !== "server") {
+    // 浏览器段的远端依赖只能由同一装配的 server 段满足：会话装配解析与 check:catalog 都在这里拒绝缺口，
+    // 浏览器握手时再按下发的远端能力描述复核本地模块目录。
+    assertRemoteCapabilities([...consumerDefinitions.values()], serverBoundCapabilities(assembly), realm);
   }
 
   const nodes = new Set(consumerDefinitions.keys());

@@ -58,6 +58,66 @@ describe("装配解析错误路径", () => {
     expect(detailsText(error)).toContain("client");
   });
 
+  it("浏览器 realm 绑定服务端命名空间的能力时按 realm 命名空间拒绝", () => {
+    // 未经描述符校验的定义声明了服务端能力；解析器自身也必须拒绝这类绑定，不能只靠目录检查。
+    const consoleModule = fakeModule({
+      id: "console.observability.standard",
+      realm: "console",
+      instanceScope: "session",
+      provides: [capability("platform.observability", "exactly-one", "session")],
+    });
+    const assembly = makeAssembly({
+      console: { bindings: [binding("platform.observability", "console.observability.standard")] },
+    });
+    const error = expectDomainError(
+      () => resolveRealmPlan({ assembly, realm: "console", catalog: catalogOf(consoleModule) }),
+      "realm-violation",
+    );
+    expect(error.details).toEqual({
+      capability: "platform.observability",
+      moduleId: "console.observability.standard",
+      realm: "console",
+    });
+  });
+
+  it("浏览器模块的 requiresRemote 不在 server 段绑定内时逐模块列出缺失能力", () => {
+    const health = fakeModule({
+      id: "console.health.standard",
+      realm: "console",
+      instanceScope: "session",
+      provides: [capability("console.health", "exactly-one", "session")],
+      requiresRemote: ["platform.observability", "platform.operations"],
+    });
+    const admin = fakeModule({
+      id: "console.module-admin.standard",
+      realm: "console",
+      instanceScope: "session",
+      provides: [capability("console.module-admin", "exactly-one", "session")],
+      requiresRemote: ["platform.module-admin"],
+    });
+    const assembly = makeAssembly({
+      server: { bindings: [binding("platform.observability", "platform.observability.sqlite")] },
+      console: {
+        bindings: [
+          binding("console.health", "console.health.standard"),
+          binding("console.module-admin", "console.module-admin.standard"),
+        ],
+      },
+    });
+    const error = expectDomainError(
+      () => resolveRealmPlan({ assembly, realm: "console", catalog: catalogOf(health, admin) }),
+      "assembly-incompatible",
+    );
+    expect(error.details).toEqual({
+      realm: "console",
+      modules: [
+        { moduleId: "console.health.standard", missing: ["platform.operations"] },
+        { moduleId: "console.module-admin.standard", missing: ["platform.module-admin"] },
+      ],
+    });
+    expect(error.safeMessage).toContain("console.health.standard 缺少 platform.operations");
+  });
+
   it("不支持模块契约版本时拒绝装配", () => {
     const futureClock = fakeModule({
       id: "game.clock.controlled",

@@ -6,8 +6,8 @@
 export const packageName = "@world-prism/module-sdk";
 
 export { defineModule } from "./define-module";
-export { validateModuleDefinition } from "./descriptor-validation";
-export { REALM_NAMESPACES } from "./descriptor-constraints";
+// 描述符校验已下沉到 kernel，供浏览器与服务端共用；module-sdk 保留原导出，模块作者无需改动导入路径。
+export { REALM_NAMESPACES, validateModuleDefinition } from "@world-prism/kernel";
 export { createStatelessModule } from "./lifecycle";
 
 export { createScopedStateKey } from "./ports";

@@ -41,6 +41,21 @@ export const CAPABILITY_GROUPS = ["game", "agent", "platform", "transport", "cli
  */
 export const CAPABILITY_ID_PATTERN = /^(?:game|agent|platform|transport|client|console)\.[a-z][a-z0-9-]*$/;
 
+/**
+ * 浏览器宿主固定端口的键语法：`host.<name>`。固定端口由宿主应用在启动时注入，不由任何模块提供，
+ * 因此不是能力：不进装配绑定、不参与能力解析与目录摘要，也不写进 requires。
+ */
+export const HOST_PORT_PATTERN = /^host\.[a-z][a-z0-9-]*$/;
+
+/**
+ * 各浏览器 realm 的宿主固定端口契约：本 realm 的模块无需声明即可取用清单内端口，清单外的 `host.*` 一律越界。
+ * 浏览器运行时只接受并转交清单内的固定端口，check:catalog 按同一清单对账模块源码；server realm 没有固定端口。
+ */
+export const BROWSER_HOST_PORTS = {
+  client: ["host.api", "host.command", "host.session"],
+  console: ["host.console"],
+} as const satisfies Readonly<Record<"client" | "console", readonly string[]>>;
+
 /** 能力 ID 带品牌，避免与模块 ID 或普通字符串混用；不符合语法的 ID 在描述符校验阶段即失败。 */
 export const capabilityIdSchema = z
   .string()
@@ -91,13 +106,19 @@ export const moduleRefSchema = z
 
 export type ModuleRef = z.infer<typeof moduleRefSchema>;
 
-/** 会话握手返回的模块集：ID、版本、能力、装配 hash；浏览器 realm 另带已解析配置。 */
+/**
+ * 会话握手返回的模块集：ID、版本、能力、装配 hash；浏览器 realm 另带已解析配置与远端能力描述。
+ * `remoteCapabilities` 是同一装配 server 段已绑定的能力 ID（去重、按字典序），浏览器据此复核本地模块的
+ * `requiresRemote`。它只在 client / console 模块集中出现且为可选：server 模块集（经 `/api/v1/session`
+ * 返回）保持原有字段，不带该字段的 v1 载荷仍能通过本 strict schema。
+ */
 export const resolvedModuleSetSchema = z
   .object({
     realm: realmSchema,
     protocolVersion: z.string().min(1),
     modules: z.array(moduleRefSchema),
     capabilities: z.array(capabilityRefSchema),
+    remoteCapabilities: z.array(capabilityIdSchema).optional(),
     assemblyHash: z.string().min(1),
   })
   .strict();
@@ -179,7 +200,7 @@ export type AssemblyDescriptor = z.infer<typeof assemblyDescriptorSchema>;
  * 严配置 schema：未知键解析即失败的 JSON 对象 schema。
  * 只依赖 zod 的公开导出：形状用 `ZodRawShape` 表达，不引用 zod 内部命名空间，
  * 避免 zod 重构内部结构时把编译失败扩散到所有实现 configSchema 的模块。
- * 是否真的拒绝未知键由运行期探测判定，见 module-sdk 的 isStrictConfigSchema。
+ * 是否真的拒绝未知键由运行期探测判定，见 kernel 描述符校验中的 isStrictConfigSchema。
  */
 export type StrictConfigSchema = z.ZodObject<z.ZodRawShape>;
 

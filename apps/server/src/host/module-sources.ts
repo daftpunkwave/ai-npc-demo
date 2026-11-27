@@ -5,10 +5,11 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import type { ModuleDefinition } from "@world-prism/contracts";
+import type { ModuleDefinition, Realm } from "@world-prism/contracts";
 
 /** 一个模块源码目录及其对应的登记定义。 */
 export interface ModuleSource {
+  readonly realm: Realm;
   readonly directory: string;
   readonly identifier: string;
   readonly definitions: readonly ModuleDefinition[];
@@ -60,7 +61,7 @@ export function moduleIdentifier(realm: string, directory: string): string | nul
   return realm === "server" ? identifier : `${realm}.${identifier}`;
 }
 
-/** 读取模块 src 下的全部手写 TypeScript 文件。 */
+/** 读取模块 src 下的全部手写 TypeScript 文件；浏览器模块的视图写在 `.tsx` 中，同样计入。 */
 export function sourceFilesOf(directory: string): readonly string[] {
   const sourceDirectory = join(directory, "src");
   const files: string[] = [];
@@ -71,7 +72,7 @@ export function sourceFilesOf(directory: string): readonly string[] {
         if (!isSkippedDirectory(entry.name)) {
           walk(child);
         }
-      } else if (entry.isFile() && child.endsWith(".ts")) {
+      } else if (entry.isFile() && (child.endsWith(".ts") || child.endsWith(".tsx"))) {
         files.push(child);
       }
     }

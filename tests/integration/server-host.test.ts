@@ -449,6 +449,11 @@ describe("服务端宿主", () => {
     // 服务端模块配置含内容包下发的提示词、工具描述与部署期覆盖，不能对外下发。
     const serverAssembly = sessionDescriptorSchema.parse(sessionView.json()).serverAssembly;
     expect(serverAssembly.modules.length).toBeGreaterThan(0);
+    // 远端能力描述只随浏览器模块集下发，内容就是 server 模块集公布的能力 ID；server 模块集保持原有字段。
+    expect(serverAssembly).not.toHaveProperty("remoteCapabilities");
+    expect(clientAssembly.remoteCapabilities).toEqual(
+      [...new Set(serverAssembly.capabilities.map((capability) => capability.capability))].sort(),
+    );
     for (const module of serverAssembly.modules) {
       expect(module, `${module.moduleId} 不得下发服务端配置`).not.toHaveProperty("config");
       expect(typeof module.configHash).toBe("string");
@@ -1258,6 +1263,8 @@ describe("服务端宿主", () => {
       server: { bindings: current.realms.server.bindings.filter(({ capability }) => !capability.startsWith("agent.") &&
         capability !== "platform.budget" && capability !== "platform.model-transport")
         .map((binding) => binding.capability === "platform.secrets" ? { ...binding, configRef: null } : binding) },
+      // 模型池之前的装配没有模型挂载页：该页远程依赖的 agent.model-pool 当时并不存在。
+      console: { bindings: current.realms.console.bindings.filter(({ capability }) => capability !== "console.model-mounts") },
       },
     };
     const options = { dataDir, playerToken: "player-token", consoleToken: "console-token" };
@@ -1279,6 +1286,16 @@ describe("服务端宿主", () => {
     expect(restarted.branchId).toBe(first.branchId);
     expect(liveRun(restarted)["manifest_hash"]).toBe(manifest);
     expect(restarted.storage.transact((tx) => tx.branch(restarted.branchId).table("memory_watermarks").list())).toHaveLength(0);
+    // 按当前装配重启时只回退 server 段；控制台段同步去掉远程依赖已移除能力的模型挂载页，其余页面照常下发。
+    const consoleSession = await loginSession(restarted, "console-token");
+    const consoleAssembly = sessionAssemblyResponseSchema.parse((await restarted.app.inject({
+      method: "GET",
+      url: "/api/v1/session/assembly?realm=console",
+      headers: { authorization: `Bearer ${consoleSession}` },
+    })).json());
+    expect(consoleAssembly.modules.map(({ moduleId }) => moduleId)).not.toContain("console.model-mounts.standard");
+    expect(consoleAssembly.modules.map(({ moduleId }) => moduleId)).toContain("console.health.standard");
+    expect(consoleAssembly.remoteCapabilities).not.toContain("agent.model-pool");
   });
 
   it("保留天数作为部署参数并入存储配置：不改变冻结 manifest，启用后恢复同一在线 run 并清理过期跨度", async () => {

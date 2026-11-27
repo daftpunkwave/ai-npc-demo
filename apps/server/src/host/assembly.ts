@@ -31,6 +31,7 @@ import {
   computeConfigHash,
   createModuleRegistry,
   resolveRealmPlan,
+  serverBoundCapabilities,
   type CanonicalHasher,
   type ResolvedRealmPlan,
 } from "@world-prism/kernel";
@@ -393,7 +394,11 @@ export async function resolveServerAssembly(
   };
 }
 
-/** 浏览器 realm 的会话装配；与 server 共用同一解析器，空绑定得到空模块集。 */
+/**
+ * 浏览器 realm 的会话装配；与 server 共用同一解析器，空绑定得到空模块集。
+ * 解析器拒绝 requiresRemote 不在 server 段已绑定能力内的浏览器模块（assembly-incompatible）；
+ * 模块集另带同一份远端能力描述，供浏览器握手时复核本地模块目录。
+ */
 export async function resolveSessionAssemblies(
   assembly: AssemblyDescriptor,
   definitions: readonly ModuleDefinition[],
@@ -418,6 +423,7 @@ export async function resolveSessionAssemblies(
       protocolVersion,
       modules,
       capabilities: boundCapabilities(assembly, plan, realm),
+      remoteCapabilities: [...serverBoundCapabilities(assembly)],
       assemblyHash: await computeAssemblyHash({ assembly, realm, plan, hash }),
     };
   };

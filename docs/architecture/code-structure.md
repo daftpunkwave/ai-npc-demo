@@ -40,7 +40,7 @@ world-prism/
           module-catalog.ts      # explicit imports of every console page module
   packages/
     contracts/                   # zod schemas + types: envelopes, commands, events, DTOs, ports, descriptors, API, content-pack/roster/resolved-profile shapes
-    kernel/                      # realm-agnostic host mechanics: registry, capability graph, lifecycle, slots, hook order, config resolution, hashing
+    kernel/                      # realm-agnostic host mechanics: descriptor validation, registry, capability graph, lifecycle, slots, hook order, config resolution, hashing
     module-sdk/                  # server module authoring helpers: defineModule, scoped ports, disposers
     client-sdk/                  # browser module helpers: slot components, preference port, projection hooks
     client-protocol/             # typed HTTP/WS client and projection reducer protocol
@@ -153,7 +153,7 @@ modules/server/agent/memory/ledger/
 
 `contracts` 是事件信封、命令、receipt、观察、记忆、context、模型请求、ToolDefinition/ToolBinding、模块描述符、装配和双端协议的唯一定义处。各模块不能定义字段略有差别的“内部公共 DTO”。
 
-`kernel` 只放 realm 无关的宿主机制：注册表、能力图、生命周期、slot、hook 排序、配置解析、manifest 摘要。它不得 import 任何 `modules/*`、`apps/*`、游戏内容、供应商 SDK 或具体 UI。
+`kernel` 只放 realm 无关的宿主机制：模块描述符校验、注册表、能力图、生命周期、slot、hook 排序、配置解析、manifest 摘要。它不得 import 任何 `modules/*`、`apps/*`、游戏内容、供应商 SDK 或具体 UI。
 
 `authority` 放服务端固定的命令网关、事务/outbox 协调、幂等与 fencing 机制；`world` 规则本身是模块，`authority` 不包含水闸、资源或协议结算。
 
