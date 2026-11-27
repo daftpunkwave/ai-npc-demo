@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { consoleHotPathTimingSchema, type HostTracer } from "@world-prism/contracts";
 import type { GameContent } from "@world-prism/module-sdk";
 import type { ServerApp } from "../src/host/module-catalog";
+import { createHostServices } from "../src/host-services";
 import { createSpanTimings } from "../src/host/span-timings";
 import { createTransportApp, playerProjectionSpan, type TransportAppInput } from "../src/host/transport-app";
 
@@ -113,6 +114,22 @@ describe("进程内耗时汇总", () => {
   it("窗口与名称上限必须是正整数", () => {
     expect(() => createSpanTimings({ now: () => 0, windowSize: 0 })).toThrow(RangeError);
     expect(() => createSpanTimings({ now: () => 0, maxNames: 1.5 })).toThrow(RangeError);
+  });
+});
+
+describe("宿主服务的 tracer 注入", () => {
+  it("未注入 tracer 时 span 只执行回调并原样返回结果与错误", () => {
+    const services = createHostServices();
+    expect(services.tracer.span("any", {}, () => 42)).toBe(42);
+    const failure = new Error("回调错误");
+    expect(() => services.tracer.span("any", {}, () => {
+      throw failure;
+    })).toThrow(failure);
+  });
+
+  it("注入的 tracer 原样成为宿主服务的 tracer", () => {
+    const timings = createSpanTimings({ now: () => 0 });
+    expect(createHostServices({ tracer: timings }).tracer).toBe(timings);
   });
 });
 
