@@ -314,10 +314,24 @@ describe("在线名册休眠与唤醒", () => {
     for (const response of forbidden) {
       expect(response.statusCode).toBe(403);
     }
-    const otherBranch = await host.app.inject({
-      method: "GET", url: "/api/v1/console/campaign/roster?branchId=br-000000000999", headers: operator,
+    // 名册路由与其他控制台运营路由共用 branchId 查询参数守卫：与在线分支一致时放行，其他分支或空值按 400 拒绝。
+    const sameBranch = await host.app.inject({
+      method: "GET", url: `/api/v1/console/campaign/roster?branchId=${host.branchId}`, headers: researcher,
     });
-    expect(otherBranch.statusCode).toBe(400);
+    expect(sameBranch.statusCode, sameBranch.body).toBe(200);
+    expect(onlineRosterViewSchema.parse(sameBranch.json()).branchId).toBe(host.branchId);
+    const guarded = [
+      await host.app.inject({ method: "GET", url: "/api/v1/console/campaign/roster?branchId=br-000000000999", headers: operator }),
+      await host.app.inject({ method: "GET", url: "/api/v1/console/campaign/roster?branchId=", headers: operator }),
+      await host.app.inject({
+        method: "POST", url: "/api/v1/console/campaign/roster/hibernate?branchId=br-000000000999", headers: operator,
+        payload: { operationId: "op-000000000908", branchId: host.branchId },
+      }),
+    ];
+    for (const response of guarded) {
+      expect(response.statusCode).toBe(400);
+      expect(errorCode(response.json())).toBe("validation");
+    }
     expect(onlineActivationStatuses(host).every((status) => status === "active")).toBe(true);
     expect(rosterAudit(host)).toEqual([]);
   }, 60_000);
