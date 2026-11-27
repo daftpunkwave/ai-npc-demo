@@ -44,6 +44,7 @@ import { createResearchHttp } from "./http/research";
 import {
   defaultRequestTimeoutMs,
   queryString,
+  rejectWhenAborted,
   type ConsoleRequest,
   type RequestOptions,
 } from "./http/request";
@@ -366,7 +367,7 @@ export class ApiClient {
       headers.set("Content-Type", "application/json");
     }
     const { response, payload } = await this.exchange(path, headers, options);
-    // 不遵守 signal 的 fetch 实现仍可能在取消后交付响应；调用方已放弃的请求不再交付结果。
+    // 交换完成到这里恢复执行之间，调用方仍可能已取消；已放弃的请求不再交付结果。
     options.signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
@@ -384,6 +385,8 @@ export class ApiClient {
   /**
    * 发出请求并读完响应体，全程受调用方 signal 与本客户端期限共同约束。
    * 期限覆盖正文读取：服务端发出响应头后挂起正文，与连接挂起一样会让调用方无限等待。
+   * 交换与中止竞速，结果不依赖 fetch 实现遵守 signal：忽略中止的实现可能在期限后才交付响应，
+   * 也可能永不结束，中止一旦发生本次请求即按中止来源失败，迟到的结果被丢弃。
    */
   private async exchange(
     path: string,
@@ -395,20 +398,10 @@ export class ApiClient {
     const signal = options.signal === undefined
       ? deadline.signal
       : AbortSignal.any([options.signal, deadline.signal]);
+    const aborted = rejectWhenAborted(signal);
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-        method: options.method ?? "GET",
-        headers,
-        signal,
-        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      });
-      const payload: unknown = await response.json().catch((cause: unknown) => {
-        // 读取途中被中止不是“空正文”，交给外层按中止来源处理；
-        // 其余失败是非 JSON 正文（代理错误页、静态 404），按无载荷交给状态码兜底映射或契约校验。
-        if (signal.aborted) throw cause;
-        return null;
-      });
-      return { response, payload };
+      // Promise.race 订阅两个输入：落败一方之后的拒绝由它处理，不会成为未处理拒绝。
+      return await Promise.race([this.send(path, headers, options, signal), aborted.promise]);
     } catch (cause) {
       // 调用方主动取消优先，原样抛出取消原因：调用方据此区分“自己放弃”与请求失败。
       options.signal?.throwIfAborted();
@@ -418,7 +411,31 @@ export class ApiClient {
       throw cause;
     } finally {
       clearTimeout(timer);
+      aborted.dispose();
     }
+  }
+
+  private async send(
+    path: string,
+    headers: Headers,
+    options: RequestOptions,
+    signal: AbortSignal,
+  ): Promise<{ readonly response: Response; readonly payload: unknown }> {
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers,
+      signal,
+      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    });
+    // 忽略 signal 的实现可能在中止后才交付响应头：本次请求已按中止失败，不再读取正文。
+    signal.throwIfAborted();
+    const payload: unknown = await response.json().catch((cause: unknown) => {
+      // 读取途中被中止不是“空正文”，交给外层按中止来源处理；
+      // 其余失败是非 JSON 正文（代理错误页、静态 404），按无载荷交给状态码兜底映射或契约校验。
+      if (signal.aborted) throw cause;
+      return null;
+    });
+    return { response, payload };
   }
 }
 

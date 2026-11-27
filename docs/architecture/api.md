@@ -313,7 +313,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 浏览器 `ApiClient`（`packages/client-protocol`）只采纳通过 `errorResponseSchema` 校验的统一错误信封。代理、静态资源层或框架在业务处理之前返回的非 2xx 没有信封，客户端按状态码兜底：400 → `validation`，401 → `unauthenticated`（同时清除本地会话令牌），403 → `forbidden`，404 → `not-found`，408 → `not-ready`，409 → `invalid-state`，429 → `budget-exhausted`，503 → `not-ready`，其余 5xx → `plugin-failed`，其余状态 → `validation`；其中 408、429、503 与其余 5xx 标记为可重试。兜底错误的 `safeMessage` 使用客户端固定文案，不取 `statusText` 或响应正文，状态码记在 `details.status`。2xx 响应体不满足对应响应 schema 时，客户端抛出不可重试的 `plugin-failed`：问题出在服务端产出的响应而不是请求本身，重试只会拿到同样的结构。Zod 的字段路径与说明只放进 `details.issues`，界面只展示 `safeMessage`。
 
-`ApiClient` 为每个请求设置期限，缺省 35 秒，可用构造参数 `requestTimeoutMs` 调整。期限覆盖到读完响应体，因为服务端发出响应头后挂起正文同样会让调用方无限等待。缺省值略长于服务端 30 秒的处理期限：服务端仍能响应时以它返回的结构化错误为准，只有服务端挂起或连接半开时才由客户端判定超时。超期抛出可重试的 `not-ready`，`details.timeoutMs` 记录期限；登记表没有专门的超时错误码，`not-ready` 与 503 同义，表示服务当前无法处理、稍后可重试。调用方经 `AbortSignal` 取消时，客户端中止底层请求并原样抛出取消原因，不转换为领域错误，调用方据此区分“自己放弃”与请求失败。
+`ApiClient` 为每个请求设置期限，缺省 35 秒，可用构造参数 `requestTimeoutMs` 调整。期限覆盖到读完响应体，因为服务端发出响应头后挂起正文同样会让调用方无限等待。缺省值略长于服务端 30 秒的处理期限：服务端仍能响应时以它返回的结构化错误为准，只有服务端挂起或连接半开时才由客户端判定超时。超期抛出可重试的 `not-ready`，`details.timeoutMs` 记录期限；登记表没有专门的超时错误码，`not-ready` 与 503 同义，表示服务当前无法处理、稍后可重试。调用方经 `AbortSignal` 取消时，客户端中止底层请求并原样抛出取消原因，不转换为领域错误，调用方据此区分“自己放弃”与请求失败。期限与取消不依赖 fetch 实现遵守 `AbortSignal`：请求与中止竞速，中止一旦发生即按来源失败（调用方取消优先于期限），忽略中止的实现迟到交付的响应头、正文或失败一律丢弃，响应头迟到时也不再读取正文。
 
 业务规则拒绝（例如资源不足、路线不可用）不使用以上 HTTP 错误：命令被受理并写入 receipt，返回 200 和 `commandStatus: "rejected"`，原因放在 `receipt.reasonCode`。下列值容易与错误码混淆，它们只以这种方式出现，客户端不要在 `error.code` 中等待它们：
 

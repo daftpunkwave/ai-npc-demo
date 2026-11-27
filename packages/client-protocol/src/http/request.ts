@@ -1,5 +1,5 @@
 /**
- * 核心职责：定义 HTTP 请求选项、缺省请求期限和领域请求契约，统一编码查询参数。
+ * 核心职责：定义 HTTP 请求选项、缺省请求期限和领域请求契约，统一编码查询参数，提供请求与中止竞速用的拒绝信号。
  * 交互契约：依赖公共角色类型与响应 schema，供浏览器 HTTP 客户端内部装配使用。
  * 约束与禁忌：不保存会话、不执行网络请求，领域方法不指定认证身份。
  */
@@ -27,6 +27,30 @@ export type ConsoleRequest = <T>(
   path: string,
   options?: Pick<RequestOptions, "method" | "body" | "signal">,
 ) => Promise<T>;
+
+/**
+ * signal 中止时以中止原因拒绝的 Promise，只用于与请求竞速；dispose 移除监听。
+ * 已中止的 signal 不会再派发 abort 事件，因此创建时直接拒绝。
+ */
+export function rejectWhenAborted(signal: AbortSignal): { readonly promise: Promise<never>; dispose(): void } {
+  let onAbort: () => void = () => undefined;
+  const promise = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      reject(signal.reason);
+    };
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+  return {
+    promise,
+    dispose: () => {
+      signal.removeEventListener("abort", onAbort);
+    },
+  };
+}
 
 export function queryString(values: Readonly<Record<string, string | number | undefined>>): string {
   const query = new URLSearchParams();
