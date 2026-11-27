@@ -83,7 +83,7 @@ Godot C# 原生玩家端及正式 3D 美术处于规划状态。当前玩家端�
 
 ### 3.1 身份配额
 
-状态：配额已交付。部署级共享配额在开局和恢复事务内执行，活动或暂停分支上的活动身份共用 15 个名额，归档分支退出计数。实验执行器在实验开局与每个探针沙盒激活时执行同一配额检查，探针期间实验名册休眠、沙盒只激活被问 Agent，run 完成、失败或停止后名册休眠释放配额（第 2 节第 22 项）。在线名额的释放与恢复已交付：operator 经 `POST /api/v1/console/campaign/roster/hibernate` 先受控暂停在线时钟，再把在线名册全部置为休眠，在线名额归零；休眠期间在线世界只读，继续与单步被拒绝，状态跨重启保持。实验结束后经 `POST /api/v1/console/campaign/roster/wake` 在一个事务内预留名额并重新激活，名额不足时整体拒绝且可用同一 `operationId` 重试（[API](architecture/api.md#53-三势力席位与世界运营)、[运营](platform/operations.md#9-故障与配额操作)）。只暂停在线时钟仍不释放名额。用真实模型跑 `exp-memory-promise-v1` 并产出报告尚未执行，由维护者用真实凭据完成；`exp-memory-rumor-v1` 依赖的 `s-rumor` 含 `setup` 预置知识，执行器尚无经命令网关的预置入口，会以 `script-setup-unsupported` 失败。
+状态：配额已交付。部署级共享配额在开局和恢复事务内执行，活动或暂停分支上的活动身份共用 15 个名额，归档分支退出计数。实验执行器在实验开局与每个探针沙盒激活时执行同一配额检查，探针期间实验名册休眠、沙盒只激活被问 Agent，run 完成、失败或停止后名册休眠释放配额（第 2 节第 22 项）。在线名额的释放与恢复已交付：operator 经 `POST /api/v1/console/campaign/roster/hibernate` 先受控暂停在线时钟，再把在线名册全部置为休眠，在线名额归零；休眠期间在线世界只读，继续与单步被拒绝，状态跨重启保持。实验结束后经 `POST /api/v1/console/campaign/roster/wake` 在一个事务内预留名额并重新激活，名额不足时整体拒绝且可用同一 `operationId` 重试；控制台运营页展示名册状态与部署级名额并提供两个入口（[API](architecture/api.md#53-三势力席位与世界运营)、[运营](platform/operations.md#9-故障与配额操作)）。只暂停在线时钟仍不释放名额。用真实模型跑 `exp-memory-promise-v1` 并产出报告尚未执行，由维护者用真实凭据完成；`exp-memory-rumor-v1` 依赖的 `s-rumor` 含 `setup` 预置知识，执行器尚无经命令网关的预置入口，会以 `script-setup-unsupported` 失败。
 
 ### 3.2 t168 资源交接
 

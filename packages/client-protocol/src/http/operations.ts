@@ -1,5 +1,5 @@
 /**
- * 核心职责：构造控制台时钟控制与存档请求，包括只读恢复预检。
+ * 核心职责：构造控制台时钟控制、存档与在线名册休眠/唤醒请求，包括只读恢复预检。
  * 交互契约：依赖已绑定会话的控制台请求函数，使用调用方提供的版本与 operationId；
  * 恢复端点按请求是否预检选择对应响应 schema，而不是对同一份响应做形状推断。
  * 约束与禁忌：不在客户端重试写入、不变更世界状态或推算时钟版本。
@@ -7,11 +7,15 @@
 import {
   clockResponseSchema,
   clockStepRequestSchema,
+  onlineRosterOperationRequestSchema,
+  onlineRosterOperationResponseSchema,
+  onlineRosterViewSchema,
   restoreDryRunResponseSchema,
   snapshotCreateResponseSchema,
   snapshotListResponseSchema,
   snapshotRestoreResponseSchema,
   type ClockControlRequest,
+  type OnlineRosterOperationRequest,
   type SnapshotCreateRequest,
 } from "@world-prism/contracts";
 import type { z } from "zod";
@@ -65,6 +69,25 @@ export function createOperationsHttp(request: ConsoleRequest) {
         method: "POST",
         body: input,
         signal,
+      });
+    },
+
+    /** 在线名册状态与部署级名额。 */
+    consoleOnlineRoster(signal?: AbortSignal) {
+      return request(onlineRosterViewSchema, "/api/v1/console/campaign/roster", { signal });
+    },
+
+    /** 休眠在线名册：服务端先暂停在线时钟，再释放名册占用的名额。 */
+    consoleHibernateRoster(input: OnlineRosterOperationRequest) {
+      return request(onlineRosterOperationResponseSchema, "/api/v1/console/campaign/roster/hibernate", {
+        method: "POST", body: onlineRosterOperationRequestSchema.parse(input),
+      });
+    },
+
+    /** 唤醒在线名册：名额不足时服务端整体拒绝，不激活任何身份。 */
+    consoleWakeRoster(input: OnlineRosterOperationRequest) {
+      return request(onlineRosterOperationResponseSchema, "/api/v1/console/campaign/roster/wake", {
+        method: "POST", body: onlineRosterOperationRequestSchema.parse(input),
       });
     },
   };

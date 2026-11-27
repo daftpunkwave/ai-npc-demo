@@ -49,6 +49,36 @@ it("模型、研究、调试和运营请求共享会话与当前角色", async (
   expect(forwarded?.aborted).toBe(true);
 });
 
+it("在线名册读取、休眠与唤醒按运营角色发送并校验响应", async () => {
+  const roster = {
+    branchId: "br-000000000001", state: "hibernated", activeAgents: 0, dormantAgents: 15,
+    deploymentActiveAgents: 0, deploymentLimit: 15,
+  };
+  const clock = { worldTick: 3, day: 1, hour: 3, mode: "paused", runVersion: 4 };
+  const fetchImpl = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(fixtureSession))
+    .mockResolvedValueOnce(Response.json({ ...roster, state: "active", activeAgents: 15, dormantAgents: 0, deploymentActiveAgents: 15 }))
+    .mockResolvedValueOnce(Response.json({ roster, clock }))
+    .mockResolvedValueOnce(Response.json({ roster: { ...roster, state: "unknown" }, clock }));
+  const api = new ApiClient({ baseUrl, fetchImpl, storage: null, activeRole: "operator" });
+
+  await api.login("fixture-login");
+  await expect(api.consoleOnlineRoster()).resolves.toMatchObject({ state: "active", deploymentActiveAgents: 15 });
+  await expect(api.consoleHibernateRoster({ operationId: "op-000000000001" })).resolves.toEqual({ roster, clock });
+  await expect(api.consoleWakeRoster({ operationId: "op-000000000002" })).rejects.toMatchObject({ code: "plugin-failed" });
+
+  expect(fetchImpl.mock.calls.slice(1).map(([url, options]) => [
+    new URL(String(url)).pathname,
+    options?.method ?? "GET",
+    options?.body ?? null,
+    new Headers(options?.headers).get("x-active-role"),
+  ])).toEqual([
+    ["/api/v1/console/campaign/roster", "GET", null, "operator"],
+    ["/api/v1/console/campaign/roster/hibernate", "POST", JSON.stringify({ operationId: "op-000000000001" }), "operator"],
+    ["/api/v1/console/campaign/roster/wake", "POST", JSON.stringify({ operationId: "op-000000000002" }), "operator"],
+  ]);
+});
+
 it("领域请求复用响应校验和身份过期后的清理", async () => {
   const fetchImpl = vi.fn<typeof fetch>()
     .mockResolvedValueOnce(Response.json(fixtureSession))

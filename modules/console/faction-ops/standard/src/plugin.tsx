@@ -1,7 +1,8 @@
 /**
- * 核心职责：呈现当前时钟、快照与在线分支，并通过控制台 API 执行暂停、继续、单步、存档和恢复。
+ * 核心职责：呈现当前时钟、快照、在线分支与在线名额，并通过控制台 API 执行暂停、继续、单步、存档、恢复，
+ *   以及在线名册的休眠（释放名额）与唤醒（恢复名额）。
  * 交互契约：依赖宿主生成 operationId、宿主维护的在线分支订阅、控制台会话与 React；不自行计算世界版本或分支。
- * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功；在线身份变化后不展示旧分支的时钟与快照。
+ * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功；在线身份变化后不展示旧分支的时钟、快照与名额。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 /* eslint-disable no-unused-vars -- 宿主端口方法参数名只表达调用契约，Codacy 未能解析。 */
@@ -11,6 +12,8 @@ import type {
   ClockView,
   ModuleCreateInput,
   ModuleInstance,
+  OnlineRosterState,
+  OnlineRosterView,
   SessionDescriptor,
   SnapshotView,
 } from "@world-prism/contracts";
@@ -39,10 +42,17 @@ function actionError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+const rosterStateLabels: Readonly<Record<OnlineRosterState, string>> = {
+  empty: "未开局",
+  active: "占用名额",
+  hibernated: "已休眠",
+};
+
 function FactionOpsPage(): ReactNode {
   const host = usePort<ConsoleHostPort>("host.console");
   const [clock, setClock] = useState<ClockView | null>(null);
   const [snapshots, setSnapshots] = useState<readonly SnapshotView[]>([]);
+  const [roster, setRoster] = useState<OnlineRosterView | null>(null);
   const [ticks, setTicks] = useState(1);
   const [label, setLabel] = useState("manual-checkpoint");
   const [busy, setBusy] = useState(false);
@@ -63,13 +73,15 @@ function FactionOpsPage(): ReactNode {
   }, [host]);
 
   const refresh = async (signal: AbortSignal): Promise<ClockView> => {
-    const [health, nextSnapshots] = await Promise.all([
+    const [health, nextSnapshots, nextRoster] = await Promise.all([
       host.api.consoleHealth(signal),
       host.api.consoleSnapshots(signal),
+      host.api.consoleOnlineRoster(signal),
     ]);
     signal.throwIfAborted();
     setClock(health.clock);
     setSnapshots(nextSnapshots.snapshots);
+    setRoster(nextRoster);
     return health.clock;
   };
 
@@ -81,6 +93,7 @@ function FactionOpsPage(): ReactNode {
     activeRequest.current = read;
     setClock(null);
     setSnapshots([]);
+    setRoster(null);
     setBusy(false);
     setMessage(null);
     setError(null);
@@ -155,6 +168,18 @@ function FactionOpsPage(): ReactNode {
     setMessage("快照已创建");
   });
 
+  const changeRoster = (action: "hibernate" | "wake"): Promise<void> => run(async (signal) => {
+    if (action === "hibernate" && !host.confirm("确认暂停在线世界并释放全部在线名额？休眠期间在线时钟不能继续或单步。")) return;
+    const request = { operationId: host.operationId() };
+    const result = action === "hibernate"
+      ? await host.api.consoleHibernateRoster(request)
+      : await host.api.consoleWakeRoster(request);
+    signal.throwIfAborted();
+    setRoster(result.roster);
+    setClock(result.clock);
+    setMessage(action === "hibernate" ? "在线名册已休眠，名额已释放" : "在线名额已恢复，时钟保持暂停");
+  });
+
   const restore = (snapshotId: string): Promise<void> => run(async (signal) => {
     const preview = await host.api.consolePreviewSnapshotRestore({
       operationId: host.operationId(),
@@ -167,6 +192,8 @@ function FactionOpsPage(): ReactNode {
     signal.throwIfAborted();
     host.reload();
   });
+
+  const hibernated = roster?.state === "hibernated";
 
   return (
     <section className="console-page" data-testid="console-page-faction-ops">
@@ -186,7 +213,7 @@ function FactionOpsPage(): ReactNode {
           <header><h2>时钟</h2><span>version {clock?.runVersion ?? "-"}</span></header>
           <div className="ops-control-grid">
             <button type="button" disabled={busy || clock?.mode === "paused"} onClick={() => void control("pause")}>暂停</button>
-            <button type="button" disabled={busy || clock?.mode === "running"} onClick={() => void control("resume")}>继续</button>
+            <button type="button" disabled={busy || clock?.mode === "running" || hibernated} onClick={() => void control("resume")}>继续</button>
             <label>
               <span>推进 tick</span>
               <input
@@ -199,7 +226,7 @@ function FactionOpsPage(): ReactNode {
                 }}
               />
             </label>
-            <button type="button" disabled={busy || clock?.mode === "running"} onClick={() => void step()}>单步推进</button>
+            <button type="button" disabled={busy || clock?.mode === "running" || hibernated} onClick={() => void step()}>单步推进</button>
           </div>
           <div className="console-kv">
             <div><dt>游戏日</dt><dd>{clock?.day ?? "-"}</dd></div>
@@ -233,6 +260,21 @@ function FactionOpsPage(): ReactNode {
               </article>
             ))}
             {snapshots.length === 0 ? <p className="console-empty">当前分支尚无快照。</p> : null}
+          </div>
+        </section>
+        <section className="console-panel">
+          <header>
+            <h2>在线名额</h2>
+            <span>{roster === null ? "-" : `部署 ${roster.deploymentActiveAgents} / ${roster.deploymentLimit}`}</span>
+          </header>
+          <div className="console-kv">
+            <div><dt>名册状态</dt><dd data-testid="console-ops-roster-state">{roster === null ? "-" : rosterStateLabels[roster.state]}</dd></div>
+            <div><dt>活动身份</dt><dd>{roster?.activeAgents ?? "-"}</dd></div>
+            <div><dt>休眠身份</dt><dd>{roster?.dormantAgents ?? "-"}</dd></div>
+          </div>
+          <div className="ops-control-grid">
+            <button type="button" disabled={busy || roster?.state !== "active"} onClick={() => void changeRoster("hibernate")}>休眠并释放名额</button>
+            <button type="button" disabled={busy || !hibernated} onClick={() => void changeRoster("wake")}>恢复名额</button>
           </div>
         </section>
       </div>
