@@ -28,7 +28,7 @@ export function createResearchHttp(request: ConsoleRequest) {
       readonly types?: readonly string[];
       readonly agentId?: string;
       readonly nodeId?: string;
-    }) {
+    }, signal?: AbortSignal) {
       return request(
         timelineResponseSchema,
         `/api/v1/console/timeline${queryString({
@@ -40,17 +40,19 @@ export function createResearchHttp(request: ConsoleRequest) {
           agentId: input.agentId,
           nodeId: input.nodeId,
         })}`,
+        { signal },
       );
     },
 
-    consoleAgents(branchId: string) {
-      return request(agentsResponseSchema, `/api/v1/console/agents${queryString({ branchId })}`);
+    consoleAgents(branchId: string, signal?: AbortSignal) {
+      return request(agentsResponseSchema, `/api/v1/console/agents${queryString({ branchId })}`, { signal });
     },
 
-    consoleInspector(agentId: string, branchId: string) {
+    consoleInspector(agentId: string, branchId: string, signal?: AbortSignal) {
       return request(
         agentInspectorResponseSchema,
         `/api/v1/console/agents/${encodeURIComponent(agentId)}/inspector${queryString({ branchId })}`,
+        { signal },
       );
     },
 
@@ -81,7 +83,7 @@ export function createResearchHttp(request: ConsoleRequest) {
       readonly agentId?: string;
       readonly status?: string;
       readonly limit?: number;
-    } = {}) {
+    } = {}, signal?: AbortSignal) {
       return request(
         turnsResponseSchema,
         `/api/v1/console/turns${queryString({
@@ -91,22 +93,24 @@ export function createResearchHttp(request: ConsoleRequest) {
           status: input.status,
           limit: input.limit,
         })}`,
+        { signal },
       );
     },
 
-    consoleTurn(turnId: string) {
-      return request(turnDetailSchema, `/api/v1/console/turns/${encodeURIComponent(turnId)}`);
+    consoleTurn(turnId: string, signal?: AbortSignal) {
+      return request(turnDetailSchema, `/api/v1/console/turns/${encodeURIComponent(turnId)}`, { signal });
     },
 
-    consoleArtifact(artifactId: string, view: "redacted" | "raw") {
+    consoleArtifact(artifactId: string, view: "redacted" | "raw", signal?: AbortSignal) {
       return request(
         artifactResponseSchema,
         `/api/v1/console/artifacts/${encodeURIComponent(artifactId)}${queryString({ view })}`,
+        { signal },
       );
     },
 
-    consoleTrace(traceId: string) {
-      return request(traceResponseSchema, `/api/v1/console/traces/${encodeURIComponent(traceId)}`);
+    consoleTrace(traceId: string, signal?: AbortSignal) {
+      return request(traceResponseSchema, `/api/v1/console/traces/${encodeURIComponent(traceId)}`, { signal });
     },
 
     consoleBranchCompare(left: string, right: string, atSeq: number) {

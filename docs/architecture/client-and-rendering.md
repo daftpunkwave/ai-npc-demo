@@ -121,7 +121,7 @@ settings.section: rendered inside the settings modal opened from the HUD gear bu
 | 端口 | 提供者 | 接口 |
 |---|---|---|
 | `ProjectionPort` | `client.world-view.standard` | `getSnapshot(): ProjectionState \| null`、`subscribe(listener): () => void`、`getContent()`、`getConnectionState()`、`startCampaign()`、`sendDialogue()`、`pause()`、`resume()`、`save()` |
-| `CommandClient` | 宿主（`client-protocol`） | `send(type, payload): Promise<CommandReceipt>`：生成 `commandId`，网络失败时用同一个 `commandId` 重试最多 3 次 |
+| `CommandClient` | 宿主（`client-protocol`） | `send(type, payload): Promise<CommandReceipt>`：生成 `commandId`，网络失败或错误标记为可重试（含请求超时）时用同一个 `commandId` 重试最多 3 次 |
 | `SelectionPort` | `client.input.standard` | `getSnapshot(): { kind: "node" \| "character" \| "team" \| "task", id } \| null`、`select(sel)`、`subscribe` |
 | `CameraPort` | `client.camera.standard` | `getSnapshot(): { x, y, zoom }`、`pan(dx, dy)`、`zoomTo(z)`、`follow(entityId)`、`subscribe` |
 | `ScreenProjectionPort` | `client.screen-projection.isometric` | `worldToScreen(x, y, h)`、`screenToWorld(px, py)`，公式见第 5 节，`tileWidth = 64`、`tileHeight = 32` |

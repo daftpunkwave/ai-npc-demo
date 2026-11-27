@@ -18,7 +18,6 @@ import {
   runReportResponseSchema,
   runsResponseSchema,
   conversationResponseSchema,
-  errorResponseSchema,
   loginResponseSchema,
   modulesResponseSchema,
   resolvedModuleSetSchema,
@@ -42,7 +41,15 @@ import { createDebugHttp } from "./http/debug";
 import { createModelLayoutHttp } from "./http/model-layouts";
 import { createOperationsHttp } from "./http/operations";
 import { createResearchHttp } from "./http/research";
-import { queryString, type ConsoleRequest, type RequestOptions } from "./http/request";
+import {
+  defaultRequestTimeoutMs,
+  maxRequestTimeoutMs,
+  queryString,
+  rejectWhenAborted,
+  type ConsoleRequest,
+  type RequestOptions,
+} from "./http/request";
+import { contractViolationError, failedResponseError, requestTimeoutError } from "./http/request-errors";
 
 export type { RequestOptions } from "./http/request";
 
@@ -53,6 +60,11 @@ export interface ApiClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly storage?: BrowserStorage | null;
   readonly activeRole?: ConsoleActiveRole;
+  /**
+   * 单个请求从发出到读完响应体的期限（毫秒），缺省为 `defaultRequestTimeoutMs`。
+   * 必须是 1 到 `maxRequestTimeoutMs` 之间的整数，否则构造时抛出 validation 错误。
+   */
+  readonly requestTimeoutMs?: number;
 }
 
 interface BrowserStorage {
@@ -94,6 +106,7 @@ export class ApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly storage: BrowserStorage | null;
+  private readonly requestTimeoutMs: number;
   private sessionToken: string | null;
   private activeRole: ConsoleActiveRole | undefined;
   private readonly requestConsole: ConsoleRequest = (schema, path, options) =>
@@ -107,6 +120,18 @@ export class ApiClient {
     this.baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
     this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? defaultRequestTimeoutMs;
+    // 只接受整数：小于 1 的小数会被 setTimeout 截成 0，让请求一发出就超时。
+    if (
+      !Number.isInteger(this.requestTimeoutMs)
+      || this.requestTimeoutMs < 1
+      || this.requestTimeoutMs > maxRequestTimeoutMs
+    ) {
+      throw new DomainError(
+        "validation",
+        `requestTimeoutMs 必须是 1 到 ${maxRequestTimeoutMs} 之间的整数（毫秒）`,
+      );
+    }
     this.activeRole = options.activeRole;
     this.sessionToken = this.storage?.getItem(sessionStorageKey) ?? null;
   }
@@ -146,13 +171,13 @@ export class ApiClient {
     this.clearSession();
   }
 
-  session(): Promise<SessionDescriptor> {
-    return this.request(sessionDescriptorSchema, "/api/v1/session");
+  session(signal?: AbortSignal): Promise<SessionDescriptor> {
+    return this.request(sessionDescriptorSchema, "/api/v1/session", { signal });
   }
 
   /** 读取静态内容视图：章节名、时钟刻度与界面文字；与授权投影分开。 */
-  content() {
-    return this.request(clientContentViewSchema, "/api/v1/content");
+  content(signal?: AbortSignal) {
+    return this.request(clientContentViewSchema, "/api/v1/content", { signal });
   }
 
   assembly(realm: "client" | "console") {
@@ -353,33 +378,76 @@ export class ApiClient {
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
     }
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
-    const payload: unknown = await response.json().catch(() => null);
+    const { response, payload } = await this.exchange(path, headers, options);
+    // 交换完成到这里恢复执行之间，调用方仍可能已取消；已放弃的请求不再交付结果。
     options.signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
         this.clearSession();
       }
-      const parsedError = errorResponseSchema.safeParse(payload);
-      if (parsedError.success) {
-        throw new DomainError(parsedError.data.error.code, parsedError.data.error.safeMessage, {
-          retryable: parsedError.data.error.retryable,
-          traceId: parsedError.data.error.traceId,
-          detailsArtifactRef: parsedError.data.error.detailsArtifactRef,
-        });
-      }
-      throw new DomainError(
-        response.status >= 500 ? "plugin-failed" : "validation",
-        response.statusText || "请求失败",
-        { retryable: response.status >= 500 },
-      );
+      throw failedResponseError(response.status, payload);
     }
-    return schema.parse(payload);
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) {
+      throw contractViolationError(response.status, parsed.error);
+    }
+    return parsed.data;
+  }
+
+  /**
+   * 发出请求并读完响应体，全程受调用方 signal 与本客户端期限共同约束。
+   * 期限覆盖正文读取：服务端发出响应头后挂起正文，与连接挂起一样会让调用方无限等待。
+   * 交换与中止竞速，结果不依赖 fetch 实现遵守 signal：忽略中止的实现可能在期限后才交付响应，
+   * 也可能永不结束，中止一旦发生本次请求即按中止来源失败，迟到的结果被丢弃。
+   */
+  private async exchange(
+    path: string,
+    headers: Headers,
+    options: RequestOptions,
+  ): Promise<{ readonly response: Response; readonly payload: unknown }> {
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), this.requestTimeoutMs);
+    const signal = options.signal === undefined
+      ? deadline.signal
+      : AbortSignal.any([options.signal, deadline.signal]);
+    const aborted = rejectWhenAborted(signal);
+    try {
+      // Promise.race 订阅两个输入：落败一方之后的拒绝由它处理，不会成为未处理拒绝。
+      return await Promise.race([this.send(path, headers, options, signal), aborted.promise]);
+    } catch (cause) {
+      // 调用方主动取消优先，原样抛出取消原因：调用方据此区分“自己放弃”与请求失败。
+      options.signal?.throwIfAborted();
+      if (deadline.signal.aborted) {
+        throw requestTimeoutError(this.requestTimeoutMs);
+      }
+      throw cause;
+    } finally {
+      clearTimeout(timer);
+      aborted.dispose();
+    }
+  }
+
+  private async send(
+    path: string,
+    headers: Headers,
+    options: RequestOptions,
+    signal: AbortSignal,
+  ): Promise<{ readonly response: Response; readonly payload: unknown }> {
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers,
+      signal,
+      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    });
+    // 忽略 signal 的实现可能在中止后才交付响应头：本次请求已按中止失败，不再读取正文。
+    signal.throwIfAborted();
+    const payload: unknown = await response.json().catch((cause: unknown) => {
+      // 读取途中被中止不是“空正文”，交给外层按中止来源处理；
+      // 其余失败是非 JSON 正文（代理错误页、静态 404），按无载荷交给状态码兜底映射或契约校验。
+      if (signal.aborted) throw cause;
+      return null;
+    });
+    return { response, payload };
   }
 }
 
