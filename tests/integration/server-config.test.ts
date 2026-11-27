@@ -21,6 +21,7 @@ import {
   startupLogLines,
 } from "@world-prism/app-server";
 import type { DeploymentConfig, HostOptions, StartupHost } from "@world-prism/app-server";
+import { storageConfigSchema } from "@world-prism/mod-platform-storage-sqlite";
 
 vi.mock("node:fs", { spy: true });
 
@@ -187,7 +188,7 @@ describe("部署配置", () => {
       .toThrow("WORLD_PRISM_CLIENT_PORT 必须是 5173");
   });
 
-  it("trace_spans 保留天数缺省为永久保留，只接受正整数天", () => {
+  it("trace_spans 保留天数缺省为永久保留，只接受 1–36500 的整数天", () => {
     const root = tempRoot();
     const parse = (value: string | undefined) => parseDeploymentConfig({
       env: { WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS: value },
@@ -195,11 +196,18 @@ describe("部署配置", () => {
     }).traceSpansRetentionDays;
     expect(parse(undefined)).toBeNull();
     expect(parse("  ")).toBeNull();
+    expect(parse("1")).toBe(1);
     expect(parse("30")).toBe(30);
     expect(parse(" 365 ")).toBe(365);
-    for (const value of ["0", "-1", "1.5", "30d", "030", "abc"]) {
-      expect(() => parse(value)).toThrow(`WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS 必须是正整数天数，收到 "${value}"`);
+    expect(parse("36500")).toBe(36_500);
+    // 超长数字串转成数值会失去精度或变成 Infinity，必须在转换前按位数拒绝。
+    const overlong = "9".repeat(400);
+    for (const value of ["36501", "99999", "100000", "0", "-1", "1.5", "30.0", "1e3", "30d", "030", "abc", overlong]) {
+      expect(() => parse(value)).toThrow(`WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS 必须是 1–36500 的整数天数，收到 "${value}"`);
     }
+    // 解析接受的边界与存储适配器配置 schema 一致，不会出现启动参数通过、模块配置校验再失败的分叉。
+    expect(storageConfigSchema.safeParse({ retentionDays: { trace_spans: 36_500 } }).success).toBe(true);
+    expect(storageConfigSchema.safeParse({ retentionDays: { trace_spans: 36_501 } }).success).toBe(false);
   });
 
   it("拒绝玩家、控制台与单角色令牌之间的重复", () => {

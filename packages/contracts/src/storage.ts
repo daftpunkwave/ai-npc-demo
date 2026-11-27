@@ -167,6 +167,12 @@ export interface ArtifactFileStore {
 const byteCountSchema = z.number().int().nonnegative();
 
 /**
+ * 保留天数上限，约 100 年：更长的保留期与永久保留没有区别，应直接省略。
+ * 部署配置解析与存储适配器的配置 schema 共用这一上限，两处对同一取值给出相同结论。
+ */
+export const maxRetentionDays = 36_500;
+
+/**
  * 存储占用测量：主库页面与空闲页字节、artifact 正文字节、只追加表的行数与生效的保留天数。
  * 测量结果带完成时刻；适配器在后台按固定间隔重测，读取方拿到的可能是数分钟前的值。
  */

@@ -9,6 +9,7 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { maxRetentionDays } from "@world-prism/contracts";
 import { defaultModelLayoutRefFor, deploymentDefaults } from "./deployment-defaults";
 
 /** 双端拓扑固定的服务端监听地址。 */
@@ -149,15 +150,16 @@ function readBooleanFlag(env: DeploymentConfigInput["env"], name: string): boole
 }
 
 /**
- * 解析正整数天数；未配置或空白时为 null。只校验格式，取值上限由存储适配器的配置 schema 统一校验。
+ * 解析保留天数：1 到 maxRetentionDays 的十进制整数，未配置或空白时为 null。上限与存储适配器的配置 schema 共用。
+ * 先按位数拒绝超长数字串，再转成数值比较，避免超长串转换后失去精度或变成 Infinity。
  */
-function readPositiveDays(env: DeploymentConfigInput["env"], name: string): number | null {
+function readRetentionDays(env: DeploymentConfigInput["env"], name: string): number | null {
   const raw = readText(env, name);
   if (raw === undefined) {
     return null;
   }
-  if (!/^[1-9]\d*$/.test(raw)) {
-    throw new Error(`${name} 必须是正整数天数，收到 "${raw}"；留空表示永久保留`);
+  if (!/^[1-9]\d*$/.test(raw) || raw.length > String(maxRetentionDays).length || Number(raw) > maxRetentionDays) {
+    throw new Error(`${name} 必须是 1–${String(maxRetentionDays)} 的整数天数，收到 "${raw}"；留空表示永久保留`);
   }
   return Number(raw);
 }
@@ -219,7 +221,7 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     modelLayoutRef: readText(input.env, "WORLD_PRISM_MODEL_LAYOUT") ?? defaultModelLayoutRefFor(assemblyRef),
     rosterRef: readText(input.env, "WORLD_PRISM_ROSTER") ?? deploymentDefaults.rosterRef,
     migrateOnlineRun: readBooleanFlag(input.env, "WORLD_PRISM_MIGRATE_ONLINE_RUN"),
-    traceSpansRetentionDays: readPositiveDays(input.env, "WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS"),
+    traceSpansRetentionDays: readRetentionDays(input.env, "WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS"),
     configuredTokens,
   };
 }
