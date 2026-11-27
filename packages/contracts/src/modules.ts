@@ -91,13 +91,19 @@ export const moduleRefSchema = z
 
 export type ModuleRef = z.infer<typeof moduleRefSchema>;
 
-/** 会话握手返回的模块集：ID、版本、能力、装配 hash；浏览器 realm 另带已解析配置。 */
+/**
+ * 会话握手返回的模块集：ID、版本、能力、装配 hash；浏览器 realm 另带已解析配置与远端能力描述。
+ * `remoteCapabilities` 是同一装配 server 段已绑定的能力 ID（去重、按字典序），浏览器据此复核本地模块的
+ * `requiresRemote`。它只在 client / console 模块集中出现且为可选：server 模块集（经 `/api/v1/session`
+ * 返回）保持原有字段，不带该字段的 v1 载荷仍能通过本 strict schema。
+ */
 export const resolvedModuleSetSchema = z
   .object({
     realm: realmSchema,
     protocolVersion: z.string().min(1),
     modules: z.array(moduleRefSchema),
     capabilities: z.array(capabilityRefSchema),
+    remoteCapabilities: z.array(capabilityIdSchema).optional(),
     assemblyHash: z.string().min(1),
   })
   .strict();

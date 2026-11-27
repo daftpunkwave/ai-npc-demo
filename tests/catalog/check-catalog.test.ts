@@ -43,6 +43,7 @@ function fakeModule(input: {
   readonly id: string;
   readonly provides: readonly string[];
   readonly requires?: readonly string[];
+  readonly requiresRemote?: readonly string[];
   readonly realm?: Realm;
 }): ModuleDefinition {
   const realm = input.realm ?? "server";
@@ -55,7 +56,7 @@ function fakeModule(input: {
     instanceScope: realm === "server" ? "run" : "session",
     provides: input.provides.map((id) => capability(id, realm)),
     requires: (input.requires ?? []).map((id) => capability(id, realm)),
-    requiresRemote: [],
+    requiresRemote: (input.requiresRemote ?? []).map((id) => capabilityIdSchema.parse(id)),
     configSchema: clockConfigSchema,
     stateSchemaVersion: null,
     migrationPaths: [],
@@ -69,6 +70,7 @@ function assembly(input: {
   readonly assemblyId: string;
   readonly bindings?: readonly { capability: string; moduleId: string; configRef?: string | null }[];
   readonly configs?: Readonly<Record<string, unknown>>;
+  readonly consoleBindings?: readonly { capability: string; moduleId: string }[];
 }): AssemblyDescriptor {
   return assemblyDescriptorSchema.parse({
     schemaVersion: 1,
@@ -83,7 +85,9 @@ function assembly(input: {
         })),
       },
       client: { bindings: [] },
-      console: { bindings: [] },
+      console: {
+        bindings: (input.consoleBindings ?? []).map((binding) => ({ ...binding, configRef: null })),
+      },
     },
   });
 }
@@ -197,6 +201,31 @@ describe("catalog 预检", () => {
     const report = checkCatalog({ root, definitions: [hud], requiredCapabilities: [] });
     expect(report.violations.some((violation) => violation.code === "realm-violation")).toBe(true);
     expect(messagesOf(report)).toContain("client");
+  });
+
+  it("控制台模块的 requiresRemote 不在 server 段绑定内时预检失败并列出缺失能力", () => {
+    const observability = fakeModule({ id: "platform.observability.sqlite", provides: ["platform.observability"] });
+    const page = fakeModule({
+      id: "console.health.standard",
+      realm: "console",
+      provides: ["console.health"],
+      requiresRemote: ["platform.observability", "platform.operations"],
+    });
+    const root = fixtureRoot({
+      "remote.yaml": assembly({
+        assemblyId: "assembly-remote",
+        bindings: [{ capability: "platform.observability", moduleId: "platform.observability.sqlite" }],
+        consoleBindings: [{ capability: "console.health", moduleId: "console.health.standard" }],
+      }),
+    });
+    const report = checkCatalog({ root, definitions: [observability, page], requiredCapabilities: [] });
+    expect(report.violations).toEqual([
+      {
+        file: "remote.yaml",
+        code: "assembly-incompatible",
+        message: expect.stringContaining("console.health.standard 缺少 platform.operations"),
+      },
+    ]);
   });
 
   it("模块配置不符合 schema 失败并定位字段", () => {

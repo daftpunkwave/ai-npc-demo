@@ -202,7 +202,7 @@ describe("装配解析成功路径", () => {
     expect(plan.agentSlots).toEqual({ memory: ["agent.memory.none"] });
   });
 
-  it("浏览器模块允许声明 requiresRemote", () => {
+  it("浏览器模块的 requiresRemote 由同一装配的 server 段绑定满足时通过", () => {
     const hud = fakeModule({
       id: "client.hud.standard",
       realm: "client",
@@ -211,9 +211,12 @@ describe("装配解析成功路径", () => {
       requiresRemote: ["game.world"],
       port: { capability: "client.hud" },
     });
-    const assembly = makeAssembly({ client: { bindings: [binding("client.hud", "client.hud.standard")] } });
+    const assembly = makeAssembly({
+      server: { bindings: [binding("game.world", "game.world.slg-light")] },
+      client: { bindings: [binding("client.hud", "client.hud.standard")] },
+    });
     const plan = planFor([hud], assembly, "client");
-    expect(plan.modules.length).toBe(1);
+    expect(plan.modules.map((module) => module.moduleId)).toEqual(["client.hud.standard"]);
   });
 
   it("宿主固定必需能力全部有绑定时通过", () => {

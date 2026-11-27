@@ -30,6 +30,7 @@ export type {
 } from "./resolve-profile";
 
 export { isInstanceScopeCompatible } from "./capability-requirements";
+export { assertRemoteCapabilities, serverBoundCapabilities } from "./remote-capabilities";
 export type { PortProviderRef, ResolvedRequirement } from "./capability-requirements";
 
 export { resolveRealmPlan } from "./resolve-assembly";
