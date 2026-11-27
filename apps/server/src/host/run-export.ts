@@ -93,8 +93,10 @@ function redactJson(value: Json, redaction: "redacted" | "raw"): Json {
  *
  * 行来自存储层，JSON 列可能以字符串或已解析对象返回。若把字符串直接交给 `redactJson`，
  * 它只是个字符串、不会被逐字段处理，`redacted` 就会保留完整正文，`raw` 也可能带出凭据。
- * 因此按列的语义先尝试解析：解析成功的按对象脱敏；解析失败的只有正文类列才清空，
+ * 因此按列的语义处理：`redacted` 下正文类列先整列清空，再对其余列里看起来是 JSON 的字符串解析后按对象脱敏；
  * 标识、类型、时间戳等标量列保持原值——否则导出包会失去可追溯性。
+ * 正文列必须在解析之前判定：一段恰好写成 JSON 的回答（如 `{"plan":"..."}`）解析后只按键名脱敏，
+ * 不属于正文键名的字段会原样带出。
  */
 function redactRows(
   rows: readonly Readonly<Record<string, unknown>>[],
@@ -104,6 +106,10 @@ function redactRows(
   return rows.map((row) => {
     const decoded: Record<string, Json> = {};
     for (const [key, value] of Object.entries(row)) {
+      if (redaction === "redacted" && textColumns.has(key)) {
+        decoded[key] = null;
+        continue;
+      }
       if (typeof value !== "string") {
         decoded[key] = redactJson((value ?? null) as Json, redaction);
         continue;
@@ -118,8 +124,8 @@ function redactRows(
           // 解析失败说明不是合法 JSON，退回按字符串处理。
         }
       }
-      // 无法解析的正文类字符串在 redacted 下整段清空；ID、类型、时间戳等标量保留。
-      decoded[key] = redaction === "redacted" && textColumns.has(key) ? null : (value as Json);
+      // ID、类型、时间戳等标量与 raw 下的正文原样保留。
+      decoded[key] = value as Json;
     }
     return redactJson(decoded, redaction);
   });

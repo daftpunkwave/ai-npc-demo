@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startHost, type RunningHost } from "@world-prism/app-server";
+import { artifactBodyText } from "@world-prism/module-sdk";
 import {
   errorResponseSchema,
   experimentDetailResponseSchema,
@@ -1212,6 +1213,38 @@ describe("控制台评估读取接口", () => {
     const parsed = exportResponseSchema.parse(exported.json());
     // 导出产出一个 artifact 标识，调用方据此取包；正文不进响应。
     expect(parsed.artifactId).toMatch(/^art-/);
+  });
+  it("写成 JSON 的探针回答在脱敏导出里整列清空，不按键名放过其中的字段", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: testRunSpec({ id: "export-json-answer" }) },
+    })).json());
+    // 回答正文恰好是 JSON：`plan` 不是敏感键也不是正文键名，先解析再脱敏会把它原样带出。
+    host.storage.transact((tx) => {
+      tx.rows("probe_results").put({
+        probe_result_id: "prb-jsonanswer01", run_id: created.runId, script_id: "s-promise", probe_id: "p-recall-promise",
+        agent_id: "human-independent", asked_at_tick: 62, answer_text: "{\"plan\":\"PRIVATE-PLAN-背叛玩家\"}",
+        decision_json: null, score_json: null, valid: 1, invalid_reason: null, created_at: new Date().toISOString(),
+      });
+    });
+    const exportedRows = async (redaction: "redacted" | "raw") => {
+      const response = await host.app.inject({
+        method: "POST", url: "/api/v1/console/exports", headers, payload: { runId: created.runId, redaction },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const { artifactId } = exportResponseSchema.parse(response.json());
+      const row = host.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
+      if (row === null) throw new Error("导出 artifact 不存在");
+      const text = artifactBodyText(host.storage, row);
+      return { text, probeResults: (JSON.parse(text) as { readonly probeResults: readonly Record<string, unknown>[] }).probeResults };
+    };
+    const redacted = await exportedRows("redacted");
+    expect(redacted.probeResults.map((row) => [row["probe_result_id"], row["answer_text"]])).toEqual([["prb-jsonanswer01", null]]);
+    expect(redacted.text).not.toContain("PRIVATE-PLAN");
+    // raw 保留正文：差异只来自脱敏级别，而不是回答没有写进导出。
+    expect((await exportedRows("raw")).text).toContain("PRIVATE-PLAN");
   });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();
