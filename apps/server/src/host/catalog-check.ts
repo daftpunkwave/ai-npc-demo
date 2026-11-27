@@ -1,7 +1,7 @@
 /**
  * 校验 server 组合根与 config/assemblies 目录下的全部装配：模块目录、realm/kind 白名单、
  * 能力名与绑定匹配、运行时 requires 闭包、作用域/重复绑定、拓扑顺序、模块配置 schema 与必需能力。
- * 依赖 kernel 的统一解析器、module-sdk 描述符校验与组合根模块目录；不启动服务、不打开存储。
+ * 依赖 kernel 的统一解析器与描述符校验、组合根模块目录；不启动服务、不打开存储。
  * 装配目录的枚举与文件级约束复用启动路径的扫描实现，这里只在其上追加逐装配的解析检查。
  * 禁止写死装配文件名、放宽 schema 或用首错掩盖同一次预检中的其他失败项。
  */
@@ -16,9 +16,14 @@ import {
   type ModuleDefinition,
   type Realm,
 } from "@world-prism/contracts";
-import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@world-prism/kernel";
+import {
+  REALM_NAMESPACES,
+  createModuleRegistry,
+  resolveRealmPlan,
+  validateModuleDefinition,
+  type ResolvedRealmPlan,
+} from "@world-prism/kernel";
 import { loadContentPack } from "@world-prism/experiment";
-import { REALM_NAMESPACES, validateModuleDefinition } from "@world-prism/module-sdk";
 import {
   allModuleDefinitions,
   clientRequiredCapabilities,

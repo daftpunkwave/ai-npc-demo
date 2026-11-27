@@ -179,7 +179,7 @@ export type AssemblyDescriptor = z.infer<typeof assemblyDescriptorSchema>;
  * 严配置 schema：未知键解析即失败的 JSON 对象 schema。
  * 只依赖 zod 的公开导出：形状用 `ZodRawShape` 表达，不引用 zod 内部命名空间，
  * 避免 zod 重构内部结构时把编译失败扩散到所有实现 configSchema 的模块。
- * 是否真的拒绝未知键由运行期探测判定，见 module-sdk 的 isStrictConfigSchema。
+ * 是否真的拒绝未知键由运行期探测判定，见 kernel 描述符校验中的 isStrictConfigSchema。
  */
 export type StrictConfigSchema = z.ZodObject<z.ZodRawShape>;
 

@@ -6,8 +6,6 @@
 export const packageName = "@world-prism/module-sdk";
 
 export { defineModule } from "./define-module";
-export { validateModuleDefinition } from "./descriptor-validation";
-export { REALM_NAMESPACES } from "./descriptor-constraints";
 export { createStatelessModule } from "./lifecycle";
 
 export { createScopedStateKey } from "./ports";
