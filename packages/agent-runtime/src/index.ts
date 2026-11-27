@@ -9,9 +9,18 @@ export {
   agentDeploymentQuota,
   activateAgentRoster,
   activateAgentRosterInTransaction,
+  countDeploymentActiveIdentities,
   deactivateBranchAgentsInTransaction,
+  reactivateBranchAgentsInTransaction,
+  readBranchActivationCounts,
 } from "./activation";
-export type { ActivationResult, ActivateAgentRosterInput, RosterActivationInput, RosterActivationOutcome } from "./activation";
+export type {
+  ActivationResult,
+  ActivateAgentRosterInput,
+  BranchActivationCounts,
+  RosterActivationInput,
+  RosterActivationOutcome,
+} from "./activation";
 export { createCampaignStartActivationHook } from "./campaign-activation";
 export type {
   CampaignStartActivationContext,

@@ -296,6 +296,51 @@ export const campaignResetResponseSchema = z
 
 export type CampaignResetResponse = z.infer<typeof campaignResetResponseSchema>;
 
+/**
+ * 在线名册状态：`empty` 表示在线分支上没有名册身份（尚未开局），`active` 表示名册占用部署级名额，
+ * `hibernated` 表示名册已休眠、不占名额，在线时钟在恢复名额前不能继续或单步。
+ */
+export const onlineRosterStateSchema = z.enum(["empty", "active", "hibernated"]);
+
+export type OnlineRosterState = z.infer<typeof onlineRosterStateSchema>;
+
+/** 在线名册与部署级名额的只读视图；部署计数与激活配额裁决同一口径。 */
+export const onlineRosterViewSchema = z
+  .object({
+    branchId: idSchemas.br,
+    state: onlineRosterStateSchema,
+    activeAgents: z.number().int().nonnegative(),
+    dormantAgents: z.number().int().nonnegative(),
+    deploymentActiveAgents: z.number().int().nonnegative(),
+    deploymentLimit: z.number().int().positive(),
+  })
+  .strict();
+
+export type OnlineRosterView = z.infer<typeof onlineRosterViewSchema>;
+
+/**
+ * 名册休眠与唤醒请求：幂等键与发起方看到的在线分支。作用对象固定为在线分支，`branchId` 必填，
+ * 与变更时的在线分支不一致（例如其他会话已恢复存档或重开）时按 400 `validation` 拒绝，并计入幂等请求内容。
+ */
+export const onlineRosterOperationRequestSchema = z
+  .object({
+    operationId: idSchemas.op,
+    branchId: idSchemas.br,
+  })
+  .strict();
+
+export type OnlineRosterOperationRequest = z.infer<typeof onlineRosterOperationRequestSchema>;
+
+/** 名册休眠与唤醒的结果：操作提交后的名册视图与在线时钟。 */
+export const onlineRosterOperationResponseSchema = z
+  .object({
+    roster: onlineRosterViewSchema,
+    clock: clockViewSchema,
+  })
+  .strict();
+
+export type OnlineRosterOperationResponse = z.infer<typeof onlineRosterOperationResponseSchema>;
+
 export const presetSummarySchema = z
   .object({
     presetId: z.string().min(1),

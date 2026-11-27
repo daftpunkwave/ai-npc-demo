@@ -46,6 +46,7 @@ export type {
   ConversationReadQuery,
   ConversationSourceLine,
   IdGenerator,
+  OnlineRosterHooks,
   ResetHook,
   RecordSpanInput,
   RestoreSnapshotResult,

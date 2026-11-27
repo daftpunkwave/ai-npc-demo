@@ -19,6 +19,7 @@ import type { HostOptions } from "./host/options";
 import { OperationJournal } from "./host/operation-journal";
 import { OnlineAgentHost } from "./host/online-agents";
 import { createOperationsHost } from "./host/operations";
+import { onlineRosterHibernated } from "./host/online-roster";
 import { createObservabilitySources } from "./host/observability-sources";
 import { createReadPorts } from "./host/reads";
 import { createTransportApp } from "./host/transport-app";
@@ -185,6 +186,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     autoPauseAfterDisconnectMs: clockConfig.autoPauseAfterDisconnectMs,
     // 投影里的 campaign 是当前分支唯一权威来源；未开局时禁止继续时钟。
     campaignStarted: () => reads.projection().campaign !== null,
+    // 名册休眠状态由在线分支的激活行派生，重启后照样生效。
+    rosterHibernated: () => core.storage.transact((tx) => onlineRosterHibernated(tx, active.branchId)),
     // 关闭走两级编排（排空后释放）；只有启动失败路径直接释放资源。
     closeResources,
     agentHealth: () => agents?.healthy ?? true,

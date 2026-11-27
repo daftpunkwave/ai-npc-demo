@@ -24,6 +24,8 @@ import type {
   ModelLayoutsResponse,
   ModulesResponse,
   ObservationsResponse,
+  OnlineRosterOperationResponse,
+  OnlineRosterView,
   RunDetailResponse,
   RunProgressResponse,
   RunReportResponse,
@@ -148,6 +150,17 @@ export type ClockStepHook = (
 export type SnapshotCreateHook = (input: SnapshotCreateArgs) => SnapshotCreateResult;
 export type SnapshotRestoreHook = (input: SnapshotRestoreArgs) => RestoreSnapshotResult;
 export type ResetHook = (operationId: string, principalId: string) => BranchClockResult;
+
+/**
+ * 在线名册休眠与唤醒：幂等键、请求体里发起方看到的在线分支与会话主体交给宿主；
+ * 作用对象固定为在线分支，宿主在变更名册的事务内核对 branchId。
+ */
+export interface OnlineRosterHooks {
+  state(): OnlineRosterView;
+  hibernate(operationId: string, branchId: string, principalId: string): OnlineRosterOperationResponse;
+  wake(operationId: string, branchId: string, principalId: string): OnlineRosterOperationResponse;
+}
+
 /** ID 与令牌生成由宿主注入，传输层不自行创建随机源。 */
 export type IdGenerator = (prefix: IdPrefix) => string;
 export type TokenIssuer = (kind: "session" | "ticket") => string;
@@ -371,6 +384,8 @@ export interface ServerAppOptions {
     validateRestore?: (snapshotId: string) => RestoreDryRunResponse;
   };
   readonly reset: ResetHook;
+  /** 控制台在线名册休眠与唤醒；未接线时对应路由返回服务未就绪。 */
+  readonly roster?: OnlineRosterHooks;
   readonly identities: readonly ServerIdentity[];
   readonly ids: IdGenerator;
   readonly tokens: TokenIssuer;

@@ -1,5 +1,5 @@
 /**
- * 注册 campaign 时钟、快照与恢复路由：玩家自助入口与控制台运营入口共享同一套事务与推送语义，
+ * 注册 campaign 时钟、快照、恢复与在线名册休眠/唤醒路由：玩家自助入口与控制台运营入口共享同一套事务与推送语义，
  * 只由调用方注入不同的鉴权守卫、路径前缀与可选的在线分支限制。
  * 依赖认证会话、权限守卫、运营回调与流中心分支切换通知。
  * 禁止在传输层重算幂等结果、直接改在线分支，或让未通过守卫的请求进入运营回调。
@@ -11,6 +11,9 @@ import {
   clockControlRequestSchema,
   clockResponseSchema,
   clockStepRequestSchema,
+  onlineRosterOperationRequestSchema,
+  onlineRosterOperationResponseSchema,
+  onlineRosterViewSchema,
   restoreDryRunResponseSchema,
   snapshotCreateRequestSchema,
   snapshotCreateResponseSchema,
@@ -46,6 +49,8 @@ export interface CampaignOperationsRegistration {
   readonly includeStep?: boolean;
   /** 控制台恢复入口允许先执行只读 dry-run。 */
   readonly includeDryRun?: boolean;
+  /** 是否注册在线名册的状态读取、休眠与唤醒；当前只有控制台运营入口提供。状态读取使用 authorizeRead。 */
+  readonly includeRoster?: boolean;
 }
 
 /** 读取可选 branchId 查询参数：缺省返回 undefined，非法值返回 null 由路由按 400 拒绝。 */
@@ -245,6 +250,40 @@ export function registerCampaignOperations(
       clock: restored.clock ?? options.clock(),
     });
   });
+
+  if (registration.includeRoster === true) {
+    app.get(`${registration.prefix}/roster`, (request, reply) => {
+      const session = authorize(request, reply, authorizeRead);
+      if (session === null) {
+        return;
+      }
+      if (options.roster === undefined) {
+        return sendHttpError(reply, "not-ready", "在线名册接口尚未就绪");
+      }
+      return onlineRosterViewSchema.parse(options.roster.state());
+    });
+
+    for (const action of ["hibernate", "wake"] as const) {
+      app.post(`${registration.prefix}/roster/${action}`, (request, reply) => {
+        const session = authorize(request, reply, registration.authorize);
+        if (session === null) {
+          return;
+        }
+        const body = onlineRosterOperationRequestSchema.safeParse(request.body);
+        if (!body.success) {
+          return sendHttpError(reply, "validation", "名册操作请求结构不合法");
+        }
+        if (options.roster === undefined) {
+          return sendHttpError(reply, "not-ready", "在线名册接口尚未就绪");
+        }
+        // 请求体的 branchId 由宿主在变更名册的事务内核对，不在传输层与可能已过期的在线分支比较。
+        const result = options.roster[action](body.data.operationId, body.data.branchId, session.auth.principalId);
+        // 休眠会先暂停时钟，唤醒改变名册激活状态：推送新时钟并通知宿主按新状态调度 Agent。
+        publishProjection();
+        return onlineRosterOperationResponseSchema.parse(result);
+      });
+    }
+  }
 
   if (registration.includeReset === true) {
     app.post(`${registration.prefix}/reset`, (request, reply) => {

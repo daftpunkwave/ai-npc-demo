@@ -122,6 +122,8 @@ export type {
 } from "@world-prism/mod-platform-evaluation-standard";
 export type {
   IdempotentOperationsDriver,
+  OnlineRosterDriver,
+  OnlineRosterOperation,
   OperationRequest,
   RestoreInput,
   RestoreOutcome,

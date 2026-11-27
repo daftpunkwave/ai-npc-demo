@@ -20,17 +20,17 @@
 - `config/assemblies/*.yaml`：标准、测试与升级剧情三份装配，均包含 server、client 与 console 绑定；`check:catalog` 对三个 realm 执行能力闭包、作用域、重复绑定、拓扑与配置 schema 预检。
 - 标准与测试装配预检并冻结名册的 profile、工具集、模型挂载、提示词版本和价目。开局事务激活名册，恢复事务在切换分支时重新校验活动身份配额。标准装配支持 OpenAI 兼容和 Anthropic 传输，测试装配通过本地夹具运行模型决策、工具循环与独立对白。
 
+- 在线名册休眠与唤醒：operator 经 `POST /api/v1/console/campaign/roster/hibernate` 暂停在线时钟并让在线名册休眠、释放部署级名额，经 `POST /api/v1/console/campaign/roster/wake` 在同一事务内预留名额并重新激活；休眠期间在线时钟不能继续或单步。语义见 [运营 — 故障与配额操作](../../docs/platform/operations.md#9-故障与配额操作)。
 - 实验执行器：`POST /api/v1/console/runs/{runId}/start` 启动带脚本的闭环 run 后，宿主按启动先后逐个驱动：受控时钟推进到脚本检查点、在沙盒分支执行探针、写入 `probe_results` 与 `experiment_results`，进度经 `GET /api/v1/console/runs/{runId}/progress` 读取。语义见 [评估 — 执行器](../../docs/platform/evaluation.md#81-执行器的触发顺序与终态)。
 
 ## 尚未包含
 
 - 实验执行器的开环、审计重放与快照起步路径，以及脚本 `setup` 预置知识。
-- 释放在线世界名额的运营接口。
 - 席位契约、t144 程序案与控制台运营页面（三势力席位接管、剧情卡编辑与导出页面）。
 
 ## 运行一次实验
 
-实验在宿主进程内执行，宿主必须以与实验相同的装配启动；在线世界已开局并占满 15 个名额时实验会在开局前暂停（`quota-unavailable`），因此建议使用独立数据目录且不开启在线世界。以标准装配和 OpenAI 兼容模型为例，在 `.env` 中设置：
+实验在宿主进程内执行，宿主必须以与实验相同的装配启动；在线世界已开局并占满 15 个名额时实验会在开局前暂停（`quota-unavailable`）。可以使用独立数据目录且不开启在线世界，也可以先以 operator 角色调用 `POST /api/v1/console/campaign/roster/hibernate` 释放在线名额，实验结束后调用 `POST /api/v1/console/campaign/roster/wake` 恢复。以标准装配和 OpenAI 兼容模型为例，在 `.env` 中设置：
 
 ```dotenv
 WORLD_PRISM_DATA_DIR=./data/experiments

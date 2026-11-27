@@ -12,9 +12,11 @@ import {
   clockViewSchema,
   isErrorCode,
   jsonValueSchema,
+  onlineRosterOperationResponseSchema,
   type ClockView,
   type ErrorCode,
   type Json,
+  type OnlineRosterOperationResponse,
   type StoragePort,
   type StorageRow,
   type StorageTransaction,
@@ -22,7 +24,7 @@ import {
 import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 
 /** 运营操作种类；与 operation_idempotency.operation_kind 的约束一致。 */
-export type OperationKind = "pause" | "resume" | "step" | "snapshot" | "restore" | "reset";
+export type OperationKind = "pause" | "resume" | "step" | "snapshot" | "restore" | "reset" | "hibernate" | "wake";
 
 /** 请求体中的幂等键与认证主体；传输层校验请求结构后传入。 */
 export interface OperationActor {
@@ -166,6 +168,15 @@ export function decodeBranchClockOutcome(value: Json): { readonly branchId: stri
     throw new DomainError("invalid-state", "运营幂等记录中的分支结果不合法");
   }
   return { branchId, clock: decodeClockOutcome(clock) };
+}
+
+/** 校验并还原名册休眠或唤醒的结果（名册视图与时钟）。 */
+export function decodeRosterOutcome(value: Json): OnlineRosterOperationResponse {
+  const parsed = onlineRosterOperationResponseSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new DomainError("invalid-state", "运营幂等记录中的名册结果不合法");
+  }
+  return parsed.data;
 }
 
 /**

@@ -110,6 +110,27 @@ describe("platform 模块", () => {
     expect(calls).toEqual(["pause:3", "snapshot:单步中存档"]);
   });
 
+  it("运营驱动未提供在线名册时，名册读取、休眠与唤醒按 not-ready 拒绝", () => {
+    const clock = { worldTick: 0, day: 1, hour: 0, mode: "paused" as const, runVersion: 0 };
+    const service = new OperationsService({
+      clock: () => ({ mode: clock.mode, runVersion: clock.runVersion }),
+      pause: () => clock,
+      resume: () => clock,
+      step: () => clock,
+      snapshot: () => ({ snapshotId: "snap-1", worldTick: 0 }),
+      restore: () => ({ branchId: "br-1" }),
+      reset: () => ({ branchId: "br-2", clock }),
+    });
+    const operation = { operationId: "op-000000000001", principalId: "operator-1", branchId: "br-000000000001" };
+    for (const call of [
+      () => service.rosterState(),
+      () => service.hibernateRoster(operation),
+      () => service.wakeRoster(operation),
+    ]) {
+      expect(call).toThrow(expect.objectContaining({ code: "not-ready" }) as Error);
+    }
+  });
+
   it("传输模块只接受回环地址与合法端口", async () => {
     const instance = await transportModuleDefinition.create(input("transport.http-ws.fastify", { port: 3000 }));
     const port = instance.port as TransportPort;

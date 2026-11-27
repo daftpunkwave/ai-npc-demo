@@ -1,5 +1,6 @@
 /**
- * 核心职责：注册控制台运营的 campaign 时钟暂停与恢复、受控单步推进、快照创建与列表、从快照恢复入口。
+ * 核心职责：注册控制台运营的 campaign 时钟暂停与恢复、受控单步推进、快照创建与列表、从快照恢复，
+ *   以及在线名册状态读取、休眠与唤醒入口。
  * 交互契约：依赖控制台会话认证、X-Active-Role 角色裁决与共享的 campaign 运营路由注册器。
  * 约束与禁忌：禁止放行玩家角色、静默忽略非在线分支的 branchId，或在传输层重算幂等结果。
  */
@@ -7,7 +8,7 @@ import { registerCampaignOperations } from "./campaign-operations";
 import { requireConsoleRole } from "./context";
 import type { RouteContext } from "./context";
 
-/** 时钟、受控单步、快照创建与恢复仅 operator；快照列表额外允许 researcher 只读。 */
+/** 时钟、受控单步、快照创建、恢复与名册休眠/唤醒仅 operator；快照列表与名册状态额外允许 researcher 只读。 */
 const operatorRoles = ["operator"] as const;
 const snapshotReadRoles = ["operator", "researcher"] as const;
 
@@ -21,5 +22,6 @@ export function registerConsoleOperationsRoutes(context: RouteContext): void {
     restrictToOnlineBranch: true,
     includeStep: true,
     includeDryRun: true,
+    includeRoster: true,
   });
 }

@@ -337,6 +337,9 @@ export class ApiClient {
   consoleCreateSnapshot = this.operations.consoleCreateSnapshot;
   consoleRestoreSnapshot = this.operations.consoleRestoreSnapshot;
   consolePreviewSnapshotRestore = this.operations.consolePreviewSnapshotRestore;
+  consoleOnlineRoster = this.operations.consoleOnlineRoster;
+  consoleHibernateRoster = this.operations.consoleHibernateRoster;
+  consoleWakeRoster = this.operations.consoleWakeRoster;
 
   webSocketUrl(ticket: string): string {
     const current = browserWindow();

@@ -1,10 +1,11 @@
 /**
- * 运营编排：组合基础操作与幂等执行，向传输层暴露暂停/继续、受控单步、快照、恢复与重开。
- * 依赖运营模块的服务工厂、基础操作与幂等执行；不直接操作传输、路由或存储表。
+ * 运营编排：组合基础操作与幂等执行，向传输层暴露暂停/继续、受控单步、快照、恢复、重开与在线名册休眠/唤醒。
+ * 依赖运营模块的服务工厂、基础操作、幂等执行与在线名册驱动；不直接操作传输、路由或存储表。
  * 禁止改写幂等语义、跳过暂停排空或绕过 operationId 重放首次结果。
  */
 import { DomainError, type RestoreDryRunResponse } from "@world-prism/contracts";
 import type { OperationsFactory } from "./module-catalog";
+import { createOnlineRoster } from "./online-roster";
 import type { OperationJournal } from "./operation-journal";
 import { createIdempotentOperations } from "./operations-idempotent";
 import type { OperationsPrimitivesInput } from "./operations-primitives";
@@ -64,5 +65,13 @@ export function createOperationsHost(input: OperationsHostInput): ReturnType<Ope
     },
     reset: (createdBy) => primitives.resetOnline(createdBy),
     idempotent,
+    roster: createOnlineRoster({
+      host: input.host,
+      storage: input.storage,
+      runtime: input.runtime,
+      active: input.active,
+      journal: input.journal,
+      primitives,
+    }),
   });
 }
