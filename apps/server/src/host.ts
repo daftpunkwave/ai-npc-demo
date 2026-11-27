@@ -25,8 +25,9 @@ import { createTransportApp } from "./host/transport-app";
 import { ModelLayoutAdminPort } from "./host/model-layout-admin";
 import { createEvaluationReadPort } from "./host/evaluation-read";
 import { resolve } from "node:path";
-import { createRunWrites } from "./host/run-writes";
+import { createRunWrites, type RunWrites } from "./host/run-writes";
 import { createWorldAuthority } from "./host/world-authority";
+import { ExperimentRunner } from "./host/experiment-runner";
 import { loadRoster } from "@world-prism/experiment";
 import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
 import type { EvaluationPort } from "./host/module-catalog";
@@ -39,6 +40,16 @@ export { disposeInReverse, disposeWithin, drainBeforeClose, settleWithin } from 
 
 /** 关闭时每级资源排空的默认预算；与租约期限解耦，只用于给关闭一个可终止的边界。 */
 const defaultShutdownDrainMs = 10_000;
+
+/**
+ * 实验执行器单个 tick 或单个探针等待收敛的默认上限。
+ * 它只用来把卡死显式报成失败：真实模型下一个 tick 可能串行跑多个 turn 与记忆整理，
+ * 单个 turn 预算上限 90 秒、整理租约 2 分钟，上限必须远大于它们之和，避免把正常的慢 tick 误判为积压。
+ */
+const defaultExperimentSettleTimeoutMs = 30 * 60_000;
+
+/** 收敛等待的轮询间隔；与 turn 就绪轮询的首档间隔一致。 */
+const experimentPollIntervalMs = 25;
 
 export interface RunningHost {
   readonly app: ServerApp;
@@ -80,6 +91,7 @@ function pricingVersionOf(models: Json): string {
 export async function startHost(options: HostOptions): Promise<RunningHost> {
   const core = await createHostStartup(options);
   let agents: OnlineAgentHost | null = null;
+  let experiments: ExperimentRunner | null = null;
   let app: ServerApp | null = null;
   const active: LiveRunState = {
     branchId: core.active.branchId, worldId: core.active.worldId,
@@ -123,6 +135,8 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   };
   const drainResources = async (deadlineAt: number): Promise<void> => drainBeforeClose(
     [
+      // 实验执行器最先排空：它在共享存储上驱动实验分支，必须在模块与存储释放前把当前 run 落为 paused。
+      { label: "experiment runner", drain: async (deadlineMs) => { await experiments?.close(deadlineMs); } },
       { label: "online Agents", drain: async (deadlineMs) => { await agents?.drain(deadlineMs); } },
       { label: "started modules", drain: (deadlineMs) => core.startedModules.drain(deadlineMs) },
       { label: "storage", drain: (deadlineMs) => core.storageStarted.drain(deadlineMs) },
@@ -251,18 +265,22 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
   const evaluationPort = evaluationPortOf(core);
   // 写入能力（创建 run、导出）只依赖存储、内容与装配定义，不依赖评估模块；
   // 计分与报告才需要评估端口，因此两者分开注入，评估模块缺失时写入仍然可用。
-  const writes = createRunWrites({
-    host: core.host,
-    storage: core.storage,
+  // 创建 run 与实验执行器复算冻结配置共用同一组依赖，二者对同一 RunSpec 不会解析出不同结果。
+  const runConfiguration = {
     content: core.content,
     definitions: options.moduleDefinitions ?? serverModuleDefinitions,
     contentVersion: core.contentVersion,
-    loadRoster: (rosterRef) => loadRoster(rosterRef, core.loadContext),
+    loadRoster: (rosterRef: string) => loadRoster(rosterRef, core.loadContext),
     loadContext: core.loadContext,
-    worldId: core.active.worldId,
     // loadAssembly 期望仓库根目录并在其下拼接 `config/assemblies`；
     // 宿主的 configRoot 指向配置目录本身，因此取其父目录作为仓库根。
     repoRoot: resolve(resolve(options.configRoot ?? "config"), ".."),
+  };
+  const writes = createRunWrites({
+    ...runConfiguration,
+    host: core.host,
+    storage: core.storage,
+    worldId: core.active.worldId,
     artifacts: new StoredAgentArtifactStore(core.storage, core.host),
   });
   const evaluation = evaluationPort === null ? undefined : createEvaluationReadPort({
@@ -273,6 +291,24 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     pricingVersion: core.active.manifest.models === undefined ? "unknown" : pricingVersionOf(core.active.manifest.models),
     worldId: core.active.worldId,
   });
+  const runner = new ExperimentRunner({
+    core, reads, runConfiguration,
+    report: evaluation === undefined ? null : (runId) => evaluation.report(runId),
+    settleTimeoutMs: options.experimentSettleTimeoutMs ?? defaultExperimentSettleTimeoutMs,
+    pollIntervalMs: experimentPollIntervalMs,
+  }, core.active.worldId);
+  experiments = runner;
+  // 上次进程遗留的 running 实验 run 没有驱动者：先归位为 paused，由研究员显式继续。
+  runner.recoverInterrupted();
+  // 启动接口只改 run 状态与时钟；执行器在状态提交后被唤醒，按启动顺序逐个驱动。
+  const runWrites: RunWrites = {
+    ...writes,
+    startRun: (runId, request) => {
+      const result = writes.startRun(runId, request);
+      runner.wake();
+      return result;
+    },
+  };
 
   const transportApp = await createTransportApp({
     host: core.host,
@@ -290,7 +326,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     sessionAssembly: core.sessionAssembly,
     modelLayouts,
     evaluation,
-    writes,
+    writes: runWrites,
     // 未启动 Agent 运行时（无 Agent 名册）时没有维护队列，健康摘要按零值展示。
     ...(agents === null ? {} : { maintenanceQueue: () => agents.maintenanceQueue }),
     // 世界变化同时驱动传输推送与 Agent 运行时：tick 推进、命令提交后立即重跑一轮，
