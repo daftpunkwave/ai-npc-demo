@@ -78,6 +78,8 @@ export { createProcessFaultHandlers, faultExitCode, installProcessFaultHandlers 
 export type { ProcessFaultHandlersInput, ProcessFaultReport } from "./process-faults";
 export { OperationJournal, operationRequestHash } from "./host/operation-journal";
 export type { OperationKey, OperationKind, OperationOutcome } from "./host/operation-journal";
+export { createOperationsHost } from "./host/operations";
+export type { OperationsHostInput } from "./host/operations";
 export { createTransportApp } from "./host/transport-app";
 export type { TransportAppInput } from "./host/transport-app";
 export {
