@@ -1,5 +1,6 @@
 /**
- * 实现库存预留、释放、消耗、转移与调整，并在同一事务内发出资源事件。
+ * 实现库存预留、释放、消耗、转移与调整，并在同一事务内发出资源事件；另提供单点快照、可用量与全部库存点
+ * 快照加展示等级的只读查询。
  * 依赖库存状态、内容初始值、mcn 资源运算与注入的 scoped WorldTx。
  * 禁止读取其他模块聚合、超预留扣减或在失败时留下部分资源变化。
  */
@@ -20,10 +21,12 @@ import {
   type GameResourcesPort,
   type ResourceLevel,
   type ScopedWorldTxFactory,
+  type StockpileLevels,
+  type StockpileStatus,
   type StockpileView,
 } from "@world-prism/module-sdk";
 import { resourcesModuleDefinition } from "./definition";
-import { readStockpile, stockpileStateSchema, type StockpileState } from "./state";
+import { listStockpiles, readStockpile, stockpileStateSchema, type StockpileState } from "./state";
 
 export interface ResourcesPortOptions {
   readonly scarceRatio: number;
@@ -159,16 +162,17 @@ class LightResourcesPort implements GameResourcesPort {
     return { ...state };
   }
 
+  stockpiles(): readonly StockpileStatus[] {
+    // 快照与等级出自同一次读取：玩家投影每次重建都要全部库存点，逐个按 ID 回查会把每个库存点读取并校验两遍。
+    return listStockpiles(this.tx()).map((state) => ({ ...state, levels: this.levelsOf(state) }));
+  }
+
   available(stockpileId: string, resource: ResourceId): number {
     const state = this.require(stockpileId);
     return state === null ? 0 : amountOf(state.amount, resource) - amountOf(state.reserved, resource);
   }
 
-  level(stockpileId: string): Readonly<Record<ResourceId, ResourceLevel>> {
-    const state = this.require(stockpileId);
-    if (state === null) {
-      return { supply: "scarce", energy: "scarce", medical: "scarce" };
-    }
+  private levelsOf(state: StockpileState): StockpileLevels {
     return {
       supply: levelOf(state, "supply", this.options),
       energy: levelOf(state, "energy", this.options),

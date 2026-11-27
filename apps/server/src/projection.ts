@@ -80,7 +80,6 @@ export function buildPlayerProjection(input: PlayerProjectionInput): PlayerProje
   const meterView = metersView(world);
   const delegations = world.delegationsOf(playerPrincipalId);
   const stockpiles = stockpileViews({
-    content,
     resources: input.resources,
     delegations,
     tick,
