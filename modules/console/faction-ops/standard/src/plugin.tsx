@@ -1,7 +1,7 @@
 /**
  * 核心职责：呈现当前时钟、快照与在线分支，并通过控制台 API 执行暂停、继续、单步、存档和恢复。
  * 交互契约：依赖宿主生成 operationId、宿主维护的在线分支订阅、控制台会话与 React；不自行计算世界版本或分支。
- * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功。
+ * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功；在线身份变化后不展示旧分支的时钟与快照。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 /* eslint-disable no-unused-vars -- 宿主端口方法参数名只表达调用契约，Codacy 未能解析。 */
@@ -19,9 +19,11 @@ import type { ApiClient } from "@world-prism/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
+  /** 当前世界；与在线分支一起由宿主维护。 */
+  readonly worldId: string;
   /** 当前在线分支；宿主按服务端会话描述维护，其他会话恢复或重开后随之更新。 */
   readonly branchId: string;
-  /** 订阅在线分支变化；返回取消订阅函数。 */
+  /** 订阅在线分支变化（世界或分支任一变化）；返回取消订阅函数。 */
   subscribeBranch(listener: () => void): () => void;
   operationId(): string;
   reload(): void;
@@ -47,11 +49,17 @@ function FactionOpsPage(): ReactNode {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
-  // 本页自己订阅在线分支：其他会话恢复存档后，展示的在线分支必须跟随宿主更新，不依赖外壳恰好重渲染。
+  // 本页自己订阅在线身份：其他会话恢复存档或重开后，展示的分支、时钟与快照都必须跟随宿主更新，
+  // 不依赖外壳恰好重渲染。
+  const [worldId, setWorldId] = useState(host.worldId);
   const [branchId, setBranchId] = useState(host.branchId);
   useEffect(() => {
-    setBranchId(host.branchId);
-    return host.subscribeBranch(() => setBranchId(host.branchId));
+    const sync = (): void => {
+      setWorldId(host.worldId);
+      setBranchId(host.branchId);
+    };
+    sync();
+    return host.subscribeBranch(sync);
   }, [host]);
 
   const refresh = async (signal: AbortSignal): Promise<ClockView> => {
@@ -65,14 +73,22 @@ function FactionOpsPage(): ReactNode {
     return health.clock;
   };
 
+  // 首次进入与在线身份变化时读取时钟与快照。身份变化时清理函数先中止在途的读取或操作，
+  // 旧分支的迟到结果随之作废；被中止的操作不会再复位忙碌状态，因此这里一并复位，
+  // 并清掉属于旧分支的时钟、快照与提示，新分支的结果到达前不展示旧数据。
   useEffect(() => {
-    const initial = new AbortController();
-    activeRequest.current = initial;
-    void refresh(initial.signal).catch((cause: unknown) => {
-      if (!initial.signal.aborted) setError(`读取运营状态失败：${actionError(cause)}`);
+    const read = new AbortController();
+    activeRequest.current = read;
+    setClock(null);
+    setSnapshots([]);
+    setBusy(false);
+    setMessage(null);
+    setError(null);
+    void refresh(read.signal).catch((cause: unknown) => {
+      if (!read.signal.aborted) setError(`读取运营状态失败：${actionError(cause)}`);
     });
     return () => { activeRequest.current?.abort(); };
-  }, [host.api]);
+  }, [host.api, worldId, branchId]);
 
   const run = async (work: (signal: AbortSignal) => Promise<void>, stepTicks?: number): Promise<void> => {
     activeRequest.current?.abort();
