@@ -3,6 +3,7 @@
  * 依赖注入时钟与“会话是否有活动连接”的查询；不发送消息、不持有连接。
  * 禁止无限保留缓冲、跨分支补发旧序号，或绕过条数上限累积增量。
  */
+import { ReplayRing } from "./replay-ring";
 import {
   playerChannel,
   replayLimit,
@@ -57,14 +58,14 @@ export class ReplayStore {
       channel,
       generation: this.generation,
       branchId: this.branchId,
-      frames: [],
+      frames: new ReplayRing<ReplayFrame>(replayLimit),
       lastActiveAt: this.options.now(),
     };
     this.buffers.set(key, created);
     return created;
   }
 
-  /** 发布一次增量：只追加到玩家频道缓冲，并保持条数上限。 */
+  /** 发布一次增量：只追加到玩家频道缓冲；环形缓冲写满后覆盖最旧帧，条数保持在上限内。 */
   append(frame: ReplayFrame): void {
     for (const buffer of this.buffers.values()) {
       if (buffer.channel !== playerChannel) {
@@ -74,9 +75,6 @@ export class ReplayStore {
         this.reset(buffer);
       }
       buffer.frames.push(frame);
-      if (buffer.frames.length > replayLimit) {
-        buffer.frames.shift();
-      }
       buffer.lastActiveAt = this.options.now();
     }
   }
@@ -86,7 +84,7 @@ export class ReplayStore {
     if (fromStreamSeq === null || buffer.generation !== this.generation || buffer.branchId !== this.branchId) {
       return null;
     }
-    const frames = buffer.frames.filter((frame) => frame.streamSeq > fromStreamSeq);
+    const frames = buffer.frames.after(fromStreamSeq);
     const first = frames.at(0);
     const last = frames.at(-1);
     if (first === undefined || last === undefined) {
@@ -143,7 +141,7 @@ export class ReplayStore {
   private reset(buffer: ReplayBuffer): void {
     buffer.generation = this.generation;
     buffer.branchId = this.branchId;
-    buffer.frames.length = 0;
+    buffer.frames.clear();
     buffer.lastActiveAt = this.options.now();
   }
 

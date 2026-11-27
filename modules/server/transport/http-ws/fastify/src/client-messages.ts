@@ -93,7 +93,7 @@ export function handleClientMessage(deps: ClientMessageDeps, socket: StreamSocke
   deps.replay.touch(connection.sessionId, value.channel);
   if (replay === null) {
     // 无可连续补发的增量时以完整快照重建基线。
-    buffer.frames.length = 0;
+    buffer.frames.clear();
     deps.sender.sendSnapshot(connection, value.channel);
     return;
   }
