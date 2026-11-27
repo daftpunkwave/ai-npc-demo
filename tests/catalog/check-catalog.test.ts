@@ -20,6 +20,7 @@ import {
 } from "@world-prism/contracts";
 import { defineModule } from "@world-prism/module-sdk";
 import { clockConfigSchema } from "@world-prism/mod-game-clock-controlled";
+import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { checkCatalog, runCatalogCheckCli } from "@world-prism/scripts/check-catalog";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -276,6 +277,34 @@ describe("catalog 预检", () => {
     expect(report.violations.some((violation) => violation.code === "assembly-incompatible")).toBe(true);
     expect(messagesOf(report)).toContain("配置校验失败");
     expect(messagesOf(report)).toContain("secondsPerTick");
+  });
+
+  it("装配配置块声明只由部署环境提供的 retentionDays 时失败并点名配置块、键与环境变量", () => {
+    const storageAssembly = (storage: Readonly<Record<string, unknown>>): AssemblyDescriptor => assembly({
+      assemblyId: "assembly-storage",
+      configs: { storage },
+      bindings: [{ capability: "platform.storage", moduleId: storageModuleDefinition.id, configRef: "storage" }],
+    });
+    const accepted = checkCatalog({
+      root: fixtureRoot({ "storage.yaml": storageAssembly({ inlineArtifactMaxBytes: 65536 }) }),
+      definitions: [storageModuleDefinition],
+      requiredCapabilities: [],
+    });
+    expect(accepted.violations).toEqual([]);
+    // 存储配置 schema 本身接受 retentionDays；拦截来自装配检查，而不是 schema。
+    const rejected = checkCatalog({
+      root: fixtureRoot({
+        "storage.yaml": storageAssembly({ inlineArtifactMaxBytes: 65536, retentionDays: { trace_spans: 30 } }),
+      }),
+      definitions: [storageModuleDefinition],
+      requiredCapabilities: [],
+    });
+    expect(rejected.violations).toEqual([{
+      file: "storage.yaml",
+      code: "assembly-incompatible",
+      message: expect.stringContaining("装配配置块 storage 不能为模块 platform.storage.sqlite 声明 retentionDays"),
+    }]);
+    expect(messagesOf(rejected)).toContain("WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS");
   });
 
   it("装配 schema 失败时给出代码与字段路径", () => {

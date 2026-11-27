@@ -1305,6 +1305,38 @@ describe("服务端宿主", () => {
     expect(consoleAssembly.remoteCapabilities).not.toContain("agent.model-pool");
   });
 
+  it("保留天数作为部署参数并入存储配置：不改变冻结 manifest，启用后恢复同一在线 run 并清理过期跨度", async () => {
+    const dataDir = tempDataDir();
+    const options = { dataDir, playerToken: "player-token", consoleToken: "console-token" };
+    const first = await startHost(options);
+    let manifestHash: StorageCell | undefined;
+    try {
+      manifestHash = liveRun(first)["manifest_hash"];
+      first.storage.transact((tx) => tx.rows("trace_spans").put({
+        span_id: "spn-000000000001", trace_id: "trc-000000000001", parent_span_id: null, run_id: null,
+        branch_id: first.branchId, agent_id: null, turn_id: null, module_id: null, module_version: null,
+        name: "http.request", status: "ok", start_ms: 0, end_ms: 1, started_at: "2000-01-01T00:00:00.000Z",
+        attrs_json: { route: "/api/v1/health" },
+      }));
+    } finally {
+      await first.close();
+    }
+    const restarted = await startHost({ ...options, traceSpansRetentionDays: 30 });
+    hosts.push(restarted);
+    expect(restarted.branchId).toBe(first.branchId);
+    expect(liveRun(restarted)["manifest_hash"]).toBe(manifestHash);
+    const storageModule = (liveRun(restarted)["manifest_json"] as unknown as {
+      readonly assembly: { readonly modules: readonly { readonly moduleId: string; readonly config: Json }[] };
+    }).assembly.modules.find((module) => module.moduleId === storageModuleDefinition.id);
+    expect(storageModule?.config).toEqual({ dataDir: "./data", inlineArtifactMaxBytes: 65536 });
+    await vi.waitFor(() => {
+      expect(restarted.storage.transact((tx) =>
+        tx.rows("lifecycle_events").list({ type: "StorageRetentionPruned" }).map((row) => row["payload_json"])))
+        .toEqual([expect.objectContaining({ retentionDays: 30, deletedRows: 1 })]);
+    });
+    expect(restarted.storage.transact((tx) => tx.rows("trace_spans").get({ span_id: "spn-000000000001" }))).toBeNull();
+  });
+
   it("首次启动选择升级装配时 RunSpec 与 manifest 记录实际引用", async () => {
     const host = await startHost({
       dataDir: tempDataDir(),
@@ -2129,5 +2161,24 @@ describe("服务端宿主", () => {
     await expect(startHost({ dataDir: configDir, playerToken: "p", consoleToken: "c", assembly: invalidConfig }))
       .rejects.toThrow(/配置校验失败/);
     expect(existsSync(join(configDir, "world-prism.db"))).toBe(false);
+  }, 30_000);
+
+  it("装配配置块声明 retentionDays 时启动预检以 assembly-incompatible 拒绝，不论部署环境是否设置保留天数", async () => {
+    const base = loadAssembly("local-slg-standard-v1");
+    const withRetention: AssemblyDescriptor = {
+      ...base,
+      configs: { ...base.configs, storage: { inlineArtifactMaxBytes: 65536, retentionDays: { trace_spans: 30 } } },
+    };
+    for (const deployment of [{}, { traceSpansRetentionDays: 7 }]) {
+      const dataDir = tempDataDir();
+      const failure = await startHost({ dataDir, playerToken: "p", consoleToken: "c", assembly: withRetention, ...deployment })
+        .then(() => null, (error: unknown) => error);
+      expect(failure).toMatchObject({
+        code: "assembly-incompatible",
+        details: { configRef: "storage", moduleId: storageModuleDefinition.id, key: "retentionDays" },
+      });
+      expect((failure as Error).message).toContain("WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS");
+      expect(existsSync(join(dataDir, "world-prism.db"))).toBe(false);
+    }
   }, 30_000);
 });

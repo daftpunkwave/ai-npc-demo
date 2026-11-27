@@ -67,6 +67,7 @@ export async function startServer(options: StartServerOptions): Promise<StartupH
       transportPort: config.serverPort,
       clientPort: config.clientPort,
       migrateOnlineRun: config.migrateOnlineRun,
+      ...(config.traceSpansRetentionDays === null ? {} : { traceSpansRetentionDays: config.traceSpansRetentionDays }),
     });
   } catch (error) {
     discardStaged(staged, logError);

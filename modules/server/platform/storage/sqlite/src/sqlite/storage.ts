@@ -1,10 +1,10 @@
 /**
- * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制、备份与 artifact 大正文文件，并持有连接级预编译语句缓存。
+ * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制、备份、artifact 大正文文件与后台占用测量的最近结果，并持有连接级预编译语句缓存。
  * 交互契约：依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/statement-cache/transaction/fork/backup/
- * artifact-files 实现与端口契约；语句缓存随连接创建，在每次事务之间复用，连接关闭时随之清空；
+ * artifact-files/footprint 实现与端口契约；语句缓存随连接创建，占用测量由模块启动后开始，二者在连接关闭时随之清空或停止；
  * artifact 正文文件按配置的 inlineArtifactMaxBytes 分流，与数据库连接的开关无关。
  * 约束与禁忌：禁止在事务内 await、向调用方暴露连接、跳过迁移失败、在同一连接上并发提交两个事务、
- * 跨越连接存活期复用缓存，或在回滚失败后继续复用状态不可信的连接。
+ * 跨越连接存活期复用缓存、在健康读取路径上统计行数，或在回滚失败后继续复用状态不可信的连接。
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -19,14 +19,18 @@ import {
   type ForkBranchRequest,
   type ForkBranchResult,
   type HostServices,
+  type StorageFootprint,
   type StoragePort,
   type StorageTransaction,
+  type StorageValue,
 } from "@world-prism/contracts";
 import type { StorageConfig } from "../definition";
 import { SqliteArtifactFiles } from "./artifact-files";
+import type { BackgroundPassSchedule } from "./background-pass";
 import { backupDatabase, type PublishedBackup } from "./backup";
 import { closeDatabase, openDatabase } from "./connection";
 import { forkBranchDatabase } from "./fork-branch";
+import { startFootprintSchedule } from "./footprint";
 import { applyMigrations } from "./migrations";
 import { resolveCatalog, type StorageCatalog } from "./schema";
 import { StatementCache } from "./statement-cache";
@@ -51,6 +55,10 @@ export class SqliteStorage implements StoragePort {
   private fatalFailure: { readonly rollbackError: unknown; readonly originalError: unknown } | null = null;
   private opening: Promise<void> | null = null;
   private lifecycleEpoch = 0;
+  /** 后台占用测量调度；模块启动后创建，连接关闭时停止。 */
+  private footprintSchedule: BackgroundPassSchedule | null = null;
+  /** 最近一次完整测得的占用；首轮完成前与连接关闭后为 null。 */
+  private latestFootprint: StorageFootprint | null = null;
 
   constructor(config: StorageConfig, host: HostServices) {
     this.config = config;
@@ -121,6 +129,9 @@ export class SqliteStorage implements StoragePort {
   /** 关闭连接并清空语句缓存；重复调用安全。关闭失败时保留句柄与不可用标记以便重试。 */
   close(): void {
     this.lifecycleEpoch += 1;
+    // 先停止后台测量：进行中的一轮在下一次读取之前结束，不会读到即将关闭的连接。
+    this.footprintSchedule?.stop();
+    this.footprintSchedule = null;
     const database = this.database;
     if (database === null) {
       return;
@@ -133,6 +144,7 @@ export class SqliteStorage implements StoragePort {
     this.database = null;
     this.catalog = null;
     this.fatalFailure = null;
+    this.latestFootprint = null;
   }
 
   get isOpen(): boolean {
@@ -262,5 +274,35 @@ export class SqliteStorage implements StoragePort {
       removedBackups: result.removedBackups,
     });
     return result;
+  }
+
+  /**
+   * 开始后台占用测量：立即排入首轮，之后按固定间隔重测，直到连接关闭。由模块 start 在打开连接后调用，重复调用无副作用。
+   */
+  startFootprintMeasurement(): void {
+    this.requireDatabase();
+    this.footprintSchedule ??= startFootprintSchedule({
+      read: (sql, params) => this.readOutsideTransaction(sql, params),
+      host: this.host,
+      retentionDays: this.config.retentionDays,
+      onMeasured: (footprint) => {
+        this.latestFootprint = footprint;
+      },
+    });
+  }
+
+  /**
+   * 在事务外执行一条只读语句并返回首行，供后台占用测量逐块读取。
+   * 不经 BEGIN IMMEDIATE：WAL 模式下自动提交的读语句只在执行期间持有本条语句的读快照，不取写锁，
+   * 也不产生需要提交的事务；调用是同步的，不会与本连接上的事务交错。每条语句自身必须有界。
+   */
+  readOutsideTransaction(sql: string, params: readonly StorageValue[]): Readonly<Record<string, unknown>> | undefined {
+    this.requireDatabase();
+    return this.requireStatements().prepare(sql).get(...params);
+  }
+
+  /** 返回最近一次完整测得的占用；首轮测量完成前为 null。只读内存中的结果，不访问数据库，可在任何时刻调用。 */
+  footprint(): StorageFootprint | null {
+    return this.latestFootprint;
   }
 }
