@@ -81,6 +81,28 @@ describe("artifact 正文按内联上限分流", () => {
     expect(artifactDirectory()).toEqual([]);
   });
 
+  it("content_hash 对规范正文文本求一次摘要，结果与 host.hash 对同一值一致", async () => {
+    const host = createFakeHost();
+    const calls = { hash: 0, hashText: [] as string[] };
+    const store = new StoredAgentArtifactStore(storage, {
+      ...host,
+      hash: async (value) => {
+        calls.hash += 1;
+        return host.hash(value);
+      },
+      hashText: async (text) => {
+        calls.hashText.push(text);
+        return host.hashText(text);
+      },
+    });
+    const value: Json = { zeta: 1, alpha: [true, "正文"] };
+    const stored = await store.put({ artifactId: "art-hash", runId: null, kind: "tool-view", value });
+    expect(calls.hash).toBe(0);
+    expect(calls.hashText).toEqual([canonicalJson(value)]);
+    expect(stored.contentHash).toBe(await host.hash(value));
+    expect(rowOf("art-hash")?.["content_hash"]).toBe(stored.contentHash);
+  });
+
   it("登记事务失败时删除刚写入的正文文件，既有 artifact 保持不变", async () => {
     await artifacts.put({ artifactId: "art-taken", runId: null, kind: "tool-raw", value: { text: "small" } });
     await expect(artifacts.put({

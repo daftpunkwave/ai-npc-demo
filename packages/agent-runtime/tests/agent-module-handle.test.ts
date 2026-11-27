@@ -20,6 +20,7 @@ const host: HostServices = {
   },
   rng: () => () => 0.5,
   hash: async () => "hash",
+  hashText: async () => "hash",
   // 本测试不校验日志输出。
   logger: {
     info: () => {},

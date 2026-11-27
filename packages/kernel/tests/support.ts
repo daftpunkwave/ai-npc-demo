@@ -136,6 +136,7 @@ export function fakeHostServices(overrides: Partial<HostServices> = {}): HostSer
     sleep: async () => undefined,
     rng: () => () => 0.5,
     hash: async (value: Json) => `h${canonicalJson(value).length}`,
+    hashText: async (text: string) => `h${text.length}`,
     logger: {
       info: () => undefined,
       warn: () => undefined,

@@ -196,6 +196,7 @@ interface HostServices {                                   // 模块访问时间
   sleep(ms: number, signal?: AbortSignal): Promise<void>; // 模块等待的唯一入口（退避与轮询）
   rng(...seedParts: string[]): () => number;               // 见规则 §11
   hash(value: Json): Promise<string>;                      // 规范 JSON 的 SHA-256
+  hashText(canonicalJsonText: string): Promise<string>;    // 已序列化规范 JSON 文本的 SHA-256，与 hash 同值同结果
   logger: { info(msg: string, data?: Json): void; warn(msg: string, data?: Json): void; error(msg: string, data?: Json): void };
   tracer: { span<T>(name: string, attrs: Json, fn: () => T): T };
 }                                                          // 存储与模型只经 requires 声明的 typed port 获得，不挂在宿主服务上
@@ -215,7 +216,7 @@ interface UiExtension {
 
 哈希有两类口径，选哪一种由比对双方的可用接口决定，不按包归属区分。
 
-- `HostServices.hash`：输入为 JSON 值，先做规范 JSON 序列化再取 SHA-256。装配摘要、manifest、证据与 artifact 摘要走这一条，因此宿主可以替出确定性实现用于测试。
+- `HostServices.hash`：输入为 JSON 值，先做规范 JSON 序列化再取 SHA-256。装配摘要、manifest、证据与 artifact 摘要走这一条，因此宿主可以替出确定性实现用于测试。调用方已持有规范 JSON 文本时改用 `HostServices.hashText`，它对同一值给出相同结果，只省去再次序列化；artifact 仓对要落库的正文文本求 `content_hash` 走这一入口。
 - 固定 SHA-256：`commandPayloadHash` 直接对规范 JSON 取 SHA-256，不经注入端口。命令幂等键要写进 `command_receipts.payload_hash` 并长期留存，是同一 `commandId` 重复提交时判断内容是否相同的唯一依据；若跟随注入实现变化，更换宿主哈希后同一命令会被判成 `idempotency-conflict`。
 
 固定口径只覆盖命令幂等键一处，其余摘要仍统一走 `host.hash`。

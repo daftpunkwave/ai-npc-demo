@@ -84,6 +84,7 @@ export function fakeHostServices(): HostServices {
     sleep: async () => undefined,
     rng: () => () => 0.5,
     hash: async (value: Json) => `h${JSON.stringify(value).length}`,
+    hashText: async (text: string) => `h${text.length}`,
     logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
     tracer: { span: <T,>(_name: string, _attrs: Json, fn: () => T): T => fn() },
   };

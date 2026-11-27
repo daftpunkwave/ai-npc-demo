@@ -23,6 +23,7 @@ const host: HostServices = {
   },
   rng: () => () => 0.5,
   hash: async () => "hash",
+  hashText: async () => "hash",
   logger: {
     info: () => {},
     warn: () => {},

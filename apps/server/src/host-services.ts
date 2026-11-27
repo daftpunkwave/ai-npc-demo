@@ -67,6 +67,7 @@ export function createHostServices(): HostServices {
     },
     rng: (...parts) => rngFromHostParts(parts),
     hash: (value) => canonicalHasher(canonicalJson(value)),
+    hashText: canonicalHasher,
     logger,
     tracer,
   };

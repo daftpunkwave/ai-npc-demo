@@ -49,6 +49,12 @@ function randomText(length: number): string {
   return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join("");
 }
 
+/** 文本的 SHA-256 十六进制摘要；浏览器只能经 Web Crypto 异步计算。 */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function browserHostServices(): HostServices {
   const startedAt = performance.now();
   return {
@@ -81,11 +87,8 @@ function browserHostServices(): HostServices {
         return state / 0x1_0000_0000;
       };
     },
-    hash: async (value) => {
-      const bytes = new TextEncoder().encode(JSON.stringify(value));
-      const digest = await crypto.subtle.digest("SHA-256", bytes);
-      return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    },
+    hash: async (value) => sha256Hex(JSON.stringify(value)),
+    hashText: sha256Hex,
     logger: {
       info: (message, data) => console.info(message, data ?? ""),
       warn: (message, data) => console.warn(message, data ?? ""),

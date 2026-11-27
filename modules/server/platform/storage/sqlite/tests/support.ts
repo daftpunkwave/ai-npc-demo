@@ -54,6 +54,7 @@ export function createFakeHost(startIso = "2026-01-01T00:00:00.000Z"): FakeHost 
     },
     rng: () => () => 0.5,
     hash: async (value: Json) => createHash("sha256").update(canonicalJson(value)).digest("hex"),
+    hashText: async (text: string) => createHash("sha256").update(text).digest("hex"),
     logger: {
       info: (message, data) => {
         logs.push(data === undefined ? { level: "info", message } : { level: "info", message, data });

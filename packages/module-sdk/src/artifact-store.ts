@@ -1,7 +1,7 @@
 /**
  * 核心职责：持久化 Agent 原始结果、模型视图与已批准对白 artifact，并按存储端口的内联上限把大正文分流到文件。
  * 交互契约：通过 storage 的 artifacts 表登记规范 JSON，超过 artifactFiles.inlineMaxBytes 的正文经 artifactFiles 落盘；
- * 用注入的 host 生成 ID 与 hash。artifactBodyText 供其他只读方在事务外取回正文。
+ * 用注入的 host 生成 ID，并对规范正文文本求 content_hash。artifactBodyText 供其他只读方在事务外取回正文。
  * 约束与禁忌：不得覆盖既有 artifact、读取跨 scope 内容或把文件 I/O 放进任何事务。
  */
 import {
@@ -131,7 +131,8 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
     assertDefinedJson(input.value, "value");
     const bodyText = canonicalJson(input.value);
     const body = new TextEncoder().encode(bodyText);
-    const contentHash = await this.host.hash(input.value);
+    // 对已得到的规范文本求摘要，与 host.hash(input.value) 结果相同，但不再对同一值序列化第二次。
+    const contentHash = await this.host.hashText(bodyText);
     const artifactId = input.artifactId ?? this.host.ids("art");
     const createdAt = this.host.nowIso();
     const files = this.storage.artifactFiles;
