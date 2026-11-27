@@ -196,7 +196,7 @@ export class ObservabilityPort {
         agentId: agent.agentId as AgentsResponse["agents"][number]["agentId"],
         kind: agent.rosterKind === "character" ? "character" : "strategic",
         active: agent.activationStatus === "active",
-        controllerKind: agent.controllerKind === "human" ? "human" : "agent",
+        controllerKind: agent.controllerKind === "human" || agent.controllerKind === "script" ? agent.controllerKind : "agent",
         location: agent.nodeId !== null && agent.nodeId.length > 0 ? agent.nodeId : null,
         turnStatus: agent.latestTurnStatus ?? "idle",
         // 尚未建立感知水位的 Agent 视为滞后整条事件流，而不是滞后 0。

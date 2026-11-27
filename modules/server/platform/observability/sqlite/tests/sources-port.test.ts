@@ -92,6 +92,15 @@ describe("观测模块只经数据源端口取数", () => {
           scannedThroughSeq: null,
           nodeId: "node-gate",
         },
+        {
+          agentId: "human-earth-alliance",
+          rosterKind: "strategic",
+          activationStatus: "active",
+          controllerKind: "script",
+          latestTurnStatus: "completed",
+          scannedThroughSeq: 12,
+          nodeId: "archive",
+        },
       ],
     });
 
@@ -114,6 +123,16 @@ describe("观测模块只经数据源端口取数", () => {
           location: "node-gate",
           turnStatus: "idle",
           watermarkLag: 12,
+        },
+        {
+          // 实验执行器的脚本窗口如实呈现，不折算成 Agent 或真人。
+          agentId: "human-earth-alliance",
+          kind: "strategic",
+          active: true,
+          controllerKind: "script",
+          location: "archive",
+          turnStatus: "completed",
+          watermarkLag: 0,
         },
       ],
     });

@@ -1,9 +1,9 @@
 /**
  * 创建有界 turn、维护 trigger 合并，并恢复重启或过期租约遗留的 turn。
  * 依赖 storage、HostServices、roster/profile 与调度端口。
- * 禁止为 human 控制身份创建 turn，或让过期 turn 永久占用 trigger。
+ * 禁止为 human 或 script 控制的身份创建 turn，或让过期 turn 永久占用 trigger。
  */
-import type { HostServices, StoragePort } from "@world-prism/contracts";
+import type { ControllerKind, HostServices, StoragePort } from "@world-prism/contracts";
 import type { SchedulingPort } from "@world-prism/module-sdk";
 import type { ResolvedAgentProfile, Roster } from "@world-prism/contracts";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
@@ -19,6 +19,11 @@ export interface TurnSchedulerInput {
   readonly maxConcurrentTurns: number;
   readonly branchId: string;
   readonly patrolHour?: number;
+}
+
+/** 租约上的控制者种类；没有租约的身份按 Agent 自己控制计，是否能排 turn 另由激活与租约存在性决定。 */
+function controllerKindOf(value: unknown): ControllerKind {
+  return value === "human" || value === "script" ? value : "agent";
 }
 
 export class TurnScheduler {
@@ -68,7 +73,7 @@ export class TurnScheduler {
       return {
         agentId: agent.agentId,
         active: activation?.["status"] === "active",
-        controllerKind: lease?.["controller_kind"] === "human" ? "human" as const : "agent" as const,
+        controllerKind: controllerKindOf(lease?.["controller_kind"]),
         strategic: agent.kind === "strategic",
       };
     });

@@ -193,7 +193,8 @@ export class MemoryStore {
       const lease = branch.table("controller_leases").get({ agent_id: agentId });
       return {
         active: activation?.["status"] === "active",
-        agentControlled: lease === null || lease["controller_kind"] === "agent",
+        // 只有真人接管会换掉决策者；脚本窗口期间 Agent 仍是同一个人格，唤醒照常写成待处理 trigger，交还后再调度。
+        agentControlled: lease === null || lease["controller_kind"] !== "human",
       };
     });
   }

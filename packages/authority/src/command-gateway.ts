@@ -167,7 +167,7 @@ export class CommandGateway {
     if (branchViolation !== null) {
       return this.rejectionReceipt(scope, clock, "no-authority", branchViolation);
     }
-    const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso());
+    const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso(), branch.kind);
     if (!fencing.ok) {
       const safeMessage = fencing.reasonCode === "stale-controller" ? "控制权已变更，请刷新后再试" : "turn 租约已失效";
       return this.rejectionReceipt(scope, clock, fencing.reasonCode, safeMessage);

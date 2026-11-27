@@ -141,6 +141,8 @@ message.send/information.share 也不能绕过此边界：decision 只提发送�
 
 human/agent 控制同一身份，接管不创建新记忆人格。接管和归还都通过权威控制服务递增 controllerEpoch，并停止旧控制器的新任务入口。
 
+第三种控制者 `script` 只属于闭环实验分支：实验执行器为 `as` 不是玩家的脚本步骤取得该身份的控制（代次 +1），提交这一步后立即交还 `agent`（代次再 +1），两次变更各写一条 `ControllerChanged` 生命周期审计（见 [领域模型](../architecture/domain-model.md) 第 2 节）。窗口内调度器不为该身份创建 turn，它的 trigger（含记忆模块提出的唤醒）保持待处理，交还后按新代次照常调度；在途与排队的 turn 带着旧代次，提交与认领都按 `stale-controller` 拒绝或取消并释放 trigger。感知、记忆摄入与整理不暂停，被控 Agent 与其他身份一样感知脚本动作产生的事件。取得只认 `agent` 控制的身份，真人接管中的身份不能被脚本抢占。
+
 worker 认领、重领 turn 时取得新的 turnLeaseEpoch。仅取消信号不足以隔离晚到网络响应；每次短发布、记忆候选提交、世界命令和对白提交都验证 fencing。
 
 提交还验证 branch 活跃状态、profileHash、主体授权与实际读集版本。读集由工具网关/runtime 记录，command handler 补齐规则依赖，不能信任 LLM 自报。

@@ -21,6 +21,13 @@ export type {
   RosterActivationInput,
   RosterActivationOutcome,
 } from "./activation";
+export {
+  acquireScriptControl,
+  controllerChangedEventType,
+  releaseLeftoverScriptControl,
+  releaseScriptControl,
+} from "./script-control";
+export type { ControllerTransition, ScriptControlRequest } from "./script-control";
 export { createCampaignStartActivationHook } from "./campaign-activation";
 export type {
   CampaignStartActivationContext,

@@ -240,10 +240,11 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["布局草稿响应", modelLayoutDraftResponseSchema, { layoutId: "shared-model-layout-v1", version: 2 }, { layoutId: "", version: 2 }],
   ["模型探测请求", modelProbeRequestSchema, { modelId: "npc-chat", operationId: "op-k3j9x0a1b2c3" }, { modelId: "npc-chat" }],
   ["模型探测响应", modelProbeResponseSchema, { ok: true, latencyMs: 120, servedModel: "deepseek-chat" }, { ok: true, latencyMs: -1 }],
-  ["席位控制者", seatControllerKindSchema, "human", "npc"],
+  // 脚本控制只属于实验分支，席位接口既不呈现也不接受。
+  ["席位控制者", seatControllerKindSchema, "human", "script"],
   ["席位视图", seatViewSchema, { agentId: "species-fauna", controllerKind: "agent", controllerPrincipalId: "species-fauna", controllerEpoch: 0, leaseExpiresAt: "2026-11-18T00:10:00.000Z" }, { agentId: "species-fauna", controllerKind: "agent" }],
   ["席位列表", seatsResponseSchema, { seats: [] }, { seats: [{}] }],
-  ["席位交接请求", seatHandoverRequestSchema, { operationId: "op-k3j9x0a1b2c3", mode: "human", expectedEpoch: 0, reason: "接管" }, { operationId: "op-k3j9x0a1b2c3", mode: "npc", expectedEpoch: 0, reason: "接管" }],
+  ["席位交接请求", seatHandoverRequestSchema, { operationId: "op-k3j9x0a1b2c3", mode: "human", expectedEpoch: 0, reason: "接管" }, { operationId: "op-k3j9x0a1b2c3", mode: "script", expectedEpoch: 0, reason: "接管" }],
   ["席位交接响应", seatHandoverResponseSchema, { controllerEpoch: 1, controllerKind: "human", leaseExpiresAt: "2026-11-18T00:10:00.000Z" }, { controllerEpoch: -1, controllerKind: "human", leaseExpiresAt: "x" }],
   ["席位续期请求", seatRenewRequestSchema, { controllerEpoch: 1 }, { controllerEpoch: -1 }],
   ["席位续期响应", seatRenewResponseSchema, { leaseExpiresAt: "2026-11-18T00:10:00.000Z" }, {}],

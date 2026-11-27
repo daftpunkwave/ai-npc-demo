@@ -197,6 +197,7 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["时间线查询", timelineQuerySchema, { fromSeq: 0, limit: 200, types: ["CampaignStarted"] }, { fromSeq: 0, limit: 201 }],
   ["时间线响应", timelineResponseSchema, { events: [timelineItem] }, { events: [{}] }],
   ["Agent 列表项", agentStatusViewSchema, { agentId: "npc-cenyan", kind: "character", active: true, controllerKind: "agent", location: "pass", turnStatus: "idle", watermarkLag: 0 }, { agentId: "npc-cenyan", kind: "npc", active: true, controllerKind: "agent", location: null, turnStatus: "idle", watermarkLag: 0 }],
+  ["Agent 列表项（脚本窗口）", agentStatusViewSchema, { agentId: "human-earth-alliance", kind: "strategic", active: true, controllerKind: "script", location: "archive", turnStatus: "idle", watermarkLag: 0 }, { agentId: "human-earth-alliance", kind: "strategic", active: true, controllerKind: "runner", location: null, turnStatus: "idle", watermarkLag: 0 }],
   ["Agent 列表", agentsResponseSchema, { agents: [] }, { agents: [{}] }],
   ["Agent 查询", agentsQuerySchema, { branchId: "br-k3j9x0a1b2c3" }, {}],
   ["关系视图", agentRelationViewSchema, { targetId: "npc-shenli", label: "同僚", trust: 2 }, { targetId: "npc-shenli", label: "同僚", trust: 3 }],
