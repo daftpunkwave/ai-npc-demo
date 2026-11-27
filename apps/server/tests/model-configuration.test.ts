@@ -8,9 +8,11 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJson, type Json } from "@world-prism/contracts";
 import {
-  loadContentPack, loadModelLayout, loadRoster, loadRunSpec, type ConfigLoadContext, type ModelLayout,
+  experimentSpecSchema, loadContentPack, loadExperimentSpec, loadModelLayout, loadRoster, loadRunSpec,
+  type ConfigLoadContext, type ModelLayout,
 } from "@world-prism/experiment";
 import { canonicalHasher, serverModuleDefinitions } from "@world-prism/app-server";
+import { runsOfExperiment } from "../src/host/experiment-write";
 import { resolveRunConfiguration } from "../src/host/run-configuration";
 
 const content = loadContentPack("content", "earth-2964-v1");
@@ -144,5 +146,64 @@ describe("推理开关与返回名别名的环境变量", () => {
     ["别名列表含空项", { WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS: "deepseek/deepseek-flash," }, "WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS 含空名称"],
   ])("%s时预检失败并指出变量", async (_label, env, message) => {
     await expect(resolveWith(env)).rejects.toThrow(message);
+  });
+});
+
+describe("OpenAI 兼容网关布局", () => {
+  const gatewayLayout = "openai-compatible-gateway-layout-v1";
+  const gatewayModel = "deepseek-v4.1-flash-official";
+  const gatewayEnv = { WORLD_PRISM_OPENAI_COMPAT_BASE_URL: "https://api.deepseek.com/v1", WORLD_PRISM_OPENAI_COMPAT_MODEL: gatewayModel };
+  const withoutModelName = (routes: readonly Readonly<Record<string, Json>>[]) =>
+    routes.map(({ configHash: _configHash, externalModel: _externalModel, ...route }) => route);
+
+  it("以网关模型名通过预检，冻结估算价目、推理开关与返回名别名", async () => {
+    const { models, routes } = await frozenModels({
+      loadContext: contextOf({
+        ...gatewayEnv, WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled", WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS: "deepseek/deepseek-flash",
+      }),
+      modelLayoutRef: gatewayLayout,
+    });
+    expect(models).toMatchObject({ layoutId: gatewayLayout, pricingVersion: "2026-11-gateway-estimate" });
+    expect(routes).toHaveLength(45);
+    for (const route of routes) {
+      expect(route).toMatchObject({
+        modelId: "npc-chat", externalModel: gatewayModel, servedModels: ["deepseek/deepseek-flash"],
+        parameters: { temperature: 0.6, maxTokensField: "max_tokens", thinking: "disabled" },
+        price: { inputPerMTok: 0.3, outputPerMTok: 1.2, currency: "USD" },
+      });
+    }
+    expect(Object.fromEntries(routes.filter(({ agentId }) => agentId === "npc-yinuo")
+      .map(({ purpose, maxOutputTokens }) => [String(purpose), maxOutputTokens])))
+      .toEqual({ decision: 1500, speech: 400, "memory-maintenance": 800 });
+  });
+
+  it("两个变量未设置时，除供应商模型名外与共享布局的冻结路由一致", async () => {
+    const gateway = await frozenModels({ loadContext: contextOf(gatewayEnv), modelLayoutRef: gatewayLayout });
+    const shared = await frozenModels({ loadContext: contextOf(deepseekEnv), modelLayoutRef: "shared-model-layout-v1" });
+    expect(gateway.routes.every(({ externalModel }) => externalModel === gatewayModel)).toBe(true);
+    expect(withoutModelName(gateway.routes)).toEqual(withoutModelName(shared.routes));
+  });
+
+  it("供应商模型名与估算价目记录不一致时预检失败", async () => {
+    await expect(frozenModels({ loadContext: contextOf(deepseekEnv), modelLayoutRef: gatewayLayout }))
+      .rejects.toThrow("模型 npc-chat 的 externalModel 与价目记录不一致");
+  });
+
+  it("实验规格只替换 modelLayoutRef 时，每个 run 冻结网关布局", async () => {
+    const loadContext = contextOf({ ...gatewayEnv, WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled" });
+    const repository = loadExperimentSpec("exp-memory-promise-v1", loadContext).value;
+    const inline = experimentSpecSchema.parse({ ...repository, base: { ...repository.base, modelLayoutRef: gatewayLayout } });
+    const runs = runsOfExperiment(inline);
+    expect(runs).toHaveLength(24);
+    const [first] = runs;
+    if (first === undefined) throw new Error("实验没有展开出 run");
+    const resolved = await resolveRunConfiguration({
+      content, definitions: serverModuleDefinitions, contentVersion: content.pack.contentVersion,
+      loadRoster: (ref) => loadRoster(ref, loadContext), loadContext, repoRoot: process.cwd(),
+    }, first);
+    if ("failures" in resolved) throw new Error(resolved.failures.map(({ message }) => message).join("; "));
+    const { manifest } = resolved.configuration;
+    expect(manifest.selection).toMatchObject({ runSpecId: first.id, modelLayoutRef: gatewayLayout });
+    expect(manifest.models).toMatchObject({ layoutId: gatewayLayout, pricingVersion: "2026-11-gateway-estimate" });
   });
 });

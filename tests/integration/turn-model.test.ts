@@ -557,6 +557,40 @@ describe("确定性模型装配与角色对白", () => {
     }
   });
 
+  it("网关布局按部署变量关闭推理，上游返回名命中别名时不记为模型替换", async () => {
+    const requested = "deepseek-v4.1-flash-official";
+    const served = "deepseek/deepseek-flash";
+    const restoreFetch = stubStandardModelHttp({ requested, served });
+    try {
+      vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_THINKING", "disabled");
+      vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS", served);
+      const host = await modelHost({ assemblyRef: "local-slg-standard-v1", modelLayoutRef: "openai-compatible-gateway-layout-v1" });
+      runCampaign(host);
+      const record = await turnFor(host, startConversation(host, "请留意水闸的状态。"));
+      expect(record).toMatchObject({ status: "completed" });
+      const turnId = String(record["turn_id"]);
+      const rows = attempts(host, turnId);
+      expect(rows.map((row) => [row["purpose"], row["status"]]).sort())
+        .toEqual([["decision", "succeeded"], ["speech", "succeeded"]]);
+      for (const row of rows) {
+        expect(artifact(host, row["request_artifact_id"])).toMatchObject({
+          servedModels: [served], request: { externalModel: requested },
+          wire: { model: requested, thinking: { type: "disabled" }, temperature: 0.6 },
+        });
+        expect(artifact(host, row["response_artifact_id"])).toMatchObject({ response: { servedModel: served } });
+      }
+      const effective = host.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: turnId })?.["effective_json"]);
+      const modelStages = (typeof effective === "string" ? JSON.parse(effective) as Json[] : effective as Json[])
+        .filter((entry) => (entry as { stage?: string }).stage === "turn.model");
+      expect(modelStages).toHaveLength(2);
+      for (const stage of modelStages) {
+        expect(stage).toMatchObject({ status: "applied", reason: null, effective: { attempts: [{ servedModel: served, substituted: false }] } });
+      }
+    } finally {
+      restoreFetch();
+    }
+  });
+
   it("预检拒绝模型与价目记录指向不同的供应商模型", async () => {
     const restoreFetch = stubStandardModelHttp();
     try {

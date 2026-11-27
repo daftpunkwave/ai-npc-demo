@@ -373,7 +373,7 @@ runSpecTemplate:
 
 ### 10.5 价目 `config/pricing*.yaml`
 
-模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。
+模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。`openai-compatible-gateway-layout-v1` 使用 `config/pricing-openai-compatible-gateway.yaml`（`pricingVersion: "2026-11-gateway-estimate"`）：网关没有公布 `deepseek-v4.1-flash-official` 的单价，该文件沿用 deepseek-flash 的单价，属于估算值。已冻结的 run 在重启和执行前会按当前价目文件复算 manifest，因此为新的模型名定价时新增价目文件，不修改已被布局引用的文件。
 
 ```yaml
 schemaVersion: 1

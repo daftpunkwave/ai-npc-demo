@@ -43,12 +43,13 @@ evaluation 由独立 evaluator 配置引用 `modelId`，调用主体类型为 ev
 
 ## 4. 目标配置示例
 
-三个目标布局位于 `config/model-layouts/`。连接、生成参数、能力、限流及输出上限使用下表引用的 `connections` 和 `models` 配置。真实供应商须通过连通性与能力预检。
+四个布局位于 `config/model-layouts/`。连接、生成参数、能力、限流及输出上限使用下表引用的 `connections` 和 `models` 配置。真实供应商须通过连通性与能力预检。
 
 | 布局 | 挂载 | 连接与模型配置 |
 |---|---|---|
 | `shared-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-chat` | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
 | `claude-model-layout-v1.yaml` | `decision` 挂载 `npc-claude`，`speech` 与 `memory-maintenance` 挂载 `npc-chat` | [model-transport.md — Anthropic 配置](model-transport.md#41-配置)、[model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
+| `openai-compatible-gateway-layout-v1.yaml` | 与共享布局相同；`npc-chat` 的推理开关与返回名别名取自部署变量 | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置)、[evaluation.md — 经网关执行](../platform/evaluation.md#82-经-openai-兼容网关用真实模型执行) |
 | `deterministic-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-fixture` | [model-transport.md — 确定性适配器](model-transport.md#5-确定性适配器测试) |
 
 下面是共享布局的挂载片段，以伊诺为例。正式布局按 `standard-15` 填入全部 Agent ID，测试布局按所选测试名册填写。名单见 [00-scope-and-invariants.md — 15 个上场身份](../00-scope-and-invariants.md#11-15-个上场身份)。
@@ -63,7 +64,7 @@ mounts:
     purposes: [decision, speech, memory-maintenance]
 ~~~
 
-`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`（`evaluator` 独立评估主体目前尚未写入仓库预设布局文件，开启 `evaluator.enabled: true` 会在运行启动预检时被拒绝）。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
+`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`，网关布局引用估算价目 `config/pricing-openai-compatible-gateway.yaml`（`evaluator` 独立评估主体目前尚未写入仓库预设布局文件，开启 `evaluator.enabled: true` 会在运行启动预检时被拒绝）。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
 
 ## 5. 解析与 run 冻结
 
