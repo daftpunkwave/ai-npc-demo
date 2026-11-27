@@ -21,8 +21,18 @@ export interface ConsoleHostPort {
   readonly activeRole: "operator" | "researcher" | "evaluator";
 }
 
-/** 存储占用面板：测量由服务端缓存，面板标出测量时刻，避免把旧值读成实时值。 */
+/** 存储占用面板：测量由服务端在后台定期执行，面板标出测量时刻，避免把旧值读成实时值。 */
 function StoragePanels({ storage }: { readonly storage: StorageSummaryView }): ReactNode {
+  if (storage.status === "pending") {
+    return (
+      <section className="console-panel" data-testid="console-health-storage">
+        <header>
+          <h2>存储占用</h2>
+        </header>
+        <p className="console-empty">首轮测量尚未完成。</p>
+      </section>
+    );
+  }
   return (
     <div className="console-two-column" data-testid="console-health-storage">
       <section className="console-panel">

@@ -168,7 +168,7 @@ const byteCountSchema = z.number().int().nonnegative();
 
 /**
  * 存储占用测量：主库页面与空闲页字节、artifact 正文字节、只追加表的行数与生效的保留天数。
- * 测量结果带测量时刻；适配器缓存一段时间，读取方拿到的可能是数分钟前的值。
+ * 测量结果带完成时刻；适配器在后台按固定间隔重测，读取方拿到的可能是数分钟前的值。
  */
 export const storageFootprintSchema = z
   .object({
@@ -198,8 +198,9 @@ export interface StoragePort {
   /** 超过内联上限的 artifact 正文所在的文件存放；只在事务外使用。 */
   readonly artifactFiles: ArtifactFileStore;
   /**
-   * 存储占用测量；缓存过期时才重新测量，必须在事务外调用。
+   * 最近一次完整测得的存储占用；首轮测量完成前为 null。
+   * 测量由适配器在后台分块执行，本方法只返回内存中的结果，不触发测量、不访问数据库，可在任何时刻调用。
    * 可选能力：不提供测量的存储实现省略该方法，读取方据此不展示占用数据。
    */
-  footprint?(): StorageFootprint;
+  footprint?(): StorageFootprint | null;
 }

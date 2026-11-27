@@ -284,7 +284,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
               maintenanceQueued: maintenance.queued,
               maintenanceExhausted: maintenance.exhausted,
             },
-            // 占用测量由存储适配器缓存，2 秒一次的健康摘要不会每次都统计行数；不提供测量的存储省略该字段。
+            // 只取存储适配器后台测得的最近结果，健康摘要不统计行数；首轮未完成时为 null，不提供测量的存储省略该字段。
             ...(footprint === undefined ? {} : { storage: footprint }),
             budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),

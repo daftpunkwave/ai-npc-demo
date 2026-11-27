@@ -105,8 +105,8 @@ export const consoleHealthResponseSchema = z
     modules: z.array(consoleModuleStatusSchema),
     clock: clockViewSchema,
     queues: consoleQueueSummarySchema,
-    /** 存储占用测量；存储实现不提供测量时省略。 */
-    storage: storageFootprintSchema.optional(),
+    /** 存储占用测量：null 表示首轮后台测量尚未完成；存储实现不提供测量时省略。 */
+    storage: storageFootprintSchema.nullable().optional(),
     laggingAgents: z.number().int().nonnegative().optional(),
     budgets: z.array(consoleBudgetSummarySchema),
     recentFailures: z.array(consoleFailureSummarySchema),

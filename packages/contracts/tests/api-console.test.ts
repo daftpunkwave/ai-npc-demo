@@ -184,6 +184,7 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["控制台健康降级", consoleHealthResponseSchema, { ...consoleHealth, status: "degraded" }, { ...consoleHealth, status: "starting" }],
   ["存储占用", storageFootprintSchema, { ...storageFootprint, retention: [] }, { ...storageFootprint, retention: [{ table: "trace_spans", days: 0 }] }],
   ["控制台健康含存储占用", consoleHealthResponseSchema, { ...consoleHealth, storage: storageFootprint }, { ...consoleHealth, storage: { ...storageFootprint, freeBytes: -1 } }],
+  ["控制台健康首轮存储测量未完成", consoleHealthResponseSchema, { ...consoleHealth, storage: null }, { ...consoleHealth, storage: {} }],
   ["存储占用拒绝未知字段", storageFootprintSchema, storageFootprint, { ...storageFootprint, walBytes: 0 }],
   [
     "模块描述",

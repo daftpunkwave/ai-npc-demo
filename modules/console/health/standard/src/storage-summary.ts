@@ -1,11 +1,14 @@
 /**
  * 核心职责：把健康响应中的存储占用测量转换为运行总览面板直接渲染的字节、行数与保留策略文案。
  * 交互契约：输入已通过 consoleHealthResponseSchema 校验的响应；不发起请求、不保留状态。
- * 约束与禁忌：响应不含 storage 时返回 null，禁止用 0 冒充未提供的测量；保留天数为空时必须标明永久保留。
+ * 约束与禁忌：响应不含 storage 时返回 null，首轮测量未完成时返回待测量状态，禁止用 0 冒充未提供或尚未完成的测量；
+ *   保留天数为空时必须标明永久保留。
  */
 import type { ConsoleHealthResponse } from "@world-prism/contracts";
 
-export interface StorageSummaryView {
+/** 已完成测量的面板文案。 */
+export interface StorageMeasuredView {
+  readonly status: "measured";
   readonly measuredAt: string;
   readonly databaseText: string;
   /** 空闲页：删除释放、等待复用的空间。 */
@@ -14,6 +17,13 @@ export interface StorageSummaryView {
   readonly retentionText: string;
   readonly tables: readonly { readonly table: string; readonly rowsText: string }[];
 }
+
+/** 服务端提供测量，但首轮后台测量尚未完成。 */
+export interface StoragePendingView {
+  readonly status: "pending";
+}
+
+export type StorageSummaryView = StorageMeasuredView | StoragePendingView;
 
 const byteUnits = ["B", "KiB", "MiB", "GiB", "TiB"] as const;
 
@@ -33,8 +43,12 @@ export function storageSummary(health: ConsoleHealthResponse): StorageSummaryVie
   if (storage === undefined) {
     return null;
   }
+  if (storage === null) {
+    return { status: "pending" };
+  }
   const rowsFormat = new Intl.NumberFormat("en-US");
   return {
+    status: "measured",
     measuredAt: storage.measuredAt,
     databaseText: formatBytes(storage.databaseBytes),
     freeText: formatBytes(storage.freeBytes),

@@ -767,7 +767,7 @@ SQLite 删除行后不缩小数据库文件：被释放的页进入空闲列表�
 
 ### 6.6 占用测量
 
-存储端口的可选方法 `footprint()` 返回一份占用测量，控制台运行总览经 `GET /api/v1/console/health` 的 `storage` 字段展示（[API](api.md#51-运行总览与模块装配)）：
+存储端口的可选方法 `footprint()` 返回最近一次完整测得的占用，首轮测量完成前为 `null`；控制台运行总览经 `GET /api/v1/console/health` 的 `storage` 字段展示（[API](api.md#51-运行总览与模块装配)）：
 
 | 字段 | 口径 |
 |---|---|
@@ -776,6 +776,8 @@ SQLite 删除行后不缩小数据库文件：被释放的页进入空闲列表�
 | `artifactBytes.inline` / `artifactBytes.file` | 按 `artifacts.storage` 分组汇总的 `byte_size`；`file` 是数据目录下独立正文文件的登记字节，不逐个读取文件 |
 | `tables` | 只追加表的行数：`domain_events`、`command_receipts`、`consumer_inbox`、`observations`、`memory_records`、`memory_revisions`、`turn_runs`、`model_attempts`、`tool_calls`、`artifacts`、`trace_spans`、`lifecycle_events`、`budget_ledger` |
 | `retention` | 生效的保留天数；空数组表示全部永久保留 |
-| `measuredAt` | 测量时刻 |
+| `measuredAt` | 本轮测量完成的时刻 |
 
-健康摘要约每 2 秒读取一次，而行数统计的成本随表规模线性增长，因此适配器把测量结果缓存 5 分钟（按宿主单调时钟计），过期后的下一次读取才在一个短事务里重新测量；连接关闭时缓存随之丢弃。每张被统计的表都有覆盖索引，`COUNT(*)` 只扫描索引页；artifact 字节汇总走 0021 的 `artifacts_storage_bytes` 覆盖索引，不读取内联正文。`modules/server/platform/storage/sqlite/tests/footprint.test.ts` 对这些语句断言查询计划，并核对删除行后 `freeBytes` 增加而 `databaseBytes` 不变。
+测量在后台进行，健康读取不触发统计。存储模块 `start` 打开数据库后立即排入首轮，此后每轮结束再隔 5 分钟重测；`footprint()` 只返回内存中的上一份结果，不访问数据库。行数按 rowid 分块统计：每块是一条 `SELECT COUNT(*), MAX(rowid) FROM (SELECT rowid FROM <表> WHERE rowid > ? ORDER BY rowid LIMIT 1000)`，从上一块的最大 rowid 之后接着读；`artifacts` 的分块同时按存放方式累加 `byte_size`；各表读完后再读取页面统计。每条读取之前都经 `setImmediate` 让出事件循环，单次同步执行只读一块，耗时与表规模无关，排队的请求与写事务在两块之间执行。每块沿表的 rowid B-tree 读取叶页；`storage` 与 `byte_size` 位于 `body` 之前，汇总不读取溢出页上的正文。被测表都是 rowid 表，WITHOUT ROWID 表无法按此分块。
+
+分块读取不经 `BEGIN IMMEDIATE`：WAL 模式下自动提交的读语句只在执行期间持有该语句的读快照，不取写锁，也没有需要提交的事务；同一连接上的调用是同步的，不会与事务交错。代价是各块各取快照，测量期间发生的写入可能只被部分计入，对占用估计可以接受。`dispose` 关闭连接前停止调度，进行中的一轮在下一块之前结束且不产出结果；单轮失败只记错误日志，下一轮照常执行。`modules/server/platform/storage/sqlite/tests/footprint.test.ts` 断言每块的查询计划都是 rowid 范围查找、每次读取之前都让出过事件循环、测得的行数与字节和独立统计一致，并核对删除行后 `freeBytes` 增加而 `databaseBytes` 不变。

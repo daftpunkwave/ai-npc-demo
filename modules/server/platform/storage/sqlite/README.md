@@ -39,5 +39,5 @@ retentionDays:                           # 可选；缺省表示永久保留全�
 - 原始查询通道（`get`/`all`/`run`）只面向宿主固定机制的跨分支与范围查询；模块状态读写使用分支 scope 表接口，不持有连接。
 - 模块不持有按主体隔离的 JSON 状态，`stateSchemaVersion` 为 `null`；数据库 schema 版本由 `schema_migrations` 管理。
 - `artifactFiles` 向 `StoredAgentArtifactStore` 提供内联上限（`inlineArtifactMaxBytes`）与正文文件读写：正文先写暂存文件再以硬链接独占发布为 `dataDir/artifacts/<artifact_id>`，同名文件已存在时拒绝覆盖；登记路径固定为 `artifacts/<artifact_id>`，读取与删除时按不可信输入校验，不接受目录外路径。文件读写只在事务外调用。
-- `footprint()` 返回缓存 5 分钟的占用测量：主库页面与空闲页字节、按存放方式汇总的 artifact 正文字节、只追加表的行数与生效的保留天数；计数语句只扫描覆盖索引，不能在事务内调用。
+- `footprint()` 返回最近一次完整测得的占用（首轮完成前为 `null`）：主库页面与空闲页字节、按存放方式汇总的 artifact 正文字节、只追加表的行数与生效的保留天数。它只读内存中的结果；测量由 `start` 在后台立即开始、每 5 分钟重测，每块是一条按 rowid 范围、至多 1000 行的事务外只读查询，块与块之间让出事件循环；`dispose` 关闭连接前停止测量。
 - `backup()` 只复制数据库；`dataDir/artifacts` 中的正文文件写入后不再改变，按 artifact ID 命名，迁移或恢复数据目录时需与备份一并保留。

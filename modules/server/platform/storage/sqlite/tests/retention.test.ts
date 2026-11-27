@@ -123,9 +123,14 @@ describe("存储保留策略", () => {
     }
   });
 
+  /** 启动存储并等后台首轮占用测量完成，避免它的让出在用例切换到受控定时器后混入定时器计数。 */
   const open = async (extraConfig: Parameters<typeof startStorage>[2] = {}): Promise<StorageHandle> => {
-    handle = await startStorage(createTempDataDir(), createFakeHost(), extraConfig);
-    return handle;
+    const opened = await startStorage(createTempDataDir(), createFakeHost(), extraConfig);
+    handle = opened;
+    await vi.waitFor(() => {
+      expect(opened.port.footprint?.()).not.toBeNull();
+    });
+    return opened;
   };
 
   it("每张迁移表恰好归入一类，可轮转清单只含观测跨度", async () => {
