@@ -77,9 +77,13 @@ export class AttemptEvidence {
       return value;
     };
     const { wire, ...responseFields } = response ?? {};
+    // 请求名在 request.externalModel 中，声明的别名一并归档，审计无需回查 manifest 就能核对别名判定。
     const requestArtifact = await this.artifacts.put({
       kind: "model-request", runId: scope.runId,
-      value: redact({ request, wire: wire?.requestBody ?? null, modelConfigHash: route.configHash }),
+      value: redact({
+        request, wire: wire?.requestBody ?? null, modelConfigHash: route.configHash,
+        ...(route.servedModels === undefined ? {} : { servedModels: [...route.servedModels] }),
+      }),
     });
     const error = input.error === null ? null : redact({ ...input.error });
     const responseArtifact = await this.artifacts.put({
@@ -116,7 +120,8 @@ export class AttemptEvidence {
       attrs: {
         attemptId: request.attemptId, llmCallId: request.llmCallId, purpose: request.purpose,
         modelId: route.modelId, modelConfigHash: route.configHash,
-        servedModel, status, reason: substituted ? "model-substituted" : null,
+        servedModel, status,
+        reason: substituted ? "model-substituted" : servedByAlias(route, response) ? "served-model-alias" : null,
         requestArtifactId: requestArtifact.artifactId, responseArtifactId: responseArtifact.artifactId, timings,
       },
     });
@@ -133,5 +138,15 @@ export class AttemptEvidence {
 }
 
 export function modelSubstituted(route: ModelRoute, response: ModelResponse | null): boolean {
-  return response !== null && (response.fallbackUsed || (response.servedModel !== null && response.servedModel !== route.externalModel));
+  return response !== null && (response.fallbackUsed || (response.servedModel !== null &&
+    response.servedModel !== route.externalModel && route.servedModels?.includes(response.servedModel) !== true));
+}
+
+/**
+ * 供应商报告的名称不同于请求名、但精确命中布局声明的别名。
+ * span 单独标注这种情况，审计能区分“报告名就是请求名”与“按声明的别名认定为同一模型”。
+ */
+function servedByAlias(route: ModelRoute, response: ModelResponse | null): boolean {
+  const served = response?.servedModel ?? null;
+  return served !== null && served !== route.externalModel && route.servedModels?.includes(served) === true;
 }

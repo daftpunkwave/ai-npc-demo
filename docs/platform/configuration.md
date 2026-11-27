@@ -135,7 +135,8 @@ requested 是用户选择，resolved 是装配解析，effective 是本阶段实
 `env:NAME` 的解析时机按文档分类，不能一概而论：
 
 - 装配、RunSpec、Agent profile、toolset 与价目：加载时由共享管线做深度 `env:` 替换，缺失或空值在预检期报错。
-- 模型布局：加载时不做通用替换，各字段按自己的时机解析。`endpoint` 与 `externalModel` 在宿主预检（`resolveModelEnv`）时按白名单取值，布局对象本身保留原始 `env:` 引用；`credentialRef` 始终保留为引用，由传输适配器在调用时解析；模型 `parameters` 内的 `env:` 不解析——任意环境变量经该字段可直达模型请求，保留原样才能在预检期暴露误用。
+- 模型布局：加载时不做通用替换，各字段按自己的时机解析。`endpoint` 与 `externalModel` 在宿主预检（`resolveModelEnv`）时按白名单取值，布局对象本身保留原始 `env:` 引用；`credentialRef` 始终保留为引用，由传输适配器在调用时解析；模型 `parameters` 内的 `env:` 一般不解析——任意环境变量经该字段可直达模型请求，保留原样才能在预检期暴露误用。
+- 模型布局的两个可选开关也在宿主预检时解析，各自只接受一个登记的变量名：OpenAI 兼容连接的 `parameters.thinking` 可写 `env:WORLD_PRISM_OPENAI_COMPAT_THINKING`，取值只能是 `disabled` 或 `enabled`；模型的 `servedModels` 可写 `env:WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS`，取值为逗号分隔的模型名，逐项去掉首尾空白，空项、重复项或超过 16 项都会被拒绝。两个变量未设置、为空或只含空白时按未声明处理，冻结路由与布局不写这两个字段时逐字节一致；取值不合法或引用了其他变量名时，该 run 以 `agent-configuration-invalid` 预检失败，错误信息写明变量名。
 
 三条路径都走同一条 `loadConfigDocument` 管线（引用解析、YAML、草稿回退、缓存、错误格式化一致），布局只显式关闭其中的通用 env 替换。
 
@@ -372,7 +373,7 @@ runSpecTemplate:
 
 ### 10.5 价目 `config/pricing*.yaml`
 
-模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。
+模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。`openai-compatible-gateway-layout-v1` 使用 `config/pricing-openai-compatible-gateway.yaml`（`pricingVersion: "2026-11-gateway-estimate"`）：网关没有公布 `deepseek-v4.1-flash-official` 的单价，该文件沿用 deepseek-flash 的单价，属于估算值。已冻结的 run 在重启和执行前会按当前价目文件复算 manifest，因此为新的模型名定价时新增价目文件，不修改已被布局引用的文件。
 
 ```yaml
 schemaVersion: 1

@@ -9,6 +9,14 @@ import type { Json } from "@world-prism/contracts";
 import { modelConnection, modelRequest, statusOutput, transportPort } from "../support/model-transport";
 
 const credential = "contract-test-key";
+/** 模型池绑定 run 时交给 `capabilities` 预检的挂载模型。 */
+const mountedModel = {
+  externalModel: "test-chat",
+  capabilities: {
+    toolCalling: true, strictTools: false, structuredOutput: "json_object", assistantReplay: "standard",
+    contextWindowTokens: 64_000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null,
+  },
+} as const;
 
 function completion(message: Json, finish = "stop") {
   return { id: "chat-1", model: "test-chat", choices: [{ finish_reason: finish, message }] };
@@ -78,6 +86,36 @@ describe("OpenAI 兼容模型传输", () => {
       ...(structuredOutput === "none" ? {} : { response_format: responseFormat }),
     });
     expect(response).toMatchObject({ json: { ready: true, label: '{quoted} and "escape"' }, jsonError: null, usage: { inputTokens: null } });
+  });
+
+  it.each([
+    ["未声明", {}, undefined],
+    ["disabled", { thinking: "disabled" }, { type: "disabled" }],
+    ["enabled", { thinking: "enabled" }, { type: "enabled" }],
+  ] as const)("推理开关%s时按 DeepSeek 兼容格式映射 thinking 字段", async (_label, parameters, wire) => {
+    const fetcher = fetchReply(Response.json(completion({ role: "assistant", content: '{"ready":true}' })));
+    const port = await transportPort(openAICompatibleTransportDefinition);
+    expect(port.capabilities(parameters, mountedModel)).toEqual(mountedModel.capabilities);
+    const request = modelRequest({ purpose: "speech", tools: [], output: statusOutput, parameters, maxOutputTokens: 400 });
+    await port.complete(request, credential, modelConnection());
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(Object.hasOwn(body, "thinking")).toBe(wire !== undefined);
+    expect(body["thinking"]).toEqual(wire);
+    expect(body).toMatchObject({ max_tokens: 400, response_format: { type: "json_object" }, stream: false });
+  });
+
+  it.each([
+    ["未知线协议参数", { reasoning_effort: "minimal" }],
+    ["顶层透传的 enable_thinking", { enable_thinking: false }],
+    ["thinking 的非法取值", { thinking: "minimal" }],
+    ["thinking 写成线协议对象", { thinking: { type: "disabled" } }],
+  ])("参数校验拒绝%s，预检与发送前都不放行", async (_label, parameters) => {
+    const fetcher = fetchReply(Response.json(completion({ role: "assistant", content: "unused" })));
+    const port = await transportPort(openAICompatibleTransportDefinition);
+    expect(() => port.capabilities(parameters, mountedModel)).toThrow("OpenAI 兼容模型的 parameters 或 capabilities 无效");
+    await expect(port.complete(modelRequest({ parameters }), credential, modelConnection()))
+      .rejects.toMatchObject({ kind: "bad-request", retryable: false });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -89,12 +89,12 @@ world-prism/
     assemblies/                  # standard, test and escalating are present; HUD and console swaps arrive in S24
     profiles/                    # platform baseline, scene profile, agent profiles, memory variant patches
     rosters/                     # standard-15, core-3
-    model-layouts/               # shared-, claude-, deterministic-model-layout-v1
+    model-layouts/               # shared-, claude-, deterministic-model-layout-v1, openai-compatible-gateway-layout-v1
     toolsets/                    # character-default, character-broadcaster, strategic-default
     # presets/                   # 玩家测试申请预设目录为后续目标，尚未创建
     runs/                        # online RunSpec templates
     experiments/                 # experiment specs (variants × script branches × repetitions)
-    pricing.yaml  pricing-live.yaml
+    pricing.yaml  pricing-live.yaml  pricing-openai-compatible-gateway.yaml
   content/
     world-packs/earth-2964-v1/   # see docs/game/content-pack.md
   tests/
