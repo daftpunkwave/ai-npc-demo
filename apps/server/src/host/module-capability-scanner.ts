@@ -1,9 +1,10 @@
 /**
- * 核心职责：词法扫描单个服务端模块源码，找出按能力 ID 取用端口的位置与行号。
+ * 核心职责：词法扫描单个服务端模块源码，找出按能力 ID 取用端口的位置与行号，
+ * 以及以非字面量键读取端口容器、因而无法静态得知能力 ID 的位置。
  * 交互契约：输入为源码文本，返回能力访问记录；能力 ID 语法只取自公共契约，不读文件、不判定访问是否已声明，
  * 对账与违规汇总由调用方负责。
- * 约束与禁忌：只做词法扫描，不执行源码；注释与普通字符串里的能力名不算访问，
- * 只识别写死能力 ID 的索引访问与解构键。
+ * 约束与禁忌：只做词法扫描，不执行源码；注释与普通字符串里的能力名不算访问。
+ * 端口容器按名字识别，把容器转存到其他名字后再索引、或经 Object.values 等反射式枚举读取不在识别范围。
  */
 import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN } from "@world-prism/contracts";
 
@@ -33,12 +34,20 @@ function looksLikeCapabilityId(value: string): boolean {
   return CAPABILITY_GROUPS.includes(value.slice(0, separator) as (typeof CAPABILITY_GROUPS)[number]);
 }
 
-/** 一条源码能力访问：语法合法的进入对账集合，语法非法但明显是能力 ID 的单独报告。 */
-export interface CapabilityAccess {
-  readonly value: string;
-  readonly line: number;
-  readonly valid: boolean;
-}
+/**
+ * 一条源码能力访问：
+ * - `literal`：写死能力 ID 的访问；语法合法的进入对账集合，语法非法但明显是能力 ID 的单独报告；
+ * - `dynamic-key`：以非字面量键读取端口容器，无法静态得知访问了哪个能力，`receiver` 为容器名。
+ */
+export type CapabilityAccess =
+  | { readonly kind: "literal"; readonly value: string; readonly line: number; readonly valid: boolean }
+  | { readonly kind: "dynamic-key"; readonly receiver: string; readonly line: number };
+
+/**
+ * 端口容器按名字识别：宿主注入的 `ports`、规则上下文的 `modules`，
+ * 以及以 `Ports` 结尾的变量、属性、类型或返回端口视图的调用（如 `asPorts(context)`）。
+ */
+const PORT_CONTAINER_NAME = /^(?:ports|modules)$|Ports$/;
 
 const whitespaceCharacters: ReadonlySet<string> = new Set([" ", "\t", "\n", "\r"]);
 
@@ -161,16 +170,23 @@ function previousWord(text: string, index: number): string {
 /** 解构声明只接受 `const`/`let`/`var` 之后的对象模式；普通对象字面量不计为能力访问。 */
 const declarationKeywords: ReadonlySet<string> = new Set(["const", "let", "var"]);
 
+/** 一个对象解构模式的扫描结果。 */
+interface DestructuringPattern {
+  readonly keys: readonly { readonly capability: string; readonly newlines: number; readonly valid: boolean }[];
+  /** 第 1 层计算键 `{ [expr]: x }` 相对模式起点的换行数；没有计算键时为 null。 */
+  readonly computedKeyNewlines: number | null;
+  /** 闭合 `}` 之后的位置，用于读取被解构的来源；模式未闭合时为文本末尾。 */
+  readonly end: number;
+}
+
 /**
- * 扫描一个对象解构模式里作为键的能力 ID。
- * 只在模式第 1 层识别字符串键，嵌套默认值里的表达式由主扫描继续处理。
+ * 扫描一个对象解构模式里作为键的能力 ID，并记录第 1 层是否出现计算键。
+ * 只在模式第 1 层识别键，嵌套默认值里的表达式由主扫描继续处理。
  * 语法非法但明显在写能力 ID 的键同样收集，由上层报告为语法违规。
  */
-function destructuringKeys(
-  text: string,
-  braceIndex: number,
-): readonly { readonly capability: string; readonly newlines: number; readonly valid: boolean }[] {
+function destructuringPattern(text: string, braceIndex: number): DestructuringPattern {
   const hits: { capability: string; newlines: number; valid: boolean }[] = [];
+  let computedKeyNewlines: number | null = null;
   let depth = 0;
   let newlines = 0;
   let index = braceIndex;
@@ -206,17 +222,24 @@ function destructuringKeys(
       index = skipStringLiteral(text, index);
       continue;
     }
+    // 第 1 层紧跟 `{` 或 `,` 的方括号是计算键；跟在 `=` 或 `:` 后的是默认值或嵌套数组模式。
+    if (current === "[" && depth === 1 && computedKeyNewlines === null) {
+      const before = previousSignificantChar(text, index);
+      if (before === "{" || before === ",") {
+        computedKeyNewlines = newlines;
+      }
+    }
     if (current === "{") {
       depth += 1;
     } else if (current === "}") {
       depth -= 1;
       if (depth === 0) {
-        return hits;
+        return { keys: hits, computedKeyNewlines, end: index + 1 };
       }
     }
     index += 1;
   }
-  return hits;
+  return { keys: hits, computedKeyNewlines, end: text.length };
 }
 
 /** 返回指定位置之前最近的代码字符，用于区分索引访问与声明数组。 */
@@ -259,7 +282,83 @@ function isMemberAccessReceiver(text: string, bracketIndex: number): boolean {
   return previousSignificantChar(text, dotIndex) !== ".";
 }
 
-/** 抽取一个源码文件中按能力 ID 访问端口的行与能力名；跳过注释与普通字符串。 */
+/** 返回 end 处结束的标识符；end 处不是标识符字符时返回空串。 */
+function identifierEndingAt(text: string, end: number): string {
+  let start = end;
+  while (start >= 0 && isIdentifierCharacter(text[start])) {
+    start -= 1;
+  }
+  return text.slice(start + 1, end + 1);
+}
+
+/** 从 closeIndex 处的 `)` 向前找到配对的 `(`；不配对时返回 -1。 */
+function matchingOpenParenthesis(text: string, closeIndex: number): number {
+  let depth = 0;
+  for (let cursor = closeIndex; cursor >= 0; cursor -= 1) {
+    if (text[cursor] === ")") {
+      depth += 1;
+    } else if (text[cursor] === "(") {
+      depth -= 1;
+      if (depth === 0) {
+        return cursor;
+      }
+    }
+  }
+  return -1;
+}
+
+/**
+ * 取索引访问 `[` 之前接收者的末端名字：`a.ports[k]`、`ports?.[k]` 取 `ports`；
+ * 调用 `asPorts(context)[k]` 取被调函数名；括号表达式 `(x as GameModulePorts)[k]` 取括号内最后的名字。
+ */
+function indexReceiverName(text: string, bracketIndex: number): string {
+  let cursor = previousSignificantIndex(text, bracketIndex);
+  if (text[cursor] === ".") {
+    cursor = previousSignificantIndex(text, cursor);
+    if (text[cursor] === "?") {
+      cursor = previousSignificantIndex(text, cursor);
+    }
+  }
+  if (text[cursor] !== ")") {
+    return identifierEndingAt(text, cursor);
+  }
+  const open = matchingOpenParenthesis(text, cursor);
+  const callee = open < 0 ? "" : identifierEndingAt(text, previousSignificantIndex(text, open));
+  return callee !== "" ? callee : identifierEndingAt(text, previousSignificantIndex(text, cursor));
+}
+
+/** 键是否为不含转义的单引号或双引号字面量，且紧跟闭合的 `]`。 */
+function isPlainStringKey(text: string, keyIndex: number): boolean {
+  const quote = text[keyIndex];
+  if (quote !== '"' && quote !== "'") {
+    return false;
+  }
+  let cursor = keyIndex + 1;
+  while (cursor < text.length && text[cursor] !== quote) {
+    if (text[cursor] === "\\" || text[cursor] === "\n") {
+      return false;
+    }
+    cursor += 1;
+  }
+  return cursor < text.length && text[skipTrivia(text, cursor + 1).index] === "]";
+}
+
+/** 读取 `} = <来源>` 中被解构来源的末端名字：成员链取最后一段，调用取被调函数名。 */
+function assignedSourceName(text: string, patternEnd: number): string {
+  const assignment = skipTrivia(text, patternEnd);
+  if (text[assignment.index] !== "=") {
+    return "";
+  }
+  const source = skipTrivia(text, assignment.index + 1).index;
+  // eslint-disable-next-line security/detect-unsafe-regex -- 输入是仓库内源码片段，成员链每段由 `.` 分隔，无嵌套量词。
+  const chain = /^[\w$]+(?:\s*\??\.\s*[\w$]+)*/.exec(text.slice(source, source + 200))?.[0] ?? "";
+  return /[\w$]+$/.exec(chain)?.[0] ?? "";
+}
+
+/**
+ * 抽取一个源码文件中按能力 ID 访问端口的行与能力名，以及以非字面量键读取端口容器的位置；
+ * 跳过注释与普通字符串。
+ */
 export function capabilityAccesses(text: string): readonly CapabilityAccess[] {
   const accesses: CapabilityAccess[] = [];
   let line = 1;
@@ -291,8 +390,13 @@ export function capabilityAccesses(text: string): readonly CapabilityAccess[] {
     }
     if (current === "{") {
       if (declarationKeywords.has(previousWord(text, index))) {
-        for (const key of destructuringKeys(text, index)) {
-          accesses.push({ value: key.capability, line: line + key.newlines, valid: key.valid });
+        const pattern = destructuringPattern(text, index);
+        for (const key of pattern.keys) {
+          accesses.push({ kind: "literal", value: key.capability, line: line + key.newlines, valid: key.valid });
+        }
+        const source = pattern.computedKeyNewlines === null ? "" : assignedSourceName(text, pattern.end);
+        if (pattern.computedKeyNewlines !== null && PORT_CONTAINER_NAME.test(source)) {
+          accesses.push({ kind: "dynamic-key", receiver: source, line: line + pattern.computedKeyNewlines });
         }
       }
       index += 1;
@@ -308,10 +412,19 @@ export function capabilityAccesses(text: string): readonly CapabilityAccess[] {
         // 接收者不是表达式时这些形态本就无法编译。
         const isIndexAccess = text[after.index] === "]" && isMemberAccessReceiver(text, index);
         if (isIndexAccess) {
-          accesses.push({ value: literal.capability, line: line + inner.newlines, valid: literal.valid });
+          accesses.push({ kind: "literal", value: literal.capability, line: line + inner.newlines, valid: literal.valid });
           line += inner.newlines + after.newlines;
           index = after.index + 1;
           continue;
+        }
+      }
+      // 端口容器只接受写死的引号字面量键；变量、模板字符串与带转义的字面量都无法与 requires 静态对账。
+      // 空方括号是数组类型（如 `GamePorts[]`），不是索引访问。
+      const isEmptyBrackets = text[inner.index] === "]";
+      if (!isEmptyBrackets && isMemberAccessReceiver(text, index) && !isPlainStringKey(text, inner.index)) {
+        const receiver = indexReceiverName(text, index);
+        if (PORT_CONTAINER_NAME.test(receiver)) {
+          accesses.push({ kind: "dynamic-key", receiver, line });
         }
       }
     }

@@ -2,9 +2,10 @@
  * 核心职责：静态对账模块描述符的 provides/requires 与模块源码实际访问的能力端口。
  * 交互契约：只读取仓库 modules 目录下的手写源码与已登记模块定义，不执行模块代码、不访问存储；
  * 源码中的能力访问由能力扫描器逐文件抽取，对账结果交给目录预检汇总，
- * 供 `pnpm check:catalog` 在启动前发现漏声明、多余声明与拼写错误。
+ * 供 `pnpm check:catalog` 在启动前发现漏声明、多余声明、拼写错误与无法静态对账的动态能力键。
  * 约束与禁忌：不按模块 ID 猜测实现、不跳过读不到源码的模块，也不把能力访问限制成运行期才暴露的问题；
- * 只识别源码中写死能力 ID 的索引访问与对象键，动态键（如 `ports[variable]`）属于无法静态求值的形式，不在此检查。
+ * 服务端模块生产源码以非字面量键读取端口容器（如 `ports[variable]`、`{ [key]: port } = context.modules`）
+ * 直接报 `capability-dynamic-key`，不为动态键设放行名单，保证每处能力访问都能与 requires 对账。
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -107,6 +108,17 @@ export function checkModuleCapabilityUsage(input: {
     for (const file of module.files) {
       for (const access of capabilityAccesses(readFileSync(file, "utf8"))) {
         const relativeFile = displayPath(root, file);
+        if (access.kind === "dynamic-key") {
+          const owners = module.definitions.map((definition) => definition.id).join("、");
+          violations.push({
+            file: relativeFile,
+            code: "capability-dynamic-key",
+            message:
+              `模块 ${owners} 在 ${relativeFile}:${access.line} 用非字面量键读取端口容器 ${access.receiver}，` +
+              "无法与 requires 静态对账；请改为写死能力 ID 的引号字面量，如 ports[\"game.world\"]",
+          });
+          continue;
+        }
         if (!access.valid) {
           const owners = module.definitions.map((definition) => definition.id).join("、");
           violations.push({
