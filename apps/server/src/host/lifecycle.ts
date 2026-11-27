@@ -7,6 +7,7 @@
 import { DomainError, type Json, type StoragePort } from "@world-prism/contracts";
 import {
   clearRuleFailure,
+  readBranch,
   readRuleFailure,
   workerFailureIdentity,
   writeRuleFailure,
@@ -74,8 +75,8 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
   const recordLifecycleEvent = (type: string, subjectId: string, payload: Json): void => {
     try {
       storage.transact((tx) => {
-        const branch = tx.rows("branches").get({ branch_id: active.branchId });
-        const runId = branch !== null && typeof branch["run_id"] === "string" ? branch["run_id"] : null;
+        // 分支的 run 归属经 authority 的分支读取取得，字段缺失或类型不符时随审计失败记入日志。
+        const runId = readBranch(tx, active.branchId)?.runId ?? null;
         insertLifecycleAuditEvent(tx, {
           runId, branchId: active.branchId, type, subjectId, payload, createdAt: host.nowIso(),
         });

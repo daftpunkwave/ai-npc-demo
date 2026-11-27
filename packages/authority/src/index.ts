@@ -1,5 +1,5 @@
 /**
- * 汇总 authority 的公开入口：命令网关、规则注册、job/时钟/消费者执行器、事件只读查询及组装门面。
+ * 汇总 authority 的公开入口：命令网关、规则注册、job/时钟/消费者执行器、分支与事件只读查询及组装门面。
  * 依赖各固定机制实现与公共类型；调用方只经此入口装配，不导入内部事务细节。
  * 禁止在此启动运行时、创建存储连接或隐藏处理器注册失败。
  */
@@ -34,6 +34,8 @@ export type {
   RuleFailureRecord,
   RuleFailureWrite,
 } from "./rule-failures";
+export { readBranch } from "./branch-state";
+export type { BranchRecord } from "./branch-state";
 export {
   indexedEventPayloadKeys,
   latestEventSeqsByPayload,
