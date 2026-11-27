@@ -96,7 +96,8 @@ function ObservabilityView({ worldId, branchId }: OnlineIdentity): ReactNode {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactBody, setArtifactBody] = useState<string | null>(null);
   const [artifactView, setArtifactView] = useState<"redacted" | "raw">("redacted");
-  const artifactRequestSeq = useRef(0);
+  // 当前 artifact 读取；新读取、改选 turn 或离开页面时中止，迟到的旧结果不再写入。
+  const artifactRequest = useRef<AbortController | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -242,8 +243,13 @@ function ObservabilityView({ worldId, branchId }: OnlineIdentity): ReactNode {
     return () => { request.abort(); };
   }, [host.api, worldId, branchId, selectedAgent, refreshVersion]);
 
+  useEffect(() => () => {
+    artifactRequest.current?.abort();
+  }, []);
+
   useEffect(() => {
-    artifactRequestSeq.current += 1;
+    artifactRequest.current?.abort();
+    artifactRequest.current = null;
     setSelectedArtifactId(null);
     setArtifactBody(null);
     setArtifactView("redacted");
@@ -281,18 +287,21 @@ function ObservabilityView({ worldId, branchId }: OnlineIdentity): ReactNode {
   );
 
   const readArtifact = async (artifactId: string, view: "redacted" | "raw"): Promise<void> => {
-    const request = artifactRequestSeq.current + 1;
-    artifactRequestSeq.current = request;
+    artifactRequest.current?.abort();
+    const request = new AbortController();
+    artifactRequest.current = request;
     try {
-      const artifact = await host.api.consoleArtifact(artifactId, view);
-      if (request !== artifactRequestSeq.current) return;
+      const artifact = await host.api.consoleArtifact(artifactId, view, request.signal);
+      if (request.signal.aborted) return;
       setArtifactBody(artifact.body);
       setSelectedArtifactId(artifactId);
       setArtifactView(view);
       setDetailError(null);
     } catch (cause) {
-      if (request !== artifactRequestSeq.current) return;
+      if (request.signal.aborted) return;
       setDetailError(String(cause));
+    } finally {
+      if (artifactRequest.current === request) artifactRequest.current = null;
     }
   };
 

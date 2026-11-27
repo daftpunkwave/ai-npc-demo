@@ -101,10 +101,11 @@ export function createResearchHttp(request: ConsoleRequest) {
       return request(turnDetailSchema, `/api/v1/console/turns/${encodeURIComponent(turnId)}`, { signal });
     },
 
-    consoleArtifact(artifactId: string, view: "redacted" | "raw") {
+    consoleArtifact(artifactId: string, view: "redacted" | "raw", signal?: AbortSignal) {
       return request(
         artifactResponseSchema,
         `/api/v1/console/artifacts/${encodeURIComponent(artifactId)}${queryString({ view })}`,
+        { signal },
       );
     },
 

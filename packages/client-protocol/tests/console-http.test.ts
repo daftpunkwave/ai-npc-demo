@@ -84,6 +84,7 @@ it("研究读取把调用方取消传给底层请求，页面卸载后不再占�
     api.consoleTurns({ branchId: "br-fixture" }, caller.signal),
     api.consoleTurn("turn-fixture", caller.signal),
     api.consoleTrace("trc-fixture", caller.signal),
+    api.consoleArtifact("art-fixture", "redacted", caller.signal),
   ].map((read) => read.then(() => "resolved", (cause: unknown) => cause));
   expect(fetchImpl).toHaveBeenCalledTimes(reads.length);
   caller.abort();
