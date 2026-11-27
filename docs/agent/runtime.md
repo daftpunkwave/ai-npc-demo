@@ -264,6 +264,7 @@ async function runTurn(turnId: string): Promise<void> {
   //      请求 -> pool.call(decision) -> 按下方规则处理本轮 -> 追加 assistant 与 tool 结果。
   //      decision_submit 通过校验时停止；纯文本纠偏与 invalid decision_submit 重试共享同一单次纠偏标记（整轮最多触发一次，prompts.md §2.3）。
   //      最后一轮或收尾轮的提交被驳回且纠偏机会未用时，额外给一轮只接受 decision_submit 的改正轮（不计入 maxDecisionRounds，计入 maxModelCallsPerTurn）。
+  //      轮次用完仍未提交时，在最后一轮的工具结果后追加 decision.budgetStop，再给一个只接受提交的收尾轮；仍未获接受按 round-limit 结束。
   //    agent.decision.deterministic 以 §13.7 替代步骤 5-6，并且绝不调用模型。
   // 7. speech：dialogueIntent.kind != "none" 时 -> speech 请求 -> 校验 -> 模板后备 -> speech.commit。
   //    （agent.decision.deterministic 始终使用 prompts.md §5 的安全模板。）

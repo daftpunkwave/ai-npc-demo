@@ -55,10 +55,14 @@ const modelDecision: ModelDecisionPort = {
     const seen = new Set<string>();
     let corrected = false;
     let usedTools = 0;
-    // 预算停止：某轮因工具限额或上下文阈值被拦截后，先向模型回传 budget-exhausted 工具错误，
-    // 并只保留一个收尾轮——工具继续拒绝、模型须直接提交 decision_submit，未获接受即按 over-budget 结束。
+    // 预算停止：某轮因工具限额或上下文阈值被拦截后，先向模型回传 budget-exhausted 工具错误；
+    // 轮次用完仍未提交时，在本轮工具结果之后追加 decision.budgetStop 提醒。两种情况都只再给一个收尾轮——
+    // 工具继续拒绝、模型须直接提交 decision_submit，未获接受时工具限额与内容窗口按 over-budget 结束，
+    // 轮次用完沿用 budget-exhausted 与 round-limit。
     let awaitingBudgetStop = false;
-    let budgetStopReason: "call-budget" | "context-window" = "call-budget";
+    let budgetStopReason: "call-budget" | "context-window" | "round-limit" = "call-budget";
+    const stopped = (): DecisionResult => budgetStopReason === "round-limit"
+      ? fail("budget-exhausted", "round-limit") : fail("over-budget", budgetStopReason);
     // 改正轮：最后一轮或收尾轮的提交被驳回、且本 turn 的单次纠偏机会尚未使用时，额外给一轮只接受
     // decision_submit 的请求。该轮不计入 maxRounds，但仍计入每 turn 的模型调用上限，其中的其他工具一律拒绝。
     let lastRound = input.maxRounds;
@@ -84,7 +88,7 @@ const modelDecision: ModelDecisionPort = {
       for (const { id } of toolCalls) seen.add(id);
       messages.push({ role: "assistant", content: text, toolCalls, providerReplay });
       if (toolCalls.length === 0) {
-        if (awaitingBudgetStop) return fail("over-budget", budgetStopReason);
+        if (awaitingBudgetStop) return stopped();
         if (corrected || round >= input.maxRounds) return fail("invalid-decision");
         corrected = true;
         messages.push({ role: "user", content: input.nudgeSubmit });
@@ -147,13 +151,22 @@ const modelDecision: ModelDecisionPort = {
         }
       }
       if (correctionRound) return fail("invalid-decision");
-      if (awaitingBudgetStop) return fail("over-budget", budgetStopReason);
-      if (budgetBlocked) {
-        budgetStopReason = callBudgetBlocked ? "call-budget" : "context-window";
-        if (round === input.maxRounds) return fail("over-budget", budgetStopReason);
+      if (awaitingBudgetStop) return stopped();
+      if (budgetBlocked || round === lastRound) {
+        if (callBudgetBlocked) {
+          budgetStopReason = "call-budget";
+        } else if (windowBlocked) {
+          budgetStopReason = "context-window";
+        } else {
+          budgetStopReason = "round-limit";
+          messages.push({ role: "user", content: input.budgetStop });
+        }
+        // 最后一轮触发的停止额外给出收尾轮：它不计入 maxRounds，但计入每 turn 的模型调用上限。
+        if (round === lastRound) lastRound = round + 1;
         awaitingBudgetStop = true;
       }
     }
+    // 收尾轮与改正轮都会在轮内返回；这里只作兜底。
     return fail("budget-exhausted", "round-limit");
   },
 

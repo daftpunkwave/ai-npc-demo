@@ -436,7 +436,7 @@ describe("确定性模型装配与角色对白", () => {
     expect(replies(host)).toHaveLength(0);
   });
 
-  it("每轮都调用工具但轮次耗尽仍无有效提交时，以 round-limit 原因结束", async () => {
+  it("每轮都调用工具、收尾轮仍不提交时，以 round-limit 原因结束且收尾轮的工具不执行", async () => {
     const inspect = (round: number) => ({
       id: `inspect-${round}`, match: { purpose: "decision", agentId: target, round },
       response: {
@@ -444,10 +444,33 @@ describe("确定性模型装配与角色对白", () => {
         toolCalls: [{ name: "world_inspect", arguments: { nodeId: null } }],
       },
     });
-    const host = await modelHost({ configRoot: fixtureConfig([inspect(1), inspect(2), inspect(3), inspect(4)]) });
+    const host = await modelHost({ configRoot: fixtureConfig([inspect(1), inspect(2), inspect(3), inspect(4), inspect(5)]) });
     const turn = await turnFor(host, startConversation(host, "请持续调查。"));
     expect(turn).toMatchObject({ status: "budget-exhausted", terminal_reason: "round-limit" });
+    const turnId = String(turn["turn_id"]);
+    expect(requests(host, turnId).filter(({ purpose }) => purpose === "decision")).toHaveLength(5);
+    expect(host.storage.transact((tx) => tx.rows("tool_calls").list({ turn_id: turnId }))).toHaveLength(4);
     expect(replies(host)).toHaveLength(0);
+  });
+
+  it("轮次用完仍未提交时追加提醒并给一个只接受提交的收尾轮，收尾轮提交的决定被接受", async () => {
+    const inspect = (round: number) => ({
+      id: `inspect-${round}`, match: { purpose: "decision", agentId: target, round },
+      response: { finishReason: "tool_calls", toolCalls: [{ name: "world_inspect", arguments: { nodeId: null } }] },
+    });
+    const host = await modelHost({ configRoot: fixtureConfig([
+      taskList(1), taskList(2), inspect(3), inspect(4), submitted(5, submission), speechOk,
+    ]) });
+    const turn = await turnFor(host, startConversation(host, "请回应。"));
+    expect(turn).toMatchObject({ status: "completed" });
+    const decisions = requests(host, String(turn["turn_id"])).filter(({ purpose }) => purpose === "decision");
+    expect(decisions.map(({ context }) => context.round)).toEqual([1, 2, 3, 4, 5]);
+    // 第 4 轮的工具照常执行，结果之后追加内容包的 decision.budgetStop。
+    expect(decisions[4]?.messages.slice(-2)).toEqual([
+      expect.objectContaining({ role: "tool", isError: false }),
+      { role: "user", content: "已达到本轮的调用上限，请立即调用 decision_submit 结束本轮。" },
+    ]);
+    expect(replies(host)).toHaveLength(1);
   });
 
   it("决策请求在名字旁注明 ID，task.inspect 不指定任务时列出任务而不报错", async () => {

@@ -125,7 +125,7 @@ const DecisionSubmit = z.object({
 
 schema 不通过时，能读出的受众与引用字段照常做第 2 至 4 条检查，避免一个 schema 问题掩盖其他违规、改正后仍被驳回。`violations` 逐字段给出违规：`rule` 与 `invalidReasons` 的键一致；`path` 为字段路径（整个提交为 `$`）；数组字段合并为一条，`value` 只列不被接受的条目（受众里的自己、范围外主体与重复项）；`allowed` 为该位置可填写的 ID，按在请求中出现的先后排列、最多 16 个，其余计入 `allowedOmitted`；schema 违规只给 `issue`（最多 8 条），不回显取值。
 
-被驳回后允许模型再提交一次（计入调用次数）。这次提交若已经发生在最后一轮（`maxDecisionRounds`）或预算停止后的收尾轮，宿主额外给一轮只接受 `decision_submit` 的改正轮：该轮不计入 `maxDecisionRounds`，但计入 `maxModelCallsPerTurn`，其中的其他工具调用一律按 `budget-exhausted` 拒绝且不执行。仍不合法则 turn 以 `invalid-decision` 结束，不生成对白，玩家界面显示 `ui.noReply`；最后一次驳回的 `reasons` 与 `violations` 记入该 turn `turn.decision` 阶段的 `effective.rejection`。模型以纯文本结束而没有调用 `decision_submit` 时，宿主追加一条 user 消息（`decision.nudgeSubmit`）再请求一次，仍未调用按同样方式结束；纯文本提醒与驳回后重交共用同一次纠偏机会。一轮里多个工具调用的处理顺序见 [运行时](runtime.md) 第 13.3 节。
+被驳回后允许模型再提交一次（计入调用次数）。这次提交若已经发生在最后一轮（`maxDecisionRounds`）或预算停止后的收尾轮，宿主额外给一轮只接受 `decision_submit` 的改正轮：该轮不计入 `maxDecisionRounds`，但计入 `maxModelCallsPerTurn`，其中的其他工具调用一律按 `budget-exhausted` 拒绝且不执行。仍不合法则 turn 以 `invalid-decision` 结束，不生成对白，玩家界面显示 `ui.noReply`；最后一次驳回的 `reasons` 与 `violations` 记入该 turn `turn.decision` 阶段的 `effective.rejection`。模型以纯文本结束而没有调用 `decision_submit` 时，宿主追加一条 user 消息（`decision.nudgeSubmit`）再请求一次，仍未调用按同样方式结束；纯文本提醒与驳回后重交共用同一次纠偏机会。最后一轮仍在调用其他工具、没有提交时，这些工具照常执行，宿主在结果之后追加一条 user 消息（`decision.budgetStop`），再给一个只接受 `decision_submit` 的收尾轮（不计入 `maxDecisionRounds`，计入 `maxModelCallsPerTurn`）；收尾轮仍未获接受时按 `budget-exhausted` 与 `round-limit` 结束，提交被驳回且纠偏机会未用时再给一次改正轮。一轮里多个工具调用的处理顺序见 [运行时](runtime.md) 第 13.3 节。
 
 ### 2.4 占位符的数据来源
 
