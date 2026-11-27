@@ -1,7 +1,8 @@
 /**
  * 核心职责：验证存储占用测量：模块启动后在后台测量，首轮完成前 footprint() 为 null、完成后只返回内存中的结果，
  *   按间隔重测且关闭连接时取消进行中的一轮；每次读取都是按 rowid 范围的有界单块查询、读取之前让出事件循环，
- *   测得的行数与 artifact 字节与独立统计一致；删除行后空闲页增加而主库字节不变；清理批次语句只扫描覆盖索引。
+ *   测得的行数与 artifact 字节与独立统计一致（每张被测表播种不同行数逐表对照）；删除行后空闲页增加而主库字节不变；
+ *   清理批次语句只扫描覆盖索引。
  * 交互契约：依赖真实 SQLite 临时目录、存储模块测试助手、测量与保留期实现；调度用 vitest 受控定时器推进。
  * 约束与禁忌：禁止用假存储替代真实适配器，或只断言测量值为正数而不与 SQLite 自身的统计对照。
  */
@@ -35,6 +36,48 @@ function putArtifact(tx: StorageTransaction, artifactId: string, byteSize: numbe
     file_path: storage === "file" ? `artifacts/${artifactId}` : null, redaction: "raw", redacted_from: null,
     created_at: "2026-01-01T00:00:00.000Z",
   });
+}
+
+/** 带 CHECK 约束的列取一个合法值；其余列按声明类型逐行生成不同的值，满足主键与唯一约束。 */
+const checkedColumnValues: Readonly<Record<string, Readonly<Record<string, StorageValue>>>> = {
+  observations: { epistemic: "witnessed" },
+  memory_records: { kind: "episodic", status: "active", epistemic: "verified-event" },
+  memory_revisions: { change_kind: "init" },
+  turn_runs: { status: "completed" },
+  model_attempts: { status: "succeeded" },
+  tool_calls: { status: "settled", execution_status: "ok" },
+  artifacts: { storage: "inline", redaction: "raw" },
+  trace_spans: { status: "ok" },
+};
+
+/** 按表结构向任意被测表写入指定行数；INTEGER PRIMARY KEY 列留给 SQLite 自动分配。 */
+function seedRows(tx: StorageTransaction, table: string, rows: number): void {
+  const columns = tx.all("SELECT name, type, pk FROM pragma_table_info(?)", [table]).map((row) => ({
+    name: String(row["name"]),
+    type: String(row["type"]),
+    pk: Number(row["pk"]),
+  }));
+  const rowidAlias = columns.filter((column) => column.pk > 0).length === 1
+    ? columns.find((column) => column.pk === 1 && column.type === "INTEGER")?.name
+    : undefined;
+  const insertable = columns.filter((column) => column.name !== rowidAlias);
+  const sql = `INSERT INTO ${table} (${insertable.map((column) => column.name).join(", ")})
+    VALUES (${insertable.map(() => "?").join(", ")})`;
+  for (let index = 1; index <= rows; index += 1) {
+    tx.run(sql, insertable.map((column): StorageValue => {
+      const checked = checkedColumnValues[table]?.[column.name];
+      if (checked !== undefined) {
+        return checked;
+      }
+      if (column.name.endsWith("_json")) {
+        return "{}";
+      }
+      if (column.type === "INTEGER" || column.type === "REAL") {
+        return index;
+      }
+      return column.type === "BLOB" ? null : `${column.name}-${String(index)}`;
+    }));
+  }
 }
 
 function pageStats(storage: StoragePort): { readonly databaseBytes: number; readonly freeBytes: number } {
@@ -187,6 +230,27 @@ describe("存储占用测量", () => {
       retention: [],
     });
     expect(rowsOf(footprint, "trace_spans")).toBe(spans);
+  });
+
+  it("每张被测表播种不同行数，逐表测得的行数与 artifact 字节和独立统计一致", async () => {
+    handle = await startStorage(createTempDataDir());
+    const storage = handle.port as SqliteStorage;
+    // 各表行数互不相同，块大小 5 让多数表跨多块，15 与 35 行恰好是整块，覆盖末尾空块。
+    const seeded: Readonly<Record<string, number>> = Object.fromEntries(measuredTables.map((table, index) => [table, 3 + index * 4]));
+    storage.transact((tx) => {
+      for (const table of measuredTables) {
+        // eslint-disable-next-line security/detect-object-injection -- table 来自固定的被测表清单。
+        seedRows(tx, table, seeded[table] ?? 0);
+      }
+    });
+    const independent = independentStats(storage);
+    // 播种确实落在每张表上且行数各不相同：计数错位到别的表或漏掉某张表都无法与对照一致。
+    expect(independent.tables).toEqual(measuredTables.map((table) => ({ table, rows: seeded[table] })));
+    expect(new Set(Object.values(seeded)).size).toBe(measuredTables.length);
+    expect(independent.artifactBytes.inline).toBeGreaterThan(0);
+    const footprint = await measure(storage, { chunkRows: 5 });
+    expect(footprint?.tables).toEqual(independent.tables);
+    expect(footprint?.artifactBytes).toEqual(independent.artifactBytes);
   });
 
   it("分块语句只按 rowid 范围读取，被测表都是 rowid 表；清理批次语句只扫描覆盖索引", async () => {
