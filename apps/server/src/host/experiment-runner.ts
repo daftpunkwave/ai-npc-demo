@@ -25,6 +25,7 @@ import {
   readExperimentProgress,
   recoverInterruptedRuns,
   type ExperimentRunProgress,
+  type HaltReason,
 } from "./experiment-results";
 import { nextStepTarget } from "./experiment-script";
 import {
@@ -40,7 +41,7 @@ import {
 /** 一次执行的结局；终态写入按它分派。 */
 type ExecutionOutcome =
   | { readonly kind: "completed" }
-  | { readonly kind: "halted"; readonly reason: "stopped" | "interrupted" }
+  | { readonly kind: "halted"; readonly reason: HaltReason; readonly message?: string }
   | { readonly kind: "failed"; readonly code: string; readonly message: string };
 
 export class ExperimentRunner {
@@ -161,7 +162,7 @@ export class ExperimentRunner {
       payload: { worldTick: tickNow(), endTick: ctx.plan.endTick, scriptBranch: ctx.plan.branch },
     });
     pauseClock(exec);
-    await ensureCampaignStarted(exec);
+    ensureCampaignStarted(exec);
     activateExperimentRoster(exec);
     const runtime = await openBranchAgentRuntime({
       core: this.deps.core, reads: this.deps.reads, authority: ctx.authority, approvals: ctx.approvals,
@@ -210,7 +211,7 @@ export class ExperimentRunner {
           finishHalted({ ...input, reason: "stopped" });
         }
       } else if (outcome.kind === "halted") {
-        finishHalted({ ...input, reason: outcome.reason });
+        finishHalted({ ...input, reason: outcome.reason, ...(outcome.message === undefined ? {} : { message: outcome.message }) });
       } else {
         finishFailed({ ...input, code: outcome.code, message: outcome.message });
       }
@@ -222,9 +223,12 @@ export class ExperimentRunner {
   }
 }
 
-/** 把执行中的异常归为停止、关闭或带错误码的失败。 */
+/** 把执行中的异常归为停止、关闭、配额不足或带错误码的失败。 */
 function classify(error: unknown): ExecutionOutcome {
   if (error instanceof RunHalted) return { kind: "halted", reason: error.reason };
+  if (error instanceof ExperimentFailure && error.code === "quota-unavailable") {
+    return { kind: "halted", reason: "quota-unavailable", message: error.message };
+  }
   if (error instanceof ExperimentFailure) return { kind: "failed", code: error.code, message: error.message };
   return { kind: "failed", code: "execution-failed", message: error instanceof Error ? error.message : String(error) };
 }

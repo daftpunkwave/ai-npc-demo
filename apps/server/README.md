@@ -30,7 +30,7 @@
 
 ## 运行一次实验
 
-实验在宿主进程内执行，宿主必须以与实验相同的装配启动；在线世界已开局并占满 15 个名额时实验开局会失败，因此建议使用独立数据目录且不开启在线世界。以标准装配和 OpenAI 兼容模型为例，在 `.env` 中设置：
+实验在宿主进程内执行，宿主必须以与实验相同的装配启动；在线世界已开局并占满 15 个名额时实验会在开局前暂停（`quota-unavailable`），因此建议使用独立数据目录且不开启在线世界。以标准装配和 OpenAI 兼容模型为例，在 `.env` 中设置：
 
 ```dotenv
 WORLD_PRISM_DATA_DIR=./data/experiments
@@ -45,7 +45,7 @@ WORLD_PRISM_OPENAI_COMPAT_API_KEY=<密钥>
 1. `POST /api/v1/auth/login`，请求体 `{ "token": "<控制台令牌>" }`，取得 `sessionToken`。
 2. `POST /api/v1/console/experiments`，请求体 `{ "experimentRef": "exp-memory-promise-v1" }`，返回 24 个 run；模型布局引用的环境变量在这一步解析并冻结。也可以提交内联 `experimentSpec`（与 `config/experiments/*.yaml` 同格式），例如把 `repetitions` 改为 1，或把 `base.modelLayoutRef` 改为 `claude-model-layout-v1`（还需 `ANTHROPIC_API_KEY`，对白与记忆整理仍走 OpenAI 兼容端点）。
 3. 对需要执行的每个 run 调用 `POST /api/v1/console/runs/{runId}/start`，请求体 `{ "operationId": "op-<12 位小写 base32>" }`；run 按启动先后排队执行。
-4. 用 `GET /api/v1/console/runs/{runId}/progress` 查看当前 tick、探针计数与最近事件；`status` 变为 `completed` 后读取 `GET /api/v1/console/runs/{runId}/report` 与 `GET /api/v1/console/experiments/exp-memory-promise-v1`。失败时 `lastEvent.payload.code` 给出原因码。
+4. 用 `GET /api/v1/console/runs/{runId}/progress` 查看当前 tick、探针计数与最近事件；`status` 变为 `completed` 后读取 `GET /api/v1/console/runs/{runId}/report` 与 `GET /api/v1/console/experiments/exp-memory-promise-v1`。失败时 `lastEvent.payload.code` 给出原因码；run 被暂停时 `lastEvent.payload.reason` 说明是研究员停止还是配额不足。
 
 ## 运行标准装配
 

@@ -94,18 +94,35 @@ describe("实验执行器的配额与失败路径", () => {
     expect(sandboxesOf(host, branchOf(host, runId)).map((row) => row["status"])).toEqual(["archived"]);
   }, 120_000);
 
-  it("在线名册占满配额时实验开局被拒，run 记为失败并给出原因码", async () => {
+  it("在线名册占满配额时实验暂停在开局前，腾出名额后继续执行到完成", async () => {
     const host = await experimentHost(resources, { rosterRef: "standard-15" });
     startOnlineCampaign(host);
     const headers = await researcherHeaders(host);
     const [runId] = await createExperimentRuns(host, headers, experimentSpec({ experimentId: "exp-runner-full-v1" }));
     if (runId === undefined) throw new Error("实验没有展开出 run");
+    const branchId = branchOf(host, runId);
     await startRun(host, headers, runId, "op-000000000501");
-    expect(await waitForRunStatus(host, runId, ["completed", "failed"])).toBe("failed");
-    expect(failureCode(host, runId)).toBe("quota-unavailable");
-    expect(activeAgentsOn(host, branchOf(host, runId))).toEqual([]);
+    // 配额不足是外部条件：run 暂停而不是作废，实验分支没有开局，在线名额保持原样。
+    await vi.waitFor(() => expect(experimentAudit(host, branchId).at(-1)?.type).toBe("ExperimentRunStopped"), { timeout: 30_000, interval: 20 });
+    expect(runRow(host, runId)["status"]).toBe("paused");
+    expect(experimentAudit(host, branchId).at(-1)?.payload).toMatchObject({ status: "paused", reason: "quota-unavailable" });
+    expect(eventTypes(host, branchId)).toEqual([]);
+    expect(activeAgentsOn(host, branchId)).toEqual([]);
     expect(activeIdentityCount(host)).toBe(15);
-    expect(probeResults(host, runId)).toHaveLength(0);
+
+    // 运营让出在线名额后，研究员继续同一个 run：开局用新的命令 ID，不重放上一次的拒绝回执。
+    host.storage.transact((tx) => {
+      const activations = tx.branch(host.branchId).table("agent_activations");
+      for (const agentId of ["human-independent", "human-earth-alliance", "human-alien-accord"]) {
+        const row = activations.get({ agent_id: agentId });
+        if (row === null) throw new Error(`在线名册缺少 ${agentId}`);
+        activations.put({ ...row, status: "dormant" });
+      }
+    });
+    await startRun(host, headers, runId, "op-000000000502");
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
+    expect(probeResults(host, runId)).toHaveLength(1);
+    expect(activeIdentityCount(host)).toBe(12);
   }, 120_000);
 
   it("探针 turn 失败时写入 turn-failed 无效样本，报告不把它计入正确率分母", async () => {

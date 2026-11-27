@@ -58,18 +58,19 @@ function playerAuth(ctx: ExperimentRunContext, principalId: string): AuthContext
 
 /**
  * 冷启动开局：以玩家身份提交 `campaign.start`，名册激活与开局同事务；已开局时不重复提交。
- * 配额不足时命令被整体拒绝，按配额不可用失败——实验不能在名册不完整时开跑。
+ * 配额不足时命令被整体拒绝，按配额不可用中断——实验不能在名册不完整时开跑。
+ * 开局是否已发生以世界状态为准，因此每次尝试用新的命令 ID：沿用固定 ID 会让腾出名额后的重试
+ * 重放上一次的拒绝回执，run 永远无法开局。
  */
-export async function ensureCampaignStarted(exec: ExperimentExecution): Promise<void> {
+export function ensureCampaignStarted(exec: ExperimentExecution): void {
   const { core, reads } = exec.deps;
   const { ctx } = exec;
   const scope = { worldId: ctx.worldId, branchId: ctx.branchId };
   const started = core.storage.transact((tx) => reads.portsIn(tx, scope)["game.world"].campaign() !== null);
   if (started) return;
-  const digest = await core.host.hash([ctx.runId, "campaign-start"]);
   assertRunActive(exec);
   const receipt = ctx.authority.commands.execute(playerAuth(ctx, core.content.index.playerPrincipalId), {
-    commandId: `cmd-${digest.slice(0, 12)}`, type: "campaign.start", schemaVersion: 1,
+    commandId: core.host.ids("cmd"), type: "campaign.start", schemaVersion: 1,
     payload: { factionId: ctx.plan.startFactionId },
   });
   if (receipt.commandStatus !== "accepted") {

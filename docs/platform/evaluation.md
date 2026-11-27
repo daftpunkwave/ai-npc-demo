@@ -18,7 +18,7 @@
 
 Agent 上限按全平台同时激活的逻辑身份计，正式世界与实验合计不得超过 15。标准 15 个 Agent 正式运行时，完整闭环对比必须先暂停正式运行并释放名额，再逐分支执行。休眠快照不占激活名额，激活前必须预留名额；局部被试实验仅可使用实际空余名额。
 
-当前执行器在同一宿主进程内逐个执行实验 run，只使用实际空余名额：实验名册在开局事务内预留配额，名额不足时开局被拒、run 记为 `failed`（原因码 `quota-unavailable`），不会挤占在线世界。服务端尚无“保存并释放在线名额”的运营接口，暂停在线时钟不会释放名额；在线世界已开局且名册占满时，实验需要在在线世界未开局或名册较小（如 `core-3`）的独立数据目录上执行。
+当前执行器在同一宿主进程内逐个执行实验 run，只使用实际空余名额：实验名册在开局事务内预留配额，探针沙盒与探针结束后的名册重新激活也各自预留；名额不足时 run 暂停为 `paused`（审计原因 `quota-unavailable`），不会挤占在线世界，腾出名额后再次启动即从当前 tick 继续。服务端尚无“保存并释放在线名额”的运营接口，暂停在线时钟不会释放名额；在线世界已开局且名册占满时，实验需要在在线世界未开局或名册较小（如 `core-3`）的独立数据目录上执行。
 
 ## 2. 启动预检与运行清单
 
@@ -147,11 +147,11 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 - 触发：`POST /api/v1/console/runs/{runId}/start` 把 run 置为 `running` 后唤醒执行器。只驱动 `mode: closed-loop`、声明了 `script` 的实验 run；没有脚本的 run 启动后仍只改状态与时钟。
 - 顺序：同一宿主同一时刻只执行一个 run，其余按 `started_at` 先后排队；`GET /api/v1/console/runs/{runId}/progress` 的 `executing` 区分正在执行与排队。
 - 准备：用创建 run 时的同一实现复算冻结配置（装配、名册、Agent profile、工具集与模型挂载）并核对 `manifest_hash`，不一致记 `manifest-mismatch`；run 的服务端装配摘要必须与宿主当前装配一致，否则记 `assembly-mismatch`，需以同一装配启动宿主。
-- 开局：冷启动时以玩家身份提交 `campaign.start`，派系取脚本的 `start.factionId`；名册在开局事务内预留配额，名额不足时命令被整体拒绝，run 记 `quota-unavailable`。
+- 开局：冷启动时以玩家身份提交 `campaign.start`，派系取脚本的 `start.factionId`；名册在开局事务内预留配额，名额不足时命令被整体拒绝，run 暂停为 `paused`，`ExperimentRunStopped` 审计的原因为 `quota-unavailable`；每次开局尝试使用新的命令 ID，腾出名额后再次启动不会重放上一次的拒绝回执。
 - 推进：每一段从 `paused` 进入 `stepping`，段终点不越过下一个检查点、脚本终点与时钟单步上限 `maxStepTicks`。每个 tick 先按规则第 1 节提交时钟、到期 job、时钟步骤与消费者，再按声明顺序以玩家身份注入该 tick 的脚本命令（主线步骤在前、所选分支的追加步骤在后；命令 ID 由 run 与步骤序号确定性派生，恢复执行时重放得到原回执），然后等待收敛：规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、没有未终结的 turn，且一轮内事件前沿与 turn 总数不再变化。只因冷却不能调度的 trigger 不产生 turn，不阻塞收敛。脚本命令被规则拒绝属于闭环结果，照常记入审计并继续推进。
 - 检查点：本 tick 收敛后暂停实验分支时钟，执行上面第 2–4 步；已写入结果的探针不重复提问。
 - 完成：处理完脚本终点（最后一个外部命令或检查点所在 tick）后，按与 `GET /runs/{runId}/report` 相同的口径把每项指标写入 `experiment_results`（`details_json` 带变体、脚本分支、有效性与无效样本计数），run 置为 `completed`，实验名册休眠并释放配额。
-- 失败：死信的规则失败（`rule-failure`）、Agent 运行时周期失败（`agent-runtime-failed`）、单个 tick 或探针超过收敛上限（`settle-timeout`，宿主默认 30 分钟）、配额不足（`quota-unavailable`）、到达章节终点（`chapter-ended`）等使 run 记为 `failed`，原因码与说明写入 `ExperimentRunFailed` 审计事件，名册休眠、时钟暂停。
+- 失败：死信的规则失败（`rule-failure`）、Agent 运行时周期失败（`agent-runtime-failed`）、单个 tick 或探针超过收敛上限（`settle-timeout`，宿主默认 30 分钟）、到达章节终点（`chapter-ended`）等使 run 记为 `failed`，原因码与说明写入 `ExperimentRunFailed` 审计事件，名册休眠、时钟暂停。配额不足不作废 run：开局、探针沙盒或探针后的名册重新激活缺少名额时，run 暂停为 `paused`，进行中的沙盒被归档、名册休眠，腾出名额后再次启动即可继续。
 - 停止与恢复：`POST /runs/{runId}/stop` 把 run 与时钟置为暂停，执行器在下一次收敛检查或命令注入前停下：在途 turn 因时钟版本变化被取消，进行中的沙盒被归档，实验名册休眠。再次启动后先补完当前 tick，再从当前 tick 继续。宿主关闭时执行中的 run 改为 `paused`；进程中断遗留的 `running` 实验 run 在下次启动时同样归位为 `paused`，未关闭的沙盒被归档，由研究员显式继续。
 - 观察：执行器把 `ExperimentRunStarted`、`ExperimentStepSubmitted`、`ExperimentCheckpointReached`、`ExperimentProbeCompleted`、`ExperimentRunCompleted`、`ExperimentRunFailed`、`ExperimentRunStopped` 与 `ExperimentRunInterrupted` 写入实验分支的生命周期审计，可经 `GET /api/v1/console/timeline?branchId=` 查看；进度接口给出当前 tick、脚本终点、已写入结果的探针数与最近一条执行器事件。
 - 未接入：脚本 `setup` 预置知识目前没有经命令网关的提交入口，含 `setup` 的脚本（如 `s-rumor`）记 `script-setup-unsupported` 失败；脚本步骤只支持以玩家身份提交；`audit`、`open-loop` 模式与 `initialState: snapshot/rebuild` 仍由 RunSpec schema 拒绝。

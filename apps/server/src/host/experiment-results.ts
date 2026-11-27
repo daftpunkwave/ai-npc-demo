@@ -102,21 +102,31 @@ export function finishFailed(input: FinishInput & { readonly code: string; reado
 }
 
 /**
- * run 被停止或宿主关闭：释放名册配额并暂停时钟。
- * 宿主关闭时 run 仍是 running，改为 paused：重启后不应在无人确认的情况下自动继续消耗模型预算，
+ * 执行中断的原因：研究员停止、宿主关闭，或部署级配额此刻不够。
+ * 配额不足是外部条件而不是 run 自身的错误：腾出名额后从当前 tick 继续即可，不必作废已推进的分支。
+ */
+export type HaltReason = "stopped" | "interrupted" | "quota-unavailable";
+
+/**
+ * run 被停止、宿主关闭或配额不足：释放名册配额并暂停时钟。
+ * 宿主关闭与配额不足时 run 仍是 running，改为 paused：重启后不应在无人确认的情况下自动继续消耗模型预算，
  * 研究员重新调用启动接口即可从当前 tick 继续。
  */
-export function finishHalted(input: FinishInput & { readonly reason: "stopped" | "interrupted" }): void {
+export function finishHalted(input: FinishInput & { readonly reason: HaltReason; readonly message?: string }): void {
   input.storage.transact((tx) => {
     const run = tx.rows("runs").get({ run_id: input.runId });
-    if (input.reason === "interrupted" && run !== null && run["status"] === "running") {
+    if (input.reason !== "stopped" && run !== null && run["status"] === "running") {
       tx.rows("runs").put({ ...run, status: "paused" });
     }
     deactivateBranchAgentsInTransaction(tx, input.branchId, input.host.nowIso());
     recordExperimentAuditIn(tx, input.host, {
       runId: input.runId, branchId: input.branchId,
-      type: input.reason === "stopped" ? "ExperimentRunStopped" : "ExperimentRunInterrupted", subjectId: null,
-      payload: { status: runStatusIn(tx, input.runId) },
+      type: input.reason === "interrupted" ? "ExperimentRunInterrupted" : "ExperimentRunStopped", subjectId: null,
+      payload: {
+        status: runStatusIn(tx, input.runId),
+        reason: input.reason,
+        ...(input.message === undefined ? {} : { message: input.message }),
+      },
     });
   });
   pauseRunClock(input);
