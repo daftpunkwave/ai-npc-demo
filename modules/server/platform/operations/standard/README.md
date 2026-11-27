@@ -1,6 +1,6 @@
 # platform.operations.standard
 
-在线世界运营编排：暂停、继续、一致快照、恢复与重新开局。
+在线世界运营编排：暂停、继续、一致快照、恢复、重新开局与在线名册休眠/唤醒。
 
 ## 接口
 
@@ -11,10 +11,11 @@
 - `OperationsService.validateRestore(snapshotId)`：只读恢复预检。
 - `OperationsService.restore(snapshotId, createdBy, runId?, operation?)`
 - `OperationsService.reset(operation?)`
+- `OperationsService.rosterState()`、`hibernateRoster(operation)`、`wakeRoster(operation)`：在线名册状态、休眠与唤醒；驱动未提供 `roster` 时按 `not-ready` 拒绝。
 
 ## 依赖
 
-由宿主注入 `OperationsDriver`（clock/pause/resume/step/snapshot/validateRestore/restore/reset 及可选的 `idempotent` 驱动）。模块本身不写存储、不创建分支。
+由宿主注入 `OperationsDriver`（clock/pause/resume/step/snapshot/validateRestore/restore/reset 及可选的 `idempotent` 与 `roster` 驱动）。模块本身不写存储、不创建分支。
 
 ## 限制
 

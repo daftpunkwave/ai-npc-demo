@@ -1,7 +1,7 @@
 /**
  * 宿主生命周期：时钟控制（含受控单步）、运营生命周期审计、断线自动暂停、在线 tick worker 与关闭释放。
  * 依赖时钟 provider、authority 的 tick 推进、存储事务、传输应用通知与组合根提供的释放回调。
- * 禁止在 worker 失败后继续推进时钟、跳过断线宽限或在关闭时跳过资源释放。
+ * 禁止在 worker 失败后继续推进时钟、在线名册休眠期间继续或单步、跳过断线宽限或在关闭时跳过资源释放。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
 import { DomainError, type Json, type StoragePort } from "@world-prism/contracts";
@@ -31,6 +31,8 @@ export interface LifecycleInput {
   readonly agentHealth?: () => boolean;
   /** 当前在线分支是否已开始 campaign；未开局时不能继续时钟，避免非零 tick 开局。 */
   readonly campaignStarted: () => boolean;
+  /** 当前在线名册是否已休眠；休眠期间名额已让出，继续或单步会让世界在名册缺席时推进。 */
+  readonly rosterHibernated?: () => boolean;
   /**
    * 关闭时排空并释放存储、模块与传输；传输实例在 attachApp 后可用。
    * 实现方必须先排空再释放（见 `drainBeforeClose`），因此这里不再分两级调用。
@@ -314,6 +316,13 @@ export function createLifecycle(input: LifecycleInput): HostLifecycle {
       throw new DomainError(
         "not-ready",
         mode === "step" ? "campaign 尚未开始，不能单步推进时钟" : "campaign 尚未开始，不能继续时钟",
+        { details: { branchId: active.branchId } },
+      );
+    }
+    if (mode !== "pause" && input.rosterHibernated?.() === true) {
+      throw new DomainError(
+        "invalid-state",
+        mode === "step" ? "在线名册已休眠并释放名额，恢复名额前不能单步推进时钟" : "在线名册已休眠并释放名额，恢复名额前不能继续时钟",
         { details: { branchId: active.branchId } },
       );
     }

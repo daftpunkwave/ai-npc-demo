@@ -1,5 +1,6 @@
 /**
- * 核心职责：在单个存储事务内激活分支名册并执行部署级 15 身份配额，或把分支身份置为休眠以释放配额。
+ * 核心职责：在单个存储事务内激活分支名册并执行部署级 15 身份配额，把分支身份置为休眠以释放配额，
+ *   或按同一配额重新激活休眠身份；并给出分支与部署级的激活计数。
  * 交互契约：依赖 agent_activations、controller_leases、branch 状态与调用方给出的确定性时间；
  *   事务内入口返回明确结果，供命令钩子据此拒绝整条命令，直接入口按 budget-exhausted 抛出领域错误。
  * 约束与禁忌：禁止跨事务预占、把冻结分支计入配额或静默允许第 16 个身份。
@@ -50,6 +51,29 @@ export function activateAgentRoster(input: ActivateAgentRosterInput): Activation
   return { activated: outcome.activated, totalActive: outcome.totalActive };
 }
 
+/** 单个分支上的名册激活计数。 */
+export interface BranchActivationCounts {
+  readonly active: number;
+  readonly dormant: number;
+}
+
+/** 部署级活动身份数：活动或暂停分支上的活动身份，归档与冻结分支不计入；与激活裁决同一口径。 */
+export function countDeploymentActiveIdentities(tx: StorageTransaction): number {
+  const row = tx.all(
+    "SELECT COUNT(*) AS count FROM agent_activations a JOIN branches b ON a.branch_id = b.branch_id WHERE a.status = 'active' AND b.status IN ('active', 'paused')",
+  )[0];
+  return Number(row?.["count"] ?? 0);
+}
+
+/** 读取分支上活动与休眠身份的数量。 */
+export function readBranchActivationCounts(tx: StorageTransaction, branchId: string): BranchActivationCounts {
+  const activations = tx.branch(branchId).table("agent_activations");
+  return {
+    active: activations.count({ status: "active" }),
+    dormant: activations.count({ status: "dormant" }),
+  };
+}
+
 /** 在调用方事务内激活身份；供命令后续钩子与名字册恢复共用同一事务边界。 */
 export function activateAgentRosterInTransaction(input: RosterActivationInput): RosterActivationOutcome {
   const branch = input.tx.branch(input.branchId);
@@ -58,10 +82,7 @@ export function activateAgentRosterInTransaction(input: RosterActivationInput): 
   const missing = input.agentIds.filter((agentId) =>
     activations.get({ agent_id: agentId })?.["status"] !== "active",
   );
-  const row = input.tx.all(
-    "SELECT COUNT(*) AS count FROM agent_activations a JOIN branches b ON a.branch_id = b.branch_id WHERE a.status = 'active' AND b.status IN ('active', 'paused')",
-  )[0];
-  const current = Number(row?.["count"] ?? 0);
+  const current = countDeploymentActiveIdentities(input.tx);
   const requested = current + missing.length;
   if (requested > agentDeploymentQuota) {
     return {
@@ -103,4 +124,19 @@ export function deactivateBranchAgentsInTransaction(
     released.push(String(row["agent_id"]));
   }
   return released;
+}
+
+/**
+ * 在调用方事务内重新激活分支上的全部休眠身份，与开局激活执行同一部署级配额裁决：
+ * 名额不足时返回 rejected 且不写入任何行，调用方必须回滚整个操作，不留下部分激活的名册。
+ */
+export function reactivateBranchAgentsInTransaction(
+  tx: StorageTransaction,
+  branchId: string,
+  nowIso: string,
+): RosterActivationOutcome {
+  const dormant = tx.branch(branchId).table("agent_activations")
+    .list({ status: "dormant" }, { orderBy: [{ column: "agent_id" }] })
+    .map((row) => String(row["agent_id"]));
+  return activateAgentRosterInTransaction({ tx, branchId, agentIds: dormant, nowIso });
 }

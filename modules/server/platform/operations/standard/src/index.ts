@@ -10,6 +10,7 @@ export type { OperationsConfig } from "./definition";
 export { OperationsService } from "./plugin";
 export type {
   IdempotentOperationsDriver,
+  OnlineRosterDriver,
   OperationRequest,
   OperationsDriver,
   RestoreInput,

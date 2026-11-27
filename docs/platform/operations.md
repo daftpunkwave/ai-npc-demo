@@ -2,7 +2,7 @@
 
 > 本文定义 Demo 单人运营。多人席位、托管与权威设计见 [02-authority-economy-fairness.md — 权威与公平](../design/multiplayer/02-authority-economy-fairness.md)。
 
-> 状态：部分实现。玩家自助入口与控制台运营入口都已提供暂停、继续、受控单步、存档与恢复：玩家经 `/api/v1/campaign/*`，operator 经 `/api/v1/console/campaign/*`（单步仅控制台入口提供），快照列表另允许 researcher 只读；重新开局只在玩家自助入口提供。三势力席位、剧情运营接口与控制台页面仍为目标。本文规定运营与故障处理。参见 [00-scope-and-invariants.md — 序章范围](../00-scope-and-invariants.md)、[api.md — HTTP 与 WebSocket API](../architecture/api.md)、[two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
+> 状态：部分实现。玩家自助入口与控制台运营入口都已提供暂停、继续、受控单步、存档与恢复：玩家经 `/api/v1/campaign/*`，operator 经 `/api/v1/console/campaign/*`（单步仅控制台入口提供），快照列表另允许 researcher 只读；重新开局只在玩家自助入口提供；在线名册的休眠与唤醒只在控制台运营入口提供（第 9 节）。三势力席位、剧情运营接口与控制台页面仍为目标。本文规定运营与故障处理。参见 [00-scope-and-invariants.md — 序章范围](../00-scope-and-invariants.md)、[api.md — HTTP 与 WebSocket API](../architecture/api.md)、[two-endpoints.md — 双端部署](../architecture/two-endpoints.md)。
 
 ## 1. 操作身份
 
@@ -100,7 +100,7 @@
 
 ## 8. 目标请求 API 与通用规则
 
-接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，控制台运营的时钟、单步、存档与恢复在第 5.3 节；玩家 `/presets` 与 `/run-requests`、控制台三势力席位（`/ops/*`）与剧情卡（`/scenarios/*`）为目标接口，当前尚未注册。
+接口清单、载荷与角色权限见 [API](../architecture/api.md)：玩家的暂停、继续、存档与恢复在第 3 节，控制台运营的时钟、单步、存档、恢复与在线名册休眠/唤醒在第 5.3 节；玩家 `/presets` 与 `/run-requests`、控制台三势力席位（`/ops/*`）与剧情卡（`/scenarios/*`）为目标接口，当前尚未注册。
 
 玩家入口与控制台入口都在服务端同一端口；路由前缀区分权限域，不能因为控制台与玩家同源就复用玩家 scope。相同幂等键和 payload 返回原 receipt；相同键不同 payload 返回冲突；可重试失败不锁定幂等键，规则见第 2 节。accepted 只表示已接纳，不等于异步任务 completed。服务端决定 principal/scope，不能信任模型或客户端自报授权身份。
 
@@ -124,6 +124,14 @@
 `unhandledRejection` 与 `uncaughtException` 都属于不可继续的故障：Node 的默认行为会跳过关闭直接终止进程，丢失世界时钟、在途 turn 与 WS 会话且不留结构化记录；把处理器写成空实现则会让服务停在非法状态并继续兑现可用性承诺。因此两种异常统一走「记录 → 非零退出码 → 优雅关闭」，不需要在调用点逐处手写容错分支。
 
 在线与实验活动 gameplay 身份共用 **15** 上限。满员时先暂停正式世界、保存在线实例并释放名额，再逐分支实验；结束后释放实验实例再恢复在线。只暂停画面而不释放实例不产生新配额。
+
+释放与恢复由 operator 经控制台的在线名册休眠与唤醒完成（[API](../architecture/api.md#53-三势力席位与世界运营)）：
+
+| 操作 | 服务端行为 |
+|---|---|
+| 休眠 | 名册须处于活动状态。运行或单步中先受控暂停并补完当前 tick（与快照前的准备相同，在途 turn 被围栏），再在一个事务内把在线分支的全部活动身份置为休眠，写入 `OnlineRosterHibernated` 审计与幂等结果。在线分支、run 与控制租约保持不变，数据原样留在存储中，不另建快照 |
+| 休眠期间 | 在线名额为零；休眠身份不再被调度 turn。玩家与控制台的继续、单步返回 `invalid-state`，世界只读，变更世界的命令按暂停拒绝。状态由在线分支的激活记录派生，宿主重启后保持 |
+| 唤醒 | 名册须处于休眠状态。在一个事务内按部署级配额预留名额并重新激活全部休眠身份，写入 `OnlineRosterWoken` 审计与幂等结果；名额不足时返回可重试的 `budget-exhausted`，事务回滚，没有任何身份被激活。唤醒不改时钟，世界保持 `paused` 直到运营或玩家继续 |
 
 运营页面的模块可替换，但暂停/保存/接管/发布的服务端语义与审计不可替换；替换页面不得绕过过期 checkpoint、引用了过期 epoch 的 handover 或未校验的发布。恢复、接管和发布的并发/故障验收见 [roadmap-and-acceptance](../delivery/roadmap-and-acceptance.md)。
 

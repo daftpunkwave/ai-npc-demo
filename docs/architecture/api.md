@@ -219,10 +219,15 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `POST /campaign/snapshots`（已实现） | operator | `{ operationId, label }` | `{ snapshotId, worldTick }` |
 | `GET /campaign/snapshots`（已实现） | operator、researcher | — | `{ snapshots: SnapshotView[] }` |
 | `POST /campaign/restore`（已实现） | operator | `{ operationId, snapshotId, dryRun? }` | `dryRun: true` 返回 `{ ok, checks }` 只读预检，校验失败的检查项带原因。实际恢复成功后返回 `{ branchId, clock }`，并创建后继在线分支、保留旧分支 |
+| `GET /campaign/roster`（已实现） | operator、researcher | — | `OnlineRosterView`：`{ branchId, state: "empty"\|"active"\|"hibernated", activeAgents, dormantAgents, deploymentActiveAgents, deploymentLimit }`，部署计数与激活配额同一口径 |
+| `POST /campaign/roster/hibernate`（已实现） | operator | `{ operationId }` | `{ roster: OnlineRosterView, clock }`：运行或单步中先受控暂停并补完当前 tick，再把在线名册全部置为休眠，释放其占用的部署级名额 |
+| `POST /campaign/roster/wake`（已实现） | operator | `{ operationId }` | `{ roster: OnlineRosterView, clock }`：在同一事务内按配额预留名额并重新激活全部休眠身份；名额不足返回 429 `budget-exhausted`（`retryable: true`），不激活任何身份；时钟保持 `paused` |
 | `GET /run-requests` | operator | — | 玩家的 run 申请列表 |
 | `POST /run-requests/{requestId}/approve` / `reject` | operator | `{ note }` | approve 返回 `{ runId }` |
 
 已实现的运营入口位于 `/api/v1/console/campaign/*`，与第 3 节玩家自助入口路径独立。查询参数 `branchId` 可省略，省略时作用于在线分支；当前版本只支持在线分支，显式传入与在线分支不同的值返回 400 `validation`。快照列表与玩家入口一致，只列当前 campaign 的存档。
+
+在线名册的休眠与唤醒供标准 15 人在线世界旁的完整闭环实验让出名额（[评估](../platform/evaluation.md) 第 1 节），只在控制台运营入口提供，玩家入口没有对应路由。名册状态由在线分支的激活记录派生：存在休眠身份为 `hibernated`，只有活动身份为 `active`，没有任何身份（尚未开局）为 `empty`；状态随存储持久，宿主重启后保持。休眠只接受 `active`、唤醒只接受 `hibernated`，其余状态返回 409 `invalid-state`，休眠的前置检查在暂停时钟之前完成，被拒绝的请求不改动时钟。休眠期间世界只读：玩家与控制台的继续、单步都返回 409 `invalid-state`，玩家仍可登录、读取投影与会话，变更世界的命令按暂停返回 `paused` 回执。两个操作按 `operationId` 幂等，结果与生命周期审计（`OnlineRosterHibernated`、`OnlineRosterWoken`，载荷含 `operationId`、`agentIds` 与 `worldTick`）随名册变更在同一事务提交；名额不足的唤醒是可重试失败，不锁定 `operationId`，名额腾出后可用同一请求重试。从快照恢复在切换事务内为后继分支按名册预留名额：休眠期间恢复已开局的存档，后继分支会重新占用名额，名额不足时整个恢复被拒绝。
 
 时钟单步、快照创建与快照恢复的请求/响应 DTO 在 `packages/contracts/src/api.ts` 中各只有一份定义，`packages/contracts/src/api-operations.ts` 只做再导出。恢复端点按请求是否带 `dryRun: true` 返回两种互斥形状：预检返回 `{ ok, checks }`，实际恢复返回 `{ branchId, clock }`；两者没有共享的判别字段，因此客户端按自己发出的请求选择校验哪一份 schema，而不是对响应做形状推断。预检能力只由控制台运营入口（`/api/v1/console/campaign/restore`）提供；玩家自助入口（`/api/v1/campaign/restore`）收到 `dryRun: true` 返回 400 `validation`，不会退化成真正执行恢复。以旧契约（恢复请求必填 `dryRun`）构造的调用会被 `.strict()` 拒绝，这正是不允许多份端点契约并存的原因。
 
@@ -283,7 +288,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 第 3 节其余玩家接口 | ✓ | ✗ | ✗ | ✗ |
 | 5.1 总览与装配 | ✗ | ✓ | ✓（只读） | ✗ |
 | 5.2 模型池 | ✗ | ✓ | ✓（只读） | ✗ |
-| 5.3 席位与运营 | ✗ | ✓（时钟、单步、存档、恢复） | 只读快照列表 | ✗ |
+| 5.3 席位与运营 | ✗ | ✓（时钟、单步、存档、恢复、名册休眠与唤醒） | 只读快照列表与名册状态 | ✗ |
 | 5.4 剧情卡 | ✗ | ✓ | 只能 override | ✗ |
 | 5.5 可观测与调试 | ✗ | ✗ | ✓ | ✗ |
 | 5.6 评估与导出 | ✗ | ✗ | ✓ | 只读 run、进度与报告 |
@@ -362,6 +367,15 @@ interface CampaignView {
 }
 
 interface SnapshotView { snapshotId: string; label: string; worldTick: number; day: number; createdAt: string; createdBy: string }
+
+interface OnlineRosterView {
+  branchId: string;
+  state: "empty" | "active" | "hibernated";
+  activeAgents: number;           // 在线分支上的活动身份
+  dormantAgents: number;          // 在线分支上的休眠身份
+  deploymentActiveAgents: number; // 活动或暂停分支上的活动身份总数，与激活配额裁决同一口径
+  deploymentLimit: number;        // 部署级上限 15
+}
 
 interface ClientUiText {
   noReply: string; waitingReply: string; reconnecting: string; serverUnavailable: string;

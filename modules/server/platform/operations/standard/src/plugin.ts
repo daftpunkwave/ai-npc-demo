@@ -1,10 +1,18 @@
 /**
- * 运营编排：暂停、继续、受控单步、一致快照、恢复与重新开局的统一入口。
- * 依赖调用方注入的时钟/存档/分支回调；不直接写存储。
+ * 运营编排：暂停、继续、受控单步、一致快照、恢复、重新开局与在线名册休眠/唤醒的统一入口。
+ * 依赖调用方注入的时钟/存档/分支/名册回调；不直接写存储。
  * 禁止跳过暂停保存快照，或把恢复/重开实现成覆盖旧分支。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口方法参数名用于表达运营调用契约。 */
-import type { ClockView, ModuleCreateInput, ModuleInstance, RestoreDryRunResponse } from "@world-prism/contracts";
+import {
+  DomainError,
+  type ClockView,
+  type ModuleCreateInput,
+  type ModuleInstance,
+  type OnlineRosterOperationResponse,
+  type OnlineRosterView,
+  type RestoreDryRunResponse,
+} from "@world-prism/contracts";
 import { createStatelessModule } from "@world-prism/module-sdk";
 import { operationsConfigSchema } from "./definition";
 
@@ -55,6 +63,16 @@ export interface IdempotentOperationsDriver {
   };
 }
 
+/**
+ * 在线名册的休眠与唤醒：休眠先受控暂停在线时钟并释放部署级名额，唤醒在同一事务内预留名额并激活名册。
+ * 两者都只经幂等入口执行，宿主按 operationId 记录首次结果。
+ */
+export interface OnlineRosterDriver {
+  readonly state: () => OnlineRosterView;
+  readonly hibernate: (operation: OperationRequest) => OnlineRosterOperationResponse;
+  readonly wake: (operation: OperationRequest) => OnlineRosterOperationResponse;
+}
+
 /** 宿主注入的时钟/存档/分支回调；运营服务不直接读写存储。 */
 export interface OperationsDriver {
   readonly clock: () => { readonly mode: string; readonly runVersion: number };
@@ -69,6 +87,8 @@ export interface OperationsDriver {
   readonly reset: (createdBy: string) => { readonly branchId: string; readonly clock: ClockView };
   /** 可选的幂等执行入口；提供后运营服务按 operationId 转发。 */
   readonly idempotent?: IdempotentOperationsDriver;
+  /** 可选的在线名册休眠与唤醒；未提供时对应操作按 not-ready 拒绝。 */
+  readonly roster?: OnlineRosterDriver;
 }
 
 /** 统一运营流程；快照前强制暂停，恢复/重开保留旧分支。 */
@@ -139,6 +159,27 @@ export class OperationsService {
       return this.driver.idempotent.reset(operation);
     }
     return this.driver.reset(createdBy);
+  }
+
+  rosterState(): OnlineRosterView {
+    return this.roster().state();
+  }
+
+  /** 休眠在线名册：运行或单步中先受控暂停，再释放名册占用的部署级名额。 */
+  hibernateRoster(operation: OperationRequest): OnlineRosterOperationResponse {
+    return this.roster().hibernate(operation);
+  }
+
+  /** 唤醒在线名册：在同一事务内预留名额并激活，名额不足时整体拒绝；时钟保持暂停。 */
+  wakeRoster(operation: OperationRequest): OnlineRosterOperationResponse {
+    return this.roster().wake(operation);
+  }
+
+  private roster(): OnlineRosterDriver {
+    if (this.driver.roster === undefined) {
+      throw new DomainError("not-ready", "运营驱动未提供在线名册休眠与唤醒");
+    }
+    return this.driver.roster;
   }
 }
 
