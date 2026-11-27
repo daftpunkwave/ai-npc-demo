@@ -19,9 +19,11 @@ export { TurnLeases, TurnStopped } from "./turn-lease";
 export type { ClaimedTurn } from "./turn-lease";
 export {
   cancelActiveTurnsSql,
+  currentMemoryRecordsSql,
   latestDayPassedSql,
   pendingTriggersSql,
   recoverExpiredTurnsSql,
+  visibleMemoryRecordsSql,
 } from "./agent-hot-path-sql";
 export type { ReadTurnWorld, TurnWorldRead } from "./turn-input";
 export { readTurnObservations } from "./turn-observations";

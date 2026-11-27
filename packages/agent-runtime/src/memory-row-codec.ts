@@ -113,6 +113,32 @@ function rawNumber(row: StorageRawRow, key: string): number {
   return value;
 }
 
+/**
+ * 把 memory_records 的原始查询行转换为表级行：三个 JSON 列由文本解析为值，其余列原样保留。
+ * 解码结果既交给 parseRecord，也可能整行写回表级接口（退役当前行版本时），
+ * 写回时表级接口会重新编码 JSON 列，因此这里必须完整还原，不能把 TEXT 原样留在 JSON 列里。
+ */
+export function decodeMemoryRow(row: StorageRawRow): StorageRow {
+  const json = (key: string): Json => {
+    const value = row[key];
+    if (typeof value !== "string") throw new Error(`memory raw column ${key} is not text`);
+    try {
+      return JSON.parse(value) as Json;
+    } catch (error) {
+      throw new Error(`memory raw column ${key} is not valid JSON`, { cause: error });
+    }
+  };
+  const decoded: Record<string, StorageRow[string]> = {};
+  for (const [column, value] of Object.entries(row)) {
+    if (typeof value === "bigint") throw new Error(`memory raw column ${column} exceeds the safe integer range`);
+    decoded[column] = value;
+  }
+  decoded["tags_json"] = json("tags_json");
+  decoded["source_observation_ids_json"] = json("source_observation_ids_json");
+  decoded["content_json"] = json("content_json");
+  return decoded;
+}
+
 export function parseRecord(row: StorageRow): MemoryRecordView {
   const content = jsonObject(row["content_json"]);
   const data = jsonObject(content["data"]);

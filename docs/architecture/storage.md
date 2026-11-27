@@ -672,6 +672,8 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 
 修改记忆记录（例如强度衰减）时，不能 `UPDATE` 内容列：先把当前行版本的 `retired_revision` 设为新 revision，再插入 `row_version + 1`、`created_revision = 新 revision` 的新行。这样任意旧 revision 都能按上面的查询原样重建。
 
+`agent-runtime` 读取 revision 视图（含公共编年史）时直接执行上面这条可见性查询，提交记忆计划时只按 `retired_revision IS NULL` 取当前行版本，两者都由 `memory_visible` 索引在 SQLite 内过滤，不把某个主体的全部历史行版本读进内存。历史行版本按设计只追加不清理，旧 revision 的重建依赖它们。
+
 ## 5. 存储验收
 
 - 写入事务中途抛错，状态、事件、job 与 receipt 都不落库。

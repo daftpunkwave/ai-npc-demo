@@ -1,5 +1,5 @@
 /**
- * 核心职责：用 agent-runtime 的生产 SQL 对真实 SQLite 断言查询计划，确认热路径确实命中 0016 的部分索引。
+ * 核心职责：用 agent-runtime 的生产 SQL 对真实 SQLite 断言查询计划，确认热路径确实命中 0016 的部分索引与记忆可见性索引。
  * 交互契约：依赖存储模块启动真实 SQLite、agent-runtime 导出的查询常量与迁移定义的索引。
  * 约束与禁忌：禁止另写一份字面量 SQL 副本代替生产查询——参数化会让部分索引失效，
  *   副本的查询计划说明不了生产行为；也不得把索引条件退化成全表扫描后仍判为通过。
@@ -7,9 +7,11 @@
 import { describe, expect, it } from "vitest";
 import {
   cancelActiveTurnsSql,
+  currentMemoryRecordsSql,
   latestDayPassedSql,
   pendingTriggersSql,
   recoverExpiredTurnsSql,
+  visibleMemoryRecordsSql,
 } from "@world-prism/agent-runtime";
 import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
@@ -101,5 +103,17 @@ describe("最近 DayPassed 查询计划", () => {
     expect(plan).toContain("observations_day_passed");
     expect(plan).not.toContain("SCAN observations");
     expect(plan).not.toContain("USE TEMP B-TREE");
+  });
+});
+
+describe("记忆可见性查询计划", () => {
+  it("revision 视图与当前行版本查询按 memory_visible 索引过滤，不扫描整表", async () => {
+    const storage = await openStorage();
+    const visible = planOf(storage, visibleMemoryRecordsSql, ["br-000000000001", "human-independent", 3, 3]);
+    expect(visible).toContain("memory_visible");
+    expect(visible).not.toContain("SCAN memory_records");
+    const current = planOf(storage, currentMemoryRecordsSql, ["br-000000000001", "human-independent"]);
+    expect(current).toContain("memory_visible");
+    expect(current).not.toContain("SCAN memory_records");
   });
 });
