@@ -41,8 +41,13 @@ import { createDebugHttp } from "./http/debug";
 import { createModelLayoutHttp } from "./http/model-layouts";
 import { createOperationsHttp } from "./http/operations";
 import { createResearchHttp } from "./http/research";
-import { queryString, type ConsoleRequest, type RequestOptions } from "./http/request";
-import { contractViolationError, failedResponseError } from "./http/request-errors";
+import {
+  defaultRequestTimeoutMs,
+  queryString,
+  type ConsoleRequest,
+  type RequestOptions,
+} from "./http/request";
+import { contractViolationError, failedResponseError, requestTimeoutError } from "./http/request-errors";
 
 export type { RequestOptions } from "./http/request";
 
@@ -53,6 +58,8 @@ export interface ApiClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly storage?: BrowserStorage | null;
   readonly activeRole?: ConsoleActiveRole;
+  /** 单个请求从发出到读完响应体的期限（毫秒），缺省为 `defaultRequestTimeoutMs`。 */
+  readonly requestTimeoutMs?: number;
 }
 
 interface BrowserStorage {
@@ -94,6 +101,7 @@ export class ApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly storage: BrowserStorage | null;
+  private readonly requestTimeoutMs: number;
   private sessionToken: string | null;
   private activeRole: ConsoleActiveRole | undefined;
   private readonly requestConsole: ConsoleRequest = (schema, path, options) =>
@@ -107,6 +115,10 @@ export class ApiClient {
     this.baseUrl = (options.baseUrl ?? "").replace(/\/$/, "");
     this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? defaultRequestTimeoutMs;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      throw new DomainError("validation", "requestTimeoutMs 必须是正数");
+    }
     this.activeRole = options.activeRole;
     this.sessionToken = this.storage?.getItem(sessionStorageKey) ?? null;
   }
@@ -353,14 +365,8 @@ export class ApiClient {
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
     }
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
-    // 非 JSON 正文（代理错误页、静态 404）按无载荷处理，交给状态码兜底映射或契约校验。
-    const payload: unknown = await response.json().catch(() => null);
+    const { response, payload } = await this.exchange(path, headers, options);
+    // 不遵守 signal 的 fetch 实现仍可能在取消后交付响应；调用方已放弃的请求不再交付结果。
     options.signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
@@ -373,6 +379,46 @@ export class ApiClient {
       throw contractViolationError(response.status, parsed.error);
     }
     return parsed.data;
+  }
+
+  /**
+   * 发出请求并读完响应体，全程受调用方 signal 与本客户端期限共同约束。
+   * 期限覆盖正文读取：服务端发出响应头后挂起正文，与连接挂起一样会让调用方无限等待。
+   */
+  private async exchange(
+    path: string,
+    headers: Headers,
+    options: RequestOptions,
+  ): Promise<{ readonly response: Response; readonly payload: unknown }> {
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), this.requestTimeoutMs);
+    const signal = options.signal === undefined
+      ? deadline.signal
+      : AbortSignal.any([options.signal, deadline.signal]);
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method: options.method ?? "GET",
+        headers,
+        signal,
+        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      });
+      const payload: unknown = await response.json().catch((cause: unknown) => {
+        // 读取途中被中止不是“空正文”，交给外层按中止来源处理；
+        // 其余失败是非 JSON 正文（代理错误页、静态 404），按无载荷交给状态码兜底映射或契约校验。
+        if (signal.aborted) throw cause;
+        return null;
+      });
+      return { response, payload };
+    } catch (cause) {
+      // 调用方主动取消优先，原样抛出取消原因：调用方据此区分“自己放弃”与请求失败。
+      options.signal?.throwIfAborted();
+      if (deadline.signal.aborted) {
+        throw requestTimeoutError(this.requestTimeoutMs);
+      }
+      throw cause;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

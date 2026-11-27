@@ -1,5 +1,5 @@
 /**
- * 核心职责：把 HTTP 失败响应与不符合契约的成功响应转换为登记错误码的 DomainError。
+ * 核心职责：把 HTTP 失败响应、不符合契约的成功响应与请求超时转换为登记错误码的 DomainError。
  * 交互契约：依赖公共错误码登记表与统一错误信封 schema；输入为状态码、已解析的响应体或 Zod 校验错误，输出可直接抛出的 DomainError。
  * 约束与禁忌：只使用登记表内的错误码；safeMessage 只取统一错误信封或本文件的固定文案，不拼接 statusText、响应正文或 Zod 原文。
  */
@@ -71,5 +71,17 @@ export function contractViolationError(status: number, error: z.ZodError): Domai
         message: issue.message,
       })),
     },
+  });
+}
+
+/**
+ * 请求在期限内没有完成。登记表没有专门的网络或超时错误码：
+ * not-ready 表示服务当前无法处理、稍后可重试，与 503 同义；cancelled 只用于进程内租约与启动取消，
+ * plugin-failed 表示服务端已报告内部故障，而客户端超时时并不知道服务端发生了什么，两者都不适用。
+ */
+export function requestTimeoutError(timeoutMs: number): DomainError {
+  return new DomainError("not-ready", "服务端响应超时，请稍后重试", {
+    retryable: true,
+    details: { timeoutMs },
   });
 }

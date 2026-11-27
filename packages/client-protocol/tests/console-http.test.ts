@@ -26,8 +26,8 @@ it("模型、研究、调试和运营请求共享会话与当前角色", async (
   await expect(api.consoleObservations("agent/one", "branch a")).resolves.toEqual({ observations: [] });
   await expect(api.consoleWakeAgent("agent/one", "fixture", "op-000000000001")).resolves.toEqual({ ok: true });
   api.setActiveRole("operator");
-  const signal = new AbortController().signal;
-  await expect(api.consoleSnapshots(signal)).resolves.toEqual({ snapshots: [] });
+  const caller = new AbortController();
+  await expect(api.consoleSnapshots(caller.signal)).resolves.toEqual({ snapshots: [] });
 
   expect(fetchImpl.mock.calls.slice(1).map(([url, options]) => {
     const requestUrl = new URL(String(url));
@@ -42,7 +42,11 @@ it("模型、研究、调试和运营请求共享会话与当前角色", async (
   expect(fetchImpl.mock.calls[3]?.[1]).toMatchObject({
     method: "POST", body: JSON.stringify({ reason: "fixture", operationId: "op-000000000001" }),
   });
-  expect(fetchImpl.mock.calls[4]?.[1]?.signal).toBe(signal);
+  // fetch 收到的是调用方取消与请求期限的合并信号：调用方取消必须传导到底层请求。
+  const forwarded = fetchImpl.mock.calls[4]?.[1]?.signal;
+  expect(forwarded?.aborted).toBe(false);
+  caller.abort();
+  expect(forwarded?.aborted).toBe(true);
 });
 
 it("领域请求复用响应校验和身份过期后的清理", async () => {
