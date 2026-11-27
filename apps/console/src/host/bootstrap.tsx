@@ -1,6 +1,6 @@
 /**
- * 完成控制台登录、当前角色选择、装配握手与页面模块启动。
- * 依赖类型化 API、浏览器模块运行时与角色会话；不信任 URL 自报角色。
+ * 完成控制台登录、当前角色选择、装配握手与页面模块启动，并向页面提供在线分支身份。
+ * 依赖类型化 API、浏览器模块运行时、角色会话与在线分支跟踪器；不信任 URL 自报角色或页面自报分支。
  * 禁止让玩家会话进入控制台，也不在版本不匹配时继续加载页面。
  */
 import { useEffect, useState, type ReactNode } from "react";
@@ -13,6 +13,7 @@ import {
 import { ApiClient, takeHashToken } from "@world-prism/client-protocol";
 import { DomainError, type ClockView, type ConsoleActiveRole, type SessionDescriptor } from "@world-prism/contracts";
 import { consoleModuleDefinitions } from "./module-catalog";
+import { createOnlineBranchTracker } from "./online-branch";
 import { ConsoleShell } from "../ui/console-shell";
 
 interface ConsoleReady {
@@ -82,19 +83,13 @@ export function ConsoleBootstrap(): ReactNode {
       api.setActiveRole(role);
       const assembly = await api.assembly("console");
       const roleState = { activeRole: role };
-      // 在线分支以服务端为准：恢复/重开会切换分支，页面查询必须跟随新分支。
-      // 会话描述符里的 branchId 是登录时的快照，因此单独维护可变的当前身份。
-      // 世界与分支任一变化都要通知订阅者：跨 worldId 的重开同样会让页面数据失效。
-      const identityState = {
-        worldId: session.worldId,
-        branchId: session.branchId,
-        listeners: new Set<() => void>(),
-      };
-      const notifyIdentity = (): void => {
-        for (const listener of [...identityState.listeners]) {
-          listener();
-        }
-      };
+      // 在线分支以服务端为准：恢复/重开会切换分支，页面查询与界面标识必须跟随新分支。
+      // 会话描述符里的 branchId 是登录时的快照，宿主独立于页面定期核对，
+      // 因此无论打开的是哪个页面，其他会话切换分支后本会话都会更新。
+      const onlineBranch = createOnlineBranchTracker({
+        initial: { worldId: session.worldId, branchId: session.branchId },
+        readSession: (signal) => api.session(signal),
+      });
       const hostPort = {
         api,
         session,
@@ -117,23 +112,18 @@ export function ConsoleBootstrap(): ReactNode {
           },
         },
         get worldId(): string {
-          return identityState.worldId;
+          return onlineBranch.identity.worldId;
         },
         get branchId(): string {
-          return identityState.branchId;
+          return onlineBranch.identity.branchId;
         },
+        /** 订阅在线分支变化；世界或分支任一变化都会通知。 */
         subscribeBranch(listener: () => void): () => void {
-          identityState.listeners.add(listener);
-          return () => {
-            identityState.listeners.delete(listener);
-          };
+          return onlineBranch.subscribe(listener);
         },
-        /** 快照帧带来的身份校对；世界或分支任一变化都通知订阅者。 */
-        applyBranchIdentity(worldId: string, branchId: string): void {
-          if (identityState.worldId === worldId && identityState.branchId === branchId) return;
-          identityState.worldId = worldId;
-          identityState.branchId = branchId;
-          notifyIdentity();
+        /** 页面发现流帧身份与当前分支不一致时调用：只触发一次向服务端的核对，不采用帧内身份。 */
+        refreshBranchIdentity(): void {
+          onlineBranch.refresh();
         },
         get activeRole(): ConsoleActiveRole {
           return roleState.activeRole;
@@ -150,6 +140,8 @@ export function ConsoleBootstrap(): ReactNode {
         signal: controller.signal,
       });
       if (!controller.signal.aborted) {
+        // 页面就绪后才开始核对：启动失败时不留后台请求，卸载时随 controller 一起停止。
+        onlineBranch.start(controller.signal);
         setReady({ api, session, runtime, initialRole: roleState.activeRole });
       }
     })().catch((cause: unknown) => {

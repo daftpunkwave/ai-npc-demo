@@ -26,8 +26,8 @@ it("模型、研究、调试和运营请求共享会话与当前角色", async (
   await expect(api.consoleObservations("agent/one", "branch a")).resolves.toEqual({ observations: [] });
   await expect(api.consoleWakeAgent("agent/one", "fixture", "op-000000000001")).resolves.toEqual({ ok: true });
   api.setActiveRole("operator");
-  const signal = new AbortController().signal;
-  await expect(api.consoleSnapshots(signal)).resolves.toEqual({ snapshots: [] });
+  const caller = new AbortController();
+  await expect(api.consoleSnapshots(caller.signal)).resolves.toEqual({ snapshots: [] });
 
   expect(fetchImpl.mock.calls.slice(1).map(([url, options]) => {
     const requestUrl = new URL(String(url));
@@ -42,7 +42,11 @@ it("模型、研究、调试和运营请求共享会话与当前角色", async (
   expect(fetchImpl.mock.calls[3]?.[1]).toMatchObject({
     method: "POST", body: JSON.stringify({ reason: "fixture", operationId: "op-000000000001" }),
   });
-  expect(fetchImpl.mock.calls[4]?.[1]?.signal).toBe(signal);
+  // fetch 收到的是调用方取消与请求期限的合并信号：调用方取消必须传导到底层请求。
+  const forwarded = fetchImpl.mock.calls[4]?.[1]?.signal;
+  expect(forwarded?.aborted).toBe(false);
+  caller.abort();
+  expect(forwarded?.aborted).toBe(true);
 });
 
 it("领域请求复用响应校验和身份过期后的清理", async () => {
@@ -59,8 +63,34 @@ it("领域请求复用响应校验和身份过期后的清理", async () => {
   await api.login("fixture-login");
   api.setActiveRole("researcher");
   await expect(api.consoleModelLayouts()).rejects.toMatchObject({
-    issues: [expect.objectContaining({ path: ["layouts"] })],
+    code: "plugin-failed",
+    details: { status: 200, issues: [expect.objectContaining({ path: "layouts" })] },
   });
   await expect(api.consoleTurns()).rejects.toMatchObject({ code: "unauthenticated", safeMessage: "会话已过期" });
   expect(api.token).toBeNull();
+});
+
+it("研究读取把调用方取消传给底层请求，页面卸载后不再占用连接", async () => {
+  const fetchImpl = vi.fn<typeof fetch>((_, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+  }));
+  const api = new ApiClient({ baseUrl, fetchImpl, storage: null, activeRole: "researcher" });
+  const caller = new AbortController();
+
+  const reads = [
+    api.consoleTimeline({ branchId: "br-fixture" }, caller.signal),
+    api.consoleAgents("br-fixture", caller.signal),
+    api.consoleInspector("agent-fixture", "br-fixture", caller.signal),
+    api.consoleTurns({ branchId: "br-fixture" }, caller.signal),
+    api.consoleTurn("turn-fixture", caller.signal),
+    api.consoleTrace("trc-fixture", caller.signal),
+    api.consoleArtifact("art-fixture", "redacted", caller.signal),
+  ].map((read) => read.then(() => "resolved", (cause: unknown) => cause));
+  expect(fetchImpl).toHaveBeenCalledTimes(reads.length);
+  caller.abort();
+
+  for (const outcome of await Promise.all(reads)) {
+    expect(outcome).toMatchObject({ name: "AbortError" });
+  }
+  expect(fetchImpl.mock.calls.map(([, init]) => init?.signal?.aborted)).toEqual(reads.map(() => true));
 });

@@ -3,11 +3,11 @@
  * 交互契约：启动真实宿主与临时 SQLite，经 HTTP 注入读取控制台接口；只读取 storage 端口核对落库事实。
  * 约束与禁忌：不得用固定 0 或空数组冒充无数据源；不得为了通过断言放宽契约 schema 或跳过错误路径。
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { errorResponseSchema, timelineQuerySchema } from "@world-prism/contracts";
+import { consoleHealthResponseSchema, errorResponseSchema, timelineQuerySchema } from "@world-prism/contracts";
 import { startHost, type RunningHost } from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import { stubStandardModelHttp } from "./standard-model-support";
@@ -482,6 +482,32 @@ describe("控制台只读接口的契约保真度", () => {
     const response = await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers });
     expect(response.statusCode).toBe(200);
     expect((response.json() as { readonly budgets: unknown[] }).budgets).toEqual([]);
+  });
+
+  it("运行总览只透传存储后台测得的最近结果：请求之间不重新统计，首轮未完成时为 null", { timeout: 30_000 }, async () => {
+    const host = await hostsWithCampaign();
+    const headers = await researcherHeaders(host);
+    const readStorage = async () => consoleHealthResponseSchema.parse(
+      (await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers })).json(),
+    ).storage;
+    await vi.waitFor(() => {
+      expect(host.storage.footprint?.()).not.toBeNull();
+    });
+    const snapshot = host.storage.footprint?.();
+    const first = await readStorage();
+    expect(first).toEqual(snapshot);
+    expect(first?.retention).toEqual([]);
+    expect(first?.databaseBytes).toBeGreaterThan(0);
+    // 第一次请求自身的 http.request 跨度已在之后落库；健康请求不触发测量，第二次仍是同一份结果。
+    const second = await readStorage();
+    expect(second).toEqual(first);
+
+    const pending = vi.spyOn(host.storage, "footprint").mockReturnValue(null);
+    try {
+      expect(await readStorage()).toBeNull();
+    } finally {
+      pending.mockRestore();
+    }
   });
 
   it("HTTP 错误响应携带可在 trace_spans 中查到的 traceId", { timeout: 30_000 }, async () => {

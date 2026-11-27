@@ -44,7 +44,7 @@
 | `GET /api/v1/health` | — | `{ status: "starting"\|"ready"\|"degraded", protocolVersion: "1" }` | 不需要认证，不返回内部细节；e2e 用它等待就绪 |
 | `POST /api/v1/auth/login` | `{ token }` | `{ sessionToken, principalId, roles, expiresAt }` | 令牌错误返回 401。会话自登录起默认有效 12 小时 |
 | `POST /api/v1/auth/logout` | — | `{ ok: true }` | 吊销当前会话 |
-| `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集 |
+| `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集。`branchId` 取请求时的在线分支，不是登录时的快照；控制台宿主据此定期核对在线分支 |
 | `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；`assemblyHash` 是本 realm 解析结果的摘要，不进入 run 的冻结清单；响应另带 `remoteCapabilities`，即同一装配 server 段已绑定的能力 ID，浏览器据此复核本地模块的 `requiresRemote`；玩家会话请求 `realm=console` 返回 403 `realm-violation` |
 | `POST /api/v1/streams/ticket` | — | `{ ticket, expiresAt }` | 一次性 WS 票据，30 秒内有效 |
 
@@ -167,7 +167,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 出现未应用的帧后，客户端必须进入「等待快照」状态：此后的增量既不应用也不确认，直到收到 `snapshot` 重建连续基线。只让被拒的那一帧不确认是不够的——后续帧一旦被确认，游标就跨过了缺口，服务端重连时从缺口之后续传，缺失的增量同样再也不会补发。玩家端在拒帧后先断开当前连接再重新取快照，避免旧连接继续推送与恢复并行。
 
-在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。跨分支快照用于切换身份与投影基线。序号和投影版本只用于同一分支内的快照顺序判定。世界 ID 不同的快照仍被拒绝。
+在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，玩家端据此更新本地会话身份，HUD 显示的分支跟随该值，不再沿用登录时写入的常量。控制台的在线分支只由宿主维护：页面可见时每 5 秒读取 `GET /api/v1/session` 核对一次，与打开哪个页面无关；侧栏与运营页展示的分支、运营页的时钟与快照列表、观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随宿主身份；身份（世界或分支任一）变化时，运营页与观测页中止在途读取、丢弃旧身份的数据，按新身份重新读取，观测页同时重新订阅。观测页收到身份与本页查询身份不一致的控制台快照时不采用帧内身份，只请求宿主立即核对。流帧与会话响应之间没有共同的先后序，两路各自写入身份时，较早发出的会话响应可能把较新的分支改回旧值。跨分支快照用于切换身份与投影基线。序号和投影版本只用于同一分支内的快照顺序判定。世界 ID 不同的快照仍被拒绝。
 
 `append` 可与对应 `delta` 共用同一 `streamSeq`。对白按 `dialogueId` 识别，派生提醒按 `playerNotificationKey` 的 `kind` 与 `text` 识别。`worldTick` 会随 tick 更新。
 
@@ -179,11 +179,11 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；`queues` 给出 `turnsQueued` 与记忆维护的 `maintenanceQueued`、`maintenanceExhausted`；尚无数据来源的 `turnsRunning`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`recentFailures` 最多 10 条。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。`hotPaths` 给出宿主在进程内按 span 名称汇总的热路径耗时，目前包括玩家投影构建 `player-projection.build` 与投影发布 `player-stream.publish`（发布包含其中的投影构建、增量比对与推送）。`count`、`errors` 自进程启动累计；`lastMs`、`p50Ms`、`p95Ms`、`maxMs` 只统计最近 `samples` 个样本（每个名称最多 256 个），单位毫秒。这些数据不写库，进程重启后清零；宿主未接入耗时汇总时省略该字段。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；`queues` 给出 `turnsQueued` 与记忆维护的 `maintenanceQueued`、`maintenanceExhausted`；尚无数据来源的 `turnsRunning`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`storage` 是可选的存储占用测量（主库页面与空闲页字节、内联与文件 artifact 正文字节、只追加表的行数、生效的保留天数与测量时刻），由存储适配器在后台每 5 分钟分块测量一次，健康接口只返回最近一次完成的结果，不统计行数；首轮测量完成前为 `null`，存储实现不提供测量时省略，字段口径见 [存储 — 占用测量](storage.md#66-占用测量)。`recentFailures` 最多 10 条。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。`hotPaths` 给出宿主在进程内按 span 名称汇总的热路径耗时，目前包括玩家投影构建 `player-projection.build` 与投影发布 `player-stream.publish`（发布包含其中的投影构建、增量比对与推送）。`count`、`errors` 自进程启动累计；`lastMs`、`p50Ms`、`p95Ms`、`maxMs` 只统计最近 `samples` 个样本（每个名称最多 256 个），单位毫秒。这些数据不写库，进程重启后清零；宿主未接入耗时汇总时省略该字段。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, maintenanceExhausted?, modelQueue? }, laggingAgents?, budgets, recentFailures, hotPaths?: { name, count, errors, samples, lastMs, p50Ms, p95Ms, maxMs }[] }` |
+| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, maintenanceExhausted?, modelQueue? }, storage?: { measuredAt, databaseBytes, freeBytes, artifactBytes: { inline, file }, tables: { table, rows }[], retention: { table, days }[] } \| null, laggingAgents?, budgets, recentFailures, hotPaths?: { name, count, errors, samples, lastMs, p50Ms, p95Ms, maxMs }[] }` |
 | `GET /modules?realm=`（已实现） | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
 | `GET /assemblies`（已实现） | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
 | `GET /assemblies/{assemblyId}`（已实现） | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |
@@ -251,7 +251,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `GET /turns`（已实现） | `runId`、`branchId`、`agentId`、`status`、`limit`（缺省 50，范围 1–200） | turn 列表 |
 | `GET /turns/{turnId}`（已实现） | — | turn 详情：frontier、各阶段 requested/resolved/effective、span、context artifact 引用、全部 model attempt、tool call（原始与视图 artifact 引用）、receipt、对白 |
 | `GET /artifacts/{artifactId}`（已实现） | `view=redacted\|raw` | 当前世界所属 run 的 artifact 正文。缺少可访问 run 时返回 `forbidden`。读取原文记一条审计生命周期事件 |
-| `GET /traces/{traceId}`（已实现） | — | span 树 |
+| `GET /traces/{traceId}`（已实现） | — | span 树；跨度已按保留期全部删除的 trace 返回 `not-found`（[存储 — 数据保留与轮转](storage.md#6-数据保留与轮转)） |
 | `GET /branches/compare`（事件差异已实现） | `left`、`right`、`atSeq` | 两个分支在相同检查点后的事件差异摘要；指标与协议差异仍待补齐 |
 | `GET /debug/queues`（已实现） | — | 调度队列、模型池队列、维护队列。模型池的排队数 `modelPool.queued` 为 `null` 表示存储无法提供该计数 |
 | `POST /debug/turns/{turnId}/replay`（hash 校验已实现） | — | 校验已归档 artifact 的规范 JSON hash；不调用模型，返回 `{ requestHashMatch, differences }` |
@@ -312,6 +312,10 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 503 | `not-ready` | 服务未就绪、分支正在静默或切换 |
 | 500 | `plugin-failed` / `provider-failed` | 未预期的模块或供应商故障；`safeMessage` 不含内部细节 |
 
+浏览器 `ApiClient`（`packages/client-protocol`）只采纳通过 `errorResponseSchema` 校验的统一错误信封。代理、静态资源层或框架在业务处理之前返回的非 2xx 没有信封，客户端按状态码兜底：400 → `validation`，401 → `unauthenticated`（同时清除本地会话令牌），403 → `forbidden`，404 → `not-found`，408 → `not-ready`，409 → `invalid-state`，429 → `budget-exhausted`，503 → `not-ready`，其余 5xx → `plugin-failed`，其余状态 → `validation`；其中 408、429、503 与其余 5xx 标记为可重试。兜底错误的 `safeMessage` 使用客户端固定文案，不取 `statusText` 或响应正文，状态码记在 `details.status`。2xx 响应体不满足对应响应 schema 时，客户端抛出不可重试的 `plugin-failed`：问题出在服务端产出的响应而不是请求本身，重试只会拿到同样的结构。Zod 的字段路径与说明只放进 `details.issues`，界面只展示 `safeMessage`。
+
+`ApiClient` 为每个请求设置期限，缺省 35 秒，可用构造参数 `requestTimeoutMs` 调整，取值必须是 1 到 2147483647（2^31−1）之间的整数毫秒，否则构造时抛出 `validation`：期限由 `setTimeout` 计时，更大的延时会溢出并几乎立即触发，小于 1 的小数会被截成 0。期限覆盖到读完响应体，因为服务端发出响应头后挂起正文同样会让调用方无限等待。缺省值略长于服务端 30 秒的处理期限：服务端仍能响应时以它返回的结构化错误为准，只有服务端挂起或连接半开时才由客户端判定超时。超期抛出可重试的 `not-ready`，`details.timeoutMs` 记录期限；登记表没有专门的超时错误码，`not-ready` 与 503 同义，表示服务当前无法处理、稍后可重试。调用方经 `AbortSignal` 取消时，客户端中止底层请求并原样抛出取消原因，不转换为领域错误，调用方据此区分“自己放弃”与请求失败。期限与取消不依赖 fetch 实现遵守 `AbortSignal`：请求与中止竞速，中止一旦发生即按来源失败（调用方取消优先于期限），忽略中止的实现迟到交付的响应头、正文或失败一律丢弃，响应头迟到时也不再读取正文。
+
 业务规则拒绝（例如资源不足、路线不可用）不使用以上 HTTP 错误：命令被受理并写入 receipt，返回 200 和 `commandStatus: "rejected"`，原因放在 `receipt.reasonCode`。下列值容易与错误码混淆，它们只以这种方式出现，客户端不要在 `error.code` 中等待它们：
 
 | `receipt.reasonCode` | 场景 |
@@ -325,7 +329,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 `traceId` 的取值分两种情况，客户端不能假定它一定对应本次请求的 span：
 
 1. `DomainError` 显式携带 `traceId` 或 `detailsArtifactRef` 时优先返回错误自身的值。这类错误可能由其他请求、后台 worker 或延迟提交产生，其 trace 指向产生错误的那个上下文，不一定能在本次 `http.request` span 下查到。
-2. 未显式携带时回落到本次请求的 trace。`onRequest` 为每个请求生成 trace，并在注入了 `recordSpan` 时登记，错误出口在构造响应时取回；该值对应本次请求写入 `trace_spans` 的 `http.request` span。
+2. 未显式携带时回落到本次请求的 trace。`onRequest` 为每个请求生成 trace，并在注入了 `recordSpan` 时登记，错误出口在构造响应时取回；该值对应本次请求写入 `trace_spans` 的 `http.request` span。部署配置了 `trace_spans` 保留期时，该 span 超过保留期后被删除，之后按该 `traceId` 查不到 span。
 
 两者都没有时字段为 `null`，不用空串冒充。传输层未注入 `recordSpan` 时请求 span 不会落库，此时不登记 trace，错误响应的 `traceId` 保持 `null`，避免给出查不到的伪标识。
 
@@ -335,7 +339,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 - 同一 `commandId` 重放得到同一 receipt；换 payload 返回 409 `idempotency-conflict`。
 - 断线后带 `fromStreamSeq` 重连，客户端投影与 `GET /world/view` 一致；缺口超过 200 时收到新快照。
 - 来自其他 Origin 的请求与 WS 握手被拒绝。
-- 任一非 2xx 响应的 `traceId` 要么能在 `trace_spans` 中查到对应的 `http.request` span（回落情形），要么是该错误自身携带的 trace（显式情形）；未注入 `recordSpan` 时为 `null`。
+- 任一非 2xx 响应的 `traceId` 要么能在 `trace_spans` 中查到对应的 `http.request` span（回落情形；配置了保留期时限于保留期内），要么是该错误自身携带的 trace（显式情形）；未注入 `recordSpan` 时为 `null`。
 - `GET /console/timeline` 的查询边界与 `timelineQuerySchema` 一致：缺省 `fromSeq`/`limit` 使用默认值，`types` 超过 20 个返回 400。
 - `GET /console/agents` 对已开局角色返回真实 `location` 与 `watermarkLag`，不用固定 `null` 与 `0` 冒充。
 - 所有接口的响应里都找不到 API 密钥、`credentialRef` 的解析值或任何 Agent 的私密记忆（玩家接口）。
@@ -424,7 +428,7 @@ interface TurnDetail extends TurnSummary {
                rawArtifactId: string | null; viewArtifactId: string | null; operationId: string | null }[];
   decision: Json | null;          // 通过校验的 decision_submit 参数
   speech: { speechArtifactId: string; text: string; fallback: boolean } | null;
-  traceId: string | null; // queued turn 尚未产生 span 时为 null
+  traceId: string | null; // queued turn 尚未产生 span，或其 span 已按保留期删除时为 null
 }
 ```
 

@@ -181,12 +181,13 @@ flowchart LR
 - 顶栏有“当前角色”下拉框，只列出会话拥有的角色；切换后所有请求都带新的 `X-Active-Role`，页面重新加载数据。
 - 导航由已装载页面模块的贡献生成，每个页面声明 `allowedRoles`，当前角色不在其中时导航项置灰并注明原因；装配里没有的页面显示“模块未装载”。
 - 页面模块只经 `client-protocol` 调用 [API](api.md) 第 5 节的接口，不直接 `fetch` 未声明的路径。
+- 在线分支身份由宿主维护：页面可见时每 5 秒读取 `GET /api/v1/session` 核对，连续失败按 2 倍退避、最长 60 秒，变化时通知侧栏与各页面。其他会话恢复存档或重新开局后，无论当前打开哪个页面，本会话都在一个核对周期内更新。身份只按服务端会话描述写入，观测页收到身份不一致的流帧时只请求宿主立即核对（见 [玩家投影与恢复](api.md#玩家投影与恢复)）。
 
 ### 10.2 各页面
 
 | 页面模块 | 角色 | 数据来源 | 视图 | 操作 |
 |---|---|---|---|---|
-| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度（待执行 turn、记忆维护排队与耗尽数）、预算消耗、最近 10 条失败、宿主热路径耗时（玩家投影构建与发布）；水位落后的 Agent 尚无数据来源，响应省略该字段 | 无 |
+| `console.health.standard` | operator、researcher | `GET /console/health`：上一次读取结束后 2 秒再读，连续失败按 2 倍退避、最长 30 秒，页面隐藏时暂停、恢复可见立即补读，卸载或切换角色时中止在途请求；页面标题取自 `GET /content` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度（待执行 turn、记忆维护排队与耗尽数）、预算消耗、最近 10 条失败、宿主热路径耗时（玩家投影构建与发布）；水位落后的 Agent 尚无数据来源，响应省略该字段 | 无 |
 | `console.module-admin.standard` | operator、researcher | `/console/modules`、`/console/assemblies*` | catalog 表（按 realm 筛选）、装配列表、各 realm 的解析结果 | 查看 catalog 与装配详情（预检、diff 与保存草稿为目标能力） |
 | `console.model-mounts.standard` | operator、researcher | `/console/model-layouts*` | 布局列表；布局详情（连接只显示适配器、主机名与 `credentialRef` 名称）；“按模型看挂载”与“按角色看路由”两个视图 | 静态校验布局草稿（保存草稿与连通性探测为目标能力） |
 | `console.faction-ops.standard` | operator | `/console/campaign/*`（`/console/ops/*`、`/console/run-requests` 为目标） | 时钟状态；存档列表（三个非人类势力席位状态、接管视图与运行申请为目标视图） | 暂停/继续/单步 N tick；存档；恢复（席位接管/交还、席位命令与运行申请审批为目标操作） |

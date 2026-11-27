@@ -102,9 +102,14 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: options.allowedOrigins }),
   });
 
-  /** 部署期参数由宿主并入模块配置：数据目录与监听设置不写进装配，也不参与冻结摘要。 */
+  /** 部署期参数由宿主并入模块配置：数据目录、保留天数与监听设置不写进装配，也不参与冻结摘要。 */
   const deploymentOverrides: Readonly<Record<string, Json>> = {
-    "platform.storage.sqlite": { dataDir },
+    "platform.storage.sqlite": {
+      dataDir,
+      ...(options.traceSpansRetentionDays === undefined
+        ? {}
+        : { retentionDays: { trace_spans: options.traceSpansRetentionDays } }),
+    },
     "transport.http-ws.fastify": transportConfig as unknown as Json,
   };
 
