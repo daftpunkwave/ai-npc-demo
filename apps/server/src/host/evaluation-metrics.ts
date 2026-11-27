@@ -2,7 +2,8 @@
  * 核心职责：从归档行聚合 run 报告的各项指标：成本、turn 时长与延迟、记忆分层、行为记录，
  * 以及行为记录需要的 artifact 正文、触发器种类与命令类型查询。
  * 交互契约：输入已读取的行集合与必要的存储事务，返回控制台报告字段；缺失字段按契约回退，不编造值。
- * 以文件存放的 artifact 正文由调用方在事务外预先装载后传入。
+ * 以文件存放的 artifact 正文由调用方在事务外预先装载后传入。行为记录只收外部输入触发的决策，
+ * 探针、调试、巡检与预期提醒这类内部唤醒不计入。
  * 约束与禁忌：不执行查询以外的工作、不写存储、不在事务内读取文件，也不为缺失的触发器或立场填默认值。
  */
 import type { Json, StorageTransaction } from "@world-prism/contracts";
@@ -53,6 +54,18 @@ export function turnDurationsOf(turns: readonly Readonly<Record<string, unknown>
   return durations;
 }
 
+/**
+ * run 自己分支上以失败或预算耗尽结束的 turn 数。
+ * 这类 turn 的触发已被消费却没有完成决策（取消的 turn 会释放触发并重新调度，不在此列），
+ * run 的轨迹因此不完整。只计 run 绑定的分支：探针沙盒里的 turn 失败已由探针的无效原因单列。
+ */
+export function failedTurnCountOf(turns: readonly Readonly<Record<string, unknown>>[], branchId: string): number {
+  return turns.filter((turn) => {
+    const status = stringCell(turn, "status");
+    return stringCell(turn, "branch_id") === branchId && (status === "failed" || status === "budget-exhausted");
+  }).length;
+}
+
 /** 延迟快照：按 turn 时长取 p50 与 p95；没有样本时为 null。 */
 export function latencyOf(durationsMs: readonly number[]): ReportLatency {
   if (durationsMs.length === 0) return { turnP50Ms: null, turnP95Ms: null };
@@ -87,10 +100,17 @@ export function memoryOf(input: {
 }
 
 /**
+ * 不属于外部输入的唤醒种类：探针与调试是测量和排障手段，巡检与预期提醒是 Agent 按自身节奏的定时唤醒。
+ * 行为记录用来比较各组对脚本外部输入的反应（评估文档第 8 节「行为记录」），这些 turn 混入会污染各组的行为分布。
+ */
+const nonExternalTriggerKinds: ReadonlySet<string> = new Set(["probe", "debug", "patrol", "prospective"]);
+
+/**
  * 行为记录：从 turn 归档的 decision artifact 与其真实触发器提取立场、理由类别与提交的命令。
  *
  * 字段都不允许填默认值：
- * - `trigger` 按 `trigger_ids_json` 的第一条 ID 查 `triggers.kind`；
+ * - `trigger` 是 `trigger_ids_json` 里第一个外部触发的 `triggers.kind`，内部唤醒排在前面时跳过它们；
+ *   触发全是内部唤醒的 turn 不进入行为记录；
  * - `stance` 与 `reasonCode` 从 decision artifact 的 `decision`/`dialogueIntent` 读取；
  * - `commands` 从 `turn.tool` 阶段归档的回执 ID 反查 `command_receipts.command_type`。
  * 任一必需字段缺失就整条跳过：编造一个触发器或立场会让报告声称发生过没发生的事情。
@@ -125,12 +145,11 @@ export function behaviorOf(input: {
       ? (intent as Readonly<Record<string, Json>>)["reasonCode"]
       : null;
     const stance = decisionRecord["stance"];
-    const triggerId = firstTriggerId(turn);
-    if (typeof stance !== "string" || typeof reasonCode !== "string" || triggerId === null) continue;
+    if (typeof stance !== "string" || typeof reasonCode !== "string") continue;
     const branchId = stringCell(turn, "branch_id");
     const agentId = stringCell(turn, "agent_id");
     if (branchId === null || agentId === null) continue;
-    const trigger = triggerKindOf(input.tx, branchId, triggerId);
+    const trigger = firstExternalTriggerKind(input.tx, branchId, turn);
     if (trigger === null) continue;
     behavior.push({
       atTick: numberCell(turn, "created_tick", 0),
@@ -171,18 +190,27 @@ export function artifactValue(
   }
 }
 
-/** 取 turn 的第一条触发器 ID；没有触发器时返回 null。 */
-export function firstTriggerId(turn: Readonly<Record<string, unknown>>): string | null {
-  const triggers = jsonCell(turn, "trigger_ids_json");
-  if (!Array.isArray(triggers)) return null;
-  const first = triggers[0];
-  return typeof first === "string" && first.length > 0 ? first : null;
-}
-
-/** 按触发器 ID 读取 `triggers.kind`；记录缺失时返回 null，调用方跳过该行为样本。 */
-export function triggerKindOf(tx: StorageTransaction, branchId: string, triggerId: string): string | null {
-  const row = tx.branch(branchId).table("triggers").get({ trigger_id: triggerId });
-  return row === null ? null : stringCell(row, "kind");
+/**
+ * 按 `trigger_ids_json` 的顺序取 turn 的第一个外部触发种类。
+ * 调度器会把同一 Agent 待处理的触发合并进一个 turn，较早的巡检或预期提醒可能排在玩家输入之前；
+ * 只看第一条会把回应玩家输入的决策整条丢掉。触发记录缺失的 ID 不能断言种类，跳过；
+ * 全部是内部唤醒或都查不到时返回 null，调用方跳过该行为样本。
+ */
+function firstExternalTriggerKind(
+  tx: StorageTransaction,
+  branchId: string,
+  turn: Readonly<Record<string, unknown>>,
+): string | null {
+  const triggerIds = jsonCell(turn, "trigger_ids_json");
+  if (!Array.isArray(triggerIds)) return null;
+  const triggers = tx.branch(branchId).table("triggers");
+  for (const triggerId of triggerIds) {
+    if (typeof triggerId !== "string" || triggerId.length === 0) continue;
+    const row = triggers.get({ trigger_id: triggerId });
+    const kind = row === null ? null : stringCell(row, "kind");
+    if (kind !== null && !nonExternalTriggerKinds.has(kind)) return kind;
+  }
+  return null;
 }
 
 /** 从 `turn.tool` 阶段归档的回执 ID 反查命令类型；同一 turn 内去重。 */

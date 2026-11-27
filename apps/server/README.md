@@ -20,10 +20,32 @@
 - `config/assemblies/*.yaml`：标准、测试与升级剧情三份装配，均包含 server、client 与 console 绑定；`check:catalog` 对三个 realm 执行能力闭包、作用域、重复绑定、拓扑与配置 schema 预检。
 - 标准与测试装配预检并冻结名册的 profile、工具集、模型挂载、提示词版本和价目。开局事务激活名册，恢复事务在切换分支时重新校验活动身份配额。标准装配支持 OpenAI 兼容和 Anthropic 传输，测试装配通过本地夹具运行模型决策、工具循环与独立对白。
 
+- 实验执行器：`POST /api/v1/console/runs/{runId}/start` 启动带脚本的闭环 run 后，宿主按启动先后逐个驱动：受控时钟推进到脚本检查点、在沙盒分支执行探针、写入 `probe_results` 与 `experiment_results`，进度经 `GET /api/v1/console/runs/{runId}/progress` 读取。语义见 [评估 — 执行器](../../docs/platform/evaluation.md#81-执行器的触发顺序与终态)。
+
 ## 尚未包含
 
-- 实验自动执行器（按脚本检查点驱动受控时钟、发起探针并写入 `probe_results`）。
+- 实验执行器的开环、审计重放与快照起步路径，以及脚本 `setup` 预置知识。
+- 释放在线世界名额的运营接口。
 - 席位契约、t144 程序案与控制台运营页面（三势力席位接管、剧情卡编辑与导出页面）。
+
+## 运行一次实验
+
+实验在宿主进程内执行，宿主必须以与实验相同的装配启动；在线世界已开局并占满 15 个名额时实验会在开局前暂停（`quota-unavailable`），因此建议使用独立数据目录且不开启在线世界。以标准装配和 OpenAI 兼容模型为例，在 `.env` 中设置：
+
+```dotenv
+WORLD_PRISM_DATA_DIR=./data/experiments
+WORLD_PRISM_ASSEMBLY=local-slg-standard-v1
+WORLD_PRISM_OPENAI_COMPAT_BASE_URL=https://api.deepseek.com/v1
+WORLD_PRISM_OPENAI_COMPAT_MODEL=deepseek-flash
+WORLD_PRISM_OPENAI_COMPAT_API_KEY=<密钥>
+```
+
+运行 `pnpm dev:server` 后，用控制台令牌登录并以研究员角色调用接口（`X-Active-Role: researcher`）：
+
+1. `POST /api/v1/auth/login`，请求体 `{ "token": "<控制台令牌>" }`，取得 `sessionToken`。
+2. `POST /api/v1/console/experiments`，请求体 `{ "experimentRef": "exp-memory-promise-v1" }`，返回 24 个 run；模型布局引用的环境变量在这一步解析并冻结。也可以提交内联 `experimentSpec`（与 `config/experiments/*.yaml` 同格式），例如把 `repetitions` 改为 1，或把 `base.modelLayoutRef` 改为 `claude-model-layout-v1`（还需 `ANTHROPIC_API_KEY`，对白与记忆整理仍走 OpenAI 兼容端点）。
+3. 对需要执行的每个 run 调用 `POST /api/v1/console/runs/{runId}/start`，请求体 `{ "operationId": "op-<12 位小写 base32>" }`；run 按启动先后排队执行。
+4. 用 `GET /api/v1/console/runs/{runId}/progress` 查看当前 tick、探针计数与最近事件；`status` 变为 `completed` 后读取 `GET /api/v1/console/runs/{runId}/report` 与 `GET /api/v1/console/experiments/exp-memory-promise-v1`。失败时 `lastEvent.payload.code` 给出原因码；run 被暂停时 `lastEvent.payload.reason` 说明是研究员停止还是配额不足。
 
 ## 运行标准装配
 

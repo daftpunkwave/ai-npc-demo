@@ -55,33 +55,26 @@ export interface RunWrites {
 
 /** 构造写入端口；各操作各自独立，互不共享中间状态。 */
 export function createRunWrites(input: RunWritesInput): RunWrites {
+  const runWrite = {
+    host: input.host,
+    storage: input.storage,
+    content: input.content,
+    definitions: input.definitions,
+    contentVersion: input.contentVersion,
+    loadRoster: input.loadRoster,
+    loadContext: input.loadContext,
+    worldId: input.worldId,
+    repoRoot: input.repoRoot,
+  };
   return {
-    createRun: (runSpec) => createRun({
-      host: input.host,
-      storage: input.storage,
-      content: input.content,
-      definitions: input.definitions,
-      contentVersion: input.contentVersion,
-      loadRoster: input.loadRoster,
-      worldId: input.worldId,
-      repoRoot: input.repoRoot,
-    }, runSpec),
+    createRun: (runSpec) => createRun(runWrite, runSpec),
     startRun: (runId, request) => startRun({ host: input.host, storage: input.storage, worldId: input.worldId }, runId, request),
     stopRun: (runId, request) => stopRun({ host: input.host, storage: input.storage, worldId: input.worldId }, runId, request),
     createExperiment: (request) => createExperiment({
       content: input.content,
       loadRoster: input.loadRoster,
       loadContext: input.loadContext,
-      runWrite: {
-        host: input.host,
-        storage: input.storage,
-        content: input.content,
-        definitions: input.definitions,
-        contentVersion: input.contentVersion,
-        loadRoster: input.loadRoster,
-        worldId: input.worldId,
-        repoRoot: input.repoRoot,
-      },
+      runWrite,
     }, request),
     exportRun: (request) => exportRun({
       host: input.host,

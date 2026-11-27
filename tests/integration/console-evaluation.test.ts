@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startHost, type RunningHost } from "@world-prism/app-server";
+import { artifactBodyText } from "@world-prism/module-sdk";
 import {
   errorResponseSchema,
   experimentDetailResponseSchema,
@@ -287,6 +288,98 @@ describe("控制台评估读取接口", () => {
     expect(after.latency.turnP95Ms).toBe(300);
   });
 
+  it("行为记录只收外部输入触发的决策，探针、调试、巡检与预期提醒的 turn 不计入", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = host.branchId;
+    const now = new Date().toISOString();
+    const kinds = ["player-dialogue", "probe", "debug", "patrol", "prospective", "agreement-proposal"] as const;
+    host.storage.transact((tx) => {
+      kinds.forEach((kind, index) => {
+        const suffix = String(index).padStart(2, "0");
+        tx.rows("artifacts").put({
+          artifact_id: `art-behaviorkind${suffix}`, run_id: runId, kind: "decision",
+          content_hash: `sha256-behaviorkind${suffix}`, mime: "application/json", byte_size: 64,
+          storage: "inline",
+          body: JSON.stringify({ decision: { stance: "accept", dialogueIntent: { reasonCode: "fair-terms" } } }),
+          file_path: null, redaction: "raw", redacted_from: null, created_at: now,
+        });
+        tx.rows("turn_runs").put({
+          turn_id: `turn-behaviorkind${suffix}`, run_id: runId, branch_id: branchId,
+          agent_id: "human-independent", agent_turn_index: index + 1, status: "completed",
+          trigger_ids_json: [`trg-behaviorkind${suffix}`], profile_hash: "hash",
+          controller_epoch: 1, turn_lease_epoch: 0, created_tick: 10 + index,
+          effective_json: [{
+            stage: "turn.decision", status: "applied", reason: null, requested: null, resolved: null,
+            effective: { artifactId: `art-behaviorkind${suffix}` }, spanId: `spn-behaviorkind${suffix}`,
+          }],
+          created_at: now, started_at: now, ended_at: now,
+        });
+        tx.branch(branchId).table("triggers").put({
+          trigger_id: `trg-behaviorkind${suffix}`, agent_id: "human-independent", kind,
+          priority: 100, source_ref: `evt-behaviorkind${suffix}`, created_tick: 10 + index,
+          dedupe_key: `behavior-kind-${suffix}`, consumed_by_turn_id: `turn-behaviorkind${suffix}`,
+        });
+      });
+    });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.behavior.map((entry) => [entry.atTick, entry.trigger])).toEqual([
+      [10, "player-dialogue"],
+      [15, "agreement-proposal"],
+    ]);
+  });
+
+  it("合并了内部唤醒与外部输入的 turn 按第一个外部触发计入行为记录，全为内部唤醒的 turn 不计入", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = host.branchId;
+    const now = new Date().toISOString();
+    // 调度器把同一 Agent 待处理的触发并进一个 turn：较早的巡检排在玩家对白之前。
+    const turns = [
+      { suffix: "00", kinds: ["patrol", "player-dialogue", "agreement-proposal"] },
+      { suffix: "01", kinds: ["prospective", "patrol"] },
+    ] as const;
+    host.storage.transact((tx) => {
+      turns.forEach(({ suffix, kinds }, index) => {
+        tx.rows("artifacts").put({
+          artifact_id: `art-mergedtrig${suffix}`, run_id: runId, kind: "decision",
+          content_hash: `sha256-mergedtrig${suffix}`, mime: "application/json", byte_size: 64,
+          storage: "inline",
+          body: JSON.stringify({ decision: { stance: "accept", dialogueIntent: { reasonCode: "fair-terms" } } }),
+          file_path: null, redaction: "raw", redacted_from: null, created_at: now,
+        });
+        tx.rows("turn_runs").put({
+          turn_id: `turn-mergedtrig${suffix}`, run_id: runId, branch_id: branchId,
+          agent_id: "human-independent", agent_turn_index: index + 1, status: "completed",
+          trigger_ids_json: kinds.map((_, position) => `trg-mergedtrig${suffix}${position}`), profile_hash: "hash",
+          controller_epoch: 1, turn_lease_epoch: 0, created_tick: 20 + index,
+          effective_json: [{
+            stage: "turn.decision", status: "applied", reason: null, requested: null, resolved: null,
+            effective: { artifactId: `art-mergedtrig${suffix}` }, spanId: `spn-mergedtrig${suffix}`,
+          }],
+          created_at: now, started_at: now, ended_at: now,
+        });
+        kinds.forEach((kind, position) => {
+          tx.branch(branchId).table("triggers").put({
+            trigger_id: `trg-mergedtrig${suffix}${position}`, agent_id: "human-independent", kind,
+            priority: 100, source_ref: `evt-mergedtrig${suffix}${position}`, created_tick: 20 + index,
+            dedupe_key: `merged-trigger-${suffix}-${position}`, consumed_by_turn_id: `turn-mergedtrig${suffix}`,
+          });
+        });
+      });
+    });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.behavior.map((entry) => [entry.atTick, entry.trigger])).toEqual([[20, "player-dialogue"]]);
+  });
+
   it("报告从归档 decision、预算账本与活动记忆行读取行为、成本与记忆", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
@@ -441,6 +534,40 @@ describe("控制台评估读取接口", () => {
       agentId: "human-independent",
       score: { kind: "recall", correct: true },
     })]);
+  });
+
+  it("实验 run 的报告按自身冻结的价目版本计费，只统计实验分支的整理任务", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: testExperimentSpec({
+        experimentId: "exp-report-scope-v1", variants: ["memory-m1-structured-ledger"], scriptBranches: ["keep"],
+      }) },
+    })).json());
+    const runId = created.runIds[0] as string;
+    const branchId = String(host.storage.transact((tx) => tx.rows("runs").get({ run_id: runId })?.["branch_id"]));
+    host.storage.transact((tx) => {
+      const run = tx.rows("runs").get({ run_id: runId });
+      if (run === null) throw new Error("run 不存在");
+      // 实验 run 选用的模型布局可能与在线世界不同：价目版本必须取自该 run 自己冻结的模型配置。
+      const manifest = run["manifest_json"] as { readonly models: Record<string, unknown> };
+      tx.rows("runs").put({ ...run, manifest_json: { ...manifest, models: { ...manifest.models, pricingVersion: "2026-11-exp" } } });
+      // 同一 run 的探针沙盒也可能排队整理任务；记忆快照只统计实验分支自己的整理。
+      for (const [maintenanceId, rowBranch] of [["mnt-aaaaaaaaaaaa", branchId], ["mnt-bbbbbbbbbbbb", "br-0000000sandb"]] as const) {
+        tx.rows("maintenance_runs").put({
+          maintenance_id: maintenanceId, run_id: runId, branch_id: rowBranch, agent_id: "human-independent",
+          module_id: "agent.memory.ledger", status: "completed", trigger: "day-passed", due_tick: 24,
+          observation_seq_through: 0, task_json: {}, base_revision: 0, lease_epoch: 1, lease_expires_at: null,
+          error_json: null, created_at: new Date().toISOString(), ended_at: new Date().toISOString(),
+        });
+      }
+    });
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.cost.pricingVersion).toBe("2026-11-exp");
+    expect(report.memory.maintenanceRuns).toBe(1);
   });
 
   it("缺脚本声明的探针计入证据不完整，非法 JSON 不使读取失败", async () => {
@@ -1133,6 +1260,38 @@ describe("控制台评估读取接口", () => {
     const parsed = exportResponseSchema.parse(exported.json());
     // 导出产出一个 artifact 标识，调用方据此取包；正文不进响应。
     expect(parsed.artifactId).toMatch(/^art-/);
+  });
+  it("写成 JSON 的探针回答在脱敏导出里整列清空，不按键名放过其中的字段", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = runCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/runs", headers,
+      payload: { runSpec: testRunSpec({ id: "export-json-answer" }) },
+    })).json());
+    // 回答正文恰好是 JSON：`plan` 不是敏感键也不是正文键名，先解析再脱敏会把它原样带出。
+    host.storage.transact((tx) => {
+      tx.rows("probe_results").put({
+        probe_result_id: "prb-jsonanswer01", run_id: created.runId, script_id: "s-promise", probe_id: "p-recall-promise",
+        agent_id: "human-independent", asked_at_tick: 62, answer_text: "{\"plan\":\"PRIVATE-PLAN-背叛玩家\"}",
+        decision_json: null, score_json: null, valid: 1, invalid_reason: null, created_at: new Date().toISOString(),
+      });
+    });
+    const exportedRows = async (redaction: "redacted" | "raw") => {
+      const response = await host.app.inject({
+        method: "POST", url: "/api/v1/console/exports", headers, payload: { runId: created.runId, redaction },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const { artifactId } = exportResponseSchema.parse(response.json());
+      const row = host.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
+      if (row === null) throw new Error("导出 artifact 不存在");
+      const text = artifactBodyText(host.storage, row);
+      return { text, probeResults: (JSON.parse(text) as { readonly probeResults: readonly Record<string, unknown>[] }).probeResults };
+    };
+    const redacted = await exportedRows("redacted");
+    expect(redacted.probeResults.map((row) => [row["probe_result_id"], row["answer_text"]])).toEqual([["prb-jsonanswer01", null]]);
+    expect(redacted.text).not.toContain("PRIVATE-PLAN");
+    // raw 保留正文：差异只来自脱敏级别，而不是回答没有写进导出。
+    expect((await exportedRows("raw")).text).toContain("PRIVATE-PLAN");
   });
   it("导出未知 run 返回 not-found", async () => {
     const host = await testHost();

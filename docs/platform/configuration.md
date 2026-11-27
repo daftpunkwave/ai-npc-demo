@@ -66,7 +66,7 @@ failurePolicy: strict
 
 这是目标格式，引用内容与模块必须在实现时实际存在并通过 schema 与能力校验。clock.kind 表示所选时钟模块声明支持的运行模式，不会因此切到另一套隐式时钟实现。对 console/UI 贡献的选择也进入 assembly 版本，不能靠隐藏的硬编码菜单补足缺模块。
 
-每个新实验 run 独占 branchId，不允许指定复用活动分支。当前 schema 只接受两种 mode：live 接收自由玩家输入，对应 `clock.kind: realtime`；closed-loop 对应实验分支，要求 `clock.kind: controlled`。mode 与 clock.kind 必须成对匹配，预检拒绝不匹配的组合。audit 与 open-loop 依赖尚未实现的实验执行器，`initialState` 目前只接受 `cold-start`；快照与记忆重建的取值同样在执行器落地前被拒绝，避免配置写错却静默按冷启动执行。玩家设置与 console 布局不属于 RunSpec；它们可即时生效，但不能改变 assembly、规则或世界状态。
+每个新实验 run 独占 branchId，不允许指定复用活动分支。当前 schema 只接受两种 mode：live 接收自由玩家输入，对应 `clock.kind: realtime`；closed-loop 对应实验分支，要求 `clock.kind: controlled`。mode 与 clock.kind 必须成对匹配，预检拒绝不匹配的组合。实验执行器目前只实现闭环冷启动（[评估](evaluation.md) 第 8.1 节）：audit 与 open-loop 没有执行路径，`initialState` 只接受 `cold-start`；快照与记忆重建的取值同样被拒绝，避免配置写错却静默按冷启动执行。玩家设置与 console 布局不属于 RunSpec；它们可即时生效，但不能改变 assembly、规则或世界状态。
 
 ## 4. 双端设置分工
 
@@ -350,7 +350,7 @@ repetitions: 3
 runOrder: rotate               # rotate the variant order on each repetition
 ```
 
-实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）只把 run 置为 `running` 并初始化该分支时钟，按展开顺序自动驱动整轮实验的执行器尚未实现，启动后不会自行推进到脚本检查点，见 [实现状态](../IMPLEMENTATION-STATUS.md)。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 当前只接受 `cold-start`（从内容包初态开始）；`snapshot`（引用快照）与 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）依赖尚未实现的实验执行器，预检会拒绝。在线 RunSpec 模板放在 `config/runs/`：`config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用），与实验规格分目录存放。
+实验按“变体 × 脚本分支 × 重复次数”展开 run（上例为 24 个；若 `scriptBranches` 为空如 `exp-memory-rumor-v1`、`exp-memory-secret-v1`，则按每个变体每重复一次生成 12 个），并按展开顺序逐个创建：每个 run 单独走预检、独占一个分支，某个 run 预检失败不影响后续创建。预检在冻结 manifest 时一并解析并冻结名册内每个 Agent 的 profile、工具集与模型挂载（`agentProfiles`、`models`），因此模型布局引用的环境变量（如 `WORLD_PRISM_OPENAI_COMPAT_BASE_URL`、`WORLD_PRISM_OPENAI_COMPAT_MODEL`）必须在创建 run 时就已设置，缺失时该 run 以 `agent-configuration-invalid` 预检失败。创建只写入 run 与分支记录，不推进时钟；启动（`POST /runs/{runId}/start`）把 run 置为 `running`、初始化该分支时钟并唤醒实验执行器，执行器按启动先后逐个驱动 run 到脚本终点（[评估](evaluation.md) 第 8.1 节），整轮实验需要逐个启动展开出的 run。执行器在宿主进程内运行，宿主必须以与 run 相同的装配启动（例如标准装配的实验在 `WORLD_PRISM_ASSEMBLY=local-slg-standard-v1` 的宿主上执行），模型布局则由各 run 自己的 `modelLayoutRef` 决定，与在线世界使用的布局无关。每个 run 的 `variant.profilePatchRefs = [...commonPatchRefs, 该变体]`，`seed = base.seed + ":rep" + 重复序号`（同一次重复的各变体相同，便于配对比较）。`initialState.kind` 当前只接受 `cold-start`（从内容包初态开始）；`snapshot`（引用快照）与 `rebuild`（从快照中的合法观察重建记忆，见 [记忆](../agent/memory.md) 第 9 节）没有执行路径，预检会拒绝。在线 RunSpec 模板放在 `config/runs/`：`config/runs/online-default.yaml` 与 `config/runs/online-model-test.yaml`（夹具传输在线测试用），与实验规格分目录存放。
 
 ### 10.4 玩家测试 preset `config/presets/*.yaml`（目标，尚未创建）
 
@@ -368,7 +368,7 @@ runSpecTemplate:
   initialState: { kind: snapshot, snapshotRef: latest }
 ```
 
-玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。该 preset 依赖 `initialState.kind: snapshot`，需等实验执行器实现后才可用；当前 schema 会拒绝该取值。
+玩家只能提交申请；运营在控制台批准后，服务端以当前在线分支的最新快照为起点创建 run（`snapshotRef: latest`），在线世界不受影响。该 preset 依赖 `initialState.kind: snapshot`，实验执行器目前只支持冷启动，需等从快照起步的执行路径实现后才可用；当前 schema 会拒绝该取值。
 
 ### 10.5 价目 `config/pricing*.yaml`
 

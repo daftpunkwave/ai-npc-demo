@@ -25,6 +25,9 @@ import {
   stringValue,
 } from "./runtime-records";
 
+/** 感知消费者在 consumer_offsets 中的登记 ID；受控推进按它判断感知是否已追平事件前沿。 */
+export const perceptionConsumerId = "agent.perception.local";
+
 export interface EventConsumerInput {
   readonly storage: StoragePort;
   readonly host: HostServices;
@@ -67,7 +70,7 @@ export class PerceptionEventConsumer {
   ) {}
 
   async consume(worldTick: number): Promise<void> {
-    const consumerId = "agent.perception.local";
+    const consumerId = perceptionConsumerId;
     const events = this.input.storage.transact((tx) => {
       const offset = tx.branch(this.input.branchId).table("consumer_offsets").get({ consumer_id: consumerId });
       return tx.all(

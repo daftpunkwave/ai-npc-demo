@@ -571,6 +571,8 @@ CREATE TABLE probe_results (
 );
 ```
 
+`probe_results` 由 agent-runtime 写入：探针 turn 在 speaking 阶段写入回答（模型路径退回安全模板记 `speech-fallback`，严格失败策略下模型被替换记 `model-substituted`），没有对白意图时写入 `no-dialogue`；实验执行器在探针 turn 失败或未被调度时补写 `turn-failed`，对白写入后 turn 在结算阶段失败的把该行改判为无效。执行器按 `run_id` 与 `probe_id` 判断探针是否已有结果，已有结果的探针在恢复执行时不重复提问；结果是否已按 turn 终态落定以实验分支上的 `ExperimentProbeCompleted` 审计为准，只有回答行而未落定的，按当时沙盒里 turn 的终态补判（未到 `completed` 改判 `turn-failed`）；读取方直接采用 `valid` 与 `invalid_reason`。`experiment_results` 由实验执行器在 run 完成时按评估报告口径逐指标写入，`details_json` 记录变体、脚本分支、有效性与无效样本计数；两张表都按 `run_id` 归档，不随分支复制。
+
 L6 公共编年史以 `agent_id = '~public'` 在分支内保存单份记录。公共行使用分支公共版本，不能与某个 Agent 的局部 `revision` 比较。每个记忆 revision 持久保存当时的 `public_revision`；读取时只合并该边界可见的活动公共版本，检索同时按查询 `worldTick` 过滤有效时间。之后发布的公共行不会改变旧视图。公共行提交在同一事务内校验记录种类、公开策略、所有来源观察及来源事件键，并按分支和规范化事件键去重。引用其他 Agent 的公共来源时，只接受冻结公共视图中已绑定且确实为公开观察的来源。
 
 ### 2.1 后续迁移
@@ -651,8 +653,9 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 |---|---|
 | 快照 | 先按 [运营](../platform/operations.md) 第 3 节静默源分支，再 `forkBranch(src, snap, 'snapshot')`，新分支 `status = 'frozen'`，写 `snapshots` 行 |
 | 从快照恢复在线世界 | `forkBranch(snap, new, 'online')` → 预检 → 在同一事务中：先将旧在线分支设为 archived、其激活状态置为 dormant，再按名册预留配额并把新分支名册内 Agent 置为 active，最后切换 `world_aliases('online')`（配额不足则整个事务回滚，旧分支与别名保持不变） |
-| 创建实验 run | 冷启动：新建空分支（时钟 paused、tick 0），由运行器以 `player-1` 身份提交 `campaign.start`；从快照：`forkBranch(snap, exp, 'experiment', runId)`，再按名册激活。每个 run 一个分支 |
-| 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入 |
+| 创建实验 run | 冷启动：新建空分支，启动时写入 tick 0 时钟，由运行器以 `player-1` 身份提交 `campaign.start` 并在同一事务内按名册激活（已实现）；从快照：`forkBranch(snap, exp, 'experiment', runId)`，再按名册激活（未实现）。每个 run 一个分支 |
+| 检查点探针沙盒 | 实验分支在检查点暂停并休眠名册后，`forkBranch(exp, sandbox, 'sandbox')`，同一事务只激活被提问的 Agent（计入配额，不足则整体回滚）；探针结束后休眠该身份、分支设为 archived，不再写入（已实现） |
+| 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入（开环模式未实现） |
 | 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `world-prism-<UTC时间>[-<label>].<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `world-prism-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
 
 快照行的 `world_tick` 与 `world_seq` 是源分支在复制时刻的检查点，恢复预检再用同样的来源核对冻结分支是否仍与快照行一致。存档模块不直接读取这两类事实所在的表，两项查询都由宿主组合根在绑定存档端口时注入：`world_tick` 取宿主以时钟端口 `GameClockPort.readInTransaction` 提供的分支 tick 查询，`world_seq` 取 authority 的分支事件前沿查询 `branchEventFrontier`（该分支 `domain_events` 的最大 `world_seq`，没有事件时为 0）。两者都在存档操作所在的同一存储事务内读取。它们不经存档模块的 `requires` 解析，存档模块描述符只依赖 `platform.storage`，模块目录摘要与已冻结 run 的 manifest 不因此变化。

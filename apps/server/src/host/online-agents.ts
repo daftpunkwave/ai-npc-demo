@@ -3,11 +3,11 @@
  * 使用已冻结配置、已启动的依赖端口和权威命令网关。
  * 分支切换后，旧实例及其租约不得继续提交世界动作或对白。
  */
-import { AgentRuntime, type SpeechApprovalIndex } from "@world-prism/agent-runtime";
+import type { AgentRuntime, SpeechApprovalIndex } from "@world-prism/agent-runtime";
 import { readBranch, type Authority } from "@world-prism/authority";
 import type { StartedInstances } from "@world-prism/kernel";
 import { startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
-import { agentWorldReaders } from "./agent-world-read";
+import { openBranchAgentRuntime } from "./branch-agent-runtime";
 import type { HostStartup } from "./startup";
 import { disposeInReverse, settleWithin } from "./dispose";
 import type { LiveRunState } from "./live-state";
@@ -144,7 +144,7 @@ export class OnlineAgentHost {
 
   private async openBranch(scope: { readonly worldId: string; readonly branchId: string }): Promise<BranchAgents> {
     const { core, reads, authority, approvals, onStateChange } = this.options;
-    const { host, storage, content, gameContent, activeStartup } = core;
+    const { host, storage, content, activeStartup } = core;
     const agents = core.active.agents;
     if (agents === null) throw new Error("Agent run is not configured");
     const runId = storage.transact((tx) => readBranch(tx, scope.branchId)?.runId ?? null);
@@ -152,27 +152,14 @@ export class OnlineAgentHost {
     const running = [...core.storageStarted.instances, ...core.startedModules.instances];
     const prepared = scope.branchId === core.active.branchId ? this.initialModules : null;
     if (prepared !== null) this.initialModules = null;
-    const { started: modules, tools, scheduling, model, maxConcurrentTurns, patrolHour } = prepared ??
+    const runModules = prepared ??
       await startAgentRunModules({ plan: activeStartup.plan, configuration: agents, content, host, scope, running });
+    const modules = runModules.started;
     try {
-      const read = agentWorldReaders({ storage, reads, content: gameContent, scope });
-      const ports = Object.fromEntries([...running, ...modules.instances]
-        .flatMap((instance) => (agents.modules.get(instance.moduleId)?.provides ?? [])
-          .map(({ capability }) => [capability, instance.port])));
-      const runtime = new AgentRuntime({
-        ...scope, runId, storage, host, content,
-        roster: agents.roster, profiles: agents.profiles, moduleDefinitions: agents.modules,
-        scheduling, maxConcurrentTurns,
-        ...(patrolHour === undefined ? {} : { patrolHour }),
-        readWorlds: read.perception, onStateChange,
-        turnExecution: {
-          runSeed: core.active.runSpec.seed, profileHashes: agents.profileHashes, tools,
-          approvals, readWorld: read.decision, ports, model,
-          recordSpan: (span) => core.runtime.observability.recordSpan(span),
-          executeCommand: (auth, envelope, operationId) => authority.commands.execute(auth, envelope, { operationId }),
-        },
+      const runtime = await openBranchAgentRuntime({
+        core, reads, authority, approvals, agents, modules: runModules, scope, runId,
+        runSeed: core.active.runSpec.seed, onStateChange,
       });
-      await runtime.start();
       return { branchId: scope.branchId, modules, runtime };
     } catch (error) {
       try {

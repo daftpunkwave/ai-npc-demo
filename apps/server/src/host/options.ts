@@ -60,4 +60,9 @@ export interface HostOptions {
    * 缺省使用与租约期限解耦的默认值，避免单个卡住的 turn 无限拖住进程退出。
    */
   readonly shutdownDrainMs?: number;
+  /**
+   * 实验执行器单个 tick 或探针等待收敛的上限（毫秒），超过即把该 run 记为 settle-timeout 失败。
+   * 缺省使用宿主默认值；测试可缩短以验证积压失败路径。
+   */
+  readonly experimentSettleTimeoutMs?: number;
 }

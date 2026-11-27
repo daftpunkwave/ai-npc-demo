@@ -172,4 +172,4 @@ artifact 正文按存储适配器配置 `inlineArtifactMaxBytes`（缺省 65536 
 
 1. 查询 `GET /artifacts/{artifactId}?view=redacted` 时按内容包秘密列表将秘密正文替换为 `[SECRET <secretId> len=N]`。
 2. 凭据字段在写入模型 attempt 与导出时掩码或清空，防止凭据原文进入可观测数据。
-3. `POST /exports` 设为 `redacted` 时清空正文字段并保留元数据与哈希，设为 `raw` 时保留正文（同样不输出凭据解析值）。
+3. `POST /exports` 设为 `redacted` 时清空正文字段并保留元数据与哈希，设为 `raw` 时保留正文（同样不输出凭据解析值）。正文列（如探针回答 `answer_text`）按列整列清空，内容恰好写成 JSON 时也不先解析再按键名放行。
