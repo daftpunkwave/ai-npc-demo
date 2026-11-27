@@ -1,9 +1,31 @@
 /**
  * 提供游戏模块的内容索引收窄断言与派系驻地解析。
- * 依赖 module-sdk 的内容视图类型；只做结构断言与纯函数解析，不读取 YAML 或磁盘。
+ * 依赖 module-sdk 的内容视图类型；结构断言按 ReadonlyMap 接口能力检查各固定索引，不要求 Map 实例；
+ * 只做结构断言与纯函数解析，不读取 YAML 或磁盘。
  * 禁止在这里修补缺失内容、生成默认业务值或替代启动时的内容校验。
  */
 import type { GameContent, GameFaction } from "./game-ports";
+
+/**
+ * 判断值是否满足 ReadonlyMap 接口：size 为数字、可迭代且具备全部读取方法。
+ * 类型契约只要求 ReadonlyMap，因此不按 Map 实例判断，自定义实现同样可以通过。
+ */
+function isReadonlyMap(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<ReadonlyMap<unknown, unknown>>;
+  return (
+    typeof candidate.size === "number" &&
+    typeof candidate[Symbol.iterator] === "function" &&
+    typeof candidate.get === "function" &&
+    typeof candidate.has === "function" &&
+    typeof candidate.keys === "function" &&
+    typeof candidate.values === "function" &&
+    typeof candidate.entries === "function" &&
+    typeof candidate.forEach === "function"
+  );
+}
 
 /**
  * 把宿主注入的内容索引收窄为游戏端口视图；调用方必须在启动时完成真实内容校验。
@@ -15,15 +37,15 @@ export function requireGameContent(content: unknown): GameContent {
   }
   const candidate = content as Partial<GameContent>;
   if (
-    !(candidate.nodes instanceof Map) ||
-    !(candidate.roads instanceof Map) ||
-    !(candidate.factions instanceof Map) ||
-    !(candidate.characters instanceof Map) ||
-    !(candidate.stockpiles instanceof Map) ||
-    !(candidate.teams instanceof Map) ||
-    !(candidate.groups instanceof Map) ||
-    !(candidate.evidence instanceof Map) ||
-    !(candidate.starts instanceof Map)
+    !isReadonlyMap(candidate.nodes) ||
+    !isReadonlyMap(candidate.roads) ||
+    !isReadonlyMap(candidate.factions) ||
+    !isReadonlyMap(candidate.characters) ||
+    !isReadonlyMap(candidate.stockpiles) ||
+    !isReadonlyMap(candidate.teams) ||
+    !isReadonlyMap(candidate.groups) ||
+    !isReadonlyMap(candidate.evidence) ||
+    !isReadonlyMap(candidate.starts)
   ) {
     throw new TypeError("内容索引缺少游戏模块所需的固定索引");
   }
