@@ -1,6 +1,7 @@
 /**
  * 核心职责：作为宿主 tracer 的生产实现，按 span 名称在进程内汇总同步回调的耗时，供控制台健康页读取热路径耗时。
- * 交互契约：span 用注入的单调时钟计时；回调抛错时照样记录耗时、计入失败次数，再把原错误抛出。每个名称只保留
+ * 交互契约：span 用注入的单调时钟计时；回调抛错时照样记录耗时、计入失败次数，再把原错误抛出。读取时钟本身失败时
+ *   只放弃这一次计时，回调照常执行，结果与错误都原样交给调用方。每个名称只保留
  *   最近 windowSize 个样本；summaries 按名称排序，给出自进程启动以来的次数与失败次数，以及窗口内的最近值、
  *   中位数、p95 与最大值（毫秒）。
  * 约束与禁忌：只在内存中保存，不写存储、不做 I/O，进程重启即清零；不保存 attrs。名称数量有上限，超出上限的新名称
@@ -90,16 +91,31 @@ export function createSpanTimings(options: SpanTimingsOptions): SpanTimings {
     }
   };
 
+  /** 读取时钟；失败时返回 undefined。计时是旁路观测，不能让时钟故障改变被计时代码的结果或掩盖它的错误。 */
+  const readClock = (): number | undefined => {
+    try {
+      return options.now();
+    } catch {
+      return undefined;
+    }
+  };
+
   return {
     span<T>(name: string, _attrs: Json, fn: () => T): T {
-      const startedAt = options.now();
+      const startedAt = readClock();
+      if (startedAt === undefined) {
+        return fn();
+      }
       let failed = true;
       try {
         const result = fn();
         failed = false;
         return result;
       } finally {
-        record(name, options.now() - startedAt, failed);
+        const endedAt = readClock();
+        if (endedAt !== undefined) {
+          record(name, endedAt - startedAt, failed);
+        }
       }
     },
     summaries(): readonly ConsoleHotPathTiming[] {

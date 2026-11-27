@@ -90,6 +90,26 @@ describe("进程内耗时汇总", () => {
     ]);
   });
 
+  it("时钟读取失败只放弃本次计时，不改变回调结果，也不掩盖回调错误", () => {
+    let reads = 0;
+    // 第 2 次读取（第一次 span 结束时）与第 3 次读取（第二次 span 开始时）抛错。
+    const timings = createSpanTimings({
+      now: () => {
+        reads += 1;
+        if (reads === 2 || reads === 3) {
+          throw new Error("时钟故障");
+        }
+        return reads;
+      },
+    });
+    const failure = new Error("回调错误");
+    expect(() => timings.span("first", {}, () => {
+      throw failure;
+    })).toThrow(failure);
+    expect(timings.span("second", {}, () => "ok")).toBe("ok");
+    expect(timings.summaries()).toEqual([]);
+  });
+
   it("窗口与名称上限必须是正整数", () => {
     expect(() => createSpanTimings({ now: () => 0, windowSize: 0 })).toThrow(RangeError);
     expect(() => createSpanTimings({ now: () => 0, maxNames: 1.5 })).toThrow(RangeError);
