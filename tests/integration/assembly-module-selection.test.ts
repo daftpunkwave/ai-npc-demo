@@ -23,6 +23,7 @@ import {
 import { toGameContent } from "@world-prism/app-server/content";
 import type { GameContent, GameResourcesPort, WorldTx } from "@world-prism/module-sdk";
 import { loadContentPack } from "@world-prism/experiment";
+import { gameToolsModuleDefinition } from "@world-prism/mod-agent-tools-game-tools";
 import { createFakeHost } from "./authority-support";
 import { createMemoryTx } from "./game-support";
 
@@ -178,6 +179,35 @@ describe("装配驱动的模块选择与启动", () => {
       await started.started.dispose();
       await started.storageStarted.dispose();
     }
+  });
+
+  it("agent.tools 换成其他模块时，宿主按能力把内容包工具描述注入新 provider 的配置", async () => {
+    const content = loadContentPack("content", "earth-2964-v1");
+    // 与共享工具模块契约相同、只换模块 ID 的替代 provider；宿主不应因模块 ID 不同而跳过注入。
+    const alternative = {
+      ...gameToolsModuleDefinition,
+      id: "agent.tools.alternative-tools",
+      sourceModuleId: gameToolsModuleDefinition.id,
+    };
+    const base = loadAssembly("local-slg-standard-v1");
+    const swapped: AssemblyDescriptor = {
+      ...base,
+      realms: {
+        ...base.realms,
+        server: {
+          ...base.realms.server,
+          bindings: base.realms.server.bindings.map((binding) =>
+            binding.capability === "agent.tools" ? { ...binding, moduleId: alternative.id } : binding,
+          ),
+        },
+      },
+    };
+    const resolved = await resolveServerAssembly(swapped, [...serverModuleDefinitions, alternative], { content });
+    const moduleIds = resolved.plan.modules.map((module) => module.moduleId);
+    expect(moduleIds).toContain(alternative.id);
+    expect(moduleIds).not.toContain(gameToolsModuleDefinition.id);
+    expect(resolved.plan.modules.find((module) => module.moduleId === alternative.id)?.config)
+      .toEqual({ toolDescriptions: content.prompts.toolDescriptions });
   });
 
   it("资源阈值取自装配有效配置并影响库存等级判定", async () => {
