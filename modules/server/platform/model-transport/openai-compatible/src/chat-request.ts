@@ -10,6 +10,12 @@ import { z } from "zod";
 export const openAIParameters = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokensField: z.enum(["max_tokens", "max_completion_tokens"]).default("max_tokens"),
+  /**
+   * 推理开关，按 DeepSeek 兼容格式发送为 `{"thinking":{"type":...}}`；省略时不发送，由供应商默认行为决定。
+   * 默认开启推理的模型把推理 token 计入 `max_tokens`，较小的用途上限会在输出 JSON 前被截断，
+   * 因此只开放这一个枚举字段，不接受任意线协议参数。
+   */
+  thinking: z.enum(["disabled", "enabled"]).optional(),
 }).strict();
 
 function toChatMessage(message: NormalizedMessage, replay: ModelCapabilities["assistantReplay"]): Json {
@@ -59,6 +65,7 @@ export function chatRequest(request: ModelRequest, connection: ModelConnectionIn
     }),
     ...(responseFormat === undefined ? {} : { response_format: responseFormat }),
     ...(parameters.data.temperature === undefined ? {} : { temperature: parameters.data.temperature }),
+    ...(parameters.data.thinking === undefined ? {} : { thinking: { type: parameters.data.thinking } }),
     [parameters.data.maxTokensField]: request.maxOutputTokens,
     stream: false,
   };
