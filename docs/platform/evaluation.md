@@ -194,7 +194,7 @@ WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS=deepseek/deepseek-flash
 ```
 
 1. 用新的数据目录启动宿主，不开局在线世界。`WORLD_PRISM_MODEL_LAYOUT` 也要指向网关布局：首次启动时，在线 run 按这个变量选择的布局预检，若沿用共享布局，价目记录的模型名不一致，启动会失败。
-2. 以研究员身份调用 `POST /api/v1/console/experiments`，提交内联 `{ "experimentSpec": ... }`。规格内容与 `config/experiments/exp-memory-promise-v1.yaml` 相同，只改三处：`base.modelLayoutRef` 改为 `openai-compatible-gateway-layout-v2`；`commonPatchRefs` 设为 `[budget-real-model]`；`base.budget.maxTokens` 设为 2000000。真实模型的 Agent 会互发消息、相互唤醒，平台基线的每 Agent 每日 6 万 token 不够用；冒烟中第 3 天额度耗尽，导致回答探针的 turn 失败。`experimentId` 不变，展开出同样的 24 个 run，seed 也相同。每个 run 创建时把网关布局、价目版本，以及解析后的 `thinking` 与 `servedModels` 冻结进 manifest；启动时复算并核对 `manifest_hash`，创建后改动这些变量会让该 run 记为 `manifest-mismatch`。
+2. 以研究员身份调用 `POST /api/v1/console/experiments`，提交内联 `{ "experimentSpec": ... }`。规格内容与 `config/experiments/exp-memory-promise-v1.yaml` 相同，只改三处：`base.modelLayoutRef` 改为 `openai-compatible-gateway-layout-v2`；`commonPatchRefs` 设为 `[budget-real-model]`；`base.budget.maxTokens` 设为 5000000。真实模型的 Agent 会互发消息、相互唤醒：冒烟中，每个 Agent 每天要调用 90 到 110 次，平台基线的每日 6 万 token 远远不够。变体把每日上限提高到 50 万；3 个 Agent 跑 3 天最多约 450 万 token，所以单 run 总预算设为 500 万。按估算价目，单 run 约 0.5 美元以上。`experimentId` 不变，展开出同样的 24 个 run，seed 也相同。每个 run 创建时把网关布局、价目版本，以及解析后的 `thinking` 与 `servedModels` 冻结进 manifest；启动时复算并核对 `manifest_hash`，创建后改动这些变量会让该 run 记为 `manifest-mismatch`。
 3. 同一数据目录中已有同一 `experimentId` 的 run 时，创建请求按 RunSpec 的 `id` 原样返回这些 run，不会按新布局重建。换布局重跑必须使用新的数据目录。
 4. 按第 8.1 节逐个启动 run，读取进度、报告与实验汇总。响应报告的名称命中别名的 attempt 不记 `model-substituted`，span 的 `reason` 为 `served-model-alias`；其他名称仍记替换，严格实验中受影响的探针记为无效（[模型池](../agent/model-pool.md#125-记录)）。
 
