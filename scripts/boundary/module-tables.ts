@@ -5,7 +5,8 @@
  * 表引用有两类：存储事务的 `.table("t")`/`.rows("t")` 调用，以及字符串字面量中 SQL 的
  * FROM/JOIN/INTO/UPDATE 子句（含 FROM 后的逗号表列表）；注释由 lexer 去除，表值函数与 CTE 名不算表。
  * 约束与禁忌：只扫描 modules/server 下各模块的 src，不覆盖宿主与固定机制包；
- * SQL 关键字按仓库约定的大写识别，以 SQL 动词开头的字符串额外按大小写不敏感识别，普通英文文本不被当成 SQL。
+ * SQL 关键字按仓库约定的大写识别，以 SQL 动词开头的字符串额外按大小写不敏感识别，普通英文文本不被当成 SQL；
+ * 标识符、别名、逗号与语句开头逐字符读取，不用带回溯的正则，扫描耗时与输入长度成线性。
  */
 import { extname } from "node:path";
 import {
@@ -34,16 +35,70 @@ interface ParsedTableName {
 }
 
 const TABLE_ACCESSOR_PATTERN = /\.\s*(?:table|rows)\s*\(\s*/g;
-const STATEMENT_START_PATTERN = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|REPLACE|WITH)\b/i;
 // eslint-disable-next-line security/detect-unsafe-regex -- 输入是仓库内源码字符串，可选分支为固定关键字，无嵌套量词。
 const UPPERCASE_CLAUSE_PATTERN = /\b(FROM|JOIN|INTO|UPDATE(?:\s+OR\s+(?:ROLLBACK|ABORT|REPLACE|FAIL|IGNORE))?)\s+/g;
 // eslint-disable-next-line security/detect-unsafe-regex -- 同上，只是大小写不敏感的同一模式。
 const ANY_CASE_CLAUSE_PATTERN = /\b(FROM|JOIN|INTO|UPDATE(?:\s+OR\s+(?:ROLLBACK|ABORT|REPLACE|FAIL|IGNORE))?)\s+/gi;
 // eslint-disable-next-line security/detect-unsafe-regex -- 列清单括号内不含括号，量词不嵌套。
 const CTE_NAME_PATTERN = /\b([A-Za-z_]\w*)\s*(?:\([^()]*\)\s*)?AS\s*\(/gi;
-const IDENTIFIER_PATTERN = /^[A-Za-z_]\w*/;
-// eslint-disable-next-line security/detect-unsafe-regex -- 别名只匹配一个可选 AS 与单个标识符。
-const ALIAS_PATTERN = /^\s+(?:AS\s+)?[A-Za-z_]\w*/i;
+const STATEMENT_KEYWORDS: ReadonlySet<string> = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "REPLACE", "WITH"]);
+
+function isIdentifierStart(char: string | undefined): boolean {
+  return char !== undefined && (char === "_" || (char >= "A" && char <= "Z") || (char >= "a" && char <= "z"));
+}
+
+function isIdentifierPart(char: string | undefined): boolean {
+  return isIdentifierStart(char) || (char !== undefined && char >= "0" && char <= "9");
+}
+
+/** 单个字符是否为空白；与正则 `\s` 使用同一空白集合。 */
+function isWhitespace(char: string | undefined): boolean {
+  return char !== undefined && char.trim().length === 0;
+}
+
+function skipWhitespace(text: string, at: number): number {
+  let cursor = at;
+  while (isWhitespace(text[cursor])) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+/** 读取 at 处的 SQL 标识符：字母或下划线开头，其后为字母、数字或下划线；不是标识符时返回 undefined。 */
+function readIdentifier(text: string, at: number): string | undefined {
+  if (!isIdentifierStart(text[at])) {
+    return undefined;
+  }
+  let end = at + 1;
+  while (isIdentifierPart(text[end])) {
+    end += 1;
+  }
+  return text.slice(at, end);
+}
+
+/** 字符串是否以 SQL 语句动词开头（忽略前导空白与大小写，动词后必须是标识符边界）。 */
+function startsWithStatement(sql: string): boolean {
+  const word = readIdentifier(sql, skipWhitespace(sql, 0));
+  return word !== undefined && STATEMENT_KEYWORDS.has(word.toUpperCase());
+}
+
+/** FROM 子句中表名后别名占用的长度：至少一个空白，可选 `AS` 加空白，再接一个标识符；没有别名时为 0。 */
+function aliasLength(rest: string): number {
+  const start = skipWhitespace(rest, 0);
+  const first = start === 0 ? undefined : readIdentifier(rest, start);
+  if (first === undefined) {
+    return 0;
+  }
+  const afterFirst = start + first.length;
+  if (first.toUpperCase() === "AS") {
+    const nameStart = skipWhitespace(rest, afterFirst);
+    const name = nameStart === afterFirst ? undefined : readIdentifier(rest, nameStart);
+    if (name !== undefined) {
+      return nameStart + name.length;
+    }
+  }
+  return afterFirst;
+}
 
 /**
  * 读取 SQL 文本中 at 处的表名：允许 `"t"`、`[t]` 与 `schema.t` 写法；`${` 开头视为动态表名。
@@ -57,14 +112,15 @@ function readTableName(sql: string, at: number, columnListMayFollow: boolean): P
   while (sql[cursor] === "\\" || sql[cursor] === "\"" || sql[cursor] === "[") {
     cursor += 1;
   }
-  let identifier = IDENTIFIER_PATTERN.exec(sql.slice(cursor))?.[0];
+  let identifier = readIdentifier(sql, cursor);
   if (identifier === undefined) {
     return undefined;
   }
   cursor += identifier.length;
-  if (sql[cursor] === "." && IDENTIFIER_PATTERN.test(sql.slice(cursor + 1))) {
-    identifier = IDENTIFIER_PATTERN.exec(sql.slice(cursor + 1))?.[0] ?? identifier;
-    cursor += identifier.length + 1;
+  const qualified = sql[cursor] === "." ? readIdentifier(sql, cursor + 1) : undefined;
+  if (qualified !== undefined) {
+    identifier = qualified;
+    cursor += qualified.length + 1;
   }
   while (sql[cursor] === "\\" || sql[cursor] === "\"" || sql[cursor] === "]") {
     cursor += 1;
@@ -78,7 +134,7 @@ function readTableName(sql: string, at: number, columnListMayFollow: boolean): P
 
 /** 从一段 SQL 文本中收集表引用；FROM 子句继续读取逗号分隔的后续表。 */
 function sqlTableReferences(sql: string, offset: number): TableReference[] {
-  const clausePattern = STATEMENT_START_PATTERN.test(sql) ? ANY_CASE_CLAUSE_PATTERN : UPPERCASE_CLAUSE_PATTERN;
+  const clausePattern = startsWithStatement(sql) ? ANY_CASE_CLAUSE_PATTERN : UPPERCASE_CLAUSE_PATTERN;
   const cteNames = new Set([...sql.matchAll(CTE_NAME_PATTERN)].map((match) => (match[1] ?? "").toLowerCase()));
   const references: TableReference[] = [];
   for (const match of sql.matchAll(clausePattern)) {
@@ -94,12 +150,12 @@ function sqlTableReferences(sql: string, offset: number): TableReference[] {
         break;
       }
       let rest = sql.slice(parsed.end);
-      rest = rest.slice(ALIAS_PATTERN.exec(rest)?.[0].length ?? 0);
-      const comma = /^\s*,\s*/.exec(rest);
-      if (comma === null) {
+      rest = rest.slice(aliasLength(rest));
+      const commaAt = skipWhitespace(rest, 0);
+      if (rest[commaAt] !== ",") {
         break;
       }
-      parsed = readTableName(sql, sql.length - rest.length + comma[0].length, false);
+      parsed = readTableName(sql, sql.length - rest.length + skipWhitespace(rest, commaAt + 1), false);
     }
   }
   return references;
@@ -118,7 +174,7 @@ function collectTableReferences(source: string): TableReference[] {
     const quote = code[argumentStart];
     const closing = quote === "\"" || quote === "'" || quote === "`" ? code.indexOf(quote, argumentStart + 1) : -1;
     const literal = closing === -1 ? null : code.slice(argumentStart + 1, closing);
-    const isStatic = literal !== null && IDENTIFIER_PATTERN.exec(literal)?.[0] === literal;
+    const isStatic = literal !== null && readIdentifier(literal, 0) === literal;
     references.push({ table: isStatic ? literal.toLowerCase() : null, index: match.index });
   }
   for (const span of stripped.stringSpans) {

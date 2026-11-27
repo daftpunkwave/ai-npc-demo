@@ -343,16 +343,35 @@ function isPlainStringKey(text: string, keyIndex: number): boolean {
   return cursor < text.length && text[skipTrivia(text, cursor + 1).index] === "]";
 }
 
-/** 读取 `} = <来源>` 中被解构来源的末端名字：成员链取最后一段，调用取被调函数名。 */
+/**
+ * 读取 `} = <来源>` 中被解构来源的末端名字：成员链（`a.b`、`a?.b`，点号两侧允许空白）取最后一段，调用取被调函数名。
+ * 逐字符读取成员链，不用带回溯的正则，耗时与成员链长度成线性。
+ */
 function assignedSourceName(text: string, patternEnd: number): string {
   const assignment = skipTrivia(text, patternEnd);
   if (text[assignment.index] !== "=") {
     return "";
   }
-  const source = skipTrivia(text, assignment.index + 1).index;
-  // eslint-disable-next-line security/detect-unsafe-regex -- 输入是仓库内源码片段，成员链每段由 `.` 分隔，无嵌套量词。
-  const chain = /^[\w$]+(?:\s*\??\.\s*[\w$]+)*/.exec(text.slice(source, source + 200))?.[0] ?? "";
-  return /[\w$]+$/.exec(chain)?.[0] ?? "";
+  let cursor = skipTrivia(text, assignment.index + 1).index;
+  let last = "";
+  for (;;) {
+    const start = cursor;
+    while (isIdentifierCharacter(text[cursor])) {
+      cursor += 1;
+    }
+    if (cursor === start) {
+      return last;
+    }
+    last = text.slice(start, cursor);
+    let next = skipTrivia(text, cursor).index;
+    if (text[next] === "?") {
+      next += 1;
+    }
+    if (text[next] !== ".") {
+      return last;
+    }
+    cursor = skipTrivia(text, next + 1).index;
+  }
 }
 
 /**
