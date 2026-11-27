@@ -159,7 +159,7 @@ SDK/数据库/PixiJS 类型停在适配器内部，不能进入世界领域接�
 
 `platform.storage.sqlite` 实现 storage port 本身，迁移、分支复制、备份与按表名读写覆盖全部表，是唯一豁免。宿主 `apps/server` 与 authority、agent-runtime、module-sdk 等固定机制包按存储文档各自拥有多张表并负责跨表协调，不在规则 9 范围内。
 
-`pnpm check:catalog` 用与宿主启动相同的 kernel 解析器校验模块目录与 `config/assemblies` 下的全部装配，装配层面的检查项见 [模块目录](module-catalog.md#10-目录守门与验收)。它还对账服务端模块源码访问的能力与 provides/requires 声明：访问未声明或目录中不存在的能力、写下不合语法的能力 ID、声明了却从未访问的 requires，以及用非字面量键读取端口容器（如 `ports[key]`、`asPorts(context)[key]`、`const { [key]: port } = context.modules`），都会在启动前失败。端口容器按名字识别，包括 `ports`、`modules` 与以 `Ports` 结尾的名字；把容器转存到其他名字后再索引、或经 `Object.values` 等方式枚举，不在识别范围。浏览器 realm 经 client-sdk 的 `usePort` 取端口，不做这项对账。
+`pnpm check:catalog` 用与宿主启动相同的 kernel 解析器校验模块目录与 `config/assemblies` 下的全部装配，装配层面的检查项见 [模块目录](module-catalog.md#10-目录守门与验收)。它还对账服务端模块源码访问的能力与 provides/requires 声明：访问未声明或目录中不存在的能力、写下不合语法的能力 ID、声明了却从未访问的 requires，以及用非字面量键读取端口容器（如 `ports[key]`、`asPorts(context)[key]`、`const { [key]: port } = context.modules`），都会在启动前失败。端口容器按名字识别，包括 `ports`、`modules` 与以 `Ports` 结尾的名字；把容器转存到其他名字后再索引、或经 `Object.values` 等方式枚举，不在识别范围。对账覆盖三个 realm：浏览器模块的 `.ts` 与 `.tsx` 源码另按 client-sdk 的 `usePort("x")`、`usePortSubscription<T>("x")` 调用识别取用，hook 以变量取端口同样按动态能力键拒绝。`host.*` 宿主固定端口不是能力，不进入 requires 对账，只按 [插件机制](plugins.md#6-宿主能力与不可绕过的-guard) 的各 realm 固定端口清单核对，取用清单外的固定端口报 `host-port-undeclared`。浏览器运行时按同一份声明收窄模块可见的端口，见同一节。
 
 静态扫描之外，还有三项约束在启动期或类型检查中执行：
 

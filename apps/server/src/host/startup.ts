@@ -184,6 +184,8 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
       migrated = resumed;
     }
     assertStorageCompatible(startup.plan, requestedStartup.plan, storageModuleId);
+    // 浏览器两段与 server 段同属在线装配：requiresRemote 缺口等装配不兼容要在启动其余模块之前拒绝。
+    sessionAssemblies = await resolveSessionAssemblies(chosen.assembly, allModuleDefinitions);
     activeStartup = startup;
     active = chosen;
     // 在线装配确定后再启动其余模块；存储实例作为部署级 provider 复用，不重复创建。
@@ -202,7 +204,6 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
       content: gameContent,
       host,
     });
-    sessionAssemblies = await resolveSessionAssemblies(chosen.assembly, allModuleDefinitions);
     serverRuntime.moduleAdmin.bind(await resolveModuleAdminCatalog({ assemblies, content }));
     if (chosen.agents !== null) {
       initialAgentModules = await startAgentRunModules({

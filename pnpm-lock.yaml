@@ -1244,6 +1244,9 @@ importers:
       '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@world-prism/kernel':
+        specifier: workspace:*
+        version: link:../kernel
     devDependencies:
       zod:
         specifier: ^4

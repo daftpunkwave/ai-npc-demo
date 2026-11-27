@@ -1,10 +1,12 @@
 /**
- * 按服务端返回的浏览器装配校验本地模块目录，并依能力依赖创建、启动与释放模块实例。
- * 依赖公共模块描述符、React 视图贡献与本包宿主上下文；不加载装配外模块或共享服务端对象。
+ * 按服务端返回的浏览器装配校验本地模块目录（协议、版本、realm 与远端能力）与下发配置（configHash 与 configSchema），
+ * 并依能力依赖创建、启动与释放模块实例；每个模块的创建输入与视图只拿到宿主固定端口和自己声明的能力端口。
+ * 依赖公共模块描述符、kernel 的远端能力对账与配置摘要、React 视图贡献与本包宿主上下文；不加载装配外模块或共享服务端对象。
  * 禁止在版本不匹配时静默降级，也禁止忽略 slot 贡献失败或遗留网络订阅。
  */
 import {
   DomainError,
+  canonicalJson,
   isSupportedProtocolVersion,
   type HostServices,
   type Json,
@@ -12,7 +14,10 @@ import {
   type ModuleInstance,
   type ResolvedModuleSet,
 } from "@world-prism/contracts";
+import { assertRemoteCapabilities, computeConfigHash } from "@world-prism/kernel";
 import type { ReactNode } from "react";
+import { ModulePortScope } from "./context";
+import { contractedHostPorts, declaredModulePorts } from "./module-ports";
 import type { PreferencePort } from "./preferences";
 import type { SlotContribution } from "./slots";
 
@@ -23,6 +28,7 @@ export interface BrowserViewPort {
 export interface BrowserModuleRuntimeInput {
   readonly definitions: readonly ModuleDefinition[];
   readonly resolved: ResolvedModuleSet;
+  /** 宿主固定端口；键必须在本 realm 的宿主固定端口契约（BROWSER_HOST_PORTS）内。 */
   readonly fixedPorts?: Readonly<Record<string, unknown>>;
   readonly signal?: AbortSignal;
 }
@@ -49,7 +55,7 @@ function randomText(length: number): string {
   return [...bytes].map((byte) => alphabet[byte % alphabet.length]).join("");
 }
 
-/** 文本的 SHA-256 十六进制摘要；浏览器只能经 Web Crypto 异步计算。 */
+/** 规范 JSON 文本的 SHA-256 十六进制摘要，与服务端 canonicalHasher 同一算法；浏览器只能经 Web Crypto 异步计算。 */
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -87,7 +93,8 @@ function browserHostServices(): HostServices {
         return state / 0x1_0000_0000;
       };
     },
-    hash: async (value) => sha256Hex(JSON.stringify(value)),
+    // 先规范化再取摘要：JSON.stringify 保留插入键序，同一配置会得到与服务端不同的摘要。
+    hash: async (value) => sha256Hex(canonicalJson(value)),
     hashText: sha256Hex,
     logger: {
       info: (message, data) => console.info(message, data ?? ""),
@@ -136,6 +143,9 @@ function selectedDefinitions(
     }
     selected.push(definition);
   }
+  // 本地模块目录的 requiresRemote 以握手下发的远端能力描述为准复核：缺口在加载页面前拒绝，
+  // 而不是等页面发出第一个 API 请求才失败。旧载荷没有该描述时按空集处理，声明了远端依赖的模块随之拒绝。
+  assertRemoteCapabilities(selected, resolved.remoteCapabilities ?? [], resolved.realm);
   return selected;
 }
 
@@ -203,8 +213,10 @@ function dependencyOrder(definitions: readonly ModuleDefinition[]): readonly Mod
   return ordered;
 }
 
+/** 收集视图贡献；每个贡献在该模块的端口作用域内渲染，视图里的 usePort 只能取到模块声明的端口。 */
 function contributedViews(
   definitions: readonly ModuleDefinition[],
+  hostPorts: Readonly<Record<string, unknown>>,
   ports: Readonly<Record<string, unknown>>,
 ): readonly SlotContribution[] {
   const result: SlotContribution[] = [];
@@ -216,10 +228,15 @@ function contributedViews(
     if (!isViewPort(port)) {
       throw new DomainError("assembly-incompatible", `模块 ${definition.id} 未暴露视图贡献入口`);
     }
+    const viewPorts = declaredModulePorts(definition, hostPorts, ports, true);
     for (const contribution of definition.contributions) {
       result.push({
         ...contribution,
-        render: () => port.renderContribution(contribution.extensionId),
+        render: () => (
+          <ModulePortScope moduleId={definition.id} ports={viewPorts}>
+            {port.renderContribution(contribution.extensionId)}
+          </ModulePortScope>
+        ),
       });
     }
   }
@@ -235,16 +252,48 @@ function isViewPort(value: unknown): value is BrowserViewPort {
   );
 }
 
-/** 把握手下发的模块列表按 moduleId 索引为已解析配置。 */
-function configsByModuleId(resolved: ResolvedModuleSet): ReadonlyMap<string, Json> {
-  const configs = new Map<string, Json>();
-  for (const module of resolved.modules) {
-    // 服务端 realm 不下发 config；此处只收浏览器 realm 的已解析配置。
-    if (module.config !== undefined) {
-      configs.set(module.moduleId, module.config);
+/** 一个待启动模块及其已核对的启动配置。 */
+interface PreparedModule {
+  readonly definition: ModuleDefinition;
+  readonly config: Json;
+}
+
+/**
+ * 为每个选中模块准备启动配置：下发配置必须存在、与 configHash 一致并通过 configSchema。
+ * 全部核对在创建任何实例之前完成，失败时不留下半启动的模块。
+ */
+async function prepareModules(
+  definitions: readonly ModuleDefinition[],
+  resolved: ResolvedModuleSet,
+): Promise<readonly PreparedModule[]> {
+  const references = new Map(resolved.modules.map((module) => [module.moduleId, module]));
+  const prepared: PreparedModule[] = [];
+  for (const definition of definitions) {
+    // 用装配解析出的配置启动，而不是模块自带的 defaults：
+    // 浏览器没有装配解析器，握手下发的 config 才是服务端冻结并计入 configHash 的那份。
+    // 选中的定义必然来自 resolved.modules，因此配置一定存在；缺失说明契约被绕过，直接拒绝。
+    const reference = references.get(definition.id);
+    if (reference?.config === undefined) {
+      throw new DomainError("assembly-incompatible", `模块 ${definition.id} 缺少装配下发的配置`, {
+        details: { moduleId: definition.id },
+      });
     }
+    // 服务端按 sha256(canonicalJson(config)) 计算 configHash，这里用 kernel 的同一实现复算。
+    // 下发值被替换成另一组同样能通过 configSchema 的配置时，只有这一步能发现；
+    // 两端算法一致后不存在合法的不一致，因此不一致即拒绝，不降级为告警。
+    const actualConfigHash = await computeConfigHash(reference.config, sha256Hex);
+    if (actualConfigHash !== reference.configHash) {
+      throw new DomainError("assembly-incompatible", `模块 ${definition.id} 的下发配置与 configHash 不一致`, {
+        details: {
+          moduleId: definition.id,
+          expectedConfigHash: reference.configHash,
+          actualConfigHash,
+        },
+      });
+    }
+    prepared.push({ definition, config: parseResolvedConfig(definition, reference.config) });
   }
-  return configs;
+  return prepared;
 }
 
 /**
@@ -253,13 +302,14 @@ function configsByModuleId(resolved: ResolvedModuleSet): ReadonlyMap<string, Jso
  * 不是模块运行期故障，必须给出可定位的模块 ID 而不是抛原始 ZodError。
  */
 function parseResolvedConfig(definition: ModuleDefinition, config: Json): Json {
-  // 下发值已在服务端经过同一 schema 解析（含 transform）。这里只用 safeParse 校验：
+  // 下发值已在服务端经过同一 schema 解析（含 transform）。kernel 解析配置时已要求 configSchema 对自身输出幂等，
+  // 因此服务端输出在这里必然能再次通过；仍失败说明本地模块定义与服务端不一致。这里只用 safeParse 校验：
   // 再取 parsed.data 会二次执行 transform，浏览器实际用的配置就与服务端冻结结果不一致。
   const parsed = definition.configSchema.safeParse(config);
   if (!parsed.success) {
     throw new DomainError(
       "assembly-incompatible",
-      `模块 ${definition.id} 的装配配置未通过 configSchema 校验`,
+      `模块 ${definition.id} 的装配配置未通过本地 configSchema 校验：下发值是服务端解析后的输出，本地模块定义与服务端不一致`,
       {
         details: {
           moduleId: definition.id,
@@ -303,29 +353,21 @@ export async function startBrowserModules(
   input: BrowserModuleRuntimeInput,
 ): Promise<StartedBrowserModules> {
   const definitions = dependencyOrder(selectedDefinitions(input.definitions, input.resolved));
+  const hostPorts = contractedHostPorts(input.resolved.realm, input.fixedPorts);
   const host = browserHostServices();
   const signal = input.signal ?? new AbortController().signal;
   const instances: ModuleInstance[] = [];
-  const providedPorts: Record<string, unknown> = { ...input.fixedPorts };
-  const resolvedConfigs = configsByModuleId(input.resolved);
+  // 宿主外壳仍拿到全部端口；模块只经 declaredModulePorts 拿到固定端口与自己声明的能力端口。
+  const providedPorts: Record<string, unknown> = { ...hostPorts };
+  const prepared = await prepareModules(definitions, input.resolved);
   try {
-    for (const definition of definitions) {
-      // 用装配解析出的配置启动，而不是模块自带的 defaults：
-      // 浏览器没有装配解析器，握手下发的 config 才是服务端冻结并计入 configHash 的那份。
-      // 选中的定义必然来自 resolved.modules，因此配置一定存在；缺失说明契约被绕过，直接拒绝。
-      const resolvedConfig = resolvedConfigs.get(definition.id);
-      if (resolvedConfig === undefined) {
-        throw new DomainError("assembly-incompatible", `模块 ${definition.id} 缺少装配下发的配置`, {
-          details: { moduleId: definition.id },
-        });
-      }
-      const config = parseResolvedConfig(definition, resolvedConfig);
+    for (const { definition, config } of prepared) {
       const instance = await definition.create({
         moduleId: definition.id,
         realm: definition.realm,
         config,
         scope: {},
-        ports: providedPorts,
+        ports: declaredModulePorts(definition, hostPorts, providedPorts, false),
         host,
         signal,
       });
@@ -349,7 +391,7 @@ export async function startBrowserModules(
     }
     throw error;
   }
-  const contributions = contributedViews(definitions, providedPorts);
+  const contributions = contributedViews(definitions, hostPorts, providedPorts);
   let disposed = false;
   return {
     ports: providedPorts,

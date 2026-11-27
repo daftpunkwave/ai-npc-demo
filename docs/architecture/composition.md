@@ -36,7 +36,7 @@
 
 本节描述 TypeScript 装配及浏览器握手。Godot 玩家进程使用随程序发布的本地装配，仅以公共协议与服务端握手。见 [client-and-rendering.md — Godot 原生玩家端](client-and-rendering.md#9-godot-原生玩家端)。
 
-assembly 同时声明 `server`、`client`、`console` 三段。服务端在启动或创建 run 时解析 server 段，并校验需要 remote 能力的浏览器段。浏览器宿主连接后通过 `GET /api/v1/session/assembly`（`realm=client` 或 `console`）取得本域已解析模块清单、协议版本与远端能力描述。现行 `client` 域会检查浏览器必需能力，空绑定无法满足该检查。原生部署切换时仅为无浏览器玩家宿主的模式返回空 client 模块集。服务端及控制台装配继续独立校验。本地 catalog 决定浏览器模块能否加载。
+assembly 同时声明 `server`、`client`、`console` 三段。服务端在启动或创建 run 时解析 server 段；启动时在启动其余服务端模块之前还会解析两个浏览器段，浏览器模块的 `requiresRemote` 必须是同一装配 server 段已绑定能力的子集，否则以 `assembly-incompatible` 拒绝启动，`pnpm check:catalog` 对仓库全部装配执行同一检查。旧在线运行按历史模块目录回退 server 段时，浏览器段同步去掉远程依赖已移除能力的绑定，例如模型池之前的运行不加载依赖 `agent.model-pool` 的模型挂载页。浏览器宿主连接后通过 `GET /api/v1/session/assembly`（`realm=client` 或 `console`）取得本域已解析模块清单、协议版本与远端能力描述 `remoteCapabilities`（server 段已绑定的能力 ID），并按该描述复核本地模块的 `requiresRemote`：有缺口时本域拒绝加载，错误逐模块列出缺失能力。现行 `client` 域会检查浏览器必需能力，空绑定无法满足该检查。原生部署切换时仅为无浏览器玩家宿主的模式返回空 client 模块集。服务端及控制台装配继续独立校验。本地 catalog 决定浏览器模块能否加载。
 
 - 满足：加载模块并进入 ready，记录 client/console assembly hash。
 - 缺必需模块或 apiVersion 不兼容：显示组合不完整，不加载旧实现、不静默降级。
@@ -127,7 +127,7 @@ context 可以实验片段顺序，compression 可以实验阈值和算法，dec
 
 模型适配器还需报告最终序列化请求；context 的估算 token 不等于 provider 实报 usage。所有模型重试、反思、embedding 和评估请求计入成本，不能只算最后一次成功的 decision。
 
-服务端运行按冻结清单记录模块、内容、模型布局和工具配置。TypeScript 会话装配另提供客户端与控制台各自解析后的 hash。仅凭 `profileId` 无法重建实验，父级、模型池、内容和模块版本均可能变化。
+服务端运行按冻结清单记录模块、内容、模型布局和工具配置。TypeScript 会话装配另提供客户端与控制台各自解析后的 hash：`GET /api/v1/session/assembly` 返回的模块集带本 realm 的 `assemblyHash`，覆盖该 realm 的绑定、模块版本与各模块 `configHash`。浏览器段的 hash 不写入 run 的冻结清单：只换客户端 HUD、renderer 或控制台页面不改变服务端世界结果（第 12 节），原生部署切换时 client 段会变为空模块集，冻结进清单会让既有 run 在切换后无法按原清单复算。因此只替换浏览器段时，client 或 console 的 `assemblyHash` 改变，server 装配摘要、目录摘要与清单摘要不变。仅凭 `profileId` 无法重建实验，父级、模型池、内容和模块版本均可能变化。
 
 ### Godot 会话装配证据
 

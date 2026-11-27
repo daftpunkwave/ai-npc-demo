@@ -497,7 +497,10 @@ describe("确定性模型装配与角色对白", () => {
       bindings: bindings.filter(({ moduleId }) => ![...liveTransports, ...poolModules].includes(moduleId))
         .map((binding) => binding.capability === "platform.secrets" ? { ...binding, configRef: null } : binding),
       agentSlots: { ...agentSlots, decision: ["agent.decision.deterministic"] },
-    } } };
+    },
+    // 模型挂载页晚于模型池引入，远程依赖 agent.model-pool；模型池之前的装配不会绑定它。
+    console: { bindings: standard.realms.console.bindings.filter(({ capability }) => capability !== "console.model-mounts") },
+    } };
     const excluded = poolInCatalog ? liveTransports : [...liveTransports, ...poolModules];
     const dataDir = rootDir();
     const old = await modelHost({

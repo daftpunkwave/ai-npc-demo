@@ -1,15 +1,17 @@
 /**
- * 核心职责：静态对账模块描述符的 provides/requires 与模块源码实际访问的能力端口。
+ * 核心职责：静态对账三个 realm 模块描述符的 provides/requires 与模块源码实际取用的端口。
  * 交互契约：只读取仓库 modules 目录下的手写源码与已登记模块定义，不执行模块代码、不访问存储；
- * 源码中的能力访问由能力扫描器逐文件抽取，对账结果交给目录预检汇总，
- * 供 `pnpm check:catalog` 在启动前发现漏声明、多余声明、拼写错误与无法静态对账的动态能力键。
+ * 源码中的端口取用（索引、解构与浏览器 `usePort`/`usePortSubscription` 调用）由扫描器逐文件抽取，
+ * 对账结果交给目录预检汇总，供 `pnpm check:catalog` 在启动前发现漏声明、多余声明、拼写错误、
+ * 越出宿主固定端口契约与无法静态对账的动态能力键。
  * 约束与禁忌：不按模块 ID 猜测实现、不跳过读不到源码的模块，也不把能力访问限制成运行期才暴露的问题；
- * 服务端模块生产源码以非字面量键读取端口容器（如 `ports[variable]`、`{ [key]: port } = context.modules`）
+ * 以非字面量键取用端口（如 `ports[variable]`、`{ [key]: port } = context.modules`、`usePort(key)`）
  * 直接报 `capability-dynamic-key`，不为动态键设放行名单，保证每处能力访问都能与 requires 对账。
+ * `host.*` 宿主固定端口不是能力，只按公共契约的各 realm 固定端口清单核对，不进入 requires 对账。
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ModuleDefinition } from "@world-prism/contracts";
+import { BROWSER_HOST_PORTS, HOST_PORT_PATTERN, type ModuleDefinition, type Realm } from "@world-prism/contracts";
 import { capabilityAccesses } from "./module-capability-scanner";
 import { findModuleDirectories, moduleIdentifier, sourceFilesOf, type ModuleSource } from "./module-sources";
 
@@ -18,6 +20,11 @@ export interface CapabilityUsageViolation {
   readonly file: string;
   readonly code: string;
   readonly message: string;
+}
+
+/** 本 realm 模块无需声明即可取用的宿主固定端口；server realm 没有固定端口。 */
+function hostPortsOf(realm: Realm): readonly string[] {
+  return realm === "server" ? [] : BROWSER_HOST_PORTS[realm];
 }
 
 /** 相对仓库根输出文件路径，保持诊断信息可定位且不泄漏本机绝对路径。 */
@@ -29,8 +36,9 @@ function displayPath(root: string, file: string): string {
 /**
  * 对账全部模块源码访问的能力与其描述符声明。
  * - 访问了未在 provides/requires 中声明的能力：漏声明或拼写错误；
- * - 访问处写了能力 group 前缀但语法不符合契约：能力 ID 语法错误，描述符阶段同样会拒绝；
- * - requires 声明了但源码从未访问：多余声明；
+ * - 访问处写了能力 group 或 `host` 前缀但语法不符合契约：端口键语法错误，描述符阶段同样会拒绝；
+ * - 取用了本 realm 固定端口清单之外的 `host.*` 端口：越出宿主固定端口契约；
+ * - requires 声明了但源码从未访问：多余声明，浏览器运行时会按声明把端口交给模块，多余声明即多余授权；
  * - 模块目录没有对应登记定义，或定义没有对应源码目录：目录与 catalog 脱节。
  */
 export function checkModuleCapabilityUsage(input: {
@@ -76,10 +84,7 @@ export function checkModuleCapabilityUsage(input: {
     for (const definition of definitions) {
       matchedDefinitionIds.add(definition.id);
     }
-    if (realm !== "server") {
-      continue;
-    }
-    modules.push({ directory: relative, identifier, definitions, files: sourceFilesOf(directory) });
+    modules.push({ realm, directory: relative, identifier, definitions, files: sourceFilesOf(directory) });
   }
 
   for (const definition of input.definitions) {
@@ -114,8 +119,8 @@ export function checkModuleCapabilityUsage(input: {
             file: relativeFile,
             code: "capability-dynamic-key",
             message:
-              `模块 ${owners} 在 ${relativeFile}:${access.line} 用非字面量键读取端口容器 ${access.receiver}，` +
-              "无法与 requires 静态对账；请改为写死能力 ID 的引号字面量，如 ports[\"game.world\"]",
+              `模块 ${owners} 在 ${relativeFile}:${access.line} 以非字面量键经 ${access.receiver} 取用端口，` +
+              "无法与 requires 静态对账；请改为写死能力 ID 的引号字面量，如 ports[\"game.world\"] 或 usePort(\"client.camera\")",
           });
           continue;
         }
@@ -125,9 +130,23 @@ export function checkModuleCapabilityUsage(input: {
             file: relativeFile,
             code: "capability-invalid",
             message:
-              `模块 ${owners} 在 ${relativeFile}:${access.line} 写下的能力 ID ${access.value} 不符合语法 ` +
-              "<group>.<family>；family 只含小写字母、数字与连字符",
+              `模块 ${owners} 在 ${relativeFile}:${access.line} 写下的端口键 ${access.value} 不符合语法：能力 ID 为 ` +
+              "<group>.<family>，宿主固定端口为 host.<name>；名字只含小写字母、数字与连字符",
           });
+          continue;
+        }
+        if (HOST_PORT_PATTERN.test(access.value)) {
+          const hostPorts = hostPortsOf(module.realm);
+          if (!hostPorts.includes(access.value)) {
+            const owners = module.definitions.map((definition) => definition.id).join("、");
+            violations.push({
+              file: relativeFile,
+              code: "host-port-undeclared",
+              message:
+                `模块 ${owners} 在 ${relativeFile}:${access.line} 取用了 ${module.realm} realm 宿主固定端口契约之外的 ` +
+                `${access.value}；本 realm 的固定端口：${hostPorts.length === 0 ? "无" : hostPorts.join("、")}`,
+            });
+          }
           continue;
         }
         accessed.add(access.value);

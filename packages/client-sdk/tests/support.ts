@@ -1,12 +1,12 @@
 /**
- * client-sdk 测试共享的宿主上下文、slot 贡献、偏好端口假实现与错误断言助手。
- * 依赖本包公开类型与 React 服务端渲染工具；不访问浏览器 DOM、网络或本地存储。
+ * client-sdk 测试共享的宿主上下文、slot 贡献、偏好端口假实现、配置摘要与错误断言助手。
+ * 依赖本包公开类型、公共契约的规范 JSON、Web Crypto 与 React 服务端渲染工具；不访问浏览器 DOM、网络或本地存储。
  * 禁止把假实现当作生产宿主，或让测试依赖渲染顺序之外的真实副作用。
  */
 import { expect } from "vitest";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DomainError, type ErrorCode } from "@world-prism/contracts";
+import { DomainError, canonicalJson, type ErrorCode, type Json } from "@world-prism/contracts";
 import {
   ModuleHostProvider,
   type ModuleHostValue,
@@ -46,6 +46,15 @@ export function hostValue(overrides: Partial<ModuleHostValue> = {}): ModuleHostV
 /** 在宿主 Provider 内做服务端字符串渲染，用于验证 slot 与 hook 的可见输出。 */
 export function renderWithHost(value: ModuleHostValue, children: ReactNode): string {
   return renderToStaticMarkup(createElement(ModuleHostProvider, { value }, children));
+}
+
+/**
+ * 按服务端 configHash 的口径计算期望摘要：规范 JSON 的 SHA-256 十六进制。
+ * 直接用 Web Crypto 计算，不经被测运行时，测试据此核对两端算法一致。
+ */
+export async function configHashOf(config: Json): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalJson(config)));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 /** 断言同步动作抛出指定错误码的 DomainError。 */
