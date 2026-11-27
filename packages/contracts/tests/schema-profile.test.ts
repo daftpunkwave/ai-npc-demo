@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   cleanJsonSchemaForModel,
   createToolNameRegistry,
+  decisionSubmitWireSchema,
   isModelToolName,
   toModelToolName,
 } from "../src/index";
@@ -286,5 +287,24 @@ describe("JSON Schema 清洗", () => {
   it("拒绝非对象根 schema", () => {
     expect(() => cleanJsonSchemaForModel("not-a-schema" as never)).toThrow(TypeError);
     expect(() => cleanJsonSchemaForModel([1] as never)).toThrow(TypeError);
+  });
+});
+
+describe("决策提交工具的字段说明", () => {
+  // 清洗会删除 maxLength、minItems、pattern 等约束，模型只能从 description 得知字段语义与长度条数上限。
+  it("清洗后保留各字段的取值语义与上限说明", () => {
+    const schema = cleanJsonSchemaForModel(decisionSubmitWireSchema) as {
+      properties: Record<string, { description?: string; properties?: Record<string, { description?: string }>;
+        items?: { properties: Record<string, { description?: string }> } }>;
+    };
+    const intent = schema.properties["dialogueIntent"]?.properties ?? {};
+    const noteworthy = schema.properties["noteworthy"]?.items?.properties ?? {};
+    expect(intent["subjectRef"]?.description).toMatch(/agr-.*task-.*inv-.*ev-.*obs-.*mem-/su);
+    expect(intent["audience"]?.description).toMatch(/principal IDs \(never names\)/u);
+    expect(noteworthy["sourceRefs"]?.description).toMatch(/1 to 3 observation IDs \(obs-\)/u);
+    expect(noteworthy["aboutId"]?.description).toMatch(/Principal ID/u);
+    expect(noteworthy["summary"]?.description).toMatch(/60/u);
+    expect(schema.properties["decisionNote"]?.description).toMatch(/120/u);
+    expect(schema.properties["citedMemoryIds"]?.description).toMatch(/mem-/u);
   });
 });

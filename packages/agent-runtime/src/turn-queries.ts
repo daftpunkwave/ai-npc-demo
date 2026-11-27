@@ -13,6 +13,15 @@ import { asRecord } from "./runtime-records";
 import type { QueryExecutionInput, ToolCallOutcome } from "./tool-gateway-types";
 import type { FrozenTurnInput } from "./turn-input";
 
+/** 一个任务在本轮材料中的最新状态。 */
+function taskSummary(taskId: string, known: { readonly facts: Json | undefined; readonly observationId: string }): Json {
+  const facts = asRecord(known.facts);
+  return { taskId, observationId: known.observationId, taskType: facts["taskType"] as Json ?? null,
+    taskStatus: facts["taskStatus"] as Json ?? facts["status"] as Json ?? null,
+    commandStatus: null, departTick: facts["departTick"] as Json ?? null,
+    nominalCompletionTick: facts["nominalCompletionTick"] as Json ?? null };
+}
+
 export function turnQueries(input: {
   readonly frozen: FrozenTurnInput;
   readonly content: ContentPack;
@@ -98,14 +107,23 @@ export function turnQueries(input: {
       }
       case "task.inspect": {
         const taskId = params["taskId"];
-        const known = typeof taskId === "string" ? observed.findLast(({ facts, type }) =>
-          typeof type === "string" && type.startsWith("Task") && asRecord(facts)["taskId"] === taskId) : undefined;
+        // 未指定任务时列出本轮材料里出现过的全部任务（每个任务取最新一条观察），没有任务时为空列表。
+        if (typeof taskId !== "string") {
+          const latest = new Map<string, (typeof observed)[number]>();
+          for (const item of observed) {
+            const id = asRecord(item.facts)["taskId"];
+            if (typeof item.type === "string" && item.type.startsWith("Task") && typeof id === "string") {
+              latest.delete(id);
+              latest.set(id, item);
+            }
+          }
+          // 最近有变化的任务排在前面：视图按条数或 token 截断列表时先舍弃最久没有动静的任务。
+          return { tasks: [...latest].reverse().map(([id, item]) => taskSummary(id, item)) };
+        }
+        const known = observed.findLast(({ facts, type }) =>
+          typeof type === "string" && type.startsWith("Task") && asRecord(facts)["taskId"] === taskId);
         if (known === undefined) throw new DomainError("not-found", "本轮材料中没有该任务");
-        const facts = asRecord(known.facts);
-        return { taskId: String(taskId), observationId: known.observationId, taskType: facts["taskType"] as Json ?? null,
-          taskStatus: facts["taskStatus"] as Json ?? facts["status"] as Json ?? null,
-          commandStatus: null, departTick: facts["departTick"] as Json ?? null,
-          nominalCompletionTick: facts["nominalCompletionTick"] as Json ?? null };
+        return taskSummary(taskId, known);
       }
       case "conversation.inspect": {
         const dialogue = observed.flatMap(({ facts, type }) => {

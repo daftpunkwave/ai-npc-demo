@@ -309,6 +309,7 @@ variant patch 放在 `config/profiles/variants/`，`memory` 槽的完整参数�
 | `memory-m2-stream-reflection` | `slots.memory = { module: agent.memory.stream-reflection, config: <11.7 节全部参数> }` |
 | `memory-m3-layered-hybrid` | `slots.memory = { module: agent.memory.layered-hybrid, config: <11.8 节全部参数> }` |
 | `decision-deterministic` | `slots.decision = { module: agent.decision.deterministic, config: {} }`（工程测试用） |
+| `budget-real-model` | `budgets` 整块，只把 `maxTokensPerAgentPerDay` 从 60000 提高到 500000、`maxModelCallsPerTurn` 从 6 提高到 12，其余与 baseline 相同（真实模型实验经 `commonPatchRefs` 叠加，见 [评估](evaluation.md#82-经-openai-兼容网关用真实模型执行)） |
 
 ```yaml
 # 变体文件 memory-m1-structured-ledger.yaml（所有变体文件的形状）
@@ -373,7 +374,7 @@ runSpecTemplate:
 
 ### 10.5 价目 `config/pricing*.yaml`
 
-模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。`openai-compatible-gateway-layout-v1` 使用 `config/pricing-openai-compatible-gateway.yaml`（`pricingVersion: "2026-11-gateway-estimate"`）：网关没有公布 `deepseek-v4.1-flash-official` 的单价，该文件沿用 deepseek-flash 的单价，属于估算值。已冻结的 run 在重启和执行前会按当前价目文件复算 manifest，因此为新的模型名定价时新增价目文件，不修改已被布局引用的文件。
+模型布局通过可选 `pricingRef` 选择价目文件，省略时读取 `config/pricing.yaml`。`shared-model-layout-v1` 与 `claude-model-layout-v1` 使用 `config/pricing-live.yaml`，测试布局继续使用只统计 token 的默认价目。`openai-compatible-gateway-layout-v1` 与 `openai-compatible-gateway-layout-v2` 使用 `config/pricing-openai-compatible-gateway.yaml`（`pricingVersion: "2026-11-gateway-estimate"`）：网关没有公布 `deepseek-v4.1-flash-official` 的单价，该文件沿用 deepseek-flash 的单价，属于估算值。已冻结的 run 在重启和执行前会按当前价目文件复算 manifest，因此为新的模型名定价时新增价目文件，不修改已被布局引用的文件。
 
 ```yaml
 schemaVersion: 1

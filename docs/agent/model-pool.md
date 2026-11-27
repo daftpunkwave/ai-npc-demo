@@ -50,6 +50,7 @@ evaluation 由独立 evaluator 配置引用 `modelId`，调用主体类型为 ev
 | `shared-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-chat` | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
 | `claude-model-layout-v1.yaml` | `decision` 挂载 `npc-claude`，`speech` 与 `memory-maintenance` 挂载 `npc-chat` | [model-transport.md — Anthropic 配置](model-transport.md#41-配置)、[model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
 | `openai-compatible-gateway-layout-v1.yaml` | 与共享布局相同；`npc-chat` 的推理开关与返回名别名取自部署变量 | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置)、[evaluation.md — 经网关执行](../platform/evaluation.md#82-经-openai-兼容网关用真实模型执行) |
+| `openai-compatible-gateway-layout-v2.yaml` | 同 v1，`npc-chat` 的限额提高到并发 4、每分钟 60 次请求与 30 万 token | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置)、[evaluation.md — 经网关执行](../platform/evaluation.md#82-经-openai-兼容网关用真实模型执行) |
 | `deterministic-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-fixture` | [model-transport.md — 确定性适配器](model-transport.md#5-确定性适配器测试) |
 
 下面是共享布局的挂载片段，以伊诺为例。正式布局按 `standard-15` 填入全部 Agent ID，测试布局按所选测试名册填写。名单见 [00-scope-and-invariants.md — 15 个上场身份](../00-scope-and-invariants.md#11-15-个上场身份)。

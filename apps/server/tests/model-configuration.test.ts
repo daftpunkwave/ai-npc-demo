@@ -184,6 +184,19 @@ describe("OpenAI 兼容网关布局", () => {
     expect(withoutModelName(gateway.routes)).toEqual(withoutModelName(shared.routes));
   });
 
+  it("v2 布局只提高 npc-chat 的限额，冻结路由的其余字段与 v1 一致", async () => {
+    const loadContext = contextOf({ ...gatewayEnv, WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled" });
+    const v1 = await frozenModels({ loadContext, modelLayoutRef: gatewayLayout });
+    const v2 = await frozenModels({ loadContext, modelLayoutRef: "openai-compatible-gateway-layout-v2" });
+    const withoutLimits = (routes: readonly Readonly<Record<string, Json>>[]) => routes.map(({
+      configHash: _configHash, maxConcurrent: _concurrent, requestsPerMinute: _requests, tokensPerMinute: _tokens, ...route
+    }) => route);
+    expect(withoutLimits(v2.routes)).toEqual(withoutLimits(v1.routes));
+    expect(v2.models).toMatchObject({ layoutId: "openai-compatible-gateway-layout-v2", pricingVersion: "2026-11-gateway-estimate" });
+    for (const route of v1.routes) expect(route).toMatchObject({ maxConcurrent: 2, requestsPerMinute: 20, tokensPerMinute: 40000 });
+    for (const route of v2.routes) expect(route).toMatchObject({ maxConcurrent: 4, requestsPerMinute: 60, tokensPerMinute: 300000 });
+  });
+
   it("供应商模型名与估算价目记录不一致时预检失败", async () => {
     await expect(frozenModels({ loadContext: contextOf(deepseekEnv), modelLayoutRef: gatewayLayout }))
       .rejects.toThrow("模型 npc-chat 的 externalModel 与价目记录不一致");
@@ -205,5 +218,33 @@ describe("OpenAI 兼容网关布局", () => {
     const { manifest } = resolved.configuration;
     expect(manifest.selection).toMatchObject({ runSpecId: first.id, modelLayoutRef: gatewayLayout });
     expect(manifest.models).toMatchObject({ layoutId: gatewayLayout, pricingVersion: "2026-11-gateway-estimate" });
+  });
+
+  it("真实模型实验叠加 budget-real-model 后，每个 Agent 冻结的每日 token 上限为 50 万、每 turn 调用上限为 12，其余预算不变", async () => {
+    const loadContext = contextOf({ ...gatewayEnv, WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled" });
+    const repository = loadExperimentSpec("exp-memory-promise-v1", loadContext).value;
+    const configure = async (commonPatchRefs: readonly string[]) => {
+      const inline = experimentSpecSchema.parse({
+        ...repository, commonPatchRefs, base: { ...repository.base, modelLayoutRef: "openai-compatible-gateway-layout-v2" },
+      });
+      const [first] = runsOfExperiment(inline);
+      if (first === undefined) throw new Error("实验没有展开出 run");
+      const resolved = await resolveRunConfiguration({
+        content, definitions: serverModuleDefinitions, contentVersion: content.pack.contentVersion,
+        loadRoster: (ref) => loadRoster(ref, loadContext), loadContext, repoRoot: process.cwd(),
+      }, first);
+      if ("failures" in resolved) throw new Error(resolved.failures.map(({ message }) => message).join("; "));
+      return resolved.configuration.manifest;
+    };
+    const budgetsOf = (manifest: Awaited<ReturnType<typeof configure>>) =>
+      (manifest.agentProfiles as unknown as readonly { profile: { budgets: Record<string, Json> } }[]).map(({ profile }) => profile.budgets);
+    const patched = budgetsOf(await configure(["budget-real-model"]));
+    const baseline = budgetsOf(await configure([]));
+    expect(patched).toHaveLength(baseline.length);
+    expect(patched.length).toBeGreaterThan(0);
+    patched.forEach((budgets, index) => {
+      expect(budgets).toEqual({ ...baseline[index], maxTokensPerAgentPerDay: 500000, maxModelCallsPerTurn: 12 });
+      expect(baseline[index]).toMatchObject({ maxTokensPerAgentPerDay: 60000, maxModelCallsPerTurn: 6 });
+    });
   });
 });

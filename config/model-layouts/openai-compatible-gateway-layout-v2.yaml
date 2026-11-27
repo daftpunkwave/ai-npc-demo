@@ -1,0 +1,26 @@
+schemaVersion: 1
+layoutId: openai-compatible-gateway-layout-v2
+# 经 OpenAI 兼容网关接入的真实模型布局，在 v1 基础上只提高 npc-chat 的限额。
+# v1 沿用共享布局的占位限额（并发 2、每分钟 20 次请求、4 万 token）：单次决策约占 4 千 token 预留，
+# 三个 Agent 同时决策时每次调用要排队约 50 秒，turn 超过 90 秒截止。v1 保持不变，已冻结的 run 照常复算。
+# 推理开关与供应商返回名别名取自部署环境，两个变量未设置时请求与替换判定都与共享布局一致。
+pricingRef: pricing-openai-compatible-gateway
+connections:
+  openai-compat:
+    adapterId: platform.model-transport.openai-compatible
+    endpoint: env:WORLD_PRISM_OPENAI_COMPAT_BASE_URL
+    credentialRef: env:WORLD_PRISM_OPENAI_COMPAT_API_KEY
+    rateLimitKey: openai-compat-account
+models:
+  npc-chat:
+    connectionId: openai-compat
+    externalModel: env:WORLD_PRISM_OPENAI_COMPAT_MODEL
+    servedModels: env:WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS
+    parameters: { temperature: 0.6, maxTokensField: max_tokens, thinking: env:WORLD_PRISM_OPENAI_COMPAT_THINKING }
+    capabilities: { toolCalling: true, strictTools: false, structuredOutput: json_object, assistantReplay: verbatim, contextWindowTokens: 64000, maxOutputTokens: 4096, embedding: false, embeddingDimensions: null }
+    limits: { maxConcurrent: 4, requestsPerMinute: 60, tokensPerMinute: 300000, requestTimeoutMs: 30000 }
+    maxOutputTokensByPurpose: { decision: 1500, speech: 400, memory-maintenance: 800 }
+mounts:
+  - modelId: npc-chat
+    agentIds: [npc-wenzhao, npc-yinuo, npc-wenyuan, npc-taoan, npc-muzhi, npc-luchen, npc-ahe, npc-qilu, human-independent, human-earth-alliance, human-pacifist, human-alien-accord, species-fauna, species-flora, species-extraterrestrial]
+    purposes: [decision, speech, memory-maintenance]

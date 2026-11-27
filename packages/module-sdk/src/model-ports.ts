@@ -164,7 +164,32 @@ export interface AgentBudgetPort {
   }): void;
 }
 
-export type DecisionValidation = { readonly decision: DecisionSubmission } | { readonly reasons: readonly string[] };
+/**
+ * 决定校验的一条违规：指出字段与填写的值，并在能枚举时给出该位置可以填写的 ID，供模型据此改正。
+ * 数组字段按字段合并为一条，`value` 只列出不被接受的条目。
+ */
+export interface DecisionViolation {
+  /** 违反的规则，与内容包 `decision.invalidReasons` 的键一致。 */
+  readonly rule: "schema" | "audience" | "subject" | "unknown-ref";
+  /** 字段路径，如 `dialogueIntent.subjectRef`、`noteworthy[0].sourceRefs`；整个提交为 `$`。 */
+  readonly path: string;
+  /** 不被接受的取值：标量字段为该值，数组字段为不被接受的条目。schema 违规不回显取值。 */
+  readonly value?: Json;
+  /** 补充说明，例如 schema 违规的校验文本。 */
+  readonly issue?: string;
+  /** 该位置可以填写的 ID，按在请求中出现的先后排列。 */
+  readonly allowed?: readonly string[];
+  /** `allowed` 因条数上限未列出的 ID 个数。 */
+  readonly allowedOmitted?: number;
+}
+
+/** 被驳回的提交：`reasons` 为内容包提供的规则说明，`violations` 为逐字段的违规明细。 */
+export interface DecisionRejection {
+  readonly reasons: readonly string[];
+  readonly violations?: readonly DecisionViolation[];
+}
+
+export type DecisionValidation = { readonly decision: DecisionSubmission } | DecisionRejection;
 
 /**
  * 模型决策的结果状态：ok 表示产出可提交决策，其余四个值区分失败原因。
@@ -198,6 +223,8 @@ export interface ModelDecisionPort {
     readonly decision: DecisionSubmission | null;
     /** 非 ok 终态的细分原因：round-limit、call-budget、context-window、deadline-backpressure；无细分时为 null。 */
     readonly reason: string | null;
+    /** 以 invalid-decision 结束且有被驳回的提交时，最后一次驳回的校验结果；供宿主写入 turn 证据。 */
+    readonly rejection?: DecisionRejection;
     readonly messages: readonly NormalizedMessage[];
   }>;
   speak(input: {

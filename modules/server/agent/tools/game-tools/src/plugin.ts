@@ -31,7 +31,7 @@ interface ToolSpec {
 const toolSpecs: readonly ToolSpec[] = [
   { toolId: "world.inspect", effect: "query", commandType: null, permissionProfile: "self-known", viewFields: ["asOfTick", "meters", "allocation", "roads", "characters", "stockpileLevels"] },
   { toolId: "route.inspect", effect: "query", commandType: null, permissionProfile: "self-known", viewFields: ["path", "travelTicks", "risks", "blockedRoads"] },
-  { toolId: "task.inspect", effect: "query", commandType: null, permissionProfile: "self-known", viewFields: ["taskId", "taskType", "commandStatus", "taskStatus", "departTick", "nominalCompletionTick", "participants"] },
+  { toolId: "task.inspect", effect: "query", commandType: null, permissionProfile: "self-known", viewFields: ["taskId", "taskType", "commandStatus", "taskStatus", "departTick", "nominalCompletionTick", "participants", "tasks"] },
   { toolId: "conversation.inspect", effect: "query", commandType: null, permissionProfile: "self-known", viewFields: ["lines"] },
   { toolId: "operation.inspect", effect: "query", commandType: null, permissionProfile: "self-known", viewFields: ["receipt", "taskStatus"] },
   { toolId: "message.send", effect: "command", commandType: "speech.commit", permissionProfile: "message-principals", viewFields: ["messageId", "deliverAtTick"] },

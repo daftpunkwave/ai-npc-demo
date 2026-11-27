@@ -263,6 +263,8 @@ async function runTurn(turnId: string): Promise<void> {
   // 6. decision 循环（agent.decision.model）：round 从 1 到 maxDecisionRounds。
   //      请求 -> pool.call(decision) -> 按下方规则处理本轮 -> 追加 assistant 与 tool 结果。
   //      decision_submit 通过校验时停止；纯文本纠偏与 invalid decision_submit 重试共享同一单次纠偏标记（整轮最多触发一次，prompts.md §2.3）。
+  //      最后一轮或收尾轮的提交被驳回且纠偏机会未用时，额外给一轮只接受 decision_submit 的改正轮（不计入 maxDecisionRounds，计入 maxModelCallsPerTurn）。
+  //      轮次用完仍未提交时，在最后一轮的工具结果后追加 decision.budgetStop，再给一个只接受提交的收尾轮；仍未获接受按 round-limit 结束。
   //    agent.decision.deterministic 以 §13.7 替代步骤 5-6，并且绝不调用模型。
   // 7. speech：dialogueIntent.kind != "none" 时 -> speech 请求 -> 校验 -> 模板后备 -> speech.commit。
   //    （agent.decision.deterministic 始终使用 prompts.md §5 的安全模板。）
@@ -278,7 +280,7 @@ async function runTurn(turnId: string): Promise<void> {
 
 1. `finishReason` 为 `length` 或 `refusal`：不执行其中任何工具调用，turn 以 `invalid-decision` 结束（不重试本轮）。
 2. 按模型返回的顺序处理工具调用：先执行所有非 `decision_submit` 的调用，其中只有前 `maxToolCallsPerRound` 个真正执行，其余返回错误结果（文本取 `decision.budgetStop`）；超过 `maxToolCallsPerTurn` 时抛出 `TurnStopped("budget-exhausted", "tool-call-limit")`，达到 [压缩与工具视图](compression-and-tool-view.md) 第 12.1 节的预算条件时同样返回该错误结果。
-3. 然后处理 `decision_submit`（若有多个只认第一个，其余返回错误结果）：校验时，本轮刚执行的工具结果中出现的 ID 也算“出现在本次请求中”。校验通过则结束循环；不通过则返回 `invalid_decision` 结果，若本轮尚未使用纠偏机会则允许再试一次。
+3. 然后处理 `decision_submit`（若有多个只认第一个，其余返回错误结果）：校验时，本轮刚执行的工具结果中出现的 ID 也算“出现在本次请求中”。校验通过则结束循环；不通过则返回带 `violations` 逐字段明细的 `invalid_decision` 结果（格式见 [提示词](prompts.md) 第 2.3 节），若本 turn 尚未使用纠偏机会则允许再试一次；这次提交已在最后一轮或收尾轮时，再试发生在额外的改正轮里，该轮其他工具一律拒绝。
 4. 每个工具调用都配一条结果消息（包括被拒绝的），保证调用与结果一一对应。
 
 turn 的默认预算与失败策略（Agent profile，完整默认值见 [配置](../platform/configuration.md) 第 10.2 节）：

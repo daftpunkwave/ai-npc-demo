@@ -89,7 +89,7 @@ world-prism/
     assemblies/                  # standard, test and escalating are present; HUD and console swaps arrive in S24
     profiles/                    # platform baseline, scene profile, agent profiles, memory variant patches
     rosters/                     # standard-15, core-3
-    model-layouts/               # shared-, claude-, deterministic-model-layout-v1, openai-compatible-gateway-layout-v1
+    model-layouts/               # shared-, claude-, deterministic-model-layout-v1, openai-compatible-gateway-layout-v1/v2
     toolsets/                    # character-default, character-broadcaster, strategic-default
     # presets/                   # 玩家测试申请预设目录为后续目标，尚未创建
     runs/                        # online RunSpec templates

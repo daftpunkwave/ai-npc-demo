@@ -4,7 +4,7 @@
  * 租约检查不得代替世界命令自己的权威 fencing。
  */
 import type {
-  AgentTrigger, AgentTurnStatus, AuthContext, HostServices, StoragePort, StorageRow, StorageTransaction,
+  AgentTrigger, AgentTurnStatus, AuthContext, HostServices, Json, StoragePort, StorageRow, StorageTransaction,
 } from "@world-prism/contracts";
 import { arrayValue, numberValue, stringValue, triggerFromRow } from "./runtime-records";
 
@@ -33,6 +33,8 @@ export class TurnStopped extends Error {
   constructor(
     readonly status: "cancelled" | "failed" | "budget-exhausted",
     readonly reason: string,
+    /** 写入失败阶段 `effective` 的明细，例如被驳回决定的校验结果；没有时为 null。 */
+    readonly effective: Json = null,
   ) {
     super(reason);
   }
