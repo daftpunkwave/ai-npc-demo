@@ -181,6 +181,22 @@ describe("玩家投影", () => {
     );
   });
 
+  it("开局后库存视图覆盖全部库存点，按 ID 排序，等级逐项对应三类资源", async () => {
+    const value = await harness();
+    expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
+    // 期望值取自改为批量查询之前的实现在同一局面下的输出；初始数量为 0 的资源相对基线判为短缺。
+    expect(projection(value).stockpiles).toEqual([
+      { stockpileId: "sp-accord", nodeId: "anchor", ownerFactionId: "human-alien-accord", supplyLevel: "adequate", energyLevel: "adequate", medicalLevel: "adequate", amounts: null, delegation: null },
+      { stockpileId: "sp-commons", nodeId: "grayharbor", ownerFactionId: "human-neutral", supplyLevel: "adequate", energyLevel: "adequate", medicalLevel: "adequate", amounts: { supply: 60, energy: 12, medical: 8 }, delegation: { remaining: { supply: 15, energy: 6, medical: 4 }, untilTick: 168 } },
+      { stockpileId: "sp-earth", nodeId: "orchard", ownerFactionId: "human-earth-alliance", supplyLevel: "adequate", energyLevel: "adequate", medicalLevel: "adequate", amounts: null, delegation: null },
+      { stockpileId: "sp-fauna", nodeId: "pass", ownerFactionId: "species-fauna", supplyLevel: "adequate", energyLevel: "scarce", medicalLevel: "adequate", amounts: null, delegation: null },
+      { stockpileId: "sp-flora", nodeId: "orchard", ownerFactionId: "species-flora", supplyLevel: "adequate", energyLevel: "scarce", medicalLevel: "adequate", amounts: null, delegation: null },
+      { stockpileId: "sp-rubble", nodeId: "pass", ownerFactionId: "human-independent", supplyLevel: "adequate", energyLevel: "adequate", medicalLevel: "adequate", amounts: null, delegation: null },
+      { stockpileId: "sp-star", nodeId: "anchor", ownerFactionId: "species-extraterrestrial", supplyLevel: "adequate", energyLevel: "adequate", medicalLevel: "scarce", amounts: null, delegation: null },
+      { stockpileId: "sp-truce", nodeId: "grayharbor", ownerFactionId: "human-pacifist", supplyLevel: "adequate", energyLevel: "adequate", medicalLevel: "adequate", amounts: null, delegation: null },
+    ]);
+  });
+
   it("库存委托投影聚合全部有效委托并使用最早到期 tick", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
