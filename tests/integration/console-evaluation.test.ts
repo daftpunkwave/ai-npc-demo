@@ -333,6 +333,53 @@ describe("控制台评估读取接口", () => {
     ]);
   });
 
+  it("合并了内部唤醒与外部输入的 turn 按第一个外部触发计入行为记录，全为内部唤醒的 turn 不计入", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = host.branchId;
+    const now = new Date().toISOString();
+    // 调度器把同一 Agent 待处理的触发并进一个 turn：较早的巡检排在玩家对白之前。
+    const turns = [
+      { suffix: "00", kinds: ["patrol", "player-dialogue", "agreement-proposal"] },
+      { suffix: "01", kinds: ["prospective", "patrol"] },
+    ] as const;
+    host.storage.transact((tx) => {
+      turns.forEach(({ suffix, kinds }, index) => {
+        tx.rows("artifacts").put({
+          artifact_id: `art-mergedtrig${suffix}`, run_id: runId, kind: "decision",
+          content_hash: `sha256-mergedtrig${suffix}`, mime: "application/json", byte_size: 64,
+          storage: "inline",
+          body: JSON.stringify({ decision: { stance: "accept", dialogueIntent: { reasonCode: "fair-terms" } } }),
+          file_path: null, redaction: "raw", redacted_from: null, created_at: now,
+        });
+        tx.rows("turn_runs").put({
+          turn_id: `turn-mergedtrig${suffix}`, run_id: runId, branch_id: branchId,
+          agent_id: "human-independent", agent_turn_index: index + 1, status: "completed",
+          trigger_ids_json: kinds.map((_, position) => `trg-mergedtrig${suffix}${position}`), profile_hash: "hash",
+          controller_epoch: 1, turn_lease_epoch: 0, created_tick: 20 + index,
+          effective_json: [{
+            stage: "turn.decision", status: "applied", reason: null, requested: null, resolved: null,
+            effective: { artifactId: `art-mergedtrig${suffix}` }, spanId: `spn-mergedtrig${suffix}`,
+          }],
+          created_at: now, started_at: now, ended_at: now,
+        });
+        kinds.forEach((kind, position) => {
+          tx.branch(branchId).table("triggers").put({
+            trigger_id: `trg-mergedtrig${suffix}${position}`, agent_id: "human-independent", kind,
+            priority: 100, source_ref: `evt-mergedtrig${suffix}${position}`, created_tick: 20 + index,
+            dedupe_key: `merged-trigger-${suffix}-${position}`, consumed_by_turn_id: `turn-mergedtrig${suffix}`,
+          });
+        });
+      });
+    });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.behavior.map((entry) => [entry.atTick, entry.trigger])).toEqual([[20, "player-dialogue"]]);
+  });
+
   it("报告从归档 decision、预算账本与活动记忆行读取行为、成本与记忆", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
