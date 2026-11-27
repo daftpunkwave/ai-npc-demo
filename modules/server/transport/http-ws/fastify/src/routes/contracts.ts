@@ -25,6 +25,7 @@ import type {
   ModulesResponse,
   ObservationsResponse,
   RunDetailResponse,
+  RunProgressResponse,
   RunReportResponse,
   RunSummary,
   AuthContext,
@@ -266,6 +267,11 @@ export interface ConsoleReadPort {
     experiment(experimentId: string): ExperimentDetailResponse | null;
     experiments(): readonly { readonly experimentId: string; readonly runCount: number }[];
   };
+  /**
+   * 实验 run 的执行进度；run 不存在时返回 null，路由据此返回 not-found。
+   * 与评估读取分开注入：进度只依赖执行器与存储，不依赖评估模块。
+   */
+  runProgress?: (runId: string) => RunProgressResponse | null;
   /**
    * 评估写入：创建 run 与导出。
    * 与 `evaluation` 分开，因为写操作只依赖存储、内容与装配定义，

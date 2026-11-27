@@ -16,6 +16,7 @@ import type {
   ConsoleHotPathTiming,
   HostServices,
   ResolvedModuleSet,
+  RunProgressResponse,
   StartOption,
   StoragePort,
 } from "@world-prism/contracts";
@@ -55,6 +56,8 @@ export interface TransportAppInput {
   readonly evaluation?: EvaluationReadPort;
   /** 评估写入端口；不依赖评估模块，未注入时写入路由返回 not-ready。 */
   readonly writes?: RunWrites;
+  /** 实验 run 执行进度；未注入时进度路由返回 not-ready。 */
+  readonly runProgress?: (runId: string) => RunProgressResponse | null;
   /**
    * 记忆维护队列计数；宿主未提供数据源时返回零值，而不是编造数字。
    * `queued` 与 `exhausted` 分别对应「仍会推进」与「已达上限不再推进」。
@@ -326,6 +329,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         }),
         // 写入与读取分开装配：评估模块未绑定时写接口仍然可用。
         ...(writes === undefined ? {} : { evaluationWrites: writes }),
+        ...(input.runProgress === undefined ? {} : { runProgress: input.runProgress }),
       },
       // 每次世界变化都会重建玩家投影（tick、玩家命令、Agent turn 完成），单独计时才能看出它在发布里的占比。
       projection: () => host.tracer.span(playerProjectionSpan, {}, () => reads.projection()),

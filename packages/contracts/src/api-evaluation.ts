@@ -278,6 +278,39 @@ export const runControlResponseSchema = z
 
 export type RunControlResponse = z.infer<typeof runControlResponseSchema>;
 
+/**
+ * run 执行进度：实验分支的当前 tick、脚本终点、已写入结果的探针数与执行器最近一条审计事件。
+ * 失败时最近事件给出原因码；没有脚本的 run 终点为 null、探针总数为 0。
+ */
+export const runProgressResponseSchema = z
+  .object({
+    runId: idSchemas.run,
+    status: z.string().min(1),
+    branchId: z.string().min(1),
+    /** 执行器此刻是否正在驱动该 run；running 但未在执行表示在队列中等待前序 run。 */
+    executing: z.boolean(),
+    /** 实验分支时钟；run 从未启动、分支还没有时钟时为 null。 */
+    worldTick: z.number().int().nonnegative().nullable(),
+    endTick: z.number().int().nonnegative().nullable(),
+    probes: z
+      .object({
+        recorded: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+      })
+      .strict(),
+    lastEvent: z
+      .object({
+        type: z.string().min(1),
+        payload: jsonValueSchema,
+        createdAt: z.string().min(1),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export type RunProgressResponse = z.infer<typeof runProgressResponseSchema>;
+
 /** 实验列表的一项：标识与已创建的 run 数量。 */
 export const experimentListEntrySchema = z
   .object({

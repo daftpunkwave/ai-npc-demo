@@ -1,12 +1,12 @@
 /**
  * 核心职责：验证实验执行器按脚本检查点驱动受控时钟、在沙盒分支执行探针、写入 probe_results 与 experiment_results，
- * 实验分支之间与在线分支之间互不读写。
+ * 实验分支之间与在线分支之间互不读写，并经进度接口如实对外呈现。
  * 交互契约：使用真实测试装配、SQLite 与控制台接口，决策走确定性模块，不调用模型。
  * 约束与禁忌：断言必须读执行器写入的真实存储行或公开接口；禁止替换执行器内部实现。
  */
 import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { runReportResponseSchema, type Json } from "@world-prism/contracts";
+import { runProgressResponseSchema, runReportResponseSchema, type Json } from "@world-prism/contracts";
 import type { RunningHost } from "@world-prism/app-server";
 import {
   activeAgentsOn,
@@ -179,4 +179,34 @@ describe("实验执行器", () => {
       for (const turnBranch of branches) expect(allowed.has(turnBranch)).toBe(true);
     }
   }, 180_000);
+
+  it("进度接口给出当前 tick、脚本终点与探针计数，评估员可读、玩家不可读", async () => {
+    const host = await experimentHost(resources);
+    const headers = await researcherHeaders(host);
+    const [runId] = await createExperimentRuns(host, headers, experimentSpec({ experimentId: "exp-runner-progress-v1" }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    const ready = runProgressResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/progress`, headers,
+    })).json());
+    expect(ready).toMatchObject({ status: "ready", worldTick: null, endTick: 62, probes: { recorded: 0, total: 1 }, executing: false, lastEvent: null });
+
+    await startRun(host, headers, runId, "op-000000000301");
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"])).toBe("completed");
+    const evaluatorHeaders = { ...headers, "X-Active-Role": "evaluator" };
+    const done = runProgressResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/progress`, headers: evaluatorHeaders,
+    })).json());
+    expect(done).toMatchObject({
+      status: "completed", branchId: branchOf(host, runId), worldTick: 62, endTick: 62,
+      probes: { recorded: 1, total: 1 }, executing: false, lastEvent: { type: "ExperimentRunCompleted" },
+    });
+    const missing = await host.app.inject({ method: "GET", url: "/api/v1/console/runs/run-aaaaaaaaaaaa/progress", headers });
+    expect(missing.statusCode).toBe(404);
+    const playerLogin = await host.app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { token: "experiment-player" } });
+    const playerSession = (playerLogin.json() as { readonly sessionToken: string }).sessionToken;
+    const forbidden = await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/progress`, headers: { Authorization: `Bearer ${playerSession}` },
+    });
+    expect(forbidden.statusCode).toBe(403);
+  }, 120_000);
 });

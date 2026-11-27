@@ -327,6 +327,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     modelLayouts,
     evaluation,
     writes: runWrites,
+    runProgress: (runId) => runner.progress(runId),
     // 未启动 Agent 运行时（无 Agent 名册）时没有维护队列，健康摘要按零值展示。
     ...(agents === null ? {} : { maintenanceQueue: () => agents.maintenanceQueue }),
     // 世界变化同时驱动传输推送与 Agent 运行时：tick 推进、命令提交后立即重跑一轮，

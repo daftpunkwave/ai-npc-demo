@@ -32,6 +32,7 @@ import { authenticate, requireConsoleRole, sendHttpError } from "./context";
 import {
   experimentDetailResponseSchema,
   runDetailResponseSchema,
+  runProgressResponseSchema,
   runReportResponseSchema,
   runsQuerySchema,
   runsResponseSchema,
@@ -299,6 +300,16 @@ export function registerConsoleEvaluationRoutes(context: RouteContext): void {
     const detail = options.console.evaluation.run(path.runId);
     if (detail === null) return sendHttpError(reply, "not-found", "run 不存在");
     return runDetailResponseSchema.parse(detail);
+  });
+
+  app.get("/api/v1/console/runs/:runId/progress", (request, reply) => {
+    if (requireEvaluationSession(request, reply) === null) return;
+    if (options.console?.runProgress === undefined) return sendHttpError(reply, "not-ready", "实验执行进度尚未就绪");
+    const path = parsePath(runParamsSchema, request.params);
+    if (path === null) return sendHttpError(reply, "validation", "runId 不合法");
+    const progress = options.console.runProgress(path.runId);
+    if (progress === null) return sendHttpError(reply, "not-found", "run 不存在");
+    return runProgressResponseSchema.parse(progress);
   });
 
   app.get("/api/v1/console/runs/:runId/report", (request, reply) => {
