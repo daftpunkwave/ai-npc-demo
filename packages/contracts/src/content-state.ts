@@ -1,18 +1,16 @@
 /**
  * 定义 world-init、evidence、starts、scenario 与脚本内容文件的严格 schema。
- * 依赖公共契约的命令与领域值 schema；只描述字段形状，不做跨文件引用检查。
+ * 依赖本包的命令与领域值 schema 及内容 schema 共用原语；只描述字段形状，跨文件引用检查由内容加载器负责。
  * 禁止在此读取文件或填充运行时生成的 ID。
  */
+import { z } from "zod";
 import {
   cardEffectSchema,
   cityResourceAmountsSchema,
-  commandRequestSchema,
-  principalIdSchema,
-  probeIdSchema,
   resourceAmountsSchema,
   taskTypeSchema,
-} from "@world-prism/contracts";
-import { z } from "zod";
+} from "./command-values";
+import { commandRequestSchema } from "./commands";
 import {
   contentIdSchema,
   evidenceIdSchema,
@@ -27,7 +25,8 @@ import {
   stockpileIdSchema,
   teamIdSchema,
   textSchema,
-} from "./common";
+} from "./content-primitives";
+import { principalIdSchema, probeIdSchema } from "./ids";
 
 /** world-init.yaml：指标、库存、队伍、群体、职责委托与玩家初态。 */
 export const contentWorldInitSchema = z

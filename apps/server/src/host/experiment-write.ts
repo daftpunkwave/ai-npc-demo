@@ -4,17 +4,15 @@
  * 展开结果里的实验标识与变体/脚本分支一并写入每个 RunSpec，供评估读取按显式字段归组。
  * 约束与禁忌：只创建 run 记录，不启动执行、不推进时钟；规格本身不合法时在创建任何 run 之前失败。
  */
-import { DomainError } from "@world-prism/contracts";
+import { DomainError, type ContentPack, type Roster } from "@world-prism/contracts";
 import {
   experimentSpecSchema,
   expandExperimentRuns,
   loadExperimentSpec,
   validateExperimentSpec,
   type ConfigLoadContext,
-  type ContentPack,
   type ExperimentSpec,
   type LoadedConfig,
-  type Roster,
   type RunSpec,
 } from "@world-prism/experiment";
 import { createRun, type RunCreateResult, type RunWriteInput } from "./run-write";

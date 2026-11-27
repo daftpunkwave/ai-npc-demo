@@ -21,7 +21,7 @@ import {
 } from "@world-prism/contracts";
 import type { AgentArtifactStore, ApprovedSpeech, ApprovedSpeechReader } from "@world-prism/module-sdk";
 import type { MessageExecutionInput, MessageExecutionResult } from "./tool-gateway";
-import type { ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
 import {
   filterDisclosableFacts,
   type SpeechFact,

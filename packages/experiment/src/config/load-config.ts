@@ -5,8 +5,8 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { configRefSchema, rosterSchema, type ContentPack, type Roster } from "@world-prism/contracts";
 import type { z } from "zod";
-import type { ContentPack } from "../content/load-content-pack";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { parseYamlText } from "../loading/yaml";
 import {
@@ -15,7 +15,7 @@ import {
   type ConfigDocumentCache,
   type LoadedConfigDocument,
 } from "./config-document-cache";
-import { configRefSchema, rosterSchema, type Roster, runSpecSchema, type RunSpec } from "./schema";
+import { runSpecSchema, type RunSpec } from "./schema";
 
 /** 可保存为数据库草稿的配置种类；与 config_drafts 的 kind 约束一致。 */
 export type ConfigDraftKind = "assembly" | "model-layout" | "profile" | "toolset";

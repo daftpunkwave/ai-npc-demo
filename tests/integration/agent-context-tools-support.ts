@@ -16,7 +16,7 @@ import type {
 import { capabilityIdSchema } from "@world-prism/contracts";
 import { createModuleRegistry, resolveRealmPlan, startInstances, type ResolvedRealmPlan, type StartedInstances } from "@world-prism/kernel";
 import type { AgentCompressionPort, AgentContextPort, AgentToolViewPort } from "@world-prism/module-sdk";
-import type { ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
 import { loadContentPack } from "@world-prism/experiment";
 import { orderedBlocksContextDefinition } from "@world-prism/mod-agent-context-ordered-blocks";
 import { compressionNoneModuleDefinition } from "@world-prism/mod-agent-compression-none";

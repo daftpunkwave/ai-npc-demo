@@ -6,10 +6,9 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
-import { jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@world-prism/contracts";
+import { configRefSchema, jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@world-prism/contracts";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { envReferenceName, loadConfigDocument, type ConfigLoadContext } from "./load-config";
-import { configRefSchema } from "./schema";
 
 const positive = z.number().int().positive();
 const name = z.string().min(1);

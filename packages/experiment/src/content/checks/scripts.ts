@@ -4,10 +4,8 @@
  * 禁止在此执行命令、改写脚本或跳过引用检查。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
-import type { CommandRequest } from "@world-prism/contracts";
+import type { CommandRequest, ContentIndex, ContentScript, ContentScriptStep } from "@world-prism/contracts";
 import { roadIdFromPolicyKey } from "@world-prism/contracts";
-import type { ContentIndex } from "../content-index";
-import type { ContentScript, ContentScriptStep } from "../schema/index";
 import { fail } from "./common";
 
 /** 从外部脚本命令中取出内容 ID 引用，供跨文件校验使用。 */

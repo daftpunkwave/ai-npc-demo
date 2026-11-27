@@ -12,11 +12,12 @@ import {
   moduleKindSchema,
   type AssemblyDescriptor,
   type CapabilityRef,
+  type ContentPack,
   type ModuleDefinition,
   type Realm,
 } from "@world-prism/contracts";
 import { createModuleRegistry, resolveRealmPlan, type ResolvedRealmPlan } from "@world-prism/kernel";
-import { loadContentPack, type ContentPack } from "@world-prism/experiment";
+import { loadContentPack } from "@world-prism/experiment";
 import { REALM_NAMESPACES, validateModuleDefinition } from "@world-prism/module-sdk";
 import {
   allModuleDefinitions,

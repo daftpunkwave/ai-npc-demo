@@ -16,12 +16,13 @@ import {
   protocolVersion,
   type AssemblyDescriptor,
   type CapabilityRef,
+  type ContentPack,
   type Json,
   type ModuleDefinition,
   type ModuleRef,
   type ResolvedModuleSet,
 } from "@world-prism/contracts";
-import { loadContentPack, schemaLoadingError, type ContentPack } from "@world-prism/experiment";
+import { loadContentPack, schemaLoadingError } from "@world-prism/experiment";
 import {
   computeAssemblyHash,
   computeCatalogHash,

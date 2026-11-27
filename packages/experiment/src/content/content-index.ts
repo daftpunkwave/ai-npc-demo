@@ -1,6 +1,6 @@
 /**
  * 建立内容包索引并编排跨文件一致性检查。
- * 依赖内容 schema 类型、各主题检查函数与共用 ID 辅助；输出只读索引供加载器与后续模块复用。
+ * 依赖公共契约的内容文件与索引类型、各主题检查函数与共用 ID 辅助；输出只读索引供加载器返回。
  * 禁止在此读取磁盘、修补缺失引用或跳过检查继续启动。
  */
 /* eslint-disable @typescript-eslint/restrict-template-expressions -- 内容 ID 已由 schema 约束为字符串；缺少完整类型信息时规则会把推断类型视为 unknown。 */
@@ -11,71 +11,11 @@ import { checkRules } from "./checks/rules";
 import { fail, registerGlobalIds, uniqueById } from "./checks/common";
 import type {
   ContentCard,
-  ContentCharacter,
-  ContentCharacters,
-  ContentEvidence,
-  ContentEvidenceEntry,
-  ContentFaction,
-  ContentFactions,
-  ContentGroup,
-  ContentLocale,
-  ContentLore,
-  ContentMap,
-  ContentNode,
-  ContentPackFile,
-  ContentPrompts,
-  ContentRoad,
-  ContentRules,
+  ContentIndex,
+  ContentParts,
   ContentScenario,
   ContentScript,
-  ContentSecret,
-  ContentStart,
-  ContentStarts,
-  ContentStockpile,
-  ContentTeam,
-  ContentWorldInit,
-} from "./schema/index";
-
-/** 内容包全部文件解析后的部分，供索引构建使用。 */
-export interface ContentParts {
-  readonly pack: ContentPackFile;
-  readonly lore: ContentLore;
-  readonly map: ContentMap;
-  readonly factions: ContentFactions;
-  readonly characters: ContentCharacters;
-  readonly worldInit: ContentWorldInit;
-  readonly rules: ContentRules;
-  readonly evidence: ContentEvidence;
-  readonly starts: ContentStarts;
-  readonly scenarios: ReadonlyMap<string, ContentScenario>;
-  readonly scripts: ReadonlyMap<string, ContentScript>;
-  readonly prompts: ContentPrompts;
-  readonly locale: ContentLocale;
-}
-
-/** 内容包索引：固定 ID 到内容的只读映射与主体集合。 */
-export interface ContentIndex {
-  readonly nodes: ReadonlyMap<string, ContentNode>;
-  readonly roads: ReadonlyMap<string, ContentRoad>;
-  readonly factions: ReadonlyMap<string, ContentFaction>;
-  readonly characters: ReadonlyMap<string, ContentCharacter>;
-  readonly stockpiles: ReadonlyMap<string, ContentStockpile>;
-  readonly teams: ReadonlyMap<string, ContentTeam>;
-  readonly groups: ReadonlyMap<string, ContentGroup>;
-  readonly evidence: ReadonlyMap<string, ContentEvidenceEntry>;
-  readonly secrets: ReadonlyMap<string, ContentSecret>;
-  readonly starts: ReadonlyMap<string, ContentStart>;
-  readonly cards: ReadonlyMap<string, ContentCard>;
-  readonly scenarios: ReadonlyMap<string, ContentScenario>;
-  readonly scripts: ReadonlyMap<string, ContentScript>;
-  readonly principalIds: ReadonlySet<string>;
-  readonly agentIds: ReadonlySet<string>;
-  readonly characterIds: ReadonlySet<string>;
-  readonly factionIds: ReadonlySet<string>;
-  readonly evidenceIds: ReadonlySet<string>;
-  readonly secretIds: ReadonlySet<string>;
-  readonly playerPrincipalId: string;
-}
+} from "@world-prism/contracts";
 
 /** 内容文件在错误与全局 ID 登记中的固定来源名。 */
 const contentFiles = {

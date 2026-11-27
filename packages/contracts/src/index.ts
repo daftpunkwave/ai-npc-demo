@@ -1,5 +1,6 @@
 /**
- * 汇总公共契约包的命名导出：JSON、ID、信封、命令、事件、投影、模块、API、模型与 schema 工具。
+ * 汇总公共契约包的命名导出：JSON、ID、信封、命令、事件、投影、模块、API、模型、内容包、名册、
+ * Agent profile 与 schema 工具。
  * 依赖各主题源文件的 Zod schema 与类型；不引入任何宿主机制或功能实现。
  * 禁止在此追加实现逻辑，包入口只做再导出并保留包名常量。
  */
@@ -24,6 +25,12 @@ export * from "./storage";
 export * from "./model";
 export * from "./model-fixtures";
 export * from "./agent-runtime";
+export * from "./agent-profile";
+export * from "./roster";
+export * from "./content-world";
+export * from "./content-state";
+export * from "./content-templates";
+export * from "./content-pack";
 export * from "./context-budget";
 export * from "./token-estimate";
 export * from "./schema-profile";

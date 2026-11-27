@@ -1,9 +1,9 @@
 /**
  * 把已校验内容包收窄为游戏端口视图；只做索引映射，不复制数据。
- * 依赖 experiment 内容类型与 module-sdk 视图类型；不依赖游戏模块。
+ * 依赖公共契约的内容包类型与 module-sdk 视图类型；不依赖游戏模块。
  * 禁止在此读取环境变量、打开存储或补默认业务值。
  */
-import type { ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
 import type { GameContent, GameNotificationTexts, GameScenario, GameScenarioCard } from "@world-prism/module-sdk";
 
 /** 已校验剧情内容中适配器透传所需的最小形状。 */

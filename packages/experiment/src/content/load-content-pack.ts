@@ -1,42 +1,44 @@
 /**
  * 从磁盘读取并解析内容包，返回经过 schema 与交叉检查校验的只读视图。
- * 依赖 yaml 解析、内容 schema、索引构建与注入的内容根目录；不依赖配置或运行时状态。
+ * 依赖 yaml 解析、公共契约的内容 schema 与内容包形状、索引构建与注入的内容根目录；不依赖配置或运行时状态。
  * 禁止在缺少声明文件时用默认值补齐，也不接受未登记的顶层资源文件。
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  contentCharactersSchema,
+  contentEvidenceSchema,
+  contentFactionsSchema,
+  contentLocaleSchema,
+  contentLoreSchema,
+  contentMapSchema,
+  contentPackSchema,
+  contentPromptsSchema,
+  contentRulesSchema,
+  contentScenarioSchema,
+  contentScriptSchema,
+  contentStartsSchema,
+  contentWorldInitSchema,
+  type ContentCharacters,
+  type ContentEvidence,
+  type ContentFactions,
+  type ContentLocale,
+  type ContentLore,
+  type ContentMap,
+  type ContentPack,
+  type ContentPackFile,
+  type ContentParts,
+  type ContentPrompts,
+  type ContentRules,
+  type ContentScenario,
+  type ContentScript,
+  type ContentStarts,
+  type ContentWorldInit,
+} from "@world-prism/contracts";
 import type { z } from "zod";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { parseYamlText } from "../loading/yaml";
-import { type ContentIndex, buildContentIndex, type ContentParts } from "./content-index";
-import {
-  contentCharactersSchema,
-  type ContentCharacters,
-  contentEvidenceSchema,
-  type ContentEvidence,
-  contentFactionsSchema,
-  type ContentFactions,
-  contentLocaleSchema,
-  type ContentLocale,
-  contentLoreSchema,
-  type ContentLore,
-  contentMapSchema,
-  type ContentMap,
-  contentPackSchema,
-  type ContentPackFile,
-  contentPromptsSchema,
-  type ContentPrompts,
-  contentRulesSchema,
-  type ContentRules,
-  contentScenarioSchema,
-  type ContentScenario,
-  contentScriptSchema,
-  type ContentScript,
-  contentStartsSchema,
-  type ContentStarts,
-  contentWorldInitSchema,
-  type ContentWorldInit,
-} from "./schema/index";
+import { buildContentIndex } from "./content-index";
 
 /** 内容包清单文件的固定相对路径。 */
 const packFileName = "pack.yaml";
@@ -59,11 +61,6 @@ const requiredFileNames = [
 export interface ContentPackSources {
   readonly packId: string;
   readonly files: ReadonlyMap<string, string>;
-}
-
-/** 解析并交叉检查后的内容包；索引供运行时按 ID 查询。 */
-export interface ContentPack extends ContentParts {
-  readonly index: ContentIndex;
 }
 
 /** 按 schema 解析一份 YAML 文本，失败时保留来源文件与字段路径。 */

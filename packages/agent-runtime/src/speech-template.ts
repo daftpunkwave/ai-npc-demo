@@ -4,7 +4,7 @@
  * 约束与禁忌：不得拼接未披露秘密、自由文本理由或未来完成承诺。
  */
 import type { DialogueIntent, Json } from "@world-prism/contracts";
-import type { ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
 import type { SpeechFact } from "./disclosure";
 import type { SpeechReceiptState } from "./speech-guards";
 

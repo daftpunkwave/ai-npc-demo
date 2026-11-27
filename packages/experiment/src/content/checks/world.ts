@@ -19,7 +19,7 @@ import type {
   ContentStockpile,
   ContentTeam,
   ContentWorldInit,
-} from "../schema/index";
+} from "@world-prism/contracts";
 import { fail } from "./common";
 
 /** 各内容文件在错误信息中的固定来源名。 */

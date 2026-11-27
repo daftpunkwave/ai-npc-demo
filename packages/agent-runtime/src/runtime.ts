@@ -6,7 +6,7 @@
  */
 import type { HostServices, ModuleDefinition, StoragePort } from "@world-prism/contracts";
 import type { PerceptionPort, SchedulingPort } from "@world-prism/module-sdk";
-import type { ContentPack, ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import type { ContentPack, ResolvedAgentProfile, Roster } from "@world-prism/contracts";
 import { PerceptionEventConsumer } from "./event-consumer";
 import { MemoryHost } from "./memory-host";
 import { memoryIdentityForAgent } from "./memory-identity";

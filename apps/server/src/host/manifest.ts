@@ -1,11 +1,11 @@
 /**
  * 冻结一次 run 的解析结果：内容版本、seed、实际装配引用与每个模块的解析后配置。
- * 依赖 kernel 的规范化摘要、实验包的 RunSpec/名册类型与已解析 server 装配；不访问存储、不启动模块。
+ * 依赖 kernel 的规范化摘要、实验包的 RunSpec 类型、公共契约的名册类型与已解析 server 装配；不访问存储、不启动模块。
  * 禁止写入密钥或凭据，禁止用原始 JSON.stringify、模块 ID 或截断摘要代替规范化哈希。
  * 未声明 Agent 槽位时不解析 profile、toolset 与模型布局，只保留名册选择供运行记录。
  */
-import type { Json } from "@world-prism/contracts";
-import type { Roster, RunSpec } from "@world-prism/experiment";
+import type { Json, Roster } from "@world-prism/contracts";
+import type { RunSpec } from "@world-prism/experiment";
 import { computeConfigHash, type CanonicalHasher } from "@world-prism/kernel";
 import { canonicalHasher } from "../host-services";
 import type { ResolvedServerAssembly } from "./assembly";

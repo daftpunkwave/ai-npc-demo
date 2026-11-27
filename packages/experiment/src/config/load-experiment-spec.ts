@@ -3,12 +3,11 @@
  * 交互契约：依赖配置加载器、内容索引与 profile 解析入口；只校验，不创建分支或启动运行。
  * 约束与禁忌：禁止在不校验脚本分支与变体补丁的情况下展开 run，也禁止静默跳过无法解析的补丁。
  */
-import type { ContentPack } from "../content/load-content-pack";
+import type { ContentPack, Roster } from "@world-prism/contracts";
 import { crossCheckLoadingError, referenceLoadingError } from "../loading/errors";
 import { applyProfilePatch, loadAgentProfile } from "./agent-profile";
 import { experimentSpecSchema, type ExperimentSpec } from "./experiment-spec";
 import { loadConfigDocument, type ConfigLoadContext, type LoadedConfig } from "./load-config";
-import type { Roster } from "./schema";
 
 /** 加载实验规格；文档 ID 必须与引用一致。 */
 export function loadExperimentSpec(

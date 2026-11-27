@@ -15,8 +15,8 @@ import {
   type StorageRow,
   type StorageTransaction,
 } from "@world-prism/contracts";
-import type { HostServices } from "@world-prism/contracts";
-import type { ConfigLoadContext, ContentPack, RunSpec } from "@world-prism/experiment";
+import type { ContentPack, HostServices } from "@world-prism/contracts";
+import type { ConfigLoadContext, RunSpec } from "@world-prism/experiment";
 import { loadRoster, runSpecSchema, validateRoster, validateRunSpec } from "@world-prism/experiment";
 import type { ClockState } from "@world-prism/module-sdk";
 import { loadAssembly } from "./assembly";

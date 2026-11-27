@@ -11,7 +11,7 @@ import type {
   Json,
   StoragePort,
 } from "@world-prism/contracts";
-import type { ContentPack, ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import type { ContentPack, ResolvedAgentProfile, Roster } from "@world-prism/contracts";
 import type { NewAgentTrigger, PerceptionPort, PerceptionRequest } from "@world-prism/module-sdk";
 import type { AgentModuleHandle } from "./agent-module-handle";
 import { renderObservation } from "./observation-renderer";

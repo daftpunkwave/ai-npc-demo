@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { memoryRetrievalBudgetDefaults, type Json } from "@world-prism/contracts";
-import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ResolvedAgentProfile } from "@world-prism/contracts";
 import { memoryRetrievalBudget } from "../src/turn-materials";
 
 /** 只填记忆检索预算需要的最小 profile 形态。 */

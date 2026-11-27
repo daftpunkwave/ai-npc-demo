@@ -5,14 +5,13 @@
  * 返回活动 run、启动计划与（若发生迁移）源分支标识和原状态供失败补偿。
  * 约束与禁忌：不按当前入参重建 RunSpec、不静默改写冻结哈希、不跳过 manifest 与 RunSpec 的一致性校验。
  */
-import type { AssemblyDescriptor, HostServices, Json, ModuleDefinition, StoragePort } from "@world-prism/contracts";
+import type { AssemblyDescriptor, ContentPack, HostServices, Json, ModuleDefinition, StoragePort } from "@world-prism/contracts";
 import {
   loadRoster,
   runSpecSchema,
   validateRoster,
   validateRunSpec,
   type ConfigLoadContext,
-  type ContentPack,
 } from "@world-prism/experiment";
 import { resolveAgentConfiguration } from "./agent-configuration";
 import { loadAssembly, resolveServerAssembly, type ResolvedServerAssembly } from "./assembly";

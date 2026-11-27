@@ -1,22 +1,21 @@
 /**
  * 定义 prompts 与 locale 内容文件的严格 schema，以及模板覆盖所需的键目录。
- * 依赖公共契约的事件、原因码、任务类型与领域值；只描述字段形状与完整键集合。
+ * 依赖本包的事件、原因码、任务类型与领域值；只描述字段形状与完整键集合。
  * 禁止在此渲染模板、判定关键词或改写中文文本。
  */
+import { z } from "zod";
 import {
-  domainEventTypes,
-  reasonCodeGroups,
-  reasonCodes,
-  resourceLevelSchema,
   roadStatusSchema,
   taskTypeSchema,
   watergateAllocationSchema,
   type DialogueIntentKind,
   type MeterChangeCause,
   type TermKind,
-} from "@world-prism/contracts";
-import { z } from "zod";
-import { exactRecord, textSchema } from "./common";
+} from "./command-values";
+import { exactRecord, textSchema } from "./content-primitives";
+import { domainEventTypes } from "./events";
+import { resourceLevelSchema } from "./projection";
+import { reasonCodeGroups, reasonCodes } from "./reason-codes";
 
 /** 对白意图全集；speechTemplates 只需覆盖会生成对白的 13 种。 */
 const dialogueIntentKinds = [

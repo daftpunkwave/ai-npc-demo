@@ -6,15 +6,14 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { rosterSchema, type Roster } from "@world-prism/contracts";
 import {
   LoadingError,
   loadContentPack,
   loadRoster,
   parseContentPack,
   readContentPackSources,
-  rosterSchema,
   type ContentPackSources,
-  type Roster,
   validateRoster,
 } from "../src/index";
 

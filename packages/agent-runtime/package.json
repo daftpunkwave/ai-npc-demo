@@ -8,8 +8,10 @@
   },
   "dependencies": {
     "@world-prism/contracts": "workspace:*",
-    "@world-prism/experiment": "workspace:*",
     "@world-prism/kernel": "workspace:*",
     "@world-prism/module-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@world-prism/experiment": "workspace:*"
   }
 }

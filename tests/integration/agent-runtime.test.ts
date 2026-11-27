@@ -22,7 +22,8 @@ import {
   type PerceptionRequest,
   type SchedulingPort,
 } from "@world-prism/module-sdk";
-import { loadContentPack, type ResolvedAgentProfile, type Roster } from "@world-prism/experiment";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/contracts";
+import { loadContentPack } from "@world-prism/experiment";
 import { memoryNoneModuleDefinition } from "@world-prism/mod-agent-memory-none";
 import { perceptionModuleDefinition } from "@world-prism/mod-agent-perception-local";
 import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";

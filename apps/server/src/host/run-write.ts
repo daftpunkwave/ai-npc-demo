@@ -7,12 +7,14 @@
  */
 import {
   DomainError,
+  type ContentPack,
   type HostServices,
   type Json,
   type ModuleDefinition,
+  type Roster,
   type StoragePort,
 } from "@world-prism/contracts";
-import { runSpecSchema, validateRunSpec, type ContentPack, type LoadedConfig, type Roster, type RunSpec } from "@world-prism/experiment";
+import { runSpecSchema, validateRunSpec, type LoadedConfig, type RunSpec } from "@world-prism/experiment";
 import { buildRunManifest } from "./manifest";
 import { loadAssembly, resolveServerAssembly, type ResolvedServerAssembly } from "./assembly";
 

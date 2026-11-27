@@ -18,7 +18,8 @@ import type {
 } from "@world-prism/contracts";
 import { domainEventPayloadSchemas } from "@world-prism/contracts";
 import { Authority, TransactionWorldTx } from "@world-prism/authority";
-import { loadContentPack, type ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
+import { loadContentPack } from "@world-prism/experiment";
 import {
   gameModuleIds,
   type AggregateListOptions,
