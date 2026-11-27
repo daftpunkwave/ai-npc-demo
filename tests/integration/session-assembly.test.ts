@@ -1,11 +1,18 @@
 /**
- * 校验浏览器会话装配的服务端解析：requiresRemote 必须由同一装配的 server 段绑定满足，模块集下发远端能力描述。
- * 依赖真实组合根目录与仓库装配文件；只做装配解析，不启动模块、不打开存储或监听端口。
+ * 校验浏览器会话装配的服务端解析：requiresRemote 必须由同一装配的 server 段绑定满足，模块集下发远端能力描述；
+ * 服务端下发的模块集能被浏览器运行时按同一算法复算 configHash 后接受。
+ * 依赖真实组合根目录、仓库装配文件与 client-sdk 运行时；浏览器模块的 create 换成空实现，不加载视图、不打开存储或监听端口。
  * 禁止手工拼装解析结果，或在远端能力缺失时把断言放宽成只检查抛错。
  */
 import { describe, expect, it } from "vitest";
-import type { AssemblyDescriptor } from "@world-prism/contracts";
-import { allModuleDefinitions, loadAssembly, resolveSessionAssemblies } from "@world-prism/app-server";
+import type { AssemblyDescriptor, ModuleDefinition } from "@world-prism/contracts";
+import { startBrowserModules } from "@world-prism/client-sdk";
+import {
+  allModuleDefinitions,
+  browserModuleDefinitions,
+  loadAssembly,
+  resolveSessionAssemblies,
+} from "@world-prism/app-server";
 
 /** 去掉 server 段的指定能力绑定，模拟部署换掉或漏装某个远端能力的 provider。 */
 function withoutServerCapability(assembly: AssemblyDescriptor, capability: string): AssemblyDescriptor {
@@ -44,5 +51,39 @@ describe("浏览器会话装配的远端能力", () => {
         ],
       },
     });
+  });
+});
+
+/** 保留真实描述符（版本、配置 schema、能力与贡献），只把 create 换成不加载视图实现的空实例。 */
+function withInertFactory(definition: ModuleDefinition): ModuleDefinition {
+  return {
+    ...definition,
+    create: async (input) => ({
+      moduleId: input.moduleId,
+      start: async () => undefined,
+      drain: async () => undefined,
+      dispose: async () => undefined,
+      port: { renderContribution: () => null },
+    }),
+  };
+}
+
+describe("服务端与浏览器的 configHash 口径", () => {
+  it("服务端下发的 client 与 console 模块集在浏览器侧复算 configHash 全部一致并能启动", async () => {
+    const sessions = await resolveSessionAssemblies(loadAssembly("local-slg-standard-v1"), allModuleDefinitions);
+    for (const realm of ["client", "console"] as const) {
+      const resolved = sessions[realm];
+      const started = await startBrowserModules({
+        definitions: browserModuleDefinitions.filter((definition) => definition.realm === realm).map(withInertFactory),
+        resolved,
+      });
+      try {
+        expect(started.instances.map(({ moduleId }) => moduleId).sort()).toEqual(
+          resolved.modules.map(({ moduleId }) => moduleId).sort(),
+        );
+      } finally {
+        await started.dispose();
+      }
+    }
   });
 });
