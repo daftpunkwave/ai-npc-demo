@@ -4,8 +4,8 @@
  * 依赖 host 子模块与 authority；不启动浏览器端，也不直接引用模块实现。
  * 禁止绕过解析计划引用模块实现、按当前入参重建已冻结的在线 run，或重复实现时钟状态与路由。
  */
-import { Authority } from "@world-prism/authority";
-import { activateAgentRosterInTransaction, createCampaignStartActivationHook, SpeechApprovalIndex } from "@world-prism/agent-runtime";
+import type { Authority } from "@world-prism/authority";
+import { activateAgentRosterInTransaction, SpeechApprovalIndex } from "@world-prism/agent-runtime";
 import { DomainError, modelLayoutRoutesResponseSchema, type Json, type StoragePort } from "@world-prism/contracts";
 import { catchUpWorldTick } from "./tick";
 import { createClientContent } from "./host/client-content";
@@ -26,6 +26,7 @@ import { ModelLayoutAdminPort } from "./host/model-layout-admin";
 import { createEvaluationReadPort } from "./host/evaluation-read";
 import { resolve } from "node:path";
 import { createRunWrites } from "./host/run-writes";
+import { createWorldAuthority } from "./host/world-authority";
 import { loadRoster } from "@world-prism/experiment";
 import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
 import type { EvaluationPort } from "./host/module-catalog";
@@ -91,24 +92,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
 
   const approvals = new SpeechApprovalIndex();
   const rosterAgentIds = core.active.agents?.roster.agents.map(({ agentId }) => agentId);
-  const authority = new Authority({
-    storage: core.storage,
-    host: core.host,
-    content: core.gameContent,
-    moduleBinder: core.runtime.binder,
-    runSeed: core.active.runSpec.seed,
-    approvedSpeech: approvals,
-  });
-  for (const contributor of core.runtime.contributors) {
-    authority.registerModule(contributor);
-  }
-  if (rosterAgentIds !== undefined) {
-    authority.hostAfterCommand(
-      "agent-runtime",
-      "campaign.start",
-      createCampaignStartActivationHook({ agentIds: rosterAgentIds, nowIso: () => core.host.nowIso() }),
-    );
-  }
+  const authority = createWorldAuthority({ core, runSeed: core.active.runSpec.seed, approvals, rosterAgentIds });
 
   const reads = createReadPorts({
     host: core.host,
