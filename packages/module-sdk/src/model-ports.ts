@@ -39,6 +39,11 @@ export interface ModelRoute {
   readonly purpose: Purpose;
   readonly modelId: string;
   readonly externalModel: string;
+  /**
+   * 布局声明的供应商返回名别名；响应的 servedModel 精确命中其一时不算模型替换。
+   * 未声明时省略该键，既有路由的冻结内容与 configHash 不变。
+   */
+  readonly servedModels?: readonly string[];
   readonly connectionId: string;
   readonly adapterId: string;
   readonly endpoint: string | null;

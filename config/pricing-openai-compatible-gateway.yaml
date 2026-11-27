@@ -1,0 +1,6 @@
+schemaVersion: 1
+pricingVersion: "2026-11-gateway-estimate"
+currency: USD
+models:
+  # 估算价目：网关没有公布该模型的单价，沿用 pricing-live 中 deepseek-flash 的单价，报告中的费用只作参考。
+  npc-chat: { externalModel: deepseek-v4.1-flash-official, inputPerMTok: 0.3, outputPerMTok: 1.2 }

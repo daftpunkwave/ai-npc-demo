@@ -246,10 +246,25 @@ export const modelLimitsSchema = z
   })
   .strict();
 
+/** 一个模型最多声明的供应商返回名别名数。 */
+export const maxServedModelAliases = 16;
+
+/**
+ * 供应商返回名别名：有的网关按请求名路由，却在响应里报告上游名称，声明后这些响应不算模型替换。
+ * 写成名称列表，或写成 `env:` 引用（由宿主预检时解析逗号分隔的列表）；仓库布局文件、控制台草稿与查看共用这一份定义。
+ */
+export const servedModelsSchema = z.union([
+  z.string().regex(/^env:/u),
+  z.array(z.string().min(1)).min(1).max(maxServedModelAliases)
+    .refine((names) => new Set(names).size === names.length, { message: "servedModels 不得重复" }),
+]);
+
 export const modelConfigDraftSchema = z
   .object({
     connectionId: z.string().min(1),
     externalModel: z.string().min(1),
+    /** 未声明时省略，与仓库布局文件的写法一致。 */
+    servedModels: servedModelsSchema.optional(),
     parameters: jsonValueSchema,
     capabilities: modelCapabilitiesSchema,
     limits: modelLimitsSchema,

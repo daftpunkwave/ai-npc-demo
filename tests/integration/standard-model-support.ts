@@ -9,9 +9,15 @@ const origin = "https://model.example.test";
 const externalModel = "deepseek-flash";
 export const standardModelTestKey = "integration-test-api-key";
 
-export function stubStandardModelHttp(): () => void {
+/**
+ * 替换 fetch 并设置部署变量；`requested` 是部署配置的模型名，`served` 是响应 model 字段报告的名称，
+ * 两者不同用于模拟按请求名路由、却报告上游名称的网关。
+ */
+export function stubStandardModelHttp(model: { readonly requested: string; readonly served: string } = {
+  requested: externalModel, served: externalModel,
+}): () => void {
   vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_BASE_URL", `${origin}/v1`);
-  vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_MODEL", externalModel);
+  vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_MODEL", model.requested);
   vi.stubEnv("WORLD_PRISM_OPENAI_COMPAT_API_KEY", standardModelTestKey);
   vi.stubEnv("ANTHROPIC_API_KEY", undefined);
   const originalFetch = globalThis.fetch;
@@ -31,7 +37,7 @@ export function stubStandardModelHttp(): () => void {
     const message = hasTools
       ? { role: "assistant", content: null, tool_calls: [{ id: "call-decision", type: "function", function: { name: "decision_submit", arguments: argumentsRaw } }] }
       : { role: "assistant", content: '{"utterance":"收到，我会留意。","citedRefs":[]}' };
-    return Response.json({ id: "test-model-reply", model: externalModel, choices: [{ finish_reason: hasTools ? "tool_calls" : "stop", message }],
+    return Response.json({ id: "test-model-reply", model: model.served, choices: [{ finish_reason: hasTools ? "tool_calls" : "stop", message }],
       usage: { prompt_tokens: 30, completion_tokens: 20 } });
   });
   return () => {

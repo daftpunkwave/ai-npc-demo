@@ -1,11 +1,11 @@
 /**
- * 核心职责：验证控制台模型布局端口的文件错误和安全端点往返。
- * 交互契约：使用独立配置目录与真实布局加载器，检查调用方可见的领域错误和布局视图。
+ * 核心职责：验证控制台模型布局端口的文件错误、安全端点往返，以及供应商返回名别名在查看与草稿校验中的往返。
+ * 交互契约：使用独立配置目录或仓库配置目录与真实布局加载器，检查调用方可见的领域错误和布局视图。
  * 约束与禁忌：不读取部署配置、不连接供应商、不提供真实凭据。
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ModelLayoutAdminPort } from "../src/host/model-layout-admin";
 
@@ -135,5 +135,45 @@ describe("模型布局管理端口", () => {
     expect(port.layout(layoutId).connections["proxy"]).toMatchObject({
       endpointRef: expected, endpointHost: null,
     });
+  });
+});
+
+describe("模型布局管理端口的返回名别名", () => {
+  const repoConfig = resolve(import.meta.dirname, "../../../config");
+
+  function portFor(agentIds: readonly string[]): ModelLayoutAdminPort {
+    return new ModelLayoutAdminPort({ configDir: repoConfig }, new Set(agentIds), () => ({ routes: [] }), () => null);
+  }
+
+  it("网关布局的查看结果带出别名引用，由查看结果还原的草稿可以通过校验", () => {
+    const reader = portFor([]);
+    const layout = reader.layout("openai-compatible-gateway-layout-v1");
+    expect(layout.models["npc-chat"]?.servedModels).toBe("env:WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS");
+    const port = portFor(layout.mounts.flatMap((mount) => mount.agentIds));
+    const draft = {
+      schemaVersion: layout.schemaVersion,
+      layoutId: layout.layoutId,
+      connections: Object.fromEntries(Object.entries(layout.connections).map(([connectionId, connection]) => [
+        connectionId,
+        { adapterId: connection.adapterId, endpoint: connection.endpointRef, credentialRef: `env:${connection.credentialRef}` },
+      ])),
+      models: layout.models,
+      mounts: layout.mounts,
+    };
+    expect(port.validate(draft)).toEqual({ ok: true, errors: [] });
+
+    const listed = { ...draft, models: { "npc-chat": { ...layout.models["npc-chat"], servedModels: ["deepseek/deepseek-flash"] } } };
+    expect(port.validate(listed)).toEqual({ ok: true, errors: [] });
+
+    const duplicated = { ...draft, models: { "npc-chat": { ...layout.models["npc-chat"], servedModels: ["a", "a"] } } };
+    expect(port.validate(duplicated)).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ code: "schema", message: expect.stringContaining("servedModels 不得重复") })],
+    });
+  });
+
+  it("未声明别名的共享布局，查看结果不出现 servedModels 键", () => {
+    const layout = portFor([]).layout("shared-model-layout-v1");
+    expect(Object.keys(layout.models["npc-chat"] ?? {})).not.toContain("servedModels");
   });
 });

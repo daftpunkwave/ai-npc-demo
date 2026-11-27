@@ -195,7 +195,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
 | `GET /model-layouts`（已实现） | operator、researcher | — | `{ layouts: { layoutId, source }[] }` |
-| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 显示 `adapterId`、`endpointRef`、端点主机名与 `credentialRef` 名称） |
+| `GET /model-layouts/{layoutId}`（已实现） | operator、researcher | — | 去密钥的 layout（connections 显示 `adapterId`、`endpointRef`、端点主机名与 `credentialRef` 名称；模型条目声明了供应商返回名别名时原样带出 `servedModels`，可能是名称列表或 `env:` 引用） |
 | `GET /model-layouts/{layoutId}/routes`（已实现） | operator、researcher | — | `{ routes: { agentId, purpose, modelId, connectionId, adapterId, externalModel }[] }`：按角色看的已解析路由 |
 | `POST /model-layouts/validate`（已实现） | operator | `{ layout }`，其中 `layout` 可以是任意 JSON 值 | `{ ok, errors }`。布局结构问题以 `schema` 错误项返回。请求缺少 `layout` 时返回 400 |
 | `POST /model-layouts/drafts` | operator | `{ layout }` | `{ layoutId, version }`：保存为草稿，只对新 run 生效 |

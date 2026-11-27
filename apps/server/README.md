@@ -43,7 +43,7 @@ WORLD_PRISM_OPENAI_COMPAT_API_KEY=<密钥>
 运行 `pnpm dev:server` 后，用控制台令牌登录并以研究员角色调用接口（`X-Active-Role: researcher`）：
 
 1. `POST /api/v1/auth/login`，请求体 `{ "token": "<控制台令牌>" }`，取得 `sessionToken`。
-2. `POST /api/v1/console/experiments`，请求体 `{ "experimentRef": "exp-memory-promise-v1" }`，返回 24 个 run；模型布局引用的环境变量在这一步解析并冻结。也可以提交内联 `experimentSpec`（与 `config/experiments/*.yaml` 同格式），例如把 `repetitions` 改为 1，或把 `base.modelLayoutRef` 改为 `claude-model-layout-v1`（还需 `ANTHROPIC_API_KEY`，对白与记忆整理仍走 OpenAI 兼容端点）。
+2. `POST /api/v1/console/experiments`，请求体 `{ "experimentRef": "exp-memory-promise-v1" }`，返回 24 个 run；模型布局引用的环境变量在这一步解析并冻结。也可以提交内联 `experimentSpec`（与 `config/experiments/*.yaml` 同格式），例如把 `repetitions` 改为 1，或把 `base.modelLayoutRef` 改为 `claude-model-layout-v1`（还需 `ANTHROPIC_API_KEY`，对白与记忆整理仍走 OpenAI 兼容端点）。经 OpenAI 兼容网关接入 `deepseek-v4.1-flash-official` 时改为 `openai-compatible-gateway-layout-v1`，所需变量与注意事项见 [评估 — 经网关执行](../../docs/platform/evaluation.md#82-经-openai-兼容网关用真实模型执行)。
 3. 对需要执行的每个 run 调用 `POST /api/v1/console/runs/{runId}/start`，请求体 `{ "operationId": "op-<12 位小写 base32>" }`；run 按启动先后排队执行。
 4. 用 `GET /api/v1/console/runs/{runId}/progress` 查看当前 tick、探针计数与最近事件；`status` 变为 `completed` 后读取 `GET /api/v1/console/runs/{runId}/report` 与 `GET /api/v1/console/experiments/exp-memory-promise-v1`。失败时 `lastEvent.payload.code` 给出原因码；run 被暂停时 `lastEvent.payload.reason` 说明是研究员停止还是配额不足。
 

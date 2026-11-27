@@ -4,7 +4,7 @@
  * 禁止解析密钥正文、自动补挂载或把未验证的 endpoint 写入清单。
  */
 import { canonicalJson, DomainError, type Json, type ResolvedAgentProfile } from "@world-prism/contracts";
-import { loadModelFixtures, loadModelLayout, loadModelPricing, resolveModelEnv,
+import { loadModelFixtures, loadModelLayout, loadModelPricing, resolveModelEnv, resolveModelThinking, resolveServedModels,
   type ConfigLoadContext, type RunSpec } from "@world-prism/experiment";
 import type { ResolvedRealmPlan } from "@world-prism/kernel";
 import {
@@ -40,6 +40,20 @@ function endpointOf(value: string, loadContext: ConfigLoadContext): string {
     fail("模型端点必须使用 HTTPS 或回环 HTTP，且不携带凭据、参数或片段");
   }
   return url.href;
+}
+
+/**
+ * OpenAI 兼容连接的 `parameters.thinking` 可以引用推理开关的部署环境。
+ * 环境未设置时删去该键，冻结路由与布局不写该参数时一致；其余参数及其他适配器的参数不解析 env，
+ * 其中的 `env:` 文本由适配器的严格参数校验拒绝。
+ */
+function parametersOf(parameters: Json, adapterId: string, loadContext: ConfigLoadContext): Json {
+  if (adapterId !== openAICompatibleAdapter || typeof parameters !== "object" || parameters === null ||
+    Array.isArray(parameters)) return parameters;
+  const { thinking, ...rest } = parameters;
+  if (typeof thinking !== "string" || !thinking.startsWith("env:")) return parameters;
+  const resolved = resolveModelThinking(thinking, loadContext);
+  return resolved === undefined ? rest : { ...rest, thinking: resolved };
 }
 
 export async function resolveModelConfiguration(input: {
@@ -104,14 +118,22 @@ export async function resolveModelConfiguration(input: {
       fail(`模型 ${modelId} 的 externalModel 与价目记录不一致`);
     }
     const { externalModel: _pricedExternalModel, ...priceFields } = price;
+    const { servedModels: declaredServedModels, parameters: declaredParameters, ...fields } = model;
+    const servedModels = declaredServedModels === undefined ? undefined : resolveServedModels(declaredServedModels, loadContext);
     return [modelId, {
-      ...model, connection, externalModel, modelId,
+      ...fields, connection, externalModel, modelId,
+      ...(servedModels === undefined ? {} : { servedModels }),
+      parameters: parametersOf(declaredParameters, connection.adapterId, loadContext),
       price: { ...priceFields, currency: pricing.currency },
     }] as const;
   }));
   if (layout.evaluator !== undefined && !models.has(layout.evaluator.modelId)) fail("评估主体引用了未知模型");
   if (layout.evaluator?.enabled === true) fail("当前运行装配未启用模型评估主体");
-  const mounts = new Map<string, Omit<ModelRoute, "configHash"> & { readonly fixturesHash: string | null }>();
+  // 冻结路由要写入 Json 形态的 manifest，别名列表在此保持可变数组类型；交给模型池时仍按只读路由使用。
+  const mounts = new Map<string, Omit<ModelRoute, "configHash" | "servedModels"> & {
+    readonly servedModels?: string[];
+    readonly fixturesHash: string | null;
+  }>();
   for (const mount of layout.mounts) {
     const model = models.get(mount.modelId);
     if (model === undefined) fail(`挂载引用了未知模型 ${mount.modelId}`);
@@ -126,6 +148,7 @@ export async function resolveModelConfiguration(input: {
           purpose === "embedding" && !model.capabilities.embedding) fail(`模型 ${model.modelId} 不支持 ${purpose}`);
         mounts.set(key, {
           ...connection, agentId, purpose, modelId: model.modelId, externalModel: model.externalModel,
+          ...(model.servedModels === undefined ? {} : { servedModels: model.servedModels }),
           parameters: model.parameters, capabilities: model.capabilities, ...model.limits, price: model.price,
           maxOutputTokens: model.maxOutputTokensByPurpose[purpose] ?? Math.min(4096, model.capabilities.maxOutputTokens),
         });

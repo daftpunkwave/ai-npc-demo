@@ -17,7 +17,7 @@
 | 配置 | 内容 | 禁止内容 |
 |---|---|---|
 | connections | adapterId（模块 ID）、受控 endpoint、credentialRef、账号级 rateLimitKey | 明文密钥、Agent 消息历史 |
-| models | modelId、connectionId、外部模型名、生成参数、能力与资源上限 | 每个角色的主张、记忆与授权 |
+| models | modelId、connectionId、外部模型名、可选的供应商返回名别名（`servedModels`，见第 12.5 节）、生成参数、能力与资源上限 | 每个角色的主张、记忆与授权 |
 | mounts | modelId、agentIds、purposes，精确挂载关系 | 复制模型参数、放宽工具权限 |
 
 credentialRef 由服务端 secret resolver 解析；前端只能看到连接别名与验证状态。导出 manifest 保留引用及配置 hash，删除实际密钥、认证 header、Cookie 和敏感 URL 参数。
@@ -43,12 +43,13 @@ evaluation 由独立 evaluator 配置引用 `modelId`，调用主体类型为 ev
 
 ## 4. 目标配置示例
 
-三个目标布局位于 `config/model-layouts/`。连接、生成参数、能力、限流及输出上限使用下表引用的 `connections` 和 `models` 配置。真实供应商须通过连通性与能力预检。
+四个布局位于 `config/model-layouts/`。连接、生成参数、能力、限流及输出上限使用下表引用的 `connections` 和 `models` 配置。真实供应商须通过连通性与能力预检。
 
 | 布局 | 挂载 | 连接与模型配置 |
 |---|---|---|
 | `shared-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-chat` | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
 | `claude-model-layout-v1.yaml` | `decision` 挂载 `npc-claude`，`speech` 与 `memory-maintenance` 挂载 `npc-chat` | [model-transport.md — Anthropic 配置](model-transport.md#41-配置)、[model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置) |
+| `openai-compatible-gateway-layout-v1.yaml` | 与共享布局相同；`npc-chat` 的推理开关与返回名别名取自部署变量 | [model-transport.md — OpenAI 兼容配置](model-transport.md#31-配置)、[evaluation.md — 经网关执行](../platform/evaluation.md#82-经-openai-兼容网关用真实模型执行) |
 | `deterministic-model-layout-v1.yaml` | `decision`、`speech`、`memory-maintenance` 均挂载 `npc-fixture` | [model-transport.md — 确定性适配器](model-transport.md#5-确定性适配器测试) |
 
 下面是共享布局的挂载片段，以伊诺为例。正式布局按 `standard-15` 填入全部 Agent ID，测试布局按所选测试名册填写。名单见 [00-scope-and-invariants.md — 15 个上场身份](../00-scope-and-invariants.md#11-15-个上场身份)。
@@ -63,7 +64,7 @@ mounts:
     purposes: [decision, speech, memory-maintenance]
 ~~~
 
-`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`（`evaluator` 独立评估主体目前尚未写入仓库预设布局文件，开启 `evaluator.enabled: true` 会在运行启动预检时被拒绝）。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
+`pricingRef` 可选，省略时读取 `config/pricing.yaml`；共享与 Claude 真实布局都引用 `config/pricing-live.yaml`，网关布局引用估算价目 `config/pricing-openai-compatible-gateway.yaml`（`evaluator` 独立评估主体目前尚未写入仓库预设布局文件，开启 `evaluator.enabled: true` 会在运行启动预检时被拒绝）。把某个 Agent 的一个用途改挂其他模型时，从原挂载移除该 `(agentId, purpose)`，再新增指向新 `modelId` 的挂载。同一 Agent 若用不同模型承担 `decision` 与 `speech`，为两个用途各写一条挂载。启用向量检索时，在 `models` 声明向量模型，为所需主体增加 `embedding` 挂载。
 
 ## 5. 解析与 run 冻结
 
@@ -197,3 +198,10 @@ interface ScopedModelPort {             // runtime、memory 与 speech 收到的
 ### 12.5 记录
 
 每个 attempt 写一行 `model_attempts`（agent、purpose、modelId、connectionId、adapterId、状态、是否为有效 attempt、请求/响应 artifact、usage、排队/首字/总耗时、错误），并写一个 span。`servedModel` 与配置的 `externalModel` 不同、或 `fallbackUsed` 为 true 时，attempt 标记 `model-substituted`，该 turn 的 effective 记录写明实际服务的模型。
+
+有的网关按请求名路由，却在响应的 `model` 字段报告上游名称（例如请求 `deepseek-v4.1-flash-official`，响应报告 `deepseek/deepseek-flash`）。模型定义可以用 `servedModels` 声明这类名称：
+
+- `servedModels` 是精确名称列表，1–16 项且不得重复；也可以写成 `env:WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS`，由宿主预检时按逗号拆分，变量未设置时按未声明处理，见 [配置](../platform/configuration.md#10-完整配置文件首版)。
+- 预检把解析出的列表写入该模型每条冻结路由的 `servedModels`，并计入路由的 `configHash`；没有声明的模型，路由里不出现该键。
+- `servedModel` 精确命中列表中的某一项时不算替换。span 的 `reason` 记为 `served-model-alias`，请求 artifact 同时保存请求名（`request.externalModel`）和声明的 `servedModels`，响应 artifact 保存供应商报告的 `servedModel`。
+- 未命中的名称仍记 `model-substituted`；`fallbackUsed` 为 true 时，即使命中别名也算替换。

@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions } from "@world-prism/app-server";
 import { deterministicModelTransportDefinition } from "@world-prism/mod-platform-model-transport-deterministic/definition";
 import { estimateModelInputTokens, modelResponseSchema, DomainError, type DecisionSubmission, type HostServices, type ModelFixture, type ModelResponse, type ModelTransportError, type ModelTransportPort, type StoragePort } from "@world-prism/contracts";
-import { agentModelPoolCapability, bindAgentModelRoutes, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelRoute, type ModelWorkScope } from "@world-prism/module-sdk";
+import { agentModelPoolCapability, bindAgentModelRoutes, type AgentBudgetPort, type AgentModelPoolPort, type ModelCallInput, type ModelDecisionPort, type ModelObservabilityPort, type ModelRoute, type ModelWorkScope } from "@world-prism/module-sdk";
 import { createFakeHost } from "./authority-support";
 import { storageFailingOnLifecycleAudit } from "./lifecycle-audit-support";
 
@@ -86,17 +86,18 @@ async function poolHarness(
   await storageInstance.start(signal);
   const storage = storageInstance.port as StoragePort;
   const budget = await create("platform.budget.standard", { "platform.storage": storage });
+  const recordSpan = vi.fn<ModelObservabilityPort["recordSpan"]>();
   const pool = await create("agent.model-pool.shared", {
     "platform.storage": wrapStorage(storage),
     "platform.budget": wrapBudget(budget.port as AgentBudgetPort),
     "platform.secrets": { resolve: () => credential },
-    "platform.observability": { recordSpan: vi.fn() },
+    "platform.observability": { recordSpan },
     "platform.model-transport": [transport ?? { adapterId: route.adapterId, capabilities: () => capabilities, complete }],
   });
   await budget.start(signal);
   await pool.start(signal);
   return {
-    storage, pool: pool.port as AgentModelPoolPort, retryWaits,
+    storage, pool: pool.port as AgentModelPoolPort, retryWaits, recordSpan,
     advance(ms: number) {
       now += ms;
       for (const timer of timers) {
@@ -469,6 +470,52 @@ describe("共享模型池与预算", () => {
       await run.call(scope, "decision", 100, request);
       await expect(run.call(scope, "decision", 100, request)).rejects.toMatchObject({ code: "budget-exhausted" });
       expect(complete).toHaveBeenCalledTimes(1);
+    } finally {
+      await harness.dispose();
+    }
+  });
+});
+
+describe("供应商返回名与声明的别名", () => {
+  const gatewayRoute: ModelRoute = { ...route, externalModel: "deepseek-v4.1-flash-official", servedModels: ["deepseek/deepseek-flash"] };
+
+  it.each([
+    { name: "命中声明的别名", served: "deepseek/deepseek-flash", fallbackUsed: false, substituted: false, reason: "served-model-alias" },
+    { name: "与请求名相同", served: "deepseek-v4.1-flash-official", fallbackUsed: false, substituted: false, reason: null },
+    { name: "未声明的带日期名", served: "deepseek-v4-flash-0731", fallbackUsed: false, substituted: true, reason: "model-substituted" },
+    { name: "别名但供应商报告内部切换", served: "deepseek/deepseek-flash", fallbackUsed: true, substituted: true, reason: "model-substituted" },
+  ])("$name时按别名判定替换并在证据中如实记录", async ({ served, fallbackUsed, substituted, reason }) => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue({ ...response, servedModel: served, fallbackUsed });
+    const harness = await poolHarness(complete);
+    try {
+      const result = await harness.pool.bindRun({ routes: [gatewayRoute], limits }).call(work(), "decision", 100, request);
+      expect(result.attempts).toEqual([expect.objectContaining({ status: "succeeded", servedModel: served, substituted })]);
+      expect(complete.mock.calls[0]?.[0]).toMatchObject({ externalModel: "deepseek-v4.1-flash-official" });
+      expect(harness.recordSpan).toHaveBeenCalledWith(expect.objectContaining({
+        name: "model.attempt", attrs: expect.objectContaining({ servedModel: served, reason }),
+      }));
+      const bodies = harness.storage.transact((tx) => tx.rows("artifacts").list())
+        .map((row) => JSON.parse(new TextDecoder().decode(row["body"] as Uint8Array)) as Record<string, unknown>);
+      expect(bodies).toEqual(expect.arrayContaining([
+        expect.objectContaining({ servedModels: ["deepseek/deepseek-flash"], request: expect.objectContaining({ externalModel: "deepseek-v4.1-flash-official" }) }),
+        expect.objectContaining({ response: expect.objectContaining({ servedModel: served }) }),
+      ]));
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("未声明别名的路由仍把不同的返回名记为替换，请求证据不出现别名字段", async () => {
+    const complete = vi.fn<ModelTransportPort["complete"]>().mockResolvedValue({ ...response, servedModel: "deepseek/deepseek-flash" });
+    const harness = await poolHarness(complete);
+    try {
+      const result = await harness.pool.bindRun({ routes: [route], limits }).call(work(), "decision", 100, request);
+      expect(result.attempts).toEqual([expect.objectContaining({ servedModel: "deepseek/deepseek-flash", substituted: true })]);
+      expect(harness.recordSpan).toHaveBeenCalledWith(expect.objectContaining({ attrs: expect.objectContaining({ reason: "model-substituted" }) }));
+      const requestBody = harness.storage.transact((tx) => tx.rows("artifacts").list())
+        .map((row) => JSON.parse(new TextDecoder().decode(row["body"] as Uint8Array)) as Record<string, unknown>)
+        .find((body) => Object.hasOwn(body, "request"));
+      expect(Object.keys(requestBody ?? {}).sort()).toEqual(["modelConfigHash", "request", "wire"]);
     } finally {
       await harness.dispose();
     }
