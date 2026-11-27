@@ -49,7 +49,7 @@ export const HOST_PORT_PATTERN = /^host\.[a-z][a-z0-9-]*$/;
 
 /**
  * 各浏览器 realm 的宿主固定端口契约：本 realm 的模块无需声明即可取用清单内端口，清单外的 `host.*` 一律越界。
- * check:catalog 按本清单对账模块源码；server realm 没有固定端口。
+ * 浏览器运行时只接受并转交清单内的固定端口，check:catalog 按同一清单对账模块源码；server realm 没有固定端口。
  */
 export const BROWSER_HOST_PORTS = {
   client: ["host.api", "host.command", "host.session"],

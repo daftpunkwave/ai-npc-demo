@@ -1,5 +1,6 @@
 /**
- * 按服务端返回的浏览器装配校验本地模块目录（协议、版本、realm 与远端能力），并依能力依赖创建、启动与释放模块实例。
+ * 按服务端返回的浏览器装配校验本地模块目录（协议、版本、realm 与远端能力），并依能力依赖创建、启动与释放模块实例；
+ * 每个模块的创建输入与视图只拿到宿主固定端口和自己声明的能力端口。
  * 依赖公共模块描述符、kernel 的远端能力对账、React 视图贡献与本包宿主上下文；不加载装配外模块或共享服务端对象。
  * 禁止在版本不匹配时静默降级，也禁止忽略 slot 贡献失败或遗留网络订阅。
  */
@@ -14,6 +15,8 @@ import {
 } from "@world-prism/contracts";
 import { assertRemoteCapabilities } from "@world-prism/kernel";
 import type { ReactNode } from "react";
+import { ModulePortScope } from "./context";
+import { contractedHostPorts, declaredModulePorts } from "./module-ports";
 import type { PreferencePort } from "./preferences";
 import type { SlotContribution } from "./slots";
 
@@ -24,6 +27,7 @@ export interface BrowserViewPort {
 export interface BrowserModuleRuntimeInput {
   readonly definitions: readonly ModuleDefinition[];
   readonly resolved: ResolvedModuleSet;
+  /** 宿主固定端口；键必须在本 realm 的宿主固定端口契约（BROWSER_HOST_PORTS）内。 */
   readonly fixedPorts?: Readonly<Record<string, unknown>>;
   readonly signal?: AbortSignal;
 }
@@ -207,8 +211,10 @@ function dependencyOrder(definitions: readonly ModuleDefinition[]): readonly Mod
   return ordered;
 }
 
+/** 收集视图贡献；每个贡献在该模块的端口作用域内渲染，视图里的 usePort 只能取到模块声明的端口。 */
 function contributedViews(
   definitions: readonly ModuleDefinition[],
+  hostPorts: Readonly<Record<string, unknown>>,
   ports: Readonly<Record<string, unknown>>,
 ): readonly SlotContribution[] {
   const result: SlotContribution[] = [];
@@ -220,10 +226,15 @@ function contributedViews(
     if (!isViewPort(port)) {
       throw new DomainError("assembly-incompatible", `模块 ${definition.id} 未暴露视图贡献入口`);
     }
+    const viewPorts = declaredModulePorts(definition, hostPorts, ports, true);
     for (const contribution of definition.contributions) {
       result.push({
         ...contribution,
-        render: () => port.renderContribution(contribution.extensionId),
+        render: () => (
+          <ModulePortScope moduleId={definition.id} ports={viewPorts}>
+            {port.renderContribution(contribution.extensionId)}
+          </ModulePortScope>
+        ),
       });
     }
   }
@@ -307,10 +318,12 @@ export async function startBrowserModules(
   input: BrowserModuleRuntimeInput,
 ): Promise<StartedBrowserModules> {
   const definitions = dependencyOrder(selectedDefinitions(input.definitions, input.resolved));
+  const hostPorts = contractedHostPorts(input.resolved.realm, input.fixedPorts);
   const host = browserHostServices();
   const signal = input.signal ?? new AbortController().signal;
   const instances: ModuleInstance[] = [];
-  const providedPorts: Record<string, unknown> = { ...input.fixedPorts };
+  // 宿主外壳仍拿到全部端口；模块只经 declaredModulePorts 拿到固定端口与自己声明的能力端口。
+  const providedPorts: Record<string, unknown> = { ...hostPorts };
   const resolvedConfigs = configsByModuleId(input.resolved);
   try {
     for (const definition of definitions) {
@@ -329,7 +342,7 @@ export async function startBrowserModules(
         realm: definition.realm,
         config,
         scope: {},
-        ports: providedPorts,
+        ports: declaredModulePorts(definition, hostPorts, providedPorts, false),
         host,
         signal,
       });
@@ -353,7 +366,7 @@ export async function startBrowserModules(
     }
     throw error;
   }
-  const contributions = contributedViews(definitions, providedPorts);
+  const contributions = contributedViews(definitions, hostPorts, providedPorts);
   let disposed = false;
   return {
     ports: providedPorts,

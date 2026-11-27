@@ -97,6 +97,8 @@
 | console | `host.console` | 控制台宿主端口：API 客户端、会话、当前角色与在线分支身份 |
 | server | 无 | 服务端模块只经 `requires` 声明的 typed port 取用能力 |
 
+client-sdk 运行时只接受清单内的固定端口，并按声明把端口交给每个模块：创建输入只含本 realm 固定端口与 `requires` 声明的能力端口，视图另含模块自身 `provides` 的端口；视图经 `usePort` 取用未声明的能力时抛 `assembly-incompatible` 并指出模块与能力。宿主外壳不在模块作用域内，仍能读取全部端口。
+
 宿主固定执行以下顺序，模块不能把这些步骤设为可选 hook：
 
 1. 认证与会话。
