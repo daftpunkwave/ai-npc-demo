@@ -151,11 +151,14 @@ export type SnapshotCreateHook = (input: SnapshotCreateArgs) => SnapshotCreateRe
 export type SnapshotRestoreHook = (input: SnapshotRestoreArgs) => RestoreSnapshotResult;
 export type ResetHook = (operationId: string, principalId: string) => BranchClockResult;
 
-/** 在线名册休眠与唤醒：幂等键与会话主体交给宿主，作用对象固定为在线分支。 */
+/**
+ * 在线名册休眠与唤醒：幂等键、请求体里发起方看到的在线分支与会话主体交给宿主；
+ * 作用对象固定为在线分支，宿主在变更名册的事务内核对 branchId。
+ */
 export interface OnlineRosterHooks {
   state(): OnlineRosterView;
-  hibernate(operationId: string, principalId: string): OnlineRosterOperationResponse;
-  wake(operationId: string, principalId: string): OnlineRosterOperationResponse;
+  hibernate(operationId: string, branchId: string, principalId: string): OnlineRosterOperationResponse;
+  wake(operationId: string, branchId: string, principalId: string): OnlineRosterOperationResponse;
 }
 
 /** ID 与令牌生成由宿主注入，传输层不自行创建随机源。 */

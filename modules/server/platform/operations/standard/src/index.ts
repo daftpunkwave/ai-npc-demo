@@ -11,6 +11,7 @@ export { OperationsService } from "./plugin";
 export type {
   IdempotentOperationsDriver,
   OnlineRosterDriver,
+  OnlineRosterOperation,
   OperationRequest,
   OperationsDriver,
   RestoreInput,

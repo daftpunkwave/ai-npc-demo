@@ -121,7 +121,7 @@ describe("platform 模块", () => {
       restore: () => ({ branchId: "br-1" }),
       reset: () => ({ branchId: "br-2", clock }),
     });
-    const operation = { operationId: "op-000000000001", principalId: "operator-1" };
+    const operation = { operationId: "op-000000000001", principalId: "operator-1", branchId: "br-000000000001" };
     for (const call of [
       () => service.rosterState(),
       () => service.hibernateRoster(operation),

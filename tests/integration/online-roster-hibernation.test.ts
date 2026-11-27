@@ -1,7 +1,7 @@
 /**
  * 核心职责：验证控制台在线名册休眠与唤醒：休眠先暂停在线时钟并让在线名额归零，实验 run 随后可以开局并完成；
  *   名额不足时唤醒整体拒绝、不留下部分激活的名册，名额腾出后同一 operationId 可重试成功；休眠期间在线时钟不能继续或单步，
- *   休眠状态跨宿主重启保持；幂等重放、前置状态、请求结构与角色权限按控制台运营契约裁决。
+ *   休眠状态跨宿主重启保持；在线分支被切换后按旧分支发出的请求被拒绝；幂等重放、前置状态、请求结构与角色权限按控制台运营契约裁决。
  * 交互契约：使用真实测试装配（确定性模型传输）、SQLite 临时目录与控制台 HTTP 接口；部署级计数按激活配额裁决的口径读取。
  * 约束与禁忌：名额占用只在“模拟实验占用”的独立分支上构造，不改写在线分支的激活行；断言读真实存储与公开接口。
  */
@@ -109,7 +109,7 @@ describe("在线名册休眠与唤醒", () => {
     const before = await rosterClock(host, operator);
     const resumed = await post(host, operator, "/api/v1/console/campaign/resume", { operationId: "op-000000000701", expectedRunVersion: before.runVersion });
     expect(resumed.statusCode, resumed.body).toBe(200);
-    const hibernated = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000702" });
+    const hibernated = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000702", branchId: host.branchId });
     expect(hibernated.statusCode, hibernated.body).toBe(200);
     const hibernatedBody = onlineRosterOperationResponseSchema.parse(hibernated.json());
     expect(hibernatedBody.clock.mode).toBe("paused");
@@ -127,11 +127,11 @@ describe("在线名册休眠与唤醒", () => {
     expect([...released].sort()).toEqual(released);
 
     // 同键重放返回首次结果且不再写入；新键在已休眠时按前置状态拒绝。
-    const replay = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000702" });
+    const replay = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000702", branchId: host.branchId });
     expect(replay.statusCode).toBe(200);
     expect(replay.json()).toEqual(hibernated.json());
     expect(rosterAudit(host)).toHaveLength(1);
-    const again = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000703" });
+    const again = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000703", branchId: host.branchId });
     expect(again.statusCode).toBe(409);
     expect(errorCode(again.json())).toBe("invalid-state");
 
@@ -145,7 +145,7 @@ describe("在线名册休眠与唤醒", () => {
 
     // 名额被实验占用：唤醒需要 15 个名额，整体拒绝且不激活任何在线身份，也不写入唤醒审计。
     const occupant = occupyOneIdentity(host);
-    const refused = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000705" });
+    const refused = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000705", branchId: host.branchId });
     expect(refused.statusCode).toBe(429);
     expect(errorResponseSchema.parse(refused.json()).error).toMatchObject({ code: "budget-exhausted", retryable: true });
     expect(onlineActivationStatuses(host).filter((status) => status === "active")).toEqual([]);
@@ -159,7 +159,7 @@ describe("在线名册休眠与唤醒", () => {
       if (row === null) throw new Error("占用分支不存在");
       tx.rows("branches").put({ ...row, status: "archived" });
     });
-    const woken = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000705" });
+    const woken = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000705", branchId: host.branchId });
     expect(woken.statusCode, woken.body).toBe(200);
     const wokenBody = onlineRosterOperationResponseSchema.parse(woken.json());
     expect(wokenBody.roster).toEqual({
@@ -188,7 +188,7 @@ describe("在线名册休眠与唤醒", () => {
     startOnlineCampaign(first);
     const operator = await sessionHeaders(first, "roster-console", "operator");
     const player = await sessionHeaders(first, "roster-player", null);
-    const hibernated = await post(first, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000801" });
+    const hibernated = await post(first, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000801", branchId: first.branchId });
     expect(hibernated.statusCode, hibernated.body).toBe(200);
     const { clock } = onlineRosterOperationResponseSchema.parse(hibernated.json());
 
@@ -220,13 +220,59 @@ describe("在线名册休眠与唤醒", () => {
     expect(stillBlocked.statusCode).toBe(409);
     expect(errorCode(stillBlocked.json())).toBe("invalid-state");
 
-    const woken = await post(second, restartedOperator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000806" });
+    const woken = await post(second, restartedOperator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000806", branchId: second.branchId });
     expect(woken.statusCode, woken.body).toBe(200);
     const stepped = await post(second, restartedOperator, "/api/v1/console/campaign/step", {
       operationId: "op-000000000807", expectedRunVersion: restartedClock.runVersion, ticks: 1,
     });
     expect(stepped.statusCode, stepped.body).toBe(200);
     expect((stepped.json() as { readonly mode: string }).mode).toBe("stepping");
+  }, 60_000);
+
+  it("其他会话恢复存档后，按旧在线分支发出的休眠与唤醒被拒绝，不暂停时钟也不改动新在线分支的名册", async () => {
+    const host = await experimentHost(resources, { rosterRef: "standard-15" });
+    startOnlineCampaign(host);
+    const operator = await sessionHeaders(host, "experiment-console", "operator");
+    const staleBranchId = host.branchId;
+
+    // 存档后恢复：在线分支切换为后继分支，按旧视图操作的会话仍持有原分支。
+    const snapshot = await post(host, operator, "/api/v1/console/campaign/snapshots", { operationId: "op-000000001001", label: "旧视图" });
+    expect(snapshot.statusCode, snapshot.body).toBe(200);
+    const { snapshotId } = snapshot.json() as { readonly snapshotId: string };
+    const restored = await post(host, operator, "/api/v1/console/campaign/restore", { operationId: "op-000000001002", snapshotId });
+    expect(restored.statusCode, restored.body).toBe(200);
+    const onlineBranchId = host.branchId;
+    expect(onlineBranchId).not.toBe(staleBranchId);
+
+    // 新在线分支运行中：按旧分支发出的休眠在暂停时钟之前就被拒绝，时钟与名册都不变。
+    const paused = await rosterClock(host, operator);
+    const resumed = await post(host, operator, "/api/v1/console/campaign/resume", {
+      operationId: "op-000000001003", expectedRunVersion: paused.runVersion,
+    });
+    expect(resumed.statusCode, resumed.body).toBe(200);
+    const running = await rosterClock(host, operator);
+    expect(running.mode).toBe("running");
+    const stale = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000001004", branchId: staleBranchId });
+    expect(stale.statusCode).toBe(400);
+    expect(errorCode(stale.json())).toBe("validation");
+    expect(await rosterClock(host, operator)).toMatchObject({ mode: "running", runVersion: running.runVersion });
+    expect(await rosterOf(host, operator)).toMatchObject({ branchId: onlineBranchId, state: "active", activeAgents: 15 });
+
+    // 同一 operationId 改投当前在线分支：分支计入请求内容，按幂等冲突拒绝，不会作用到另一个分支。
+    const replayedElsewhere = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000001004", branchId: onlineBranchId });
+    expect(replayedElsewhere.statusCode).toBe(409);
+    expect(errorCode(replayedElsewhere.json())).toBe("idempotency-conflict");
+    expect((await rosterClock(host, operator)).mode).toBe("running");
+
+    // 按当前在线分支休眠成功；唤醒同样核对分支，按旧分支唤醒被拒绝，名册保持休眠且没有唤醒审计。
+    const hibernated = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000001005", branchId: onlineBranchId });
+    expect(hibernated.statusCode, hibernated.body).toBe(200);
+    expect(onlineRosterOperationResponseSchema.parse(hibernated.json()).roster).toMatchObject({ branchId: onlineBranchId, state: "hibernated" });
+    const staleWake = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000001006", branchId: staleBranchId });
+    expect(staleWake.statusCode).toBe(400);
+    expect(errorCode(staleWake.json())).toBe("validation");
+    expect((await rosterOf(host, operator)).state).toBe("hibernated");
+    expect(rosterAudit(host).map(({ type }) => type)).toEqual(["OnlineRosterHibernated"]);
   }, 60_000);
 
   it("前置状态、请求结构与角色权限：未开局与未休眠分别拒绝，只有 operator 可以变更，researcher 只读", async () => {
@@ -238,24 +284,31 @@ describe("在线名册休眠与唤醒", () => {
     // 未开局：名册为空，休眠在暂停时钟之前就被拒绝，时钟版本不变。
     expect((await rosterOf(host, researcher)).state).toBe("empty");
     const clockBefore = await rosterClock(host, operator);
-    const notStarted = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000901" });
+    const notStarted = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000901", branchId: host.branchId });
     expect(notStarted.statusCode).toBe(409);
     expect(errorCode(notStarted.json())).toBe("invalid-state");
     expect(await rosterClock(host, operator)).toEqual(clockBefore);
 
     startOnlineCampaign(host);
-    const notHibernated = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000902" });
+    const notHibernated = await post(host, operator, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000902", branchId: host.branchId });
     expect(notHibernated.statusCode).toBe(409);
     expect(errorCode(notHibernated.json())).toBe("invalid-state");
 
-    const invalidBody = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000903", extra: true });
-    expect(invalidBody.statusCode).toBe(400);
-    expect(errorCode(invalidBody.json())).toBe("validation");
+    // 请求结构：多余字段与缺少发起方看到的在线分支都按契约拒绝。
+    const invalidPayloads: readonly Json[] = [
+      { operationId: "op-000000000903", branchId: host.branchId, extra: true },
+      { operationId: "op-000000000907" },
+    ];
+    for (const payload of invalidPayloads) {
+      const invalidBody = await post(host, operator, "/api/v1/console/campaign/roster/hibernate", payload);
+      expect(invalidBody.statusCode).toBe(400);
+      expect(errorCode(invalidBody.json())).toBe("validation");
+    }
 
     const forbidden = [
-      await post(host, researcher, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000904" }),
-      await post(host, { ...operator, "X-Active-Role": "evaluator" }, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000905" }),
-      await post(host, player, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000906" }),
+      await post(host, researcher, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000904", branchId: host.branchId }),
+      await post(host, { ...operator, "X-Active-Role": "evaluator" }, "/api/v1/console/campaign/roster/wake", { operationId: "op-000000000905", branchId: host.branchId }),
+      await post(host, player, "/api/v1/console/campaign/roster/hibernate", { operationId: "op-000000000906", branchId: host.branchId }),
       await host.app.inject({ method: "GET", url: "/api/v1/console/campaign/roster", headers: player }),
     ];
     for (const response of forbidden) {
@@ -271,8 +324,13 @@ describe("在线名册休眠与唤醒", () => {
 });
 
 /** 读取控制台健康摘要里的在线时钟。 */
-async function rosterClock(host: RunningHost, headers: Record<string, string>): Promise<{ readonly runVersion: number; readonly worldTick: number }> {
+async function rosterClock(
+  host: RunningHost,
+  headers: Record<string, string>,
+): Promise<{ readonly mode: string; readonly runVersion: number; readonly worldTick: number }> {
   const response = await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers });
   expect(response.statusCode, response.body).toBe(200);
-  return (response.json() as { readonly clock: { readonly runVersion: number; readonly worldTick: number } }).clock;
+  return (response.json() as {
+    readonly clock: { readonly mode: string; readonly runVersion: number; readonly worldTick: number };
+  }).clock;
 }

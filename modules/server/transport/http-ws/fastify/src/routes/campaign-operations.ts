@@ -276,7 +276,8 @@ export function registerCampaignOperations(
         if (options.roster === undefined) {
           return sendHttpError(reply, "not-ready", "在线名册接口尚未就绪");
         }
-        const result = options.roster[action](body.data.operationId, session.auth.principalId);
+        // 请求体的 branchId 由宿主在变更名册的事务内核对，不在传输层与可能已过期的在线分支比较。
+        const result = options.roster[action](body.data.operationId, body.data.branchId, session.auth.principalId);
         // 休眠会先暂停时钟，唤醒改变名册激活状态：推送新时钟并通知宿主按新状态调度 Agent。
         publishProjection();
         return onlineRosterOperationResponseSchema.parse(result);

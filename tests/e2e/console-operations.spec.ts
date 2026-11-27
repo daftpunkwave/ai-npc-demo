@@ -273,5 +273,6 @@ test("在线名额面板：休眠后继续与单步置灰，名额不足时提�
     "/api/v1/console/campaign/roster/wake",
     "/api/v1/console/campaign/roster/wake",
   ]);
-  for (const { body } of posted) expect(body).toEqual({ operationId: expect.stringMatching(/^op-/) });
+  // 每个操作都带上页面当前的在线分支，服务端据此拒绝按旧视图发出的请求。
+  for (const { body } of posted) expect(body).toEqual({ operationId: expect.stringMatching(/^op-/), branchId: onlineBranchId });
 });

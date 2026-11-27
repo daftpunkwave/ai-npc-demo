@@ -362,8 +362,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
       reset: (operationId, principalId) => operations.reset(principalId, { operationId, principalId }),
       roster: {
         state: () => operations.rosterState(),
-        hibernate: (operationId, principalId) => operations.hibernateRoster({ operationId, principalId }),
-        wake: (operationId, principalId) => operations.wakeRoster({ operationId, principalId }),
+        hibernate: (operationId, branchId, principalId) => operations.hibernateRoster({ operationId, branchId, principalId }),
+        wake: (operationId, branchId, principalId) => operations.wakeRoster({ operationId, branchId, principalId }),
       },
       onBranchChanged: (nextBranchId) => switchLiveBranch(active, nextBranchId),
       ...(input.onWorldCommitted === undefined ? {} : { onWorldCommitted: input.onWorldCommitted }),

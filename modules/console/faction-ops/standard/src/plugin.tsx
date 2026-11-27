@@ -170,7 +170,8 @@ function FactionOpsPage(): ReactNode {
 
   const changeRoster = (action: "hibernate" | "wake"): Promise<void> => run(async (signal) => {
     if (action === "hibernate" && !host.confirm("确认暂停在线世界并释放全部在线名额？休眠期间在线时钟不能继续或单步。")) return;
-    const request = { operationId: host.operationId() };
+    // 带上页面当前的在线分支：其他会话已恢复存档或重开时，服务端拒绝而不是作用到页面没有展示的分支。
+    const request = { operationId: host.operationId(), branchId };
     const result = action === "hibernate"
       ? await host.api.consoleHibernateRoster(request)
       : await host.api.consoleWakeRoster(request);

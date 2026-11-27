@@ -63,14 +63,19 @@ export interface IdempotentOperationsDriver {
   };
 }
 
+/** 在线名册操作的上下文：branchId 是发起方看到的在线分支，宿主在变更名册的事务内核对，并计入幂等请求内容。 */
+export interface OnlineRosterOperation extends OperationRequest {
+  readonly branchId: string;
+}
+
 /**
  * 在线名册的休眠与唤醒：休眠先受控暂停在线时钟并释放部署级名额，唤醒在同一事务内预留名额并激活名册。
- * 两者都只经幂等入口执行，宿主按 operationId 记录首次结果。
+ * 两者都只经幂等入口执行，宿主按 operationId 记录首次结果；请求的分支已不是在线分支时整体拒绝。
  */
 export interface OnlineRosterDriver {
   readonly state: () => OnlineRosterView;
-  readonly hibernate: (operation: OperationRequest) => OnlineRosterOperationResponse;
-  readonly wake: (operation: OperationRequest) => OnlineRosterOperationResponse;
+  readonly hibernate: (operation: OnlineRosterOperation) => OnlineRosterOperationResponse;
+  readonly wake: (operation: OnlineRosterOperation) => OnlineRosterOperationResponse;
 }
 
 /** 宿主注入的时钟/存档/分支回调；运营服务不直接读写存储。 */
@@ -166,12 +171,12 @@ export class OperationsService {
   }
 
   /** 休眠在线名册：运行或单步中先受控暂停，再释放名册占用的部署级名额。 */
-  hibernateRoster(operation: OperationRequest): OnlineRosterOperationResponse {
+  hibernateRoster(operation: OnlineRosterOperation): OnlineRosterOperationResponse {
     return this.roster().hibernate(operation);
   }
 
   /** 唤醒在线名册：在同一事务内预留名额并激活，名额不足时整体拒绝；时钟保持暂停。 */
-  wakeRoster(operation: OperationRequest): OnlineRosterOperationResponse {
+  wakeRoster(operation: OnlineRosterOperation): OnlineRosterOperationResponse {
     return this.roster().wake(operation);
   }
 

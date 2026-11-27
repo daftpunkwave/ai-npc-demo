@@ -11,7 +11,7 @@
 - `OperationsService.validateRestore(snapshotId)`：只读恢复预检。
 - `OperationsService.restore(snapshotId, createdBy, runId?, operation?)`
 - `OperationsService.reset(operation?)`
-- `OperationsService.rosterState()`、`hibernateRoster(operation)`、`wakeRoster(operation)`：在线名册状态、休眠与唤醒；驱动未提供 `roster` 时按 `not-ready` 拒绝。
+- `OperationsService.rosterState()`、`hibernateRoster(operation)`、`wakeRoster(operation)`：在线名册状态、休眠与唤醒；`operation` 携带发起方看到的在线分支 `branchId`，由宿主在变更名册的事务内核对并计入幂等请求内容；驱动未提供 `roster` 时按 `not-ready` 拒绝。
 
 ## 依赖
 

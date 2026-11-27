@@ -1,10 +1,11 @@
 /**
  * 核心职责：在线名册的休眠与唤醒。休眠先受控暂停在线时钟并补完当前 tick，再在一个事务内把在线身份置为 dormant，
  *   释放部署级名额；唤醒在一个事务内按同一配额裁决重新激活全部休眠身份，名额不足时整体拒绝。
- *   两者按 operationId 幂等，结果与审计随业务写入同事务提交。
+ *   两者按 operationId 幂等（请求内容含发起方看到的在线分支），结果与审计随业务写入同事务提交。
  * 交互契约：依赖 agent-runtime 的激活计数与休眠/激活事务函数、时钟 provider、在线别名、运营幂等日志与基础操作；
  *   名册状态由在线分支的激活行派生（存在休眠身份即为已休眠），跨进程重启保持。
- * 约束与禁忌：禁止先激活再补记账、在时钟未暂停时休眠、在名额不足时留下部分激活的名册，或作用于在线分支以外的分支。
+ * 约束与禁忌：禁止先激活再补记账、在时钟未暂停时休眠、在名额不足时留下部分激活的名册，
+ *   或作用于在线分支以外、发起方没有看到的分支。
  */
 import {
   agentDeploymentQuota,
@@ -27,7 +28,7 @@ import {
 import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 import { clockView } from "./clock-view";
 import type { LiveRunState } from "./live-state";
-import type { OnlineRosterDriver, OperationRequest, ServerRuntime } from "./module-catalog";
+import type { OnlineRosterDriver, OnlineRosterOperation, OperationRequest, ServerRuntime } from "./module-catalog";
 import { decodeRosterOutcome, toJsonResult, type OperationJournal } from "./operation-journal";
 import type { OperationsPrimitives } from "./operations-primitives";
 
@@ -67,12 +68,21 @@ export function readOnlineRosterInTransaction(tx: StorageTransaction, branchId: 
 export function createOnlineRoster(input: OnlineRosterInput): OnlineRosterDriver {
   const { host, storage, runtime, active, journal, primitives } = input;
 
-  /** 在线别名必须仍指向宿主当前分支；别名漂移时拒绝，避免把休眠或唤醒写到已让位的分支。 */
-  const requireOnlineBranch = (tx: StorageTransaction): string => {
+  /**
+   * 在线别名必须仍指向宿主当前分支，且就是发起方看到的分支：别名漂移时按 invalid-state 拒绝；
+   * 其他会话已恢复存档或重开时，按旧视图发出的请求与控制台入口的 branchId 守卫一样按 validation 拒绝，
+   * 不把休眠或唤醒作用到发起方没有看到的分支。
+   */
+  const requireOnlineBranch = (tx: StorageTransaction, requestedBranchId: string): string => {
     const branchId = tx.rows("world_aliases").get({ alias: "online" })?.["branch_id"];
     if (branchId !== active.branchId) {
       throw new DomainError("invalid-state", "在线别名与宿主在线分支不一致，拒绝变更名册", {
         details: { branchId: active.branchId },
+      });
+    }
+    if (requestedBranchId !== active.branchId) {
+      throw new DomainError("validation", "当前版本只支持在线分支，branchId 必须与在线分支一致", {
+        details: { branchId: active.branchId, requestedBranchId },
       });
     }
     return active.branchId;
@@ -108,18 +118,24 @@ export function createOnlineRoster(input: OnlineRosterInput): OnlineRosterDriver
     return { roster: readOnlineRosterInTransaction(tx, branchId), clock: clockView(clock) };
   };
 
-  const hibernate = (operation: OperationRequest): OnlineRosterOperationResponse => {
-    const key = primitives.operationKeyFor("hibernate", operation.principalId, operation.operationId, {});
+  const hibernate = (operation: OnlineRosterOperation): OnlineRosterOperationResponse => {
+    const key = primitives.operationKeyFor("hibernate", operation.principalId, operation.operationId, {
+      branchId: operation.branchId,
+    });
     const replayed = journal.replay(key, decodeRosterOutcome);
     if (replayed !== null) return replayed;
     try {
-      // 先在只读事务里确认可以休眠，再暂停时钟：未开局或已休眠的请求不应留下暂停时钟的副作用。
-      storage.transact((tx) => requireState(readOnlineRosterInTransaction(tx, requireOnlineBranch(tx)), "active"));
+      // 先在只读事务里确认可以休眠，再暂停时钟：分支已切换、未开局或已休眠的请求不应留下暂停时钟的副作用。
+      storage.transact((tx) => requireState(
+        readOnlineRosterInTransaction(tx, requireOnlineBranch(tx, operation.branchId)),
+        "active",
+      ));
       primitives.prepareSnapshot();
       const committed = storage.transact((tx) => {
         const stored = journal.read(tx, key);
         if (stored !== null) return journal.materialize(stored, decodeRosterOutcome);
-        const branchId = requireOnlineBranch(tx);
+        // 暂停时钟期间其他会话可能已切换在线分支：在变更名册的事务内重新核对。
+        const branchId = requireOnlineBranch(tx, operation.branchId);
         requireState(readOnlineRosterInTransaction(tx, branchId), "active");
         if (runtime.clock.readInTransaction(tx, branchId).mode !== "paused") {
           throw new DomainError("invalid-state", "在线时钟未处于暂停，拒绝休眠名册", { details: { branchId } });
@@ -136,15 +152,17 @@ export function createOnlineRoster(input: OnlineRosterInput): OnlineRosterDriver
     }
   };
 
-  const wake = (operation: OperationRequest): OnlineRosterOperationResponse => {
-    const key = primitives.operationKeyFor("wake", operation.principalId, operation.operationId, {});
+  const wake = (operation: OnlineRosterOperation): OnlineRosterOperationResponse => {
+    const key = primitives.operationKeyFor("wake", operation.principalId, operation.operationId, {
+      branchId: operation.branchId,
+    });
     const replayed = journal.replay(key, decodeRosterOutcome);
     if (replayed !== null) return replayed;
     try {
       const committed = storage.transact((tx) => {
         const stored = journal.read(tx, key);
         if (stored !== null) return journal.materialize(stored, decodeRosterOutcome);
-        const branchId = requireOnlineBranch(tx);
+        const branchId = requireOnlineBranch(tx, operation.branchId);
         requireState(readOnlineRosterInTransaction(tx, branchId), "hibernated");
         const activation = reactivateBranchAgentsInTransaction(tx, branchId, host.nowIso());
         if (activation.kind === "rejected") {

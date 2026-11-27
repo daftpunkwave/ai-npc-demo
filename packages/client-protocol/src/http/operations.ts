@@ -77,14 +77,17 @@ export function createOperationsHttp(request: ConsoleRequest) {
       return request(onlineRosterViewSchema, "/api/v1/console/campaign/roster", { signal });
     },
 
-    /** 休眠在线名册：服务端先暂停在线时钟，再释放名册占用的名额。 */
+    /**
+     * 休眠在线名册：服务端先暂停在线时钟，再释放名册占用的名额。
+     * branchId 是调用方当前看到的在线分支；在线分支已被其他会话切换时服务端按 400 validation 拒绝。
+     */
     consoleHibernateRoster(input: OnlineRosterOperationRequest) {
       return request(onlineRosterOperationResponseSchema, "/api/v1/console/campaign/roster/hibernate", {
         method: "POST", body: onlineRosterOperationRequestSchema.parse(input),
       });
     },
 
-    /** 唤醒在线名册：名额不足时服务端整体拒绝，不激活任何身份。 */
+    /** 唤醒在线名册：名额不足时服务端整体拒绝，不激活任何身份；branchId 的含义与休眠相同。 */
     consoleWakeRoster(input: OnlineRosterOperationRequest) {
       return request(onlineRosterOperationResponseSchema, "/api/v1/console/campaign/roster/wake", {
         method: "POST", body: onlineRosterOperationRequestSchema.parse(input),

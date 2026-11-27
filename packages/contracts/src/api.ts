@@ -318,10 +318,14 @@ export const onlineRosterViewSchema = z
 
 export type OnlineRosterView = z.infer<typeof onlineRosterViewSchema>;
 
-/** 名册休眠与唤醒请求；只携带幂等键，作用对象固定为在线分支。 */
+/**
+ * 名册休眠与唤醒请求：幂等键与发起方看到的在线分支。作用对象固定为在线分支，`branchId` 必填，
+ * 与变更时的在线分支不一致（例如其他会话已恢复存档或重开）时按 400 `validation` 拒绝，并计入幂等请求内容。
+ */
 export const onlineRosterOperationRequestSchema = z
   .object({
     operationId: idSchemas.op,
+    branchId: idSchemas.br,
   })
   .strict();
 

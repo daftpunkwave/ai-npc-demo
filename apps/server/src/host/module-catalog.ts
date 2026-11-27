@@ -123,6 +123,7 @@ export type {
 export type {
   IdempotentOperationsDriver,
   OnlineRosterDriver,
+  OnlineRosterOperation,
   OperationRequest,
   RestoreInput,
   RestoreOutcome,
