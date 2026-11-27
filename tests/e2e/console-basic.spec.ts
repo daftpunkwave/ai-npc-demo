@@ -3,8 +3,19 @@
  * 依赖固定双端口与服务端 403 边界；不访问真实观测原文。
  * 禁止把隐藏按钮或静态占位页当作授权通过。
  */
-import { expect, test, type WebSocketRoute } from "@playwright/test";
-import { agentInspectorResponseSchema } from "@world-prism/contracts";
+import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
+import {
+  agentInspectorResponseSchema,
+  consoleStreamSnapshotMessageSchema,
+  sessionDescriptorSchema,
+} from "@world-prism/contracts";
+
+/** 打开控制台并取宿主启动时读到的会话身份，供构造属于当前在线分支的流帧。 */
+async function openConsole(page: Page) {
+  const sessionResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/session");
+  await page.goto("http://127.0.0.1:3000/console/#token=e2e-console");
+  return sessionDescriptorSchema.parse(await (await sessionResponse).json());
+}
 
 test("控制台显示运行总览并在评估角色下禁用装配页", async ({ page }) => {
   await page.goto("http://127.0.0.1:3000/console/#token=e2e-console");
@@ -72,30 +83,36 @@ test("Agent 检查器显示实际位置和第九条记忆", async ({ page }) => 
     }));
     await route.fulfill({ response, json: { ...inspector, location: "node-console-fixture", memoryRecords } });
   });
-  await page.goto("http://127.0.0.1:3000/console/#token=e2e-console");
+  const session = await openConsole(page);
   await page.getByTestId("console-role").selectOption("researcher");
   await page.getByTestId("console-nav-observability").click();
   await expect(page.getByRole("heading", { name: "世界时间线" })).toBeVisible();
   const openSocket = socket as WebSocketRoute | null;
   if (openSocket === null) throw new Error("expected console timeline websocket");
-  openSocket.send(JSON.stringify({
+  // 帧按公共契约构造：不符合 WS 协议的帧在传输层就被拒绝，到不了页面。
+  openSocket.send(JSON.stringify(consoleStreamSnapshotMessageSchema.parse({
     type: "snapshot",
     channel: "console.timeline",
     streamSeq: 3,
-    worldId: "wld-console-fixture",
-    branchId: "br-console-fixture",
+    projectionVersion: 0,
+    worldId: session.worldId,
+    branchId: session.branchId,
     data: {
       events: [{
-        eventId: "evt-console-fixture",
+        kind: "domain",
+        eventId: "evt-000000000003",
         type: "ConsoleFixture",
         summaryZh: "来自实时快照的时间线",
         worldSeq: 3,
         worldTick: 1,
         principalId: null,
+        audience: null,
+        payload: {},
+        correlationId: null,
         createdAt: "2026-01-01T00:00:00.000Z",
       }],
     },
-  }));
+  })));
   await expect(page.getByText("来自实时快照的时间线", { exact: true })).toBeVisible();
   const inspector = page.locator("section.console-panel").filter({ has: page.getByRole("heading", { name: "Agent 检查器" }) });
   await expect(inspector.locator("header").getByText("node-console-fixture")).toBeVisible();
