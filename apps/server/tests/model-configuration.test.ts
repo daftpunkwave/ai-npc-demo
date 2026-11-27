@@ -219,4 +219,32 @@ describe("OpenAI 兼容网关布局", () => {
     expect(manifest.selection).toMatchObject({ runSpecId: first.id, modelLayoutRef: gatewayLayout });
     expect(manifest.models).toMatchObject({ layoutId: gatewayLayout, pricingVersion: "2026-11-gateway-estimate" });
   });
+
+  it("真实模型实验叠加 budget-real-model 后，每个 Agent 的每日 token 上限冻结为 20 万，其余预算不变", async () => {
+    const loadContext = contextOf({ ...gatewayEnv, WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled" });
+    const repository = loadExperimentSpec("exp-memory-promise-v1", loadContext).value;
+    const configure = async (commonPatchRefs: readonly string[]) => {
+      const inline = experimentSpecSchema.parse({
+        ...repository, commonPatchRefs, base: { ...repository.base, modelLayoutRef: "openai-compatible-gateway-layout-v2" },
+      });
+      const [first] = runsOfExperiment(inline);
+      if (first === undefined) throw new Error("实验没有展开出 run");
+      const resolved = await resolveRunConfiguration({
+        content, definitions: serverModuleDefinitions, contentVersion: content.pack.contentVersion,
+        loadRoster: (ref) => loadRoster(ref, loadContext), loadContext, repoRoot: process.cwd(),
+      }, first);
+      if ("failures" in resolved) throw new Error(resolved.failures.map(({ message }) => message).join("; "));
+      return resolved.configuration.manifest;
+    };
+    const budgetsOf = (manifest: Awaited<ReturnType<typeof configure>>) =>
+      (manifest.agentProfiles as unknown as readonly { profile: { budgets: Record<string, Json> } }[]).map(({ profile }) => profile.budgets);
+    const patched = budgetsOf(await configure(["budget-real-model"]));
+    const baseline = budgetsOf(await configure([]));
+    expect(patched).toHaveLength(baseline.length);
+    expect(patched.length).toBeGreaterThan(0);
+    patched.forEach((budgets, index) => {
+      expect(budgets).toEqual({ ...baseline[index], maxTokensPerAgentPerDay: 200000 });
+      expect(baseline[index]).toMatchObject({ maxTokensPerAgentPerDay: 60000 });
+    });
+  });
 });
