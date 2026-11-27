@@ -208,6 +208,13 @@ function informationShare(context: CommsContext, payload: Json): HandlerResult {
   if (!ports["game.comms"].holds(fromId, input.evidenceId)) {
     return { kind: "rejected", reasonCode: "evidence-not-held", safeMessage: "当前主体不持有该证据" };
   }
+  // 受众必须是真实主体：不存在的 ID（例如模型把角色显示名当成主体 ID）若被受理，会排进知识送达任务，
+  // 到送达 tick 才在建索引键时失败，让整条任务连同推进它的 tick 一起出错。与 dialogue.say 同口径在提交时拒绝。
+  const unknownAudience = input.audience.filter((principalId) =>
+    principalId !== content.playerPrincipalId && !content.characters.has(principalId) && !content.factions.has(principalId));
+  if (unknownAudience.length > 0) {
+    return { kind: "rejected", reasonCode: "unknown-target", safeMessage: "分享对象中有不存在的主体" };
+  }
   if (!allDeliverable(context, "message", fromId, input.audience)) {
     return { kind: "rejected", reasonCode: "relay-down", safeMessage: "中继中断，无法分享证据" };
   }

@@ -363,6 +363,24 @@ describe("通信", () => {
     expect(events.filter((event) => event.type === "KnowledgeGranted").length).toBeGreaterThan(1);
   });
 
+  it("受众含不存在的主体时整条拒绝，不排送达任务，送达 tick 也不会出错", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    setRelay(value, 25);
+    // 真实模型曾把角色显示名当作主体 ID 提交；旧实现受理后在送达 tick 建索引键时抛错。
+    const rejected = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["species-fauna", "洛"] }, value.host.ids("cmd")),
+    );
+    expect(rejected).toMatchObject({ commandStatus: "rejected", reasonCode: "unknown-target" });
+    const events = readGameEvents(value);
+    expect(events.filter((event) => event.type === "InformationShared")).toHaveLength(0);
+    setGameClock(value, { worldTick: 3, mode: "running" });
+    expect(() => value.authority.jobs.runDue(value.branchId, 3)).not.toThrow();
+    expect(readGameEvents(value).filter((event) =>
+      event.type === "KnowledgeGranted" && (event.payload as { readonly via?: string }).via === "share")).toHaveLength(0);
+  });
+
   it("异地证据分享的授权在送达 tick 才生效", async () => {
     const value = await harness();
     expect(start(value).commandStatus).toBe("accepted");
