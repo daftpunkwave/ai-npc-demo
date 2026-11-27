@@ -23,7 +23,7 @@ PRAGMA busy_timeout = 5000;
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
 
-本节展示经后续迁移演进后的核心表结构（其中 `rule_failures`、`clock_stop_requests`、`trace_spans.started_at` 分别由 0006、0007、0013 追加，初始迁移 `0001_init.sql` 原建的 `conversation_lines` 已由 0010 移除）。完整迁移链为 0001–0021：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 指纹，0005 为 `turn_runs` 增加 `created_tick`，0006 新增 `rule_failures`，0007 新增 `clock_stop_requests`，0008 重建 `operation_idempotency` 加入 `'step'` 种类，0009–0013 补充预算日界、移除 `conversation_lines`、物化通信索引聚合（`conversation-line`、`conversation-membership`、`message-delivery` 并重写 `knowledge-grant` 键格式）、新增 `budget_ledger_unsettled` 部分索引及 `trace_spans.started_at` 与调试审计索引，0014–0021 见下文。0002 与 0003 的语句见 §2.1。
+本节展示经后续迁移演进后的核心表结构（其中 `rule_failures`、`clock_stop_requests`、`trace_spans.started_at` 分别由 0006、0007、0013 追加，初始迁移 `0001_init.sql` 原建的 `conversation_lines` 已由 0010 移除）。完整迁移链为 0001–0020：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 指纹，0005 为 `turn_runs` 增加 `created_tick`，0006 新增 `rule_failures`，0007 新增 `clock_stop_requests`，0008 重建 `operation_idempotency` 加入 `'step'` 种类，0009–0013 补充预算日界、移除 `conversation_lines`、物化通信索引聚合（`conversation-line`、`conversation-membership`、`message-delivery` 并重写 `knowledge-grant` 键格式）、新增 `budget_ledger_unsettled` 部分索引及 `trace_spans.started_at` 与调试审计索引，0014–0020 见下文。0002 与 0003 的语句见 §2.1。
 
 0016 为 Agent 热路径补索引，只新增索引、不改表结构：
 
@@ -43,7 +43,7 @@ PRAGMA busy_timeout = 5000;
 
 0019 为 `domain_events` 增加表达式索引 `domain_events_dialogue (branch_id, type, CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.dialogueId') END, world_seq)`。会话读取要按一批对白 ID 找回各自的提交事件序号，原查询只能靠 `domain_events_type` 收窄到 `(branch_id, type)`，再把该分支全部 `DialogueSubmitted` 逐行解析 `payload_json` 比对 `dialogueId`，成本随对白事件数线性增长；把 `dialogueId` 提升为索引列后，按对白查找与取最大 `world_seq` 都在索引内完成。索引列先做 `json_valid` 守卫再取值：表达式索引对每一行求值，缺少守卫时非法 JSON 文本会让写入与建索引失败。表达式必须与查询写法逐字一致，`tests/integration/dialogue-event-index.test.ts` 按生产查询形状断言查询计划命中该索引。这条查询由 authority 的 `latestEventSeqsByPayload` 提供，宿主不拼接事件 SQL；可按取值查找的（事件类型，载荷字段）登记在 `indexedEventPayloadKeys`，字段名受契约载荷类型约束，新增登记必须配套表达式相同的索引。
 
-0020 为 `trace_spans` 增加索引 `trace_spans_started_at (started_at)`，供保留期清理按截止时间分批定位过期跨度，见[第 6 节](#6-数据保留与轮转)。0021 为 `artifacts` 增加覆盖索引 `artifacts_storage_bytes (storage, byte_size)`，占用测量按存放方式汇总正文字节时只读索引，不逐页读取内联正文，见 [6.6 节](#66-占用测量)。
+0020 为 `trace_spans` 增加索引 `trace_spans_started_at (started_at)`，供保留期清理按截止时间分批定位过期跨度，见[第 6 节](#6-数据保留与轮转)。
 
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
@@ -482,9 +482,6 @@ CREATE TABLE artifacts (
   redacted_from TEXT,
   created_at TEXT NOT NULL
 );
-
--- 0021 为占用测量按存放方式汇总正文字节补覆盖索引。
-CREATE INDEX artifacts_storage_bytes ON artifacts (storage, byte_size);
 
 CREATE TABLE trace_spans (              -- 观测跨度；唯一可按保留期裁剪的表，见第 6 节
   span_id TEXT PRIMARY KEY,
