@@ -1,6 +1,6 @@
 /**
- * 核心职责：验证控制台运营页的异步刷新、错误展示、读请求取消、单步恢复、在线名额的休眠与恢复入口，
- *   以及在线分支切换后标识、时钟与快照跟随。
+ * 核心职责：验证控制台运营页的异步刷新、错误展示、读请求取消、单步恢复、在线名额的休眠与恢复入口、
+ *   在线名额轮询（反映其他会话的变化且迟到结果不覆盖操作结果），以及在线分支切换后标识、时钟与快照跟随。
  * 交互契约：使用真实控制台登录和浏览器，对运营 API 施加可控的失败与响应顺序。
  * 约束与禁忌：不改变共享测试世界，不以固定延时制造竞态。
  */
@@ -275,4 +275,91 @@ test("在线名额面板：休眠后继续与单步置灰，名额不足时提�
   ]);
   // 每个操作都带上页面当前的在线分支，服务端据此拒绝按旧视图发出的请求。
   for (const { body } of posted) expect(body).toEqual({ operationId: expect.stringMatching(/^op-/), branchId: onlineBranchId });
+});
+
+/** 测试装配 core-3 名册的在线名额视图；deploymentActiveAgents 另计其他分支（实验）占用的名额。 */
+function rosterViewOf(branchId: string, hibernated: boolean, otherBranchAgents = 0) {
+  return {
+    branchId,
+    state: hibernated ? "hibernated" : "active",
+    activeAgents: hibernated ? 0 : 3,
+    dormantAgents: hibernated ? 3 : 0,
+    deploymentActiveAgents: (hibernated ? 0 : 3) + otherBranchAgents,
+    deploymentLimit: 15,
+  };
+}
+
+test("其他运营者休眠在线名册、实验占用名额后，运营页按轮询更新名额面板与按钮", async ({ page }) => {
+  let hibernatedElsewhere = false;
+  let experimentAgents = 0;
+  // 名册状态由路由模拟其他会话的变化，读取仍经服务端以取得真实在线分支；时钟固定为暂停，按钮可用性只随名册变化。
+  await page.route("**/api/v1/console/campaign/roster", async (route) => {
+    const response = await route.fetch();
+    const { branchId } = onlineRosterViewSchema.parse(await response.json());
+    await route.fulfill({ response, json: rosterViewOf(branchId, hibernatedElsewhere, experimentAgents) });
+  });
+  await page.route("**/api/v1/console/health", async (route) => {
+    const response = await route.fetch();
+    const health = consoleHealthResponseSchema.parse(await response.json());
+    await route.fulfill({ response, json: { ...health, clock: { ...health.clock, mode: "paused" } } });
+  });
+  const operations = await openOperations(page);
+  const state = operations.getByTestId("console-ops-roster-state");
+  const resume = operations.getByRole("button", { name: "继续" });
+  const step = operations.getByRole("button", { name: "单步推进" });
+  const wake = operations.getByRole("button", { name: "恢复名额" });
+  await expect(state).toHaveText("占用名额");
+  await expect(operations.getByText("部署 3 / 15")).toBeVisible();
+  await expect(resume).toBeEnabled();
+  await expect(wake).toBeDisabled();
+
+  // 本页没有任何操作：另一位运营者休眠了在线名册，随后实验 run 占用 12 个名额，下一次轮询读到后更新。
+  hibernatedElsewhere = true;
+  experimentAgents = 12;
+  await expect(state).toHaveText("已休眠");
+  await expect(operations.getByText("部署 12 / 15")).toBeVisible();
+  await expect(resume).toBeDisabled();
+  await expect(step).toBeDisabled();
+  await expect(wake).toBeEnabled();
+  await expect(operations.getByRole("alert")).toHaveCount(0);
+});
+
+test("名额轮询的迟到结果不覆盖休眠操作的结果", async ({ page }) => {
+  let onlineBranchId: string | null = null;
+  let holdReads = false;
+  const heldReads: Route[] = [];
+  await page.route("**/api/v1/console/campaign/roster", async (route) => {
+    if (holdReads) {
+      heldReads.push(route);
+      return;
+    }
+    const response = await route.fetch();
+    onlineBranchId = onlineRosterViewSchema.parse(await response.json()).branchId;
+    await route.fulfill({ response, json: rosterViewOf(onlineBranchId, false) });
+  });
+  await page.route("**/api/v1/console/campaign/roster/hibernate", async (route) => {
+    if (onlineBranchId === null) throw new Error("名册状态尚未读取");
+    await route.fulfill({
+      json: { roster: rosterViewOf(onlineBranchId, true), clock: { worldTick: 0, day: 1, hour: 0, mode: "paused", runVersion: 0 } },
+    });
+  });
+  page.on("dialog", (dialog) => { void dialog.accept(); });
+  const operations = await openOperations(page);
+  const state = operations.getByTestId("console-ops-roster-state");
+  await expect(state).toHaveText("占用名额");
+
+  // 下一次轮询读取在休眠之前发出，挂起到休眠完成之后才返回休眠前的状态。
+  holdReads = true;
+  await expect.poll(() => heldReads.length).toBe(1);
+  await operations.getByRole("button", { name: "休眠并释放名额" }).click();
+  await expect(state).toHaveText("已休眠");
+  if (onlineBranchId === null) throw new Error("名册状态尚未读取");
+  await heldReads[0]?.fulfill({ json: rosterViewOf(onlineBranchId, false) });
+
+  // 页面丢弃迟到结果，并在它结束后立即补读；补读发出时迟到结果已经处理完毕，名额面板仍为休眠。
+  await expect.poll(() => heldReads.length).toBe(2);
+  await expect(state).toHaveText("已休眠");
+  await expect(operations.getByRole("button", { name: "恢复名额" })).toBeEnabled();
+  await heldReads[1]?.fulfill({ json: rosterViewOf(onlineBranchId, true) });
+  await expect(state).toHaveText("已休眠");
 });

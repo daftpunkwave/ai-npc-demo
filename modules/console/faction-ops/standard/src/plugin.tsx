@@ -1,8 +1,10 @@
 /**
  * 核心职责：呈现当前时钟、快照、在线分支与在线名额，并通过控制台 API 执行暂停、继续、单步、存档、恢复，
- *   以及在线名册的休眠（释放名额）与唤醒（恢复名额）。
- * 交互契约：依赖宿主生成 operationId、宿主维护的在线分支订阅、控制台会话与 React；不自行计算世界版本或分支。
- * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功；在线身份变化后不展示旧分支的时钟、快照与名额。
+ *   以及在线名册的休眠（释放名额）与唤醒（恢复名额）；页面可见期间定期读取在线名额，反映其他会话造成的变化。
+ * 交互契约：依赖宿主生成 operationId、宿主维护的在线分支订阅、控制台会话、client-protocol 的轮询调度与 React；
+ *   不自行计算世界版本或分支。
+ * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功；在线身份变化后不展示旧分支的时钟、快照与名额；
+ *   早于本页操作发出的名额读取不得覆盖操作结果。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
 /* eslint-disable no-unused-vars -- 宿主端口方法参数名只表达调用契约，Codacy 未能解析。 */
@@ -17,7 +19,7 @@ import type {
   SessionDescriptor,
   SnapshotView,
 } from "@world-prism/contracts";
-import type { ApiClient } from "@world-prism/client-protocol";
+import { startPolling, type ApiClient, type PollingHandle } from "@world-prism/client-protocol";
 
 interface ConsoleHostPort {
   readonly api: ApiClient;
@@ -42,6 +44,14 @@ function actionError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+/**
+ * 在线名额的轮询间隔：其他运营者休眠或恢复名册、实验 run 占用或释放部署级名额都不经本页操作发生，
+ * 页面可见时最迟约这么久显示新状态；与宿主核对在线分支的间隔一致。
+ */
+const rosterPollIntervalMs = 5_000;
+/** 名额读取连续失败时的最长等待。 */
+const rosterMaxBackoffMs = 30_000;
+
 const rosterStateLabels: Readonly<Record<OnlineRosterState, string>> = {
   empty: "未开局",
   active: "占用名额",
@@ -53,12 +63,16 @@ function FactionOpsPage(): ReactNode {
   const [clock, setClock] = useState<ClockView | null>(null);
   const [snapshots, setSnapshots] = useState<readonly SnapshotView[]>([]);
   const [roster, setRoster] = useState<OnlineRosterView | null>(null);
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const [ticks, setTicks] = useState(1);
   const [label, setLabel] = useState("manual-checkpoint");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
+  const rosterPolling = useRef<PollingHandle | null>(null);
+  // 本页操作写入名额视图的次数：轮询读取发出后若已写入操作结果，该读取可能早于操作提交，结果丢弃并由补读取代。
+  const rosterRevision = useRef(0);
   // 本页自己订阅在线身份：其他会话恢复存档或重开后，展示的分支、时钟与快照都必须跟随宿主更新，
   // 不依赖外壳恰好重渲染。
   const [worldId, setWorldId] = useState(host.worldId);
@@ -73,27 +87,31 @@ function FactionOpsPage(): ReactNode {
   }, [host]);
 
   const refresh = async (signal: AbortSignal): Promise<ClockView> => {
-    const [health, nextSnapshots, nextRoster] = await Promise.all([
+    const [health, nextSnapshots] = await Promise.all([
       host.api.consoleHealth(signal),
       host.api.consoleSnapshots(signal),
-      host.api.consoleOnlineRoster(signal),
     ]);
     signal.throwIfAborted();
     setClock(health.clock);
     setSnapshots(nextSnapshots.snapshots);
-    setRoster(nextRoster);
     return health.clock;
+  };
+
+  const showRosterResult = (next: OnlineRosterView): void => {
+    rosterRevision.current += 1;
+    setRoster(next);
   };
 
   // 首次进入与在线身份变化时读取时钟与快照。身份变化时清理函数先中止在途的读取或操作，
   // 旧分支的迟到结果随之作废；被中止的操作不会再复位忙碌状态，因此这里一并复位，
-  // 并清掉属于旧分支的时钟、快照与提示，新分支的结果到达前不展示旧数据。
+  // 并清掉属于旧分支的时钟、快照、名额与提示，新分支的结果到达前不展示旧数据。
   useEffect(() => {
     const read = new AbortController();
     activeRequest.current = read;
     setClock(null);
     setSnapshots([]);
     setRoster(null);
+    setRosterError(null);
     setBusy(false);
     setMessage(null);
     setError(null);
@@ -101,6 +119,28 @@ function FactionOpsPage(): ReactNode {
       if (!read.signal.aborted) setError(`读取运营状态失败：${actionError(cause)}`);
     });
     return () => { activeRequest.current?.abort(); };
+  }, [host.api, worldId, branchId]);
+
+  // 在线名额只由这里的轮询读取：上一次读取结束后才排下一次，连续失败按指数退避，页面不可见时暂停、恢复可见立即补读；
+  // 卸载或在线身份变化时停止并中止在途读取，旧分支的结果不会写入。
+  useEffect(() => {
+    const polling = startPolling({
+      read: async (signal) => {
+        const revision = rosterRevision.current;
+        const next = await host.api.consoleOnlineRoster(signal);
+        if (signal.aborted || revision !== rosterRevision.current) return;
+        setRoster(next);
+        setRosterError(null);
+      },
+      intervalMs: rosterPollIntervalMs,
+      maxBackoffMs: rosterMaxBackoffMs,
+      onError: (cause) => setRosterError(`读取在线名额失败：${actionError(cause)}`),
+    });
+    rosterPolling.current = polling;
+    return () => {
+      polling.stop();
+      if (rosterPolling.current === polling) rosterPolling.current = null;
+    };
   }, [host.api, worldId, branchId]);
 
   const run = async (work: (signal: AbortSignal) => Promise<void>, stepTicks?: number): Promise<void> => {
@@ -120,6 +160,8 @@ function FactionOpsPage(): ReactNode {
     }
     if (signal.aborted) return;
 
+    // 操作可能改变名额（休眠、唤醒、恢复存档）：无论成败都尽快补读一次，不等下一个轮询间隔。
+    rosterPolling.current?.refresh();
     try {
       const latestClock = await refresh(signal);
       if (operationFailure !== null && stepTicks !== undefined && latestClock.mode === "stepping") {
@@ -176,7 +218,7 @@ function FactionOpsPage(): ReactNode {
       ? await host.api.consoleHibernateRoster(request)
       : await host.api.consoleWakeRoster(request);
     signal.throwIfAborted();
-    setRoster(result.roster);
+    showRosterResult(result.roster);
     setClock(result.clock);
     setMessage(action === "hibernate" ? "在线名册已休眠，名额已释放" : "在线名额已恢复，时钟保持暂停");
   });
@@ -273,6 +315,7 @@ function FactionOpsPage(): ReactNode {
             <div><dt>活动身份</dt><dd>{roster?.activeAgents ?? "-"}</dd></div>
             <div><dt>休眠身份</dt><dd>{roster?.dormantAgents ?? "-"}</dd></div>
           </div>
+          {rosterError === null ? null : <p className="console-error" data-testid="console-ops-roster-error">{rosterError}</p>}
           <div className="ops-control-grid">
             <button type="button" disabled={busy || roster?.state !== "active"} onClick={() => void changeRoster("hibernate")}>休眠并释放名额</button>
             <button type="button" disabled={busy || !hibernated} onClick={() => void changeRoster("wake")}>恢复名额</button>
