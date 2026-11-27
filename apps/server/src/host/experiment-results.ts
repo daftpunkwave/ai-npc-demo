@@ -2,7 +2,8 @@
  * 核心职责：落定实验 run 的终态：完成时把评估报告的指标写入 `experiment_results`，失败、停止或宿主关闭时
  * 如实记录原因；释放实验分支与遗留沙盒的配额；并提供启动时的中断恢复与控制台进度读取。
  * 交互契约：报告由评估读取端口按与 `/runs/{runId}/report` 相同的口径计算；状态变更、指标写入、名册休眠与审计
- * 在同一事务提交，执行器被停止时以 run 当前状态为准，不覆盖研究员的停止操作。
+ * 在同一事务提交，执行器被停止时以 run 当前状态为准，不覆盖研究员的停止操作；被停止后再次启动取代的执行
+ * 按时钟版本围栏识别，不写终态。
  * 约束与禁忌：只写 run、分支、`experiment_results` 与审计；不改写探针结果与世界状态，也不编造缺失的指标。
  */
 import { deactivateBranchAgentsInTransaction, recordedProbeIds } from "@world-prism/agent-runtime";
@@ -11,6 +12,7 @@ import { runSpecSchema } from "@world-prism/experiment";
 import type { GameClockPort } from "@world-prism/module-sdk";
 import { latestExperimentAudit, recordExperimentAuditIn } from "./experiment-audit";
 import { scriptExtent } from "./experiment-script";
+import { readExecutionFence } from "./experiment-ticks";
 import type { HostStartup } from "./startup-types";
 
 /** 进度读取结果；字段与契约 `runProgressResponseSchema` 一致。 */
@@ -44,6 +46,24 @@ function pauseRunClock(input: FinishInput): void {
 function runStatusIn(tx: StorageTransaction, runId: string): string | null {
   const status = tx.rows("runs").get({ run_id: runId })?.["status"];
   return typeof status === "string" ? status : null;
+}
+
+/**
+ * 执行已被取代时记一条审计并返回 true，调用方不再写任何终态。
+ * 取代的判据与执行中的围栏相同：run 仍是 running，但实验分支时钟版本已不是这次执行最后采纳的版本，
+ * 即期间发生过停止并再次启动。此时 run 状态、名册与时钟都属于接手的执行：写 completed 或 failed 会替新一次
+ * 启动落下终态，休眠名册与暂停时钟会掐断它。run 已不是 running（单纯停止）时不算取代，照常按停止收尾。
+ */
+export function finishSuperseded(input: FinishInput & { readonly clockVersion: number | null; readonly outcome: string }): boolean {
+  return input.storage.transact((tx) => {
+    const fence = readExecutionFence(tx, input.runId, input.branchId);
+    if (fence.status !== "running" || fence.clockVersion === input.clockVersion) return false;
+    recordExperimentAuditIn(tx, input.host, {
+      runId: input.runId, branchId: input.branchId, type: "ExperimentRunStopped", subjectId: null,
+      payload: { status: "running", reason: "superseded", discardedOutcome: input.outcome },
+    });
+    return true;
+  });
 }
 
 /**

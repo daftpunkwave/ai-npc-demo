@@ -51,6 +51,26 @@ function startOnlineCampaign(host: RunningHost): void {
   expect(receipt.commandStatus).toBe("accepted");
 }
 
+/**
+ * 在一个事务里依次落下停止与再次启动两次控制的持久化效果，写法与 run-control 的两次提交相同：
+ * 停止把 run 与时钟置为暂停并递增时钟版本，启动再置为运行并递增一次。
+ * 两次 HTTP 控制之间执行器可能被调度，无法确定性地落在同一等待里，因此直接写存储。
+ */
+function stopAndRestartAtOnce(host: RunningHost, runId: string, branchId: string): void {
+  host.storage.transact((tx) => {
+    const run = tx.rows("runs").get({ run_id: runId });
+    const clocks = tx.branch(branchId).table("clock");
+    const clock = clocks.get({});
+    if (run === null || clock === null) throw new Error("run 或实验分支时钟不存在");
+    const now = new Date().toISOString();
+    const stopped = { ...clock, mode: "paused", run_version: Number(clock["run_version"]) + 1, updated_at: now };
+    clocks.put(stopped);
+    tx.rows("runs").put({ ...run, status: "paused" });
+    clocks.put({ ...stopped, mode: "running", run_version: stopped.run_version + 1, updated_at: now });
+    tx.rows("runs").put({ ...run, status: "running" });
+  });
+}
+
 function failureCode(host: RunningHost, runId: string): Json | undefined {
   const failed = experimentAudit(host, branchOf(host, runId)).find(({ type }) => type === "ExperimentRunFailed");
   return (failed?.payload as Record<string, Json> | undefined)?.["code"];
@@ -253,6 +273,34 @@ describe("实验执行器的配额与失败路径", () => {
     // 每条脚本命令在实验分支上只有一张玩家回执（加开局一共 5 张）。
     expect(host.storage.transact((tx) => tx.branch(branchId).table("command_receipts").list({ principal_id: "player-1" }))).toHaveLength(5);
     expect(probeResults(host, runId)).toHaveLength(1);
+  }, 120_000);
+
+  it("探针进行中停止后立即再次启动：旧执行被取代且不写终态，新执行接手完成", async () => {
+    const host = await experimentHost(resources);
+    const headers = await researcherHeaders(host);
+    const [runId] = await createExperimentRuns(host, headers, experimentSpec({ experimentId: "exp-runner-restart-race-v1" }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    const branchId = branchOf(host, runId);
+    await startRun(host, headers, runId, "op-000000000711");
+    // 旧执行停在探针沙盒里等待时，同一同步段内落下停止与再次启动：它在两次控制之间没有机会读到 paused，
+    // 恢复后看到的 run 仍是 running，只有时钟版本不同。
+    await vi.waitFor(() => {
+      expect(sandboxesOf(host, branchId).some((row) => row["status"] === "active")).toBe(true);
+      stopAndRestartAtOnce(host, runId, branchId);
+    }, { timeout: 60_000, interval: 1 });
+
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
+    const audit = experimentAudit(host, branchId);
+    expect(audit.map(({ type }) => type)).not.toContain("ExperimentRunFailed");
+    expect(audit.filter(({ type }) => type === "ExperimentRunStarted")).toHaveLength(2);
+    // 旧执行只记一条被取代的审计，不改 run 状态、名册与时钟。
+    expect(audit.filter(({ type }) => type === "ExperimentRunStopped").map(({ payload }) => payload))
+      .toEqual([expect.objectContaining({ status: "running", reason: "superseded" })]);
+    expect(audit.at(-1)?.type).toBe("ExperimentRunCompleted");
+    expect(worldTickOf(host, branchId)).toBe(62);
+    expect(probeResults(host, runId)).toHaveLength(1);
+    expect(sandboxesOf(host, branchId).every((row) => row["status"] === "archived")).toBe(true);
+    expect(activeIdentityCount(host)).toBe(0);
   }, 120_000);
 
   it("收敛超时、不支持的脚本与宿主装配不一致都显式失败", async () => {

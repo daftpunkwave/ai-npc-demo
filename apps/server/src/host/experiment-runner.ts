@@ -2,6 +2,7 @@
  * 核心职责：宿主内的实验执行器：按启动顺序逐个驱动处于 running 的脚本化实验 run，经受控时钟走完脚本的外部命令
  * 与检查点探针，完成后汇总 `experiment_results`；响应停止、宿主关闭与重启恢复。
  * 交互契约：由组合根在 `POST /runs/{runId}/start` 成功后唤醒；停止由 run 状态表达，执行器在每个收敛轮与注入前读取；
+ * 停止后再次启动由实验分支时钟版本区分，被取代的执行既不继续推进也不写终态；
  * 与在线世界共用存储写连接、游戏模块实例与部署级配额，每个 run 使用自己的命令网关、随机种子与 Agent 运行时。
  * 约束与禁忌：同一时刻只执行一个 run（配额与单写连接都按逐分支执行设计）；不读写在线分支；
  * 失败与积压显式落为 failed 并附原因码，不静默跳过检查点或伪造结果。
@@ -21,6 +22,7 @@ import {
   finishCompleted,
   finishFailed,
   finishHalted,
+  finishSuperseded,
   isScriptedExperimentRun,
   readExperimentProgress,
   recoverInterruptedRuns,
@@ -32,7 +34,9 @@ import {
   activateExperimentRoster,
   advanceAndSettle,
   assertRunActive,
+  controlClock,
   ensureCampaignStarted,
+  readExecutionFence,
   RunHalted,
   settleCurrentTick,
   type ExperimentExecution,
@@ -117,12 +121,16 @@ export class ExperimentRunner {
           String(left["run_id"]).localeCompare(String(right["run_id"])));
       const run = candidates[0];
       if (run === undefined) return null;
+      const runId = String(run["run_id"]);
+      const branchId = String(run["branch_id"]);
       return {
-        runId: String(run["run_id"]),
+        runId,
         worldId: this.worldId,
-        branchId: String(run["branch_id"]),
+        branchId,
         runSpec: run["run_spec_json"],
         manifestHash: typeof run["manifest_hash"] === "string" ? run["manifest_hash"] : null,
+        // 与选中时的 running 状态同一事务读取：这次执行只拥有这一版本起的时钟。
+        clockVersion: readExecutionFence(tx, runId, branchId).clockVersion,
       };
     });
   }
@@ -133,7 +141,7 @@ export class ExperimentRunner {
     let outcome: ExecutionOutcome;
     try {
       const ctx = await prepareExperimentRun(this.deps, record);
-      execution = { deps: this.deps, ctx, signal: this.abort.signal, runtime: null, sandbox: null };
+      execution = { deps: this.deps, ctx, signal: this.abort.signal, runtime: null, sandbox: null, clockVersion: record.clockVersion };
       await this.drive(execution);
       outcome = { kind: "completed" };
     } catch (error) {
@@ -146,7 +154,7 @@ export class ExperimentRunner {
         outcome = outcome.kind === "completed" ? classify(error) : outcome;
       }
     }
-    this.finish(record, outcome);
+    this.finish(record, execution?.clockVersion ?? record.clockVersion, outcome);
   }
 
   /**
@@ -157,11 +165,13 @@ export class ExperimentRunner {
     const { ctx } = exec;
     const clock = this.deps.core.runtime.clock;
     const tickNow = (): number => clock.read(ctx.branchId).worldTick;
+    // 准备阶段让出过事件循环：期间被停止或被再次启动取代时不再记开始。
+    assertRunActive(exec);
     recordExperimentAudit(this.deps.core.storage, this.deps.core.host, {
       runId: ctx.runId, branchId: ctx.branchId, type: "ExperimentRunStarted", subjectId: null,
       payload: { worldTick: tickNow(), endTick: ctx.plan.endTick, scriptBranch: ctx.plan.branch },
     });
-    pauseClock(exec);
+    controlClock(exec, "pause");
     ensureCampaignStarted(exec);
     activateExperimentRoster(exec);
     const runtime = await openBranchAgentRuntime({
@@ -174,29 +184,35 @@ export class ExperimentRunner {
       assertRunActive(exec);
       const tick = tickNow();
       const target = nextStepTarget(ctx.plan, tick, ctx.maxStepTicks);
-      stepClock(exec, Math.max(1, target - tick));
+      controlClock(exec, "step", Math.max(1, target - tick));
       await settleCurrentTick(exec, runtime, tick);
       const probes = pendingProbesAt(exec, tick);
       if (probes.length > 0) {
-        pauseClock(exec);
+        controlClock(exec, "pause");
         await runCheckpointProbes(exec, tick, probes);
         continue;
       }
       if (tick >= ctx.plan.endTick) {
-        pauseClock(exec);
+        controlClock(exec, "pause");
         return;
       }
       for (let next = tick + 1; next <= target; next += 1) {
         await advanceAndSettle(exec, runtime, next);
       }
-      pauseClock(exec);
+      controlClock(exec, "pause");
     }
   }
 
-  private finish(record: ExperimentRunRecord, outcome: ExecutionOutcome): void {
+  /**
+   * 落定终态。先按执行围栏判断这次执行是否已被「停止后再次启动」取代：被取代时只记审计，run 状态、名册与时钟
+   * 都留给接手的执行，执行队列随后会按 running 再次选中该 run。整个收尾是同步的，围栏判断与终态写入之间
+   * 不会插入新的控制请求。
+   */
+  private finish(record: ExperimentRunRecord, clockVersion: number | null, outcome: ExecutionOutcome): void {
     const { core } = this.deps;
     const input = { storage: core.storage, host: core.host, clock: core.runtime.clock, runId: record.runId, branchId: record.branchId };
     try {
+      if (finishSuperseded({ ...input, clockVersion, outcome: outcome.kind === "failed" ? `failed:${outcome.code}` : outcome.kind })) return;
       if (outcome.kind === "completed") {
         let report: RunReportResponse | null;
         try {
@@ -245,16 +261,4 @@ async function release(exec: ExperimentExecution): Promise<void> {
       await exec.ctx.modules.started.dispose();
     }
   }
-}
-
-/** 暂停实验分支时钟；暂停是静默与探针的前提，失败即无法保证收敛点。 */
-function pauseClock(exec: ExperimentExecution): void {
-  const result = exec.deps.core.runtime.clock.pause(exec.ctx.branchId);
-  if (!result.ok) throw new ExperimentFailure("clock-control-failed", `实验分支时钟无法暂停：${result.reasonCode}`);
-}
-
-/** 从暂停进入 stepping；目标 tick 由本段计划给出。 */
-function stepClock(exec: ExperimentExecution, ticks: number): void {
-  const result = exec.deps.core.runtime.clock.step(exec.ctx.branchId, ticks);
-  if (!result.ok) throw new ExperimentFailure("clock-control-failed", `实验分支时钟无法进入单步：${result.reasonCode}`);
 }

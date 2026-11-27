@@ -45,6 +45,8 @@ export async function runCheckpointProbes(exec: ExperimentExecution, tick: numbe
   for (const probe of probes) {
     await runProbe(exec, probe);
   }
+  // 最后一个沙盒关闭时让出过事件循环：被停止的 run 不能再把名册激活回来占用配额。
+  assertRunActive(exec);
   activateExperimentRoster(exec);
 }
 

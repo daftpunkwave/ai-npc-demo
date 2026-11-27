@@ -2,7 +2,8 @@
  * 核心职责：在实验分支上执行受控时钟的单 tick 处理：开局与名册激活、推进或补完 tick、按声明顺序注入脚本命令，
  * 并等待本 tick 收敛（规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、无进行中 turn、无可调度 trigger）。
  * 交互契约：依赖 run 级命令网关、时钟端口、分支 Agent 运行时与 agent-runtime 的收敛读数；
- * 每次注入前读取 run 状态，被停止或宿主关闭时抛出 `RunHalted`，失败与积压抛出 `ExperimentFailure`。
+ * 每次注入与时钟操作前按执行围栏（run 状态与实验分支时钟版本）检查，被停止、被停止后再次启动所取代
+ * 或宿主关闭时抛出 `RunHalted`，失败与积压抛出 `ExperimentFailure`。
  * 约束与禁忌：脚本命令以玩家身份走正常命令网关，不授予系统权限或暂停豁免；收敛前不推进下一 tick；
  * 事务内不等待，状态检查与命令注入之间不让出事件循环，避免停止请求插入其间。
  */
@@ -12,7 +13,7 @@ import {
   type AgentRuntime,
 } from "@world-prism/agent-runtime";
 import { latestEventSeq, listRuleFailures } from "@world-prism/authority";
-import type { AuthContext } from "@world-prism/contracts";
+import type { AuthContext, StorageTransaction } from "@world-prism/contracts";
 import { advanceWorldTick, catchUpWorldTick } from "../tick";
 import { recordExperimentAudit } from "./experiment-audit";
 import { ExperimentFailure, type ExperimentHostDeps, type ExperimentRunContext } from "./experiment-context";
@@ -26,13 +27,20 @@ export class RunHalted extends Error {
   }
 }
 
-/** 一次执行的可变状态：实验分支运行时与正在执行的探针沙盒。 */
+/**
+ * 一次执行的可变状态：实验分支运行时、正在执行的探针沙盒，以及执行围栏。
+ *
+ * 围栏是实验分支时钟的 `run_version`：停止与启动都会递增它，执行器自己的暂停、单步与 tick 推进后
+ * 立即采纳新版本。run 仍是 running 但版本不是本次执行最后采纳的值，说明期间发生过停止并再次启动，
+ * 这次执行已被取代——单看 run 状态分不出这两次执行。
+ */
 export interface ExperimentExecution {
   readonly deps: ExperimentHostDeps;
   readonly ctx: ExperimentRunContext;
   readonly signal: AbortSignal;
   runtime: AgentRuntime | null;
   sandbox: { readonly branchId: string; runtime: AgentRuntime | null } | null;
+  clockVersion: number | null;
 }
 
 /** 收敛判定所需的一个分支：分支 ID 与其 Agent 运行时。 */
@@ -41,11 +49,52 @@ export interface SettleTarget {
   readonly runtime: AgentRuntime;
 }
 
-/** run 仍在运行且宿主未关闭；否则中断执行。 */
+/** 执行围栏的读数：run 状态与实验分支时钟版本，在同一事务内读出；时钟缺失时版本为 null。 */
+export function readExecutionFence(
+  tx: StorageTransaction,
+  runId: string,
+  branchId: string,
+): { readonly status: unknown; readonly clockVersion: number | null } {
+  const version = tx.branch(branchId).table("clock").get({})?.["run_version"];
+  return { status: tx.rows("runs").get({ run_id: runId })?.["status"], clockVersion: typeof version === "number" ? version : null };
+}
+
+/**
+ * run 仍在运行、宿主未关闭，且没有被停止后再次启动；否则中断执行。
+ * 被取代与被停止一样按 `stopped` 中断，收尾时再由终态写入按同一围栏区分二者。
+ */
 export function assertRunActive(exec: ExperimentExecution): void {
   if (exec.signal.aborted) throw new RunHalted("interrupted");
-  const status = exec.deps.core.storage.transact((tx) => tx.rows("runs").get({ run_id: exec.ctx.runId })?.["status"]);
-  if (status !== "running") throw new RunHalted("stopped");
+  const fence = exec.deps.core.storage.transact((tx) => readExecutionFence(tx, exec.ctx.runId, exec.ctx.branchId));
+  if (fence.status !== "running" || fence.clockVersion !== exec.clockVersion) throw new RunHalted("stopped");
+}
+
+/**
+ * 采纳执行器自己的时钟写入产生的新版本（章节终点暂停、tick 推进中的时钟操作）。
+ * 只能在围栏检查之后、未让出事件循环的同步段内调用：此时版本变化只可能来自本次执行。
+ */
+function adoptClockVersion(exec: ExperimentExecution): void {
+  exec.clockVersion = exec.deps.core.storage.transact((tx) => readExecutionFence(tx, exec.ctx.runId, exec.ctx.branchId)).clockVersion;
+}
+
+/**
+ * 以期望版本执行一次实验分支时钟控制并采纳结果版本。
+ * 版本冲突说明在上一次围栏检查之后有人停止或启动过 run，本次执行不再拥有这个时钟，按停止中断。
+ */
+export function controlClock(
+  exec: ExperimentExecution,
+  action: "pause" | "step",
+  ticks = 0,
+): void {
+  const clock = exec.deps.core.runtime.clock;
+  const branchId = exec.ctx.branchId;
+  const expected = exec.clockVersion ?? undefined;
+  const result = action === "pause" ? clock.pause(branchId, expected) : clock.step(branchId, ticks, expected);
+  if (!result.ok && result.reasonCode === "version-conflict") throw new RunHalted("stopped");
+  if (!result.ok) {
+    throw new ExperimentFailure("clock-control-failed", `实验分支时钟无法${action === "pause" ? "暂停" : "进入单步"}：${result.reasonCode}`);
+  }
+  exec.clockVersion = result.clock.runVersion;
 }
 
 /** 实验分支上的玩家认证上下文；与在线玩家同一主体，作用域限定在实验分支。 */
@@ -133,7 +182,12 @@ function tickContext(exec: ExperimentExecution) {
 
 /** 补完当前 tick：幂等重跑到期 job、时钟步骤与消费者，注入未提交的脚本命令并等待收敛。 */
 export async function settleCurrentTick(exec: ExperimentExecution, runtime: AgentRuntime, tick: number): Promise<void> {
-  catchUpWorldTick(tickContext(exec));
+  assertRunActive(exec);
+  try {
+    catchUpWorldTick(tickContext(exec));
+  } finally {
+    adoptClockVersion(exec);
+  }
   assertNoChapterStop(exec);
   injectSteps(exec, tick);
   await settleBranch(exec, { branchId: exec.ctx.branchId, runtime }, tick);
@@ -142,7 +196,11 @@ export async function settleCurrentTick(exec: ExperimentExecution, runtime: Agen
 /** 推进到下一 tick（时钟须处于 stepping），注入该 tick 的脚本命令并等待收敛。 */
 export async function advanceAndSettle(exec: ExperimentExecution, runtime: AgentRuntime, tick: number): Promise<void> {
   assertRunActive(exec);
-  advanceWorldTick({ ...tickContext(exec), targetTick: tick });
+  try {
+    advanceWorldTick({ ...tickContext(exec), targetTick: tick });
+  } finally {
+    adoptClockVersion(exec);
+  }
   assertNoChapterStop(exec);
   runtime.notifyWorldChanged();
   injectSteps(exec, tick);

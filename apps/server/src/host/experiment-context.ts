@@ -61,6 +61,8 @@ export interface ExperimentRunRecord {
   readonly branchId: string;
   readonly runSpec: unknown;
   readonly manifestHash: string | null;
+  /** 选中 run 时实验分支时钟的 run_version；本次执行的围栏起点，时钟缺失时为 null。 */
+  readonly clockVersion: number | null;
 }
 
 /**
