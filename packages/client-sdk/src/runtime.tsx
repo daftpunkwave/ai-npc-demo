@@ -1,6 +1,6 @@
 /**
- * 按服务端返回的浏览器装配校验本地模块目录，并依能力依赖创建、启动与释放模块实例。
- * 依赖公共模块描述符、React 视图贡献与本包宿主上下文；不加载装配外模块或共享服务端对象。
+ * 按服务端返回的浏览器装配校验本地模块目录（协议、版本、realm 与远端能力），并依能力依赖创建、启动与释放模块实例。
+ * 依赖公共模块描述符、kernel 的远端能力对账、React 视图贡献与本包宿主上下文；不加载装配外模块或共享服务端对象。
  * 禁止在版本不匹配时静默降级，也禁止忽略 slot 贡献失败或遗留网络订阅。
  */
 import {
@@ -12,6 +12,7 @@ import {
   type ModuleInstance,
   type ResolvedModuleSet,
 } from "@world-prism/contracts";
+import { assertRemoteCapabilities } from "@world-prism/kernel";
 import type { ReactNode } from "react";
 import type { PreferencePort } from "./preferences";
 import type { SlotContribution } from "./slots";
@@ -136,6 +137,9 @@ function selectedDefinitions(
     }
     selected.push(definition);
   }
+  // 本地模块目录的 requiresRemote 以握手下发的远端能力描述为准复核：缺口在加载页面前拒绝，
+  // 而不是等页面发出第一个 API 请求才失败。旧载荷没有该描述时按空集处理，声明了远端依赖的模块随之拒绝。
+  assertRemoteCapabilities(selected, resolved.remoteCapabilities ?? [], resolved.realm);
   return selected;
 }
 

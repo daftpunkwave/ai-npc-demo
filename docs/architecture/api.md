@@ -45,7 +45,7 @@
 | `POST /api/v1/auth/login` | `{ token }` | `{ sessionToken, principalId, roles, expiresAt }` | 令牌错误返回 401。会话自登录起默认有效 12 小时 |
 | `POST /api/v1/auth/logout` | — | `{ ok: true }` | 吊销当前会话 |
 | `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集 |
-| `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；响应另带 `remoteCapabilities`，即同一装配 server 段已绑定的能力 ID；玩家会话请求 `realm=console` 返回 403 `realm-violation` |
+| `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；响应另带 `remoteCapabilities`，即同一装配 server 段已绑定的能力 ID，浏览器据此复核本地模块的 `requiresRemote`；玩家会话请求 `realm=console` 返回 403 `realm-violation` |
 | `POST /api/v1/streams/ticket` | — | `{ ticket, expiresAt }` | 一次性 WS 票据，30 秒内有效 |
 
 会话数量有上限。容量满时服务端先清理过期会话，再淘汰没有活动 WS 连接且最早过期的会话；如果剩余会话都保持活动连接，登录返回 429 `budget-exhausted`（`retryable: true`），不会驱逐活跃会话。

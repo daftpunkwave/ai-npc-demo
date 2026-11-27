@@ -57,7 +57,7 @@
 5. 创建 run/会话时解析 assembly、profile、模型/工具挂载；缺失实现、能力、必需 purpose 或非法组合拒绝启动。
 6. 为本次 run 冻结已解析实例计划、模块版本、config hash 与 artifact 版本；后续 catalog 变化不能改变在途运行。
 7. 先预留全平台 Agent 配额与模块资源，再创建状态与实例；失败按相反顺序释放，不能留下半个活动分支。
-8. 浏览器 realm 连接时执行握手：server 返回本 realm 已解析模块清单与远端能力描述；客户端验证本地内置模块能满足，不满足则显示组合不完整，不静默降级。
+8. 浏览器 realm 连接时执行握手：server 返回本 realm 已解析模块清单与远端能力描述（`remoteCapabilities`）；客户端验证本地内置模块能满足，各模块的 `requiresRemote` 必须都在远端能力描述内，不满足则显示组合不完整，不静默降级。
 
 同一模块定义可被多个主体引用，实例状态是否共享由 `instanceScope` 与契约明确规定。instanceScope 决定生命周期维度，不替代状态 scope：memory 实例的生命周期按 agent，但状态仍按 branch + agent 隔离。模型传输客户端可共享；工具定义为宿主共享，但调用上下文与 ToolBinding 永远按主体生成。
 
