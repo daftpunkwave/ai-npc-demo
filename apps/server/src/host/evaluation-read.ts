@@ -23,6 +23,7 @@ import type {
 } from "./module-catalog";
 import {
   booleanCell,
+  frozenPricingVersionOf,
   jsonCell,
   numberCell,
   runSummary,
@@ -221,10 +222,12 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
       behavior: behaviorOf({ tx, turns: tx.rows("turn_runs").list({ run_id: runId }), fileBodies }),
       memory: memoryOf({
         records: branchId.length === 0 ? [] : tx.branch(branchId).table("memory_records").list(),
-        // maintenance_runs 是部署级表（主键为 maintenance_id），只能经非分支接口按 run 读取。
-        maintenance: tx.rows("maintenance_runs").list({ run_id: runId }),
+        // maintenance_runs 是部署级表（主键为 maintenance_id），只能经非分支接口按 run 读取；
+        // 探针沙盒与实验分支同属一个 run，按 run 自己的分支收窄，沙盒里排队的整理不计入实验分支的记忆快照。
+        maintenance: tx.rows("maintenance_runs").list({ run_id: runId, branch_id: branchId }),
       }),
-      cost: costOf({ rows: tx.rows("budget_ledger").list({ run_id: runId }), pricingVersion: input.pricingVersion }),
+      // 价目版本以该 run 冻结的模型配置为准；实验 run 可能选用与在线世界不同的模型布局。
+      cost: costOf({ rows: tx.rows("budget_ledger").list({ run_id: runId }), pricingVersion: frozenPricingVersionOf(run) ?? input.pricingVersion }),
       latency: latencyOf(turnDurationsOf(tx.rows("turn_runs").list({ run_id: runId }))),
       lexicons: input.lexicons,
     });

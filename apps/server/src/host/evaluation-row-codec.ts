@@ -52,6 +52,16 @@ export function runSummary(row: Readonly<Record<string, unknown>>): RunSummary {
   };
 }
 
+/** 读出 run 冻结 manifest 中模型配置的价目版本；未冻结模型配置的 run 返回 null。 */
+export function frozenPricingVersionOf(row: Readonly<Record<string, unknown>>): string | null {
+  const manifest = jsonCell(row, "manifest_json");
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) return null;
+  const models = (manifest as Readonly<Record<string, Json>>)["models"];
+  if (typeof models !== "object" || models === null || Array.isArray(models)) return null;
+  const version = (models as Readonly<Record<string, Json>>)["pricingVersion"];
+  return typeof version === "string" && version.length > 0 ? version : null;
+}
+
 /** 从 run 的 RunSpec 中读出脚本章节与分支；实验规格未写脚本时返回 null。 */
 export function scriptSelectionOf(row: Readonly<Record<string, unknown>>): { readonly scriptRef: string; readonly branch: string | null } | null {
   const spec = jsonCell(row, "run_spec_json");

@@ -443,6 +443,40 @@ describe("控制台评估读取接口", () => {
     })]);
   });
 
+  it("实验 run 的报告按自身冻结的价目版本计费，只统计实验分支的整理任务", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const created = experimentCreateResponseSchema.parse((await host.app.inject({
+      method: "POST", url: "/api/v1/console/experiments", headers,
+      payload: { experimentSpec: testExperimentSpec({
+        experimentId: "exp-report-scope-v1", variants: ["memory-m1-structured-ledger"], scriptBranches: ["keep"],
+      }) },
+    })).json());
+    const runId = created.runIds[0] as string;
+    const branchId = String(host.storage.transact((tx) => tx.rows("runs").get({ run_id: runId })?.["branch_id"]));
+    host.storage.transact((tx) => {
+      const run = tx.rows("runs").get({ run_id: runId });
+      if (run === null) throw new Error("run 不存在");
+      // 实验 run 选用的模型布局可能与在线世界不同：价目版本必须取自该 run 自己冻结的模型配置。
+      const manifest = run["manifest_json"] as { readonly models: Record<string, unknown> };
+      tx.rows("runs").put({ ...run, manifest_json: { ...manifest, models: { ...manifest.models, pricingVersion: "2026-11-exp" } } });
+      // 同一 run 的探针沙盒也可能排队整理任务；记忆快照只统计实验分支自己的整理。
+      for (const [maintenanceId, rowBranch] of [["mnt-aaaaaaaaaaaa", branchId], ["mnt-bbbbbbbbbbbb", "br-0000000sandb"]] as const) {
+        tx.rows("maintenance_runs").put({
+          maintenance_id: maintenanceId, run_id: runId, branch_id: rowBranch, agent_id: "human-independent",
+          module_id: "agent.memory.ledger", status: "completed", trigger: "day-passed", due_tick: 24,
+          observation_seq_through: 0, task_json: {}, base_revision: 0, lease_epoch: 1, lease_expires_at: null,
+          error_json: null, created_at: new Date().toISOString(), ended_at: new Date().toISOString(),
+        });
+      }
+    });
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.cost.pricingVersion).toBe("2026-11-exp");
+    expect(report.memory.maintenanceRuns).toBe(1);
+  });
+
   it("缺脚本声明的探针计入证据不完整，非法 JSON 不使读取失败", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
