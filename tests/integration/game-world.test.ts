@@ -6,14 +6,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DomainError, type Json } from "@world-prism/contracts";
 import { Authority, createScopedWorldTxFactory, createSystemAuth } from "@world-prism/authority";
-import { gameModuleIds, type GameModulePorts, type GameResourcesPort, type ModuleBinder } from "@world-prism/module-sdk";
+import type { GameModulePorts, GameResourcesPort, ModuleBinder } from "@world-prism/module-sdk";
 import { createActionsContributor, createActionsPort } from "@world-prism/mod-game-actions-standard";
-import { createAgreementsContributor, createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
-import { createCommsContributor, createCommsPort } from "@world-prism/mod-game-comms-standard";
+import { agreementsModuleDefinition, createAgreementsContributor, createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
+import { commsModuleDefinition, createCommsContributor, createCommsPort } from "@world-prism/mod-game-comms-standard";
 import { createMapContributor, createMapPort } from "@world-prism/mod-game-map-six-nodes";
 import { createResourcesContributor, createResourcesPort } from "@world-prism/mod-game-resources-light";
 import { createScenarioContributor, createScenarioPort } from "@world-prism/mod-game-scenario-watergate";
-import { createWorldContributor, createWorldPort } from "@world-prism/mod-game-world-slg-light";
+import { createWorldContributor, createWorldPort, worldModuleDefinition } from "@world-prism/mod-game-world-slg-light";
 import {
   createGameHarness,
   createMemoryTx,
@@ -71,7 +71,7 @@ function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: b
     const map = createMapPort(txFor, value.gameContent, value.host.ids);
     const world = createWorldPort(txFor, value.gameContent, value.host.ids);
     const comms = createCommsPort(
-      () => txFor(gameModuleIds.comms),
+      () => txFor(commsModuleDefinition.id),
       value.gameContent,
       value.host.ids,
       world,
@@ -84,7 +84,7 @@ function authorityWithFailingDailyConsume(value: GameHarness, control: { fail: b
       "game.comms": comms,
       "game.actions": actions,
       "game.agreements": createAgreementsPort(
-        () => txFor(gameModuleIds.agreements),
+        () => txFor(agreementsModuleDefinition.id),
         { actions, comms, world, map },
         value.gameContent.factions,
       ),
@@ -568,9 +568,9 @@ describe("世界端口", () => {
         host: value.host,
       });
       // 世界模块读取自己声明的角色聚合。
-      expect(txFor(gameModuleIds.world).get("character", "npc-wenzhao")).not.toBeNull();
+      expect(txFor(worldModuleDefinition.id).get("character", "npc-wenzhao")).not.toBeNull();
       // 通信模块没有声明 character，越权读取直接失败。
-      expect(() => txFor(gameModuleIds.comms).get("character", "npc-wenzhao")).toThrowError(DomainError);
+      expect(() => txFor(commsModuleDefinition.id).get("character", "npc-wenzhao")).toThrowError(DomainError);
       // 未注册模块没有作用域声明，必须明确失败而不是获得默认权限。
       expect(() => txFor("game.missing")).toThrowError(/未注册/);
     });

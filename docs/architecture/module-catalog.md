@@ -62,7 +62,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `game.comms.standard` | service | run | `game.comms` | 会话、消息投递、知识授权 | 对话、消息、广播、证据分享与 `speech.commit` |
 | `game.scenario.watergate` | service | run | `game.scenario` | 剧情卡状态 | 序章卡片按内容包的 `atTick` 触发；草稿不可感知，发布后走标准命令 |
 | `game.scenario.watergate-escalating` | service | run | `game.scenario` | 同上 | 模块替换演示用的第二实现：同一份卡片，节奏加快并带额外压力（[内容包](../game/content-pack.md) 第 9 节） |
-| `game.save.sqlite` | service | run | `game.save` | 快照记录 | 静默、分支复制与恢复预检（[存储](storage.md) 第 3 节）；通过 `platform.storage` 读写 |
+| `game.save.sqlite` | service | run | `game.save` | 快照记录 | 静默、分支复制与恢复预检（[存储](storage.md) 第 3 节）；通过 `platform.storage` 读写；检查点 tick 与事件前沿取宿主绑定时注入的查询（时钟端口与 authority），不进 `requires`；宿主只经 module-sdk 的 `SavePort` 使用 |
 
 `game.scenario.*` 两个实现对同一 capability 只能选一个；替换它们只改装配绑定，客户端、Agent 与其他游戏模块的代码都不改。
 
@@ -107,7 +107,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 `platform.model-transport` 的基数是 `many`：模型布局里每个 connection 用 `adapterId` 指定一个已装配的传输适配器。标准装配同时装 `openai-compatible` 与 `anthropic`；`deterministic` 只出现在测试装配，预检拒绝它与真实适配器出现在同一装配里，以免测试响应混进真实实验。
 
-`run`/`branch`/`manifest` 生命周期由宿主 `packages/experiment` 机制协调，不属于可替换能力；评估协议、runner 与报告由 `platform.evaluation.standard` 模块提供。适配器只做技术转换；语义失败（未知 schema、不支持的输出协议、缺 usage）必须显式返回，不能吞掉或伪造成功。
+`run`/`branch`/`manifest` 生命周期由服务端宿主（`apps/server/src/host`）协调，不属于可替换能力；`packages/experiment` 只加载并交叉检查内容包、配置与实验规格；评估协议、runner 与报告由 `platform.evaluation.standard` 模块提供。适配器只做技术转换；语义失败（未知 schema、不支持的输出协议、缺 usage）必须显式返回，不能吞掉或伪造成功。
 
 ## 5. 客户端模块
 

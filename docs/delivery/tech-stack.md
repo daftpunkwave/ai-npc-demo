@@ -171,8 +171,8 @@ packages:
 | `pnpm typecheck` | 已实现 | `tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json` | 检查服务端与浏览器的 TypeScript |
 | `pnpm test` | 已实现 | `vitest run` | 单元、契约、集成、目录、场景测试 |
 | `pnpm test:e2e` | 已实现 | `playwright test` | 两端口启动、玩家与控制台关键路径 |
-| `pnpm check:boundaries` | 已实现 | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header、中文说明与三项完整性 |
-| `pnpm check:catalog` | 已实现 | `tsx scripts/check-catalog.ts` | 检查装配的 realm/kind、能力闭包、作用域、重复绑定、拓扑和配置 schema |
+| `pnpm check:boundaries` | 已实现 | `tsx scripts/check-boundaries.ts` | 源码与包依赖图、realm/kind 白名单、原生源码 header、中文说明与三项完整性、共享契约唯一定义、服务端模块表名白名单 |
+| `pnpm check:catalog` | 已实现 | `tsx scripts/check-catalog.ts` | 检查装配的 realm/kind、能力闭包、作用域、重复绑定、拓扑和配置 schema，并对账模块源码访问的能力与 requires（含拒绝动态能力键） |
 | `pnpm check:assets` | 已实现 | `tsx scripts/check-assets.ts` | 核对资产清单、版本与内容包覆盖 |
 | `pnpm check:docs` | 已实现 | `tsx scripts/check-docs.ts` | 检查相对链接、锚点与表格列数 |
 | `pnpm check:ports` | 已实现 | `tsx scripts/check-ports.ts` | 启动后核对应用只监听 :5173 与 :3000，并验证端口占用失败 |

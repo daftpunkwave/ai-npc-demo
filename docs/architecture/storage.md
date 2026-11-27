@@ -651,6 +651,8 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 | 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入 |
 | 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `world-prism-<UTC时间>[-<label>].<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `world-prism-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
 
+快照行的 `world_tick` 与 `world_seq` 是源分支在复制时刻的检查点，恢复预检再用同样的来源核对冻结分支是否仍与快照行一致。存档模块不直接读取这两类事实所在的表，两项查询都由宿主组合根在绑定存档端口时注入：`world_tick` 取宿主以时钟端口 `GameClockPort.readInTransaction` 提供的分支 tick 查询，`world_seq` 取 authority 的分支事件前沿查询 `branchEventFrontier`（该分支 `domain_events` 的最大 `world_seq`，没有事件时为 0）。两者都在存档操作所在的同一存储事务内读取。它们不经存档模块的 `requires` 解析，存档模块描述符只依赖 `platform.storage`，模块目录摘要与已冻结 run 的 manifest 不因此变化。
+
 ## 4. 常用查询
 
 ```sql
@@ -672,6 +674,20 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 
 修改记忆记录（例如强度衰减）时，不能 `UPDATE` 内容列：先把当前行版本的 `retired_revision` 设为新 revision，再插入 `row_version + 1`、`created_revision = 新 revision` 的新行。这样任意旧 revision 都能按上面的查询原样重建。
 
+`agent-runtime` 读取 revision 视图（含公共编年史）时直接执行上面这条可见性查询，提交记忆计划时只按 `retired_revision IS NULL` 取当前行版本，两者都由 `memory_visible` 索引在 SQLite 内过滤，不把某个主体的全部历史行版本读进内存。历史行版本按设计只追加不清理，旧 revision 的重建依赖它们。
+
+观测 provider `platform.observability.sqlite` 只直接读写自己拥有的 `trace_spans`，生命周期审计经 module-sdk 的 `insertLifecycleAuditEvent` 写入。控制台时间线、Agent 列表、检查器、turn、记忆、观察、分支对比与调试队列需要的其他数据，经 module-sdk 声明的数据源端口 `ObservabilitySources` 读取，由各表的所有者在自己一侧把列与 JSON 路径解码为端口声明的类型化记录：
+
+| 数据 | 提供方 | 查询 |
+|---|---|---|
+| `domain_events`、`command_receipts`、`branches` 的世界与 run 归属 | authority | `listTimelineEvents`、`listEventsAfter`、`latestEventSeq`、`readCommandReceipt`、`readBranch` |
+| `turn_runs`、`triggers`、`tool_calls`，以及模型池按 turn 证据写入的 `model_attempts` | agent-runtime | `listTurnRuns`、`readTurnRun`、`listTurnTriggerKinds`、`countTurnToolCalls`、`listTurnModelUsages`、`listTurnModelAttempts`、`listTurnToolCalls`、`readSchedulerQueue`、`listStartedModelAttemptTimes` |
+| `agent_activations`、`controller_leases`、`perception_state`、`memory_watermarks`、`memory_records`、`observations`、`maintenance_runs` | agent-runtime | `listAgentRuntimeStates`、`readPerceptionRevision`、`readMemoryWatermark`、`listMemoryRecordVersions`、`listObservationPage`、`listPendingMaintenance` |
+| `lifecycle_events`、`artifacts` | module-sdk | `listLifecycleTimeline`、`latestLifecycleEventByOperation`、`readArtifactBody`（端口顶层的 `artifactBody`，不在 `read` 的存储快照内：超过内联上限的正文存放在文件中，须在事务外读取） |
+| `runs.manifest_json` 中冻结的名册 | 宿主 | `rosterAgentKindsOf` |
+
+角色位置经世界模块只读端口取得，调试触发的创建 tick 取自时钟 provider。宿主在 `apps/server/src/host/observability-sources.ts` 组合上述查询并绑定到观测 provider；调试唤醒是端口上唯一的写入，由宿主在一个事务内经 agent-runtime 登记调试触发、标记 run 受污染并写审计。时间线的类型、主体与节点筛选以及 limit 都在所有者的 SQL 内完成，按 operationId 查找调试审计的表达式与 0013 的 `lifecycle_debug_operation` 索引一致。表结构或 JSON 嵌套调整只需改所有者一侧的解码与测试：`tests/integration/observability-source-events.test.ts` 与 `observability-source-runtime.test.ts` 锁定列到字段的映射，其中 `turn_runs` 的列清单与观测记录字段逐一对照，名册读取以 `buildRunManifest` 冻结的 manifest 为准；替换观测实现不需要了解这些表的物理结构。
+
 ## 5. 存储验收
 
 - 写入事务中途抛错，状态、事件、job 与 receipt 都不落库。
@@ -680,4 +696,4 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 - 备份先写入 `0700` 暂存目录并执行完整性校验，通过后以硬链接独占发布为最终 `.db`；`VACUUM INTO` 失败或校验失败时不残留可被当作有效备份的文件。- 成功发布后只保留最近 20 份备份，旧备份按文件名时间戳删除。
 - `VACUUM INTO` 生成的备份可以被重新打开，`PRAGMA integrity_check` 返回 `ok`。
 
-对白消费：authority 在 `speech.commit` 的 command savepoint 内检查并插入 `speech_commits`，与事件、receipt 一起提交；已有同分支 artifact 消费记录时返回 `speech-not-approved`。相同 commandId 先按 receipt 幂等返回。handler 或 afterCommand 拒绝时回滚消费记录；复制分支时保留记录，防止历史对白重复发布。只读 `approvedSpeech.read` 从持久化批准结果的内存索引同步读取；若 artifact 在文件中，宿主须在开启事务前装载并校验，事务内不做文件 I/O。
+对白消费：authority 在 `speech.commit` 的 command savepoint 内检查并插入 `speech_commits`，与事件、receipt 一起提交；已有同分支 artifact 消费记录时返回 `speech-not-approved`。相同 commandId 先按 receipt 幂等返回。handler 或 afterCommand 拒绝时回滚消费记录；复制分支时保留记录，防止历史对白重复发布。只读 `approvedSpeech.read` 从持久化批准结果的内存索引同步读取。`speech` artifact 始终内联存储：turn 取消在命令事务内用 SQL 读取其正文判断回复是否已发布，事务内不做文件 I/O。

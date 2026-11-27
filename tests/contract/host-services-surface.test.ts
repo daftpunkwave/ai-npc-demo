@@ -10,7 +10,7 @@ describe("HostServices 公开字段", () => {
   it("只包含有精确类型的宿主服务，不含 storage/model 等 unknown 出口", () => {
     // 字段全集相等而非包含：新增任何字段都会让类型检查失败，迫使评审确认它不是绕过 typed port 的后门。
     expectTypeOf<keyof HostServices>().toEqualTypeOf<
-      "ids" | "nowIso" | "monotonicMs" | "sleep" | "rng" | "hash" | "logger" | "tracer"
+      "ids" | "nowIso" | "monotonicMs" | "sleep" | "rng" | "hash" | "hashText" | "logger" | "tracer"
     >();
     expectTypeOf<HostServices>().not.toHaveProperty("storage");
     expectTypeOf<HostServices>().not.toHaveProperty("model");

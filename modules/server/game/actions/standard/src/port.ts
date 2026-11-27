@@ -6,11 +6,11 @@
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import { DomainError, type InvitationView } from "@world-prism/contracts";
 import {
-  gameModuleIds,
   type GameActionsPort,
   type ScopedWorldTxFactory,
   type TaskView,
 } from "@world-prism/module-sdk";
+import { actionsModuleDefinition } from "./definition";
 import { readTaskState, type InvitationState, type TaskState } from "./state";
 
 function toView(state: TaskState): TaskView {
@@ -40,7 +40,7 @@ class StandardActionsPort implements GameActionsPort {
   }
 
   private tx() {
-    return this.txFor(gameModuleIds.actions);
+    return this.txFor(actionsModuleDefinition.id);
   }
 
   task(taskId: string): TaskView | null {

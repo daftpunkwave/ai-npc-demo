@@ -5,7 +5,7 @@
  */
 import type { HostServices, StoragePort } from "@world-prism/contracts";
 import type { SchedulingPort } from "@world-prism/module-sdk";
-import type { ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/contracts";
 import { numberValue, stringValue, triggerFromRow } from "./runtime-records";
 import { cancelActiveTurnsSql, pendingTriggersSql, recoverExpiredTurnsSql } from "./agent-hot-path-sql";
 import { cancelTurn, terminalTurnStatuses } from "./turn-lease";

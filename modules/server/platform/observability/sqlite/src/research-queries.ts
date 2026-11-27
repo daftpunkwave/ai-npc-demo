@@ -1,11 +1,13 @@
 /**
- * 核心职责：为控制台提供记忆、观察、turn、artifact、trace、分支差异与调试队列的只读查询。
- * 交互契约：依赖 StoragePort 的固定数据表与 HostServices 的 ID/时间；不触发模型、规则或后台任务。
+ * 核心职责：为控制台提供记忆、观察、turn、artifact、trace、分支差异与调试队列的只读查询，并转交调试唤醒。
+ * 交互契约：他人拥有的数据只经注入的数据源端口读取；本模块的 StoragePort 只用于自有的 trace_spans 与
+ *   生命周期审计写入；HostServices 只提供审计时间。不触发模型、规则或后台任务。
  * 约束与禁忌：禁止返回未归档内容或无来源示例；原始 artifact 读取必须同时写审计生命周期事件。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 构造器参数属性通过 this 使用，Codacy 缺少 workspace 类型解析时会把契约联合判成 any。 */
 import {
   DomainError,
+  debugWakeResponseSchema,
   inputFrontierSchema,
   traceResponseSchema,
   turnDetailSchema,
@@ -22,25 +24,21 @@ import {
   type MemoryResponse,
   type ObservationsResponse,
   type StoragePort,
-  type StorageRow,
-  type StorageTransaction,
-  type StorageValue,
   type TraceResponse,
   type TraceSpan,
   type TurnDetail,
   type TurnsResponse,
 } from "@world-prism/contracts";
-import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
+import { insertLifecycleAuditEvent, type ObservabilitySources } from "@world-prism/module-sdk";
 import {
   jsonColumn,
-  numberColumn,
   parseJsonText,
   stringColumn,
   detailFromSummary,
 } from "./research-codec";
-import { compareBranchEvents, readDebugQueues, wakeDebugAgent } from "./debug-research";
+import { compareBranchEvents, readDebugQueues } from "./debug-research";
 import { readMemory, readMemoryDiff, readObservations } from "./memory-research";
-import { readTurnSummaries } from "./turn-summary-query";
+import { summarizeTurns } from "./turn-summary-query";
 
 type TurnFilters = {
   readonly runId?: string;
@@ -55,136 +53,68 @@ function clampLimit(value: number | undefined, fallback = 50): number {
   return Math.max(1, Math.min(value ?? fallback, 200));
 }
 
-function parseArtifactBody(row: StorageRow): string {
-  const body = row["body"];
-  if (body instanceof Uint8Array) return new TextDecoder().decode(body);
-  if (typeof body === "string") return body;
-  throw new DomainError("invalid-state", "artifact 正文缺失；当前首版只读取内联 artifact");
-}
-
-function receiptStatus(
-  tx: StorageTransaction,
-  branchId: string,
-  agentId: string,
-  commandId: string | null,
-): TurnDetail["toolCalls"][number]["commandStatus"] {
-  if (commandId === null) return null;
-  const value = tx.get(
-    `SELECT receipt_json FROM command_receipts
-      WHERE branch_id = ? AND principal_id = ? AND command_id = ?`,
-    [branchId, agentId, commandId],
-  )?.["receipt_json"];
-  if (typeof value !== "string") return null;
-  try {
-    const receipt = jsonColumn(JSON.parse(value));
-    if (Array.isArray(receipt) || receipt === null || typeof receipt !== "object") return null;
-    return receipt["commandStatus"] === "accepted" || receipt["commandStatus"] === "rejected"
-      ? receipt["commandStatus"]
-      : null;
-  } catch {
-    throw new DomainError("invalid-state", `command receipt ${commandId} 不是合法 JSON`);
-  }
-}
-
 export class ResearchQueries {
   constructor(
     private readonly storage: StoragePort,
     private readonly host: HostServices,
+    private readonly sources: ObservabilitySources,
   ) {}
 
   memory(branchId: string, agentId: string, revision: number): MemoryResponse {
-    return readMemory(this.storage, branchId, agentId, revision);
+    return readMemory(this.sources, branchId, agentId, revision);
   }
 
   memoryDiff(branchId: string, agentId: string, from: number, to: number): MemoryDiffResponse {
-    return readMemoryDiff(this.storage, branchId, agentId, from, to);
+    return readMemoryDiff(this.sources, branchId, agentId, from, to);
   }
 
   observations(branchId: string, agentId: string, fromSeq: number, limit: number): ObservationsResponse {
-    return readObservations(this.storage, branchId, agentId, fromSeq, limit);
+    return readObservations(this.sources, branchId, agentId, fromSeq, limit);
   }
 
   turns(query: TurnFilters): TurnsResponse {
-    const conditions: string[] = [];
-    const parameters: StorageValue[] = [];
-    if (query.worldId !== undefined) {
-      conditions.push("b.world_id = ?");
-      parameters.push(query.worldId);
-    }
-    if (query.runId !== undefined) {
-      conditions.push("t.run_id = ?");
-      parameters.push(query.runId);
-    }
-    if (query.branchId !== undefined) {
-      conditions.push("t.branch_id = ?");
-      parameters.push(query.branchId);
-    }
-    if (query.agentId !== undefined) {
-      conditions.push("t.agent_id = ?");
-      parameters.push(query.agentId);
-    }
-    if (query.status !== undefined) {
-      conditions.push("t.status = ?");
-      parameters.push(query.status);
-    }
-    parameters.push(clampLimit(query.limit));
-    const turns = this.storage.transact((tx) => {
-      const rows = tx.all(
-        `SELECT t.* FROM turn_runs t
-          JOIN branches b ON b.branch_id = t.branch_id
-          ${conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`}
-         ORDER BY t.created_at DESC LIMIT ?`,
-        parameters,
-      );
-      return readTurnSummaries(tx, rows);
-    });
+    const turns = this.sources.read((reader) => summarizeTurns(reader, reader.turnRuns({
+      worldId: query.worldId,
+      runId: query.runId,
+      branchId: query.branchId,
+      agentId: query.agentId,
+      status: query.status,
+      limit: clampLimit(query.limit),
+    })));
     return turnsResponseSchema.parse({ turns });
   }
 
   turn(turnId: string): TurnDetail {
-    const { row, summary } = this.storage.transact((tx) => {
-      const row = tx.rows("turn_runs").get({ turn_id: turnId });
-      if (row === null) throw new DomainError("not-found", `turn ${turnId} 不存在`);
-      const [summary] = readTurnSummaries(tx, [row]);
+    const { run, summary, attempts, toolCalls } = this.sources.read((reader) => {
+      const run = reader.turnRun(turnId);
+      if (run === null) throw new DomainError("not-found", `turn ${turnId} 不存在`);
+      const [summary] = summarizeTurns(reader, [run]);
       if (summary === undefined) throw new DomainError("invalid-state", `turn ${turnId} 缺少摘要`);
-      return { row, summary };
+      const attempts = reader.turnModelAttempts(run.runId, turnId).map((attempt) => ({
+        attemptId: attempt.attemptId as TurnDetail["attempts"][number]["attemptId"],
+        purpose: attempt.purpose,
+        modelId: attempt.modelId,
+        status: attempt.status,
+        isEffective: attempt.isEffective,
+        requestArtifactId: attempt.requestArtifactId as TurnDetail["attempts"][number]["requestArtifactId"],
+        responseArtifactId: attempt.responseArtifactId as TurnDetail["attempts"][number]["responseArtifactId"],
+        usage: attempt.usage,
+        error: attempt.error,
+      }));
+      const toolCalls = reader.turnToolCalls(run.runId, turnId).map((call) => ({
+        toolCallId: call.toolCallId,
+        toolId: call.toolId,
+        executionStatus: call.executionStatus,
+        commandStatus: call.commandId === null ? null : reader.commandStatus(run.branchId, run.agentId, call.commandId),
+        rawArtifactId: call.rawArtifactId,
+        viewArtifactId: call.viewArtifactId,
+        operationId: call.operationId,
+      }));
+      return { run, summary, attempts, toolCalls };
     });
-    const effective = Array.isArray(row["effective_json"]) ? row["effective_json"] : [];
+    const effective = Array.isArray(run.effective) ? run.effective : [];
     const stages = effective.map((entry) => turnStageViewSchema.parse(entry));
-    const attempts = this.storage.transact((tx) => tx.rows("model_attempts")
-      .list({ run_id: summary.runId, work_ref: turnId }, { orderBy: [{ column: "created_at" }, { column: "attempt_id" }] }))
-      .map((attempt) => ({
-      attemptId: String(attempt["attempt_id"]) as TurnDetail["attempts"][number]["attemptId"],
-      purpose: String(attempt["purpose"]),
-      modelId: String(attempt["model_id"]),
-      status: String(attempt["status"]),
-      isEffective: attempt["is_effective"] === 1,
-      requestArtifactId: attempt["request_artifact_id"] === null
-        ? null : String(attempt["request_artifact_id"]) as TurnDetail["attempts"][number]["requestArtifactId"],
-      responseArtifactId: attempt["response_artifact_id"] === null
-        ? null : String(attempt["response_artifact_id"]) as TurnDetail["attempts"][number]["responseArtifactId"],
-      usage: jsonColumn(attempt["usage_json"]),
-      error: attempt["error_json"] === null ? null : jsonColumn(attempt["error_json"]),
-    }));
-    const toolCalls = this.storage.transact((tx) => {
-      const { branchId, agentId } = summary;
-      return tx.rows("tool_calls")
-        .list({ run_id: summary.runId, turn_id: turnId }, { orderBy: [{ column: "created_at" }, { column: "tool_call_id" }] })
-        .map((call) => {
-          const commandId = call["command_id"] === null ? null : String(call["command_id"]);
-          return {
-            toolCallId: String(call["tool_call_id"]),
-            toolId: String(call["tool_id"]),
-            executionStatus: call["execution_status"] as TurnDetail["toolCalls"][number]["executionStatus"],
-            commandStatus: receiptStatus(tx, branchId, agentId, commandId),
-            rawArtifactId: call["raw_artifact_id"] === null ? null : String(call["raw_artifact_id"]),
-            viewArtifactId: call["view_artifact_id"] === null ? null : String(call["view_artifact_id"]),
-            operationId: call["operation_id"] === null ? null : String(call["operation_id"]),
-          };
-        });
-    });
-    const frontier = row["input_frontier_json"] === null
-      ? null : inputFrontierSchema.parse(row["input_frontier_json"]);
+    const frontier = run.inputFrontier === null ? null : inputFrontierSchema.parse(run.inputFrontier);
     const trace = this.storage.transact((tx) => tx.all(
       `SELECT trace_id FROM trace_spans
         WHERE turn_id = ? ORDER BY CASE WHEN name = 'turn' THEN 0 ELSE 1 END, start_ms LIMIT 1`,
@@ -203,7 +133,7 @@ export class ResearchQueries {
     const speech = speechArtifactId === null ? null : this.speechOf(speechArtifactId);
     return turnDetailSchema.parse(detailFromSummary(summary, {
       inputFrontier: frontier,
-      memoryRevision: row["memory_revision"] === null ? null : numberColumn(row, "memory_revision"),
+      memoryRevision: run.memoryRevision,
       stages,
       contextArtifactIds: [...new Set(artifactIds)],
       attempts,
@@ -236,23 +166,21 @@ export class ResearchQueries {
   }
 
   private artifactValue(artifactId: string): Json | null {
-    const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
-    if (row === null) return null;
-    const body = parseArtifactBody(row);
+    const artifact = this.sources.artifactBody(artifactId);
+    if (artifact === null) return null;
     try {
-      return jsonColumn(JSON.parse(body));
+      return jsonColumn(JSON.parse(artifact.body));
     } catch {
       throw new DomainError("invalid-state", `artifact ${artifactId} 的正文无法解析`);
     }
   }
 
   artifact(artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse {
-    const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
-    if (row === null) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
-    const body = parseArtifactBody(row);
+    const artifact = this.sources.artifactBody(artifactId);
+    if (artifact === null) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
     if (view === "raw") {
       this.storage.transact((tx) => insertLifecycleAuditEvent(tx, {
-        runId: row["run_id"] === null ? null : String(row["run_id"]),
+        runId: artifact.runId,
         branchId: null,
         type: "ArtifactViewed",
         subjectId: principalId,
@@ -260,7 +188,7 @@ export class ResearchQueries {
         createdAt: this.host.nowIso(),
       }));
     }
-    return { artifactId: artifactId as ArtifactResponse["artifactId"], view, body };
+    return { artifactId: artifactId as ArtifactResponse["artifactId"], view, body: artifact.body };
   }
 
   trace(traceId: string): TraceResponse {
@@ -298,14 +226,15 @@ export class ResearchQueries {
   }
 
   branchCompare(left: string, right: string, atSeq: number): BranchCompareResponse {
-    return compareBranchEvents(this.storage, left, right, atSeq);
+    return compareBranchEvents(this.sources, left, right, atSeq);
   }
 
   debugQueues(branchId: string): DebugQueuesResponse {
-    return readDebugQueues(this.storage, branchId);
+    return readDebugQueues(this.sources, branchId);
   }
 
   debugWake(input: DebugWakeInput): DebugWakeResponse {
-    return wakeDebugAgent(this.storage, this.host, input);
+    this.sources.requestDebugWake(input);
+    return debugWakeResponseSchema.parse({ ok: true });
   }
 }

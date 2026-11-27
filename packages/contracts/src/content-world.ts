@@ -1,10 +1,10 @@
 /**
  * 定义 pack、lore、map、factions 与 characters 内容文件的严格 schema。
- * 依赖公共契约的领域值与 schema 共用辅助；只描述字段形状，不做跨文件引用检查。
+ * 依赖本包的领域值与内容 schema 共用原语；只描述字段形状，跨文件引用检查由内容加载器负责。
  * 禁止在此读取文件或放宽未知键。
  */
-import { principalIdSchema, roadStatusSchema, taskTypeSchema } from "@world-prism/contracts";
 import { z } from "zod";
+import { roadStatusSchema, taskTypeSchema } from "./command-values";
 import {
   contentIdSchema,
   factionIdSchema,
@@ -13,7 +13,8 @@ import {
   roadIdSchema,
   schemaVersion,
   textSchema,
-} from "./common";
+} from "./content-primitives";
+import { principalIdSchema } from "./ids";
 
 /** pack.yaml：包标识、版本与文件清单。 */
 export const contentPackSchema = z

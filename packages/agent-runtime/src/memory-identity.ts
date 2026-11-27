@@ -4,7 +4,7 @@
  * 禁止向记忆模块暴露密钥、prompt 或可变内容对象。
  */
 import type { MemoryAgentIdentity } from "@world-prism/module-sdk";
-import type { ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
 
 export function memoryIdentityForAgent(
   content: ContentPack,

@@ -18,7 +18,7 @@ import type {
   MemoryRecordView,
   RevisionView,
 } from "@world-prism/module-sdk";
-import type { ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/contracts";
 import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost, type FakeHost } from "./authority-support";
 

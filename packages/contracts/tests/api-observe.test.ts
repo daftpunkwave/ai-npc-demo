@@ -212,6 +212,7 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["观察查询", observationsQuerySchema, { branchId: "br-k3j9x0a1b2c3", fromSeq: 0, limit: 50 }, { branchId: "br-k3j9x0a1b2c3", fromSeq: 0 }],
   ["观察响应", observationsResponseSchema, { observations: [observationFixture()] }, { observations: [{}] }],
   ["turn 摘要", turnSummarySchema, turnSummaryFixture(), { ...turnSummaryFixture(), turnId: "turn-1" }],
+  ["turn 摘要序号从 1 起", turnSummarySchema, { ...turnSummaryFixture(), agentTurnIndex: 1 }, { ...turnSummaryFixture(), agentTurnIndex: 0 }],
   ["turn 阶段", turnStageViewSchema, turnDetailFixture().stages[0], { stage: "context", status: "pending", reason: null, requested: {}, resolved: {}, effective: {}, spanId: "spn-k3j9x0a1b2c3" }],
   ["turn 尝试", turnAttemptViewSchema, turnDetailFixture().attempts[0], { ...turnDetailFixture().attempts[0], attemptId: "attempt-1" }],
   ["turn 工具调用", turnToolCallViewSchema, { toolCallId: "tc-1", toolId: "world.inspect", executionStatus: "ok", commandStatus: null, rawArtifactId: null, viewArtifactId: null, operationId: null }, { toolCallId: "tc-1", toolId: "world.inspect", executionStatus: "done", commandStatus: null, rawArtifactId: null, viewArtifactId: null, operationId: null }],

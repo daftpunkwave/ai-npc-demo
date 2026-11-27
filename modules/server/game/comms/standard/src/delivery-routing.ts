@@ -4,6 +4,7 @@
  * 返回投递时刻、relay-down 标记或按 principalId 排序的投递名单。
  * 约束与禁忌：不写存储、不追加对白，也不在中继不可达时静默丢弃定向消息。
  */
+import { comparePrincipalIds } from "@world-prism/contracts";
 import type { DeliveryRoute } from "./comms-types";
 
 /** 投递路由需要的只读上下文。 */
@@ -91,7 +92,7 @@ export function deliveries(
   recipients: readonly string[],
   originNodeId?: string | null,
 ): readonly DeliveryRoute[] | null {
-  const unique = [...new Set([fromId, ...recipients])].sort((left, right) => left.localeCompare(right));
+  const unique = [...new Set([fromId, ...recipients])].sort(comparePrincipalIds);
   const output: DeliveryRoute[] = [];
   for (const principalId of unique) {
     const at = channel === "broadcast"

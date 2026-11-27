@@ -20,7 +20,7 @@ world-prism/
         main.ts                  # load env -> open storage -> load content/config -> startHost -> listen
         host.ts  startup.ts  projection.ts  tick.ts  shutdown.ts  host-services.ts  config.ts  process-faults.ts
         projection/              # pure read-side projection builders (campaign, comms, meters, resources, tasks, agreements, notifications)
-        host/                    # host orchestration: assembly, catalog-check, dispose, operations, console-research, evaluation-read, experiment/run writes, online-agents
+        host/                    # host orchestration: assembly, catalog-check, dispose, operations, console-research, evaluation-read, run/branch/manifest lifecycle (experiment/run writes, manifest freezing, run control), online-agents
       console-static/            # built console assets served at /console/* (generated, git-ignored)
     client/                      # client host (browser, :5173)
       index.html
@@ -39,15 +39,15 @@ world-prism/
           bootstrap.tsx          # login, active role switch, handshake, route/panel slots
           module-catalog.ts      # explicit imports of every console page module
   packages/
-    contracts/                   # zod schemas + types: envelopes, commands, events, DTOs, ports, descriptors, API
+    contracts/                   # zod schemas + types: envelopes, commands, events, DTOs, ports, descriptors, API, content-pack/roster/resolved-profile shapes
     kernel/                      # realm-agnostic host mechanics: registry, capability graph, lifecycle, slots, hook order, config resolution, hashing
     module-sdk/                  # server module authoring helpers: defineModule, scoped ports, disposers
     client-sdk/                  # browser module helpers: slot components, preference port, projection hooks
     client-protocol/             # typed HTTP/WS client and projection reducer protocol
     authority/                   # command gateway, transactions, idempotency, fencing, job runner, consumers
     agent-runtime/               # trigger store, scheduler host, turn state machine, tool gateway, speech pipeline
-    experiment/                  # run lifecycle, snapshot coordination and frozen manifests; no scoring policy
-    observability/               # trace/span helpers and evidence envelope
+    experiment/                  # experiment environment loading: content packs, rosters, RunSpecs, profiles, toolsets, model layouts, experiment specs (YAML + cross-checks); no run lifecycle or scoring
+    observability/               # reserved package, exports only its name; trace/span schemas live in contracts
   modules/
     server/
       game/
@@ -159,7 +159,7 @@ modules/server/agent/memory/ledger/
 
 `agent-runtime` 保留唯一的 turn 管线与调度协调。memory、context、compression、decision 等模块只实现阶段策略；不能在另一个目录里复制一份 loop，再让配置在两套不一致的系统之间选。
 
-`observability` 提供 trace/evidence 协议与 span 辅助；具体存储/查询由 `platform.observability.sqlite` 模块提供，控制台页面由 `console.observability.standard` 模块贡献。三者不能互相 import 实现。
+`observability` 包目前只导出包名，为服务端观测机制保留入口；trace、span 与证据信封的 schema 定义在 contracts 的 `api-observe.ts`，具体存储/查询由 `platform.observability.sqlite` 模块提供，控制台页面由 `console.observability.standard` 模块贡献。三者不能互相 import 实现。
 
 `client-protocol` 只含类型化传输与投影 reducer 协议；场景/UI 模块只消费授权投影，不拼装第二份世界。
 

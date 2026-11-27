@@ -12,7 +12,7 @@ import type {
   ContentRules,
   ContentStockpile,
   ContentTeam,
-} from "../schema/index";
+} from "@world-prism/contracts";
 import { fail } from "./common";
 
 /** 规则参数文件在错误信息中的固定来源名。 */

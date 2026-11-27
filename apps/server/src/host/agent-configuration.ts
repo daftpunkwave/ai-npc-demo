@@ -3,7 +3,15 @@
  * 使用已解析的装配白名单和模块 schema，收敛到同一 run 级调度设置。
  * 不在缺少 Agent 槽位时加载认知配置，不加载模型布局或启动模块。
  */
-import { agentSlots, canonicalJson, type Json, type ModuleDefinition } from "@world-prism/contracts";
+import {
+  agentSlots,
+  canonicalJson,
+  type ContentPack,
+  type Json,
+  type ModuleDefinition,
+  type ResolvedAgentProfile,
+  type Roster,
+} from "@world-prism/contracts";
 import {
   applyProfilePatch,
   loadAgentProfile,
@@ -12,9 +20,6 @@ import {
   validateProfileSelection,
   type AgentToolset,
   type ConfigLoadContext,
-  type ContentPack,
-  type ResolvedAgentProfile,
-  type Roster,
   type RunSpec,
 } from "@world-prism/experiment";
 import { resolveModuleConfig } from "@world-prism/kernel";

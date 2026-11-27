@@ -90,7 +90,7 @@ JSON 载荷另有结构性输入预算：容器嵌套深度上限 200 层，节�
 
 CommandEnvelope 包含 commandId、type、schemaVersion、expectedVersions 与 payload；principal、world/branch、controllerEpoch 和 turnLeaseEpoch 由认证上下文或宿主附加。模型不能靠自报 author 取得权限。
 
-CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、acceptedEventIds、operationId 与 resultingVersions。命令经副作用操作提交时（如 Agent 工具调用），网关把该操作的 operationId 写入回执；玩家直接提交的命令为 null。operationId 不参与幂等内容哈希，同一 commandId 重放返回首次回执。commandStatus 只有 accepted 或 rejected 两个值，是不可变的提交回执；accepted 不代表异步任务已经完成。幂等键和 payloadHash 都相同的请求返回原 receipt，不重复执行；键相同但内容不同的请求拒绝。
+CommandReceipt 包含 receiptId、commandId、commandStatus、reasonCode、safeMessage、acceptedEventIds、operationId、resultingVersions、result 与 worldTick（schema 见 `packages/contracts/src/envelopes.ts` 的 `commandReceiptSchema`）。safeMessage 是可直接展示的拒绝说明，受理时为 null；result 是命令处理器返回的有界 JSON 结果（例如 task.dispatch 的 `{ taskId }`、agreement.propose 的 `{ agreementId }`），没有结果时为 null；worldTick 是回执生成时的世界 tick。命令经副作用操作提交时（如 Agent 工具调用），网关把该操作的 operationId 写入回执；玩家直接提交的命令为 null。operationId 不参与幂等内容哈希，同一 commandId 重放返回首次回执。commandStatus 只有 accepted 或 rejected 两个值，是不可变的提交回执；accepted 不代表异步任务已经完成。幂等键和 payloadHash 都相同的请求返回原 receipt，不重复执行；键相同但内容不同的请求拒绝。
 
 异步任务投影使用独立的 taskStatus：pending、running、completed、failed、cancelled。ToolResult 使用 executionStatus：ok、error、unknown。ok 表示网关拿到了确定的合法响应，响应里仍可能带 commandStatus=rejected；unknown 表示副作用结果未确认，必须去查 receipt。工具视图不得把这几个层次的状态混成一个 status，也不能省略失败。没有任务的只读结果不伪造 taskStatus。这三个状态枚举与 receipt 共用同一份 schema 定义，工具结果不另写内联枚举。工具结果的 reasonCode 接受命令原因码与执行侧专用码 execution-failed、execution-unknown 的并集，后者只描述执行器缺失与结果未确认，不进入 receipt 的业务拒绝理由表。
 
@@ -196,6 +196,7 @@ interface HostServices {                                   // 模块访问时间
   sleep(ms: number, signal?: AbortSignal): Promise<void>; // 模块等待的唯一入口（退避与轮询）
   rng(...seedParts: string[]): () => number;               // 见规则 §11
   hash(value: Json): Promise<string>;                      // 规范 JSON 的 SHA-256
+  hashText(canonicalJsonText: string): Promise<string>;    // 已序列化规范 JSON 文本的 SHA-256，与 hash 同值同结果
   logger: { info(msg: string, data?: Json): void; warn(msg: string, data?: Json): void; error(msg: string, data?: Json): void };
   tracer: { span<T>(name: string, attrs: Json, fn: () => T): T };
 }                                                          // 存储与模型只经 requires 声明的 typed port 获得，不挂在宿主服务上
@@ -215,7 +216,7 @@ interface UiExtension {
 
 哈希有两类口径，选哪一种由比对双方的可用接口决定，不按包归属区分。
 
-- `HostServices.hash`：输入为 JSON 值，先做规范 JSON 序列化再取 SHA-256。装配摘要、manifest、证据与 artifact 摘要走这一条，因此宿主可以替出确定性实现用于测试。
+- `HostServices.hash`：输入为 JSON 值，先做规范 JSON 序列化再取 SHA-256。装配摘要、manifest、证据与 artifact 摘要走这一条，因此宿主可以替出确定性实现用于测试。调用方已持有规范 JSON 文本时改用 `HostServices.hashText`，它对同一值给出相同结果，只省去再次序列化；artifact 仓对要落库的正文文本求 `content_hash` 走这一入口。
 - 固定 SHA-256：`commandPayloadHash` 直接对规范 JSON 取 SHA-256，不经注入端口。命令幂等键要写进 `command_receipts.payload_hash` 并长期留存，是同一 `commandId` 重复提交时判断内容是否相同的唯一依据；若跟随注入实现变化，更换宿主哈希后同一命令会被判成 `idempotency-conflict`。
 
 固定口径只覆盖命令幂等键一处，其余摘要仍统一走 `host.hash`。

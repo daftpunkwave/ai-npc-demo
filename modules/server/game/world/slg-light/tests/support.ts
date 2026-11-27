@@ -101,6 +101,7 @@ export function createTestHost(): HostServices {
     },
     rng: () => () => 0.5,
     hash: async (value) => String(JSON.stringify(value).length).padStart(64, "0"),
+    hashText: async (text) => String(text.length).padStart(64, "0"),
     logger: {
       info: () => {},
       warn: () => {},

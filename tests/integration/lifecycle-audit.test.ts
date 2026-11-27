@@ -1,13 +1,13 @@
 /**
  * 验证生命周期审计统一契约的写入与控制台时间线按事件类型的读取。
- * 使用真实 SQLite 与观测模块；存量记录按旧写入格式预置，新记录经统一契约写入。
+ * 使用真实 SQLite 与观测模块，观测模块按宿主同样的组合绑定数据源查询；存量记录按旧写入格式预置，新记录经统一契约写入。
  * 禁止用假存储替代真实适配器，或把领域事件写入 lifecycle_events。
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { serverModuleDefinitions } from "@world-prism/app-server";
+import { createObservabilitySources, serverModuleDefinitions } from "@world-prism/app-server";
 import type { Json, StoragePort } from "@world-prism/contracts";
 import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 import type { ObservabilityPort } from "@world-prism/mod-platform-observability-sqlite";
@@ -34,9 +34,21 @@ async function auditHarness() {
   const storage = storageInstance.port as StoragePort;
   const observabilityInstance = await create("platform.observability.sqlite", { "platform.storage": storage }, { timelineLimit: 200 });
   await observabilityInstance.start(signal);
+  const observability = observabilityInstance.port as ObservabilityPort;
+  // 时间线只读事件与审计，不读取时钟或角色位置。
+  observability.bind(createObservabilitySources({
+    storage,
+    host,
+    worldTick: () => {
+      throw new Error("审计用例不读取时钟");
+    },
+    worldIn: () => {
+      throw new Error("审计用例不读取角色位置");
+    },
+  }));
   return {
     storage,
-    observability: observabilityInstance.port as ObservabilityPort,
+    observability,
     async dispose() {
       await observabilityInstance.dispose();
       await storageInstance.dispose();

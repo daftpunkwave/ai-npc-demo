@@ -318,3 +318,81 @@ describe("模块能力声明对账", () => {
     expect(violations.map((violation) => violation.message).join("\n")).toContain("game.world.slg-light");
   });
 });
+
+describe("动态能力键", () => {
+  /** world 模块访问自身与 requires 的能力，避免夹具同时触发漏声明与多余声明。 */
+  const declaredWorldAccess = "export const roads = ports[\"game.map\"];\nexport const own = ports[\"game.world\"];\n";
+
+  function dynamicKeyViolations(worldSource: string): readonly { readonly file: string; readonly message: string }[] {
+    const root = fixture({
+      ...sourceModule("game.map.six-nodes", "port.ts", "export const roads = roadsOf();\n"),
+      ...sourceModule("game.world.slg-light", "port.ts", declaredWorldAccess),
+      ...sourceModule("game.world.slg-light", "dynamic.ts", worldSource),
+    });
+    return checkModuleCapabilityUsage({ root, definitions: [map, world] }).filter(
+      (violation) => violation.code === "capability-dynamic-key",
+    );
+  }
+
+  it("以变量索引端口容器时报动态能力键并指向所在行", () => {
+    const violations = dynamicKeyViolations(
+      [
+        "const capability = pick();",
+        "export const port = input.ports[capability];",
+      ].join("\n"),
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({ file: expect.stringContaining("world/slg-light/src/dynamic.ts") }),
+    ]);
+    expect(violations[0]?.message).toContain("dynamic.ts:2");
+    expect(violations[0]?.message).toContain("ports");
+  });
+
+  it("可选链、调用返回的端口视图、括号转型、模板字符串与转义字面量键同样被拒绝", () => {
+    const violations = dynamicKeyViolations(
+      [
+        "export const a = ports?.[capability];",
+        "export const b = asPorts(context)[capability];",
+        "export const c = (context.modules as GameModulePorts)[capability];",
+        "export const d = context.modules[`game.world`];",
+        "export const e = ports[\"game\\u002eworld\"];",
+        "export const f = context.modules[",
+        "  capability",
+        "];",
+      ].join("\n"),
+    );
+    expect(violations.map((violation) => violation.message.match(/dynamic\.ts:(\d+)/)?.[1])).toEqual([
+      "1", "2", "3", "4", "5", "6",
+    ]);
+  });
+
+  it("以计算键解构端口容器时报动态能力键", () => {
+    const violations = dynamicKeyViolations(
+      [
+        "export function portOf(context: HandlerContext, key: string): unknown {",
+        "  const { [key]: port } = context.modules;",
+        "  return port;",
+        "}",
+      ].join("\n"),
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.message).toContain("dynamic.ts:2");
+    expect(violations[0]?.message).toContain("modules");
+  });
+
+  it("非端口容器的变量索引、数组类型、计算键解构普通对象与注释字符串不报动态能力键", () => {
+    const violations = dynamicKeyViolations(
+      [
+        "// ports[capability] 只是注释",
+        "const label = \"context.modules[key]\";",
+        "export const item = items[index];",
+        "export const value = record[key] ?? label;",
+        "export const list: GameModulePorts[] = [];",
+        "const { [key]: setting } = settings;",
+        "export const spread = [...ports.list];",
+        "export const own = setting;",
+      ].join("\n"),
+    );
+    expect(violations).toEqual([]);
+  });
+});

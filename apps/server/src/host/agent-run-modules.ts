@@ -4,8 +4,7 @@
  * 启动失败时释放实例，避免保存一份无法启动的在线配置。
  */
 import { decisionSubmitTool, decisionSystem, modelContextBudget } from "@world-prism/agent-runtime";
-import { DomainError, estimateModelInputTokens, resolveContextTokenLimits, toModelToolName, type HostServices, type ModuleScope } from "@world-prism/contracts";
-import type { ContentPack } from "@world-prism/experiment";
+import { DomainError, estimateModelInputTokens, resolveContextTokenLimits, toModelToolName, type ContentPack, type HostServices, type ModuleScope } from "@world-prism/contracts";
 import { startInstances, type ResolvedRealmPlan, type RunningInstance, type StartedInstances } from "@world-prism/kernel";
 import { agentModelPoolCapability, bindAgentModelRoutes, type AgentModelPoolPort, type AgentToolsPort, type RunModelPort, type SchedulingPort } from "@world-prism/module-sdk";
 import type { AgentConfiguration } from "./agent-configuration";

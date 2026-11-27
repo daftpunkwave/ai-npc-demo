@@ -149,7 +149,22 @@ export interface StorageTransaction {
   savepoint<T>(name: string, fn: () => T): T;
 }
 
-/** 存储适配器端口：唯一写连接上的同步事务、分支复制与整库备份。 */
+/**
+ * artifact 大正文的文件存放：不超过 inlineMaxBytes 的正文内联进 artifacts.body，更大的正文写到数据目录下的独立文件。
+ * 全部方法都必须在事务外调用：存储只有一条写连接，事务内的文件 I/O 会延长写锁占用。
+ */
+export interface ArtifactFileStore {
+  /** 正文内联上限（字节，含边界）；超过即写文件。 */
+  readonly inlineMaxBytes: number;
+  /** 以独占方式写入正文并返回登记到 artifacts.file_path 的相对路径；同名文件已存在时抛错。 */
+  write(artifactId: string, body: Uint8Array): string;
+  /** 按 artifacts.file_path 读取正文；路径不在 artifact 目录内时拒绝。 */
+  read(filePath: string): Uint8Array;
+  /** 删除尚未登记成功的正文文件；用于登记事务失败后的清理，文件不存在时不报错。 */
+  remove(filePath: string): void;
+}
+
+/** 存储适配器端口：唯一写连接上的同步事务、分支复制、整库备份与 artifact 大正文文件。 */
 export interface StoragePort {
   /** 在 BEGIN IMMEDIATE 事务内同步执行；回调返回 Promise 时回滚并抛错。 */
   transact<T>(fn: (tx: StorageTransaction) => T): T;
@@ -157,4 +172,6 @@ export interface StoragePort {
   forkBranch(tx: StorageTransaction, request: ForkBranchRequest): ForkBranchResult;
   /** 用 VACUUM INTO 生成整库一致副本；不能与事务并发执行。 */
   backup(options?: BackupOptions): BackupResult;
+  /** 超过内联上限的 artifact 正文所在的文件存放；只在事务外使用。 */
+  readonly artifactFiles: ArtifactFileStore;
 }

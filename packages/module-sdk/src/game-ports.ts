@@ -12,6 +12,7 @@ export * from "./game-actions-port";
 export * from "./game-agreements-port";
 export * from "./game-scenario-port";
 export * from "./game-comms-port";
+export * from "./game-save-port";
 export * from "./game-port-binding";
 
 export type { ResourceLevel, ScenarioCardStatus } from "@world-prism/contracts";

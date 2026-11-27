@@ -13,7 +13,7 @@ import {
   type DeterministicDecisionPort,
   type ModelDecisionPort,
 } from "@world-prism/module-sdk";
-import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ResolvedAgentProfile } from "@world-prism/contracts";
 import { ModelTurnPorts } from "./model-turn";
 import { AgentModuleHandle } from "./agent-module-handle";
 import type { AgentRuntimeOptions } from "./runtime";

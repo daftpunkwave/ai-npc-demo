@@ -143,6 +143,7 @@ const host: HostServices = {
   sleep: async () => undefined,
   rng: () => () => 0.5,
   hash: async () => "hash",
+  hashText: async () => "hash",
   logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
   tracer: { span: (_name, _attrs, fn) => fn() },
 };

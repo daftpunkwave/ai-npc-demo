@@ -4,8 +4,9 @@
  * 由加载器与宿主预检负责。
  * 约束与禁忌：禁止在此读取文件、生成随机 seed 或在展开时省略任何变体或脚本分支。
  */
+import { configRefSchema } from "@world-prism/contracts";
 import { z } from "zod";
-import { configRefSchema, runSpecSchema } from "./schema";
+import { runSpecSchema } from "./schema";
 
 /**
  * RunSpec 模板：与 RunSpec 同形状，但去掉 id、variant 与 script 三个由实验决定的字段，

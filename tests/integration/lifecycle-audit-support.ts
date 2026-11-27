@@ -7,13 +7,14 @@ import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
 
 /**
  * 包装存储端口：事务内 tx.run 命中 lifecycle_events 表时抛出指定错误，
- * 其余 SQL、分支复制与整库备份原样透传，事务回滚语义由底层适配器保证。
+ * 其余 SQL、分支复制、整库备份与 artifact 正文文件原样透传，事务回滚语义由底层适配器保证。
  */
 export function storageFailingOnLifecycleAudit(inner: StoragePort, message: string): StoragePort {
   return {
     transact: (fn) => inner.transact((tx) => fn(delegateTransaction(tx, message))),
     forkBranch: (tx, request) => inner.forkBranch(tx, request),
     backup: (options) => inner.backup(options),
+    artifactFiles: inner.artifactFiles,
   };
 }
 

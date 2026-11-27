@@ -14,7 +14,7 @@ import {
   type StoragePort,
   type StorageTransaction,
 } from "@world-prism/contracts";
-import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ResolvedAgentProfile } from "@world-prism/contracts";
 import type { DeterministicDecisionInput, DelegationView } from "@world-prism/module-sdk";
 import { parseWatermark } from "./memory-row-codec";
 import { asRecord, numberValue } from "./runtime-records";

@@ -3,18 +3,18 @@
  * 依赖任务命令/job 处理器与 module-sdk 的贡献类型；不实现规则、不读写存储。
  * 禁止在这里改写任务状态、改变命令类型或绕过处理器直接调度 job。
  */
-import { gameModuleIds, type GameModulePorts, type GameRuleContributor } from "@world-prism/module-sdk";
+import type { GameModulePorts, GameRuleContributor } from "@world-prism/module-sdk";
 import { cancel } from "./cancel";
 import { dispatch } from "./dispatch";
 import { respond } from "./respond";
 import { complete, depart, returnToOrigin, work } from "./task-jobs";
 import type { ActionContext } from "./task-shared";
-import { actionsOwnedAggregates } from "./definition";
+import { actionsModuleDefinition, actionsOwnedAggregates } from "./definition";
 
 /** 行动模块的规则贡献。 */
 export function createActionsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
-    moduleId: gameModuleIds.actions,
+    moduleId: actionsModuleDefinition.id,
     ownsAggregates: actionsOwnedAggregates,
     commands: [
       { type: "task.dispatch", handler: (context, payload) => dispatch(context as ActionContext, payload) },

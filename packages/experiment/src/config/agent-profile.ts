@@ -1,66 +1,27 @@
 /**
  * 加载并合并 Agent profile 继承链，校验槽位选择、预算和 run 级调度配置。
- * 依赖配置引用解析、YAML、Zod 与公共模块枚举。
+ * 依赖配置引用解析、YAML、Zod 与公共契约的 profile 字段 schema；产出公共契约的已解析 profile 形状。
  * 禁止读取代码实现、探测模型供应商或静默补上未声明的槽位。
  */
 import { z } from "zod";
 import {
+  agentModuleSelectionSchema,
+  agentProfileBudgetsSchema,
+  agentProfileReadinessSchema,
+  agentProfileSchedulingSchema,
   agentSlots,
-  jsonValueSchema,
-  moduleIdSchema,
   type AgentSlot,
   type Json,
+  type ResolvedAgentProfile,
 } from "@world-prism/contracts";
 import { crossCheckLoadingError, referenceLoadingError } from "../loading/errors";
 import { loadConfigDocument, type ConfigLoadContext, type LoadedConfig } from "./load-config";
 
-const moduleSelectionSchema = z
-  .object({
-    module: moduleIdSchema,
-    config: jsonValueSchema,
-  })
-  .strict();
-
-const budgetSchema = z
-  .object({
-    maxModelCallsPerTurn: z.number().int().positive(),
-    maxDecisionRounds: z.number().int().positive(),
-    maxToolCallsPerTurn: z.number().int().positive(),
-    maxToolCallsPerRound: z.number().int().positive(),
-    maxTurnMs: z.number().int().positive(),
-    maxReplans: z.number().int().nonnegative(),
-    maxTokensPerAgentPerDay: z.number().int().nonnegative(),
-    reserveOutputTokens: z
-      .object({
-        decision: z.number().int().positive(),
-        speech: z.number().int().positive(),
-        "memory-maintenance": z.number().int().positive(),
-      })
-      .strict(),
-  })
-  .strict();
-
-const readinessSchema = z
-  .object({
-    requireDurable: z.boolean(),
-    requireDerived: z.boolean(),
-    waitTimeoutMs: z.number().int().positive(),
-    onlineDegradeAfterMs: z.number().int().nonnegative(),
-  })
-  .strict();
-
-const schedulingSchema = z
-  .object({
-    module: moduleIdSchema,
-    config: jsonValueSchema,
-  })
-  .strict();
-
 const slotsSchema = z
   .object(
-    Object.fromEntries(agentSlots.map((slot) => [slot, moduleSelectionSchema.optional()])) as Record<
+    Object.fromEntries(agentSlots.map((slot) => [slot, agentModuleSelectionSchema.optional()])) as Record<
       AgentSlot,
-      z.ZodOptional<typeof moduleSelectionSchema>
+      z.ZodOptional<typeof agentModuleSelectionSchema>
     >,
   )
   .strict();
@@ -73,20 +34,20 @@ const profileDocumentSchema = z
     // variant 常被单独引用为 patch，可以不带父 profile；其余 kind 必须显式给出 parent 或 null，
     // 避免继承链起点被省略成隐式默认值。
     parent: z.string().min(1).nullable().optional(),
-    budgets: budgetSchema.optional(),
-    readiness: readinessSchema.optional(),
+    budgets: agentProfileBudgetsSchema.optional(),
+    readiness: agentProfileReadinessSchema.optional(),
     speech: z.object({ maxChars: z.number().int().positive() }).strict().optional(),
     failurePolicy: z.enum(["strict", "online-fallback"]).optional(),
-    scheduling: schedulingSchema.optional(),
+    scheduling: agentProfileSchedulingSchema.optional(),
     slots: slotsSchema.optional(),
     patch:
       z
         .object({
-          budgets: budgetSchema.optional(),
-          readiness: readinessSchema.optional(),
+          budgets: agentProfileBudgetsSchema.optional(),
+          readiness: agentProfileReadinessSchema.optional(),
           speech: z.object({ maxChars: z.number().int().positive() }).strict().optional(),
           failurePolicy: z.enum(["strict", "online-fallback"]).optional(),
-          scheduling: schedulingSchema.optional(),
+          scheduling: agentProfileSchedulingSchema.optional(),
           slots: slotsSchema.optional(),
         })
         .strict()
@@ -113,18 +74,6 @@ const profileDocumentSchema = z
   });
 
 export type AgentProfileDocument = z.infer<typeof profileDocumentSchema>;
-export type AgentModuleSelection = z.infer<typeof moduleSelectionSchema>;
-
-export interface ResolvedAgentProfile {
-  readonly profileId: string;
-  readonly sourceChain: readonly string[];
-  readonly budgets: z.infer<typeof budgetSchema>;
-  readonly readiness: z.infer<typeof readinessSchema>;
-  readonly speech: { readonly maxChars: number };
-  readonly failurePolicy: "strict" | "online-fallback";
-  readonly scheduling: z.infer<typeof schedulingSchema>;
-  readonly slots: Readonly<Partial<Record<AgentSlot, AgentModuleSelection>>>;
-}
 
 function loadDocument(
   configRef: string,

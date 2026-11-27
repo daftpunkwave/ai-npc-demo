@@ -331,7 +331,7 @@ export function turnSummaryFixture(): TurnSummary {
     runId: "run-k3j9x0a1b2c3",
     branchId: "br-k3j9x0a1b2c3",
     agentId: "npc-cenyan",
-    agentTurnIndex: 0,
+    agentTurnIndex: 1,
     status: "completed",
     triggerKinds: ["player-dialogue"],
     terminalReason: null,

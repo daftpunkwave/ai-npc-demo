@@ -18,7 +18,7 @@ import {
   type MemoryBundle,
   type ToolExecutionResult,
 } from "@world-prism/contracts";
-import type { ContentPack, ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ContentPack, ResolvedAgentProfile } from "@world-prism/contracts";
 import type { DeterministicDecisionInput, MemoryRecordView } from "@world-prism/module-sdk";
 import type { SpeechApprovalInput } from "./dialogue-flow";
 import { isDisclosable, type SpeechFact } from "./disclosure";

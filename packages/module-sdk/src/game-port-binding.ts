@@ -1,7 +1,8 @@
 /**
- * 核心职责：定义游戏端口的模块 ID 常量、端口集合、能力登记表、绑定上下文与跨端口组合视图。
+ * 核心职责：定义游戏端口集合、能力登记表、绑定上下文与跨端口组合视图。
  * 交互契约：依赖本包事务端口、公共契约与全部游戏端口类型；组合根按能力解析并注入端口快照。
- * 约束与禁忌：禁止在这里实现端口行为；模块不得借端口快照读取其他模块的聚合。
+ * 约束与禁忌：禁止在这里实现端口行为或登记具体实现的模块 ID（绑定只按能力进行，模块自身 ID 取自各自的模块定义）；
+ * 模块不得借端口快照读取其他模块的聚合。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名表达调用契约；Codacy 缺少 workspace 类型解析时会把泛型联合误判为 any。 */
 import type { IdPrefix } from "@world-prism/contracts";
@@ -19,20 +20,6 @@ export type OwnWorldTxFactory = () => WorldTx;
 
 /** 宿主 ID 生成器的游戏端口视图；参数为契约登记的 ID 前缀。 */
 export type GameIdFactory = (...args: [IdPrefix]) => string;
-
-/** 首版游戏模块的稳定模块 ID；端口实现与装配共享同一组常量。 */
-export const gameModuleIds = {
-  world: "game.world.slg-light",
-  map: "game.map.six-nodes",
-  clock: "game.clock.controlled",
-  resources: "game.resources.light",
-  actions: "game.actions.standard",
-  agreements: "game.agreements.standard",
-  comms: "game.comms.standard",
-  scenario: "game.scenario.watergate",
-  scenarioEscalating: "game.scenario.watergate-escalating",
-  save: "game.save.sqlite",
-} as const;
 
 /** 游戏模块绑定的全部端口；宿主按能力解析后注入处理器上下文。 */
 export interface GameModulePorts {

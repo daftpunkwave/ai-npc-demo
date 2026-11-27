@@ -660,8 +660,9 @@ describe("控制台研究接口", () => {
     const value = { content: "证".repeat(25_000) };
     const { artifactId, byteSize } = await artifacts.put({ runId, kind: "model-request", value });
     expect(byteSize).toBeGreaterThan(65_536);
+    // 超过 inlineArtifactMaxBytes（装配缺省 65536）的正文写入独立文件，读取接口从文件取回同一正文。
     expect(host.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId })?.["storage"]))
-      .toBe("inline");
+      .toBe("file");
     const response = await host.app.inject({
       method: "GET",
       url: `/api/v1/console/artifacts/${artifactId}?view=raw`,

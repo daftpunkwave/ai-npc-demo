@@ -82,6 +82,7 @@ export function createFakeHost(): FakeHost {
       };
     },
     hash: async (value) => createHash("sha256").update(canonicalJson(value)).digest("hex"),
+    hashText: async (text) => createHash("sha256").update(text).digest("hex"),
     logger: {
       info: (message, data) => {
         logs.push(data === undefined ? { level: "info", message } : { level: "info", message, data });

@@ -3,7 +3,7 @@
  * 依赖 prompt 与 locale 的已校验结构与节点索引；只做键覆盖检查。
  * 禁止在此渲染模板、计算文本长度或修改内容。
  */
-import type { ContentLocale, ContentNode, ContentPrompts } from "../schema/index";
+import type { ContentLocale, ContentNode, ContentPrompts } from "@world-prism/contracts";
 import { fail } from "./common";
 
 /** 模板与词表错误的固定来源名。 */

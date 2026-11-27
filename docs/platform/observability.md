@@ -91,7 +91,7 @@
 
 ## 4. 服务端控制台的观测页
 
-观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
+观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。该模块只直接读写自己拥有的 `trace_spans`；领域事件、turn 证据、Agent 状态、记忆与审计等他人数据经宿主绑定的数据源端口读取，由各表所有者解码为类型化记录，替换观测实现不需要了解这些表的物理结构（提供方与查询清单见 [存储第 4 节](../architecture/storage.md#4-常用查询)）。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
 
 1. 运行总览：分支、模式、配置 hash、15 个 Agent 状态、controller、当前水位、失败与预算。
 2. 世界事件时间线：按玩家/Agent/地点筛选，区分公开事实、观察投影和研究员真值。
@@ -154,7 +154,7 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 | `manifest` | experiment | 去密钥的冻结 manifest |
 | `export` | 导出服务 | 导出包 |
 
-当前上下文、模型请求和响应均内联写入 SQLite `artifacts` 表。大于 64 KB 的正文外部文件存储仍属目标，表记录预留路径与 hash。
+artifact 正文按存储适配器配置 `inlineArtifactMaxBytes`（缺省 65536 字节）分流：规范 JSON 正文不超过上限时内联写入 `artifacts.body`，超过上限时由存储适配器在登记事务之前写入 `data/artifacts/<artifact_id>`，表行记为 `storage = 'file'` 并登记 `file_path`，`content_hash` 与 `byte_size` 两种方式口径相同。`speech` artifact 始终内联，因为 turn 取消在命令事务内用 SQL 读取其正文。读取方在事务外取回文件正文；评估报告在只读事务里组装，所需的文件 decision 正文在开启事务前装载。
 
 ### 8.3 脱敏副本
 

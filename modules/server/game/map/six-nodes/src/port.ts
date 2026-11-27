@@ -9,7 +9,6 @@ import type { ReasonCode, RoadStatus } from "@world-prism/contracts";
 import { DomainError, roadIdFromPolicyKey, roadStatusPolicyKey, roadStatusSchema } from "@world-prism/contracts";
 import {
   findRoadPath,
-  gameModuleIds,
   type GameContent,
   type GameIdFactory,
   type GameMapPort,
@@ -19,6 +18,7 @@ import {
   type RouteResult,
   type ScopedWorldTxFactory,
 } from "@world-prism/module-sdk";
+import { mapModuleDefinition } from "./definition";
 import { passageGrantStateSchema, readMapState, roadStateSchema, type PassageGrantState } from "./state";
 
 /** 地图端口实现；生命周期随一次处理器调用，构造后不跨事务复用。 */
@@ -34,7 +34,7 @@ class SixNodeMapPort implements GameMapPort {
   }
 
   private tx() {
-    return this.txFor(gameModuleIds.map);
+    return this.txFor(mapModuleDefinition.id);
   }
 
   road(roadId: string): GameRoad | null {

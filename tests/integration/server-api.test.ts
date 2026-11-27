@@ -48,11 +48,12 @@ import {
 import type { ApprovedSpeechReader } from "@world-prism/module-sdk";
 import {
   TransportPort,
+  defaultAllowedOrigins,
   httpTransportLimits,
+  transportConfigSchema,
   type ConversationReadPort,
   type ConversationSourceLine,
 } from "@world-prism/mod-transport-http-ws-fastify";
-import { SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,
@@ -65,6 +66,7 @@ import {
   withGamePorts,
   type GameHarness,
 } from "./game-support";
+import { createSqliteSavePort } from "./save-support";
 
 const active: GameHarness[] = [];
 const apps: Awaited<ReturnType<typeof createServerApp>>[] = [];
@@ -358,7 +360,7 @@ async function accessPolicyFor(harness: GameHarness, config: Json = {}): Promise
 }
 
 async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
-  const save = new SqliteSaveService(harness.storage, harness.host);
+  const save = await createSqliteSavePort(harness);
   const accessPolicy = await accessPolicyFor(harness, overrides.accessPolicyConfig ?? {});
   const app = await createServerApp({
     // 测试会密集发送请求验证幂等与并发语义，放宽限流阈值；
@@ -391,7 +393,12 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
       void operationId;
       return setClockStepping(harness, expected, ticks);
     },
-    save,
+    // 传输层存档钩子直接接到真实存档端口；恢复在一次存储事务内提交，与宿主编排的事务边界一致。
+    save: {
+      createSnapshot: (input) => save.createSnapshot(input),
+      listSnapshots: () => save.listSnapshots(),
+      restoreSnapshot: (input) => harness.storage.transact((tx) => save.restoreSnapshotInTransaction(tx, input)),
+    },
     reset: overrides.reset ?? (() => ({ branchId: harness.branchId, clock: clockView(harness) })),
     identities: [
       { token: "player-token", auth: playerAuth(harness) },
@@ -2534,6 +2541,20 @@ describe("服务端 API", () => {
     current += 20_000;
     const rejected = openStream(port, unused);
     expect((await rejected.closed()).code).toBe(4401);
+  });
+
+  it("未指定 allowedOrigins 时同时接受网页玩家端与同源控制台的 Origin", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    for (const origin of defaultAllowedOrigins) {
+      const response = await app.inject({ method: "POST", url: "/api/v1/auth/login", headers: { origin }, payload: { token: "console-token" } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["access-control-allow-origin"]).toBe(origin);
+    }
+    expect(defaultAllowedOrigins).toEqual(["http://127.0.0.1:5173", "http://127.0.0.1:3000"]);
+    expect(transportConfigSchema.parse({}).allowedOrigins).toEqual([...defaultAllowedOrigins]);
+    const foreign = await app.inject({ method: "POST", url: "/api/v1/auth/login", headers: { origin: "http://127.0.0.1:4000" }, payload: { token: "console-token" } });
+    expect(foreign.statusCode).toBe(403);
   });
 
   it("拒绝错误 Origin 与玩家访问控制台", async () => {

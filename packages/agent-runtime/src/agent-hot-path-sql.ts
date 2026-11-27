@@ -1,5 +1,5 @@
 /**
- * 核心职责：集中 Agent 热路径的 SQL 文本，让生产调用与查询计划测试共用同一份语句。
+ * 核心职责：集中 Agent 热路径（turn 调度、观察与记忆读取）的 SQL 文本，让生产调用与查询计划测试共用同一份语句。
  * 交互契约：只导出 SQL 字符串常量与状态词列表；不持有存储、不执行查询。
  * 约束与禁忌：状态词必须内联成字面量而不是绑定参数——SQLite 只有看到字面量才肯为
  *   部分索引判定谓词成立，绑定参数会让优化器退回全量索引；这些常量也不得承载外部输入。
@@ -28,3 +28,16 @@ export const latestDayPassedSql = `SELECT known_at_tick, observation_seq FROM ob
             AND json_extract(content_json, '$.eventType') = 'DayPassed'
           ORDER BY known_at_tick DESC, observation_seq DESC
           LIMIT 1`;
+
+/**
+ * 取某个 Agent（或公共编年史）在指定 revision 可见的活动记忆行；可见性谓词与 memory_visible 索引列一致。
+ * 历史行版本按索引在 SQLite 内过滤，不再把该主体的全部行版本读进内存再筛选——行版本只追加，
+ * 全量读取的成本会随会话时长单调增长。参数依次为 branch_id、agent_id、revision、revision。
+ */
+export const visibleMemoryRecordsSql = `SELECT * FROM memory_records
+          WHERE branch_id = ? AND agent_id = ? AND created_revision <= ?
+            AND (retired_revision IS NULL OR retired_revision > ?) AND status = 'active'`;
+
+/** 取某个 Agent 的当前行版本（retired_revision 为 NULL），作为提交记忆计划时对账的基线。 */
+export const currentMemoryRecordsSql = `SELECT * FROM memory_records
+          WHERE branch_id = ? AND agent_id = ? AND retired_revision IS NULL`;

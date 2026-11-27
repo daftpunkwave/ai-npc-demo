@@ -248,7 +248,13 @@ export interface HostServices {
   monotonicMs(): number;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
   rng(...seedParts: string[]): () => number;
+  /** 规范 JSON 值的摘要：先做规范 JSON 序列化，再交给 hashText。 */
   hash(value: Json): Promise<string>;
+  /**
+   * 已序列化规范 JSON 文本的摘要；对同一值必须与 hash(value) 结果相同。
+   * 调用方已持有规范文本（例如要落库的 artifact 正文）时用它，避免对同一值再序列化一次。
+   */
+  hashText(canonicalJsonText: string): Promise<string>;
   logger: HostLogger;
   tracer: HostTracer;
 }

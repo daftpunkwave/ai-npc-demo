@@ -1,5 +1,6 @@
 /**
- * 轻量词法扫描：去注释并收集静态 import、re-export、动态导入记录。
+ * 轻量词法扫描：去注释并收集静态 import、re-export、动态导入记录；
+ * 去注释文本与字符串区间同时供共享契约声明与模块表名扫描复用。
  * 不构建完整语法树，只保证 import 判定不会被注释或字符串字面量干扰。
  * 禁止在此执行被检查代码、解析模块语义或决定依赖白名单。
  */
@@ -11,7 +12,7 @@ import type { ImportRecord, StringSpan, StrippedSource } from "./types";
  * 用词法状态机把注释替换为空格并记录字符串区间。
  * 保留字符串原文与换行位置，使行号与后续字面量动态导入解析保持一致。
  */
-function stripComments(source: string): StrippedSource {
+export function stripComments(source: string): StrippedSource {
   const characters = source.split("");
   const stringSpans: StringSpan[] = [];
   type Mode = "code" | "line" | "block" | "single" | "double" | "template";
@@ -88,7 +89,7 @@ function stripComments(source: string): StrippedSource {
   return { code: characters.join(""), stringSpans };
 }
 
-function isInsideString(spans: readonly StringSpan[], index: number): boolean {
+export function isInsideString(spans: readonly StringSpan[], index: number): boolean {
   return spans.some((span) => index >= span.start && index < span.end);
 }
 

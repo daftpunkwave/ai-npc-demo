@@ -20,6 +20,7 @@ const host = {
   monotonicMs: () => sequence,
   sleep: async () => undefined,
   hash: async (value: Json) => createHash("sha256").update(canonicalJson(value)).digest("hex"),
+  hashText: async (text: string) => createHash("sha256").update(text).digest("hex"),
   logger: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined },
   nowIso: () => "2026-01-01T00:00:00.000Z",
 } as unknown as HostServices;

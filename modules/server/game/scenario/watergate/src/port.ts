@@ -4,7 +4,8 @@
  * 禁止在查询中改写卡片状态。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-redundant-type-constituents -- 接口参数名用于表达调用契约；Codacy 缺少 workspace 类型解析时将联合类型误判为 any。 */
-import { gameModuleIds, type ScenarioCardView, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
+import type { ScenarioCardView, ScopedWorldTxFactory } from "@world-prism/module-sdk";
+import { scenarioModuleDefinition } from "./definition";
 import { readCardState, type ScenarioCardState } from "./state";
 
 /** 剧情卡查询形状；控制台与运营 API 复用。 */
@@ -14,7 +15,7 @@ export interface ScenarioPort {
 }
 
 /** 构造绑定到当前事务的剧情查询端口；moduleId 区分标准版与升级版。 */
-export function createScenarioPort(txFor: ScopedWorldTxFactory, moduleId: string = gameModuleIds.scenario): ScenarioPort {
+export function createScenarioPort(txFor: ScopedWorldTxFactory, moduleId: string = scenarioModuleDefinition.id): ScenarioPort {
   const tx = () => txFor(moduleId);
   return {
     card: (cardId) => {

@@ -1158,15 +1158,16 @@ importers:
       '@world-prism/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@world-prism/experiment':
-        specifier: workspace:*
-        version: link:../experiment
       '@world-prism/kernel':
         specifier: workspace:*
         version: link:../kernel
       '@world-prism/module-sdk':
         specifier: workspace:*
         version: link:../module-sdk
+    devDependencies:
+      '@world-prism/experiment':
+        specifier: workspace:*
+        version: link:../experiment
 
   packages/authority:
     dependencies:

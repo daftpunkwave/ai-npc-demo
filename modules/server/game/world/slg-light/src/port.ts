@@ -5,9 +5,9 @@
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import { DomainError, type ResourceAmounts } from "@world-prism/contracts";
-import { gameModuleIds, principalsAudience, totalAmount, type AgreementCounts, type GameContent, type GameIdFactory, type GameWorldPort, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
+import { principalsAudience, totalAmount, type AgreementCounts, type GameContent, type GameIdFactory, type GameWorldPort, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
 import { runChapterEvaluation } from "./settlement";
-import { defaultChapterLengthTicks } from "./definition";
+import { defaultChapterLengthTicks, worldModuleDefinition } from "./definition";
 import { campaignAggregateId, metersAggregateId } from "./port-aggregates";
 import { createWorldQueries } from "./port-queries";
 import { createWorldEntityOps } from "./port-entity-ops";
@@ -46,7 +46,7 @@ export function createWorldPort(
   const { findDelegations, ...queries } = createWorldQueries({ txFor, content });
   // 章节长度与评估权限在构造时取值；调用方此后修改 options 对象不影响端口行为。
   const { chapterLengthTicks, allowChapterEvaluation } = options;
-  const tx = () => txFor(gameModuleIds.world);
+  const tx = () => txFor(worldModuleDefinition.id);
   return {
     ...queries,
     ...createWorldEntityOps({ txFor, content }),

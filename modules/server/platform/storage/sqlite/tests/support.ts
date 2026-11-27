@@ -54,6 +54,7 @@ export function createFakeHost(startIso = "2026-01-01T00:00:00.000Z"): FakeHost 
     },
     rng: () => () => 0.5,
     hash: async (value: Json) => createHash("sha256").update(canonicalJson(value)).digest("hex"),
+    hashText: async (text: string) => createHash("sha256").update(text).digest("hex"),
     logger: {
       info: (message, data) => {
         logs.push(data === undefined ? { level: "info", message } : { level: "info", message, data });
@@ -80,13 +81,17 @@ export interface StorageHandle {
   dispose(): Promise<void>;
 }
 
-/** 在指定数据目录启动一个存储模块实例；调用方负责关闭与清理。 */
-export async function startStorage(dataDir: string, host: FakeHost = createFakeHost()): Promise<StorageHandle> {
+/** 在指定数据目录启动一个存储模块实例；extraConfig 覆盖其余配置项。调用方负责关闭与清理。 */
+export async function startStorage(
+  dataDir: string,
+  host: FakeHost = createFakeHost(),
+  extraConfig: Readonly<Record<string, Json>> = {},
+): Promise<StorageHandle> {
   const signal = new AbortController().signal;
   const input: ModuleCreateInput = {
     moduleId: storageModuleDefinition.id,
     realm: "server",
-    config: { dataDir },
+    config: { ...extraConfig, dataDir },
     scope: {},
     ports: {},
     host,

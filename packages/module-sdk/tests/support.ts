@@ -37,7 +37,7 @@ export function strictConfigSchema(): ModuleDefinition["configSchema"] {
 /** 构造一个最小但合法的服务端模块描述符，供测试按字段覆盖出非法组合。 */
 export function moduleDefinition(overrides: Readonly<Record<string, unknown>> = {}): ModuleDefinition {
   const definition: ModuleDefinition = {
-    id: "game.clock.controlled",
+    id: "platform.sdk-fixture.standard",
     realm: "server",
     kind: "service",
     version: "1.0.0",
@@ -84,6 +84,7 @@ export function fakeHostServices(): HostServices {
     sleep: async () => undefined,
     rng: () => () => 0.5,
     hash: async (value: Json) => `h${JSON.stringify(value).length}`,
+    hashText: async (text: string) => `h${text.length}`,
     logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
     tracer: { span: <T,>(_name: string, _attrs: Json, fn: () => T): T => fn() },
   };
@@ -92,7 +93,7 @@ export function fakeHostServices(): HostServices {
 /** 构造模块创建输入；默认带世界与分支作用域，可按需覆盖。 */
 export function createInput(overrides: Partial<ModuleCreateInput> = {}): ModuleCreateInput {
   return {
-    moduleId: "game.clock.controlled",
+    moduleId: "platform.sdk-fixture.standard",
     realm: "server",
     config: {},
     scope: { worldId: "wld-000000000000", branchId: "br-000000000000" },

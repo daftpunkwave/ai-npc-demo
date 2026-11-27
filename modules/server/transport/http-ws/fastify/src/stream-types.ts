@@ -14,6 +14,7 @@ import type {
   PlayerProjection,
   StreamChannel,
 } from "@world-prism/contracts";
+import type { ReplayRing } from "./replay-ring";
 
 /** 推送目标的最小视图；Fastify/ws 的 WebSocket 满足该结构，测试可注入假实现。 */
 export interface StreamSocket {
@@ -111,13 +112,13 @@ export interface ReplayFrame {
   readonly set: Record<string, Json>;
 }
 
-/** 每个 (session, channel) 独立的有界重放缓冲，绑定分支与代次。 */
+/** 每个 (session, channel) 独立的有界重放缓冲，绑定分支与代次；帧存放在容量为 replayLimit 的环形缓冲中。 */
 export interface ReplayBuffer {
   readonly sessionId: string;
   readonly channel: StreamChannel;
   generation: number;
   branchId: string;
-  readonly frames: ReplayFrame[];
+  readonly frames: ReplayRing<ReplayFrame>;
   lastActiveAt: number;
 }
 

@@ -238,6 +238,7 @@ function countingJobReads(
     transact: (fn) => storage.transact((tx) => fn(wrapTransaction(tx))),
     forkBranch: (tx, request) => storage.forkBranch(tx, request),
     backup: (options) => storage.backup(options),
+    artifactFiles: storage.artifactFiles,
   };
 }
 

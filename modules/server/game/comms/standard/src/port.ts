@@ -12,7 +12,7 @@ import {
   type DeliveryRoutingInput,
 } from "./delivery-routing";
 import type { DeliveryRoute } from "./comms-types";
-import { DomainError } from "@world-prism/contracts";
+import { comparePrincipalIds, DomainError } from "@world-prism/contracts";
 import {
   factionStandingNode,
   principalsAudience,
@@ -350,7 +350,7 @@ class StandardCommsPort implements GameCommsPort {
       : null;
     const deliveries = input.channel === "opening"
       ? [...new Set([input.fromId, ...recipients])]
-          .sort((left, right) => left.localeCompare(right))
+          .sort(comparePrincipalIds)
           .map((principalId) => ({ principalId, deliverAtTick: 0 }))
       : this.deliveries(input.channel === "broadcast" ? "broadcast" : "message", input.fromId, recipients, originNodeId);
     if (deliveries === null) {

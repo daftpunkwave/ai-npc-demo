@@ -179,11 +179,11 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；尚无数据来源的 `turnsRunning`、`maintenanceQueued`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；`queues` 给出 `turnsQueued` 与记忆维护的 `maintenanceQueued`、`maintenanceExhausted`；尚无数据来源的 `turnsRunning`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`recentFailures` 最多 10 条。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, modelQueue? }, laggingAgents?, budgets, recentFailures }` |
+| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, maintenanceExhausted?, modelQueue? }, laggingAgents?, budgets, recentFailures }` |
 | `GET /modules?realm=`（已实现） | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
 | `GET /assemblies`（已实现） | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
 | `GET /assemblies/{assemblyId}`（已实现） | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |
@@ -297,19 +297,29 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 { "error": { "code": "forbidden", "retryable": false, "safeMessage": "当前角色无权访问该接口", "traceId": "trc-...", "detailsArtifactRef": null } }
 ```
 
+下表只列 HTTP 接口实际会产生的 `error.code`：
+
 | HTTP | code | 场景 |
 |---|---|---|
 | 400 | `validation` | JSON 或 schema 不合法、未知命令类型、未知字段 |
 | 401 | `unauthenticated` | 缺少或无效的会话、令牌错误 |
 | 403 | `forbidden` / `realm-violation` | 角色不允许、Origin 不允许、玩家访问控制台接口、命令类型已登记但当前角色无权 |
 | 404 | `not-found` | 资源不存在 |
-| 409 | `idempotency-conflict` / `version-conflict` / `stale-controller` / `stale-turn` / `cancelled` / `invalid-state` | 同 ID 不同 payload、版本不符、控制权或 turn 已失效、操作已取消、当前状态不允许操作 |
+| 409 | `idempotency-conflict` / `version-conflict` / `invalid-state` | 同 ID 不同 payload、版本不符、当前状态不允许操作 |
 | 422 | `assembly-incompatible` / `module-missing` / `capability-conflict` | 装配或 run 预检失败 |
 | 429 | `budget-exhausted` | 预算或配额耗尽 |
-| 503 | `not-ready` / `paused` | 服务未就绪、分支正在静默或切换 |
+| 503 | `not-ready` | 服务未就绪、分支正在静默或切换 |
 | 500 | `plugin-failed` / `provider-failed` | 未预期的模块或供应商故障；`safeMessage` 不含内部细节 |
 
-业务规则拒绝（例如资源不足、路线不可用）不使用以上 HTTP 错误：命令被受理并写入 receipt，返回 200 和 `commandStatus: "rejected"`。
+业务规则拒绝（例如资源不足、路线不可用）不使用以上 HTTP 错误：命令被受理并写入 receipt，返回 200 和 `commandStatus: "rejected"`，原因放在 `receipt.reasonCode`。下列值容易与错误码混淆，它们只以这种方式出现，客户端不要在 `error.code` 中等待它们：
+
+| `receipt.reasonCode` | 场景 |
+|---|---|
+| `paused` | 世界时钟不在 running 或 stepping，命令不豁免暂停 |
+| `stale-controller` | Agent 命令缺少或携带过期的控制权 epoch、控制租约已过期，或角色已由非 Agent 控制者接管 |
+| `stale-turn` | Agent 命令缺少 turn 租约，或 turn 不存在、已结束、租约过期、租约代次与归属不符 |
+
+传输层的状态码映射覆盖登记表中的全部错误码，以保证任何 `DomainError` 都有确定的 HTTP 状态；其中 `cancelled` 只用于模型池工作租约失效与存储启动取消等进程内流程，`paused`、`stale-controller`、`stale-turn` 只作为上表的回执原因码出现，三者都没有 HTTP 接口的产生路径。
 
 `traceId` 的取值分两种情况，客户端不能假定它一定对应本次请求的 span：
 
@@ -379,7 +389,7 @@ interface TimelineItem {
   type: string;
   principalId: string | null;
   audience: AudienceSpec[] | null;
-  summaryZh: string;             // 使用 observationTemplates 渲染，展示真实世界视图
+  summaryZh: string;             // 领域事件为「事件类型 · 发出主体 ID」，生命周期事件为「事件类型 · 主体 ID」（无主体时为「系统」）；不经 observationTemplates 渲染
   payload: Json;
   correlationId: string | null;
   createdAt: string;
@@ -395,7 +405,8 @@ interface ModuleDescriptorView {
 }
 
 interface TurnSummary {
-  turnId: string; runId: string; branchId: string; agentId: string; agentTurnIndex: number;
+  turnId: string; runId: string; branchId: string; agentId: string;
+  agentTurnIndex: number;        // 同一分支内该 Agent 的第几个 turn，从 1 起计，与 turn 记录同一口径
   status: string; triggerKinds: string[]; terminalReason: string | null;
   createdAt: string; endedAt: string | null; modelCalls: number; toolCalls: number; tokens: { input: number | null; output: number | null };
 }

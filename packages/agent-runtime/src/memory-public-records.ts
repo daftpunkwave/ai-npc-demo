@@ -4,7 +4,8 @@
  * 约束与禁忌：禁止发布私有来源、跨分支读取或使用 Agent 局部 revision 作为公共边界。
  */
 import type { MemoryChangePlan, StorageRow, StorageTransaction } from "@world-prism/contracts";
-import { encodeMemoryRow, jsonObject, numberColumn, parseRecord } from "./memory-row-codec";
+import { visibleMemoryRecordsSql } from "./agent-hot-path-sql";
+import { decodeMemoryRow, encodeMemoryRow, jsonObject, numberColumn, parseRecord } from "./memory-row-codec";
 
 export const publicMemoryAgentId = "~public";
 
@@ -13,12 +14,10 @@ export function publicRevision(tx: StorageTransaction, branchId: string): number
   return typeof row?.["revision"] === "number" ? row["revision"] : 0;
 }
 
+/** 公共编年史在指定公共版本可见的活动行；与 Agent 私有记忆共用同一条按索引过滤的可见性查询。 */
 export function publicRows(tx: StorageTransaction, branchId: string, revision: number): readonly StorageRow[] {
-  return tx.branch(branchId).table("memory_records").list({ agent_id: publicMemoryAgentId }).filter((row) =>
-    numberColumn(row, "created_revision") <= revision &&
-    (row["retired_revision"] === null || numberColumn(row, "retired_revision") > revision) &&
-    row["status"] === "active",
-  );
+  return tx.all(visibleMemoryRecordsSql, [branchId, publicMemoryAgentId, revision, revision])
+    .map((row) => decodeMemoryRow(row));
 }
 
 export function validateMemorySources(tx: StorageTransaction, branchId: string, agentId: string, plan: MemoryChangePlan, frozenPublicRevision: number): void {

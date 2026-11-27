@@ -4,17 +4,16 @@
  * 禁止在这里发放资源事件之外的世界状态，也禁止覆盖已有库存。
  */
 import {
-  gameModuleIds,
   requireGameContent,
   type GameModulePorts,
   type GameRuleContributor,
 } from "@world-prism/module-sdk";
-import { resourcesOwnedAggregates } from "./definition";
+import { resourcesModuleDefinition, resourcesOwnedAggregates } from "./definition";
 
 /** 资源模块在 campaign.start 后初始化库存；不产生额外的公开事件。 */
 export function createResourcesContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
-    moduleId: gameModuleIds.resources,
+    moduleId: resourcesModuleDefinition.id,
     ownsAggregates: resourcesOwnedAggregates,
     afterCommands: [
       {

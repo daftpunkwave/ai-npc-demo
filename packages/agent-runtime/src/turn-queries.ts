@@ -7,7 +7,7 @@ import {
   dayPassedPayloadSchema, dialogueSubmittedPayloadSchema, DomainError, metersChangedPayloadSchema,
   passageGrantedPayloadSchema, policyChangedPayloadSchema, roadStatusSchema, type Json,
 } from "@world-prism/contracts";
-import type { ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
 import { findRoadPath } from "@world-prism/module-sdk";
 import { asRecord } from "./runtime-records";
 import type { QueryExecutionInput, ToolCallOutcome } from "./tool-gateway-types";

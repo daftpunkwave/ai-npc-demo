@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  comparePrincipalIds,
   deliveryListSchema,
   deliverySchema,
   domainEventPayloadSchemas,
@@ -380,6 +381,20 @@ describe("领域事件目录", () => {
     expectValid(deliveryListSchema, openings);
     expectInvalid(deliveryListSchema, [...openings].reverse());
     expectInvalid(deliveryListSchema, [openings[0], openings[0]]);
+  });
+
+  it("主体 ID 按 UTF-16 码元比较，与 locale 排序无关", () => {
+    expect(comparePrincipalIds("NPC-1", "npc_x")).toBeLessThan(0);
+    expect(comparePrincipalIds("npc_x", "NPC-1")).toBeGreaterThan(0);
+    expect(comparePrincipalIds("npc-1", "npc-1")).toBe(0);
+    expect(["npc_x", "player-1", "NPC-1", "npc1"].sort(comparePrincipalIds)).toEqual(["NPC-1", "npc1", "npc_x", "player-1"]);
+  });
+
+  it("投递名单的大小写与标点混排按码元序校验", () => {
+    const mixed = ["NPC-1", "npc1", "npc_x"].map((principalId) => ({ principalId, deliverAtTick: 0 }));
+    expectValid(deliveryListSchema, mixed);
+    // localeCompare 在 zh-CN 等 locale 下会把 "NPC-1" 排到 "npc_x" 之后，这样的名单必须被拒绝。
+    expectInvalid(deliveryListSchema, [mixed[2], mixed[0]]);
   });
 
   it("任务效果与侦察报告的结构", () => {

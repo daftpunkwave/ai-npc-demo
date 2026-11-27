@@ -5,7 +5,7 @@
  */
 export const packageName = "@world-prism/mod-transport-http-ws-fastify";
 
-export { transportConfigSchema, transportModuleDefinition } from "./definition";
+export { defaultAllowedOrigins, transportConfigSchema, transportModuleDefinition } from "./definition";
 export type { TransportConfig } from "./definition";
 export { TransportPort } from "./plugin";
 export { createServerApp, httpTransportLimits } from "./app";

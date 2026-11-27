@@ -1,5 +1,6 @@
 /**
- * 服务端组合根：显式登记全部 server 模块定义，并从已启动实例的公开端口装配运行期端口与规则贡献。
+ * 服务端组合根：显式登记全部 server 模块定义，并从已启动实例的公开端口装配运行期端口与规则贡献；
+ * 需要宿主注入查询的模块端口（如存档的检查点 tick 与事件前沿）在这里以时钟端口与 authority 的查询绑定。
  * 应用组合根只允许本文件引用模块包；其他 host 文件只经此入口取用。
  * 禁止在这里启动服务、打开存储、按模块 ID 挑选实现或手工构造模块实例。
  */
@@ -11,6 +12,7 @@ import {
   type InstanceScope,
   type StoragePort,
 } from "@world-prism/contracts";
+import { branchEventFrontier } from "@world-prism/authority";
 import type { PlannedModule, ResolvedRealmPlan, RunningInstance } from "@world-prism/kernel";
 import type {
   GameClockPort,
@@ -18,6 +20,8 @@ import type {
   GameModulePorts,
   GameRuleContributor,
   ModuleBinder,
+  SaveModulePort,
+  SavePort,
 } from "@world-prism/module-sdk";
 import { resolveGameModuleBindings } from "./game-port-binder";
 import { compressionNoneModuleDefinition } from "@world-prism/mod-agent-compression-none/definition";
@@ -48,7 +52,7 @@ import {
   escalatingScenarioModuleDefinition,
   scenarioModuleDefinition,
 } from "@world-prism/mod-game-scenario-watergate";
-import { saveModuleDefinition, SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
+import { saveModuleDefinition } from "@world-prism/mod-game-save-sqlite";
 import {
   accessPolicyModuleDefinition,
   type AccessPolicyPort,
@@ -134,11 +138,6 @@ export type {
   ServerIdentity,
 } from "@world-prism/mod-transport-http-ws-fastify";
 export type { ConversationReadPort, ConversationReadQuery, ConversationSourceLine } from "@world-prism/mod-transport-http-ws-fastify";
-
-/** 创建存档领域服务；宿主只经组合根引用具体实现。 */
-export function createSaveService(storage: StoragePort, host: HostServices): SqliteSaveService {
-  return new SqliteSaveService(storage, host);
-}
 
 /** 全部 server 模块定义；moduleId 唯一性由注册表与 check-catalog 校验。 */
 export const serverLiveModelTransportDefinitions = [openAICompatibleTransportDefinition, anthropicTransportDefinition] as const;
@@ -278,7 +277,8 @@ export interface ServerRuntime {
   readonly operations: OperationsFactory;
   readonly observability: ObservabilityPort;
   readonly moduleAdmin: ModuleAdminPort;
-  readonly save: SqliteSaveService;
+  /** 存档端口；宿主的快照、恢复与预检编排只经此端口，不依赖存档实现类。 */
+  readonly save: SavePort;
   readonly binder: ModuleBinder;
   readonly contributors: readonly GameRuleContributor<GameModulePorts, unknown>[];
 }
@@ -356,19 +356,26 @@ export function createServerRuntime(input: {
   const { plan, instances, content, host } = input;
   const { binder, contributors } = resolveGameModuleBindings({ plan, instances, content, host });
 
-  const savePort = portFor<{ readonly save?: SqliteSaveService }>(plan, instances, "game.save");
-  if (savePort.save === undefined) {
-    throw new Error("存档模块没有通过公开端口暴露存档服务");
+  const saveModule = portFor<Partial<SaveModulePort>>(plan, instances, "game.save");
+  if (typeof saveModule.bind !== "function") {
+    throw new Error("存档模块没有通过公开端口暴露存档绑定");
   }
+  const clock = portFor<GameClockPort>(plan, instances, "game.clock");
+  // 检查点事实归其他所有者：世界 tick 经时钟端口、事件前沿经 authority 查询注入，存档实现不直读 clock 与事件表。
+  // 两者都在绑定时注入而不进 requires，存档模块描述符与模块目录摘要保持不变，已冻结 run 的 manifest 仍可复算。
+  const save = saveModule.bind({
+    eventFrontier: branchEventFrontier,
+    worldTick: (tx, branchId) => clock.readInTransaction(tx, branchId).worldTick,
+  });
   return {
     storage: portFor<StoragePort>(plan, instances, "platform.storage"),
-    clock: portFor<GameClockPort>(plan, instances, "game.clock"),
+    clock,
     transport: portFor<TransportPort>(plan, instances, "transport.http-ws"),
     accessPolicy: portFor<AccessPolicyPort>(plan, instances, "platform.access-policy"),
     operations: portFor<OperationsFactory>(plan, instances, "platform.operations"),
     observability: portFor<ObservabilityPort>(plan, instances, "platform.observability"),
     moduleAdmin: portFor<ModuleAdminPort>(plan, instances, "platform.module-admin"),
-    save: savePort.save,
+    save,
     binder,
     contributors,
   };

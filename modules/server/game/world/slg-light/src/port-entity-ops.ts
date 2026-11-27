@@ -5,12 +5,12 @@
  */
 import {
   factionAudience,
-  gameModuleIds,
   principalsAudience,
   type GameContent,
   type GameWorldPort,
   type ScopedWorldTxFactory,
 } from "@world-prism/module-sdk";
+import { worldModuleDefinition } from "./definition";
 import { failure, type OpFailure, type OpSuccess } from "./port-result";
 import {
   characterStateSchema,
@@ -38,7 +38,7 @@ export function createWorldEntityOps({ txFor, content }: WorldEntityOpsDeps): Pi
   | "claimGroup"
   | "releaseGroup"
 > {
-  const tx = () => txFor(gameModuleIds.world);
+  const tx = () => txFor(worldModuleDefinition.id);
   return {
     moveCharacter(agentId: string, nodeId: string): OpSuccess | OpFailure {
       const record = readWorldState(tx(), "character", agentId, characterStateSchema);

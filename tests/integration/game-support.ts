@@ -18,9 +18,9 @@ import type {
 } from "@world-prism/contracts";
 import { domainEventPayloadSchemas } from "@world-prism/contracts";
 import { Authority, TransactionWorldTx } from "@world-prism/authority";
-import { loadContentPack, type ContentPack } from "@world-prism/experiment";
+import type { ContentPack } from "@world-prism/contracts";
+import { loadContentPack } from "@world-prism/experiment";
 import {
-  gameModuleIds,
   type AggregateListOptions,
   type GameClockPort,
   type GameContent,
@@ -32,9 +32,9 @@ import {
 } from "@world-prism/module-sdk";
 import { createClockPort } from "@world-prism/mod-game-clock-controlled";
 import { createMapContributor, createMapPort } from "@world-prism/mod-game-map-six-nodes";
-import { createCommsContributor, createCommsPort } from "@world-prism/mod-game-comms-standard";
+import { commsModuleDefinition, createCommsContributor, createCommsPort } from "@world-prism/mod-game-comms-standard";
 import { createActionsContributor, createActionsPort } from "@world-prism/mod-game-actions-standard";
-import { createAgreementsContributor, createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
+import { agreementsModuleDefinition, createAgreementsContributor, createAgreementsPort } from "@world-prism/mod-game-agreements-standard";
 import { createScenarioContributor, createScenarioPort } from "@world-prism/mod-game-scenario-watergate";
 import { createResourcesContributor, createResourcesPort } from "@world-prism/mod-game-resources-light";
 import { createWorldContributor, createWorldPort } from "@world-prism/mod-game-world-slg-light";
@@ -131,7 +131,7 @@ function bindGamePorts(
   const resources = createResourcesPort(txFor, { scarceRatio: 0.3, surplusRatio: 1.2 });
   const baseWorld = createWorldPort(txFor, gameContent, host.ids);
   const world = worldPortWrapper?.(baseWorld) ?? baseWorld;
-  const comms = createCommsPort(() => txFor(gameModuleIds.comms), gameContent, host.ids, world);
+  const comms = createCommsPort(() => txFor(commsModuleDefinition.id), gameContent, host.ids, world);
   const actions = createActionsPort(txFor);
   return {
     "game.map": map,
@@ -140,7 +140,7 @@ function bindGamePorts(
     "game.comms": comms,
     "game.actions": actions,
     "game.agreements": createAgreementsPort(
-      () => txFor(gameModuleIds.agreements),
+      () => txFor(agreementsModuleDefinition.id),
       { actions, comms, world, map },
       gameContent.factions,
     ),

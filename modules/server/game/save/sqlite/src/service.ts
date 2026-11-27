@@ -1,61 +1,47 @@
 /**
- * 存档服务：把在线分支复制为冻结快照，并在同一存储事务内从快照切换到后继在线分支；
- * 同时提供当前 campaign 的快照列表、恢复 dry-run 与可并入调用方事务的 InTransaction 变体。
- * 依赖 StoragePort 的分支复制，snapshots/branches/runs/world_aliases 与分支内 clock、事件表，
- * 以及宿主 ID/时间服务；不暂停时钟、不排空 job，也不校验时钟模式。
- * 暂停与排空由调用方在调用前完成；禁止覆盖已有分支、在冻结快照上继续写入、
- * 复用已存在的 run，在失败时留下部分写入，或用普通异常表示可预期的快照校验失败。
+ * 核心职责：SQLite 存档端口实现：把在线分支复制为冻结快照，并在同一存储事务内从快照切换到后继在线分支；
+ *   同时提供当前 campaign 的快照列表、恢复 dry-run 与可并入调用方事务的 InTransaction 变体。
+ * 交互契约：实现 module-sdk 的 SavePort；依赖 StoragePort 的分支复制与 snapshots/branches/runs/world_aliases 表、
+ *   宿主绑定时注入的检查点查询（分支 tick 与事件前沿），以及宿主 ID/时间服务；
+ *   不暂停时钟、不排空 job，也不校验时钟模式。
+ * 约束与禁忌：暂停与排空由调用方在调用前完成；禁止覆盖已有分支、在冻结快照上继续写入、
+ *   复用已存在的 run，在失败时留下部分写入，或用普通异常表示可预期的快照校验失败。
  */
 import {
   DomainError,
-  canonicalJson,
   type ForkBranchResult,
   type HostServices,
   type IdPrefix,
-  type Json,
-  type StorageCell,
   type StoragePort,
-  type StorageRow,
   type StorageTransaction,
 } from "@world-prism/contracts";
-import {
-  assertExpectedSource,
-  campaignBranchIds,
-  inspectSnapshot,
-  maxWorldSeq,
-  numberValue,
-  readFrozenSnapshot,
-  readSourceRun,
-  snapshotRecordOf,
-  stringValue,
-} from "./snapshot-read";
 import type {
   CreateSnapshotInput,
-  FrozenSnapshot,
-  RestoreExpectation,
   RestoreInspection,
   RestoreResult,
   RestoreSnapshotInput,
+  SaveHostQueries,
+  SavePort,
   SnapshotRecord,
-  SnapshotSourceRun,
-} from "./snapshot-types";
-
-export type {
-  CreateSnapshotInput,
-  RestoreResult,
-  RestoreSnapshotInput,
-  SnapshotRecord,
-  SnapshotSourceRun,
-} from "./snapshot-types";
-
+} from "@world-prism/module-sdk";
+import {
+  assertExpectedSource,
+  branchWorldTick,
+  campaignBranchIds,
+  inspectSnapshot,
+  snapshotRecordOf,
+  stringValue,
+} from "./snapshot-read";
 
 /** SQLite 存档实现；恢复在一次存储事务内完成分支、run、旧分支归档与在线别名切换。 */
-export class SqliteSaveService {
+export class SqliteSaveService implements SavePort {
   private readonly storage: StoragePort;
+  private readonly queries: SaveHostQueries;
   private readonly host: Pick<HostServices, "ids" | "nowIso">;
 
-  constructor(storage: StoragePort, host: Pick<HostServices, "ids" | "nowIso">) {
+  constructor(storage: StoragePort, queries: SaveHostQueries, host: Pick<HostServices, "ids" | "nowIso">) {
     this.storage = storage;
+    this.queries = queries;
     this.host = host;
   }
 
@@ -82,12 +68,10 @@ export class SqliteSaveService {
         details: { branchId: input.sourceBranchId },
       });
     }
-    const clock = tx.branch(input.sourceBranchId).table("clock").get({});
-    if (clock === null) {
-      throw new DomainError("invalid-state", `源分支 ${input.sourceBranchId} 缺少时钟记录`, {
-        details: { branchId: input.sourceBranchId },
-      });
-    }
+    const worldTick = branchWorldTick(this.queries, tx, input.sourceBranchId, {
+      message: `源分支 ${input.sourceBranchId} 缺少时钟记录`,
+      details: { branchId: input.sourceBranchId },
+    });
     const snapshotId = this.nextId("snap");
     const frozenBranchId = this.nextId("br");
     const fork: ForkBranchResult = this.storage.forkBranch(tx, {
@@ -99,8 +83,8 @@ export class SqliteSaveService {
       snapshotId,
       sourceBranchId: input.sourceBranchId,
       frozenBranchId: fork.branchId,
-      worldSeq: maxWorldSeq(tx, input.sourceBranchId),
-      worldTick: numberValue(clock["world_tick"], "clock.world_tick"),
+      worldSeq: this.queries.eventFrontier(tx, input.sourceBranchId),
+      worldTick,
       label: input.label,
       createdBy: input.createdBy,
       createdAt: this.host.nowIso(),
@@ -141,23 +125,16 @@ export class SqliteSaveService {
 
   /** 在调用方事务内执行恢复 dry-run；只读传入事务，不自行提交。 */
   inspectRestoreInTransaction(tx: StorageTransaction, snapshotId: string): RestoreInspection {
-    return inspectSnapshot(tx, snapshotId);
+    return inspectSnapshot(tx, snapshotId, this.queries);
   }
 
   /**
-   * 从快照切换在线世界：创建后继分支与绑定源 RunSpec 的新 run、结束旧 run、归档旧分支，
-   * 并原子切换 world_aliases('online')；任一步失败整体回滚，旧分支与别名保持原状。
-   */
-  restoreSnapshot(input: RestoreSnapshotInput): RestoreResult {
-    return this.storage.transact((tx) => this.restoreSnapshotInTransaction(tx, input));
-  }
-
-  /**
-   * 在调用方已开启的事务内从快照切换在线世界；供宿主把运营幂等记录并入同一次提交。
+   * 在调用方已开启的事务内从快照切换在线世界：创建后继分支与绑定源 RunSpec 的新 run、结束旧 run、
+   * 归档旧分支，并原子切换 world_aliases('online')；任一步失败由调用方事务整体回滚，旧分支与别名保持原状。
    * 只读写传入事务，不自行提交或回滚。
    */
   restoreSnapshotInTransaction(tx: StorageTransaction, input: RestoreSnapshotInput): RestoreResult {
-    const inspection = inspectSnapshot(tx, input.snapshotId);
+    const inspection = inspectSnapshot(tx, input.snapshotId, this.queries);
     if (input.expected !== undefined) {
       assertExpectedSource(input.expected, inspection);
     }
@@ -239,15 +216,3 @@ export class SqliteSaveService {
     };
   }
 }
-
-/** 存档服务公开类型；调用方只依赖这些方法。 */
-export type SaveService = Pick<
-  SqliteSaveService,
-  | "createSnapshot"
-  | "createSnapshotInTransaction"
-  | "listSnapshots"
-  | "inspectRestore"
-  | "inspectRestoreInTransaction"
-  | "restoreSnapshot"
-  | "restoreSnapshotInTransaction"
->;

@@ -21,7 +21,7 @@ import type {
   RevisionView,
   RunModelPort,
 } from "@world-prism/module-sdk";
-import type { ResolvedAgentProfile, Roster } from "@world-prism/experiment";
+import type { ResolvedAgentProfile, Roster } from "@world-prism/contracts";
 import { MemoryMaintenanceQueue, type ClaimedMaintenance } from "./memory-maintenance-queue";
 import { maintenanceModel } from "./maintenance-model";
 import { AgentModuleHandle } from "./agent-module-handle";

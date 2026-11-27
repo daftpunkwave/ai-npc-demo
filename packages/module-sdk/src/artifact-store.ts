@@ -1,9 +1,13 @@
 /**
- * 核心职责：持久化 Agent 原始结果、模型视图与已批准对白 artifact。
- * 交互契约：通过 storage 的 artifacts 表保存规范 JSON，并用注入的 host 生成 ID 与 hash。
- * 约束与禁忌：不得覆盖既有 artifact、读取跨 scope 内容或把文件 I/O 放进调用方事务。
+ * 核心职责：持久化 Agent 原始结果、模型视图与已批准对白 artifact，按存储端口的内联上限把大正文分流到文件，
+ *   并提供按 ID 取回正文的只读查询。
+ * 交互契约：通过 storage 的 artifacts 表登记规范 JSON，超过 artifactFiles.inlineMaxBytes 的正文经 artifactFiles 落盘；
+ *   用注入的 host 生成 ID，并对规范正文文本求 content_hash。artifactBodyText 与 readArtifactBody 在事务外取回正文，
+ *   读取方不需要知道列名与存储形态。
+ * 约束与禁忌：不得覆盖既有 artifact、读取跨 scope 内容或把文件 I/O 放进任何事务；作用域与权限由调用方在读取前裁决。
  */
 import {
+  DomainError,
   canonicalJson,
   checkJsonBudget,
   type HostServices,
@@ -11,6 +15,7 @@ import {
   type StoragePort,
   type StorageRow,
 } from "@world-prism/contracts";
+import type { ObservedArtifactBody } from "./observability-sources";
 
 const artifactKinds = ["tool-raw", "tool-view", "speech", "decision", "context", "model-request", "model-response", "export"] as const;
 
@@ -81,7 +86,13 @@ function requireNumber(row: StorageRow, key: string): number {
   return value;
 }
 
-function decodeBody(row: StorageRow): string {
+/**
+ * 在事务内被读取正文的 artifact 类型始终内联：turn 取消时在命令事务里用 SQL 读取对白 artifact 判断回复是否已发布，
+ * 事务内不能做文件 I/O。对白正文受命令文本长度上限约束，内联不会带来大对象。
+ */
+const alwaysInlineKinds: ReadonlySet<AgentArtifactKind> = new Set(["speech"]);
+
+function decodeInlineBody(row: StorageRow): string {
   const body = row["body"];
   if (body instanceof Uint8Array) {
     return new TextDecoder().decode(body);
@@ -90,6 +101,21 @@ function decodeBody(row: StorageRow): string {
     return body;
   }
   throw new Error("artifact body is missing or unsupported");
+}
+
+/**
+ * 取回 artifacts 行的正文文本：内联行直接解码，文件行经存储端口读取正文文件。
+ * 必须在事务外调用：文件行会触发文件 I/O，而存储只有一条写连接。
+ */
+export function artifactBodyText(storage: StoragePort, row: StorageRow): string {
+  if (row["storage"] !== "file") {
+    return decodeInlineBody(row);
+  }
+  const filePath = row["file_path"];
+  if (typeof filePath !== "string" || filePath.length === 0) {
+    throw new Error("artifact file_path is missing");
+  }
+  return new TextDecoder().decode(storage.artifactFiles.read(filePath));
 }
 
 /** 由存储支持的不可变 artifact 仓库，供工具与对白阶段共用。 */
@@ -109,29 +135,39 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
     assertDefinedJson(input.value, "value");
     const bodyText = canonicalJson(input.value);
     const body = new TextEncoder().encode(bodyText);
-    const contentHash = await this.host.hash(input.value);
+    // 对已得到的规范文本求摘要，与 host.hash(input.value) 结果相同，但不再对同一值序列化第二次。
+    const contentHash = await this.host.hashText(bodyText);
     const artifactId = input.artifactId ?? this.host.ids("art");
     const createdAt = this.host.nowIso();
-    this.storage.transact((tx) => {
-      const artifacts = tx.rows("artifacts");
-      if (artifacts.get({ artifact_id: artifactId }) !== null) {
-        throw new Error(`artifact ${artifactId} already exists`);
-      }
-      artifacts.put({
-        artifact_id: artifactId,
-        run_id: input.runId,
-        kind: input.kind,
-        content_hash: contentHash,
-        mime: "application/json",
-        byte_size: body.byteLength,
-        storage: "inline",
-        body,
-        file_path: null,
-        redaction: "raw",
-        redacted_from: null,
-        created_at: createdAt,
+    const files = this.storage.artifactFiles;
+    const inline = body.byteLength <= files.inlineMaxBytes || alwaysInlineKinds.has(input.kind);
+    // 正文文件在登记事务之前写入：事务内不做文件 I/O；登记失败时删除刚写入的文件，不留下无人引用的正文。
+    const filePath = inline ? null : files.write(artifactId, body);
+    try {
+      this.storage.transact((tx) => {
+        const artifacts = tx.rows("artifacts");
+        if (artifacts.get({ artifact_id: artifactId }) !== null) {
+          throw new Error(`artifact ${artifactId} already exists`);
+        }
+        artifacts.put({
+          artifact_id: artifactId,
+          run_id: input.runId,
+          kind: input.kind,
+          content_hash: contentHash,
+          mime: "application/json",
+          byte_size: body.byteLength,
+          storage: filePath === null ? "inline" : "file",
+          body: filePath === null ? body : null,
+          file_path: filePath,
+          redaction: "raw",
+          redacted_from: null,
+          created_at: createdAt,
+        });
       });
-    });
+    } catch (error) {
+      if (filePath !== null) files.remove(filePath);
+      throw error;
+    }
     return {
       artifactId,
       runId: input.runId,
@@ -150,7 +186,7 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
     if (!(artifactKinds as readonly string[]).includes(kind)) {
       throw new Error(`artifact ${artifactId} has unsupported kind ${kind}`);
     }
-    const bodyText = decodeBody(row);
+    const bodyText = artifactBodyText(this.storage, row);
     const bodyBytes = new TextEncoder().encode(bodyText);
     const declaredSize = requireNumber(row, "byte_size");
     if (bodyBytes.byteLength !== declaredSize) {
@@ -165,5 +201,24 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
       createdAt: requireString(row, "created_at"),
       value: JSON.parse(bodyText) as Json,
     };
+  }
+}
+
+/**
+ * 读取 artifact 的正文文本与所属 run；不存在时返回 null。
+ * 行在独立的短事务内读出，正文在事务外按登记方式取回（内联解码或读取正文文件），因此调用方不能处在事务中。
+ * 只返回存储中的原文，不按种类过滤、不做 JSON 解析，脱敏与审计由调用方负责。
+ */
+export function readArtifactBody(storage: StoragePort, artifactId: string): ObservedArtifactBody | null {
+  const row = storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
+  if (row === null) return null;
+  const runId = row["run_id"];
+  if (runId !== null && typeof runId !== "string") {
+    throw new DomainError("invalid-state", `artifact ${artifactId} 的 run_id 不是文本`);
+  }
+  try {
+    return { runId, body: artifactBodyText(storage, row) };
+  } catch (error) {
+    throw new DomainError("invalid-state", `artifact ${artifactId} 的正文缺失或无法读取`, { cause: error });
   }
 }

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { DomainError, type Json } from "@world-prism/contracts";
-import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ResolvedAgentProfile } from "@world-prism/contracts";
 import { modelContextBudget } from "../src/model-turn-materials";
 
 const profileId = "agent-strategic-default";

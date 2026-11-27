@@ -7,14 +7,20 @@ import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contract
 import { defineModule } from "@world-prism/module-sdk";
 import { z } from "zod";
 
+/**
+ * 缺省允许的 Origin：网页玩家端 5173 与同源控制台 3000。
+ * 配置 schema 与 createServerApp 共用这一份，直接嵌入应用而省略该选项时也不会把 /console/ 的同源请求拒成 403。
+ */
+export const defaultAllowedOrigins: readonly string[] = Object.freeze([
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
+]);
+
 export const transportConfigSchema = z
   .object({
     host: z.literal("127.0.0.1").default("127.0.0.1"),
     port: z.number().int().min(1).max(65535).default(3000),
-    allowedOrigins: z.array(z.string().url()).min(1).default([
-      "http://127.0.0.1:5173",
-      "http://127.0.0.1:3000",
-    ]),
+    allowedOrigins: z.array(z.string().url()).min(1).default(() => [...defaultAllowedOrigins]),
   })
   .strict();
 

@@ -5,7 +5,6 @@
  */
 import {
   addAmounts,
-  gameModuleIds,
   type CampaignView,
   type CharacterView,
   type DelegationView,
@@ -16,6 +15,7 @@ import {
   type ScopedWorldTxFactory,
   type TeamView,
 } from "@world-prism/module-sdk";
+import { worldModuleDefinition } from "./definition";
 import { viewOfMeters } from "./port-meter-ops";
 import { campaignAggregateId, metersAggregateId } from "./port-aggregates";
 import {
@@ -65,7 +65,7 @@ export interface WorldQueriesDeps {
 }
 
 export function createWorldQueries({ txFor, content }: WorldQueriesDeps): WorldQueries {
-  const tx = () => txFor(gameModuleIds.world);
+  const tx = () => txFor(worldModuleDefinition.id);
 
   const campaign = (): CampaignView | null => {
     const record = readWorldState(tx(), "campaign", campaignAggregateId, campaignStateSchema);

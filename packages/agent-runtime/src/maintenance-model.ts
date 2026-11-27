@@ -4,7 +4,7 @@
  * 约束与禁忌：禁止跨 Agent 复用、越过模型池或让模块自行选择路由。
  */
 import type { HostServices, MemoryScope } from "@world-prism/contracts";
-import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ResolvedAgentProfile } from "@world-prism/contracts";
 import type { ModelWorkScope, RunModelPort, ScopedModelPort } from "@world-prism/module-sdk";
 import type { ClaimedMaintenance } from "./memory-maintenance-queue";
 

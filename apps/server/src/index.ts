@@ -17,7 +17,9 @@ export type {
 } from "./host/catalog-check";
 export { filterPlan, loadAssembly, resolveServerAssembly, resolveSessionAssemblies, resolveServerModules } from "./host/assembly";
 export type { ResolvedServerAssembly, ResolveServerAssemblyOptions } from "./host/assembly";
-export { buildRunManifest, readFrozenManifest } from "./host/manifest";
+export { buildRunManifest, readFrozenManifest, rosterAgentKindsOf } from "./host/manifest";
+export { createObservabilitySources } from "./host/observability-sources";
+export type { ObservabilitySourcesInput } from "./host/observability-sources";
 export {
   assertMigrationScopeIsCapabilityClosure,
   migrateOnlineRun,
@@ -38,7 +40,6 @@ export { generateRunSeed, rngFor } from "./host/random";
 export { canonicalHasher } from "./host-services";
 export {
   clockConfigOf,
-  createSaveService,
   createServerRuntime,
   plannedModuleForCapability,
   serverRequiredCapabilities,
@@ -77,6 +78,8 @@ export { createProcessFaultHandlers, faultExitCode, installProcessFaultHandlers 
 export type { ProcessFaultHandlersInput, ProcessFaultReport } from "./process-faults";
 export { OperationJournal, operationRequestHash } from "./host/operation-journal";
 export type { OperationKey, OperationKind, OperationOutcome } from "./host/operation-journal";
+export { createOperationsHost } from "./host/operations";
+export type { OperationsHostInput } from "./host/operations";
 export { createTransportApp } from "./host/transport-app";
 export type { TransportAppInput } from "./host/transport-app";
 export {

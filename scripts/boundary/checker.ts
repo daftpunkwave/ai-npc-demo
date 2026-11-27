@@ -1,5 +1,5 @@
 /**
- * 边界检查编排：汇总模块元数据、逐文件执行 import 与文件头规则、再检查包清单与依赖图。
+ * 边界检查编排：汇总模块元数据、逐文件执行 import 与文件头规则、再检查包清单、依赖图、共享契约唯一定义与模块表名白名单。
  * 纯函数入口不读写文件系统，夹具字符串与 CLI 扫描结果走同一条规则链。
  * 禁止在此放行无法判定 kind 的模块、跳过文件或改变规则编号。
  */
@@ -12,6 +12,7 @@ import { dedupeAndSort, violation } from "./finding";
 import { checkFileHeader } from "./header";
 import { inspectImport } from "./import-rules";
 import { collectImports } from "./lexer";
+import { checkModuleTables } from "./module-tables";
 import { checkModuleManifests, parseModuleDirectory, readDefinitionKind } from "./modules";
 import {
   findOwningPackage,
@@ -20,6 +21,7 @@ import {
   resolveWorkspaceImport,
 } from "./package-registry";
 import { isSkippedPath, isToolConfigFile, nodeBuiltinName, normalizeRepoPath, packageNameOfSpecifier } from "./paths";
+import { checkSharedContracts } from "./shared-contracts";
 import type {
   BoundaryCheckInput,
   BoundaryPackage,
@@ -140,6 +142,8 @@ export function checkBoundaries(input: BoundaryCheckInput): readonly BoundaryVio
   violations.push(...checkModuleManifests(packages, modulePackages));
   violations.push(...checkDependencyGraph(packages, productionImports));
   violations.push(...checkSourceFileLengths(files));
+  violations.push(...checkSharedContracts(files, packagesBySpecificity));
+  violations.push(...checkModuleTables(files, packagesBySpecificity));
   return dedupeAndSort(violations);
 }
 

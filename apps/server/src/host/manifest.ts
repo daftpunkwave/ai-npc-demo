@@ -1,11 +1,11 @@
 /**
- * 冻结一次 run 的解析结果：内容版本、seed、实际装配引用与每个模块的解析后配置。
- * 依赖 kernel 的规范化摘要、实验包的 RunSpec/名册类型与已解析 server 装配；不访问存储、不启动模块。
+ * 冻结一次 run 的解析结果：内容版本、seed、实际装配引用与每个模块的解析后配置，并从冻结 manifest 读回关键字段与名册。
+ * 依赖 kernel 的规范化摘要、实验包的 RunSpec 类型、公共契约的名册类型与已解析 server 装配；不访问存储、不启动模块。
  * 禁止写入密钥或凭据，禁止用原始 JSON.stringify、模块 ID 或截断摘要代替规范化哈希。
  * 未声明 Agent 槽位时不解析 profile、toolset 与模型布局，只保留名册选择供运行记录。
  */
-import type { Json } from "@world-prism/contracts";
-import type { Roster, RunSpec } from "@world-prism/experiment";
+import type { Json, Roster } from "@world-prism/contracts";
+import type { RunSpec } from "@world-prism/experiment";
 import { computeConfigHash, type CanonicalHasher } from "@world-prism/kernel";
 import { canonicalHasher } from "../host-services";
 import type { ResolvedServerAssembly } from "./assembly";
@@ -147,6 +147,47 @@ function manifestString(value: Json | undefined, label: string): string {
     throw new Error(`冻结 manifest 缺少 ${label}`);
   }
   return value;
+}
+
+type ManifestRosterAgent = RunManifest["roster"]["agents"][number];
+
+/**
+ * 冻结 manifest 中名册条目的路径；键名受 RunManifest 约束，
+ * 名册的嵌套或字段名调整时这里在类型检查阶段失败，读取方不会静默得到空名册。
+ */
+const rosterPath = {
+  roster: "roster",
+  agents: "agents",
+  agentId: "agentId",
+  kind: "kind",
+} as const satisfies {
+  readonly roster: keyof RunManifest;
+  readonly agents: keyof RunManifest["roster"];
+  readonly agentId: keyof ManifestRosterAgent;
+  readonly kind: keyof ManifestRosterAgent;
+};
+
+function jsonRecord(value: Json | undefined): Readonly<Record<string, Json>> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Readonly<Record<string, Json>>
+    : null;
+}
+
+/**
+ * 读取冻结 manifest 中名册登记的 Agent 及其种类。run 尚未冻结 manifest 或 manifest 不带名册时没有登记的 Agent；
+ * agentId 不是文本的条目不视为登记，种类缺失时为 null。
+ */
+export function rosterAgentKindsOf(manifest: Json): ReadonlyMap<string, string | null> {
+  const kinds = new Map<string, string | null>();
+  const agents = jsonRecord(jsonRecord(manifest)?.[rosterPath.roster])?.[rosterPath.agents];
+  if (!Array.isArray(agents)) return kinds;
+  for (const entry of agents) {
+    const agent = jsonRecord(entry);
+    const agentId = agent?.[rosterPath.agentId];
+    const kind = agent?.[rosterPath.kind];
+    if (typeof agentId === "string") kinds.set(agentId, typeof kind === "string" ? kind : null);
+  }
+  return kinds;
 }
 
 /** 读取并校验冻结 manifest 的关键字段；字段损坏时拒绝按它启动。 */

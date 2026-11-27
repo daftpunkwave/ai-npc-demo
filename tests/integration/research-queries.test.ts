@@ -1,13 +1,16 @@
 /**
  * 核心职责：验证观测查询与调试审计在独立分支、异常存储行和队列变化下的结果。
- * 交互契约：直接调用观测端口，使用独立 SQLite 与确定性 HostServices。
- * 约束与禁忌：不启动 HTTP、模型或后台调度器，不复用游戏数据库。
+ * 交互契约：直接调用观测端口，并按宿主同样的组合绑定数据所有者的数据源查询；使用独立 SQLite、
+ *   时钟 provider 与确定性 HostServices。
+ * 约束与禁忌：不启动 HTTP、模型或后台调度器，不复用游戏数据库；本文件用例不读取角色位置。
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createObservabilitySources } from "@world-prism/app-server";
 import { canonicalJson, type Json, type ModuleInstance, type StoragePort, type StorageTransaction } from "@world-prism/contracts";
+import { clockConfigSchema, createClockPort } from "@world-prism/mod-game-clock-controlled";
 import { ObservabilityPort } from "@world-prism/mod-platform-observability-sqlite";
 import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost } from "./authority-support";
@@ -55,6 +58,15 @@ describe("研究查询与审计端口", () => {
     await instance.start(signal);
     storage = instance.port as StoragePort;
     observability = new ObservabilityPort(storage, { timelineLimit: 200 }, host);
+    const clock = createClockPort(storage, clockConfigSchema.parse({}), () => host.nowIso());
+    observability.bind(createObservabilitySources({
+      storage,
+      host,
+      worldTick: (tx, branchId) => clock.readInTransaction(tx, branchId).worldTick,
+      worldIn: () => {
+        throw new Error("研究查询用例不读取角色位置");
+      },
+    }));
     storage.transact((tx) => {
       tx.rows("worlds").put({ world_id: worldId, pack_id: "test", content_version: "1.0.0", created_at: createdAt });
       for (const { branchId, runId } of [left, right]) {
@@ -125,7 +137,7 @@ describe("研究查询与审计端口", () => {
     });
     expect(() => observability.branchCompare(left.branchId, right.branchId, 0)).toThrow(expect.objectContaining({
       code: "invalid-state",
-      safeMessage: "观测 JSON 文本无法解析",
+      safeMessage: "存储表 domain_events 的列 payload_json 不是合法 JSON 文本",
     }));
   });
 

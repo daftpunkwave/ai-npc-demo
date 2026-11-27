@@ -191,6 +191,7 @@ describe("共享模型池与预算", () => {
         },
       }))),
       forkBranch: (tx, input) => inner.forkBranch(tx, input), backup: (input) => inner.backup(input),
+      artifactFiles: inner.artifactFiles,
     });
     const harness = await poolHarness(complete, null, stage === "evidence" ? wrapStorage : undefined, null,
       (budget) => stage === "budget" ? { ...budget, reserve: () => { throw new DomainError("budget-exhausted", "budget changed while queued"); } } : budget);

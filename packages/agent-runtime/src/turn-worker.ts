@@ -7,7 +7,7 @@ import {
   canonicalJson, DomainError, toModelToolName,
   type AgentTurnStatus, type AuthContext, type CommandEnvelope, type CommandReceipt, type Json, type NormalizedToolCall,
 } from "@world-prism/contracts";
-import type { ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ResolvedAgentProfile } from "@world-prism/contracts";
 import type {
   DeterministicDecisionInput,
   DeterministicDecisionPort,

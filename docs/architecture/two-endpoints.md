@@ -186,7 +186,7 @@ flowchart LR
 
 | 页面模块 | 角色 | 数据来源 | 视图 | 操作 |
 |---|---|---|---|---|
-| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度、水位落后的 Agent、预算消耗、最近 10 条失败 | 无 |
+| `console.health.standard` | operator、researcher | `GET /console/health`，WS `console.health` | 整体健康状态、端口、三个 realm 的就绪状态、装配 hash、时钟、有数据来源的队列长度（待执行 turn、记忆维护排队与耗尽数）、预算消耗、最近 10 条失败；水位落后的 Agent 尚无数据来源，响应省略该字段 | 无 |
 | `console.module-admin.standard` | operator、researcher | `/console/modules`、`/console/assemblies*` | catalog 表（按 realm 筛选）、装配列表、各 realm 的解析结果 | 查看 catalog 与装配详情（预检、diff 与保存草稿为目标能力） |
 | `console.model-mounts.standard` | operator、researcher | `/console/model-layouts*` | 布局列表；布局详情（连接只显示适配器、主机名与 `credentialRef` 名称）；“按模型看挂载”与“按角色看路由”两个视图 | 静态校验布局草稿（保存草稿与连通性探测为目标能力） |
 | `console.faction-ops.standard` | operator | `/console/campaign/*`（`/console/ops/*`、`/console/run-requests` 为目标） | 时钟状态；存档列表（三个非人类势力席位状态、接管视图与运行申请为目标视图） | 暂停/继续/单步 N tick；存档；恢复（席位接管/交还、席位命令与运行申请审批为目标操作） |

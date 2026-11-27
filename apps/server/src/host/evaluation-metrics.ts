@@ -2,7 +2,8 @@
  * 核心职责：从归档行聚合 run 报告的各项指标：成本、turn 时长与延迟、记忆分层、行为记录，
  * 以及行为记录需要的 artifact 正文、触发器种类与命令类型查询。
  * 交互契约：输入已读取的行集合与必要的存储事务，返回控制台报告字段；缺失字段按契约回退，不编造值。
- * 约束与禁忌：不执行查询以外的工作、不写存储，也不为缺失的触发器或立场填默认值。
+ * 以文件存放的 artifact 正文由调用方在事务外预先装载后传入。
+ * 约束与禁忌：不执行查询以外的工作、不写存储、不在事务内读取文件，也不为缺失的触发器或立场填默认值。
  */
 import type { Json, StorageTransaction } from "@world-prism/contracts";
 import type {
@@ -97,6 +98,8 @@ export function memoryOf(input: {
 export function behaviorOf(input: {
   readonly tx: StorageTransaction;
   readonly turns: readonly Readonly<Record<string, unknown>>[];
+  /** 事务外预先装载的文件存放 artifact 正文，键为 artifact ID。 */
+  readonly fileBodies: ReadonlyMap<string, string>;
 }): readonly ReportBehavior[] {
   const behavior: ReportBehavior[] = [];
   for (const turn of input.turns) {
@@ -112,7 +115,7 @@ export function behaviorOf(input: {
       ? (effective as Readonly<Record<string, Json>>)["artifactId"]
       : null;
     if (typeof artifactId !== "string") continue;
-    const archived = artifactValue(input.tx, artifactId);
+    const archived = artifactValue(input.tx, artifactId, input.fileBodies);
     if (archived === null || typeof archived !== "object" || Array.isArray(archived)) continue;
     const decision = (archived as Readonly<Record<string, Json>>)["decision"];
     if (typeof decision !== "object" || decision === null || Array.isArray(decision)) continue;
@@ -141,16 +144,25 @@ export function behaviorOf(input: {
   return behavior;
 }
 
-/** 读取 decision artifact 的解码后正文；引用失效或内容不是 JSON 时返回 null。 */
-export function artifactValue(tx: StorageTransaction, artifactId: string): Json | null {
+/**
+ * 读取 decision artifact 的解码后正文；引用失效、文件正文未预先装载或内容不是 JSON 时返回 null。
+ * 文件存放的正文只从 fileBodies 取：本函数在报告的只读事务内运行，不能做文件 I/O。
+ */
+export function artifactValue(
+  tx: StorageTransaction,
+  artifactId: string,
+  fileBodies: ReadonlyMap<string, string>,
+): Json | null {
   const row = tx.rows("artifacts").get({ artifact_id: artifactId });
   if (row === null) return null;
   const body = row["body"];
-  const text = typeof body === "string"
-    ? body
-    : body instanceof Uint8Array
-      ? new TextDecoder().decode(body)
-      : null;
+  const text = row["storage"] === "file"
+    ? fileBodies.get(artifactId) ?? null
+    : typeof body === "string"
+      ? body
+      : body instanceof Uint8Array
+        ? new TextDecoder().decode(body)
+        : null;
   if (text === null) return null;
   try {
     return JSON.parse(text) as Json;

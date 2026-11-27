@@ -4,7 +4,7 @@
  * 禁止调用模块与模型，或暴露跨 agent 读取。
  */
 import { completeMemoryMaintenance } from "./memory-maintenance-publication";
-import { latestDayPassedSql } from "./agent-hot-path-sql";
+import { currentMemoryRecordsSql, latestDayPassedSql, visibleMemoryRecordsSql } from "./agent-hot-path-sql";
 
 import { publicRevision, publicRows, publishPublicRecords, validateMemorySources } from "./memory-public-records";
 import {
@@ -22,6 +22,7 @@ import type {
   RevisionView,
 } from "@world-prism/module-sdk";
 import {
+  decodeMemoryRow,
   decodeObservationRow,
   encodeMemoryRow,
   jsonObject,
@@ -159,15 +160,9 @@ export class MemoryStore {
       if (revisionRow === null) {
         throw new Error(`agent ${agentId} memory revision ${revision} is not available`);
       }
-      const records = tx.branch(this.branchId)
-        .table("memory_records")
-        .list({ agent_id: agentId })
-        .filter((row) =>
-          numberColumn(row, "created_revision") <= revision &&
-          (row["retired_revision"] === null || numberColumn(row, "retired_revision") > revision) &&
-          row["status"] === "active",
-        )
-        .map((row) => parseRecord(row));
+      // 可见性在 SQL 里按 memory_visible 索引过滤：只把该 revision 可见的行读进内存。
+      const records = tx.all(visibleMemoryRecordsSql, [this.branchId, agentId, revision, revision])
+        .map((row) => parseRecord(decodeMemoryRow(row)));
       const publicRecords = publicRows(tx, this.branchId, numberColumn(revisionRow, "public_revision"))
         .map((row) => parseRecord(row));
       records.push(...publicRecords);
@@ -314,10 +309,9 @@ export class MemoryStore {
   }
 
   private currentRows(tx: StorageTransaction, agentId: string): readonly CurrentRecord[] {
-    return tx.branch(this.branchId)
-      .table("memory_records")
-      .list({ agent_id: agentId })
-      .filter((row) => row["retired_revision"] === null)
+    // 只取当前行版本，已退役的历史行版本留在 SQLite 中，不随每次提交读进内存。
+    return tx.all(currentMemoryRecordsSql, [this.branchId, agentId])
+      .map((row) => decodeMemoryRow(row))
       .sort((left, right) =>
         stringColumn(left, "memory_id").localeCompare(stringColumn(right, "memory_id")) ||
         numberColumn(right, "row_version") - numberColumn(left, "row_version"),

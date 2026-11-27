@@ -19,7 +19,7 @@ describe("createScopedStateKey", () => {
       worldId: "wld-000000000000",
       branchId: "br-000000000000",
       agentId: null,
-      moduleId: "game.clock.controlled",
+      moduleId: "platform.sdk-fixture.standard",
       stateSchemaVersion: 2,
     });
   });
@@ -52,7 +52,7 @@ describe("createScopedStateKey", () => {
 
   it("模块 ID 不一致时报错", () => {
     expectDomainError(
-      () => createScopedStateKey(statefulDefinition, createInput({ moduleId: "game.map.six-nodes" })),
+      () => createScopedStateKey(statefulDefinition, createInput({ moduleId: "platform.sdk-fixture.other" })),
       "assembly-incompatible",
     );
   });

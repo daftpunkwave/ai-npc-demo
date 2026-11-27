@@ -6,7 +6,7 @@
 import {
   estimateModelInputTokens, resolveContextTokenLimits, type AgentTurnStatus, type ContextArtifact, type HostServices, type MemoryBundle,
 } from "@world-prism/contracts";
-import type { ContentPack, ResolvedAgentProfile } from "@world-prism/experiment";
+import type { ContentPack, ResolvedAgentProfile } from "@world-prism/contracts";
 import type {
   AgentArtifactStore, AgentCompressionPort, AgentContextPort, ModelCallInput, ModelDecisionPort, ModelWorkScope, RunModelPort,
 } from "@world-prism/module-sdk";
