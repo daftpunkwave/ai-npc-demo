@@ -40,6 +40,18 @@ export function recordExperimentAudit(storage: StoragePort, host: HostServices, 
   storage.transact((tx) => { recordExperimentAuditIn(tx, host, entry); });
 }
 
+/**
+ * 实验分支上已写入 `ExperimentProbeCompleted` 的探针 ID。这条审计与探针结果按 turn 终态的落定在同一事务提交，
+ * 因此它是「结果已是终局」的唯一判据；只有 `probe_results` 行而没有它，说明探针 turn 写下回答后执行被打断。
+ */
+export function finalizedProbeIds(tx: StorageTransaction, branchId: string): ReadonlySet<string> {
+  return new Set(tx.all(
+    `SELECT json_extract(payload_json, '$.probeId') AS probe_id FROM lifecycle_events
+      WHERE branch_id = ? AND type = 'ExperimentProbeCompleted'`,
+    [branchId],
+  ).flatMap((row) => typeof row["probe_id"] === "string" ? [row["probe_id"]] : []));
+}
+
 /** 读取实验分支上最近一条执行器审计事件；没有时为 null。 */
 export function latestExperimentAudit(
   tx: StorageTransaction,

@@ -567,7 +567,7 @@ CREATE TABLE probe_results (
 );
 ```
 
-`probe_results` 由 agent-runtime 写入：探针 turn 在 speaking 阶段写入回答（模型路径退回安全模板记 `speech-fallback`，严格失败策略下模型被替换记 `model-substituted`），没有对白意图时写入 `no-dialogue`；实验执行器在探针 turn 失败或未被调度时补写 `turn-failed`，对白写入后 turn 在结算阶段失败的把该行改判为无效。执行器按 `run_id` 与 `probe_id` 判断探针是否已有结果，已有结果的探针在恢复执行时不重复提问；读取方直接采用 `valid` 与 `invalid_reason`。`experiment_results` 由实验执行器在 run 完成时按评估报告口径逐指标写入，`details_json` 记录变体、脚本分支、有效性与无效样本计数；两张表都按 `run_id` 归档，不随分支复制。
+`probe_results` 由 agent-runtime 写入：探针 turn 在 speaking 阶段写入回答（模型路径退回安全模板记 `speech-fallback`，严格失败策略下模型被替换记 `model-substituted`），没有对白意图时写入 `no-dialogue`；实验执行器在探针 turn 失败或未被调度时补写 `turn-failed`，对白写入后 turn 在结算阶段失败的把该行改判为无效。执行器按 `run_id` 与 `probe_id` 判断探针是否已有结果，已有结果的探针在恢复执行时不重复提问；结果是否已按 turn 终态落定以实验分支上的 `ExperimentProbeCompleted` 审计为准，只有回答行而未落定的，按当时沙盒里 turn 的终态补判（未到 `completed` 改判 `turn-failed`）；读取方直接采用 `valid` 与 `invalid_reason`。`experiment_results` 由实验执行器在 run 完成时按评估报告口径逐指标写入，`details_json` 记录变体、脚本分支、有效性与无效样本计数；两张表都按 `run_id` 归档，不随分支复制。
 
 L6 公共编年史以 `agent_id = '~public'` 在分支内保存单份记录。公共行使用分支公共版本，不能与某个 Agent 的局部 `revision` 比较。每个记忆 revision 持久保存当时的 `public_revision`；读取时只合并该边界可见的活动公共版本，检索同时按查询 `worldTick` 过滤有效时间。之后发布的公共行不会改变旧视图。公共行提交在同一事务内校验记录种类、公开策略、所有来源观察及来源事件键，并按分支和规范化事件键去重。引用其他 Agent 的公共来源时，只接受冻结公共视图中已绑定且确实为公开观察的来源。
 

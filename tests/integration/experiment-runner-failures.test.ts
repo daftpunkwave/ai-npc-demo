@@ -303,6 +303,67 @@ describe("实验执行器的配额与失败路径", () => {
     expect(activeIdentityCount(host)).toBe(0);
   }, 120_000);
 
+  it("探针写下回答后执行被打断时，恢复按原沙盒 turn 的终态补判，不重问也不把未完成的回答当有效样本", async () => {
+    const host = await experimentHost(resources);
+    const headers = await researcherHeaders(host);
+    const runIds = await createExperimentRuns(host, headers, experimentSpec({
+      experimentId: "exp-runner-probe-interrupted-v1", scriptBranches: ["keep", "break"],
+    }));
+    expect(runIds).toHaveLength(2);
+    // 一个 run 的探针 turn 停在结算阶段，另一个在打断前已完成：前者改判 turn-failed，后者保留有效回答。
+    const cases = [
+      { runId: runIds[0] as string, turnStatus: "settling", valid: 0, invalidReason: "turn-failed" },
+      { runId: runIds[1] as string, turnStatus: "completed", valid: 1, invalidReason: null },
+    ] as const;
+    for (const [index, { runId, turnStatus, valid, invalidReason }] of cases.entries()) {
+      const branchId = branchOf(host, runId);
+      await startRun(host, headers, runId, `op-00000000072${index}`);
+      await vi.waitFor(() => expect(worldTickOf(host, branchId)).toBeGreaterThanOrEqual(3), { timeout: 30_000, interval: 5 });
+      await stopRun(host, headers, runId, `op-00000000073${index}`);
+      await vi.waitFor(() => expect(experimentAudit(host, branchId).at(-1)?.type).toBe("ExperimentRunStopped"), { timeout: 30_000, interval: 20 });
+      // 还原探针 turn 已写下回答、执行器还没来得及按 turn 终态落定就被打断的现场：沙盒已归档，
+      // 沙盒里有这次提问的 ProbeAsked 与被问 Agent 的 turn，probe_results 有一条有效回答，但没有 ExperimentProbeCompleted。
+      const sandboxId = `br-0000000intr${index}`;
+      host.storage.transact((tx) => {
+        const now = new Date().toISOString();
+        tx.rows("branches").put({
+          branch_id: sandboxId, world_id: host.worldId, kind: "sandbox", status: "archived",
+          parent_branch_id: branchId, forked_at_world_seq: 0, run_id: null, profile_hash: null, created_at: now,
+        });
+        tx.run(
+          `INSERT INTO domain_events (branch_id, world_seq, event_id, world_tick, type, schema_version, principal_id,
+             causation_ids_json, correlation_id, audience_json, payload_json, committed_at)
+           VALUES (?, 1, ?, 62, 'ProbeAsked', 1, 'system:world', '[]', ?, '{"kind":"principals","principalIds":["human-independent"]}', ?, ?)`,
+          [sandboxId, `evt-0000000intr${index}`, `cor-0000000intr${index}`,
+            JSON.stringify({ probeId: "p-recall-promise", agentId: "human-independent", askedBy: "player-1", question: "党魁之前答应过你什么？做到了吗？" }), now],
+        );
+        tx.rows("turn_runs").put({
+          turn_id: `turn-000000intr${index}`, run_id: runId, branch_id: sandboxId, agent_id: "human-independent",
+          agent_turn_index: 1, status: turnStatus, trigger_ids_json: [], profile_hash: "hash", controller_epoch: 1,
+          turn_lease_epoch: 1, created_tick: 62, effective_json: [], created_at: now, started_at: now,
+          ended_at: turnStatus === "completed" ? now : null,
+        });
+        tx.rows("probe_results").put({
+          probe_result_id: `prb-000000intr${index}`, run_id: runId, script_id: "s-promise", probe_id: "p-recall-promise",
+          agent_id: "human-independent", asked_at_tick: 62, answer_text: "你答应给隘口送 8 点供给。", decision_json: null,
+          score_json: null, valid: 1, invalid_reason: null, created_at: now,
+        });
+      });
+
+      await startRun(host, headers, runId, `op-00000000074${index}`);
+      expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
+      // 不重新提问：只有这一条结果、没有新的沙盒，判定来自原沙盒的 turn。
+      expect(probeResults(host, runId).map((row) => [row["probe_result_id"], row["valid"], row["invalid_reason"]]))
+        .toEqual([[`prb-000000intr${index}`, valid, invalidReason]]);
+      expect(sandboxesOf(host, branchId).map((row) => row["branch_id"])).toEqual([sandboxId]);
+      expect(experimentAudit(host, branchId).filter(({ type }) => type === "ExperimentProbeCompleted").map(({ payload }) => payload))
+        .toEqual([expect.objectContaining({
+          probeId: "p-recall-promise", sandboxBranchId: sandboxId, recovered: true,
+          turnStatus, valid: valid === 1, invalidReason,
+        })]);
+    }
+  }, 180_000);
+
   it("收敛超时、不支持的脚本与宿主装配不一致都显式失败", async () => {
     const strict = await experimentHost(resources, { experimentSettleTimeoutMs: 0 });
     const strictHeaders = await researcherHeaders(strict);
