@@ -73,6 +73,8 @@ function viewOf(layout: ModelLayout): ModelLayoutView {
       {
         connectionId: model.connectionId,
         externalModel: model.externalModel,
+        // 别名原样展示：列表或 env 引用名；与 endpoint 不同，它不含主机或凭据，无需去敏。
+        ...(model.servedModels === undefined ? {} : { servedModels: model.servedModels }),
         parameters: model.parameters,
         capabilities: model.capabilities,
         limits: model.limits,

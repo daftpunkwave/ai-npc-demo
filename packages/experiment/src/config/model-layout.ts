@@ -6,7 +6,17 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
-import { configRefSchema, jsonValueSchema, modelCapabilitiesSchema, modelFixtureSchema, modelPurposeSchema, moduleIdSchema, principalIdSchema } from "@world-prism/contracts";
+import {
+  configRefSchema,
+  jsonValueSchema,
+  maxServedModelAliases,
+  modelCapabilitiesSchema,
+  modelFixtureSchema,
+  modelPurposeSchema,
+  moduleIdSchema,
+  principalIdSchema,
+  servedModelsSchema,
+} from "@world-prism/contracts";
 import { LoadingError, schemaLoadingError } from "../loading/errors";
 import { envReferenceName, loadConfigDocument, type ConfigLoadContext } from "./load-config";
 
@@ -23,19 +33,11 @@ const connectionSchema = z.object({
   fixtureFiles: z.array(fixturePath).max(32).default([]),
 }).strict();
 
-const maxServedModels = 16;
-
 /**
- * 供应商响应报告的、与 externalModel 视为同一模型的名称，逐个精确匹配。
- * 有的网关按请求名路由、却在响应里报告上游名称；声明后这些响应不算模型替换。
- * 可写成名称列表，或写成 env 引用由宿主预检时解析逗号分隔的列表。
- * 不设默认值：未声明的布局解析结果不出现该键，既有布局的冻结摘要保持不变。
+ * 供应商响应报告的、与 externalModel 视为同一模型的名称，逐个精确匹配；schema 由 contracts 的 servedModelsSchema
+ * 统一定义，仓库布局文件与控制台草稿共用。不设默认值：未声明的布局解析结果不出现该键，既有布局的冻结摘要保持不变。
  */
-const servedModelsSchema = z.union([
-  z.string().regex(/^env:/u),
-  z.array(name).min(1).max(maxServedModels)
-    .refine((names) => new Set(names).size === names.length, { message: "servedModels 不得重复" }),
-]);
+const maxServedModels = maxServedModelAliases;
 
 const modelSchema = z.object({
   connectionId: configRefSchema,
