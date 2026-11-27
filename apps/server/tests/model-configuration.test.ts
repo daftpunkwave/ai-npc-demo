@@ -1,5 +1,6 @@
 /**
- * 核心职责：验证模型挂载预检对供应商返回名别名的冻结，并锁定仓库既有模型布局与价目的冻结摘要。
+ * 核心职责：验证模型挂载预检对供应商返回名别名与推理开关（含环境变量形式）的冻结，
+ * 并锁定仓库既有模型布局与价目的冻结摘要。
  * 交互契约：经 resolveRunConfiguration 走创建 run 与实验执行器共用的解析实现；布局变体经草稿读取注入，
  * 部署环境只经加载上下文的 env 字典注入。
  * 约束与禁忌：不启动宿主、不打开存储、不发模型请求，不读写进程环境变量。
@@ -99,5 +100,49 @@ describe("供应商返回名别名的冻结", () => {
       expect(configHash).not.toBe(priorHash);
     });
     expect(before.routes.every((route) => !Object.hasOwn(route, "servedModels"))).toBe(true);
+  });
+});
+
+describe("推理开关与返回名别名的环境变量", () => {
+  const shared = loadModelLayout("shared-model-layout-v1", contextOf(deepseekEnv));
+  const sharedChat = shared.models["npc-chat"];
+  if (sharedChat === undefined || typeof sharedChat.parameters !== "object" || sharedChat.parameters === null ||
+    Array.isArray(sharedChat.parameters)) throw new Error("共享布局缺少 npc-chat 的参数对象");
+  const envDriven: ModelLayout = {
+    ...shared, layoutId: "env-switch-draft",
+    models: { "npc-chat": {
+      ...sharedChat, servedModels: "env:WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS",
+      parameters: { ...sharedChat.parameters, thinking: "env:WORLD_PRISM_OPENAI_COMPAT_THINKING" },
+    } },
+  };
+  const resolveWith = (env: Readonly<Record<string, string>>) =>
+    frozenModels({ loadContext: contextOf({ ...deepseekEnv, ...env }, [envDriven]), modelLayoutRef: envDriven.layoutId });
+
+  it("两个变量都未设置或为空时，冻结路由与共享布局逐字节一致", async () => {
+    const baseline = await frozenModels({ loadContext: contextOf(deepseekEnv), modelLayoutRef: "shared-model-layout-v1" });
+    const unset = await resolveWith({});
+    const blank = await resolveWith({ WORLD_PRISM_OPENAI_COMPAT_THINKING: "", WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS: " " });
+    expect(canonicalJson(unset.models["routes"] ?? null)).toBe(canonicalJson(baseline.models["routes"] ?? null));
+    expect(canonicalJson(blank.models["routes"] ?? null)).toBe(canonicalJson(baseline.models["routes"] ?? null));
+  });
+
+  it("设置后把解析值冻结进每条路由的参数与别名", async () => {
+    const { routes } = await resolveWith({
+      WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled",
+      WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS: "deepseek/deepseek-flash, deepseek-v4-flash-0731",
+    });
+    // standard-15 名册的 15 个身份各挂 decision、speech、memory-maintenance 三个用途。
+    expect(routes).toHaveLength(45);
+    for (const route of routes) {
+      expect(route["parameters"]).toEqual({ temperature: 0.6, maxTokensField: "max_tokens", thinking: "disabled" });
+      expect(route["servedModels"]).toEqual(["deepseek/deepseek-flash", "deepseek-v4-flash-0731"]);
+    }
+  });
+
+  it.each([
+    ["推理开关取值无效", { WORLD_PRISM_OPENAI_COMPAT_THINKING: "minimal" }, "WORLD_PRISM_OPENAI_COMPAT_THINKING 只能是 disabled 或 enabled"],
+    ["别名列表含空项", { WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS: "deepseek/deepseek-flash," }, "WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS 含空名称"],
+  ])("%s时预检失败并指出变量", async (_label, env, message) => {
+    await expect(resolveWith(env)).rejects.toThrow(message);
   });
 });

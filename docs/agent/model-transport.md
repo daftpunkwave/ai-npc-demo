@@ -195,7 +195,7 @@ speech 请求体示例（`structuredOutput: json_object`，schema 说明追加�
 | `parameters.temperature` | 配置了才发送 |
 | `parameters.thinking` | `disabled` 或 `enabled`，发送为 `"thinking": {"type": "disabled"}` 或 `{"type": "enabled"}`；省略时不发送该字段 |
 
-`parameters` 只接受 `temperature`、`maxTokensField` 与 `thinking` 三个键，其他键（例如 `reasoning_effort`、`enable_thinking`）在模型池绑定 run 时以 `assembly-incompatible` 拒绝，发送前再次校验时记为 `bad-request`。`thinking` 采用 DeepSeek 文档给出的推理开关格式。默认开启推理的模型会把推理 token 计入 `max_tokens`，若用途上限较小（例如 speech 的 400），推理可能在 JSON 输出前耗尽上限，响应以 `finish_reason: length` 结束并记为 `protocol` 失败；这类模型应设 `thinking: disabled`，或调高该用途的 `maxOutputTokensByPurpose`。其他供应商是否识别该字段以供应商文档为准。
+`thinking` 也可以写成 `env:WORLD_PRISM_OPENAI_COMPAT_THINKING`，由宿主预检时解析，变量未设置时不发送该字段（[配置](../platform/configuration.md#10-完整配置文件首版)）。`parameters` 只接受 `temperature`、`maxTokensField` 与 `thinking` 三个键，其他键（例如 `reasoning_effort`、`enable_thinking`）在模型池绑定 run 时以 `assembly-incompatible` 拒绝，发送前再次校验时记为 `bad-request`。`thinking` 采用 DeepSeek 文档给出的推理开关格式。默认开启推理的模型会把推理 token 计入 `max_tokens`，若用途上限较小（例如 speech 的 400），推理可能在 JSON 输出前耗尽上限，响应以 `finish_reason: length` 结束并记为 `protocol` 失败；这类模型应设 `thinking: disabled`，或调高该用途的 `maxOutputTokensByPurpose`。其他供应商是否识别该字段以供应商文档为准。
 
 超时：用 `AbortSignal.timeout(timeoutMs)` 传给 `fetch`。
 

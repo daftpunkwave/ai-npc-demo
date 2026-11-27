@@ -1,6 +1,6 @@
 /**
- * 加载集中模型布局、测试夹具和计费价目。
- * 模型名与端点可引用部署环境，密钥引用始终保留为引用。
+ * 加载集中模型布局、测试夹具和计费价目，并解析布局中登记的部署环境引用。
+ * 模型名、端点、推理开关与返回名别名可引用部署环境，密钥引用始终保留为引用。
  * 禁止读取夹具目录以外的正文、插入凭据或接受未校验的传输参数。
  */
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -23,13 +23,19 @@ const connectionSchema = z.object({
   fixtureFiles: z.array(fixturePath).max(32).default([]),
 }).strict();
 
+const maxServedModels = 16;
+
 /**
  * 供应商响应报告的、与 externalModel 视为同一模型的名称，逐个精确匹配。
  * 有的网关按请求名路由、却在响应里报告上游名称；声明后这些响应不算模型替换。
+ * 可写成名称列表，或写成 env 引用由宿主预检时解析逗号分隔的列表。
  * 不设默认值：未声明的布局解析结果不出现该键，既有布局的冻结摘要保持不变。
  */
-const servedModelsSchema = z.array(name).min(1).max(16)
-  .refine((names) => new Set(names).size === names.length, { message: "servedModels 不得重复" });
+const servedModelsSchema = z.union([
+  z.string().regex(/^env:/u),
+  z.array(name).min(1).max(maxServedModels)
+    .refine((names) => new Set(names).size === names.length, { message: "servedModels 不得重复" }),
+]);
 
 const modelSchema = z.object({
   connectionId: configRefSchema,
@@ -78,10 +84,10 @@ export type ModelLayout = z.infer<typeof modelLayoutSchema>;
  * 缓存与错误格式化与其他配置完全一致。
  *
  * 唯一不同的是显式关闭该管线的通用 env 替换（`resolveEnv: false`）。
- * 布局里的 `endpoint` 与 `externalModel` 用 `env:` 引用部署环境，`credentialRef`
- * 保留为引用由传输适配器解析——这三者各有专用解析器与白名单；若通用替换作用于
- * 整个文档，任意环境变量都能被写进布局，`parameters` 里的值还会被原样送进模型请求。
- * 代价是 `parameters` 中的 `env:` 不被解析，配置文档已按此声明。
+ * 布局里的 `endpoint`、`externalModel`、`servedModels` 与 OpenAI 兼容参数 `thinking` 用 `env:`
+ * 引用部署环境，`credentialRef` 保留为引用由传输适配器解析——它们各有专用解析器与白名单；
+ * 若通用替换作用于整个文档，任意环境变量都能被写进布局，`parameters` 里的值还会被原样送进模型请求。
+ * 代价是 `parameters` 中除 `thinking` 以外的 `env:` 不被解析，配置文档已按此声明。
  */
 export function loadModelLayout(modelLayoutRef: string, context: ConfigLoadContext): ModelLayout {
   const loaded = loadConfigDocument(modelLayoutRef, modelLayoutSchema, context, "model-layout", undefined, {
@@ -112,6 +118,54 @@ export function resolveModelEnv(value: string, context: ConfigLoadContext, allow
     throw new LoadingError({ code: "env", source: "model-layout", message: `模型布局需要设置 ${key}` });
   }
   return resolved;
+}
+
+const optionalModelEnv = ["WORLD_PRISM_OPENAI_COMPAT_THINKING", "WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS"] as const;
+
+/**
+ * 解析可选开关的 env 引用，只接受指定的登记名称并只读注入环境的自有字段。
+ * 未设置或只含空白时返回 undefined，调用方按未声明处理：冻结结果与布局不写该开关时一致，
+ * 部署无需为不用的开关额外设值。
+ */
+function resolveOptionalModelEnv(
+  value: string, context: ConfigLoadContext, allowed: typeof optionalModelEnv[number],
+): string | undefined {
+  if (envReferenceName(value) !== allowed) {
+    throw new LoadingError({ code: "env", source: "model-layout", message: `该字段只允许引用 ${allowed}` });
+  }
+  const env = context.env ?? {};
+  const resolved = Object.hasOwn(env, allowed) ? env[allowed]?.trim() : undefined;
+  return resolved ? resolved : undefined;
+}
+
+/** OpenAI 兼容参数 `thinking` 的 env 引用；取值与适配器的推理开关枚举一致。 */
+export function resolveModelThinking(value: string, context: ConfigLoadContext): "disabled" | "enabled" | undefined {
+  const resolved = resolveOptionalModelEnv(value, context, "WORLD_PRISM_OPENAI_COMPAT_THINKING");
+  if (resolved === undefined || resolved === "disabled" || resolved === "enabled") return resolved;
+  throw new LoadingError({
+    code: "env", source: "model-layout", message: "WORLD_PRISM_OPENAI_COMPAT_THINKING 只能是 disabled 或 enabled",
+  });
+}
+
+/**
+ * 解析布局的 servedModels：列表原样复制；env 引用按逗号分隔、逐项去掉首尾空白。
+ * 空项、重复项与超过上限都拒绝，避免拼写失误让别名静默失效或重复计入冻结摘要。
+ */
+export function resolveServedModels(value: string | readonly string[], context: ConfigLoadContext): string[] | undefined {
+  if (typeof value !== "string") return [...value];
+  const resolved = resolveOptionalModelEnv(value, context, "WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS");
+  if (resolved === undefined) return undefined;
+  const names = resolved.split(",").map((part) => part.trim());
+  const problem = names.some((part) => part.length === 0) ? "含空名称"
+    : new Set(names).size !== names.length ? "含重复名称"
+      : names.length > maxServedModels ? `超过 ${maxServedModels} 项` : null;
+  if (problem !== null) {
+    throw new LoadingError({
+      code: "env", source: "model-layout",
+      message: `WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS ${problem}，应为逗号分隔的模型名`,
+    });
+  }
+  return names;
 }
 
 export function loadModelFixtures(paths: readonly string[], context: ConfigLoadContext) {

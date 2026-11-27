@@ -200,7 +200,7 @@ interface ScopedModelPort {             // runtime、memory 与 speech 收到的
 
 有的网关按请求名路由，却在响应的 `model` 字段报告上游名称（例如请求 `deepseek-v4.1-flash-official`，响应报告 `deepseek/deepseek-flash`）。模型定义可以用 `servedModels` 声明这类名称：
 
-- `servedModels` 是精确名称列表，1–16 项且不得重复。
+- `servedModels` 是精确名称列表，1–16 项且不得重复；也可以写成 `env:WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS`，由宿主预检时按逗号拆分，变量未设置时按未声明处理，见 [配置](../platform/configuration.md#10-完整配置文件首版)。
 - 预检把解析出的列表写入该模型每条冻结路由的 `servedModels`，并计入路由的 `configHash`；没有声明的模型，路由里不出现该键。
 - `servedModel` 精确命中列表中的某一项时不算替换。span 的 `reason` 记为 `served-model-alias`，请求 artifact 同时保存请求名（`request.externalModel`）和声明的 `servedModels`，响应 artifact 保存供应商报告的 `servedModel`。
 - 未命中的名称仍记 `model-substituted`；`fallbackUsed` 为 true 时，即使命中别名也算替换。
