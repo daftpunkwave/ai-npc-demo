@@ -4,7 +4,8 @@
  * 约束与禁忌：禁止写入地图或库存聚合；阈值事件与钳制规则以 meters.ts 为准。
  */
 import { type MeterChange, type MeterChangeCause, type NumericMeterId, type WatergateAllocation } from "@world-prism/contracts";
-import { gameModuleIds, type GameWorldPort, type MetersView, type ScopedWorldTxFactory } from "@world-prism/module-sdk";
+import type { GameWorldPort, MetersView, ScopedWorldTxFactory } from "@world-prism/module-sdk";
+import { worldModuleDefinition } from "./definition";
 import { clampMeter, thresholdEvents } from "./meters";
 import { metersAggregateId } from "./port-aggregates";
 import { failure, type OpFailure, type OpSuccess } from "./port-result";
@@ -50,7 +51,7 @@ export function createWorldMeterOps({ txFor }: WorldMeterOpsDeps): Pick<
   GameWorldPort,
   "changeMeter" | "setAllocation"
 > {
-  const tx = () => txFor(gameModuleIds.world);
+  const tx = () => txFor(worldModuleDefinition.id);
   return {
     changeMeter(meter: NumericMeterId, delta: number, cause: MeterChangeCause): OpSuccess | OpFailure {
       const record = readWorldState(tx(), "meters", metersAggregateId, metersStateSchema);

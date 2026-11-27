@@ -3,17 +3,17 @@
  * 依赖协议命令/job/消费者处理器与 module-sdk 的贡献类型；不实现规则、不读写存储。
  * 禁止在这里改写协议状态、改变命令类型或绕过处理器直接调度 job。
  */
-import { gameModuleIds, type GameModulePorts, type GameRuleContributor } from "@world-prism/module-sdk";
+import type { GameModulePorts, GameRuleContributor } from "@world-prism/module-sdk";
 import { onInformationShared, onPolicyChanged, onTaskCompleted } from "./agreement-consumers";
 import { propose, respond } from "./agreement-commands";
 import { breach, expire } from "./agreement-jobs";
 import { asPorts, type AgreementContext } from "./agreement-shared";
-import { agreementsOwnedAggregates } from "./definition";
+import { agreementsModuleDefinition, agreementsOwnedAggregates } from "./definition";
 
 /** 协议模块的规则贡献。 */
 export function createAgreementsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
-    moduleId: gameModuleIds.agreements,
+    moduleId: agreementsModuleDefinition.id,
     ownsAggregates: agreementsOwnedAggregates,
     commands: [
       { type: "agreement.propose", handler: (context, payload) => propose(context as AgreementContext, payload) },

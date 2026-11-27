@@ -6,8 +6,8 @@
  */
 import { TransactionWorldTx } from "@world-prism/authority";
 import { domainEventPayloadSchemas, type AuthContext, type CommandType, type Json, type Term } from "@world-prism/contracts";
-import { gameModuleIds, type TaskView } from "@world-prism/module-sdk";
-import { createActionsPort } from "@world-prism/mod-game-actions-standard";
+import type { TaskView } from "@world-prism/module-sdk";
+import { actionsModuleDefinition, createActionsPort } from "@world-prism/mod-game-actions-standard";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createTrackedGameHarness,
@@ -101,7 +101,7 @@ function taskView(value: GameHarness, taskId: string): TaskView | null {
       worldTick: clock === undefined ? 0 : Number(clock["world_tick"]),
       principalId: "player-1",
       correlationId: "test:game-agreement-window",
-      scope: { moduleId: gameModuleIds.actions, ownsAggregates: new Set(["task"]), order: 0 },
+      scope: { moduleId: actionsModuleDefinition.id, ownsAggregates: new Set(["task"]), order: 0 },
       host: value.host,
       eventSchemas: new Map(Object.entries(domainEventPayloadSchemas)),
     });

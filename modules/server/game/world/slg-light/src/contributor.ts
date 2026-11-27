@@ -9,7 +9,6 @@ import {
   controlsWatergate,
   effectivePrincipalId,
   factionAudience,
-  gameModuleIds,
   principalsAudience,
   requireGameContent,
   type GameContent,
@@ -29,7 +28,7 @@ import {
   type GroupState,
   type TeamState,
 } from "./state";
-import { worldOwnedAggregates } from "./definition";
+import { worldModuleDefinition, worldOwnedAggregates } from "./definition";
 
 type WorldContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -180,7 +179,7 @@ function policySet(context: WorldContext, payload: Json): HandlerResult {
 /** 世界模块的规则贡献；handler 使用 context.modules 中已绑定到当前事务的端口。 */
 export function createWorldContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
-    moduleId: gameModuleIds.world,
+    moduleId: worldModuleDefinition.id,
     ownsAggregates: worldOwnedAggregates,
     commands: [
       {

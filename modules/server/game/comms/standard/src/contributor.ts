@@ -8,7 +8,6 @@ import type { Json } from "@world-prism/contracts";
 import { commandPayloadOf, comparePrincipalIds } from "@world-prism/contracts";
 import {
   effectivePrincipalId,
-  gameModuleIds,
   holdsOperationalSeat,
   isApprovedSpeechUsable,
   requireGameContent,
@@ -20,7 +19,7 @@ import {
 } from "@world-prism/module-sdk";
 import { messageDeliveryKey, type MessageState } from "./state";
 import { probeAsk } from "./probe";
-import { commsOwnedAggregates } from "./definition";
+import { commsModuleDefinition, commsOwnedAggregates } from "./definition";
 
 type CommsContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -280,7 +279,7 @@ function recordRumor(context: CommsContext, payload: Json): void {
 /** 通信模块的规则贡献。 */
 export function createCommsContributor(): GameRuleContributor<GameModulePorts, unknown> {
   return {
-    moduleId: gameModuleIds.comms,
+    moduleId: commsModuleDefinition.id,
     ownsAggregates: commsOwnedAggregates,
     commands: [
       { type: "dialogue.say", handler: (context, payload) => dialogueSay(context as CommsContext, payload) },

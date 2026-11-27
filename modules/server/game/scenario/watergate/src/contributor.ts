@@ -7,7 +7,6 @@
 import type { EventEnvelope, Json, OverrideEffect } from "@world-prism/contracts";
 import { commandPayloadOf } from "@world-prism/contracts";
 import {
-  gameModuleIds,
   requireGameContent,
   type GameModulePorts,
   type GameRuleContributor,
@@ -22,7 +21,7 @@ import {
   type ScenarioContamination,
   type ScenarioRunState,
 } from "./state";
-import { scenarioOwnedAggregates } from "./definition";
+import { escalatingScenarioModuleDefinition, scenarioModuleDefinition, scenarioOwnedAggregates } from "./definition";
 
 type ScenarioContext = HandlerContext<GameModulePorts, unknown>;
 
@@ -304,7 +303,7 @@ export function createScenarioContributor(options: { readonly escalating: boolea
       ]
     : [];
   return {
-    moduleId: options.escalating ? gameModuleIds.scenarioEscalating : gameModuleIds.scenario,
+    moduleId: options.escalating ? escalatingScenarioModuleDefinition.id : scenarioModuleDefinition.id,
     ownsAggregates: scenarioOwnedAggregates,
     commands: [
       { type: "scenario.draft", handler: (context, payload) => draft(context as ScenarioContext, payload) },

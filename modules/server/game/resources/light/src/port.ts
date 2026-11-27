@@ -10,7 +10,6 @@ import {
   applyDelta,
   coversAmounts,
   factionAudience,
-  gameModuleIds,
   isZeroAmounts,
   principalsAudience,
   requireGameContent,
@@ -23,6 +22,7 @@ import {
   type ScopedWorldTxFactory,
   type StockpileView,
 } from "@world-prism/module-sdk";
+import { resourcesModuleDefinition } from "./definition";
 import { readStockpile, stockpileStateSchema, type StockpileState } from "./state";
 
 export interface ResourcesPortOptions {
@@ -116,7 +116,7 @@ class LightResourcesPort implements GameResourcesPort {
   }
 
   private tx() {
-    return this.txFor(gameModuleIds.resources);
+    return this.txFor(resourcesModuleDefinition.id);
   }
 
   private require(stockpileId: string): StockpileState | null {

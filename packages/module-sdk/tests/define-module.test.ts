@@ -134,7 +134,7 @@ describe("defineModule", () => {
   });
 
   it("能力 ID 不符合 <group>.<family> 语法时报错", () => {
-    for (const invalid of ["game.", "game.WORLD", "game.world.extra", "game.world x"]) {
+    for (const invalid of ["game.", "game.WORLD", "agent.memory.extra", "game.world x"]) {
       const error = expectDomainError(
         () =>
           defineModule(
@@ -277,7 +277,7 @@ describe("defineModule", () => {
       }),
     });
     const instance = await defineModule(definition).create(createInput());
-    expect(instance.moduleId).toBe("game.clock.controlled");
+    expect(instance.moduleId).toBe("platform.sdk-fixture.standard");
     expect((instance as CustomInstance).port.ping()).toBe("pong");
   });
 });

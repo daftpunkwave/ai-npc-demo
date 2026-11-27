@@ -6,7 +6,6 @@
 import type { ResourceAmounts } from "@world-prism/contracts";
 import {
   factionAudience,
-  gameModuleIds,
   principalsAudience,
   subtractAmounts,
   totalAmount,
@@ -16,6 +15,7 @@ import {
   type GameWorldPort,
   type ScopedWorldTxFactory,
 } from "@world-prism/module-sdk";
+import { worldModuleDefinition } from "./definition";
 import { failure, type OpFailure, type OpSuccess } from "./port-result";
 import type { WorldQueries } from "./port-queries";
 import {
@@ -64,7 +64,7 @@ export function createWorldDelegationOps({ txFor, ids, queries }: WorldDelegatio
   GameWorldPort,
   "drawDelegation" | "refundDelegation" | "createDelegation"
 > {
-  const tx = () => txFor(gameModuleIds.world);
+  const tx = () => txFor(worldModuleDefinition.id);
   return {
     drawDelegation(
       principalId: string,
