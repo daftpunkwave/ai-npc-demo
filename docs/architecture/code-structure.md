@@ -161,7 +161,7 @@ modules/server/agent/memory/ledger/
 
 `observability` 包目前只导出包名，为服务端观测机制保留入口；trace、span 与证据信封的 schema 定义在 contracts 的 `api-observe.ts`，具体存储/查询由 `platform.observability.sqlite` 模块提供，控制台页面由 `console.observability.standard` 模块贡献。三者不能互相 import 实现。
 
-`client-protocol` 只含类型化传输与投影 reducer 协议；场景/UI 模块只消费授权投影，不拼装第二份世界。
+`client-protocol` 只含类型化传输、只读轮询调度与投影 reducer 协议；场景/UI 模块只消费授权投影，不拼装第二份世界。
 
 控制台 HTTP 请求按模型布局、研究证据、调试和运营分文件实现。`ApiClient` 装配这些方法，统一处理会话令牌、角色请求头、响应校验与错误映射。
 

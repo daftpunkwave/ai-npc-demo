@@ -163,8 +163,8 @@ export class ApiClient {
   }
 
   /** 读取静态内容视图：章节名、时钟刻度与界面文字；与授权投影分开。 */
-  content() {
-    return this.request(clientContentViewSchema, "/api/v1/content");
+  content(signal?: AbortSignal) {
+    return this.request(clientContentViewSchema, "/api/v1/content", { signal });
   }
 
   assembly(realm: "client" | "console") {
