@@ -680,4 +680,4 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 - 备份先写入 `0700` 暂存目录并执行完整性校验，通过后以硬链接独占发布为最终 `.db`；`VACUUM INTO` 失败或校验失败时不残留可被当作有效备份的文件。- 成功发布后只保留最近 20 份备份，旧备份按文件名时间戳删除。
 - `VACUUM INTO` 生成的备份可以被重新打开，`PRAGMA integrity_check` 返回 `ok`。
 
-对白消费：authority 在 `speech.commit` 的 command savepoint 内检查并插入 `speech_commits`，与事件、receipt 一起提交；已有同分支 artifact 消费记录时返回 `speech-not-approved`。相同 commandId 先按 receipt 幂等返回。handler 或 afterCommand 拒绝时回滚消费记录；复制分支时保留记录，防止历史对白重复发布。只读 `approvedSpeech.read` 从持久化批准结果的内存索引同步读取；若 artifact 在文件中，宿主须在开启事务前装载并校验，事务内不做文件 I/O。
+对白消费：authority 在 `speech.commit` 的 command savepoint 内检查并插入 `speech_commits`，与事件、receipt 一起提交；已有同分支 artifact 消费记录时返回 `speech-not-approved`。相同 commandId 先按 receipt 幂等返回。handler 或 afterCommand 拒绝时回滚消费记录；复制分支时保留记录，防止历史对白重复发布。只读 `approvedSpeech.read` 从持久化批准结果的内存索引同步读取。`speech` artifact 始终内联存储：turn 取消在命令事务内用 SQL 读取其正文判断回复是否已发布，事务内不做文件 I/O。

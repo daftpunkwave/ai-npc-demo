@@ -11,6 +11,7 @@ import type {
   StoragePort,
   StorageTransaction,
 } from "@world-prism/contracts";
+import { artifactBodyText } from "@world-prism/module-sdk";
 import type {
   EvaluationPort,
   ProbeExecution,
@@ -161,10 +162,24 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
   const summaryOf = (row: Readonly<Record<string, unknown>>): RunSummary => runSummary(row);
 
   /**
+   * 在事务外装载这些 run 中以文件存放的 decision artifact 正文。
+   * 报告在一个只读事务里组装，事务内不能做文件 I/O；artifact 写入后不再改变，提前装载不影响报告一致性。
+   */
+  const fileDecisionBodies = (runIds: readonly string[]): ReadonlyMap<string, string> => {
+    const rows = storage.transact((tx) => runIds.flatMap((runId) =>
+      tx.rows("artifacts").list({ run_id: runId, kind: "decision", storage: "file" })));
+    return new Map(rows.map((row) => [String(row["artifact_id"]), artifactBodyText(storage, row)]));
+  };
+
+  /**
    * 在一个只读事务里为单个 run 组装报告。
    * `report` 与 `experiment` 共用这一份实现，避免实验汇总与单 run 报告出现两套口径。
    */
-  const reportFor = (tx: Parameters<Parameters<StoragePort["transact"]>[0]>[0], runId: string): RunReport | null => {
+  const reportFor = (
+    tx: Parameters<Parameters<StoragePort["transact"]>[0]>[0],
+    runId: string,
+    fileBodies: ReadonlyMap<string, string>,
+  ): RunReport | null => {
     const run = tx.rows("runs").get({ run_id: runId });
     if (run === null || String(run["world_id"]) !== input.worldId) return null;
     const branchId = stringCell(run, "branch_id") ?? "";
@@ -203,7 +218,7 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
         invalidReasons,
       },
       probes: probeResult.probes,
-      behavior: behaviorOf({ tx, turns: tx.rows("turn_runs").list({ run_id: runId }) }),
+      behavior: behaviorOf({ tx, turns: tx.rows("turn_runs").list({ run_id: runId }), fileBodies }),
       memory: memoryOf({
         records: branchId.length === 0 ? [] : tx.branch(branchId).table("memory_records").list(),
         // maintenance_runs 是部署级表（主键为 maintenance_id），只能经非分支接口按 run 读取。
@@ -238,7 +253,8 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
       };
     },
     report(runId) {
-      const report = storage.transact((tx) => reportFor(tx, runId));
+      const fileBodies = fileDecisionBodies([runId]);
+      const report = storage.transact((tx) => reportFor(tx, runId, fileBodies));
       // run 不存在是正常查询结果，不是内部错误：返回 null 让路由给出 not-found。
       return report === null ? null : toReportResponse(report);
     },
@@ -250,8 +266,9 @@ export function createEvaluationReadPort(input: EvaluationReadInput): Evaluation
         .map((row) => stringCell(row, "run_id"))
         .filter((runId): runId is string => runId !== null);
       // 每个 run 的报告与单 run 报告共用同一实现，汇总口径因此不会分叉。
+      const fileBodies = fileDecisionBodies(runIds);
       const reports = storage.transact((tx) => runIds.flatMap((runId) => {
-        const report = reportFor(tx, runId);
+        const report = reportFor(tx, runId, fileBodies);
         return report === null ? [] : [report];
       }));
       const cells = evaluation.experimentCells(reports.map((report) => ({

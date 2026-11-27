@@ -1,7 +1,8 @@
 /**
- * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制与备份，并持有连接级预编译语句缓存。
- * 交互契约：依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/statement-cache/transaction/fork/backup
- * 实现与端口契约；语句缓存随连接创建，在每次事务之间复用，连接关闭时随之清空。
+ * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制、备份与 artifact 大正文文件，并持有连接级预编译语句缓存。
+ * 交互契约：依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/statement-cache/transaction/fork/backup/
+ * artifact-files 实现与端口契约；语句缓存随连接创建，在每次事务之间复用，连接关闭时随之清空；
+ * artifact 正文文件按配置的 inlineArtifactMaxBytes 分流，与数据库连接的开关无关。
  * 约束与禁忌：禁止在事务内 await、向调用方暴露连接、跳过迁移失败、在同一连接上并发提交两个事务、
  * 跨越连接存活期复用缓存，或在回滚失败后继续复用状态不可信的连接。
  */
@@ -12,6 +13,7 @@ import {
   DomainError,
   backupOptionsSchema,
   forkBranchRequestSchema,
+  type ArtifactFileStore,
   type BackupOptions,
   type BackupResult,
   type ForkBranchRequest,
@@ -21,6 +23,7 @@ import {
   type StorageTransaction,
 } from "@world-prism/contracts";
 import type { StorageConfig } from "../definition";
+import { SqliteArtifactFiles } from "./artifact-files";
 import { backupDatabase, type PublishedBackup } from "./backup";
 import { closeDatabase, openDatabase } from "./connection";
 import { forkBranchDatabase } from "./fork-branch";
@@ -36,6 +39,7 @@ function errorMessage(error: unknown): string {
 
 /** 单写 SQLite 存储端口实现；实例生命周期由模块 start/dispose 驱动。 */
 export class SqliteStorage implements StoragePort {
+  readonly artifactFiles: ArtifactFileStore;
   private readonly config: StorageConfig;
   private readonly host: HostServices;
   private database: DatabaseSync | null = null;
@@ -51,6 +55,7 @@ export class SqliteStorage implements StoragePort {
   constructor(config: StorageConfig, host: HostServices) {
     this.config = config;
     this.host = host;
+    this.artifactFiles = new SqliteArtifactFiles(config.dataDir, config.inlineArtifactMaxBytes);
   }
 
   /** 打开库文件并执行未应用的迁移；重复调用无副作用，失败时连接会被关闭后重新抛出。 */

@@ -30,7 +30,7 @@ import {
   type TurnDetail,
   type TurnsResponse,
 } from "@world-prism/contracts";
-import { insertLifecycleAuditEvent } from "@world-prism/module-sdk";
+import { artifactBodyText, insertLifecycleAuditEvent } from "@world-prism/module-sdk";
 import {
   jsonColumn,
   numberColumn,
@@ -55,11 +55,13 @@ function clampLimit(value: number | undefined, fallback = 50): number {
   return Math.max(1, Math.min(value ?? fallback, 200));
 }
 
-function parseArtifactBody(row: StorageRow): string {
-  const body = row["body"];
-  if (body instanceof Uint8Array) return new TextDecoder().decode(body);
-  if (typeof body === "string") return body;
-  throw new DomainError("invalid-state", "artifact 正文缺失；当前首版只读取内联 artifact");
+/** 在事务外取回 artifact 正文：内联行直接解码，文件行读取正文文件；正文缺失或不可读时报告状态异常。 */
+function parseArtifactBody(storage: StoragePort, row: StorageRow): string {
+  try {
+    return artifactBodyText(storage, row);
+  } catch (error) {
+    throw new DomainError("invalid-state", "artifact 正文缺失或无法读取", { cause: error });
+  }
 }
 
 function receiptStatus(
@@ -238,7 +240,7 @@ export class ResearchQueries {
   private artifactValue(artifactId: string): Json | null {
     const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
     if (row === null) return null;
-    const body = parseArtifactBody(row);
+    const body = parseArtifactBody(this.storage, row);
     try {
       return jsonColumn(JSON.parse(body));
     } catch {
@@ -249,7 +251,7 @@ export class ResearchQueries {
   artifact(artifactId: string, view: "redacted" | "raw", principalId: string): ArtifactResponse {
     const row = this.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
     if (row === null) throw new DomainError("not-found", `artifact ${artifactId} 不存在`);
-    const body = parseArtifactBody(row);
+    const body = parseArtifactBody(this.storage, row);
     if (view === "raw") {
       this.storage.transact((tx) => insertLifecycleAuditEvent(tx, {
         runId: row["run_id"] === null ? null : String(row["run_id"]),

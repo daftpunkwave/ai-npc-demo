@@ -154,7 +154,7 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 | `manifest` | experiment | 去密钥的冻结 manifest |
 | `export` | 导出服务 | 导出包 |
 
-当前上下文、模型请求和响应均内联写入 SQLite `artifacts` 表。大于 64 KB 的正文外部文件存储仍属目标，表记录预留路径与 hash。
+artifact 正文按存储适配器配置 `inlineArtifactMaxBytes`（缺省 65536 字节）分流：规范 JSON 正文不超过上限时内联写入 `artifacts.body`，超过上限时由存储适配器在登记事务之前写入 `data/artifacts/<artifact_id>`，表行记为 `storage = 'file'` 并登记 `file_path`，`content_hash` 与 `byte_size` 两种方式口径相同。`speech` artifact 始终内联，因为 turn 取消在命令事务内用 SQL 读取其正文。读取方在事务外取回文件正文；评估报告在只读事务里组装，所需的文件 decision 正文在开启事务前装载。
 
 ### 8.3 脱敏副本
 

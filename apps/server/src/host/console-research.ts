@@ -18,7 +18,7 @@ import {
   type Json,
   type TurnReplayResponse,
 } from "@world-prism/contracts";
-import type { GameContent } from "@world-prism/module-sdk";
+import { artifactBodyText, type GameContent } from "@world-prism/module-sdk";
 import type { HostReadPorts } from "./reads";
 import type { ServerRuntime } from "./module-catalog";
 
@@ -355,12 +355,14 @@ export function createConsoleResearchPort(input: {
         differences.push({ path: artifactId, expected: "artifact", actual: null });
         continue;
       }
-      const body = row["body"];
-      if (!(body instanceof Uint8Array)) {
-        differences.push({ path: artifactId, expected: "inline artifact", actual: "unsupported storage" });
+      let text: string;
+      try {
+        // 行在上面的事务里读出，这里在事务外取正文：文件存放的请求档案需要读取正文文件。
+        text = artifactBodyText(runtime.storage, row);
+      } catch {
+        differences.push({ path: artifactId, expected: "artifact body", actual: null });
         continue;
       }
-      const text = new TextDecoder().decode(body);
       let parsed: Json;
       try {
         parsed = JSON.parse(text) as Json;

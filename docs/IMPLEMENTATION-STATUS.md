@@ -115,7 +115,7 @@ Godot C# 原生玩家端及正式 3D 美术处于规划状态。当前玩家端�
 
 ### 3.8 剩余表现与 Agent 管线
 
-模型原文与上下文随现有 artifact 仓内联存储。独立的大正文存储、完整证据与提案及派遣交互、完整分支对比、席位接管与剧情运营页面、正式 3D 资产仍有交付缺口。3D 资产按 [02-modeling-spec.md — 建模规格](design/assets/02-modeling-spec.md) 单独验收。
+artifact 正文超过 `inlineArtifactMaxBytes` 时写入数据目录下的独立文件，不超过时内联存储。完整证据与提案及派遣交互、完整分支对比、席位接管与剧情运营页面、正式 3D 资产仍有交付缺口。3D 资产按 [02-modeling-spec.md — 建模规格](design/assets/02-modeling-spec.md) 单独验收。
 
 ## 4. 迁移验收要点
 

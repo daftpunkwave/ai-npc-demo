@@ -365,6 +365,53 @@ describe("控制台评估读取接口", () => {
     expect(report.memory.recordsByTier["short"]).toBe(1);
   });
 
+  it("以文件存放的 decision artifact 同样进入行为记录", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = host.branchId;
+    const now = new Date().toISOString();
+    const body = new TextEncoder().encode(JSON.stringify({
+      turnId: "turn-filedecision1", decision: { stance: "accept", dialogueIntent: { reasonCode: "shared-interest" } },
+    }));
+    const filePath = host.storage.artifactFiles.write("art-filedecision", body);
+    host.storage.transact((tx) => {
+      tx.rows("artifacts").put({
+        artifact_id: "art-filedecision", run_id: runId, kind: "decision",
+        content_hash: "sha256-filedecision", mime: "application/json", byte_size: body.byteLength,
+        storage: "file", body: null, file_path: filePath, redaction: "raw", redacted_from: null, created_at: now,
+      });
+      tx.rows("turn_runs").put({
+        turn_id: "turn-filedecision1", run_id: runId, branch_id: branchId,
+        agent_id: "human-independent", agent_turn_index: 1, status: "completed",
+        trigger_ids_json: ["trg-filedecision1"], profile_hash: "hash",
+        controller_epoch: 1, turn_lease_epoch: 0, created_tick: 7,
+        effective_json: [{
+          stage: "turn.decision", status: "applied", reason: null, requested: null, resolved: null,
+          effective: { artifactId: "art-filedecision" }, spanId: "spn-filedecision1",
+        }],
+        created_at: now, started_at: now, ended_at: now,
+      });
+      tx.branch(branchId).table("triggers").put({
+        trigger_id: "trg-filedecision1", agent_id: "human-independent", kind: "dialogue",
+        priority: 100, source_ref: "evt-filedecision1", created_tick: 7,
+        dedupe_key: "file-decision-trigger", consumed_by_turn_id: "turn-filedecision1",
+      });
+    });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.behavior).toEqual([{
+      atTick: 7,
+      agentId: "human-independent",
+      trigger: "dialogue",
+      stance: "accept",
+      reasonCode: "shared-interest",
+      commands: [],
+    }]);
+  });
+
   it("脚本声明的 p-* 探针结果在报告中按脚本 answerKey 计分", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));
