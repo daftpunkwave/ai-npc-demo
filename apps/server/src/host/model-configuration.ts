@@ -111,7 +111,11 @@ export async function resolveModelConfiguration(input: {
   }));
   if (layout.evaluator !== undefined && !models.has(layout.evaluator.modelId)) fail("评估主体引用了未知模型");
   if (layout.evaluator?.enabled === true) fail("当前运行装配未启用模型评估主体");
-  const mounts = new Map<string, Omit<ModelRoute, "configHash"> & { readonly fixturesHash: string | null }>();
+  // 冻结路由要写入 Json 形态的 manifest，别名列表在此保持可变数组类型；交给模型池时仍按只读路由使用。
+  const mounts = new Map<string, Omit<ModelRoute, "configHash" | "servedModels"> & {
+    readonly servedModels?: string[];
+    readonly fixturesHash: string | null;
+  }>();
   for (const mount of layout.mounts) {
     const model = models.get(mount.modelId);
     if (model === undefined) fail(`挂载引用了未知模型 ${mount.modelId}`);
@@ -126,6 +130,7 @@ export async function resolveModelConfiguration(input: {
           purpose === "embedding" && !model.capabilities.embedding) fail(`模型 ${model.modelId} 不支持 ${purpose}`);
         mounts.set(key, {
           ...connection, agentId, purpose, modelId: model.modelId, externalModel: model.externalModel,
+          ...(model.servedModels === undefined ? {} : { servedModels: model.servedModels }),
           parameters: model.parameters, capabilities: model.capabilities, ...model.limits, price: model.price,
           maxOutputTokens: model.maxOutputTokensByPurpose[purpose] ?? Math.min(4096, model.capabilities.maxOutputTokens),
         });

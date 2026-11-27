@@ -23,9 +23,18 @@ const connectionSchema = z.object({
   fixtureFiles: z.array(fixturePath).max(32).default([]),
 }).strict();
 
+/**
+ * 供应商响应报告的、与 externalModel 视为同一模型的名称，逐个精确匹配。
+ * 有的网关按请求名路由、却在响应里报告上游名称；声明后这些响应不算模型替换。
+ * 不设默认值：未声明的布局解析结果不出现该键，既有布局的冻结摘要保持不变。
+ */
+const servedModelsSchema = z.array(name).min(1).max(16)
+  .refine((names) => new Set(names).size === names.length, { message: "servedModels 不得重复" });
+
 const modelSchema = z.object({
   connectionId: configRefSchema,
   externalModel: name,
+  servedModels: servedModelsSchema.optional(),
   parameters: jsonValueSchema.default({}),
   capabilities: modelCapabilitiesSchema,
   limits: z.object({

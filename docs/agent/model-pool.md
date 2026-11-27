@@ -17,7 +17,7 @@
 | 配置 | 内容 | 禁止内容 |
 |---|---|---|
 | connections | adapterId（模块 ID）、受控 endpoint、credentialRef、账号级 rateLimitKey | 明文密钥、Agent 消息历史 |
-| models | modelId、connectionId、外部模型名、生成参数、能力与资源上限 | 每个角色的主张、记忆与授权 |
+| models | modelId、connectionId、外部模型名、可选的供应商返回名别名（`servedModels`，见第 12.5 节）、生成参数、能力与资源上限 | 每个角色的主张、记忆与授权 |
 | mounts | modelId、agentIds、purposes，精确挂载关系 | 复制模型参数、放宽工具权限 |
 
 credentialRef 由服务端 secret resolver 解析；前端只能看到连接别名与验证状态。导出 manifest 保留引用及配置 hash，删除实际密钥、认证 header、Cookie 和敏感 URL 参数。
@@ -197,3 +197,10 @@ interface ScopedModelPort {             // runtime、memory 与 speech 收到的
 ### 12.5 记录
 
 每个 attempt 写一行 `model_attempts`（agent、purpose、modelId、connectionId、adapterId、状态、是否为有效 attempt、请求/响应 artifact、usage、排队/首字/总耗时、错误），并写一个 span。`servedModel` 与配置的 `externalModel` 不同、或 `fallbackUsed` 为 true 时，attempt 标记 `model-substituted`，该 turn 的 effective 记录写明实际服务的模型。
+
+有的网关按请求名路由，却在响应的 `model` 字段报告上游名称（例如请求 `deepseek-v4.1-flash-official`，响应报告 `deepseek/deepseek-flash`）。模型定义可以用 `servedModels` 声明这类名称：
+
+- `servedModels` 是精确名称列表，1–16 项且不得重复。
+- 预检把解析出的列表写入该模型每条冻结路由的 `servedModels`，并计入路由的 `configHash`；没有声明的模型，路由里不出现该键。
+- `servedModel` 精确命中列表中的某一项时不算替换。span 的 `reason` 记为 `served-model-alias`，请求 artifact 同时保存请求名（`request.externalModel`）和声明的 `servedModels`，响应 artifact 保存供应商报告的 `servedModel`。
+- 未命中的名称仍记 `model-substituted`；`fallbackUsed` 为 true 时，即使命中别名也算替换。
