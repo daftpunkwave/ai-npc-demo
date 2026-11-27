@@ -61,13 +61,15 @@ const valid = {
   noteworthy: [], citedMemoryIds: [], decisionNote: "",
 } satisfies Json;
 
-function validate(candidate: Json, options: { readonly memoryIds?: readonly string[]; readonly text?: string } = {}) {
+function validate(candidate: Json, options: {
+  readonly memoryIds?: readonly string[]; readonly text?: string; readonly patrol?: boolean;
+} = {}) {
   const memoryIds = options.memoryIds ?? ["mem-promise"];
   return validateModelDecision({
     candidate,
     artifact: artifactShowing(options.text ?? `- [obs-trigger] 党魁说：“我答应送补给。” [conv-1] [dlg-1]\n${
       memoryIds.map((id) => `- [${id}] 记忆`).join("\n")}\n- [ev-ledger] 证据`),
-    frozen: frozenWith([trigger]),
+    frozen: options.patrol === true ? frozenWith([trigger], []) : frozenWith([trigger]),
     memory: { items: memoryIds.map((memoryId) => ({ memoryId })) } as unknown as MemoryBundle,
     tools: [], content, messagePrincipalIds: new Set(),
   });
@@ -114,6 +116,29 @@ describe("模型决定的驳回明细", () => {
     for (const violation of "violations" in result ? result.violations ?? [] : []) {
       expect(violation).toEqual({ rule: "schema", path: expect.any(String), issue: expect.any(String) });
     }
+  });
+
+  it("没有可引用的输入观察时（如巡检唤醒），提示删掉 noteworthy 条目而不是清空来源", () => {
+    const item = { kind: "claim", aboutId: "player-1", summary: "草案待核实", dueTick: null };
+    const silent = { ...valid, dialogueIntent: { ...valid.dialogueIntent, kind: "none", audience: [] } };
+    expect(validate({ ...silent, noteworthy: [{ ...item, sourceRefs: ["obs-1"] }] }, { patrol: true, text: "- [ev-ledger] 证据" }))
+      .toEqual({ reasons: ["U"], violations: [{ rule: "unknown-ref", path: "noteworthy[0]", value: ["obs-1"],
+        issue: expect.stringContaining("remove this item") }] });
+    expect(validate({ ...silent, noteworthy: [{ ...item, sourceRefs: [] }] }, { patrol: true, text: "- [ev-ledger] 证据" }))
+      .toEqual({ reasons: ["S", "U"], violations: [
+        { rule: "schema", path: "noteworthy[0].sourceRefs", issue: expect.any(String) },
+        { rule: "unknown-ref", path: "noteworthy[0]", value: [], issue: expect.stringContaining("remove this item") },
+      ] });
+  });
+
+  it("来源为空但本次输入里有可引用观察时，列出可选的观察 ID", () => {
+    const result = validate({ ...valid, noteworthy: [
+      { kind: "promise-by-other", aboutId: "player-1", summary: "答应送补给", dueTick: null, sourceRefs: [] },
+    ] });
+    expect(result).toEqual({ reasons: ["S", "U"], violations: [
+      { rule: "schema", path: "noteworthy[0].sourceRefs", issue: expect.any(String) },
+      { rule: "unknown-ref", path: "noteworthy[0].sourceRefs", value: [], issue: expect.any(String), allowed: ["obs-trigger"] },
+    ] });
   });
 
   it("可选 ID 超过 16 个时只列前 16 个，并给出未列出的个数", () => {

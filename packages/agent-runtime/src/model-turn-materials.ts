@@ -200,7 +200,7 @@ function pathOf(segments: readonly PropertyKey[]): string {
   return text === "" ? "$" : text;
 }
 
-function allowedList(ids: Iterable<string>): Pick<DecisionViolation, "allowed" | "allowedOmitted"> {
+function allowedList(ids: Iterable<string>): { readonly allowed: readonly string[]; readonly allowedOmitted?: number } {
   const all = [...new Set(ids)];
   const omitted = all.length - maxAllowedListed;
   return { allowed: all.slice(0, maxAllowedListed), ...(omitted > 0 ? { allowedOmitted: omitted } : {}) };
@@ -269,6 +269,30 @@ interface ReferenceScope {
   readonly observationIds: ReadonlySet<string>;
 }
 
+/**
+ * noteworthy 的来源只认本次输入里列出的观察。没有可引用的观察（如巡检唤醒）时，提示删掉该条而不是清空 sourceRefs：
+ * 清空会违反至少 1 项的 schema，模型会在两条规则之间来回改。
+ */
+function noteworthyViolations(
+  view: ReferenceView,
+  visible: ReadonlySet<string>,
+  observationIds: ReadonlySet<string>,
+): readonly DecisionViolation[] {
+  const allowedSources = allowedList([...visible].filter((id) => observationIds.has(id)));
+  const violations: DecisionViolation[] = [];
+  for (const [index, sources] of view.noteworthySources) {
+    const unknownSources = [...new Set(sources.filter((ref) => !observationIds.has(ref) || !visible.has(ref)))];
+    if (allowedSources.allowed.length === 0) {
+      violations.push({ rule: "unknown-ref", path: `noteworthy[${index}]`, value: unknownSources,
+        issue: "this turn has no input observation to cite; remove this item (noteworthy may be empty)" });
+    } else if (sources.length === 0 || unknownSources.length > 0) {
+      violations.push({ rule: "unknown-ref", path: `noteworthy[${index}].sourceRefs`, value: unknownSources,
+        issue: "cite 1 to 3 observation IDs listed under the input to handle in this turn, or remove this item", ...allowedSources });
+    }
+  }
+  return violations;
+}
+
 function referenceViolations(view: ReferenceView, scope: ReferenceScope): readonly DecisionViolation[] {
   const { visible, returned, knownSubjects, knownRefs, memoryIds, observationIds } = scope;
   const violations: DecisionViolation[] = [];
@@ -289,14 +313,7 @@ function referenceViolations(view: ReferenceView, scope: ReferenceScope): readon
     violations.push({ rule: "unknown-ref", path: "citedMemoryIds", value: [...new Set(unknownMemories)],
       ...allowedList([...visible].filter((id) => memoryIds.has(id))) });
   }
-  const allowedSources = allowedList([...visible].filter((id) => observationIds.has(id)));
-  for (const [index, sources] of view.noteworthySources) {
-    const unknownSources = sources.filter((ref) => !observationIds.has(ref) || !visible.has(ref));
-    if (unknownSources.length > 0) {
-      violations.push({ rule: "unknown-ref", path: `noteworthy[${index}].sourceRefs`, value: [...new Set(unknownSources)],
-        issue: "sourceRefs must cite observation IDs listed under the input to handle in this turn", ...allowedSources });
-    }
-  }
+  violations.push(...noteworthyViolations(view, visible, observationIds));
   return violations;
 }
 

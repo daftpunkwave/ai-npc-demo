@@ -142,7 +142,10 @@ export const decisionSubmissionSchema = z
   .object({
     stance: z.enum(["accept", "decline", "negotiate", "defer", "inform", "none"]),
     dialogueIntent: dialogueIntentSchema,
-    noteworthy: z.array(noteworthySchema).max(3).describe("Up to 3 points worth remembering, such as promises made to or by you."),
+    noteworthy: z.array(noteworthySchema).max(3).describe(
+      "Up to 3 points worth remembering, such as promises made to or by you. Each must cite an observation from the input "
+      + "you are handling, so leave this empty when the turn has no such input.",
+    ),
     citedMemoryIds: z.array(idSchemas.mem).max(8).describe("Up to 8 memory IDs (mem-) shown among your memories."),
     decisionNote: z.string().max(120).describe("One sentence of at most 120 characters stating the factual basis with IDs."),
   })
