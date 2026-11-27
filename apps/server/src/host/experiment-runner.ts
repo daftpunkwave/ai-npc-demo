@@ -37,6 +37,7 @@ import {
   controlClock,
   ensureCampaignStarted,
   readExecutionFence,
+  releaseInterruptedScriptControl,
   RunHalted,
   settleCurrentTick,
   type ExperimentExecution,
@@ -158,8 +159,9 @@ export class ExperimentRunner {
   }
 
   /**
-   * 驱动脚本：每一段从暂停进入 stepping，先补完当前 tick（恢复执行与开局后的 tick 0 都经这一步），
-   * 当前 tick 有未作答探针时暂停并执行探针，否则逐 tick 推进到本段目标并在每个 tick 收敛后再前进。
+   * 驱动脚本：先交还上次执行遗留的脚本控制，再开局与激活名册；每一段从暂停进入 stepping，先补完当前 tick
+   * （恢复执行与开局后的 tick 0 都经这一步），当前 tick 有未作答探针时暂停并执行探针，否则逐 tick 推进到本段目标
+   * 并在每个 tick 收敛后再前进。
    */
   private async drive(exec: ExperimentExecution): Promise<void> {
     const { ctx } = exec;
@@ -172,6 +174,7 @@ export class ExperimentRunner {
       payload: { worldTick: tickNow(), endTick: ctx.plan.endTick, scriptBranch: ctx.plan.branch },
     });
     controlClock(exec, "pause");
+    releaseInterruptedScriptControl(exec);
     ensureCampaignStarted(exec);
     activateExperimentRoster(exec);
     const runtime = await openBranchAgentRuntime({

@@ -1,6 +1,6 @@
 /**
  * 核心职责：验证实验脚本展开为执行计划的规则：预置知识与分支追加步骤的展开、确定性命令 ID、终点 tick、
- * 受控单步分段，以及执行器不支持的脚本形态被显式拒绝。
+ * 受控单步分段、玩家与脚本控制步骤的区分，以及执行器不支持的脚本形态被显式拒绝。
  * 交互契约：使用内容包里的真实脚本与按实验展开得到的 RunSpec 形状；哈希用确定性替身，不访问存储。
  * 约束与禁忌：不启动宿主；断言计划的具体取值，不只检查存在性。
  */
@@ -99,16 +99,25 @@ describe("实验脚本执行计划", () => {
     expect(promise.setup).toEqual([]);
   });
 
-  it("非玩家主体的步骤与 RunSpec 开局冲突的脚本被显式拒绝", async () => {
+  it("以玩家声明的步骤以玩家身份提交，以 Agent 声明的步骤标为脚本控制", async () => {
     const base = script("s-secret");
     const actingAgent: ContentScript = {
       ...base,
-      steps: [{ atTick: 1, as: "human-earth-alliance", command: { type: "policy.set", payload: { key: "watergate.allocation", value: "rotation" } } }],
+      steps: [
+        ...base.steps,
+        { atTick: 1, as: "human-earth-alliance", command: { type: "policy.set", payload: { key: "watergate.allocation", value: "rotation" } } },
+      ],
     };
-    await expect(planExperimentScript({
+    const plan = await planExperimentScript({
       script: actingAgent, runSpec: runSpec("s-secret", undefined), runId: "run-aaaaaaaaaaaa",
       playerPrincipalId: "player-1", hash,
-    })).rejects.toMatchObject({ code: "script-principal-unsupported" });
+    });
+    expect(plan.steps.map(({ declarationIndex, as, controller }) => [declarationIndex, as, controller])).toEqual([
+      [0, "player-1", "player"], [1, "human-earth-alliance", "script"],
+    ]);
+  });
+
+  it("与 RunSpec 开局冲突的脚本被显式拒绝", async () => {
     const mismatch = planExperimentScript({
       script: script("s-promise"), runSpec: runSpec("s-promise", "keep", "human-earth-alliance"), runId: "run-aaaaaaaaaaaa",
       playerPrincipalId: "player-1", hash,

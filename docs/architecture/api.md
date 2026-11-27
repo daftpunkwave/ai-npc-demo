@@ -248,7 +248,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 请求参数 | 响应 |
 |---|---|---|
 | `GET /timeline`（已实现） | `branchId`、`fromSeq`（缺省 0）、`limit`（缺省 100，≤ 200）、`order`（`asc`/`desc`）、`types`（≤ 20 个，每个 ≤ 64 字符）、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件。查询参数的取值范围以公共 `timelineQuerySchema` 为唯一基准，路由只做类型规范化 |
-| `GET /agents`（已实现） | `branchId`（必填） | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`controllerKind` 为 `agent`、`human` 或 `script`；`script` 只出现在实验分支上，表示实验执行器正处在某个脚本步骤的控制窗口。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
+| `GET /agents`（已实现） | `branchId`（必填） | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`controllerKind` 为 `agent`、`human` 或 `script`；`script` 只出现在实验分支上，表示实验执行器正处在某个脚本步骤的控制窗口；窗口在一次注入内开合，只有进程在窗口内退出时才会留到下一次执行开始时交还。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
 | `GET /agents/{agentId}/inspector`（已实现） | `branchId`（必填） | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn。未知 Agent 返回 `not-found` |
 | `GET /agents/{agentId}/memory`（已实现） | `branchId`（必填）、`revision`（可选，缺省为当前最新） | `{ revision, records: MemoryRecord[] }` |
 | `GET /agents/{agentId}/memory/diff`（已实现） | `branchId`（必填）、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |

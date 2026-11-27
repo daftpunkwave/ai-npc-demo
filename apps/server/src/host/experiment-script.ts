@@ -8,11 +8,15 @@
 import type { CommandRequest, ContentScript, HostServices } from "@world-prism/contracts";
 import type { RunSpec } from "@world-prism/experiment";
 
-/** 一条外部命令：脚本声明顺序决定同一 tick 内的注入顺序。 */
+/**
+ * 一条外部命令：脚本声明顺序决定同一 tick 内的注入顺序。
+ * `controller` 为 `player` 时以玩家身份提交；为 `script` 时 `as` 是 Agent，执行器取得它的脚本控制后代为提交。
+ */
 export interface ScriptStepPlan {
   readonly declarationIndex: number;
   readonly atTick: number;
   readonly as: string;
+  readonly controller: "player" | "script";
   readonly command: CommandRequest;
   readonly commandId: string;
 }
@@ -60,8 +64,8 @@ export class UnsupportedScriptError extends Error {
  *
  * - `setup` 每一条展开为一条 `knowledge.seed`，由执行器在开局后、首个 tick 推进前经命令网关提交，
  *   不由宿主直接改写知识聚合，预置与其他输入一样留下回执与事件。
- * - 外部命令只以玩家身份注入：脚本冒充玩家时走正常认证与权限校验。Agent 身份的命令必须持有该身份的
- *   turn 租约，或经真人席位接管后的控制代次，执行器两者都没有，因此其他主体的步骤整体拒绝。
+ * - 以玩家声明的步骤以玩家身份注入，走正常认证与权限校验；以其他主体声明的步骤由执行器取得该 Agent 的
+ *   脚本控制后代为提交，按该 Agent 的权限裁决。该主体是否在 run 的名册里由准备阶段核对。
  * - RunSpec 已指定玩家派系时必须与脚本开局一致，否则两份冻结输入互相矛盾。
  */
 export async function planExperimentScript(input: {
@@ -91,11 +95,11 @@ export async function planExperimentScript(input: {
   const declared = [...script.steps, ...branchSteps];
   const steps: ScriptStepPlan[] = [];
   for (const [declarationIndex, step] of declared.entries()) {
-    if (step.as !== input.playerPrincipalId) {
-      throw new UnsupportedScriptError("script-principal-unsupported", `脚本步骤 ${declarationIndex} 以 ${step.as} 身份提交，执行器只支持玩家身份`);
-    }
     const digest = await input.hash([input.runId, "script-step", declarationIndex]);
-    steps.push({ declarationIndex, atTick: step.atTick, as: step.as, command: step.command, commandId: `cmd-${digest.slice(0, 12)}` });
+    steps.push({
+      declarationIndex, atTick: step.atTick, as: step.as, controller: step.as === input.playerPrincipalId ? "player" : "script",
+      command: step.command, commandId: `cmd-${digest.slice(0, 12)}`,
+    });
   }
   // 同一 tick 内保持声明顺序（主线步骤在前、分支追加在后），稳定排序只按 tick 重排。
   steps.sort((left, right) => left.atTick - right.atTick || left.declarationIndex - right.declarationIndex);

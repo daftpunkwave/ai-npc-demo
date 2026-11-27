@@ -1,24 +1,28 @@
 /**
  * 核心职责：在实验分支上执行受控时钟的单 tick 处理：开局与名册激活、tick 0 提交预置知识、推进或补完 tick、按声明顺序注入脚本命令，
  * 并等待本 tick 收敛（规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、无进行中 turn、无可调度 trigger）。
- * 交互契约：依赖 run 级命令网关、时钟端口、分支 Agent 运行时与 agent-runtime 的收敛读数；
+ * 交互契约：依赖 run 级命令网关、时钟端口、分支 Agent 运行时、agent-runtime 的脚本控制与收敛读数；
  * 每次注入与时钟操作前按执行围栏（run 状态与实验分支时钟版本）检查，被停止、被停止后再次启动所取代
  * 或宿主关闭时抛出 `RunHalted`，失败与积压抛出 `ExperimentFailure`。
- * 约束与禁忌：脚本命令以玩家身份走正常命令网关，不授予系统权限或暂停豁免；只有预置知识以系统世界身份提交，
- * 且只在开局后的 tick 0；收敛前不推进下一 tick；
- * 事务内不等待，状态检查与命令注入之间不让出事件循环，避免停止请求插入其间。
+ * 约束与禁忌：玩家步骤以玩家身份、Agent 步骤以脚本控制下的该 Agent 身份走正常命令网关，都不授予系统权限或暂停豁免；
+ * 只有预置知识以系统世界身份提交，且只在开局后的 tick 0；收敛前不推进下一 tick；
+ * 事务内不等待，状态检查、脚本控制的取得与交还和命令注入之间不让出事件循环，避免停止请求或 Agent turn 插入其间。
  */
 import {
+  acquireScriptControl,
   activateAgentRosterInTransaction,
   readBranchSettlement,
+  releaseLeftoverScriptControl,
+  releaseScriptControl,
   type AgentRuntime,
+  type ScriptControlRequest,
 } from "@world-prism/agent-runtime";
 import { createSystemAuth, latestEventSeq, listRuleFailures } from "@world-prism/authority";
-import type { AuthContext, StorageTransaction } from "@world-prism/contracts";
+import { DomainError, type AuthContext, type CommandReceipt, type StorageTransaction } from "@world-prism/contracts";
 import { advanceWorldTick, catchUpWorldTick } from "../tick";
 import { recordExperimentAudit } from "./experiment-audit";
 import { ExperimentFailure, type ExperimentHostDeps, type ExperimentRunContext } from "./experiment-context";
-import { stepsAt } from "./experiment-script";
+import { stepsAt, type ScriptStepPlan } from "./experiment-script";
 
 /** run 被停止或宿主关闭时中断执行；不是失败，状态由触发方或收尾逻辑负责。 */
 export class RunHalted extends Error {
@@ -106,6 +110,25 @@ function playerAuth(ctx: ExperimentRunContext, principalId: string): AuthContext
   };
 }
 
+/** 脚本控制下代某个 Agent 提交的认证上下文：按该 Agent 裁决、记在该 Agent 名下，代次取本次窗口的脚本控制代次。 */
+function scriptedAgentAuth(ctx: ExperimentRunContext, agentId: string, controllerEpoch: number): AuthContext {
+  return {
+    principalId: agentId, kind: "system", roles: [], worldId: ctx.worldId, branchId: ctx.branchId,
+    actingAsAgentId: agentId, controllerEpoch, turnId: null, turnLeaseEpoch: null,
+  };
+}
+
+/**
+ * 交还上一次执行遗留的脚本控制。窗口在单个同步段内开合，只有进程在取得与交还之间退出才会留下 script 租约；
+ * 新一次执行在推进任何 tick、打开 Agent 运行时或复制探针沙盒之前先把控制交还 Agent，审计标记 `recovered`。
+ */
+export function releaseInterruptedScriptControl(exec: ExperimentExecution): void {
+  const { core } = exec.deps;
+  core.storage.transact((tx) => releaseLeftoverScriptControl(tx, {
+    branchId: exec.ctx.branchId, runId: exec.ctx.runId, nowIso: core.host.nowIso(),
+  }));
+}
+
 /**
  * 冷启动开局：以玩家身份提交 `campaign.start`，名册激活与开局同事务；已开局时不重复提交。
  * 配额不足时命令被整体拒绝，按配额不可用中断——实验不能在名册不完整时开跑。
@@ -166,7 +189,36 @@ function injectSetup(exec: ExperimentExecution): void {
 }
 
 /**
+ * 以脚本控制代 Agent 提交一步：取得该 Agent 的脚本控制（代次 +1）→ 经命令网关以该 Agent 身份与脚本代次提交 →
+ * 立即交还 Agent（代次再 +1）。三步在同一同步段内完成，Agent 运行时没有机会在窗口内调度该身份，
+ * 窗口前领到旧代次的 turn 之后提交或认领都按过期控制拒绝。提交抛错时同样交还；进程在窗口内退出时由下次执行开始时交还。
+ */
+function submitUnderScriptControl(exec: ExperimentExecution, step: ScriptStepPlan): CommandReceipt {
+  const { core } = exec.deps;
+  const { ctx } = exec;
+  const controlRequest = (): ScriptControlRequest => ({
+    branchId: ctx.branchId, agentId: step.as, runId: ctx.runId, nowIso: core.host.nowIso(),
+    context: { declarationIndex: step.declarationIndex, atTick: step.atTick, commandId: step.commandId },
+  });
+  let controllerEpoch: number;
+  try {
+    controllerEpoch = core.storage.transact((tx) => acquireScriptControl(tx, controlRequest())).toEpoch;
+  } catch (error) {
+    if (!(error instanceof DomainError)) throw error;
+    throw new ExperimentFailure("script-control-rejected", `脚本步骤 ${step.declarationIndex} 无法取得 ${step.as} 的控制：${error.safeMessage}`);
+  }
+  try {
+    return ctx.authority.commands.execute(scriptedAgentAuth(ctx, step.as, controllerEpoch), {
+      commandId: step.commandId, type: step.command.type, schemaVersion: 1, payload: step.command.payload,
+    });
+  } finally {
+    core.storage.transact((tx) => releaseScriptControl(tx, controlRequest()));
+  }
+}
+
+/**
  * 注入 tick 的脚本命令。已有回执的步骤（停止后恢复时重放的同一 tick）跳过，不重复下令也不重复记审计。
+ * 两种步骤的回执都记在 `as` 名下：玩家步骤以玩家为主体，Agent 步骤以被控 Agent 为主体。
  * 因暂停被拒说明执行器在时钟未处于单步时注入，属于执行器缺陷而非实验结果，按失败处理。
  */
 function injectSteps(exec: ExperimentExecution, tick: number): void {
@@ -176,9 +228,11 @@ function injectSteps(exec: ExperimentExecution, tick: number): void {
   if (steps.length === 0) return;
   assertRunActive(exec);
   for (const step of steps) {
-    const receipt = ctx.authority.commands.execute(playerAuth(ctx, step.as), {
-      commandId: step.commandId, type: step.command.type, schemaVersion: 1, payload: step.command.payload,
-    });
+    const receipt = step.controller === "script"
+      ? submitUnderScriptControl(exec, step)
+      : ctx.authority.commands.execute(playerAuth(ctx, step.as), {
+        commandId: step.commandId, type: step.command.type, schemaVersion: 1, payload: step.command.payload,
+      });
     if (receipt.commandStatus === "rejected" && receipt.reasonCode === "paused") {
       throw new ExperimentFailure("script-step-paused", `脚本步骤 ${step.declarationIndex} 在时钟暂停时注入`);
     }

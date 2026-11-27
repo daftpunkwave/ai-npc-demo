@@ -1,6 +1,6 @@
 # 评估、对比与实验有效性
 
-> 状态：接口、实验展开、探针计分与闭环冷启动的实验执行器（驱动受控时钟到脚本检查点、分叉沙盒执行探针、写入 `probe_results` 与 `experiment_results`）已实现；审计重放、开环重决策、从快照起步与以非玩家主体执行的脚本步骤尚未接入执行器（见第 8 节）。首版优先比较 memory；全模块架构允许把游戏规则、客户端 UI、控制台页面等也作为显式装配轴，但任何轴都必须固定其他条件并记录 resolved diff。原文档案字段由 [可观测性](observability.md) 维护；装配语义见 [积木组合](../architecture/composition.md)。
+> 状态：接口、实验展开、探针计分与闭环冷启动的实验执行器（驱动受控时钟到脚本检查点、分叉沙盒执行探针、写入 `probe_results` 与 `experiment_results`）已实现；审计重放、开环重决策与从快照起步尚未接入执行器（见第 8 节）。首版优先比较 memory；全模块架构允许把游戏规则、客户端 UI、控制台页面等也作为显式装配轴，但任何轴都必须固定其他条件并记录 resolved diff。原文档案字段由 [可观测性](observability.md) 维护；装配语义见 [积木组合](../architecture/composition.md)。
 
 ## 1. 三种运行模式及其结论边界
 
@@ -13,6 +13,14 @@
 审计重放校验事件序列、投影和状态 hash；压缩或整理曾用 LLM 时复用其已记录产物，不能后台重新生成。开环中的世界查询工具使用冻结检查点的授权投影；写工具只生成提案，不落世界状态。反思与 memory 写入只落该开环 run 的隔离副本。
 
 闭环冻结的是“外部指令尝试及其逻辑时间/触发条件”，不强行写入相同的世界结果。某分支已失去据点，原护送指令可合法拒绝；这种差异要保留。NPC 内部通信与行动后果不得被原轨迹覆盖。
+
+脚本也可以以名册内某个 Agent 的身份声明外部动作，执行器在注入这一步时短暂取得该 Agent 的脚本控制、按它的权限提交，随即交还（第 8.1 节）。这类动作同样是冻结的外部输入，解读结果时要注意以下几点：
+
+- 动作记在该 Agent 名下，其他身份分辨不出它是脚本注入还是该 Agent 自己的选择，它们的后续反应针对的是该 Agent 做了这件事。
+- 被控 Agent 的感知与记忆摄入不暂停，它会像感知其他事件一样感知这次动作，记忆里因此可能出现一件记在它名下、它却没有决策过的行为。这条记忆是实验刺激的一部分：回忆类探针答出它，说明记住了世界里发生的事，不说明该 Agent 自主做过这件事；需要考察自主选择时不要用脚本替它行动。
+- 行为记录只来自 turn，脚本动作不进入被控 Agent 的行为分布。
+- 窗口在执行器注入的同一同步段内开合，注入发生在上一 tick 收敛之后，或开局、恢复后时钟刚进入单步、尚未调度任何 turn 时，所以不推迟任何 turn，窗口期间产生的 trigger 在交还后的同一 tick 收敛中处理。即使有持窗口前代次的晚到输出，两次代次递增也使它按过期控制被拒，不会与脚本动作重复下令。
+- 各变体注入的是同一条外部动作，规则仍可能在某个变体里拒绝它（例如该 Agent 在这个分支里已不持有要分享的证据），拒绝照常记入审计，属于闭环结果。
 
 真人自由试玩属于探索性运行；未脚本化的临场运营不能直接作为严格 A/B 证据。正式单玩家世界不得回滚来迁就实验，实验在独立 `branchId` 执行。
 
@@ -155,14 +163,15 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 - 准备：用创建 run 时的同一实现复算冻结配置（装配、名册、Agent profile、工具集与模型挂载）并核对 `manifest_hash`，不一致记 `manifest-mismatch`；run 的服务端装配摘要必须与宿主当前装配一致，否则记 `assembly-mismatch`，需以同一装配启动宿主。
 - 开局：冷启动时以玩家身份提交 `campaign.start`，派系取脚本的 `start.factionId`；名册在开局事务内预留配额，名额不足时命令被整体拒绝，run 暂停为 `paused`，`ExperimentRunStopped` 审计的原因为 `quota-unavailable`；每次开局尝试使用新的命令 ID，腾出名额后再次启动不会重放上一次的拒绝回执。
 - 预置知识：脚本声明了 `setup` 时，执行器在 tick 0 的时钟步骤之后、tick 0 的脚本步骤之前，按声明顺序以 `system:world` 为每一条提交 `knowledge.seed`（[领域模型](../architecture/domain-model.md) 第 5 节）。该命令只在实验分支、开局之后且世界时钟仍为 tick 0 时受理，Agent 在首次感知之前就已持有预置条目，各变体的起点一致。命令 ID 由 run 与预置序号确定性派生；停止后在 tick 0 恢复时以同一 ID 重放，取回原回执而不重复授权。任何一条被拒绝时 run 记 `script-setup-rejected` 失败，不带着缺失的初始条件继续。
-- 推进：每一段从 `paused` 进入 `stepping`，段终点不越过下一个检查点、脚本终点与时钟单步上限 `maxStepTicks`。每个 tick 先按规则第 1 节提交时钟、到期 job、时钟步骤与消费者，再按声明顺序以玩家身份注入该 tick 的脚本命令（主线步骤在前、所选分支的追加步骤在后；命令 ID 由 run 与步骤序号确定性派生，恢复执行时重放得到原回执），然后等待收敛：规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、没有未终结的 turn，且一轮内事件前沿与 turn 总数不再变化。只因冷却不能调度的 trigger 不产生 turn，不阻塞收敛。脚本命令被规则拒绝属于闭环结果，照常记入审计并继续推进。
+- 推进：每一段从 `paused` 进入 `stepping`，段终点不越过下一个检查点、脚本终点与时钟单步上限 `maxStepTicks`。每个 tick 先按规则第 1 节提交时钟、到期 job、时钟步骤与消费者，再按声明顺序注入该 tick 的脚本命令（主线步骤在前、所选分支的追加步骤在后；`as` 为玩家时以玩家身份提交，为 Agent 时在脚本控制窗口内提交，见下一条；命令 ID 由 run 与步骤序号确定性派生，恢复执行时重放得到原回执），然后等待收敛：规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、没有未终结的 turn，且一轮内事件前沿与 turn 总数不再变化。只因冷却不能调度的 trigger 不产生 turn，不阻塞收敛。脚本命令被规则拒绝属于闭环结果，照常记入审计并继续推进。
+- 脚本控制：`as` 不是玩家的步骤，其主体必须在 run 的名册里，否则准备阶段记 `script-principal-not-in-roster` 失败，实验分支不开局。注入这一步时，执行器先取得该 Agent 的脚本控制：控制租约种类改为 `script`，控制者记为本 run，控制代次 +1。随后以 `kind: system`、`principalId = actingAsAgentId = 该 Agent`、脚本控制代次经命令网关提交，提交后立即交还 Agent，代次再 +1；取得、提交与交还在同一同步段内完成，不让出事件循环。命令按该 Agent 的权限裁决，回执与事件记在该 Agent 名下。两次控制变更各写一条 `ControllerChanged` 生命周期审计，载荷含前后种类与代次、控制者 run、步骤序号、tick 与命令 ID。窗口内调度器不为该 Agent 创建 turn，持旧代次的 turn 提交与认领都按 `stale-controller` 拒绝；感知、记忆摄入与整理不暂停。脚本控制只能由执行器在活动的实验分支上、对 Agent 自己控制的身份取得，取得被拒时 run 记 `script-control-rejected` 失败；在线与沙盒分支、真人席位与任何 HTTP 或控制台入口都不能取得或借用。已有回执的步骤在恢复执行时不再开窗口。进程若在窗口内退出，遗留的脚本控制在下一次执行开局与推进之前交还，审计上下文沿用取得时的记录并标记 `recovered: true`；尚未提交的步骤之后按原命令 ID 重新开窗口提交。
 - 检查点：本 tick 收敛后暂停实验分支时钟，执行上面第 2–4 步；已写入结果的探针不重复提问。探针结果按 turn 终态补齐后，执行器在同一事务写入 `ExperimentProbeCompleted`，它是结果已落定的判据：探针 turn 写下回答后、终态补齐前执行被停止或进程退出时，恢复执行不会因为已有回答就跳过，而是找到当时提问的沙盒（按其中的 `ProbeAsked`），按该沙盒里 turn 的终态补判——到达 `completed` 的回答保留，被取消、停在中间状态或找不到沙盒的一律改判 `turn-failed`；审计载荷带 `recovered: true`。
 - 完成：处理完脚本终点（最后一个外部命令或检查点所在 tick）后，按与 `GET /runs/{runId}/report` 相同的口径把每项指标写入 `experiment_results`（`details_json` 带变体、脚本分支、有效性与无效样本计数），run 置为 `completed`，实验名册休眠并释放配额。
 - 轨迹完整性：实验分支上的 turn 以 `failed` 或 `budget-exhausted` 结束（模型调用失败、预算或截止耗尽、决策无效，或停止时已产生部分副作用而被截断）时，它消费的触发没有得到完成的决策，后续轨迹不再是完整的闭环。执行器不因此中止：run 照常推进到终点并写入 `experiment_results`，但报告有效性记为无效，`invalidReasons` 含 `agent-turn-failed`，实验汇总把该 run 的各项指标计为无效样本（第 5 节“失败保留在总样本中”）。被取消的 turn 会释放触发并重新调度，不计入；探针沙盒里的 turn 失败按探针无效原因单列。
 - 失败：死信的规则失败（`rule-failure`）、Agent 运行时周期失败（`agent-runtime-failed`）、单个 tick 或探针超过收敛上限（`settle-timeout`，宿主默认 30 分钟）、到达章节终点（`chapter-ended`）等使 run 记为 `failed`，原因码与说明写入 `ExperimentRunFailed` 审计事件，名册休眠、时钟暂停。配额不足不作废 run：开局、探针沙盒或探针后的名册重新激活缺少名额时，run 暂停为 `paused`、名册休眠（沙盒激活缺额时沙盒的复制随之回滚，不留下未提问的沙盒），腾出名额后再次启动即可继续，已写入结果的探针不重复提问。
 - 停止与恢复：`POST /runs/{runId}/stop` 把 run 与时钟置为暂停，执行器在下一次收敛检查或命令注入前停下：在途 turn 因时钟版本变化被取消，进行中的沙盒被归档，实验名册休眠。再次启动后先补完当前 tick，再从当前 tick 继续。停止与启动都会递增实验分支时钟的 `run_version`，执行器把它作为本次执行的围栏：自己的暂停、单步与 tick 推进后采纳新版本，每次检查同时核对 run 状态与版本，时钟控制也带期望版本提交。停止后立即再次启动、旧执行还没来得及读到 `paused` 时，它在下一次检查发现 run 虽是 `running` 但版本已变，于是只归档自己的沙盒并记一条 `ExperimentRunStopped`（`reason: superseded`），不改 run 状态、名册与时钟，也不写 `completed` 或 `failed`；随后由新一次执行从当前 tick 接手。宿主关闭时执行中的 run 改为 `paused`；进程中断遗留的 `running` 实验 run 在下次启动时同样归位为 `paused`，未关闭的沙盒被归档，由研究员显式继续。停止接口先提交 `paused`，执行器随后才异步归档沙盒、休眠名册；进程在两者之间退出时，下次启动对 `paused` 的实验 run 同样归档遗留的 active 沙盒、休眠沙盒与实验分支上仍激活的身份，并记一条带释放数量的 `ExperimentRunInterrupted`；没有遗留时不做任何写入，重复启动是幂等的。
-- 观察：执行器把 `ExperimentRunStarted`、`ExperimentStepSubmitted`、`ExperimentCheckpointReached`、`ExperimentProbeCompleted`、`ExperimentRunCompleted`、`ExperimentRunFailed`、`ExperimentRunStopped` 与 `ExperimentRunInterrupted` 写入实验分支的生命周期审计，可经 `GET /api/v1/console/timeline?branchId=` 查看；进度接口给出当前 tick、脚本终点、已写入结果的探针数与最近一条执行器事件。
-- 未接入：脚本步骤只支持以玩家身份提交，以其他主体声明的步骤在执行前记 `script-principal-unsupported` 失败。Agent 身份的命令必须持有该 Agent 自己 turn 的控制代次与租约，或真人席位接管后的控制代次，执行器两者都没有；真人席位接管只覆盖三个外域席位，接管服务也尚未实现（见 [内容包](../game/content-pack.md) 第 11 节）。`audit`、`open-loop` 模式与 `initialState: snapshot/rebuild` 仍由 RunSpec schema 拒绝。
+- 观察：执行器把 `ExperimentRunStarted`、`ExperimentStepSubmitted`、`ExperimentCheckpointReached`、`ExperimentProbeCompleted`、`ExperimentRunCompleted`、`ExperimentRunFailed`、`ExperimentRunStopped` 与 `ExperimentRunInterrupted` 写入实验分支的生命周期审计，脚本控制的取得与交还另记 `ControllerChanged`，可经 `GET /api/v1/console/timeline?branchId=` 查看；进度接口给出当前 tick、脚本终点、已写入结果的探针数与最近一条执行器事件。
+- 未接入：`audit`、`open-loop` 模式与 `initialState: snapshot/rebuild` 仍由 RunSpec schema 拒绝。
 
 ### 8.2 经 OpenAI 兼容网关用真实模型执行
 

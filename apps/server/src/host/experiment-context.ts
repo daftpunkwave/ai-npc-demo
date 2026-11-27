@@ -106,13 +106,21 @@ export async function prepareExperimentRun(deps: ExperimentHostDeps, record: Exp
   const agents = configuration.agents;
   if (agents === null) throw new ExperimentFailure("agent-runtime-unavailable", "run 装配没有 Agent 槽位，无法执行探针");
   if (deps.report === null) throw new ExperimentFailure("evaluation-unavailable", "宿主装配未绑定评估模块，无法汇总 experiment_results");
+  const rosterAgentIds = agents.roster.agents.map(({ agentId }) => agentId);
+  // 脚本控制接管的是名册里由 Agent 自己控制的身份；名册外的身份在实验分支上没有控制租约，也没有可代为行动的 Agent。
+  const outsideRoster = plan.steps.find(({ controller, as }) => controller === "script" && !rosterAgentIds.includes(as));
+  if (outsideRoster !== undefined) {
+    throw new ExperimentFailure(
+      "script-principal-not-in-roster",
+      `脚本步骤 ${outsideRoster.declarationIndex} 以 ${outsideRoster.as} 身份提交，但该身份不在 run 名册 ${runSpec.rosterRef} 中`,
+    );
+  }
   const scope = { worldId: record.worldId, branchId: record.branchId };
   const modules = await startAgentRunModules({
     plan: core.activeStartup.plan, configuration: agents, content: core.content, host: core.host, scope,
     running: [...core.storageStarted.instances, ...core.startedModules.instances],
   });
   const approvals = new SpeechApprovalIndex();
-  const rosterAgentIds = agents.roster.agents.map(({ agentId }) => agentId);
   return {
     runId: record.runId,
     worldId: record.worldId,
