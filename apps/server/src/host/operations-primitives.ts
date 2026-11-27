@@ -1,6 +1,6 @@
 /**
  * 运营基础操作：暂停排空、快照、重开与恢复的事务内实现，以及恢复来源的兼容性裁决。
- * 依赖存档服务、时钟 provider、在线入口、内容与冻结 manifest；不写幂等记录、不做请求级去重。
+ * 依赖存档端口（SavePort）、时钟 provider、在线入口、内容与冻结 manifest；不写幂等记录、不做请求级去重。
  * 禁止在未暂停时快照、跳过来源校验、在失败时留下孤立快照或半切换别名，
  * 或用普通异常表示可预期的来源不兼容。
  */
@@ -18,7 +18,7 @@ import {
 import type { ContentPack, HostServices } from "@world-prism/contracts";
 import type { ConfigLoadContext, RunSpec } from "@world-prism/experiment";
 import { loadRoster, runSpecSchema, validateRoster, validateRunSpec } from "@world-prism/experiment";
-import type { ClockState } from "@world-prism/module-sdk";
+import type { ClockState, RestoreResult } from "@world-prism/module-sdk";
 import { loadAssembly } from "./assembly";
 import { clockView } from "./clock-view";
 import { switchLiveBranch, type LiveRunState } from "./live-state";
@@ -70,7 +70,7 @@ export interface OperationsPrimitives {
     readonly snapshotId: string;
     readonly createdBy: string;
     readonly runId?: string;
-  }): ReturnType<ServerRuntime["save"]["restoreSnapshot"]>;
+  }): RestoreResult;
 }
 
 /** 构造运营基础操作；所有写操作都依赖调用方已暂停并排空当前 tick。 */
@@ -287,7 +287,7 @@ export function createOperationsPrimitives(input: OperationsPrimitivesInput): Op
     readonly snapshotId: string;
     readonly createdBy: string;
     readonly runId?: string;
-  }): ReturnType<ServerRuntime["save"]["restoreSnapshot"]> => {
+  }): RestoreResult => {
     const inspection = save.inspectRestore(restoreInput.snapshotId);
     validateRestoreSource(inspection);
     const restored = storage.transact((tx) => {

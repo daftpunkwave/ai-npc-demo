@@ -1,13 +1,13 @@
 /**
- * 验证 SQLite 存档：创建快照时复制源分支为冻结分支、快照列表只含当前 campaign，
+ * 验证 SQLite 存档实现：创建快照时复制源分支为冻结分支、快照列表只含当前 campaign，
  * 恢复在同一事务内沿用源 run 的 RunSpec 与 manifest、结束旧 run、归档旧分支并切换在线别名；
  * 另覆盖快照不完整时的 dry-run 拒绝、坏快照按稳定领域错误码失败、调用方事务回滚与别名写入失败注入后零残留。
- * 依赖真实 SQLite 分支存储、宿主 ID/时间服务与游戏 harness 的种子分支和时钟。
+ * 依赖真实 SQLite 分支存储、宿主 ID/时间服务与游戏 harness 的种子分支和时钟；存档只经模块公开的 SavePort 取用。
  * 禁止用改写快照行或别名的方式伪造恢复成功，也禁止用假存储替代回滚验证。
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { DomainError, type ErrorCode, type Json, type StoragePort, type StorageTable, type StorageTransaction } from "@world-prism/contracts";
-import { SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
+import type { RestoreResult, RestoreSnapshotInput, SavePort } from "@world-prism/module-sdk";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,
@@ -16,6 +16,7 @@ import {
   withGamePorts,
   type GameHarness,
 } from "./game-support";
+import { createSqliteSavePort } from "./save-support";
 
 const active: GameHarness[] = [];
 
@@ -125,6 +126,11 @@ function expectDomainError(fn: () => unknown, code: ErrorCode): DomainError {
   return caught as DomainError;
 }
 
+/** 在给定存储的一次事务内提交恢复；存档端口只提供事务内恢复，事务边界由调用方决定。 */
+function restoreIn(storage: StoragePort, save: SavePort, input: RestoreSnapshotInput): RestoreResult {
+  return storage.transact((tx) => save.restoreSnapshotInTransaction(tx, input));
+}
+
 /** 用真实 SQLite 事务与分支复制，只在写入 world_aliases 时抛错，验证恢复事务整体回滚。 */
 function storageFailingAliasWrite(storage: StoragePort): StoragePort {
   return {
@@ -162,7 +168,7 @@ describe("SQLite 存档", () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 5, mode: "paused" });
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "测试存档", createdBy: "player-1" });
     expect(snapshot).toMatchObject({ sourceBranchId: value.branchId, worldTick: 5, label: "测试存档" });
     // 没有在线别名时不属于任何 campaign，列表为空。
@@ -178,7 +184,7 @@ describe("SQLite 存档", () => {
   it("缺少时钟或空标签时拒绝创建快照", async () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     expect(() => save.createSnapshot({ sourceBranchId: value.branchId, label: " ", createdBy: "player-1" })).toThrow();
     value.storage.transact((tx) => {
       tx.run("DELETE FROM clock WHERE branch_id = ?", [value.branchId]);
@@ -191,12 +197,12 @@ describe("SQLite 存档", () => {
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 5, mode: "paused" });
     const online = seedOnlineRun(value);
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "恢复点", createdBy: "operator-1" });
     const sourceJobs = value.storage.transact((tx) => tx.branch(value.branchId).table("jobs").list());
     expect(sourceJobs.filter((job) => job["status"] === "scheduled").length).toBeGreaterThan(0);
 
-    const restored = save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
+    const restored = restoreIn(value.storage, save, { snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
     expect(restored.branchId).not.toBe(value.branchId);
     expect(restored.runId).not.toBe(online.runId);
     expect(restored.previousBranchId).toBe(value.branchId);
@@ -258,9 +264,9 @@ describe("SQLite 存档", () => {
       delete state["cityResources"];
       table.put({ ...row, state_json: state, version: Number(row["version"]) + 1 });
     });
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "旧状态恢复点", createdBy: "operator-1" });
-    const restored = save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
+    const restored = restoreIn(value.storage, save, { snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
     const campaign = withGamePorts(value, (ports) => ports["game.world"].campaign(), restored.branchId);
     expect(campaign).toMatchObject({
       status: "running",
@@ -274,14 +280,14 @@ describe("SQLite 存档", () => {
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 3, mode: "paused" });
     seedOnlineRun(value);
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "待破坏", createdBy: "operator-1" });
     const before = persistenceOf(value);
     value.storage.transact((tx) => {
       tx.branch(snapshot.frozenBranchId).table("clock").delete({});
     });
     const error = expectDomainError(
-      () => save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" }),
+      () => restoreIn(value.storage, save, { snapshotId: snapshot.snapshotId, createdBy: "operator-1" }),
       "invalid-state",
     );
     expect(error.safeMessage).toContain("缺少时钟记录");
@@ -293,10 +299,10 @@ describe("SQLite 存档", () => {
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 3, mode: "paused" });
     const online = seedOnlineRun(value);
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "错误分类", createdBy: "operator-1" });
     const restore = (): unknown =>
-      save.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
+      restoreIn(value.storage, save, { snapshotId: snapshot.snapshotId, createdBy: "operator-1" });
     const frozen = value.storage.transact((tx) =>
       tx.rows("branches").get({ branch_id: snapshot.frozenBranchId }),
     );
@@ -364,7 +370,7 @@ describe("SQLite 存档", () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 3, mode: "paused" });
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
 
     // 复制主分支为一条没有任何事件的分支，连同时钟一起复制：事件前沿 MAX 为空时按 0 处理，快照仍可创建。
     value.storage.transact((tx) => {
@@ -413,7 +419,7 @@ describe("SQLite 存档", () => {
     const value = await harness();
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 5, mode: "paused" });
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const before = persistenceOf(value);
 
     expect(() =>
@@ -435,12 +441,13 @@ describe("SQLite 存档", () => {
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 4, mode: "paused" });
     seedOnlineRun(value);
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const snapshot = save.createSnapshot({ sourceBranchId: value.branchId, label: "回滚点", createdBy: "operator-1" });
     const before = persistenceOf(value);
 
-    const failing = new SqliteSaveService(storageFailingAliasWrite(value.storage), value.host);
-    expect(() => failing.restoreSnapshot({ snapshotId: snapshot.snapshotId, createdBy: "operator-1" })).toThrow(
+    const failingStorage = storageFailingAliasWrite(value.storage);
+    const failing = await createSqliteSavePort(value, failingStorage);
+    expect(() => restoreIn(failingStorage, failing, { snapshotId: snapshot.snapshotId, createdBy: "operator-1" })).toThrow(
       /注入的别名写入失败/,
     );
     expect(persistenceOf(value)).toEqual(before);
@@ -453,7 +460,7 @@ describe("SQLite 存档", () => {
     expect(startNeutralCampaign(value).commandStatus).toBe("accepted");
     setGameClock(value, { worldTick: 6, mode: "paused" });
     seedOnlineRun(value);
-    const save = new SqliteSaveService(value.storage, value.host);
+    const save = await createSqliteSavePort(value);
     const onlineSnapshot = save.createSnapshot({
       sourceBranchId: value.branchId,
       label: "在线存档",
@@ -474,7 +481,7 @@ describe("SQLite 存档", () => {
       createdBy: "operator-1",
     });
     expect(save.listSnapshots().map((item) => item.snapshotId)).toEqual([onlineSnapshot.snapshotId]);
-    save.restoreSnapshot({ snapshotId: onlineSnapshot.snapshotId, createdBy: "operator-1" });
+    restoreIn(value.storage, save, { snapshotId: onlineSnapshot.snapshotId, createdBy: "operator-1" });
     expect(save.listSnapshots().map((item) => item.snapshotId)).toEqual([onlineSnapshot.snapshotId]);
     expect(experimentSnapshot.snapshotId).not.toBe(onlineSnapshot.snapshotId);
   });

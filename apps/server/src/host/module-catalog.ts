@@ -18,6 +18,7 @@ import type {
   GameModulePorts,
   GameRuleContributor,
   ModuleBinder,
+  SavePort,
 } from "@world-prism/module-sdk";
 import { resolveGameModuleBindings } from "./game-port-binder";
 import { compressionNoneModuleDefinition } from "@world-prism/mod-agent-compression-none/definition";
@@ -48,7 +49,7 @@ import {
   escalatingScenarioModuleDefinition,
   scenarioModuleDefinition,
 } from "@world-prism/mod-game-scenario-watergate";
-import { saveModuleDefinition, SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
+import { saveModuleDefinition } from "@world-prism/mod-game-save-sqlite";
 import {
   accessPolicyModuleDefinition,
   type AccessPolicyPort,
@@ -134,11 +135,6 @@ export type {
   ServerIdentity,
 } from "@world-prism/mod-transport-http-ws-fastify";
 export type { ConversationReadPort, ConversationReadQuery, ConversationSourceLine } from "@world-prism/mod-transport-http-ws-fastify";
-
-/** 创建存档领域服务；宿主只经组合根引用具体实现。 */
-export function createSaveService(storage: StoragePort, host: HostServices): SqliteSaveService {
-  return new SqliteSaveService(storage, host);
-}
 
 /** 全部 server 模块定义；moduleId 唯一性由注册表与 check-catalog 校验。 */
 export const serverLiveModelTransportDefinitions = [openAICompatibleTransportDefinition, anthropicTransportDefinition] as const;
@@ -278,7 +274,8 @@ export interface ServerRuntime {
   readonly operations: OperationsFactory;
   readonly observability: ObservabilityPort;
   readonly moduleAdmin: ModuleAdminPort;
-  readonly save: SqliteSaveService;
+  /** 存档端口；宿主的快照、恢复与预检编排只经此端口，不依赖存档实现类。 */
+  readonly save: SavePort;
   readonly binder: ModuleBinder;
   readonly contributors: readonly GameRuleContributor<GameModulePorts, unknown>[];
 }
@@ -356,7 +353,7 @@ export function createServerRuntime(input: {
   const { plan, instances, content, host } = input;
   const { binder, contributors } = resolveGameModuleBindings({ plan, instances, content, host });
 
-  const savePort = portFor<{ readonly save?: SqliteSaveService }>(plan, instances, "game.save");
+  const savePort = portFor<{ readonly save?: SavePort }>(plan, instances, "game.save");
   if (savePort.save === undefined) {
     throw new Error("存档模块没有通过公开端口暴露存档服务");
   }

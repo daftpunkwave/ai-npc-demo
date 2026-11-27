@@ -54,7 +54,6 @@ import {
   type ConversationReadPort,
   type ConversationSourceLine,
 } from "@world-prism/mod-transport-http-ws-fastify";
-import { SqliteSaveService } from "@world-prism/mod-game-save-sqlite";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,
@@ -67,6 +66,7 @@ import {
   withGamePorts,
   type GameHarness,
 } from "./game-support";
+import { createSqliteSavePort } from "./save-support";
 
 const active: GameHarness[] = [];
 const apps: Awaited<ReturnType<typeof createServerApp>>[] = [];
@@ -360,7 +360,7 @@ async function accessPolicyFor(harness: GameHarness, config: Json = {}): Promise
 }
 
 async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
-  const save = new SqliteSaveService(harness.storage, harness.host);
+  const save = await createSqliteSavePort(harness);
   const accessPolicy = await accessPolicyFor(harness, overrides.accessPolicyConfig ?? {});
   const app = await createServerApp({
     // 测试会密集发送请求验证幂等与并发语义，放宽限流阈值；
@@ -393,7 +393,12 @@ async function appFor(harness: GameHarness, overrides: AppOverrides = {}) {
       void operationId;
       return setClockStepping(harness, expected, ticks);
     },
-    save,
+    // 传输层存档钩子直接接到真实存档端口；恢复在一次存储事务内提交，与宿主编排的事务边界一致。
+    save: {
+      createSnapshot: (input) => save.createSnapshot(input),
+      listSnapshots: () => save.listSnapshots(),
+      restoreSnapshot: (input) => harness.storage.transact((tx) => save.restoreSnapshotInTransaction(tx, input)),
+    },
     reset: overrides.reset ?? (() => ({ branchId: harness.branchId, clock: clockView(harness) })),
     identities: [
       { token: "player-token", auth: playerAuth(harness) },

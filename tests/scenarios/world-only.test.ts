@@ -4,7 +4,6 @@
  * 禁止绕过命令网关或宿主顺序手写 job/时钟/消费者调用，也禁止让墙钟时间影响结果。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { createSaveService } from "@world-prism/app-server";
 import {
   createTrackedGameHarness,
   disposeTrackedGameHarnesses,
@@ -13,6 +12,7 @@ import {
   readGameEvents,
   type GameHarness,
 } from "../integration/game-support";
+import { createSqliteSavePort } from "../integration/save-support";
 import {
   advanceToTick,
   cardTriggerTicks,
@@ -289,7 +289,7 @@ describe("章节世界脚本", () => {
   it("章节末快照与恢复出的后继分支逐表保留世界行", { timeout: 120_000 }, async () => {
     const harness = await createWorldAtChapterEnd(active);
 
-    const save = createSaveService(harness.storage, harness.host);
+    const save = await createSqliteSavePort(harness);
     const snapshot = save.createSnapshot({
       sourceBranchId: harness.branchId,
       label: "章节末世界快照",

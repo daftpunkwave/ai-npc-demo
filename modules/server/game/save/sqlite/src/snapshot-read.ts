@@ -5,12 +5,22 @@
  */
 import { DomainError, canonicalJson, type Json, type StorageCell, type StorageTransaction, type StorageRow } from "@world-prism/contracts";
 import type {
-  FrozenSnapshot,
   RestoreExpectation,
   RestoreInspection,
   SnapshotRecord,
   SnapshotSourceRun,
-} from "./snapshot-types";
+} from "@world-prism/module-sdk";
+
+/** 已校验的冻结快照：快照行与冻结分支一致，且冻结分支带完整时钟与事件前沿。 */
+export interface FrozenSnapshot {
+  readonly snapshotId: string;
+  readonly sourceBranchId: string;
+  readonly frozenBranchId: string;
+  readonly worldId: string;
+  readonly worldSeq: number;
+  readonly worldTick: number;
+  readonly sourceRunId: string | null;
+}
 
 export function numberValue(value: unknown, column: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {

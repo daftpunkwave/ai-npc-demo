@@ -40,7 +40,6 @@ export { generateRunSeed, rngFor } from "./host/random";
 export { canonicalHasher } from "./host-services";
 export {
   clockConfigOf,
-  createSaveService,
   createServerRuntime,
   plannedModuleForCapability,
   serverRequiredCapabilities,
