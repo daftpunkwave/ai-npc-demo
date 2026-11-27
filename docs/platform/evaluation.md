@@ -169,7 +169,7 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 
 探针在以下情况记为无效，不进入正确率的分母，但在报告里单列数量与原因：turn 失败；没有产生对白（意图为 none）；对白来自安全模板但模型决策路径本应作答（`speech-fallback`）；严格实验中出现模型替换（`model-substituted`）；证据不完整。确定性决策的对白本来就是模板，不算 `speech-fallback`。探针 turn 自己写入有回答与 `no-dialogue` 的结果；turn 失败、预算耗尽或从未被调度时，执行器补写 `turn-failed`；对白写入后 turn 在结算阶段失败的，已写入的结果被改判为 `turn-failed`。LLM judge 默认关闭；开启时使用独立的 evaluator 挂载，结果与上述规则分数并列报告，不替代它。
 
-行为记录：脚本里每个触发 Agent 决策的外部输入（例如 `s-promise` 第 60 tick 的请求）都记录该 Agent 的 `stance`、意图、理由类别与提交的命令，用于比较各组的行为分布。
+行为记录：脚本里每个触发 Agent 决策的外部输入（例如 `s-promise` 第 60 tick 的请求）都记录该 Agent 的 `stance`、意图、理由类别与提交的命令，用于比较各组的行为分布。报告按触发种类排除不属于外部输入的唤醒：`probe` 与 `debug` 是测量和排障手段，`patrol` 与 `prospective` 是 Agent 按自身节奏的定时唤醒，这些 turn 不进入行为记录。报告按触发种类排除不属于外部输入的唤醒：`probe` 与 `debug` 是测量和排障手段，`patrol` 与 `prospective` 是 Agent 按自身节奏的定时唤醒，这些 turn 不进入行为记录。
 
 ## 9. 报告格式
 

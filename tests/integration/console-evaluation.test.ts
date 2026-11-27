@@ -287,6 +287,51 @@ describe("控制台评估读取接口", () => {
     expect(after.latency.turnP95Ms).toBe(300);
   });
 
+  it("行为记录只收外部输入触发的决策，探针、调试、巡检与预期提醒的 turn 不计入", async () => {
+    const host = await testHost();
+    const headers = consoleHeader(await login(host, "evaluation-console"));
+    const runId = onlineRunId(host);
+    const branchId = host.branchId;
+    const now = new Date().toISOString();
+    const kinds = ["player-dialogue", "probe", "debug", "patrol", "prospective", "agreement-proposal"] as const;
+    host.storage.transact((tx) => {
+      kinds.forEach((kind, index) => {
+        const suffix = String(index).padStart(2, "0");
+        tx.rows("artifacts").put({
+          artifact_id: `art-behaviorkind${suffix}`, run_id: runId, kind: "decision",
+          content_hash: `sha256-behaviorkind${suffix}`, mime: "application/json", byte_size: 64,
+          storage: "inline",
+          body: JSON.stringify({ decision: { stance: "accept", dialogueIntent: { reasonCode: "fair-terms" } } }),
+          file_path: null, redaction: "raw", redacted_from: null, created_at: now,
+        });
+        tx.rows("turn_runs").put({
+          turn_id: `turn-behaviorkind${suffix}`, run_id: runId, branch_id: branchId,
+          agent_id: "human-independent", agent_turn_index: index + 1, status: "completed",
+          trigger_ids_json: [`trg-behaviorkind${suffix}`], profile_hash: "hash",
+          controller_epoch: 1, turn_lease_epoch: 0, created_tick: 10 + index,
+          effective_json: [{
+            stage: "turn.decision", status: "applied", reason: null, requested: null, resolved: null,
+            effective: { artifactId: `art-behaviorkind${suffix}` }, spanId: `spn-behaviorkind${suffix}`,
+          }],
+          created_at: now, started_at: now, ended_at: now,
+        });
+        tx.branch(branchId).table("triggers").put({
+          trigger_id: `trg-behaviorkind${suffix}`, agent_id: "human-independent", kind,
+          priority: 100, source_ref: `evt-behaviorkind${suffix}`, created_tick: 10 + index,
+          dedupe_key: `behavior-kind-${suffix}`, consumed_by_turn_id: `turn-behaviorkind${suffix}`,
+        });
+      });
+    });
+
+    const report = runReportResponseSchema.parse((await host.app.inject({
+      method: "GET", url: `/api/v1/console/runs/${runId}/report`, headers,
+    })).json());
+    expect(report.behavior.map((entry) => [entry.atTick, entry.trigger])).toEqual([
+      [10, "player-dialogue"],
+      [15, "agreement-proposal"],
+    ]);
+  });
+
   it("报告从归档 decision、预算账本与活动记忆行读取行为、成本与记忆", async () => {
     const host = await testHost();
     const headers = consoleHeader(await login(host, "evaluation-console"));

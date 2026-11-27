@@ -2,7 +2,8 @@
  * 核心职责：从归档行聚合 run 报告的各项指标：成本、turn 时长与延迟、记忆分层、行为记录，
  * 以及行为记录需要的 artifact 正文、触发器种类与命令类型查询。
  * 交互契约：输入已读取的行集合与必要的存储事务，返回控制台报告字段；缺失字段按契约回退，不编造值。
- * 以文件存放的 artifact 正文由调用方在事务外预先装载后传入。
+ * 以文件存放的 artifact 正文由调用方在事务外预先装载后传入。行为记录只收外部输入触发的决策，
+ * 探针、调试、巡检与预期提醒这类内部唤醒不计入。
  * 约束与禁忌：不执行查询以外的工作、不写存储、不在事务内读取文件，也不为缺失的触发器或立场填默认值。
  */
 import type { Json, StorageTransaction } from "@world-prism/contracts";
@@ -95,6 +96,12 @@ export function memoryOf(input: {
  * - `commands` 从 `turn.tool` 阶段归档的回执 ID 反查 `command_receipts.command_type`。
  * 任一必需字段缺失就整条跳过：编造一个触发器或立场会让报告声称发生过没发生的事情。
  */
+/**
+ * 不属于外部输入的唤醒种类：探针与调试是测量和排障手段，巡检与预期提醒是 Agent 按自身节奏的定时唤醒。
+ * 行为记录用来比较各组对脚本外部输入的反应（评估文档第 8 节「行为记录」），这些 turn 混入会污染各组的行为分布。
+ */
+const nonExternalTriggerKinds: ReadonlySet<string> = new Set(["probe", "debug", "patrol", "prospective"]);
+
 export function behaviorOf(input: {
   readonly tx: StorageTransaction;
   readonly turns: readonly Readonly<Record<string, unknown>>[];
@@ -131,7 +138,7 @@ export function behaviorOf(input: {
     const agentId = stringCell(turn, "agent_id");
     if (branchId === null || agentId === null) continue;
     const trigger = triggerKindOf(input.tx, branchId, triggerId);
-    if (trigger === null) continue;
+    if (trigger === null || nonExternalTriggerKinds.has(trigger)) continue;
     behavior.push({
       atTick: numberCell(turn, "created_tick", 0),
       agentId,
