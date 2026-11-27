@@ -220,7 +220,7 @@ describe("OpenAI 兼容网关布局", () => {
     expect(manifest.models).toMatchObject({ layoutId: gatewayLayout, pricingVersion: "2026-11-gateway-estimate" });
   });
 
-  it("真实模型实验叠加 budget-real-model 后，每个 Agent 的每日 token 上限冻结为 50 万，其余预算不变", async () => {
+  it("真实模型实验叠加 budget-real-model 后，每个 Agent 冻结的每日 token 上限为 50 万、每 turn 调用上限为 12，其余预算不变", async () => {
     const loadContext = contextOf({ ...gatewayEnv, WORLD_PRISM_OPENAI_COMPAT_THINKING: "disabled" });
     const repository = loadExperimentSpec("exp-memory-promise-v1", loadContext).value;
     const configure = async (commonPatchRefs: readonly string[]) => {
@@ -243,8 +243,8 @@ describe("OpenAI 兼容网关布局", () => {
     expect(patched).toHaveLength(baseline.length);
     expect(patched.length).toBeGreaterThan(0);
     patched.forEach((budgets, index) => {
-      expect(budgets).toEqual({ ...baseline[index], maxTokensPerAgentPerDay: 500000 });
-      expect(baseline[index]).toMatchObject({ maxTokensPerAgentPerDay: 60000 });
+      expect(budgets).toEqual({ ...baseline[index], maxTokensPerAgentPerDay: 500000, maxModelCallsPerTurn: 12 });
+      expect(baseline[index]).toMatchObject({ maxTokensPerAgentPerDay: 60000, maxModelCallsPerTurn: 6 });
     });
   });
 });

@@ -309,7 +309,7 @@ variant patch 放在 `config/profiles/variants/`，`memory` 槽的完整参数�
 | `memory-m2-stream-reflection` | `slots.memory = { module: agent.memory.stream-reflection, config: <11.7 节全部参数> }` |
 | `memory-m3-layered-hybrid` | `slots.memory = { module: agent.memory.layered-hybrid, config: <11.8 节全部参数> }` |
 | `decision-deterministic` | `slots.decision = { module: agent.decision.deterministic, config: {} }`（工程测试用） |
-| `budget-real-model` | `budgets` 整块，只把 `maxTokensPerAgentPerDay` 从 60000 提高到 500000，其余与 baseline 相同（真实模型实验经 `commonPatchRefs` 叠加，见 [评估](evaluation.md#82-经-openai-兼容网关用真实模型执行)） |
+| `budget-real-model` | `budgets` 整块，只把 `maxTokensPerAgentPerDay` 从 60000 提高到 500000、`maxModelCallsPerTurn` 从 6 提高到 12，其余与 baseline 相同（真实模型实验经 `commonPatchRefs` 叠加，见 [评估](evaluation.md#82-经-openai-兼容网关用真实模型执行)） |
 
 ```yaml
 # 变体文件 memory-m1-structured-ledger.yaml（所有变体文件的形状）

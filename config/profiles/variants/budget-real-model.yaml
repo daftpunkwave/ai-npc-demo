@@ -3,13 +3,16 @@ profileId: budget-real-model
 kind: variant
 parent: null
 # 真实模型实验用的预算补丁，经实验规格的 commonPatchRefs 叠加，不改平台基线。
-# 只把每个 Agent 每日 token 上限从 6 万提高到 50 万：真实模型的 Agent 会互发消息、相互唤醒。
-# 网关冒烟中，上限为 6 万时第 3 天回答探针的 turn 因额度耗尽失败；提到 20 万后，
-# 每个 Agent 每天仍要调用 90 到 110 次，第 1、2 天都会用满。
+# 与 platform-baseline 相比只改两项。
+# 每个 Agent 每日 token 上限从 6 万提高到 50 万：真实模型的 Agent 会互发消息、相互唤醒。网关冒烟中，
+#   上限为 6 万时第 3 天回答探针的 turn 因额度耗尽失败；提到 20 万后，每个 Agent 每天仍要调用 90 到 110 次，
+#   第 1、2 天都会用满。
+# 每 turn 模型调用上限从 6 提高到 12：message.send 的正文由 speech 调用生成，引用校验不过还会重试，
+#   这些调用都计入同一 turn。决策轮、收尾轮与改正轮最多 6 次，再加上发消息的 speech 调用，上限为 6 时决策会以 call-budget 失败。
 # patch 的 budgets 必须是完整块，其余各项与 platform-baseline 相同。
 patch:
   budgets:
-    maxModelCallsPerTurn: 6
+    maxModelCallsPerTurn: 12
     maxDecisionRounds: 4
     maxToolCallsPerTurn: 8
     maxToolCallsPerRound: 3
