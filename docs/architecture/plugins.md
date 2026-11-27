@@ -28,7 +28,7 @@
 | apiVersion | 与宿主契约匹配；不能只凭模块版本猜兼容性 |
 | instanceScope | deployment/run/branch/agent/session，决定实例生命周期与状态命名空间 |
 | provides / requires | 提供与依赖的能力及基数；requiresRemote 仅浏览器 realm，经握手校验 |
-| configSchema / defaults | 严格 schema；未知键拒绝，单位/范围/默认值可检查 |
+| configSchema / defaults | 严格 schema；未知键拒绝，单位/范围/默认值可检查；对自身输出幂等，改变类型或不可重入的 transform 在解析阶段拒绝 |
 | stateSchemaVersion / migrationPaths | 有状态实现声明状态版本与迁移；无状态实现显式声明无状态 |
 | contributions | 工具、事件卡、slot/route/panel 等扩展点贡献及排序 |
 | experimentAxes | 参数说明、显示顺序与可比较轴；UI 与评估共用同一描述符 |

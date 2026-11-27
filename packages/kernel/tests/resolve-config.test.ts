@@ -1,5 +1,5 @@
 /**
- * 验证模块配置的严格校验、默认值填充与错误定位。
+ * 验证模块配置的严格校验、默认值填充、schema 对自身输出幂等与错误定位。
  * 依赖 kernel 的 resolveModuleConfig、zod 严格 schema 与最小假模块。
  * 禁止使用真实模块配置或放宽未知键与类型检查。
  */
@@ -83,5 +83,46 @@ describe("模块配置解析", () => {
       configSchema: z.strictObject({ startedAt: z.date() }),
     });
     expectDomainError(() => resolveModuleConfig(definition, { startedAt: new Date(0) }), "assembly-incompatible");
+  });
+});
+
+describe("configSchema 对自身输出幂等", () => {
+  it("改变类型的 transform 让解析输出无法再次通过 schema，解析阶段即拒绝并指向 schema", () => {
+    const definition = fakeModule({
+      id: "transport.http-ws.fastify",
+      configSchema: z.strictObject({ port: z.string().transform(Number) }),
+    });
+    const error = expectDomainError(() => resolveModuleConfig(definition, { port: "8080" }, "transport"), "assembly-incompatible");
+    expect(error.details).toMatchObject({
+      moduleId: "transport.http-ws.fastify",
+      configRef: "transport",
+      reason: "config-not-idempotent",
+      issues: [expect.stringContaining("再次解析失败：port")],
+    });
+    expect(error.safeMessage).toContain("对自身输出不幂等");
+  });
+
+  it("不可重入的 transform 再次解析得到不同的值时拒绝", () => {
+    const definition = fakeModule({
+      id: "game.clock.controlled",
+      configSchema: z.strictObject({ secondsPerTick: z.number().int().transform((value) => value + 1) }),
+    });
+    const error = expectDomainError(() => resolveModuleConfig(definition, { secondsPerTick: 10 }), "assembly-incompatible");
+    expect(error.details).toMatchObject({
+      reason: "config-not-idempotent",
+      issues: ["再次解析得到的配置与首次解析输出不同"],
+    });
+  });
+
+  it("可重入的 transform 与 schema 默认值对自身输出幂等，照常解析", () => {
+    const definition = fakeModule({
+      id: "client.hud.standard",
+      realm: "client",
+      configSchema: z.strictObject({
+        title: z.string().transform((value) => value.trim()),
+        tags: z.array(z.string()).default([]),
+      }),
+    });
+    expect(resolveModuleConfig(definition, { title: "  灰港  " })).toEqual({ title: "灰港", tags: [] });
   });
 });

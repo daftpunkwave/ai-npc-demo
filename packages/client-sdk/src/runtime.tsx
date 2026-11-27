@@ -302,13 +302,14 @@ async function prepareModules(
  * 不是模块运行期故障，必须给出可定位的模块 ID 而不是抛原始 ZodError。
  */
 function parseResolvedConfig(definition: ModuleDefinition, config: Json): Json {
-  // 下发值已在服务端经过同一 schema 解析（含 transform）。这里只用 safeParse 校验：
+  // 下发值已在服务端经过同一 schema 解析（含 transform）。kernel 解析配置时已要求 configSchema 对自身输出幂等，
+  // 因此服务端输出在这里必然能再次通过；仍失败说明本地模块定义与服务端不一致。这里只用 safeParse 校验：
   // 再取 parsed.data 会二次执行 transform，浏览器实际用的配置就与服务端冻结结果不一致。
   const parsed = definition.configSchema.safeParse(config);
   if (!parsed.success) {
     throw new DomainError(
       "assembly-incompatible",
-      `模块 ${definition.id} 的装配配置未通过 configSchema 校验`,
+      `模块 ${definition.id} 的装配配置未通过本地 configSchema 校验：下发值是服务端解析后的输出，本地模块定义与服务端不一致`,
       {
         details: {
           moduleId: definition.id,

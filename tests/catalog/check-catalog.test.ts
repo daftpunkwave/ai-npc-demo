@@ -1,5 +1,5 @@
 /**
- * 校验 catalog 预检：目录扫描、模块目录一致性、运行时依赖闭包、环、重复绑定、realm 与配置 schema。
+ * 校验 catalog 预检：目录扫描、模块目录一致性、运行时依赖闭包、环、重复绑定、realm、配置 schema 与其幂等契约。
  * 依赖真实装配目录、临时 YAML 夹具与最小假模块；不启动服务、不打开存储。
  * 禁止写死装配文件名或只断言异常存在而不核对原因。
  */
@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
+import { z } from "zod";
 import {
   assemblyDescriptorSchema,
   capabilityIdSchema,
@@ -226,6 +227,40 @@ describe("catalog 预检", () => {
         message: expect.stringContaining("console.health.standard 缺少 platform.operations"),
       },
     ]);
+  });
+
+  it("配置 schema 用改变类型的 transform 时，默认配置与装配配置两条路径都报对自身输出不幂等", () => {
+    // 带默认值的模块即使没有进入任何装配，也按默认配置核对。
+    const withDefault = defineModule({
+      ...fakeModule({ id: "platform.budget.standard", provides: ["platform.budget"] }),
+      configSchema: z.strictObject({ ceiling: z.string().default("100").transform(Number) }),
+    });
+    // 必须由装配提供配置的模块，按装配解析出的配置核对。
+    const fromAssembly = defineModule({
+      ...fakeModule({ id: "transport.http-ws.fastify", provides: ["transport.http-ws"] }),
+      configSchema: z.strictObject({ port: z.string().transform(Number) }),
+    });
+    const root = fixtureRoot({
+      "transform.yaml": assembly({
+        assemblyId: "assembly-transform",
+        configs: { transport: { port: "8080" } },
+        bindings: [{ capability: "transport.http-ws", moduleId: "transport.http-ws.fastify", configRef: "transport" }],
+      }),
+    });
+    const report = checkCatalog({ root, definitions: [withDefault, fromAssembly], requiredCapabilities: [] });
+    expect(report.violations).toEqual([
+      {
+        file: "<module-catalog>",
+        code: "assembly-incompatible",
+        message: expect.stringContaining("platform.budget.standard 的默认配置"),
+      },
+      {
+        file: "transform.yaml",
+        code: "assembly-incompatible",
+        message: expect.stringContaining("transport.http-ws.fastify 的 configSchema 对自身输出不幂等"),
+      },
+    ]);
+    expect(report.violations[0]?.message).toContain("对自身输出不幂等");
   });
 
   it("模块配置不符合 schema 失败并定位字段", () => {
