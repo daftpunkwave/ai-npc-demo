@@ -66,7 +66,7 @@ function transition(
 }
 
 /**
- * 取得脚本控制：只在实验分支上、且该身份当前由 Agent 自己控制时成立。
+ * 取得脚本控制：只在实验分支上、由该分支所属的 run 发起，且该身份当前由 Agent 自己控制时成立。
  * 代次递增后，该 Agent 在途与排队的 turn 携带的旧代次一律按过期控制被网关与租约检查拒绝。
  */
 export function acquireScriptControl(tx: StorageTransaction, request: ScriptControlRequest): ControllerTransition {
@@ -74,6 +74,12 @@ export function acquireScriptControl(tx: StorageTransaction, request: ScriptCont
   if (branch?.["kind"] !== "experiment" || (branch["status"] !== "active" && branch["status"] !== "paused")) {
     throw new DomainError("forbidden", "脚本控制只能在活动的实验分支上取得", {
       details: { branchId: request.branchId, kind: typeof branch?.["kind"] === "string" ? branch["kind"] : null },
+    });
+  }
+  // 控制者记为请求方 run：若不核对分支归属，另一个 run 能在别人的实验分支上取得窗口，审计与交还归属都会记错。
+  if (branch["run_id"] !== request.runId) {
+    throw new DomainError("forbidden", "脚本控制只能由实验分支所属的 run 取得", {
+      details: { branchId: request.branchId, runId: request.runId },
     });
   }
   const lease = requireLease(tx, request.branchId, request.agentId);

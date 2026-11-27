@@ -33,11 +33,12 @@ afterEach(async () => {
   await disposeTrackedGameHarnesses(active);
 });
 
+/** 改写测试分支的种类；实验分支同时归属测试 run，与执行器只在自己 run 的分支上取得控制一致。 */
 function setBranchKind(harness: GameHarness, kind: "online" | "experiment" | "sandbox"): void {
   harness.storage.transact((tx) => {
     const branch = tx.rows("branches").get({ branch_id: harness.branchId });
     if (branch === null) throw new Error("缺少测试分支行");
-    tx.rows("branches").put({ ...branch, kind });
+    tx.rows("branches").put({ ...branch, kind, ...(kind === "experiment" ? { run_id: runId } : {}) });
   });
 }
 
@@ -141,6 +142,17 @@ describe("实验执行器的脚本控制", () => {
       { runId, subjectId: alliance, payload: { fromKind: "agent", toKind: "script", fromEpoch: 1, toEpoch: 2, controllerPrincipalId: runId, context: { declarationIndex: 3 } } },
       { runId, subjectId: alliance, payload: { fromKind: "script", toKind: "agent", fromEpoch: 2, toEpoch: 3, controllerPrincipalId: runId, context: { declarationIndex: 3 } } },
     ]);
+  });
+
+  it("另一个 run 不能在不属于它的实验分支上取得脚本控制，租约与审计都不变", async () => {
+    const harness = await startedExperiment();
+    const changesBefore = controllerChanges(harness).length;
+    expect(() => harness.storage.transact((tx) => acquireScriptControl(tx, { ...request(harness, alliance), runId: "run-00000other" })))
+      .toThrow(expect.objectContaining({ code: "forbidden" }));
+    expect(lease(harness, alliance)).toEqual(["agent", null, 1]);
+    expect(controllerChanges(harness)).toHaveLength(changesBefore);
+    // 分支所属的 run 照常取得。
+    expect(acquire(harness, alliance)).toMatchObject({ fromKind: "agent", toKind: "script", fromEpoch: 1, toEpoch: 2 });
   });
 
   it("执行被打断后遗留的脚本控制按取得时的上下文交还，并标记为恢复", async () => {
