@@ -116,13 +116,10 @@ export function startPolling(options: PollingOptions): PollingHandle {
     if (!isPageVisible(visibility.current())) return;
     const controller = new AbortController();
     inFlight = controller;
-    let pending: Promise<void>;
-    try {
-      pending = options.read(controller.signal);
-    } catch (error) {
-      pending = Promise.reject(error);
-    }
-    pending.then(
+    // 执行器同步运行，读取仍在本次调用内发出；读取函数同步抛错时执行器把它转成拒绝，与异步失败同样计数退避。
+    new Promise<void>((resolve, reject) => {
+      options.read(controller.signal).then(resolve, reject);
+    }).then(
       () => {
         failures = 0;
         settle(true);

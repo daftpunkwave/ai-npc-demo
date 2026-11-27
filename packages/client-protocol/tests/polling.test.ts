@@ -138,11 +138,22 @@ describe("只读轮询调度", () => {
     });
     const onError = vi.fn();
     const polling = startPolling({ read, intervalMs: 1_000, maxBackoffMs: 8_000, onError, visibility: fakeVisibility("visible").source });
+    expect(read).toHaveBeenCalledTimes(1);
 
     await flush();
+    expect(onError).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenCalledWith(failure);
-    await vi.advanceTimersByTimeAsync(2_000);
+    // 第一次失败后按 2 倍基础间隔退避，而不是按成功间隔或立即重读。
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(read).toHaveBeenCalledTimes(2);
+    await flush();
+    expect(onError).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(read).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(read).toHaveBeenCalledTimes(3);
     polling.stop();
   });
 
