@@ -59,7 +59,8 @@ it("领域请求复用响应校验和身份过期后的清理", async () => {
   await api.login("fixture-login");
   api.setActiveRole("researcher");
   await expect(api.consoleModelLayouts()).rejects.toMatchObject({
-    issues: [expect.objectContaining({ path: ["layouts"] })],
+    code: "plugin-failed",
+    details: { status: 200, issues: [expect.objectContaining({ path: "layouts" })] },
   });
   await expect(api.consoleTurns()).rejects.toMatchObject({ code: "unauthenticated", safeMessage: "会话已过期" });
   expect(api.token).toBeNull();

@@ -18,7 +18,6 @@ import {
   runReportResponseSchema,
   runsResponseSchema,
   conversationResponseSchema,
-  errorResponseSchema,
   loginResponseSchema,
   modulesResponseSchema,
   resolvedModuleSetSchema,
@@ -43,6 +42,7 @@ import { createModelLayoutHttp } from "./http/model-layouts";
 import { createOperationsHttp } from "./http/operations";
 import { createResearchHttp } from "./http/research";
 import { queryString, type ConsoleRequest, type RequestOptions } from "./http/request";
+import { contractViolationError, failedResponseError } from "./http/request-errors";
 
 export type { RequestOptions } from "./http/request";
 
@@ -359,27 +359,20 @@ export class ApiClient {
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
+    // 非 JSON 正文（代理错误页、静态 404）按无载荷处理，交给状态码兜底映射或契约校验。
     const payload: unknown = await response.json().catch(() => null);
     options.signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
         this.clearSession();
       }
-      const parsedError = errorResponseSchema.safeParse(payload);
-      if (parsedError.success) {
-        throw new DomainError(parsedError.data.error.code, parsedError.data.error.safeMessage, {
-          retryable: parsedError.data.error.retryable,
-          traceId: parsedError.data.error.traceId,
-          detailsArtifactRef: parsedError.data.error.detailsArtifactRef,
-        });
-      }
-      throw new DomainError(
-        response.status >= 500 ? "plugin-failed" : "validation",
-        response.statusText || "请求失败",
-        { retryable: response.status >= 500 },
-      );
+      throw failedResponseError(response.status, payload);
     }
-    return schema.parse(payload);
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) {
+      throw contractViolationError(response.status, parsed.error);
+    }
+    return parsed.data;
   }
 }
 
