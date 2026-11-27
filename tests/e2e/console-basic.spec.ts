@@ -1,5 +1,5 @@
 /**
- * 验证控制台令牌登录、运行总览、研究页面导航、角色禁用状态，以及观测页流帧与宿主在线分支的协作。
+ * 验证控制台令牌登录、运行总览、研究页面导航、角色禁用状态，以及观测页流帧与宿主在线身份（世界与分支）的协作。
  * 依赖固定双端口与服务端 403 边界；不访问真实观测原文。
  * 禁止把隐藏按钮或静态占位页当作授权通过。
  */
@@ -170,4 +170,59 @@ test("观测页收到其他分支的快照帧时只请宿主核对，宿主更�
   await expect(page.getByTestId("console-branch")).toHaveText(switchedBranch, { timeout: 2_500 });
   await expect(page.getByTestId("console-page-observability").locator(".branch-chip")).toHaveText(switchedBranch);
   await expect.poll(() => sockets.length).toBe(2);
+});
+
+test("在线世界变化而分支 ID 不变时，观测页同样按新身份重新订阅并丢弃旧世界的数据", async ({ page }) => {
+  const otherWorld = "wld-e2e-other-world";
+  let switched = false;
+  await page.route("**/api/v1/session", async (route) => {
+    const response = await route.fetch();
+    const descriptor = sessionDescriptorSchema.parse(await response.json());
+    await route.fulfill({ response, json: switched ? { ...descriptor, worldId: otherWorld } : descriptor });
+  });
+  const sockets: WebSocketRoute[] = [];
+  await page.routeWebSocket(/\/api\/v1\/streams\?/, (webSocket) => {
+    sockets.push(webSocket);
+  });
+  const session = await openConsole(page);
+  const timelineFrame = (streamSeq: number, worldId: string, summaryZh: string): string =>
+    JSON.stringify(consoleStreamSnapshotMessageSchema.parse({
+      type: "snapshot",
+      channel: "console.timeline",
+      streamSeq,
+      projectionVersion: 0,
+      worldId,
+      branchId: session.branchId,
+      data: {
+        events: [{
+          kind: "domain",
+          eventId: `evt-00000000000${streamSeq}`,
+          type: "ConsoleFixture",
+          summaryZh,
+          worldSeq: streamSeq,
+          worldTick: 1,
+          principalId: null,
+          audience: null,
+          payload: {},
+          correlationId: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }],
+      },
+    }));
+  await page.getByTestId("console-role").selectOption("researcher");
+  await page.getByTestId("console-nav-observability").click();
+  await expect.poll(() => sockets.length).toBe(1);
+  sockets[0]?.send(timelineFrame(1, session.worldId, "旧世界的时间线事件"));
+  await expect(page.getByText("旧世界的时间线事件", { exact: true })).toBeVisible();
+
+  // 帧携带新世界与同一分支：观测页不展示该帧，只请宿主核对；宿主按会话描述更新世界后，页面以新身份重新订阅。
+  switched = true;
+  sockets[0]?.send(timelineFrame(2, otherWorld, "新世界的时间线事件"));
+
+  await expect.poll(() => sockets.length).toBe(2);
+  await expect(page.getByText("旧世界的时间线事件", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("新世界的时间线事件", { exact: true })).toHaveCount(0);
+  sockets[1]?.send(timelineFrame(3, otherWorld, "新世界的时间线事件"));
+  await expect(page.getByText("新世界的时间线事件", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("console-page-observability").locator(".branch-chip")).toHaveText(session.branchId);
 });

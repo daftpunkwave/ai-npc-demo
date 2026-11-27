@@ -1,7 +1,8 @@
 /**
  * 核心职责：呈现世界时间线、Agent 检查器、turn 证据与 trace 树。
  * 交互契约：依赖 console API、当前会话与 React；所有数据经服务端授权查询。
- * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据；离开页面或切换分支、Agent、turn 时中止对应的在途读取。
+ * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据；离开页面或切换分支、Agent、turn 时中止对应的在途读取；
+ * 在线身份（世界与分支）变化时丢弃旧身份的全部数据与选择。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
@@ -30,7 +31,7 @@ interface ConsoleHostPort {
    * 该值只由宿主按服务端会话描述更新。
    */
   readonly branchId: string;
-  /** 订阅在线分支变化；返回取消订阅函数。 */
+  /** 订阅在线分支变化（世界或分支任一变化）；返回取消订阅函数。 */
   readonly subscribeBranch: (listener: () => void) => () => void;
   /** 请宿主立即向服务端核对在线分支；页面不能直接改写宿主身份。 */
   refreshBranchIdentity(): void;
@@ -52,7 +53,37 @@ function TraceNode({ node }: { readonly node: TraceResponse["root"] }): ReactNod
   );
 }
 
+interface OnlineIdentity {
+  readonly worldId: string;
+  readonly branchId: string;
+}
+
 function ObservabilityPage(): ReactNode {
+  const host = usePort<ConsoleHostPort>("host.console");
+  // 在线身份以宿主端口为准：恢复/重开后会变，查询必须跟随。
+  const [identity, setIdentity] = useState<OnlineIdentity>(() => ({ worldId: host.worldId, branchId: host.branchId }));
+  useEffect(() => {
+    const sync = (): void => {
+      setIdentity((current) =>
+        current.worldId === host.worldId && current.branchId === host.branchId
+          ? current
+          : { worldId: host.worldId, branchId: host.branchId });
+    };
+    sync();
+    return host.subscribeBranch(sync);
+  }, [host]);
+  // 以 (worldId, branchId) 复合身份为重启键：任一变化都重新挂载视图，旧身份的数据、选择、错误、
+  // 在途读取与流连接随卸载一并丢弃，查询与订阅按新身份从头开始。
+  return (
+    <ObservabilityView
+      key={JSON.stringify([identity.worldId, identity.branchId])}
+      worldId={identity.worldId}
+      branchId={identity.branchId}
+    />
+  );
+}
+
+function ObservabilityView({ worldId, branchId }: OnlineIdentity): ReactNode {
   const host = usePort<ConsoleHostPort>("host.console");
   const [events, setEvents] = useState<readonly TimelineItem[]>([]);
   const [agents, setAgents] = useState<readonly AgentStatusView[]>([]);
@@ -71,12 +102,6 @@ function ObservabilityPage(): ReactNode {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
-  // 在线分支以宿主端口为准：恢复/重开后会变，查询必须跟随。
-  const [branchId, setBranchId] = useState(host.branchId);
-  useEffect(() => {
-    setBranchId(host.branchId);
-    return host.subscribeBranch(() => setBranchId(host.branchId));
-  }, [host]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,10 +154,10 @@ function ObservabilityPage(): ReactNode {
             if (message.type !== "snapshot") return;
             // 旧连接的迟到快照不触发任何动作：先确认未取消且连接代次仍然有效。
             if (cancelled || generation !== connectionGeneration) return;
-            // 帧内身份与本页查询的分支不一致，说明在线分支可能已切换。在线分支只由宿主按服务端会话描述写入，
-            // 这里只请宿主立即核对，不直接采用帧内身份，也不展示该帧：宿主更新分支后本页按新分支重新订阅，
+            // 帧内身份与本页查询的身份不一致，说明在线分支可能已切换。在线分支只由宿主按服务端会话描述写入，
+            // 这里只请宿主立即核对，不直接采用帧内身份，也不展示该帧：宿主更新身份后本页按新身份重新订阅，
             // 服务端随订阅重发新分支的快照。
-            if (message.worldId !== host.worldId || message.branchId !== branchId) {
+            if (message.worldId !== worldId || message.branchId !== branchId) {
               host.refreshBranchIdentity();
               return;
             }
@@ -175,7 +200,7 @@ function ObservabilityPage(): ReactNode {
       clearReconnect();
       stream?.close();
     };
-  }, [host.api, branchId]);
+  }, [host.api, worldId, branchId]);
 
   useEffect(() => {
     const request = new AbortController();
@@ -188,7 +213,7 @@ function ObservabilityPage(): ReactNode {
       if (!request.signal.aborted) setAgentError(String(cause));
     });
     return () => { request.abort(); };
-  }, [host.api, branchId]);
+  }, [host.api, worldId, branchId]);
 
   useEffect(() => {
     if (selectedAgent === null) return;
@@ -215,7 +240,7 @@ function ObservabilityPage(): ReactNode {
       if (!request.signal.aborted) setDetailError(String(cause));
     });
     return () => { request.abort(); };
-  }, [host.api, branchId, selectedAgent, refreshVersion]);
+  }, [host.api, worldId, branchId, selectedAgent, refreshVersion]);
 
   useEffect(() => {
     artifactRequestSeq.current += 1;
