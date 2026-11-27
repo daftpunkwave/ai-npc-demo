@@ -307,4 +307,55 @@ describe("实验执行器的配额与失败路径", () => {
     expect(await waitForRunStatus(second, runId, ["completed", "failed"], 120_000)).toBe("completed");
     expect(probeResults(second, runId)).toHaveLength(1);
   }, 120_000);
+
+  it("停止已置为 paused 但进程在收尾前退出时，重启释放遗留的沙盒与名册激活，且重复启动不再写入", async () => {
+    const dataDir = tempRoot(resources, "world-prism-experiment-stop-crash-");
+    const first = await experimentHost(resources, { dataDir });
+    const headers = await researcherHeaders(first);
+    const [runId] = await createExperimentRuns(first, headers, experimentSpec({ experimentId: "exp-runner-stop-crash-v1" }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    const branchId = branchOf(first, runId);
+    await startRun(first, headers, runId, "op-000000000951");
+    await vi.waitFor(() => expect(worldTickOf(first, branchId)).toBeGreaterThanOrEqual(3), { timeout: 30_000, interval: 5 });
+    await stopRun(first, headers, runId, "op-000000000952");
+    await vi.waitFor(() => expect(experimentAudit(first, branchId).at(-1)?.type).toBe("ExperimentRunStopped"), { timeout: 30_000, interval: 20 });
+    // 还原成停止接口已提交、执行器尚未收尾的样子：run 与时钟已暂停，但名册仍激活、探针沙盒仍 active。
+    const sandboxId = "br-00000000sbx1";
+    first.storage.transact((tx) => {
+      const now = new Date().toISOString();
+      const activations = tx.branch(branchId).table("agent_activations");
+      for (const row of activations.list()) activations.put({ ...row, status: "active", updated_at: now });
+      tx.rows("branches").put({
+        branch_id: sandboxId, world_id: first.worldId, kind: "sandbox", status: "active",
+        parent_branch_id: branchId, forked_at_world_seq: 0, run_id: null, profile_hash: null, created_at: now,
+      });
+      tx.branch(sandboxId).table("agent_activations").put({ agent_id: "human-independent", status: "active", updated_at: now });
+    });
+    expect(runRow(first, runId)["status"]).toBe("paused");
+    expect(activeIdentityCount(first)).toBe(4);
+    const auditBefore = experimentAudit(first, branchId).length;
+    resources.hosts.splice(resources.hosts.indexOf(first), 1);
+    await first.close();
+
+    const second = await experimentHost(resources, { dataDir });
+    expect(runRow(second, runId)["status"]).toBe("paused");
+    expect(second.storage.transact((tx) => tx.rows("branches").get({ branch_id: sandboxId })?.["status"])).toBe("archived");
+    expect(activeAgentsOn(second, branchId)).toEqual([]);
+    expect(activeIdentityCount(second)).toBe(0);
+    const recovered = experimentAudit(second, branchId).slice(auditBefore);
+    expect(recovered).toEqual([{
+      type: "ExperimentRunInterrupted",
+      payload: { status: "paused", reason: "interrupted", releasedSandboxes: 1, releasedActivations: 4 },
+    }]);
+    resources.hosts.splice(resources.hosts.indexOf(second), 1);
+    await second.close();
+
+    // 再次启动没有遗留可释放：不重复写审计。研究员继续后照常执行到完成。
+    const third = await experimentHost(resources, { dataDir });
+    expect(experimentAudit(third, branchId)).toHaveLength(auditBefore + 1);
+    const thirdHeaders = await researcherHeaders(third);
+    await startRun(third, thirdHeaders, runId, "op-000000000953");
+    expect(await waitForRunStatus(third, runId, ["completed", "failed"], 120_000)).toBe("completed");
+    expect(activeIdentityCount(third)).toBe(0);
+  }, 120_000);
 });

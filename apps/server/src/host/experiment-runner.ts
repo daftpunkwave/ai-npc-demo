@@ -52,7 +52,7 @@ export class ExperimentRunner {
 
   constructor(private readonly deps: ExperimentHostDeps, private readonly worldId: string) {}
 
-  /** 启动时调用：把上次进程遗留为 running 的实验 run 归位为 paused。 */
+  /** 启动时调用：把上次进程遗留为 running 的实验 run 归位为 paused，并释放 paused run 未收尾的沙盒与激活。 */
   recoverInterrupted(): readonly string[] {
     return recoverInterruptedRuns(this.deps.core, this.worldId);
   }

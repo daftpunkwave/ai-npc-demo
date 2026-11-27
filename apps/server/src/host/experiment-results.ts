@@ -141,25 +141,56 @@ export function isScriptedExperimentRun(tx: StorageTransaction, run: Readonly<Re
 }
 
 /**
- * 启动时恢复上次进程遗留的执行：仍为 running 的实验 run 改为 paused，归档其未关闭的沙盒并释放配额。
- * 进程中断时内存里的执行状态已丢失，继续按 running 计会让 run 永远停在「运行中」而没有驱动者。
+ * 归档实验分支下仍为 active 的沙盒并休眠其中的身份，再休眠实验分支自己的名册；返回释放的沙盒数与身份数。
+ * 只在没有执行在驱动该 run 时调用（启动恢复），因此这里的 active 都是上次进程没来得及收尾的遗留。
+ */
+function releaseLeftoversIn(tx: StorageTransaction, host: HostServices, branchId: string): { readonly sandboxes: number; readonly activations: number } {
+  const branches = tx.rows("branches");
+  const nowIso = host.nowIso();
+  let sandboxes = 0;
+  let activations = 0;
+  for (const sandbox of branches.list({ parent_branch_id: branchId, kind: "sandbox", status: "active" })) {
+    branches.put({ ...sandbox, status: "archived" });
+    activations += deactivateBranchAgentsInTransaction(tx, String(sandbox["branch_id"]), nowIso).length;
+    sandboxes += 1;
+  }
+  activations += deactivateBranchAgentsInTransaction(tx, branchId, nowIso).length;
+  return { sandboxes, activations };
+}
+
+/**
+ * 启动时恢复上次进程遗留的执行，幂等：
+ * - 仍为 running 的实验 run 改为 paused，归档其未关闭的沙盒并释放配额。进程中断时内存里的执行状态已丢失，
+ *   继续按 running 计会让 run 永远停在「运行中」而没有驱动者。
+ * - 已是 paused 的实验 run 同样释放遗留的沙盒与激活：停止接口先把 run 置为 paused，执行器随后才异步关闭沙盒、
+ *   休眠名册，进程在两者之间退出时这些身份会一直占着部署级配额。没有遗留时不写任何东西。
  */
 export function recoverInterruptedRuns(core: HostStartup, worldId: string): readonly string[] {
   const { storage, host } = core;
-  const interrupted = storage.transact((tx) => tx.rows("runs").list({ world_id: worldId, status: "running" })
-    .filter((run) => isScriptedExperimentRun(tx, run))
-    .map((run) => ({ runId: String(run["run_id"]), branchId: String(run["branch_id"]) })));
-  for (const { runId, branchId } of interrupted) {
+  const candidates = storage.transact((tx) => tx.rows("runs").list({ world_id: worldId })
+    .filter((run) => (run["status"] === "running" || run["status"] === "paused") && isScriptedExperimentRun(tx, run))
+    .map((run) => ({ runId: String(run["run_id"]), branchId: String(run["branch_id"]), status: String(run["status"]) })));
+  const interrupted: string[] = [];
+  for (const { runId, branchId, status } of candidates) {
+    if (status === "running") {
+      storage.transact((tx) => { releaseLeftoversIn(tx, host, branchId); });
+      finishHalted({ storage, host, clock: core.runtime.clock, runId, branchId, reason: "interrupted" });
+      interrupted.push(runId);
+      continue;
+    }
     storage.transact((tx) => {
-      const branches = tx.rows("branches");
-      for (const sandbox of branches.list({ parent_branch_id: branchId, kind: "sandbox", status: "active" })) {
-        branches.put({ ...sandbox, status: "archived" });
-        deactivateBranchAgentsInTransaction(tx, String(sandbox["branch_id"]), host.nowIso());
-      }
+      const released = releaseLeftoversIn(tx, host, branchId);
+      if (released.sandboxes === 0 && released.activations === 0) return;
+      recordExperimentAuditIn(tx, host, {
+        runId, branchId, type: "ExperimentRunInterrupted", subjectId: null,
+        payload: {
+          status: runStatusIn(tx, runId), reason: "interrupted",
+          releasedSandboxes: released.sandboxes, releasedActivations: released.activations,
+        },
+      });
     });
-    finishHalted({ storage, host, clock: core.runtime.clock, runId, branchId, reason: "interrupted" });
   }
-  return interrupted.map(({ runId }) => runId);
+  return interrupted;
 }
 
 /** 读取 run 的执行进度；run 不存在或不属于本世界时为 null。 */
