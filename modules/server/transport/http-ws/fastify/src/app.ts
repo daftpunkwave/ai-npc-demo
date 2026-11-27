@@ -11,6 +11,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import { DomainError, type Json, type StreamChannel } from "@world-prism/contracts";
+import { defaultAllowedOrigins } from "./definition";
 import { StreamHub } from "./stream-hub";
 import { channelsFor, registerRequestTraceId, sendHttpError, type OnlineBranch, type RouteContext } from "./routes/context";
 import { registerAuthRoutes } from "./routes/auth-routes";
@@ -149,7 +150,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
       // 宿主上报失败不能影响已经确定的 HTTP 响应或连接清理。
     }
   };
-  const allowedOrigins = new Set(options.allowedOrigins ?? ["http://127.0.0.1:5173"]);
+  const allowedOrigins = new Set(options.allowedOrigins ?? defaultAllowedOrigins);
   // 跨域允许面全部显式声明，不依赖 @fastify/cors 的默认回显：
   // 方法锁定为实际路由使用的集合，头部锁定为会话与角色所需的最小集合；
   // 会话令牌走 Authorization 头而非 Cookie，因此 credentials 保持 false。

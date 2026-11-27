@@ -92,10 +92,11 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   const requestedAssembly = options.assembly === undefined
     ? loadAssembly(options.assemblyRef ?? deploymentDefaults.assemblyRef, process.cwd(), assemblies)
     : assemblyDescriptorSchema.parse(options.assembly);
+  // allowedOrigins 未指定时交给传输配置 schema 的缺省值，宿主不再另存一份 Origin 列表。
   const transportConfig = parseTransportConfig({
     host: options.transportHost ?? "127.0.0.1",
     port: options.transportPort ?? 3000,
-    allowedOrigins: options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://127.0.0.1:3000"],
+    ...(options.allowedOrigins === undefined ? {} : { allowedOrigins: options.allowedOrigins }),
   });
 
   /** 部署期参数由宿主并入模块配置：数据目录与监听设置不写进装配，也不参与冻结摘要。 */

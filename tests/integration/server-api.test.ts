@@ -48,7 +48,9 @@ import {
 import type { ApprovedSpeechReader } from "@world-prism/module-sdk";
 import {
   TransportPort,
+  defaultAllowedOrigins,
   httpTransportLimits,
+  transportConfigSchema,
   type ConversationReadPort,
   type ConversationSourceLine,
 } from "@world-prism/mod-transport-http-ws-fastify";
@@ -2534,6 +2536,20 @@ describe("服务端 API", () => {
     current += 20_000;
     const rejected = openStream(port, unused);
     expect((await rejected.closed()).code).toBe(4401);
+  });
+
+  it("未指定 allowedOrigins 时同时接受网页玩家端与同源控制台的 Origin", async () => {
+    const value = await createTrackedGameHarness(active);
+    const app = await appFor(value);
+    for (const origin of defaultAllowedOrigins) {
+      const response = await app.inject({ method: "POST", url: "/api/v1/auth/login", headers: { origin }, payload: { token: "console-token" } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["access-control-allow-origin"]).toBe(origin);
+    }
+    expect(defaultAllowedOrigins).toEqual(["http://127.0.0.1:5173", "http://127.0.0.1:3000"]);
+    expect(transportConfigSchema.parse({}).allowedOrigins).toEqual([...defaultAllowedOrigins]);
+    const foreign = await app.inject({ method: "POST", url: "/api/v1/auth/login", headers: { origin: "http://127.0.0.1:4000" }, payload: { token: "console-token" } });
+    expect(foreign.statusCode).toBe(403);
   });
 
   it("拒绝错误 Origin 与玩家访问控制台", async () => {
