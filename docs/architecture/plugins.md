@@ -89,6 +89,14 @@
 
 普通模块获得：scoped storage、授权查询、受预算的模型调用、时钟/随机源、trace、配置读取，具体接口为 [公共契约](contracts.md) 第 3 节的 `ModuleCreateInput` 与 `HostServices`。storage adapter 的原始连接只由组合根注入；普通 memory/context/decision 不获得数据库句柄或全局 world 对象。
 
+浏览器宿主另向模块注入固定端口。固定端口由宿主应用在启动时提供，不由任何模块提供，因此不是能力：不进装配绑定、不参与能力解析与目录摘要，也不写进 `requires`。各 realm 的固定端口清单由公共契约的 `BROWSER_HOST_PORTS` 唯一定义：
+
+| realm | 固定端口 | 内容 |
+|---|---|---|
+| client | `host.api`、`host.command`、`host.session` | 类型化 API 客户端、命令客户端、当前会话描述 |
+| console | `host.console` | 控制台宿主端口：API 客户端、会话、当前角色与在线分支身份 |
+| server | 无 | 服务端模块只经 `requires` 声明的 typed port 取用能力 |
+
 宿主固定执行以下顺序，模块不能把这些步骤设为可选 hook：
 
 1. 认证与会话。

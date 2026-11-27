@@ -41,6 +41,21 @@ export const CAPABILITY_GROUPS = ["game", "agent", "platform", "transport", "cli
  */
 export const CAPABILITY_ID_PATTERN = /^(?:game|agent|platform|transport|client|console)\.[a-z][a-z0-9-]*$/;
 
+/**
+ * 浏览器宿主固定端口的键语法：`host.<name>`。固定端口由宿主应用在启动时注入，不由任何模块提供，
+ * 因此不是能力：不进装配绑定、不参与能力解析与目录摘要，也不写进 requires。
+ */
+export const HOST_PORT_PATTERN = /^host\.[a-z][a-z0-9-]*$/;
+
+/**
+ * 各浏览器 realm 的宿主固定端口契约：本 realm 的模块无需声明即可取用清单内端口，清单外的 `host.*` 一律越界。
+ * check:catalog 按本清单对账模块源码；server realm 没有固定端口。
+ */
+export const BROWSER_HOST_PORTS = {
+  client: ["host.api", "host.command", "host.session"],
+  console: ["host.console"],
+} as const satisfies Readonly<Record<"client" | "console", readonly string[]>>;
+
 /** 能力 ID 带品牌，避免与模块 ID 或普通字符串混用；不符合语法的 ID 在描述符校验阶段即失败。 */
 export const capabilityIdSchema = z
   .string()

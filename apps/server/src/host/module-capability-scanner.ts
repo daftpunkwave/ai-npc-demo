@@ -1,12 +1,12 @@
 /**
- * 核心职责：词法扫描单个服务端模块源码，找出按能力 ID 取用端口的位置与行号，
- * 以及以非字面量键读取端口容器、因而无法静态得知能力 ID 的位置。
- * 交互契约：输入为源码文本，返回能力访问记录；能力 ID 语法只取自公共契约，词法原语取自 module-source-lexer，
- * 不读文件、不判定访问是否已声明，对账与违规汇总由调用方负责。
+ * 核心职责：词法扫描单个模块源码（三个 realm 通用），找出按能力 ID 或宿主固定端口键取用端口的位置与行号，
+ * 以及以非字面量键取用端口、因而无法静态得知能力 ID 的位置。
+ * 交互契约：输入为源码文本，返回端口访问记录；能力 ID 与宿主固定端口键的语法只取自公共契约，
+ * 词法原语取自 module-source-lexer，不读文件、不判定访问是否已声明，对账与违规汇总由调用方负责。
  * 约束与禁忌：只做词法扫描，不执行源码；注释与普通字符串里的能力名不算访问。
  * 端口容器按名字识别，把容器转存到其他名字后再索引、或经 Object.values 等反射式枚举读取不在识别范围。
  */
-import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN } from "@world-prism/contracts";
+import { CAPABILITY_GROUPS, CAPABILITY_ID_PATTERN, HOST_PORT_PATTERN } from "@world-prism/contracts";
 import {
   countNewlines,
   identifierEndingAt,
@@ -20,35 +20,37 @@ import {
 } from "./module-source-lexer";
 
 /**
- * 能力 ID 在源码中的两种访问形态：
+ * 端口键在源码中的三种取用形态：
  * - 索引访问：`["game.world"]`，包括 `x?.["game.world"]` 与跨行写法；
- * - 声明解构：`const { "game.world": world } = context.modules`。
+ * - 声明解构：`const { "game.world": world } = context.modules`；
+ * - 浏览器 hook 调用：`usePort("client.camera")`、`usePortSubscription<T>("client.world-view")`。
+ * 端口键是能力 ID，或浏览器宿主固定端口键 `host.<name>`（如 `ports["host.api"]`、`usePort("host.console")`）。
  * 扫描器跳过注释与普通字符串，避免把注释文字或频道名等对象键误判为能力使用；
- * 浏览器 realm 通过 client-sdk 的 `usePort` 取端口，不走索引访问，因此只对 server 模块做源码对账。
- * 能力 ID 的语法只由公共契约提供，扫描与描述符校验共用同一判定。
+ * 两种键的语法只由公共契约提供，扫描与描述符校验共用同一判定。
  */
-function isCapabilityId(value: string): boolean {
-  return CAPABILITY_ID_PATTERN.test(value);
+export function isPortKey(value: string): boolean {
+  return CAPABILITY_ID_PATTERN.test(value) || HOST_PORT_PATTERN.test(value);
 }
 
 /**
- * 判断字符串是否「明显在写能力 ID」：以能力 group 开头并跟一个分隔点。
- * 这类字符串出现在能力取用位置却不是合法能力 ID，说明作者写错了语法，
+ * 判断字符串是否「明显在写端口键」：以能力 group 或 `host` 开头并跟一个分隔点。
+ * 这类字符串出现在端口取用位置却不合语法，说明作者写错了键，
  * 必须显式报违规而不是静默跳过，否则描述符与扫描器会再次分叉。
  */
-function looksLikeCapabilityId(value: string): boolean {
+function looksLikePortKey(value: string): boolean {
   const separator = value.indexOf(".");
   if (separator <= 0) {
     return false;
   }
+  const group = value.slice(0, separator);
   // eslint-disable-next-line no-restricted-syntax -- 白名单是契约导出的只读字面量数组。
-  return CAPABILITY_GROUPS.includes(value.slice(0, separator) as (typeof CAPABILITY_GROUPS)[number]);
+  return group === "host" || CAPABILITY_GROUPS.includes(group as (typeof CAPABILITY_GROUPS)[number]);
 }
 
 /**
- * 一条源码能力访问：
- * - `literal`：写死能力 ID 的访问；语法合法的进入对账集合，语法非法但明显是能力 ID 的单独报告；
- * - `dynamic-key`：以非字面量键读取端口容器，无法静态得知访问了哪个能力，`receiver` 为容器名。
+ * 一条源码端口访问：
+ * - `literal`：写死端口键的访问；语法合法的进入对账集合，语法非法但明显是端口键的单独报告；
+ * - `dynamic-key`：以非字面量键取用端口，无法静态得知访问了哪个能力，`receiver` 为端口容器名或 hook 名。
  */
 export type CapabilityAccess =
   | { readonly kind: "literal"; readonly value: string; readonly line: number; readonly valid: boolean }
@@ -61,14 +63,10 @@ export type CapabilityAccess =
 const PORT_CONTAINER_NAME = /^(?:ports|modules)$|Ports$/;
 
 /**
- * 读取从 quoteIndex 开始的引号字符串。
- * 语法合法的能力 ID 返回 `valid: true`；明显在写能力 ID 但语法非法时返回 `valid: false`，
- * 由调用方报告；其余普通字符串返回 null，不参与对账。
+ * 读取从 quoteIndex 开始、不含转义的单引号或双引号字符串，返回内容与闭合引号之后的位置。
+ * 带转义、未闭合或不是引号起始时返回 null：这类键无法与声明静态对账。
  */
-function readCapabilityString(
-  text: string,
-  quoteIndex: number,
-): { readonly capability: string; readonly end: number; readonly valid: boolean } | null {
+function readQuotedString(text: string, quoteIndex: number): { readonly value: string; readonly end: number } | null {
   const quote = text[quoteIndex];
   if (quote !== '"' && quote !== "'") {
     return null;
@@ -81,21 +79,71 @@ function readCapabilityString(
       return null;
     }
     if (current === quote) {
-      break;
+      return { value, end: end + 1 };
     }
     value += current;
     end += 1;
   }
-  if (end >= text.length) {
+  return null;
+}
+
+/**
+ * 读取从 quoteIndex 开始的引号字符串。
+ * 语法合法的端口键返回 `valid: true`；明显在写端口键但语法非法时返回 `valid: false`，
+ * 由调用方报告；其余普通字符串返回 null，不参与对账。
+ */
+function readCapabilityString(
+  text: string,
+  quoteIndex: number,
+): { readonly capability: string; readonly end: number; readonly valid: boolean } | null {
+  const literal = readQuotedString(text, quoteIndex);
+  if (literal === null) {
     return null;
   }
-  if (isCapabilityId(value)) {
-    return { capability: value, end: end + 1, valid: true };
+  if (isPortKey(literal.value)) {
+    return { capability: literal.value, end: literal.end, valid: true };
   }
-  if (looksLikeCapabilityId(value)) {
-    return { capability: value, end: end + 1, valid: false };
+  if (looksLikePortKey(literal.value)) {
+    return { capability: literal.value, end: literal.end, valid: false };
   }
   return null;
+}
+
+/** 浏览器模块经 client-sdk 取端口的 hook 名；首个实参就是端口键。 */
+const PORT_HOOK_NAMES: ReadonlySet<string> = new Set(["usePort", "usePortSubscription"]);
+
+/**
+ * 读取 hook 名之后的调用：跳过可选的类型实参 `<...>`（箭头 `=>` 中的 `>` 不算闭合），
+ * 返回首个实参的起点与经过的换行数。名字后面不是调用（如 import 列表中的名字）时返回 null。
+ */
+function hookArgument(text: string, nameEnd: number): { readonly index: number; readonly newlines: number } | null {
+  let { index, newlines } = skipTrivia(text, nameEnd);
+  if (text[index] === "<") {
+    let depth = 0;
+    while (index < text.length) {
+      const current = text[index];
+      if (current === "\n") {
+        newlines += 1;
+      } else if (current === "<") {
+        depth += 1;
+      } else if (current === ">" && text[index - 1] !== "=") {
+        depth -= 1;
+        if (depth === 0) {
+          index += 1;
+          break;
+        }
+      }
+      index += 1;
+    }
+    const afterTypeArguments = skipTrivia(text, index);
+    index = afterTypeArguments.index;
+    newlines += afterTypeArguments.newlines;
+  }
+  if (text[index] !== "(") {
+    return null;
+  }
+  const argument = skipTrivia(text, index + 1);
+  return { index: argument.index, newlines: newlines + argument.newlines };
 }
 
 /** 解构声明只接受 `const`/`let`/`var` 之后的对象模式；普通对象字面量不计为能力访问。 */
@@ -296,6 +344,29 @@ export function capabilityAccesses(text: string): readonly CapabilityAccess[] {
       const end = skipStringLiteral(text, index);
       line += countNewlines(text, index, end);
       index = end;
+      continue;
+    }
+    if (isIdentifierCharacter(current) && !isIdentifierCharacter(text[index - 1])) {
+      let wordEnd = index;
+      while (isIdentifierCharacter(text[wordEnd])) {
+        wordEnd += 1;
+      }
+      const hookName = text.slice(index, wordEnd);
+      const argument = PORT_HOOK_NAMES.has(hookName) ? hookArgument(text, wordEnd) : null;
+      if (argument === null) {
+        index = wordEnd;
+        continue;
+      }
+      // hook 的首个实参只能是写死的端口键：任何字符串都按端口键判定语法，非字符串实参无法静态对账。
+      line += argument.newlines;
+      const literal = readQuotedString(text, argument.index);
+      if (literal === null) {
+        accesses.push({ kind: "dynamic-key", receiver: hookName, line });
+        index = argument.index;
+        continue;
+      }
+      accesses.push({ kind: "literal", value: literal.value, line, valid: isPortKey(literal.value) });
+      index = literal.end;
       continue;
     }
     if (current === "{") {
