@@ -24,6 +24,7 @@ import { toGameContent } from "@world-prism/app-server/content";
 import type { GameContent, GameResourcesPort, WorldTx } from "@world-prism/module-sdk";
 import { loadContentPack } from "@world-prism/experiment";
 import { gameToolsModuleDefinition } from "@world-prism/mod-agent-tools-game-tools";
+import { z } from "zod";
 import { createFakeHost } from "./authority-support";
 import { createMemoryTx } from "./game-support";
 
@@ -208,6 +209,44 @@ describe("装配驱动的模块选择与启动", () => {
     expect(moduleIds).not.toContain(gameToolsModuleDefinition.id);
     expect(resolved.plan.modules.find((module) => module.moduleId === alternative.id)?.config)
       .toEqual({ toolDescriptions: content.prompts.toolDescriptions });
+  });
+
+  it("注入工具描述时保留调用方对工具 provider 的其他配置覆盖，非对象覆盖仍被拒绝", async () => {
+    const content = loadContentPack("content", "earth-2964-v1");
+    // 替代 provider 除工具描述外还需要一个必填字段，由部署期配置覆盖提供。
+    const alternative = {
+      ...gameToolsModuleDefinition,
+      id: "agent.tools.listing-tools",
+      sourceModuleId: gameToolsModuleDefinition.id,
+      configSchema: z.object({
+        toolDescriptions: z.record(z.string().min(1), z.string().min(1)),
+        maxListedTools: z.number().int().positive(),
+      }).strict(),
+    };
+    const base = loadAssembly("local-slg-standard-v1");
+    const swapped: AssemblyDescriptor = {
+      ...base,
+      realms: {
+        ...base.realms,
+        server: {
+          ...base.realms.server,
+          bindings: base.realms.server.bindings.map((binding) =>
+            binding.capability === "agent.tools" ? { ...binding, moduleId: alternative.id } : binding,
+          ),
+        },
+      },
+    };
+    const definitions = [...serverModuleDefinitions, alternative];
+    const resolved = await resolveServerAssembly(swapped, definitions, {
+      content,
+      configOverrides: { [alternative.id]: { maxListedTools: 5 } },
+    });
+    expect(resolved.plan.modules.find((module) => module.moduleId === alternative.id)?.config)
+      .toEqual({ toolDescriptions: content.prompts.toolDescriptions, maxListedTools: 5 });
+    await expect(resolveServerAssembly(swapped, definitions, {
+      content,
+      configOverrides: { [alternative.id]: "max-5" },
+    })).rejects.toThrow("部署配置覆盖必须是 JSON 对象");
   });
 
   it("资源阈值取自装配有效配置并影响库存等级判定", async () => {

@@ -244,7 +244,11 @@ export function serverAssemblyInputs(
     // 工具说明文案属于内容包：装配把哪个模块绑定到 agent.tools，就把它作为该模块配置的 toolDescriptions 传入，
     // 换用其他工具 provider 只改装配；provider 的配置 schema 必须接受该字段。
     const content = options.content ?? loadContentPack(resolve(root, "content"), deploymentDefaults.contentPackId);
-    configOverrides[toolBinding.moduleId] = { toolDescriptions: content.prompts.toolDescriptions };
+    const existing = configOverrides[toolBinding.moduleId];
+    // 调用方对该模块的其他覆盖字段保留并与工具描述合并；非对象的覆盖原样交给 kernel 按非法覆盖拒绝，不在这里吞掉。
+    if (existing === undefined || (typeof existing === "object" && existing !== null && !Array.isArray(existing))) {
+      configOverrides[toolBinding.moduleId] = { ...existing, toolDescriptions: content.prompts.toolDescriptions };
+    }
   }
   return {
     requiredCapabilities: Object.keys(server.agentSlots ?? {}).length > 0
