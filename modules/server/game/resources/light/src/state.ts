@@ -56,12 +56,21 @@ export const stockpileStateSchema = z
 
 export type StockpileState = z.infer<typeof stockpileStateSchema>;
 
-/** 校验一条库存聚合状态；不合法时按 invalid-state 拒绝并带出库存点，不用默认值兜底。 */
+/**
+ * 校验一条库存聚合状态；不合法时按 invalid-state 拒绝并带出库存点，不用默认值兜底。
+ * 状态内的 stockpileId 必须等于聚合 ID：读取方按状态里的 ID 关联委托与输出视图，两者不一致说明聚合已损坏，
+ * 继续使用会把一个库存点的数量挂到另一个库存点上。
+ */
 export function parseStockpileState(state: unknown, stockpileId: string): StockpileState {
   const parsed = stockpileStateSchema.safeParse(state);
   if (!parsed.success) {
     throw new DomainError("invalid-state", `库存 ${stockpileId} 的状态不合法`, {
       details: { stockpileId },
+    });
+  }
+  if (parsed.data.stockpileId !== stockpileId) {
+    throw new DomainError("invalid-state", `库存 ${stockpileId} 的状态记录的是另一个库存点`, {
+      details: { stockpileId, stateStockpileId: parsed.data.stockpileId },
     });
   }
   return parsed.data;
@@ -73,7 +82,7 @@ export function readStockpile(tx: WorldTx, stockpileId: string): StockpileState 
   return record === null ? null : parseStockpileState(record.state, stockpileId);
 }
 
-/** 按 ID 升序列出全部库存聚合，每条只校验一次。 */
+/** 按 ID 升序（WorldTx.list 的缺省顺序）列出全部库存聚合，每条只校验一次。 */
 export function listStockpiles(tx: WorldTx): StockpileState[] {
   return tx.list<unknown>("stockpile").map((entry) => parseStockpileState(entry.state, entry.id));
 }

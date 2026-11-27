@@ -4,7 +4,7 @@
  * 禁止把资源 ID 当作无校验对象索引。
  */
 import { describe, expect, it } from "vitest";
-import { DomainError } from "@world-prism/contracts";
+import { DomainError, type Json } from "@world-prism/contracts";
 import { loadContentPack } from "@world-prism/experiment";
 import { createResourcesPort } from "@world-prism/mod-game-resources-light";
 import type { GameResourcesPort, StockpileStatus, WorldTx } from "@world-prism/module-sdk";
@@ -174,5 +174,18 @@ describe("轻资源", () => {
     }
     expect(caught).toBeInstanceOf(DomainError);
     expect(caught).toMatchObject({ code: "invalid-state", details: { stockpileId: "sp-earth" } });
+  });
+
+  it("状态内的库存点 ID 与聚合 ID 不一致时，批量与单点查询都按 invalid-state 拒绝", () => {
+    const memory = createMemoryTx();
+    const resources = createResourcesPort(() => memory, thresholds);
+    resources.initializeCampaign(content);
+    // 把 sp-commons 的状态原样写到 sp-earth 名下，模拟聚合 ID 与状态内 ID 不一致的损坏数据。
+    const commons = memory.get<Json>("stockpile", "sp-commons")?.state ?? null;
+    memory.put("stockpile", "sp-earth", commons);
+    const expected = { code: "invalid-state", details: { stockpileId: "sp-earth", stateStockpileId: "sp-commons" } };
+    expect(() => resources.stockpiles()).toThrow(DomainError);
+    expect(() => resources.stockpiles()).toThrow(expect.objectContaining(expected));
+    expect(() => resources.stockpile("sp-earth")).toThrow(expect.objectContaining(expected));
   });
 });
