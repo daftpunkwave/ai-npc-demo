@@ -126,6 +126,9 @@ export type DomainEventPayloadSchemas = typeof domainEventPayloadSchemas;
 
 export type DomainEventType = keyof DomainEventPayloadSchemas;
 
+/** 按事件类型取契约载荷类型；读取方据此在类型层面绑定载荷字段名。 */
+export type DomainEventPayload<Type extends DomainEventType> = z.infer<DomainEventPayloadSchemas[Type]>;
+
 /**
  * 领域事件 payload schema 的最小类型。
  * 公共目录中的事件直接使用 zod schema；扩展事件由模块显式登记同形状的 schema。
