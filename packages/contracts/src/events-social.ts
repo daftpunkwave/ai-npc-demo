@@ -18,14 +18,24 @@ export const deliverySchema = z
 
 export type Delivery = z.infer<typeof deliverySchema>;
 
-/** 投递名单按 principalId 排序去重，保证同一事件的冻结结果可复现。 */
+/**
+ * 主体 ID 的规范顺序：按 UTF-16 码元比较，结果与宿主 locale 无关。
+ * 投递名单的生产者排序与 deliveryListSchema 的校验共用这一比较；localeCompare 在大小写与标点上
+ * 会随 locale 给出不同顺序（例如 zh-CN 下 "NPC-1" 排在 "npc_x" 之后），不能作为冻结结果的排序依据。
+ */
+export function comparePrincipalIds(left: string, right: string): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
+/** 投递名单按 comparePrincipalIds 严格递增（即排序且去重），保证同一事件的冻结结果可复现。 */
 export const deliveryListSchema = z.array(deliverySchema).superRefine((deliveries, context) => {
   for (let index = 1; index < deliveries.length; index += 1) {
     const previous = deliveries[index - 1];
     // eslint-disable-next-line security/detect-object-injection -- 数组下标来自本文件循环。
     const current = deliveries[index];
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- 仓库开启 noUncheckedIndexedAccess，索引访问结果可能为 undefined；Codacy 项目未开启该选项，属误报。
-    if (previous !== undefined && current !== undefined && previous.principalId >= current.principalId) {
+    if (previous !== undefined && current !== undefined && comparePrincipalIds(previous.principalId, current.principalId) >= 0) {
       context.addIssue({
         code: "custom",
         message: "投递名单必须按 principalId 严格递增排序且不重复",

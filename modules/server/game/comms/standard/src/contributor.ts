@@ -5,7 +5,7 @@
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析，将导入的泛型类型误判为 any。 */
 import type { Json } from "@world-prism/contracts";
-import { commandPayloadOf } from "@world-prism/contracts";
+import { commandPayloadOf, comparePrincipalIds } from "@world-prism/contracts";
 import {
   effectivePrincipalId,
   gameModuleIds,
@@ -254,7 +254,7 @@ function recordRumor(context: CommsContext, payload: Json): void {
     content.playerPrincipalId,
     ...content.factions.keys(),
     ...content.characters.keys(),
-  ].sort((left, right) => left.localeCompare(right));
+  ].sort(comparePrincipalIds);
   const state: MessageState = {
     messageId: input.rumorId,
     fromId: input.sourceId,
