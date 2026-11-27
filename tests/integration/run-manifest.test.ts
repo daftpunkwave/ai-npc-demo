@@ -1,5 +1,5 @@
 /**
- * 验证 manifest 冻结字段、kernel 规范化哈希的键序无关性与配置敏感性，以及规则随机源向量。
+ * 验证 manifest 冻结字段、kernel 规范化哈希的键序无关性与配置敏感性、浏览器段摘要的归属，以及规则随机源向量。
  * 依赖真实内容包、仓库配置、kernel 解析与摘要函数；不启动宿主、不打开存储。
  * 禁止用原始 JSON.stringify 或截断摘要作为期望值，也禁止把随机 ID 混入随机输入。
  */
@@ -7,9 +7,11 @@ import { describe, expect, it } from "vitest";
 import type { AssemblyDescriptor, Json } from "@world-prism/contracts";
 import { loadContentPack, loadRoster, loadRunSpec } from "@world-prism/experiment";
 import {
+  allModuleDefinitions,
   buildRunManifest,
   loadAssembly,
   resolveServerAssembly,
+  resolveSessionAssemblies,
   rngFor,
   serverModuleDefinitions,
 } from "@world-prism/app-server";
@@ -136,5 +138,32 @@ describe("manifest 冻结与规范化哈希", () => {
       maxStepTicks: 24,
     });
     expect(built.manifestHash.length).toBe(64);
+  });
+});
+
+describe("浏览器段摘要的归属", () => {
+  it("只替换 client 段的渲染器时 manifest 不变，变化由会话装配的 client 摘要体现", async () => {
+    const standard = loadAssembly("local-slg-standard-v1");
+    const swapped: AssemblyDescriptor = {
+      ...standard,
+      realms: {
+        ...standard.realms,
+        client: {
+          bindings: standard.realms.client.bindings.map((binding) =>
+            binding.capability === "client.scene-renderer" ? { ...binding, moduleId: "client.scene-renderer.null" } : binding),
+        },
+      },
+    };
+    const before = await manifestFor(standard);
+    const after = await manifestFor(swapped);
+    // 冻结 manifest 只记录服务端事实：浏览器段替换不改变世界结果，不能让既有 run 的冻结摘要失配。
+    expect(after.resolved.catalogHash).toBe(before.resolved.catalogHash);
+    expect(after.resolved.assemblyHash).toBe(before.resolved.assemblyHash);
+    expect(after.built.manifestHash).toBe(before.built.manifestHash);
+    const beforeSessions = await resolveSessionAssemblies(standard, allModuleDefinitions);
+    const afterSessions = await resolveSessionAssemblies(swapped, allModuleDefinitions);
+    expect(afterSessions.client.assemblyHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(afterSessions.client.assemblyHash).not.toBe(beforeSessions.client.assemblyHash);
+    expect(afterSessions.console.assemblyHash).toBe(beforeSessions.console.assemblyHash);
   });
 });

@@ -1,6 +1,6 @@
 /**
- * 校验浏览器模块描述符的 ID、realm、kind 与必填字段后原样返回。
- * 依赖公共模块契约；不加载实现、React、PixiJS 或浏览器网络。
+ * 浏览器模块描述符的作者入口：按模块 ID 推导 realm 并构造能力引用，再交给 kernel 的统一描述符校验后原样返回。
+ * 依赖公共模块契约与 kernel 描述符校验；不加载实现、React、PixiJS 或浏览器网络。
  * 禁止提供绕过描述符校验的注册入口，或让客户端模块依赖服务端 module-sdk。
  */
 import {
@@ -8,14 +8,13 @@ import {
   capabilityIdSchema,
   emptyModuleConfigSchema,
   moduleIdSchema,
-  moduleKindSchema,
-  realmSchema,
   type CapabilityRef,
   type ContributionRef,
   type Json,
   type ModuleDefinition,
   type StrictConfigSchema,
 } from "@world-prism/contracts";
+import { validateModuleDefinition } from "@world-prism/kernel";
 
 type BrowserRealm = Extract<ModuleDefinition["realm"], "client" | "console">;
 
@@ -78,18 +77,17 @@ export function defineBrowserModuleDefinition(
   });
 }
 
+/**
+ * 校验浏览器模块描述符后原样返回。
+ * 字段级规则（能力命名空间、重复贡献、严格配置 schema 等）与服务端模块共用 kernel 的同一份校验；
+ * 这里只额外拒绝 server realm，因为浏览器宿主不能加载服务端模块。
+ */
 export function defineBrowserModule<T extends ModuleDefinition>(definition: T): T {
-  if (!moduleIdSchema.safeParse(definition.id).success) {
-    throw new DomainError("assembly-incompatible", `浏览器模块 ID 不合法：${definition.id}`);
-  }
-  if (!realmSchema.safeParse(definition.realm).success || definition.realm === "server") {
-    throw new DomainError("realm-violation", `模块 ${definition.id} 不是浏览器 realm`);
-  }
-  if (!moduleKindSchema.safeParse(definition.kind).success) {
-    throw new DomainError("assembly-incompatible", `模块 ${definition.id} 的 kind 不合法`);
-  }
-  if (definition.version.length === 0 || definition.apiVersion.length === 0) {
-    throw new DomainError("assembly-incompatible", `模块 ${definition.id} 缺少版本`);
+  validateModuleDefinition(definition);
+  if (definition.realm === "server") {
+    throw new DomainError("realm-violation", `模块 ${definition.id} 不是浏览器 realm`, {
+      details: { moduleId: definition.id, realm: definition.realm },
+    });
   }
   return definition;
 }

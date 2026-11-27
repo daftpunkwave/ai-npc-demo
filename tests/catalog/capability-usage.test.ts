@@ -1,6 +1,6 @@
 /**
- * 校验模块源码能力访问与 provides/requires 的静态对账。
- * 依赖临时模块目录、最小模块定义与 app-server 公开的对账函数。
+ * 校验模块源码能力访问与 provides/requires 的静态对账，覆盖服务端索引与解构、浏览器 hook 调用及宿主固定端口契约。
+ * 依赖临时模块目录、最小模块定义、浏览器描述符工厂与 app-server 公开的对账函数。
  * 禁止依赖真实模块实现或让测试共享临时目录。
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { capabilityIdSchema, emptyModuleConfigSchema, type ModuleDefinition } from "@world-prism/contracts";
 import { defineModule } from "@world-prism/module-sdk";
+import { defineBrowserModuleDefinition } from "@world-prism/client-sdk";
 import { checkModuleCapabilityUsage } from "@world-prism/app-server";
 
 const temporaryRoots: string[] = [];
@@ -394,5 +395,195 @@ describe("动态能力键", () => {
       ].join("\n"),
     );
     expect(violations).toEqual([]);
+  });
+});
+
+describe("浏览器模块的端口取用对账", () => {
+  const camera = defineBrowserModuleDefinition({
+    id: "client.camera.standard",
+    kind: "service",
+    provides: "client.camera",
+    create: async () => {
+      throw new Error("静态对账不应创建模块实例");
+    },
+  });
+  const worldView = defineBrowserModuleDefinition({
+    id: "client.world-view.standard",
+    kind: "service",
+    provides: "client.world-view",
+    create: async () => {
+      throw new Error("静态对账不应创建模块实例");
+    },
+  });
+
+  function settings(requires: readonly string[]): ModuleDefinition {
+    return defineBrowserModuleDefinition({
+      id: "client.settings.standard",
+      kind: "contributor",
+      provides: "client.settings",
+      requires,
+      create: async () => {
+        throw new Error("静态对账不应创建模块实例");
+      },
+    });
+  }
+
+  function healthPage(): ModuleDefinition {
+    return defineBrowserModuleDefinition({
+      id: "console.health.standard",
+      kind: "contributor",
+      provides: "console.health",
+      create: async () => {
+        throw new Error("静态对账不应创建模块实例");
+      },
+    });
+  }
+
+  /** 按浏览器 realm 目录约定写入模块源码，视图文件用 .tsx。 */
+  function browserModule(id: string, fileName: string, content: string): Record<string, string> {
+    const [realm, family, implementation] = id.split(".");
+    const directory = `modules/${String(realm)}/${String(family)}/${String(implementation)}/src`;
+    return {
+      [`${directory}/definition.ts`]: "export {};\n",
+      [`${directory}/${fileName}`]: content,
+    };
+  }
+
+  /** camera 与 world-view 不取用任何端口，只作为被依赖的提供者。 */
+  const providers = {
+    ...browserModule("client.camera.standard", "plugin.ts", "export const camera = createCamera();\n"),
+    ...browserModule("client.world-view.standard", "plugin.ts", "export const api = input.ports[\"host.api\"];\n"),
+  };
+
+  it("视图经 usePort 取用未声明的能力时报漏声明并指向所在行", () => {
+    const root = fixture({
+      ...providers,
+      ...browserModule(
+        "client.settings.standard",
+        "plugin.tsx",
+        [
+          "import { usePort, usePortSubscription } from \"@world-prism/client-sdk\";",
+          "const view = usePortSubscription<ProjectionState | null>(\"client.world-view\");",
+          "const camera = usePort<CameraLike>(\"client.camera\");",
+        ].join("\n"),
+      ),
+    });
+    const violations = checkModuleCapabilityUsage({
+      root,
+      definitions: [camera, worldView, settings(["client.world-view"])],
+    });
+    expect(violations).toEqual([
+      expect.objectContaining({ code: "capability-undeclared", file: "modules/client/settings/standard/src/plugin.tsx" }),
+    ]);
+    expect(violations[0]?.message).toContain("plugin.tsx:3");
+    expect(violations[0]?.message).toContain("client.camera");
+  });
+
+  it("带类型实参、跨行与箭头类型的 hook 调用都能识别，声明一致时没有违规", () => {
+    const root = fixture({
+      ...providers,
+      ...browserModule(
+        "client.settings.standard",
+        "plugin.tsx",
+        [
+          "const state = usePortSubscription<{ x: number; y: number; zoom: number }>(\"client.camera\");",
+          "const view = usePort<{",
+          "  subscribe(listener: (value: number) => void): () => void;",
+          "}>(",
+          "  \"client.world-view\",",
+          ");",
+          "const api = usePort<ApiClient>(\"host.api\");",
+        ].join("\n"),
+      ),
+    });
+    expect(
+      checkModuleCapabilityUsage({ root, definitions: [camera, worldView, settings(["client.camera", "client.world-view"])] }),
+    ).toEqual([]);
+  });
+
+  it("浏览器模块声明了却从未取用的 requires 报多余声明", () => {
+    const root = fixture({
+      ...providers,
+      ...browserModule("client.settings.standard", "plugin.tsx", "const camera = usePort(\"client.camera\");\n"),
+    });
+    const violations = checkModuleCapabilityUsage({
+      root,
+      definitions: [camera, worldView, settings(["client.camera", "client.world-view"])],
+    });
+    expect(violations).toEqual([
+      expect.objectContaining({ code: "capability-unused", file: "modules/client/settings/standard" }),
+    ]);
+    expect(violations[0]?.message).toContain("client.world-view");
+  });
+
+  it("取用本 realm 固定端口契约之外的宿主端口时报越界，本 realm 固定端口无需声明", () => {
+    const root = fixture({
+      ...browserModule(
+        "console.health.standard",
+        "plugin.tsx",
+        [
+          "const host = usePort<ConsoleHostPort>(\"host.console\");",
+          "const api = usePort<ApiClient>(\"host.api\");",
+        ].join("\n"),
+      ),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [healthPage()] });
+    expect(violations).toEqual([
+      expect.objectContaining({ code: "host-port-undeclared", file: "modules/console/health/standard/src/plugin.tsx" }),
+    ]);
+    expect(violations[0]?.message).toContain("plugin.tsx:2");
+    expect(violations[0]?.message).toContain("host.api");
+    expect(violations[0]?.message).toContain("host.console");
+  });
+
+  it("服务端模块没有宿主固定端口，索引取用 host 端口同样报越界", () => {
+    const root = fixture({
+      ...sourceModule("game.map.six-nodes", "port.ts", "export const api = ports[\"host.api\"];\n"),
+      ...sourceModule("game.world.slg-light", "port.ts", "export const roads = ports[\"game.map\"];\n"),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [map, world] });
+    expect(violations).toEqual([expect.objectContaining({ code: "host-port-undeclared" })]);
+    expect(violations[0]?.message).toContain("本 realm 的固定端口：无");
+  });
+
+  it("hook 以变量取端口报动态能力键，以不合语法的字符串取端口报语法违规", () => {
+    const root = fixture({
+      ...providers,
+      ...browserModule(
+        "client.settings.standard",
+        "plugin.tsx",
+        [
+          "const camera = usePort(\"client.camera\");",
+          "const port = usePort<unknown>(capability);",
+          "const typo = usePort(\"camera\");",
+        ].join("\n"),
+      ),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [camera, worldView, settings(["client.camera"])] });
+    expect(violations.map((violation) => violation.code)).toEqual(["capability-dynamic-key", "capability-invalid"]);
+    expect(violations[0]?.message).toContain("plugin.tsx:2");
+    expect(violations[0]?.message).toContain("usePort");
+    expect(violations[1]?.message).toContain("plugin.tsx:3");
+    expect(violations[1]?.message).toContain("camera");
+  });
+
+  it("hook 实参以字符串开头但拼接或运算的表达式报动态能力键，不当作静态访问", () => {
+    const root = fixture({
+      ...providers,
+      ...browserModule(
+        "client.settings.standard",
+        "plugin.tsx",
+        [
+          "const camera = usePort(\"client.camera\");",
+          "const joined = usePort(\"client.camera\" + suffix);",
+          "const chosen = usePort<unknown>(\"client.camera\" || fallback);",
+          "const listener = usePortSubscription(\"client.camera\", onChange);",
+        ].join("\n"),
+      ),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [camera, worldView, settings(["client.camera"])] });
+    expect(violations.map((violation) => violation.code)).toEqual(["capability-dynamic-key", "capability-dynamic-key"]);
+    expect(violations[0]?.message).toContain("plugin.tsx:2");
+    expect(violations[1]?.message).toContain("plugin.tsx:3");
   });
 });

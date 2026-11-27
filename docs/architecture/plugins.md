@@ -1,6 +1,6 @@
 # 模块、插件与宿主契约
 
-> 状态：部分实现。`packages/kernel` 与 `packages/module-sdk` 已支持描述符校验、能力解析、状态访问范围与生命周期，首批 `server` 模块已接入，`client` 和 `console` 的宿主接入已实现。本文规定插件与宿主的通用契约。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)、[configuration.md — 配置](../platform/configuration.md)。
+> 状态：部分实现。`packages/kernel` 与 `packages/module-sdk` 已支持描述符校验、能力解析、状态访问范围与生命周期；描述符校验位于 kernel，服务端 `module-sdk` 的 `defineModule` 与浏览器 `client-sdk` 的 `defineBrowserModule` 调用同一份，kernel 解析装配时也拒绝不属于本 realm 能力命名空间的绑定。首批 `server` 模块已接入，`client` 和 `console` 的宿主接入已实现。本文规定插件与宿主的通用契约。参见 [modules.md — 模块边界](modules.md)、[module-catalog.md — 模块目录](module-catalog.md)、[composition.md — 装配](composition.md)、[configuration.md — 配置](../platform/configuration.md)。
 
 ## 1. 术语：模块、插件、积木
 
@@ -28,7 +28,7 @@
 | apiVersion | 与宿主契约匹配；不能只凭模块版本猜兼容性 |
 | instanceScope | deployment/run/branch/agent/session，决定实例生命周期与状态命名空间 |
 | provides / requires | 提供与依赖的能力及基数；requiresRemote 仅浏览器 realm，经握手校验 |
-| configSchema / defaults | 严格 schema；未知键拒绝，单位/范围/默认值可检查 |
+| configSchema / defaults | 严格 schema；未知键拒绝，单位/范围/默认值可检查；对自身输出幂等，改变类型或不可重入的 transform 在解析阶段拒绝 |
 | stateSchemaVersion / migrationPaths | 有状态实现声明状态版本与迁移；无状态实现显式声明无状态 |
 | contributions | 工具、事件卡、slot/route/panel 等扩展点贡献及排序 |
 | experimentAxes | 参数说明、显示顺序与可比较轴；UI 与评估共用同一描述符 |
@@ -57,7 +57,7 @@
 5. 创建 run/会话时解析 assembly、profile、模型/工具挂载；缺失实现、能力、必需 purpose 或非法组合拒绝启动。
 6. 为本次 run 冻结已解析实例计划、模块版本、config hash 与 artifact 版本；后续 catalog 变化不能改变在途运行。
 7. 先预留全平台 Agent 配额与模块资源，再创建状态与实例；失败按相反顺序释放，不能留下半个活动分支。
-8. 浏览器 realm 连接时执行握手：server 返回本 realm 已解析模块清单与远端能力描述；客户端验证本地内置模块能满足，不满足则显示组合不完整，不静默降级。
+8. 浏览器 realm 连接时执行握手：server 返回本 realm 已解析模块清单与远端能力描述（`remoteCapabilities`）；客户端验证本地内置模块能满足，各模块的 `requiresRemote` 必须都在远端能力描述内，不满足则显示组合不完整，不静默降级。
 
 同一模块定义可被多个主体引用，实例状态是否共享由 `instanceScope` 与契约明确规定。instanceScope 决定生命周期维度，不替代状态 scope：memory 实例的生命周期按 agent，但状态仍按 branch + agent 隔离。模型传输客户端可共享；工具定义为宿主共享，但调用上下文与 ToolBinding 永远按主体生成。
 
@@ -88,6 +88,16 @@
 ## 6. 宿主能力与不可绕过的 guard
 
 普通模块获得：scoped storage、授权查询、受预算的模型调用、时钟/随机源、trace、配置读取，具体接口为 [公共契约](contracts.md) 第 3 节的 `ModuleCreateInput` 与 `HostServices`。storage adapter 的原始连接只由组合根注入；普通 memory/context/decision 不获得数据库句柄或全局 world 对象。
+
+浏览器宿主另向模块注入固定端口。固定端口由宿主应用在启动时提供，不由任何模块提供，因此不是能力：不进装配绑定、不参与能力解析与目录摘要，也不写进 `requires`。各 realm 的固定端口清单由公共契约的 `BROWSER_HOST_PORTS` 唯一定义：
+
+| realm | 固定端口 | 内容 |
+|---|---|---|
+| client | `host.api`、`host.command`、`host.session` | 类型化 API 客户端、命令客户端、当前会话描述 |
+| console | `host.console` | 控制台宿主端口：API 客户端、会话、当前角色与在线分支身份 |
+| server | 无 | 服务端模块只经 `requires` 声明的 typed port 取用能力 |
+
+client-sdk 运行时只接受清单内的固定端口，并按声明把端口交给每个模块：创建输入只含本 realm 固定端口与 `requires` 声明的能力端口，视图另含模块自身 `provides` 的端口；视图经 `usePort` 取用未声明的能力时抛 `assembly-incompatible` 并指出模块与能力。宿主外壳不在模块作用域内，仍能读取全部端口。
 
 宿主固定执行以下顺序，模块不能把这些步骤设为可选 hook：
 

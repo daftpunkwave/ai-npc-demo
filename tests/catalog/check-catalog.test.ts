@@ -1,5 +1,5 @@
 /**
- * 校验 catalog 预检：目录扫描、模块目录一致性、运行时依赖闭包、环、重复绑定、realm 与配置 schema。
+ * 校验 catalog 预检：目录扫描、模块目录一致性、运行时依赖闭包、环、重复绑定、realm、配置 schema 与其幂等契约。
  * 依赖真实装配目录、临时 YAML 夹具与最小假模块；不启动服务、不打开存储。
  * 禁止写死装配文件名或只断言异常存在而不核对原因。
  */
@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
+import { z } from "zod";
 import {
   assemblyDescriptorSchema,
   capabilityIdSchema,
@@ -43,6 +44,7 @@ function fakeModule(input: {
   readonly id: string;
   readonly provides: readonly string[];
   readonly requires?: readonly string[];
+  readonly requiresRemote?: readonly string[];
   readonly realm?: Realm;
 }): ModuleDefinition {
   const realm = input.realm ?? "server";
@@ -55,7 +57,7 @@ function fakeModule(input: {
     instanceScope: realm === "server" ? "run" : "session",
     provides: input.provides.map((id) => capability(id, realm)),
     requires: (input.requires ?? []).map((id) => capability(id, realm)),
-    requiresRemote: [],
+    requiresRemote: (input.requiresRemote ?? []).map((id) => capabilityIdSchema.parse(id)),
     configSchema: clockConfigSchema,
     stateSchemaVersion: null,
     migrationPaths: [],
@@ -69,6 +71,7 @@ function assembly(input: {
   readonly assemblyId: string;
   readonly bindings?: readonly { capability: string; moduleId: string; configRef?: string | null }[];
   readonly configs?: Readonly<Record<string, unknown>>;
+  readonly consoleBindings?: readonly { capability: string; moduleId: string }[];
 }): AssemblyDescriptor {
   return assemblyDescriptorSchema.parse({
     schemaVersion: 1,
@@ -83,7 +86,9 @@ function assembly(input: {
         })),
       },
       client: { bindings: [] },
-      console: { bindings: [] },
+      console: {
+        bindings: (input.consoleBindings ?? []).map((binding) => ({ ...binding, configRef: null })),
+      },
     },
   });
 }
@@ -197,6 +202,65 @@ describe("catalog 预检", () => {
     const report = checkCatalog({ root, definitions: [hud], requiredCapabilities: [] });
     expect(report.violations.some((violation) => violation.code === "realm-violation")).toBe(true);
     expect(messagesOf(report)).toContain("client");
+  });
+
+  it("控制台模块的 requiresRemote 不在 server 段绑定内时预检失败并列出缺失能力", () => {
+    const observability = fakeModule({ id: "platform.observability.sqlite", provides: ["platform.observability"] });
+    const page = fakeModule({
+      id: "console.health.standard",
+      realm: "console",
+      provides: ["console.health"],
+      requiresRemote: ["platform.observability", "platform.operations"],
+    });
+    const root = fixtureRoot({
+      "remote.yaml": assembly({
+        assemblyId: "assembly-remote",
+        bindings: [{ capability: "platform.observability", moduleId: "platform.observability.sqlite" }],
+        consoleBindings: [{ capability: "console.health", moduleId: "console.health.standard" }],
+      }),
+    });
+    const report = checkCatalog({ root, definitions: [observability, page], requiredCapabilities: [] });
+    expect(report.violations).toEqual([
+      {
+        file: "remote.yaml",
+        code: "assembly-incompatible",
+        message: expect.stringContaining("console.health.standard 缺少 platform.operations"),
+      },
+    ]);
+  });
+
+  it("配置 schema 用改变类型的 transform 时，默认配置与装配配置两条路径都报对自身输出不幂等", () => {
+    // 带默认值的模块即使没有进入任何装配，也按默认配置核对。
+    const withDefault = defineModule({
+      ...fakeModule({ id: "platform.budget.standard", provides: ["platform.budget"] }),
+      configSchema: z.strictObject({ ceiling: z.string().default("100").transform(Number) }),
+    });
+    // 必须由装配提供配置的模块，按装配解析出的配置核对。
+    const fromAssembly = defineModule({
+      ...fakeModule({ id: "transport.http-ws.fastify", provides: ["transport.http-ws"] }),
+      configSchema: z.strictObject({ port: z.string().transform(Number) }),
+    });
+    const root = fixtureRoot({
+      "transform.yaml": assembly({
+        assemblyId: "assembly-transform",
+        configs: { transport: { port: "8080" } },
+        bindings: [{ capability: "transport.http-ws", moduleId: "transport.http-ws.fastify", configRef: "transport" }],
+      }),
+    });
+    const report = checkCatalog({ root, definitions: [withDefault, fromAssembly], requiredCapabilities: [] });
+    expect(report.violations).toEqual([
+      {
+        file: "<module-catalog>",
+        code: "assembly-incompatible",
+        message: expect.stringContaining("platform.budget.standard 的默认配置"),
+      },
+      {
+        file: "transform.yaml",
+        code: "assembly-incompatible",
+        message: expect.stringContaining("transport.http-ws.fastify 的 configSchema 对自身输出不幂等"),
+      },
+    ]);
+    expect(report.violations[0]?.message).toContain("对自身输出不幂等");
   });
 
   it("模块配置不符合 schema 失败并定位字段", () => {
