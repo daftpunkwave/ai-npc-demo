@@ -13,6 +13,7 @@ import {
   campaignStartPayloadSchema,
   dialogueSayPayloadSchema,
   informationSharePayloadSchema,
+  knowledgeSeedPayloadSchema,
   policySetPayloadSchema,
   probeAskPayloadSchema,
   scenarioCompensatePayloadSchema,
@@ -53,6 +54,7 @@ export const commandPayloadSchemas = {
   "scenario.compensate": scenarioCompensatePayloadSchema,
   "scenario.override": scenarioOverridePayloadSchema,
   "probe.ask": probeAskPayloadSchema,
+  "knowledge.seed": knowledgeSeedPayloadSchema,
 } as const;
 
 /** 全部命令类型，直接由登记表键派生，避免目录与 schema 脱节。 */

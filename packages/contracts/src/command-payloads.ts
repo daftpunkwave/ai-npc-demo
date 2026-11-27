@@ -215,3 +215,11 @@ export const probeAskPayloadSchema = z
     question: z.string().min(1).max(maxCommandTextLength),
   })
   .strict();
+
+/** 实验脚本 `setup` 的一条预置知识：把一份证据授予一个主体，与脚本条目一一对应。 */
+export const knowledgeSeedPayloadSchema = z
+  .object({
+    evidenceId: contentIdSchemas.ev,
+    principalId: principalIdSchema,
+  })
+  .strict();

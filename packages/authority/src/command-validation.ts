@@ -7,6 +7,7 @@ import {
   DomainError,
   commandTypeSchema,
   jsonValueSchema,
+  type BranchKind,
   type CommandEnvelope,
   type CommandType,
   type Json,
@@ -50,13 +51,19 @@ export function parseCommandType(type: string): CommandType | null {
 
 /**
  * 发行者之外的分支限制：某些命令只在特定分支种类上成立，与暂停状态无关。
- * `probe.ask` 只用于沙盒探针，正式世界与实验分支都不接受，避免探针事件污染受评世界。
+ * - `probe.ask` 只用于沙盒探针，正式世界与实验分支都不接受，避免探针事件污染受评世界。
+ * - `knowledge.seed` 只用于实验脚本的预置知识：在线世界的知识只能经游戏内途径获得；
+ *   沙盒复制自已推进的实验分支，预置早已完成，不能在沙盒里给被问 Agent 追加知识。
  */
-export function isCommandBranchAllowed(type: CommandType, branch: BranchRecord): boolean {
-  if (type === "probe.ask") {
-    return branch.kind === "sandbox";
-  }
-  return true;
+const commandBranchRestrictions = new Map<CommandType, { readonly kind: BranchKind; readonly safeMessage: string }>([
+  ["probe.ask", { kind: "sandbox", safeMessage: "该命令只能在沙盒分支发行" }],
+  ["knowledge.seed", { kind: "experiment", safeMessage: "该命令只能在实验分支发行" }],
+]);
+
+/** 命令在该分支上被拒绝时的说明；不受分支种类限制或分支种类相符时为 null。 */
+export function commandBranchViolation(type: CommandType, branch: BranchRecord): string | null {
+  const restriction = commandBranchRestrictions.get(type);
+  return restriction === undefined || restriction.kind === branch.kind ? null : restriction.safeMessage;
 }
 
 /** 暂停豁免：开局命令，以及系统世界探针在 sandbox 分支上的询问。 */

@@ -165,7 +165,7 @@ BEGIN IMMEDIATE
        same payloadHash -> COMMIT, return the stored receipt; different -> return idempotency-conflict
   2. branch check: branch exists, worldId matches auth, status in (active, paused)
   3. type & auth checks: registered commandType -> else rejected "invalid-params";
-       issuer allowed & branch kind allowed (probe.ask only in sandbox) -> else rejected "no-authority";
+       issuer allowed & branch kind allowed (probe.ask only in sandbox, knowledge.seed only in experiment) -> else rejected "no-authority";
        fencing (controllerEpoch, turnLeaseEpoch) unless allowDirectAgentCommands
   4. pause check: clock.mode != running/stepping -> rejected "paused" (campaign.start and system:world probe.ask in an active sandbox are exempt)
   5. payload schema (zod, strict) & envelope schemaVersion -> rejected "invalid-params"
@@ -184,7 +184,7 @@ COMMIT
 
 ## 5. 命令目录
 
-`issuer` 列使用契约主体类型：`player` 为玩家；`agent` 为 Agent（含真人席位代发，按该 Agent 权限裁决）；`operator` 为运营控制台；`researcher` 为研究角色；`system` 为宿主内部与实验运行器。`seat.say` 由运营直接代发席位消息；`probe.ask` 只在 sandbox 分支由 `system` 发行。
+`issuer` 列使用契约主体类型：`player` 为玩家；`agent` 为 Agent（含真人席位代发，按该 Agent 权限裁决）；`operator` 为运营控制台；`researcher` 为研究角色；`system` 为宿主内部与实验运行器。`seat.say` 由运营直接代发席位消息；`probe.ask` 只在 sandbox 分支由 `system` 发行；`knowledge.seed` 只在 experiment 分支由 `system` 发行。
 
 | type | issuer | payload | 处理模块 | 成功时的事件 | 常见拒绝原因码 |
 |---|---|---|---|---|---|
@@ -206,6 +206,7 @@ COMMIT
 | `scenario.compensate` | operator | `{ cardId, effects: CardEffect[], note }` | scenario | `ScenarioCompensationApplied` + 效果事件 | `card-not-found`、`card-not-triggered`、`invalid-effect` |
 | `scenario.override` | operator、researcher | `{ effects: OverrideEffect[], note }` | scenario | `ScenarioOverrideApplied` + 效果事件；run 标记 `contaminated` | `invalid-effect` |
 | `probe.ask` | system | `{ probeId, agentId, askedBy, question }`（只允许在 `sandbox` 分支） | comms | `ProbeAsked` | `invalid-params` |
+| `knowledge.seed` | system | `{ evidenceId, principalId }`（只允许在 `experiment` 分支，开局后、世界时钟仍为 tick 0 时） | comms | `KnowledgeGranted`（`via: "setup"`，受众只有接收方；同一主体与证据已预置过时不再产生） | `no-authority`、`not-ready`（尚未开局）、`world-tick-not-zero`、`invalid-params`（证据不存在）、`unknown-target`（接收方不存在） |
 
 `Term` 即 [规则](../game/rules.md) 第 7 节的八种条款，统一为 `{ kind, obligorId, ...params }` 的判别联合。`CardEffect` 见 [内容包](../game/content-pack.md) 第 9 节；`OverrideEffect` 在 `CardEffect` 之外额外允许 `meter-set { meter, value }` 与 `road-status-set { roadId, status }`，只供调试，使用即污染。
 
