@@ -206,9 +206,103 @@ function allowedList(ids: Iterable<string>): Pick<DecisionViolation, "allowed" |
   return { allowed: all.slice(0, maxAllowedListed), ...(omitted > 0 ? { allowedOmitted: omitted } : {}) };
 }
 
+/** 能读出来的引用字段：schema 不通过时也据此做语义检查，避免一个 schema 问题掩盖其他字段的违规、白白耗掉唯一一次改正。 */
+interface ReferenceView {
+  readonly intentKind: string | null;
+  readonly audience: readonly string[] | null;
+  readonly subjectRef: string | null;
+  readonly factRefs: readonly string[];
+  readonly citedMemoryIds: readonly string[];
+  readonly noteworthySources: ReadonlyMap<number, readonly string[]>;
+}
+
+/** 取数组中的字符串条目；不是数组时为 null。 */
+function stringEntries(value: Json | undefined): readonly string[] | null {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : null;
+}
+
+function referenceView(candidate: Json): ReferenceView {
+  const root = asRecord(candidate);
+  const intent = asRecord(root["dialogueIntent"]);
+  const noteworthySources = new Map<number, readonly string[]>();
+  (Array.isArray(root["noteworthy"]) ? root["noteworthy"] : []).forEach((item, index) => {
+    const sources = stringEntries(asRecord(item)["sourceRefs"]);
+    if (sources !== null) noteworthySources.set(index, sources);
+  });
+  return {
+    intentKind: typeof intent["kind"] === "string" ? intent["kind"] : null,
+    audience: stringEntries(intent["audience"]),
+    subjectRef: typeof intent["subjectRef"] === "string" ? intent["subjectRef"] : null,
+    factRefs: stringEntries(intent["factRefs"]) ?? [],
+    citedMemoryIds: stringEntries(root["citedMemoryIds"]) ?? [],
+    noteworthySources,
+  };
+}
+
+/** 受众违规：只列出不被接受的条目（自己、不在可选范围内的主体与重复项），可选主体另列。 */
+function audienceViolation(
+  view: ReferenceView,
+  audiences: ReadonlySet<string>,
+  self: string,
+): DecisionViolation | null {
+  const listed = view.audience;
+  if (view.intentKind === null || view.intentKind === "none" || listed === null) return null;
+  const allowed = allowedList([...audiences].filter((id) => id !== self));
+  if (listed.length === 0) {
+    return { rule: "audience", path: "dialogueIntent.audience", value: [],
+      issue: "audience must not be empty unless dialogueIntent.kind is none", ...allowed };
+  }
+  const outside = listed.filter((id) => id === self || !audiences.has(id));
+  const duplicates = listed.filter((id, index) => listed.indexOf(id) !== index);
+  if (outside.length === 0 && duplicates.length === 0) return null;
+  return { rule: "audience", path: "dialogueIntent.audience", value: [...new Set([...outside, ...duplicates])],
+    ...(duplicates.length > 0 ? { issue: "each principal may appear only once" } : {}), ...allowed };
+}
+
+/** 本次请求里各类引用的可选集合，按在请求中出现的先后排列。 */
+interface ReferenceScope {
+  readonly visible: ReadonlySet<string>;
+  readonly returned: ReadonlySet<string>;
+  readonly knownSubjects: ReadonlySet<string>;
+  readonly knownRefs: ReadonlySet<string>;
+  readonly memoryIds: ReadonlySet<string>;
+  readonly observationIds: ReadonlySet<string>;
+}
+
+function referenceViolations(view: ReferenceView, scope: ReferenceScope): readonly DecisionViolation[] {
+  const { visible, returned, knownSubjects, knownRefs, memoryIds, observationIds } = scope;
+  const violations: DecisionViolation[] = [];
+  const subject = view.subjectRef;
+  if (subject !== null && (!subjectRefPattern.test(subject) ||
+    !(visible.has(subject) && knownSubjects.has(subject) || returned.has(subject)))) {
+    violations.push({ rule: "subject", path: "dialogueIntent.subjectRef", value: subject,
+      issue: "use null or one of the allowed agreement/task/invitation/evidence IDs",
+      ...allowedList([...[...visible].filter((id) => knownSubjects.has(id)), ...returned].filter((id) => subjectRefPattern.test(id))) });
+  }
+  const unknownFacts = view.factRefs.filter((ref) => !(visible.has(ref) && knownRefs.has(ref) || returned.has(ref)));
+  if (unknownFacts.length > 0) {
+    violations.push({ rule: "unknown-ref", path: "dialogueIntent.factRefs", value: [...new Set(unknownFacts)],
+      ...allowedList([...[...visible].filter((id) => knownRefs.has(id)), ...returned]) });
+  }
+  const unknownMemories = view.citedMemoryIds.filter((ref) => !memoryIds.has(ref) || !visible.has(ref));
+  if (unknownMemories.length > 0) {
+    violations.push({ rule: "unknown-ref", path: "citedMemoryIds", value: [...new Set(unknownMemories)],
+      ...allowedList([...visible].filter((id) => memoryIds.has(id))) });
+  }
+  const allowedSources = allowedList([...visible].filter((id) => observationIds.has(id)));
+  for (const [index, sources] of view.noteworthySources) {
+    const unknownSources = sources.filter((ref) => !observationIds.has(ref) || !visible.has(ref));
+    if (unknownSources.length > 0) {
+      violations.push({ rule: "unknown-ref", path: `noteworthy[${index}].sourceRefs`, value: [...new Set(unknownSources)],
+        issue: "sourceRefs must cite observation IDs listed under the input to handle in this turn", ...allowedSources });
+    }
+  }
+  return violations;
+}
+
 /**
- * 按实际请求校验模型提交的决定。全部规则都检查一遍再返回：驳回时 `reasons` 按规则给出内容包的说明，
- * `violations` 逐字段指出不被接受的取值与可以填写的 ID，让模型一次改全。
+ * 按实际请求校验模型提交的决定。全部规则都检查一遍再返回：schema 不通过时，能读出来的受众与引用字段照常做语义检查。
+ * 驳回时 `reasons` 按规则给出内容包的说明，`violations` 逐字段指出不被接受的取值与可以填写的 ID，让模型一次改全。
  */
 export function validateModelDecision(input: {
   readonly candidate: Json;
@@ -221,19 +315,12 @@ export function validateModelDecision(input: {
 }): DecisionValidation {
   const { candidate, artifact, frozen, memory, tools, content } = input;
   const labels = content.prompts.decision.invalidReasons;
-  const rejected = (violations: readonly DecisionViolation[]): DecisionValidation => ({
-    reasons: [...new Set(violations.map(({ rule }) => labels[rule]))], violations,
-  });
-  const parsed = decisionSubmissionSchema.safeParse(candidate);
-  if (!parsed.success) {
-    return rejected(parsed.error.issues.slice(0, maxSchemaIssues).map((issue) => ({
-      rule: "schema" as const, path: pathOf(issue.path), issue: issue.message,
-    })));
-  }
-  const decision = parsed.data;
-  const { dialogueIntent: intent } = decision;
   const self = frozen.scope.agentId;
-  const violations: DecisionViolation[] = [];
+  const parsed = decisionSubmissionSchema.safeParse(candidate);
+  const violations: DecisionViolation[] = parsed.success ? [] : parsed.error.issues.slice(0, maxSchemaIssues).map((issue) => ({
+    rule: "schema" as const, path: pathOf(issue.path), issue: issue.message,
+  }));
+  const view = referenceView(candidate);
 
   const audiences = new Set([...triggerPrincipals(frozen), ...input.messagePrincipalIds]);
   for (const observation of frozen.triggerObservations) {
@@ -242,23 +329,11 @@ export function validateModelDecision(input: {
       for (const principal of line.data.audience) audiences.add(principal);
     }
   }
-  if (intent.kind !== "none") {
-    const allowedAudience = allowedList([...audiences].filter((id) => id !== self));
-    const outside = intent.audience.filter((id) => id === self || !audiences.has(id));
-    if (intent.audience.length === 0) {
-      violations.push({ rule: "audience", path: "dialogueIntent.audience", value: [],
-        issue: "audience must not be empty unless dialogueIntent.kind is none", ...allowedAudience });
-    } else if (outside.length > 0) {
-      violations.push({ rule: "audience", path: "dialogueIntent.audience", value: outside, ...allowedAudience });
-    } else if (new Set(intent.audience).size !== intent.audience.length) {
-      violations.push({ rule: "audience", path: "dialogueIntent.audience", value: [...intent.audience], issue: "duplicate entries" });
-    }
-  }
+  const audience = audienceViolation(view, audiences, self);
+  if (audience !== null) violations.push(audience);
 
-  const visible = new Set(artifact.segments.filter(({ role }) => role === "user").flatMap(({ text }) =>
-    [...text.matchAll(/\[([a-z][a-z0-9-]+)\]/gu)].map((match) => match[1]!)));
-  const returnedRefs = new Set<string>();
-  for (const { modelText } of tools) collectReturnedRefs(JSON.parse(modelText) as Json, returnedRefs);
+  const returned = new Set<string>();
+  for (const { modelText } of tools) collectReturnedRefs(JSON.parse(modelText) as Json, returned);
   const observedRefs = frozen.observations.flatMap((observation) => Object.values(asRecord(asRecord(observation.content)["refs"]))
     .filter((ref): ref is string => typeof ref === "string"));
   const grants = frozen.world.knowledge.get(self) ?? [];
@@ -268,35 +343,13 @@ export function validateModelDecision(input: {
     ...[...grants].filter((id) => content.index.evidence.has(id)),
   ]);
   const memoryIds = new Set<string>(memory.items.map(({ memoryId }) => memoryId));
-  const knownRefs = new Set([...knownSubjects, ...grants, ...memoryIds, ...frozen.observations.map(({ observationId }) => observationId)]);
-  const shown = (ref: string) => visible.has(ref) && knownRefs.has(ref) || returnedRefs.has(ref);
-
-  const subject = intent.subjectRef;
-  if (subject !== null && (!subjectRefPattern.test(subject) ||
-    !(visible.has(subject) && knownSubjects.has(subject) || returnedRefs.has(subject)))) {
-    violations.push({ rule: "subject", path: "dialogueIntent.subjectRef", value: subject,
-      issue: "use null or one of the allowed agreement/task/invitation/evidence IDs",
-      ...allowedList([...[...visible].filter((id) => knownSubjects.has(id)), ...returnedRefs].filter((id) => subjectRefPattern.test(id))) });
-  }
-
-  const unknownFacts = intent.factRefs.filter((ref) => !shown(ref));
-  if (unknownFacts.length > 0) {
-    violations.push({ rule: "unknown-ref", path: "dialogueIntent.factRefs", value: unknownFacts,
-      ...allowedList([...[...visible].filter((id) => knownRefs.has(id)), ...returnedRefs]) });
-  }
-  const unknownMemories = decision.citedMemoryIds.filter((ref) => !memoryIds.has(ref) || !visible.has(ref));
-  if (unknownMemories.length > 0) {
-    violations.push({ rule: "unknown-ref", path: "citedMemoryIds", value: unknownMemories,
-      ...allowedList([...visible].filter((id) => memoryIds.has(id))) });
-  }
-  const observationIds = new Set<string>(frozen.triggerObservations.map(({ observationId }) => observationId));
-  const allowedSources = allowedList([...visible].filter((id) => observationIds.has(id)));
-  decision.noteworthy.forEach((item, index) => {
-    const unknownSources = item.sourceRefs.filter((ref) => !observationIds.has(ref) || !visible.has(ref));
-    if (unknownSources.length > 0) {
-      violations.push({ rule: "unknown-ref", path: `noteworthy[${index}].sourceRefs`, value: unknownSources,
-        issue: "sourceRefs must cite observation IDs listed under the input to handle in this turn", ...allowedSources });
-    }
-  });
-  return violations.length === 0 ? { decision } : rejected(violations);
+  violations.push(...referenceViolations(view, {
+    visible: new Set(artifact.segments.filter(({ role }) => role === "user").flatMap(({ text }) =>
+      [...text.matchAll(/\[([a-z][a-z0-9-]+)\]/gu)].map((match) => match[1]!))),
+    returned, knownSubjects, memoryIds,
+    knownRefs: new Set([...knownSubjects, ...grants, ...memoryIds, ...frozen.observations.map(({ observationId }) => observationId)]),
+    observationIds: new Set(frozen.triggerObservations.map(({ observationId }) => observationId)),
+  }));
+  if (parsed.success && violations.length === 0) return { decision: parsed.data };
+  return { reasons: [...new Set(violations.map(({ rule }) => labels[rule]))], violations };
 }
