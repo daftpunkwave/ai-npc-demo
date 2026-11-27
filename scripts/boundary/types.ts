@@ -3,7 +3,7 @@
  * 只声明类型与字面量联合，不包含文件系统访问或规则判定逻辑。
  * 禁止在类型层维护白名单，避免规则判定散落在多个文件而难以审计。
  */
-export type BoundaryRule = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type BoundaryRule = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export type ModuleKind = "service" | "contributor" | "adapter";
 

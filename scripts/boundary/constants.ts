@@ -7,7 +7,8 @@ import type { BoundaryRule, HeaderLanguage } from "./types";
 
 // 规则编号与检查项固定对应，供 CLI 与测试断言逐条覆盖：
 // 1 包公开入口与依赖声明，2 模块 realm/kind 白名单，3 浏览器 realm，4 kernel/contracts 限制，
-// 5 宿主应用组合根，6 依赖图、动态加载与未使用声明，7 手写源码文件头，8 共享契约唯一定义。
+// 5 宿主应用组合根，6 依赖图、动态加载与未使用声明，7 手写源码文件头，8 共享契约唯一定义，
+// 9 服务端模块源码表名白名单。
 export const RULE_IMPORT_BOUNDARY: BoundaryRule = 1;
 export const RULE_MODULE_REALM: BoundaryRule = 2;
 export const RULE_BROWSER_REALM: BoundaryRule = 3;
@@ -16,6 +17,7 @@ export const RULE_COMPOSITION_ROOT: BoundaryRule = 5;
 export const RULE_DEPENDENCY_GRAPH: BoundaryRule = 6;
 export const RULE_SOURCE_HEADER: BoundaryRule = 7;
 export const RULE_SHARED_CONTRACT: BoundaryRule = 8;
+export const RULE_MODULE_TABLE: BoundaryRule = 9;
 
 export const SKIPPED_DIRECTORY_NAMES = new Set([
   "node_modules",
@@ -127,6 +129,32 @@ export const SHARED_CONTRACT_OWNERS: ReadonlyMap<string, string> = new Map([
   ["GameContent", "@world-prism/module-sdk"],
   ["SavePort", "@world-prism/module-sdk"],
   ["ObservabilitySources", "@world-prism/module-sdk"],
+]);
+
+/**
+ * 服务端模块生产源码允许引用的物理表，键为模块目录标识 `<group>.<family>.<implementation>`。
+ * 值只含模块拥有的表与已有文档说明的跨所有者访问；未登记的模块不得在源码中引用任何表。
+ * 每项都须在模块源码中实际出现，不再使用的表要随代码一起移除，名单不预留。
+ */
+export const MODULE_TABLE_ALLOWLIST: ReadonlyMap<string, readonly string[]> = new Map([
+  // 时钟 provider 拥有分支级 clock 表。
+  ["game.clock.controlled", ["clock"]],
+  // 存档：快照写 snapshots 行；恢复时归档旧在线分支、为新分支写 live run，并切换 world_aliases 的 online 别名。
+  ["game.save.sqlite", ["snapshots", "branches", "runs", "world_aliases"]],
+  // 模型池：每次模型尝试写一行 model_attempts；归档失败或进程中断时把所属 run 标记为证据不完整。
+  ["agent.model-pool.shared", ["model_attempts", "runs"]],
+  // 预算 provider 拥有预留与结算账本。
+  ["platform.budget.standard", ["budget_ledger"]],
+  // 观测 provider 只直接读写自己的 trace_spans，其他数据经所有者提供的数据源端口读取。
+  ["platform.observability.sqlite", ["trace_spans"]],
+]);
+
+/** 不受表名白名单约束的模块与理由；只放实现 storage port 本身的适配器。 */
+export const MODULE_TABLE_EXEMPTIONS: ReadonlyMap<string, string> = new Map([
+  [
+    "platform.storage.sqlite",
+    "存储适配器实现 storage port：迁移建表、分支复制、备份与按表名读写都要覆盖全部表，逐表登记只会复制迁移清单。",
+  ],
 ]);
 
 export const NODE_BUILTIN_NAMES = new Set([
