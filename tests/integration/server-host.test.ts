@@ -2138,4 +2138,23 @@ describe("服务端宿主", () => {
       .rejects.toThrow(/配置校验失败/);
     expect(existsSync(join(configDir, "world-prism.db"))).toBe(false);
   }, 30_000);
+
+  it("装配配置块声明 retentionDays 时启动预检以 assembly-incompatible 拒绝，不论部署环境是否设置保留天数", async () => {
+    const base = loadAssembly("local-slg-standard-v1");
+    const withRetention: AssemblyDescriptor = {
+      ...base,
+      configs: { ...base.configs, storage: { inlineArtifactMaxBytes: 65536, retentionDays: { trace_spans: 30 } } },
+    };
+    for (const deployment of [{}, { traceSpansRetentionDays: 7 }]) {
+      const dataDir = tempDataDir();
+      const failure = await startHost({ dataDir, playerToken: "p", consoleToken: "c", assembly: withRetention, ...deployment })
+        .then(() => null, (error: unknown) => error);
+      expect(failure).toMatchObject({
+        code: "assembly-incompatible",
+        details: { configRef: "storage", moduleId: storageModuleDefinition.id, key: "retentionDays" },
+      });
+      expect((failure as Error).message).toContain("WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS");
+      expect(existsSync(join(dataDir, "world-prism.db"))).toBe(false);
+    }
+  }, 30_000);
 });

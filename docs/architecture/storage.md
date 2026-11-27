@@ -743,7 +743,7 @@ retentionDays:
 
 `retentionDays` 没有默认值，模块描述符的 `defaults` 也不含它。未配置时解析出的模块配置不含该键，仓库内三个装配的模块配置摘要、装配摘要与模块目录摘要都与引入该键之前一致，已冻结 manifest 的在线 run 照常恢复。
 
-取值由宿主从部署环境变量 `WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS` 读取（1–36500 的整数天，留空表示永久保留；超出范围、小数或超长数字串在解析部署配置时即拒绝启动），与数据目录一样作为部署期覆盖并入存储适配器配置，不写进装配文件，也不进入冻结 manifest（[技术栈 — 环境变量](../delivery/tech-stack.md#5-环境变量)）。保留期是运维参数，不改变实验组合；启用或调整后，已有在线 run 按原 manifest 恢复，不需要迁移。
+取值由宿主从部署环境变量 `WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS` 读取（1–36500 的整数天，留空表示永久保留；超出范围、小数或超长数字串在解析部署配置时即拒绝启动），与数据目录一样作为部署期覆盖并入存储适配器配置，不写进装配文件，也不进入冻结 manifest（[技术栈 — 环境变量](../delivery/tech-stack.md#5-环境变量)）。装配配置块声明 `retentionDays` 时，启动预检、控制台创建 run 的预检与 `pnpm check:catalog` 都以 `assembly-incompatible` 拒绝并点名配置块与环境变量：否则该值会随装配冻结进 manifest，并在部署环境未设置时原样生效。保留期是运维参数，不改变实验组合；启用或调整后，已有在线 run 按原 manifest 恢复，不需要迁移。
 
 ### 6.3 执行
 

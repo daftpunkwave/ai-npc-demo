@@ -1,6 +1,7 @@
 /**
  * 加载并解析 server 装配：严格读取装配目录，按 kernel 解析计划校验绑定、能力闭包、作用域、
- * 拓扑与模块配置，并计算规范化摘要；部署期配置覆盖只用于启动计划，不进入冻结摘要。
+ * 拓扑与模块配置，并计算规范化摘要；部署期配置覆盖只用于启动计划，不进入冻结摘要，
+ * 只能由部署环境提供的配置键出现在装配配置块里时直接拒绝。
  * 装配目录的扫描是启动路径与 check:catalog 的唯一实现，文件级约束只在这里维护一份。
  * 依赖 yaml、契约 schema、kernel 解析/摘要与组合根模块定义；不启动模块、不打开存储。
  * 禁止接受任意路径、未登记模块，也禁止用模块 ID、原始 JSON.stringify 或截断摘要代替规范化哈希。
@@ -12,6 +13,7 @@ import { join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import type { LoadingError } from "@world-prism/experiment";
 import {
+  DomainError,
   assemblyDescriptorSchema,
   protocolVersion,
   type AssemblyDescriptor,
@@ -231,13 +233,45 @@ export function needsContentPack(assembly: AssemblyDescriptor): boolean {
   return toolsBinding(assembly) !== undefined;
 }
 
-/** 服务端启动与目录检查使用同一组内容注入和条件能力要求。 */
+/**
+ * 只能由宿主从部署环境并入的模块配置键，值为提供它的环境变量。
+ * 装配配置块里的这些键会随装配冻结进 run manifest，部署环境未设置时还会原样生效，绕过只由部署参数决定的约定，因此一律拒绝。
+ */
+const deploymentOnlyConfigKeys: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "platform.storage.sqlite": { retentionDays: "WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS" },
+};
+
+/** 装配的 server 绑定引用的配置块不得声明部署期专属键；违反时以 assembly-incompatible 点名配置块、模块与键。 */
+function assertNoDeploymentOnlyConfig(assembly: AssemblyDescriptor): void {
+  for (const binding of assembly.realms.server.bindings) {
+    const keys = deploymentOnlyConfigKeys[binding.moduleId];
+    if (keys === undefined || binding.configRef === null) {
+      continue;
+    }
+    const config = assembly.configs[binding.configRef];
+    if (typeof config !== "object" || config === null || Array.isArray(config)) {
+      continue;
+    }
+    for (const [key, envName] of Object.entries(keys)) {
+      if (Object.hasOwn(config, key)) {
+        throw new DomainError(
+          "assembly-incompatible",
+          `装配配置块 ${binding.configRef} 不能为模块 ${binding.moduleId} 声明 ${key}：该参数只由部署环境变量 ${envName} 提供`,
+          { details: { assemblyId: assembly.assemblyId, configRef: binding.configRef, moduleId: binding.moduleId, key } },
+        );
+      }
+    }
+  }
+}
+
+/** 服务端启动与目录检查使用同一组内容注入、条件能力要求与部署期专属键检查。 */
 export function serverAssemblyInputs(
   assembly: AssemblyDescriptor,
   required: readonly CapabilityRef[],
   options: ResolveServerAssemblyOptions = {},
   root = process.cwd(),
 ): { readonly requiredCapabilities: readonly CapabilityRef[]; readonly configOverrides: Readonly<Record<string, Json>> } {
+  assertNoDeploymentOnlyConfig(assembly);
   const server = assembly.realms.server;
   const toolBinding = toolsBinding(assembly);
   const configOverrides = { ...options.configOverrides };

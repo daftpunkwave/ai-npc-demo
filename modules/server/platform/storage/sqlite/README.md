@@ -14,11 +14,11 @@
 ```yaml
 dataDir: ./data                          # 宿主从部署环境并入
 inlineArtifactMaxBytes: 65536            # 装配配置块提供
-retentionDays:                           # 可选；缺省表示永久保留全部数据
+retentionDays:                           # 可选，宿主从部署环境并入；缺省表示永久保留全部数据
   trace_spans: 30                        # 只接受可轮转的观测表，1–36500 的整数天
 ```
 
-`retentionDays` 没有默认值，未配置时解析结果不含该键，不改变已冻结 manifest 中的模块配置摘要。
+`retentionDays` 没有默认值，未配置时解析结果不含该键，不改变已冻结 manifest 中的模块配置摘要。装配配置块不能声明该键，服务端装配解析与 `check:catalog` 以 `assembly-incompatible` 拒绝。
 
 数据库文件为 `dataDir/world-prism.db`，备份写入 `dataDir/backups`，超过 `inlineArtifactMaxBytes` 的 artifact 正文写入 `dataDir/artifacts`。打开时应用 `journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`。
 
