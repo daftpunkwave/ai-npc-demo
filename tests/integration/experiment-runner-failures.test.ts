@@ -56,14 +56,29 @@ function failureCode(host: RunningHost, runId: string): Json | undefined {
   return (failed?.payload as Record<string, Json> | undefined)?.["code"];
 }
 
-/** 复制仓库配置并替换确定性模型夹具，供需要特定模型输出的用例使用。 */
+/**
+ * 无触发主体的自主唤醒（巡检等）不说话；与仓库默认夹具的同名一条相同。
+ * 替换夹具时必须保留：传输的默认决策响应要求受众非空，否则巡检 turn 全部失败，
+ * 报告会因这些与被测对象无关的失败把 run 记为无效。
+ */
+const autonomousNoDialogue: Json = {
+  id: "autonomous-no-dialogue",
+  match: { purpose: "decision", triggerPrincipalCount: 0 },
+  response: { finishReason: "tool_calls", toolCalls: [{ name: "decision_submit", arguments: {
+    stance: "none",
+    dialogueIntent: { kind: "none", audience: [], tone: "neutral", reasonCode: "none", subjectRef: null, factRefs: [] },
+    noteworthy: [], citedMemoryIds: [], decisionNote: "",
+  } }] },
+};
+
+/** 复制仓库配置并替换确定性模型夹具（用例给出的在前，自主唤醒不说话一条在后），供需要特定模型输出的用例使用。 */
 function fixtureConfig(lines: readonly Json[]): string {
   const root = tempRoot(resources, "world-prism-experiment-fixtures-");
   const config = join(root, "config");
   cpSync("config", config, { recursive: true });
   const fixtures = join(root, "tests", "fixtures", "model");
   mkdirSync(fixtures, { recursive: true });
-  writeFileSync(join(fixtures, "default.jsonl"), lines.map((line) => JSON.stringify(line)).join("\n"), "utf8");
+  writeFileSync(join(fixtures, "default.jsonl"), [...lines, autonomousNoDialogue].map((line) => JSON.stringify(line)).join("\n"), "utf8");
   return config;
 }
 
@@ -181,12 +196,12 @@ describe("实验执行器的配额与失败路径", () => {
     const branchId = branchOf(host, runId);
     await startRun(host, headers, runId, "op-000000000651");
     expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
-    // 第 60 tick 的请求触发的 turn 失败：触发已被消费，该输入没有得到决策。
+    // 只有第 60 tick 的请求触发的 turn 失败：触发已被消费，该输入没有得到决策。
     const failedTurns = host.storage.transact((tx) => tx.all(
       "SELECT agent_id, created_tick FROM turn_runs WHERE branch_id = ? AND status IN ('failed', 'budget-exhausted')",
       [branchId],
     ));
-    expect(failedTurns).toContainEqual({ agent_id: "human-independent", created_tick: 60 });
+    expect(failedTurns).toEqual([{ agent_id: "human-independent", created_tick: 60 }]);
     expect(probeResults(host, runId)[0]).toMatchObject({ valid: 1, invalid_reason: null });
 
     const report = runReportResponseSchema.parse((await host.app.inject({
