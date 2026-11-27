@@ -17,7 +17,7 @@ export type RotatableTable = keyof RetentionDays;
  * 类型要求覆盖 schema 中的每张表，新增可轮转表时必须同时给出年龄列与语句；
  * started_at 为 NULL 的早期跨度不满足范围条件，没有可判定的年龄，按永久保留处理。
  */
-const pruneBatchStatements = {
+export const pruneBatchStatements = {
   trace_spans: `DELETE FROM trace_spans WHERE rowid IN (
       SELECT rowid FROM trace_spans WHERE started_at < ? ORDER BY started_at LIMIT ?)`,
 } as const satisfies Record<RotatableTable, string>;

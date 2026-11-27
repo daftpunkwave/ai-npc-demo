@@ -1,7 +1,7 @@
 /**
- * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制、备份与 artifact 大正文文件，并持有连接级预编译语句缓存。
+ * 核心职责：打开数据目录、执行迁移，提供同步事务、分支复制、备份、artifact 大正文文件与缓存的占用测量，并持有连接级预编译语句缓存。
  * 交互契约：依赖 node:fs 与 node:path 定位库文件，connection/migrations/schema/statement-cache/transaction/fork/backup/
- * artifact-files 实现与端口契约；语句缓存随连接创建，在每次事务之间复用，连接关闭时随之清空；
+ * artifact-files/footprint 实现与端口契约；语句缓存与占用测量缓存随连接创建，连接关闭时随之清空；
  * artifact 正文文件按配置的 inlineArtifactMaxBytes 分流，与数据库连接的开关无关。
  * 约束与禁忌：禁止在事务内 await、向调用方暴露连接、跳过迁移失败、在同一连接上并发提交两个事务、
  * 跨越连接存活期复用缓存，或在回滚失败后继续复用状态不可信的连接。
@@ -19,6 +19,7 @@ import {
   type ForkBranchRequest,
   type ForkBranchResult,
   type HostServices,
+  type StorageFootprint,
   type StoragePort,
   type StorageTransaction,
 } from "@world-prism/contracts";
@@ -27,10 +28,17 @@ import { SqliteArtifactFiles } from "./artifact-files";
 import { backupDatabase, type PublishedBackup } from "./backup";
 import { closeDatabase, openDatabase } from "./connection";
 import { forkBranchDatabase } from "./fork-branch";
+import { measureFootprint } from "./footprint";
 import { applyMigrations } from "./migrations";
 import { resolveCatalog, type StorageCatalog } from "./schema";
 import { StatementCache } from "./statement-cache";
 import { SqliteTransaction, isThenable } from "./transaction";
+
+/**
+ * 占用测量的缓存时长。控制台健康摘要约每 2 秒读取一次，而行数统计的成本随表规模线性增长，
+ * 只在缓存过期后重新测量。
+ */
+export const footprintMaxAgeMs = 5 * 60 * 1000;
 
 /** 失败原因转成可安全记录的字符串，避免把任意对象塞进日志数据。 */
 function errorMessage(error: unknown): string {
@@ -51,6 +59,8 @@ export class SqliteStorage implements StoragePort {
   private fatalFailure: { readonly rollbackError: unknown; readonly originalError: unknown } | null = null;
   private opening: Promise<void> | null = null;
   private lifecycleEpoch = 0;
+  /** 最近一次占用测量与测量时的单调时钟；连接关闭后丢弃。 */
+  private footprintCache: { readonly measuredAtMs: number; readonly value: StorageFootprint } | null = null;
 
   constructor(config: StorageConfig, host: HostServices) {
     this.config = config;
@@ -133,6 +143,7 @@ export class SqliteStorage implements StoragePort {
     this.database = null;
     this.catalog = null;
     this.fatalFailure = null;
+    this.footprintCache = null;
   }
 
   get isOpen(): boolean {
@@ -262,5 +273,17 @@ export class SqliteStorage implements StoragePort {
       removedBackups: result.removedBackups,
     });
     return result;
+  }
+
+  /** 返回缓存的占用测量；缓存超过 footprintMaxAgeMs 时在一个短事务内重新测量。不能在事务内调用。 */
+  footprint(): StorageFootprint {
+    const nowMs = this.host.monotonicMs();
+    const cached = this.footprintCache;
+    if (cached !== null && nowMs - cached.measuredAtMs < footprintMaxAgeMs) {
+      return cached.value;
+    }
+    const value = this.transact((tx) => measureFootprint(tx, this.host.nowIso(), this.config.retentionDays));
+    this.footprintCache = { measuredAtMs: nowMs, value };
+    return value;
   }
 }

@@ -1,5 +1,5 @@
 /**
- * 定义存储适配器的公共端口：同步事务、保存点、按分支 scope 的读写、分支复制与备份。
+ * 定义存储适配器的公共端口：同步事务、保存点、按分支 scope 的读写、分支复制、备份与占用测量。
  * 依赖 JSON 值与 Zod 校验；只声明宿主固定机制需要的存储边界，不暴露 SQLite 驱动类型或连接句柄。
  * 禁止跨分支读写分支级表、在事务内 await、把原始连接泄漏给业务模块或吞掉写入失败。
  */
@@ -164,6 +164,29 @@ export interface ArtifactFileStore {
   remove(filePath: string): void;
 }
 
+const byteCountSchema = z.number().int().nonnegative();
+
+/**
+ * 存储占用测量：主库页面与空闲页字节、artifact 正文字节、只追加表的行数与生效的保留天数。
+ * 测量结果带测量时刻；适配器缓存一段时间，读取方拿到的可能是数分钟前的值。
+ */
+export const storageFootprintSchema = z
+  .object({
+    measuredAt: z.string().min(1),
+    /** 主库页面总字节（page_count × page_size），不含 WAL 文件。 */
+    databaseBytes: byteCountSchema,
+    /** 空闲页字节：删除行后释放、等待复用的页；执行 VACUUM 之前文件不会因此变小。 */
+    freeBytes: byteCountSchema,
+    /** artifact 正文字节，按内联 BLOB 与数据目录下的独立文件分开计。 */
+    artifactBytes: z.object({ inline: byteCountSchema, file: byteCountSchema }).strict(),
+    tables: z.array(z.object({ table: z.string().min(1), rows: byteCountSchema }).strict()),
+    /** 生效的保留天数；空数组表示全部永久保留。 */
+    retention: z.array(z.object({ table: z.string().min(1), days: z.number().int().positive() }).strict()),
+  })
+  .strict();
+
+export type StorageFootprint = z.infer<typeof storageFootprintSchema>;
+
 /** 存储适配器端口：唯一写连接上的同步事务、分支复制、整库备份与 artifact 大正文文件。 */
 export interface StoragePort {
   /** 在 BEGIN IMMEDIATE 事务内同步执行；回调返回 Promise 时回滚并抛错。 */
@@ -174,4 +197,9 @@ export interface StoragePort {
   backup(options?: BackupOptions): BackupResult;
   /** 超过内联上限的 artifact 正文所在的文件存放；只在事务外使用。 */
   readonly artifactFiles: ArtifactFileStore;
+  /**
+   * 存储占用测量；缓存过期时才重新测量，必须在事务外调用。
+   * 可选能力：不提供测量的存储实现省略该方法，读取方据此不展示占用数据。
+   */
+  footprint?(): StorageFootprint;
 }

@@ -260,6 +260,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
           const status = lifecycle.healthStatus();
           const summary = healthStorageSummary(runtime.storage, active.branchId);
           const maintenance = input.maintenanceQueue?.() ?? { queued: 0, exhausted: 0 };
+          const footprint = runtime.storage.footprint?.();
           // createApp 只在全部模块启动成功后创建；能出现在装配集里即表示已就绪。
           const modules = [
             ...input.assembly.modules,
@@ -283,6 +284,8 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
               maintenanceQueued: maintenance.queued,
               maintenanceExhausted: maintenance.exhausted,
             },
+            // 占用测量由存储适配器缓存，2 秒一次的健康摘要不会每次都统计行数；不提供测量的存储省略该字段。
+            ...(footprint === undefined ? {} : { storage: footprint }),
             budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),
             ...(input.hotPathTimings === undefined ? {} : { hotPaths: [...input.hotPathTimings()] }),

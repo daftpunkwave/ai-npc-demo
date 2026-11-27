@@ -5,7 +5,7 @@
 ## 能力与端口
 
 - 提供能力 `platform.storage`（`exactly-one`，deployment 作用域），不依赖其他能力。
-- 端口在 `packages/contracts` 的 `storage.ts` 中定义：同步事务、保存点、原始查询、表级 scope 读写、分支复制、整库备份与 artifact 大正文文件（`artifactFiles`）。
+- 端口在 `packages/contracts` 的 `storage.ts` 中定义：同步事务、保存点、原始查询、表级 scope 读写、分支复制、整库备份、artifact 大正文文件（`artifactFiles`）与可选的占用测量（`footprint`）。
 - `rows(table)` 只能访问部署级与运行级表；分支级表必须经 `branch(branchId)` 访问，读写自动限定 `branch_id`。`rows()` 与 `branch()` 返回的句柄绑定事务生命周期，提交或回滚后继续读写会以 `invalid-state` 失败。分支级表清单从迁移推导，打开时与代码常量比对，迁移新增分支级表却漏拷会启动失败。
 - JSON 列按命名约定（`_json` 后缀）以规范 JSON 文本存取；BLOB 保持字节数组；表名与列名只能来自迁移目录，不接受调用方拼接 SQL。
 
@@ -39,4 +39,5 @@ retentionDays:                           # 可选；缺省表示永久保留全�
 - 原始查询通道（`get`/`all`/`run`）只面向宿主固定机制的跨分支与范围查询；模块状态读写使用分支 scope 表接口，不持有连接。
 - 模块不持有按主体隔离的 JSON 状态，`stateSchemaVersion` 为 `null`；数据库 schema 版本由 `schema_migrations` 管理。
 - `artifactFiles` 向 `StoredAgentArtifactStore` 提供内联上限（`inlineArtifactMaxBytes`）与正文文件读写：正文先写暂存文件再以硬链接独占发布为 `dataDir/artifacts/<artifact_id>`，同名文件已存在时拒绝覆盖；登记路径固定为 `artifacts/<artifact_id>`，读取与删除时按不可信输入校验，不接受目录外路径。文件读写只在事务外调用。
+- `footprint()` 返回缓存 5 分钟的占用测量：主库页面与空闲页字节、按存放方式汇总的 artifact 正文字节、只追加表的行数与生效的保留天数；计数语句只扫描覆盖索引，不能在事务内调用。
 - `backup()` 只复制数据库；`dataDir/artifacts` 中的正文文件写入后不再改变，按 artifact ID 命名，迁移或恢复数据目录时需与备份一并保留。

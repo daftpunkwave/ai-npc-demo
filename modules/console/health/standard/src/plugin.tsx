@@ -1,5 +1,5 @@
 /**
- * 读取控制台健康摘要与客户端内容视图，呈现端口、装配、时钟、队列、模块、失败计数与热路径耗时。
+ * 读取控制台健康摘要与客户端内容视图，呈现端口、装配、时钟、队列、模块、失败计数、热路径耗时与存储占用。
  * 依赖注入的 console API、当前角色、页面可见性与 React；页面标题取自内容视图，不伪造 Agent 或预算数据。
  * 禁止在服务失败时保留过期页面并声称运行正常，也禁止在页面不可见时继续按固定间隔请求。
  */
@@ -13,11 +13,43 @@ import type {
 } from "@world-prism/contracts";
 import type { ApiClient } from "@world-prism/client-protocol";
 import { healthSummary } from "./health-summary";
+import { storageSummary, type StorageSummaryView } from "./storage-summary";
 import { currentVisibility, onVisibilityChange, shouldPollHealth } from "./polling";
 
 export interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly activeRole: "operator" | "researcher" | "evaluator";
+}
+
+/** 存储占用面板：测量由服务端缓存，面板标出测量时刻，避免把旧值读成实时值。 */
+function StoragePanels({ storage }: { readonly storage: StorageSummaryView }): ReactNode {
+  return (
+    <div className="console-two-column" data-testid="console-health-storage">
+      <section className="console-panel">
+        <header>
+          <h2>存储占用</h2>
+          <span>测量于 {storage.measuredAt}</span>
+        </header>
+        <dl className="console-kv">
+          <div><dt>主库</dt><dd>{storage.databaseText}</dd></div>
+          <div><dt>空闲页</dt><dd>{storage.freeText}</dd></div>
+          <div><dt>artifact 正文</dt><dd>{storage.artifactText}</dd></div>
+          <div><dt>保留策略</dt><dd>{storage.retentionText}</dd></div>
+        </dl>
+      </section>
+      <section className="console-panel">
+        <header>
+          <h2>表行数</h2>
+          <span>{storage.tables.length} tables</span>
+        </header>
+        <dl className="console-kv">
+          {storage.tables.map((entry) => (
+            <div key={entry.table}><dt>{entry.table}</dt><dd>{entry.rowsText}</dd></div>
+          ))}
+        </dl>
+      </section>
+    </div>
+  );
 }
 
 function HealthPage(): ReactNode {
@@ -102,6 +134,7 @@ function HealthPage(): ReactNode {
     return <div className="console-loading">读取运行状态…</div>;
   }
   const summary = healthSummary(health);
+  const storage = storageSummary(health);
   return (
     <section className="console-page" data-testid="console-page-health">
       <header className="console-page-head">
@@ -183,6 +216,7 @@ function HealthPage(): ReactNode {
           </div>
         </section>
       )}
+      {storage === null ? null : <StoragePanels storage={storage} />}
     </section>
   );
 }

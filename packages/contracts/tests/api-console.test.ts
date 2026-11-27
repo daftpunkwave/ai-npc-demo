@@ -73,6 +73,7 @@ import {
   seatViewSchema,
   seatWorldViewResponseSchema,
   seatsResponseSchema,
+  storageFootprintSchema,
 } from "../src/index";
 import {
   agentWorldViewFixture,
@@ -163,6 +164,15 @@ const consoleHealth = {
   recentFailures: [],
 };
 
+const storageFootprint = {
+  measuredAt: "2026-11-18T00:00:00.000Z",
+  databaseBytes: 4096 * 128,
+  freeBytes: 4096,
+  artifactBytes: { inline: 1024, file: 70_000 },
+  tables: [{ table: "trace_spans", rows: 42 }],
+  retention: [{ table: "trace_spans", days: 30 }],
+};
+
 /** 单条合法 + 非法样例的 DTO 表。 */
 const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["装配来源", assemblySourceSchema, "repo", "cache"],
@@ -172,6 +182,9 @@ const dtoRows: ReadonlyArray<readonly [string, z.ZodType, unknown, unknown]> = [
   ["失败摘要", consoleFailureSummarySchema, { code: "provider-failed", safeMessage: "供应商失败", occurredAt: "2026-11-18T00:00:00.000Z", traceId: null }, { code: "nope", safeMessage: "x", occurredAt: "x", traceId: null }],
   ["控制台健康", consoleHealthResponseSchema, consoleHealth, { ...consoleHealth, laggingAgents: -1 }],
   ["控制台健康降级", consoleHealthResponseSchema, { ...consoleHealth, status: "degraded" }, { ...consoleHealth, status: "starting" }],
+  ["存储占用", storageFootprintSchema, { ...storageFootprint, retention: [] }, { ...storageFootprint, retention: [{ table: "trace_spans", days: 0 }] }],
+  ["控制台健康含存储占用", consoleHealthResponseSchema, { ...consoleHealth, storage: storageFootprint }, { ...consoleHealth, storage: { ...storageFootprint, freeBytes: -1 } }],
+  ["存储占用拒绝未知字段", storageFootprintSchema, storageFootprint, { ...storageFootprint, walBytes: 0 }],
   [
     "模块描述",
     moduleDescriptorViewSchema,

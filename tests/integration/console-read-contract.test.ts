@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { errorResponseSchema, timelineQuerySchema } from "@world-prism/contracts";
+import { consoleHealthResponseSchema, errorResponseSchema, timelineQuerySchema } from "@world-prism/contracts";
 import { startHost, type RunningHost } from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
 import { stubStandardModelHttp } from "./standard-model-support";
@@ -482,6 +482,32 @@ describe("控制台只读接口的契约保真度", () => {
     const response = await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers });
     expect(response.statusCode).toBe(200);
     expect((response.json() as { readonly budgets: unknown[] }).budgets).toEqual([]);
+  });
+
+  it("运行总览附带缓存的存储占用测量，行数与存储一致且两次轮询之间不重新统计", { timeout: 30_000 }, async () => {
+    const host = await hostsWithCampaign();
+    const headers = await researcherHeaders(host);
+    const first = consoleHealthResponseSchema.parse(
+      (await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers })).json(),
+    ).storage;
+    const counted = host.storage.transact((tx) => Object.fromEntries(
+      ["domain_events", "artifacts", "trace_spans", "lifecycle_events"].map((table) =>
+        [table, Number(tx.get(`SELECT COUNT(*) AS count FROM ${table}`)?.["count"])]),
+    ));
+    const rowsOf = (table: string) => first?.tables.find((entry) => entry.table === table)?.rows;
+    expect(rowsOf("domain_events")).toBe(counted["domain_events"]);
+    expect(rowsOf("domain_events")).toBeGreaterThan(0);
+    expect(rowsOf("artifacts")).toBe(counted["artifacts"]);
+    expect(rowsOf("lifecycle_events")).toBe(counted["lifecycle_events"]);
+    // 第一次请求自身的 http.request 跨度在响应之后才落库，测量时尚不存在。
+    expect(rowsOf("trace_spans")).toBeLessThanOrEqual(counted["trace_spans"] ?? 0);
+    expect(first?.retention).toEqual([]);
+    expect(first?.databaseBytes).toBeGreaterThan(0);
+
+    const second = consoleHealthResponseSchema.parse(
+      (await host.app.inject({ method: "GET", url: "/api/v1/console/health", headers })).json(),
+    ).storage;
+    expect(second).toEqual(first);
   });
 
   it("HTTP 错误响应携带可在 trace_spans 中查到的 traceId", { timeout: 30_000 }, async () => {
