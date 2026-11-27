@@ -175,7 +175,7 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 
 ### 8.2 经 OpenAI 兼容网关用真实模型执行
 
-仓库规格 `exp-memory-promise-v1` 引用 `shared-model-layout-v1`，它的价目记录要求供应商模型名为 `deepseek-flash`。网关以其他模型名提供服务时，改用 `openai-compatible-gateway-layout-v1`。这份布局的挂载、能力、限额与用途上限都与共享布局相同，区别有两处：
+仓库规格 `exp-memory-promise-v1` 引用 `shared-model-layout-v1`，它的价目记录要求供应商模型名为 `deepseek-flash`。网关以其他模型名提供服务时，改用 `openai-compatible-gateway-layout-v2`。v1 的挂载、能力、限额与用途上限都与共享布局相同；v2 只把 `npc-chat` 的限额提高到并发 4、每分钟 60 次请求与 30 万 token。共享布局的限额是占位值（并发 2、每分钟 20 次请求与 4 万 token），单次决策约占 4 千 token 预留，三个 Agent 同时决策时每次调用要排队约 50 秒，turn 会超过 `maxTurnMs` 的 90 秒截止。两份网关布局与共享布局的区别有两处：
 
 - 价目引用 `config/pricing-openai-compatible-gateway.yaml`，记录的模型名为 `deepseek-v4.1-flash-official`，单价沿用 deepseek-flash（输入 0.3、输出 1.2 USD/百万 token），报告中的费用是估算值；
 - 推理开关与返回名别名取自部署变量，见 [配置](configuration.md#10-完整配置文件首版)。
@@ -185,7 +185,7 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 ```dotenv
 WORLD_PRISM_DATA_DIR=./data/experiments-gateway
 WORLD_PRISM_ASSEMBLY=local-slg-standard-v1
-WORLD_PRISM_MODEL_LAYOUT=openai-compatible-gateway-layout-v1
+WORLD_PRISM_MODEL_LAYOUT=openai-compatible-gateway-layout-v2
 WORLD_PRISM_OPENAI_COMPAT_BASE_URL=<网关基址，含 /v1>
 WORLD_PRISM_OPENAI_COMPAT_API_KEY=<密钥>
 WORLD_PRISM_OPENAI_COMPAT_MODEL=deepseek-v4.1-flash-official
@@ -194,7 +194,7 @@ WORLD_PRISM_OPENAI_COMPAT_SERVED_MODELS=deepseek/deepseek-flash
 ```
 
 1. 用新的数据目录启动宿主，不开局在线世界。`WORLD_PRISM_MODEL_LAYOUT` 也要指向网关布局：首次启动时，在线 run 按这个变量选择的布局预检，若沿用共享布局，价目记录的模型名不一致，启动会失败。
-2. 以研究员身份调用 `POST /api/v1/console/experiments`，提交内联 `{ "experimentSpec": ... }`。规格内容与 `config/experiments/exp-memory-promise-v1.yaml` 相同，只把 `base.modelLayoutRef` 改为 `openai-compatible-gateway-layout-v1`；`experimentId` 不变，展开出同样的 24 个 run，seed 也相同。每个 run 创建时把网关布局、价目版本，以及解析后的 `thinking` 与 `servedModels` 冻结进 manifest；启动时复算并核对 `manifest_hash`，创建后改动这些变量会让该 run 记为 `manifest-mismatch`。
+2. 以研究员身份调用 `POST /api/v1/console/experiments`，提交内联 `{ "experimentSpec": ... }`。规格内容与 `config/experiments/exp-memory-promise-v1.yaml` 相同，只把 `base.modelLayoutRef` 改为 `openai-compatible-gateway-layout-v2`；`experimentId` 不变，展开出同样的 24 个 run，seed 也相同。每个 run 创建时把网关布局、价目版本，以及解析后的 `thinking` 与 `servedModels` 冻结进 manifest；启动时复算并核对 `manifest_hash`，创建后改动这些变量会让该 run 记为 `manifest-mismatch`。
 3. 同一数据目录中已有同一 `experimentId` 的 run 时，创建请求按 RunSpec 的 `id` 原样返回这些 run，不会按新布局重建。换布局重跑必须使用新的数据目录。
 4. 按第 8.1 节逐个启动 run，读取进度、报告与实验汇总。响应报告的名称命中别名的 attempt 不记 `model-substituted`，span 的 `reason` 为 `served-model-alias`；其他名称仍记替换，严格实验中受影响的探针记为无效（[模型池](../agent/model-pool.md#125-记录)）。
 
