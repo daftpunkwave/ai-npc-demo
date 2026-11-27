@@ -83,7 +83,8 @@ export const turnSummarySchema = z
     runId: idSchemas.run,
     branchId: z.string().min(1),
     agentId: principalIdSchema,
-    agentTurnIndex: z.number().int().nonnegative(),
+    /** 同一分支内该 Agent 的第几个 turn，从 1 起计；与 turn 记录及 turn_runs.agent_turn_index 同一口径。 */
+    agentTurnIndex: z.number().int().positive(),
     status: z.string().min(1),
     triggerKinds: z.array(z.string().min(1)),
     terminalReason: z.string().min(1).nullable(),

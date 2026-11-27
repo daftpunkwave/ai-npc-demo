@@ -395,7 +395,8 @@ interface ModuleDescriptorView {
 }
 
 interface TurnSummary {
-  turnId: string; runId: string; branchId: string; agentId: string; agentTurnIndex: number;
+  turnId: string; runId: string; branchId: string; agentId: string;
+  agentTurnIndex: number;        // 同一分支内该 Agent 的第几个 turn，从 1 起计，与 turn 记录同一口径
   status: string; triggerKinds: string[]; terminalReason: string | null;
   createdAt: string; endedAt: string | null; modelCalls: number; toolCalls: number; tokens: { input: number | null; output: number | null };
 }
