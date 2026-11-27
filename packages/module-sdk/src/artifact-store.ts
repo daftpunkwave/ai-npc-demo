@@ -1,10 +1,13 @@
 /**
- * 核心职责：持久化 Agent 原始结果、模型视图与已批准对白 artifact，并按存储端口的内联上限把大正文分流到文件。
+ * 核心职责：持久化 Agent 原始结果、模型视图与已批准对白 artifact，按存储端口的内联上限把大正文分流到文件，
+ *   并提供按 ID 取回正文的只读查询。
  * 交互契约：通过 storage 的 artifacts 表登记规范 JSON，超过 artifactFiles.inlineMaxBytes 的正文经 artifactFiles 落盘；
- * 用注入的 host 生成 ID，并对规范正文文本求 content_hash。artifactBodyText 供其他只读方在事务外取回正文。
- * 约束与禁忌：不得覆盖既有 artifact、读取跨 scope 内容或把文件 I/O 放进任何事务。
+ *   用注入的 host 生成 ID，并对规范正文文本求 content_hash。artifactBodyText 与 readArtifactBody 在事务外取回正文，
+ *   读取方不需要知道列名与存储形态。
+ * 约束与禁忌：不得覆盖既有 artifact、读取跨 scope 内容或把文件 I/O 放进任何事务；作用域与权限由调用方在读取前裁决。
  */
 import {
+  DomainError,
   canonicalJson,
   checkJsonBudget,
   type HostServices,
@@ -12,6 +15,7 @@ import {
   type StoragePort,
   type StorageRow,
 } from "@world-prism/contracts";
+import type { ObservedArtifactBody } from "./observability-sources";
 
 const artifactKinds = ["tool-raw", "tool-view", "speech", "decision", "context", "model-request", "model-response", "export"] as const;
 
@@ -197,5 +201,24 @@ export class StoredAgentArtifactStore implements AgentArtifactStore {
       createdAt: requireString(row, "created_at"),
       value: JSON.parse(bodyText) as Json,
     };
+  }
+}
+
+/**
+ * 读取 artifact 的正文文本与所属 run；不存在时返回 null。
+ * 行在独立的短事务内读出，正文在事务外按登记方式取回（内联解码或读取正文文件），因此调用方不能处在事务中。
+ * 只返回存储中的原文，不按种类过滤、不做 JSON 解析，脱敏与审计由调用方负责。
+ */
+export function readArtifactBody(storage: StoragePort, artifactId: string): ObservedArtifactBody | null {
+  const row = storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
+  if (row === null) return null;
+  const runId = row["run_id"];
+  if (runId !== null && typeof runId !== "string") {
+    throw new DomainError("invalid-state", `artifact ${artifactId} 的 run_id 不是文本`);
+  }
+  try {
+    return { runId, body: artifactBodyText(storage, row) };
+  } catch (error) {
+    throw new DomainError("invalid-state", `artifact ${artifactId} 的正文缺失或无法读取`, { cause: error });
   }
 }

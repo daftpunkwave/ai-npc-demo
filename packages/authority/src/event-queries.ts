@@ -1,10 +1,21 @@
 /**
- * 核心职责：领域事件存储的只读查询：按事件类型与载荷字段批量查找最新事件序号，以及按分支列出完整事件行。
+ * 核心职责：领域事件存储的只读查询：按事件类型与载荷字段批量查找最新事件序号、按分支列出完整事件行，
+ *   以及为观测数据源提供解码后的时间线、分支事件与最新序号。
  * 交互契约：只接受建有表达式索引的（事件类型，载荷字段）组合；字段名受契约载荷类型约束，
- *   查询中的取值表达式与迁移建立的索引列逐字一致。
- * 约束与禁忌：只读；不解析载荷的其他字段；禁止为未建索引的字段拼接查询，否则会退化为逐行解析 JSON。
+ *   查询中的取值表达式与迁移建立的索引列逐字一致；观测记录的列到字段映射只在本文件维护。
+ * 约束与禁忌：只读；按载荷字段取值查找时不解析载荷的其他字段；禁止为未建索引的字段拼接查询，
+ *   否则会退化为逐行解析 JSON；时间线的筛选与 limit 必须在 SQL 内完成，不得取回后在内存截取。
  */
-import type { DomainEventPayload, DomainEventType, StorageRow, StorageTransaction } from "@world-prism/contracts";
+import type {
+  DomainEventPayload,
+  DomainEventType,
+  StorageRawRow,
+  StorageRow,
+  StorageTransaction,
+  StorageValue,
+} from "@world-prism/contracts";
+import type { DomainEventTimelineQuery, ObservedDomainEvent } from "@world-prism/module-sdk";
+import { readJsonTextCell, requireStorageNumber, requireStorageString } from "./storage-values";
 
 /**
  * 建有表达式索引、可按取值查找的事件载荷字段。字段名必须是该事件契约载荷的键：
@@ -68,4 +79,83 @@ export function latestEventSeqsByPayload(
  */
 export function listBranchEventRows(tx: StorageTransaction, branchId: string): readonly StorageRow[] {
   return tx.branch(branchId).table("domain_events").list();
+}
+
+const observedEventColumns = `world_seq, world_tick, event_id, type, principal_id, audience_json,
+                payload_json, correlation_id, committed_at`;
+
+/** 把原始查询返回的事件行解码为观测记录；任一列不符合契约都按 invalid-state 失败。 */
+function decodeObservedEvent(row: StorageRawRow): ObservedDomainEvent {
+  return {
+    worldSeq: requireStorageNumber(row, "domain_events", "world_seq"),
+    worldTick: requireStorageNumber(row, "domain_events", "world_tick"),
+    eventId: requireStorageString(row, "domain_events", "event_id"),
+    type: requireStorageString(row, "domain_events", "type"),
+    principalId: requireStorageString(row, "domain_events", "principal_id"),
+    audience: readJsonTextCell(row["audience_json"], "domain_events", "audience_json"),
+    payload: readJsonTextCell(row["payload_json"], "domain_events", "payload_json"),
+    correlationId: requireStorageString(row, "domain_events", "correlation_id"),
+    committedAt: requireStorageString(row, "domain_events", "committed_at"),
+  };
+}
+
+/** 载荷任一文本值包含给定文本；用于按 Agent 或节点 ID 筛选时间线。 */
+const payloadMentions = `EXISTS (
+          SELECT 1 FROM json_tree(payload_json) AS payload_value
+           WHERE payload_value.type = 'text'
+             AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
+        )`;
+
+/**
+ * 按时间线筛选读取分支内 afterSeq 之后的领域事件，按 world_seq 排序；
+ * 类型、主体与载荷文本筛选都在 SQL 内完成，limit 是筛选后的真实条数。
+ */
+export function listTimelineEvents(
+  tx: StorageTransaction,
+  query: DomainEventTimelineQuery,
+): readonly ObservedDomainEvent[] {
+  const direction = query.order === "desc" ? "DESC" : "ASC";
+  const conditions = ["branch_id = ?", "world_seq > ?"];
+  const parameters: StorageValue[] = [query.branchId, query.afterSeq];
+  if (query.types !== undefined && query.types.length > 0) {
+    conditions.push(`type IN (${query.types.map(() => "?").join(", ")})`);
+    parameters.push(...query.types);
+  }
+  if (query.involving !== undefined) {
+    conditions.push(`(principal_id = ? OR ${payloadMentions})`);
+    parameters.push(query.involving, query.involving);
+  }
+  if (query.mentioning !== undefined) {
+    conditions.push(payloadMentions);
+    parameters.push(query.mentioning);
+  }
+  parameters.push(query.limit);
+  return tx.all(
+    `SELECT ${observedEventColumns}
+       FROM domain_events
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY world_seq ${direction}
+      LIMIT ?`,
+    parameters,
+  ).map(decodeObservedEvent);
+}
+
+/** 读取分支内 afterSeq 之后的全部领域事件，按 world_seq 升序；用于分支差异比对。 */
+export function listEventsAfter(
+  tx: StorageTransaction,
+  branchId: string,
+  afterSeq: number,
+): readonly ObservedDomainEvent[] {
+  return tx.all(
+    `SELECT ${observedEventColumns}
+       FROM domain_events WHERE branch_id = ? AND world_seq > ?
+      ORDER BY world_seq`,
+    [branchId, afterSeq],
+  ).map(decodeObservedEvent);
+}
+
+/** 分支最新领域事件序号；尚无事件时为 null。 */
+export function latestEventSeq(tx: StorageTransaction, branchId: string): number | null {
+  const value = tx.branch(branchId).table("domain_events").max("world_seq");
+  return value === null ? null : requireStorageNumber({ world_seq: value }, "domain_events", "world_seq");
 }

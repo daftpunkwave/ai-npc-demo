@@ -17,7 +17,9 @@ export type {
 } from "./host/catalog-check";
 export { filterPlan, loadAssembly, resolveServerAssembly, resolveSessionAssemblies, resolveServerModules } from "./host/assembly";
 export type { ResolvedServerAssembly, ResolveServerAssemblyOptions } from "./host/assembly";
-export { buildRunManifest, readFrozenManifest } from "./host/manifest";
+export { buildRunManifest, readFrozenManifest, rosterAgentKindsOf } from "./host/manifest";
+export { createObservabilitySources } from "./host/observability-sources";
+export type { ObservabilitySourcesInput } from "./host/observability-sources";
 export {
   assertMigrationScopeIsCapabilityClosure,
   migrateOnlineRun,

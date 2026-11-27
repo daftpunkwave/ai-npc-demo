@@ -12,6 +12,7 @@ import {
   type Json,
   type ReasonCode,
   type ScopedBranchStorage,
+  type StorageTransaction,
 } from "@world-prism/contracts";
 import type { HostServices } from "@world-prism/contracts";
 import { issuesOf } from "./command-validation";
@@ -87,4 +88,15 @@ export function readReceipt(row: Readonly<Record<string, unknown>>): CommandRece
     });
   }
   return parsed.data;
+}
+
+/** 在调用方事务内按分支、主体与命令 ID 读取回执；不存在时返回 null。 */
+export function readCommandReceipt(
+  tx: StorageTransaction,
+  branchId: string,
+  principalId: string,
+  commandId: string,
+): CommandReceipt | null {
+  const row = tx.branch(branchId).table("command_receipts").get({ principal_id: principalId, command_id: commandId });
+  return row === null ? null : readReceipt(row);
 }

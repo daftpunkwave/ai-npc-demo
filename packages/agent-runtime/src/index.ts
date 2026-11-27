@@ -1,5 +1,5 @@
 /**
- * 唯一的 Agent turn 管线、调度协调、工具网关与受控对白提交。
+ * 唯一的 Agent turn 管线、调度协调、工具网关与受控对白提交，以及 turn 证据与 Agent 状态的类型化只读查询。
  * 依赖 contracts、kernel 与注入的端口，不直接持有具体认知模块实现。
  * 禁止复制第二套 loop，或让模块绕过证据、预算与 fencing 边界。
  */
@@ -28,6 +28,27 @@ export {
 export type { ReadTurnWorld, TurnWorldRead } from "./turn-input";
 export { readTurnObservations } from "./turn-observations";
 export type { TurnObservationQuery } from "./turn-observations";
+export {
+  countTurnToolCalls,
+  listStartedModelAttemptTimes,
+  listTurnModelAttempts,
+  listTurnModelUsages,
+  listTurnRuns,
+  listTurnToolCalls,
+  listTurnTriggerKinds,
+  readSchedulerQueue,
+  readTurnRun,
+} from "./turn-evidence-queries";
+export {
+  listAgentRuntimeStates,
+  listMemoryRecordVersions,
+  listObservationPage,
+  listPendingMaintenance,
+  readMemoryWatermark,
+  readPerceptionRevision,
+} from "./agent-state-queries";
+export type { AgentRuntimeState } from "./agent-state-queries";
+export { enqueueDebugTrigger, findDebugTriggerAgent, isAgentActive } from "./debug-triggers";
 export { MemoryHost } from "./memory-host";
 export type { MemoryHostOptions } from "./memory-host";
 export type { MemoryRecordUseRequest } from "./memory-publication";

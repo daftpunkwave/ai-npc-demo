@@ -7,8 +7,12 @@ import {
   DomainError,
   jsonValueSchema,
   type Json,
+  type StorageRawRow,
   type StorageRow,
 } from "@world-prism/contracts";
+
+/** 表级接口解码后的行或原始查询行；标量列在两者中形态相同。 */
+type StorageRecord = StorageRow | StorageRawRow;
 
 function invalidRow(table: string, column: string, reason: string): never {
   throw new DomainError("invalid-state", `存储表 ${table} 的列 ${column} ${reason}`, {
@@ -17,13 +21,13 @@ function invalidRow(table: string, column: string, reason: string): never {
 }
 
 /** 读取一列；列名由本文件的固定辅助函数传入，不接受任意外部键。 */
-function cellOf(row: StorageRow, column: string): unknown {
+function cellOf(row: StorageRecord, column: string): unknown {
   // eslint-disable-next-line security/detect-object-injection -- column 由固定调用点提供，row 来自已解码存储行。
   return row[column];
 }
 
 /** 读取必填整数列；负数、非安全整数或非数字都在此失败。 */
-export function requireStorageNumber(row: StorageRow, table: string, column: string): number {
+export function requireStorageNumber(row: StorageRecord, table: string, column: string): number {
   const value = cellOf(row, column);
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     invalidRow(table, column, "不是非负安全整数");
@@ -32,7 +36,7 @@ export function requireStorageNumber(row: StorageRow, table: string, column: str
 }
 
 /** 读取必填字符串列；空字符串视为损坏数据。 */
-export function requireStorageString(row: StorageRow, table: string, column: string): string {
+export function requireStorageString(row: StorageRecord, table: string, column: string): string {
   const value = cellOf(row, column);
   if (typeof value !== "string" || value.length === 0) {
     invalidRow(table, column, "不是非空字符串");
@@ -41,7 +45,7 @@ export function requireStorageString(row: StorageRow, table: string, column: str
 }
 
 /** 读取可空字符串列；未提供时返回 null。 */
-export function optionalStorageString(row: StorageRow, table: string, column: string): string | null {
+export function optionalStorageString(row: StorageRecord, table: string, column: string): string | null {
   const value = cellOf(row, column);
   if (value === null || value === undefined) {
     return null;
@@ -53,7 +57,7 @@ export function optionalStorageString(row: StorageRow, table: string, column: st
 }
 
 /** 读取可空整数列；未提供时返回 null。 */
-export function optionalStorageNumber(row: StorageRow, table: string, column: string): number | null {
+export function optionalStorageNumber(row: StorageRecord, table: string, column: string): number | null {
   const value = cellOf(row, column);
   if (value === null || value === undefined) {
     return null;
@@ -74,6 +78,20 @@ export function readJsonCell(cell: unknown, table: string, column: string): Json
     invalidRow(table, column, "不是合法 JSON 值");
   }
   return parsed.data;
+}
+
+/** 读取原始查询返回的 JSON 文本列：原始查询绕过表级接口的解码，文本须在这里解析并复检形状。 */
+export function readJsonTextCell(cell: unknown, table: string, column: string): Json {
+  if (typeof cell !== "string") {
+    invalidRow(table, column, "不是 JSON 文本");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(cell);
+  } catch {
+    invalidRow(table, column, "不是合法 JSON 文本");
+  }
+  return readJsonCell(value, table, column);
 }
 
 /** 检测处理器是否意外返回 Promise；同步事务内不得等待。 */
