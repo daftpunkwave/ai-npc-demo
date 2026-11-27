@@ -1,6 +1,7 @@
 /**
  * 核心职责：验证存储保留策略：表分类覆盖全部迁移表且可轮转清单只含观测表，配置 schema 只接受可轮转表，
- *   清理按截止时间分批删除过期行并留下与已提交删除一致的审计记录，未配置时不调度、不删除。
+ *   清理按截止时间分批删除过期行并留下与已提交删除一致的审计记录，未配置时不调度、不删除；
+ *   调度在每个间隔后真正执行下一轮，模块 dispose 之后越过间隔也不再执行。
  * 交互契约：依赖真实 SQLite 临时目录、存储模块测试助手、保留期实现与 module-sdk 的生命周期审计写入。
  * 约束与禁忌：禁止用假存储替代真实适配器，禁止让测试共享数据目录，或只断言行数减少而不核对删除了哪些行。
  */
@@ -249,7 +250,7 @@ describe("存储保留策略", () => {
       .toEqual([{ retentionDays: 30, cutoff: cutoff30, deletedRows: 2 }]);
   });
 
-  it("调度立即排入首轮并在每轮结束后按间隔排下一轮，stop 清除定时器", async () => {
+  it("调度立即排入首轮，到间隔后第二轮删除首轮之后过期的跨度，stop 清除定时器", async () => {
     const opened = await open();
     seedAgedRows(opened.port);
     vi.useFakeTimers();
@@ -259,25 +260,55 @@ describe("存储保留策略", () => {
     expect(schedule).not.toBeNull();
     expect(vi.getTimerCount()).toBe(1);
     await vi.advanceTimersByTimeAsync(0);
-    expect(spanIds(opened.port)).toHaveLength(4);
-    expect(vi.getTimerCount()).toBe(1);
-    await vi.advanceTimersByTimeAsync(retentionIntervalMs);
+    expect(spanIds(opened.port)).toEqual(["spn-at-cutoff", "spn-legacy", "spn-new-0", "spn-new-1"]);
     expect(retentionAudits(opened.port)).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
+    // 首轮之后写入新的过期跨度：间隔未到时保持不动，到点后由第二轮删除并留下第二条清理记录。
+    opened.port.transact((tx) => {
+      putSpan(tx, "spn-late-0", "2026-01-15T00:00:00.000Z");
+      putSpan(tx, "spn-late-1", "2026-01-20T00:00:00.000Z");
+    });
+    await vi.advanceTimersByTimeAsync(retentionIntervalMs - 1);
+    expect(spanIds(opened.port)).toEqual([
+      "spn-at-cutoff", "spn-late-0", "spn-late-1", "spn-legacy", "spn-new-0", "spn-new-1",
+    ]);
+    expect(retentionAudits(opened.port)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(spanIds(opened.port)).toEqual(["spn-at-cutoff", "spn-legacy", "spn-new-0", "spn-new-1"]);
+    expect(retentionAudits(opened.port).map((row) => row["payload_json"])).toEqual([
+      { retentionDays: 30, cutoff: cutoff30, deletedRows: 5 },
+      { retentionDays: 30, cutoff: cutoff30, deletedRows: 2 },
+    ]);
+    expect(vi.getTimerCount()).toBe(1);
     schedule?.stop();
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("模块启动后按配置执行首轮清理，dispose 停止调度", async () => {
+  it("模块启动后按配置执行首轮清理；dispose 之后越过间隔也不再执行清理", async () => {
     const dataDir = createTempDataDir();
     const seeded = await startStorage(dataDir);
     seedAgedRows(seeded.port);
     await seeded.dispose();
+    vi.useFakeTimers();
     const host = { ...createFakeHost(), nowIso: () => now };
-    handle = await startStorage(dataDir, host, { retentionDays: { trace_spans: 30 } });
-    const started = handle;
-    await vi.waitFor(() => {
-      expect(retentionAudits(started.port)).toHaveLength(1);
-    });
+    const started = await startStorage(dataDir, host, { retentionDays: { trace_spans: 30 } });
+    await vi.advanceTimersByTimeAsync(0);
     expect(spanIds(started.port)).toEqual(["spn-at-cutoff", "spn-legacy", "spn-new-0", "spn-new-1"]);
+    expect(retentionAudits(started.port)).toHaveLength(1);
+    started.port.transact((tx) => {
+      putSpan(tx, "spn-late-0", "2026-01-15T00:00:00.000Z");
+    });
+    // dispose 之后若仍有一轮被排上，它会经 transact 访问已关闭的连接并记录清理失败。
+    const transact = vi.spyOn(started.port, "transact");
+    await started.dispose();
+    await vi.advanceTimersByTimeAsync(retentionIntervalMs * 2);
+    expect(transact).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(host.logs.filter((log) => log.level === "error")).toEqual([]);
+    vi.useRealTimers();
+    // 重新打开核对落库状态：首轮之后过期的跨度仍在，清理记录仍只有首轮那一条。
+    handle = await startStorage(dataDir);
+    expect(spanIds(handle.port)).toContain("spn-late-0");
+    expect(retentionAudits(handle.port)).toHaveLength(1);
   });
 });
