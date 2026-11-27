@@ -7,6 +7,7 @@
 - 提供能力：`game.resources`（`exactly-one`，run 作用域）。
 - 拥有聚合：`stockpile`。
 - 写入入口：`reserve`、`release`、`consume`、`transfer`、`adjust`；资源事件在同一个 authority 事务内发出。
+- 只读查询：`stockpile(id)` 与 `available(stockpileId, resource)` 供规则路径按需查询单个库存点；`stockpiles()` 一次列出全部已初始化库存点的快照与展示等级，供玩家投影等需要全量的读取方使用，每个库存点只读取并校验一次。
 - 开局库存由 `campaign.start` 后续钩子初始化，不发布额外的“库存创建”事件。
 
 ## 规则

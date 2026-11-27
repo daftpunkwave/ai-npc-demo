@@ -1,20 +1,44 @@
 /**
- * 验证资源模块的预留、按任务释放/转移、非预留消耗与等级计算。
+ * 验证资源模块的预留、按任务释放/转移、非预留消耗、等级计算与全部库存点的批量查询。
  * 依赖真实内容包、内存 WorldTx 与资源端口。
  * 禁止把资源 ID 当作无校验对象索引。
  */
 import { describe, expect, it } from "vitest";
+import { DomainError } from "@world-prism/contracts";
 import { loadContentPack } from "@world-prism/experiment";
 import { createResourcesPort } from "@world-prism/mod-game-resources-light";
+import type { GameResourcesPort, StockpileStatus, WorldTx } from "@world-prism/module-sdk";
 import { createMemoryTx, toGameContent } from "./game-support";
 
 const content = toGameContent(loadContentPack("content", "earth-2964-v1"));
+const thresholds = { scarceRatio: 0.3, surplusRatio: 1.2 };
 
 function port(): ReturnType<typeof createResourcesPort> {
   const tx = createMemoryTx();
-  const result = createResourcesPort(() => tx, { scarceRatio: 0.3, surplusRatio: 1.2 });
+  const result = createResourcesPort(() => tx, thresholds);
   result.initializeCampaign(content);
   return result;
+}
+
+function statusOf(resources: GameResourcesPort, stockpileId: string): StockpileStatus | undefined {
+  return resources.stockpiles().find((entry) => entry.stockpileId === stockpileId);
+}
+
+/** 记录每次聚合读取的 WorldTx 包装，用来断言批量查询的读取次数。 */
+function countingTx(inner: WorldTx): { readonly tx: WorldTx; readonly reads: string[] } {
+  const reads: string[] = [];
+  const tx: WorldTx = {
+    ...inner,
+    get: (aggregateType, aggregateId) => {
+      reads.push(`get:${aggregateType}:${aggregateId}`);
+      return inner.get(aggregateType, aggregateId);
+    },
+    list: (aggregateType, options) => {
+      reads.push(`list:${aggregateType}`);
+      return inner.list(aggregateType, options);
+    },
+  };
+  return { tx, reads };
 }
 
 describe("轻资源", () => {
@@ -93,12 +117,62 @@ describe("轻资源", () => {
 
   it("按基线计算展示等级", () => {
     const resources = port();
-    expect(resources.level("sp-commons")).toEqual({
+    expect(statusOf(resources, "sp-commons")?.levels).toEqual({
       supply: "adequate",
       energy: "adequate",
       medical: "adequate",
     });
     resources.adjust({ stockpileId: "sp-commons", delta: { supply: -50 }, reason: "test" });
-    expect(resources.level("sp-commons").supply).toBe("scarce");
+    expect(statusOf(resources, "sp-commons")?.levels.supply).toBe("scarce");
+  });
+
+  it("批量查询按 ID 升序返回全部库存点的快照与等级，快照与单点查询一致", () => {
+    const resources = port();
+    resources.adjust({ stockpileId: "sp-commons", delta: { supply: -50 }, reason: "test" });
+    const statuses = resources.stockpiles();
+    const expectedIds = [...content.stockpiles.keys()].sort();
+    expect(statuses.map((entry) => entry.stockpileId)).toEqual(expectedIds);
+    for (const status of statuses) {
+      const { levels, ...snapshot } = status;
+      expect(snapshot).toEqual(resources.stockpile(status.stockpileId));
+      expect(Object.keys(levels).sort()).toEqual(["energy", "medical", "supply"]);
+    }
+    expect(statusOf(resources, "sp-commons")).toMatchObject({
+      nodeId: "grayharbor",
+      ownerFactionId: "human-neutral",
+      amount: { supply: 10, energy: 12, medical: 8 },
+      baseline: { supply: 60, energy: 12, medical: 8 },
+      levels: { supply: "scarce", energy: "adequate", medical: "adequate" },
+    });
+  });
+
+  it("开局初始化前批量查询为空集合，不按内容初值伪造库存", () => {
+    const resources = createResourcesPort(() => createMemoryTx(), thresholds);
+    expect(resources.stockpiles()).toEqual([]);
+  });
+
+  it("批量查询只列一次库存聚合，不按 ID 逐个回查", () => {
+    const memory = createMemoryTx();
+    createResourcesPort(() => memory, thresholds).initializeCampaign(content);
+    const { tx, reads } = countingTx(memory);
+    const statuses = createResourcesPort(() => tx, thresholds).stockpiles();
+    expect(statuses).toHaveLength(content.stockpiles.size);
+    expect(reads).toEqual(["list:stockpile"]);
+  });
+
+  it("库存状态不合法时批量查询按 invalid-state 拒绝并带出库存点", () => {
+    const memory = createMemoryTx();
+    const resources = createResourcesPort(() => memory, thresholds);
+    resources.initializeCampaign(content);
+    const broken = memory.get<Record<string, unknown>>("stockpile", "sp-earth")?.state;
+    memory.put("stockpile", "sp-earth", { ...broken, reserved: { supply: 999, energy: 0, medical: 0 } });
+    let caught: unknown;
+    try {
+      resources.stockpiles();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(DomainError);
+    expect(caught).toMatchObject({ code: "invalid-state", details: { stockpileId: "sp-earth" } });
   });
 });

@@ -56,17 +56,24 @@ export const stockpileStateSchema = z
 
 export type StockpileState = z.infer<typeof stockpileStateSchema>;
 
-/** 读取并校验库存聚合；缺失返回 null，损坏直接报错。 */
-export function readStockpile(tx: WorldTx, stockpileId: string): StockpileState | null {
-  const record = tx.get<unknown>("stockpile", stockpileId);
-  if (record === null) {
-    return null;
-  }
-  const parsed = stockpileStateSchema.safeParse(record.state);
+/** 校验一条库存聚合状态；不合法时按 invalid-state 拒绝并带出库存点，不用默认值兜底。 */
+export function parseStockpileState(state: unknown, stockpileId: string): StockpileState {
+  const parsed = stockpileStateSchema.safeParse(state);
   if (!parsed.success) {
     throw new DomainError("invalid-state", `库存 ${stockpileId} 的状态不合法`, {
       details: { stockpileId },
     });
   }
   return parsed.data;
+}
+
+/** 读取并校验库存聚合；缺失返回 null，损坏直接报错。 */
+export function readStockpile(tx: WorldTx, stockpileId: string): StockpileState | null {
+  const record = tx.get<unknown>("stockpile", stockpileId);
+  return record === null ? null : parseStockpileState(record.state, stockpileId);
+}
+
+/** 按 ID 升序列出全部库存聚合，每条只校验一次。 */
+export function listStockpiles(tx: WorldTx): StockpileState[] {
+  return tx.list<unknown>("stockpile").map((entry) => parseStockpileState(entry.state, entry.id));
 }

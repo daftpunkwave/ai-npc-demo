@@ -266,12 +266,14 @@ describe("装配驱动的模块选择与启动", () => {
       const tx = createMemoryTx();
       const resources = port.bind(() => tx);
       resources.initializeCampaign(content);
+      const commonsSupplyLevel = () =>
+        resources.stockpiles().find((entry) => entry.stockpileId === "sp-commons")?.levels.supply;
       expect(resources.available("sp-commons", "supply")).toBe(60);
-      expect(resources.level("sp-commons").supply).toBe("adequate");
+      expect(commonsSupplyLevel()).toBe("adequate");
       expect(resources.adjust({ stockpileId: "sp-commons", delta: { supply: -20 }, reason: "test" })).toEqual({ ok: true });
-      expect(resources.level("sp-commons").supply).toBe("scarce");
+      expect(commonsSupplyLevel()).toBe("scarce");
       expect(resources.adjust({ stockpileId: "sp-commons", delta: { supply: 20 }, reason: "test" })).toEqual({ ok: true });
-      expect(resources.level("sp-commons").supply).toBe("adequate");
+      expect(commonsSupplyLevel()).toBe("adequate");
     } finally {
       await started.dispose();
     }
