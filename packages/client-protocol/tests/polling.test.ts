@@ -54,7 +54,9 @@ function fakeVisibility(initial: PageVisibilityState): {
   };
 }
 
-const flush = (): Promise<void> => vi.advanceTimersByTimeAsync(0);
+async function flush(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0);
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
