@@ -1,6 +1,6 @@
 /**
  * 管理 WS 连接、订阅、玩家投影增量发布与有界重放；会话/票据、帧处理、重放缓冲与发送出口由独立模块负责。
- * 依赖公共契约的投影类型、权限回调、注入时钟、会话注册表、重放缓冲与发送器。
+ * 依赖公共契约的投影类型、权限回调、注入时钟、会话注册表、重放缓冲与发送器；注入宿主 tracer 时为每次发布计时。
  * 禁止无限保留过期会话、未消费票据或断线重放缓冲，也禁止在慢连接上堆积推送。
  */
 import {
@@ -45,6 +45,9 @@ export type {
   StreamState,
   StreamStats,
 } from "./stream-types";
+
+/** 玩家投影发布的 span 名称；包含投影构建、顶层字段增量比对、写入重放缓冲与按连接推送。 */
+export const playerPublishSpan = "player-stream.publish";
 
 /** 管理 WS 会话、一次性票据、连接订阅、玩家投影增量与有界重放缓冲。 */
 export class StreamHub {
@@ -244,7 +247,12 @@ export class StreamHub {
     this.ensureSweepTimer();
     this.maybeSweep();
     // 投影读取失败直接向上抛出：全库没有可静默跳过的“未初始化”错误文本，吞错会掩盖真实故障。
-    publishProjection(this.publisher());
+    const tracer = this.options.tracer;
+    if (tracer === undefined) {
+      publishProjection(this.publisher());
+    } else {
+      tracer.span(playerPublishSpan, {}, () => publishProjection(this.publisher()));
+    }
     return true;
   }
 

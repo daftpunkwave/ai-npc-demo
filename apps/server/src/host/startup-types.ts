@@ -13,6 +13,7 @@ import type { AgentRunModules } from "./agent-run-modules";
 import type { ResolvedServerAssembly } from "./assembly";
 import type { RunManifest } from "./manifest";
 import type { ServerRuntime } from "./module-catalog";
+import type { SpanTimings } from "./span-timings";
 
 /** 本次启动实际使用的世界、装配、RunSpec 与冻结 manifest。 */
 export interface ActiveRunState {
@@ -50,6 +51,8 @@ export interface SessionAssemblies {
 /** 启动完成后的宿主启动聚合：已启动实例、运行期端口与冻结的在线 run。 */
 export interface HostStartup {
   readonly host: HostServices;
+  /** host.tracer 背后的进程内耗时汇总；控制台健康页经它读取热路径耗时。 */
+  readonly spanTimings: SpanTimings;
   readonly storage: StoragePort;
   readonly storageStarted: StartedInstances;
   readonly startedModules: StartedInstances;

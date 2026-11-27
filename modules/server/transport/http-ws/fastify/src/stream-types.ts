@@ -8,6 +8,7 @@ import { DomainError, playerNotificationKey } from "@world-prism/contracts";
 import type {
   AuthContext,
   ConversationLine,
+  HostTracer,
   IdPrefix,
   Json,
   PlayerNotificationView,
@@ -77,6 +78,8 @@ export interface StreamHubOptions {
   readonly ids: (prefix: IdPrefix) => string;
   readonly tokens: (kind: "session" | "ticket") => string;
   readonly now?: () => number;
+  /** 宿主 tracer；注入后为每次玩家投影发布计时（含投影构建、增量比对与推送），缺省不计时。 */
+  readonly tracer?: HostTracer;
   /** 玩家连接数变化通知；宿主据此启动断线自动暂停计时。 */
   readonly onPlayerConnectionsChanged?: (connected: number) => void;
   readonly onBranchChanged?: (branchId: string) => void;

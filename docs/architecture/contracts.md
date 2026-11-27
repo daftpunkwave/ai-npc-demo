@@ -198,7 +198,7 @@ interface HostServices {                                   // 模块访问时间
   hash(value: Json): Promise<string>;                      // 规范 JSON 的 SHA-256
   hashText(canonicalJsonText: string): Promise<string>;    // 已序列化规范 JSON 文本的 SHA-256，与 hash 同值同结果
   logger: { info(msg: string, data?: Json): void; warn(msg: string, data?: Json): void; error(msg: string, data?: Json): void };
-  tracer: { span<T>(name: string, attrs: Json, fn: () => T): T };
+  tracer: { span<T>(name: string, attrs: Json, fn: () => T): T }; // 同步计时；生产宿主在进程内按名称汇总耗时，不写库
 }                                                          // 存储与模型只经 requires 声明的 typed port 获得，不挂在宿主服务上
 
 interface UiExtension {
