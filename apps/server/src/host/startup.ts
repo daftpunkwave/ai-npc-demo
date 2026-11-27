@@ -20,6 +20,7 @@ import {
 } from "@world-prism/experiment";
 import { startInstances } from "@world-prism/kernel";
 import { assertDistinctTokens } from "../config";
+import { deploymentDefaults } from "../deployment-defaults";
 import { createHostServices } from "../host-services";
 import { agentRunModuleIds, startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import {
@@ -61,10 +62,6 @@ export type {
   SessionAssemblies,
 } from "./startup-types";
 
-const defaultPackId = "earth-2964-v1";
-const defaultAssemblyRef = "local-slg-standard-v1";
-const defaultRosterRef = "standard-15";
-
 /** 打开并启动宿主；调用方负责之后的传输装配与端口监听。 */
 export async function createHostStartup(options: HostOptions): Promise<HostStartup> {
   assertDistinctTokens([
@@ -84,7 +81,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   const host = createHostServices();
   const signal = new AbortController().signal;
   const definitions: readonly ModuleDefinition[] = options.moduleDefinitions ?? serverModuleDefinitions;
-  const packId = options.packId ?? defaultPackId;
+  const packId = options.packId ?? deploymentDefaults.contentPackId;
   const configDir = resolve(options.configRoot ?? "config");
   const loadContext: ConfigLoadContext = { configDir, env: process.env, cache: createConfigDocumentCache() };
   // 装配目录与当前装配在本函数内被反复使用：整份目录只读一次，当前装配复用同一份解析结果。
@@ -93,7 +90,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   const gameContent = toGameContent(content);
   const contentVersion = content.pack.contentVersion;
   const requestedAssembly = options.assembly === undefined
-    ? loadAssembly(options.assemblyRef ?? defaultAssemblyRef, process.cwd(), assemblies)
+    ? loadAssembly(options.assemblyRef ?? deploymentDefaults.assemblyRef, process.cwd(), assemblies)
     : assemblyDescriptorSchema.parse(options.assembly);
   const transportConfig = parseTransportConfig({
     host: options.transportHost ?? "127.0.0.1",
@@ -136,7 +133,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
     loadContext,
     requestedAssembly,
     requestedResolved,
-    rosterRef: options.rosterRef ?? defaultRosterRef,
+    rosterRef: options.rosterRef ?? deploymentDefaults.rosterRef,
     runSpecRef: options.runSpecRef,
     modelLayoutRef: options.modelLayoutRef,
   } satisfies Parameters<typeof prepareFirstRun>[0];

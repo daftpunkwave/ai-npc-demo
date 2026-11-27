@@ -4,6 +4,7 @@
  * 约束与禁忌：不启动服务、不打开存储、不监听端口。
  */
 export { createServerApp, resolveGameModuleBindings } from "./host/module-catalog";
+export { defaultModelLayoutRefFor, deploymentDefaults } from "./deployment-defaults";
 export type { GameModuleBindings, GameModulePublicPort } from "./host/game-port-binder";
 export { checkModuleCapabilityUsage } from "./host/module-capability-usage";
 export type { CapabilityUsageViolation } from "./host/module-capability-usage";

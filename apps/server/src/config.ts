@@ -9,6 +9,7 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultModelLayoutRefFor, deploymentDefaults } from "./deployment-defaults";
 
 /** 双端拓扑固定的服务端监听地址。 */
 export const fixedServerHost = "127.0.0.1";
@@ -22,9 +23,6 @@ export const consoleStaticDirRelativeToRoot = "apps/server/console-static";
 export const credentialsFileName = "dev-tokens.json";
 
 const defaultDataDir = "./data";
-const defaultAssemblyRef = "local-slg-standard-v1";
-const defaultModelLayoutRef = "shared-model-layout-v1";
-const defaultRosterRef = "standard-15";
 const credentialsFileVersion = 1;
 
 /** 启动令牌对应的身份；单角色令牌只发放对应控制台角色。 */
@@ -182,7 +180,7 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
   const consoleStaticDir = isAbsolute(consoleStaticDirValue)
     ? resolve(consoleStaticDirValue)
     : resolve(input.projectRoot, consoleStaticDirValue);
-  const assemblyRef = readText(input.env, "WORLD_PRISM_ASSEMBLY") ?? defaultAssemblyRef;
+  const assemblyRef = readText(input.env, "WORLD_PRISM_ASSEMBLY") ?? deploymentDefaults.assemblyRef;
   const configuredTokens: Partial<Record<TokenRole, string>> = {};
   for (const role of tokenRoles) {
     const credential = readText(input.env, tokenEnvNames[role]);
@@ -202,9 +200,8 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     dataDir,
     consoleStaticDir,
     assemblyRef,
-    modelLayoutRef: readText(input.env, "WORLD_PRISM_MODEL_LAYOUT") ??
-      (assemblyRef === "local-slg-test-v1" ? "deterministic-model-layout-v1" : defaultModelLayoutRef),
-    rosterRef: readText(input.env, "WORLD_PRISM_ROSTER") ?? defaultRosterRef,
+    modelLayoutRef: readText(input.env, "WORLD_PRISM_MODEL_LAYOUT") ?? defaultModelLayoutRefFor(assemblyRef),
+    rosterRef: readText(input.env, "WORLD_PRISM_ROSTER") ?? deploymentDefaults.rosterRef,
     migrateOnlineRun: readBooleanFlag(input.env, "WORLD_PRISM_MIGRATE_ONLINE_RUN"),
     configuredTokens,
   };

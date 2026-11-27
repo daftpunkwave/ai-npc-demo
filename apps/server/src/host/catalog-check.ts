@@ -23,6 +23,7 @@ import {
   clientRequiredCapabilities,
   serverRequiredCapabilities,
 } from "./module-catalog";
+import { deploymentDefaults } from "../deployment-defaults";
 import { checkModuleCapabilityUsage } from "./module-capability-usage";
 import { needsContentPack, scanAssemblyDirectory, serverAssemblyInputs } from "./assembly";
 
@@ -54,9 +55,6 @@ export interface CatalogCliOptions extends CatalogCheckOptions {
 }
 
 const realms: readonly Realm[] = ["server", "client", "console"];
-
-/** 预检读取的内容包：与宿主启动使用同一固定包，工具描述注入据此与运行时一致。 */
-const defaultPackId = "earth-2964-v1";
 
 function leadingNamespace(value: string): string {
   const separator = value.indexOf(".");
@@ -322,7 +320,7 @@ export function checkCatalog(options: CatalogCheckOptions = {}): CatalogCheckRep
   let loadedContent: ContentPack | null = null;
   const content: ContentPackSource = {
     pack: () => {
-      loadedContent ??= loadContentPack(resolve(root, "content"), defaultPackId);
+      loadedContent ??= loadContentPack(resolve(root, "content"), deploymentDefaults.contentPackId);
       return loadedContent;
     },
   };

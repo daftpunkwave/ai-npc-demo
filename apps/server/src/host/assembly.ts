@@ -31,6 +31,7 @@ import {
   type CanonicalHasher,
   type ResolvedRealmPlan,
 } from "@world-prism/kernel";
+import { deploymentDefaults } from "../deployment-defaults";
 import { canonicalHasher } from "../host-services";
 import { clientRequiredCapabilities, serverAgentRequiredCapabilities, serverRequiredCapabilities } from "./module-catalog";
 
@@ -234,7 +235,7 @@ export function serverAssemblyInputs(
   const toolBinding = server.bindings.find((binding) => binding.capability === "agent.tools");
   const configOverrides = { ...options.configOverrides };
   if (toolBinding?.moduleId === "agent.tools.game-tools") {
-    const content = options.content ?? loadContentPack(resolve(root, "content"), "earth-2964-v1");
+    const content = options.content ?? loadContentPack(resolve(root, "content"), deploymentDefaults.contentPackId);
     configOverrides[toolBinding.moduleId] = { toolDescriptions: content.prompts.toolDescriptions };
   }
   return {

@@ -11,6 +11,8 @@ import { join, resolve } from "node:path";
 import {
   createShutdownHandler,
   credentialsFileName,
+  defaultModelLayoutRefFor,
+  deploymentDefaults,
   loadDeploymentConfig,
   parseDeploymentConfig,
   resolveCredentials,
@@ -112,6 +114,21 @@ describe("部署配置", () => {
       rosterRef: "standard-15",
       configuredTokens: {},
     });
+    // 缺省值只有一个来源：宿主启动、装配解析与目录预检读取的也是同一份。
+    expect(config).toMatchObject({
+      assemblyRef: deploymentDefaults.assemblyRef,
+      modelLayoutRef: deploymentDefaults.modelLayoutRef,
+      rosterRef: deploymentDefaults.rosterRef,
+    });
+  });
+
+  it("只指定装配时，模型布局按装配取缺省：测试装配用确定性布局，其余装配用部署默认布局", () => {
+    const root = tempRoot();
+    expect(parseDeploymentConfig({ env: { WORLD_PRISM_ASSEMBLY: "local-slg-test-v1" }, projectRoot: root }).modelLayoutRef)
+      .toBe("deterministic-model-layout-v1");
+    expect(parseDeploymentConfig({ env: { WORLD_PRISM_ASSEMBLY: "local-slg-escalating-v1" }, projectRoot: root }).modelLayoutRef)
+      .toBe(deploymentDefaults.modelLayoutRef);
+    expect(defaultModelLayoutRefFor("toString")).toBe(deploymentDefaults.modelLayoutRef);
   });
 
   it("读取 WORLD_PRISM_* 覆盖数据目录与运行时选择", () => {
