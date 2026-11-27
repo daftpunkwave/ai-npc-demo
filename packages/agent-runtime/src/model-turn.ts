@@ -44,7 +44,14 @@ interface ModelTurnOptions {
 }
 
 export class ModelTurn {
+  private substitutedAttempt = false;
+
   constructor(private readonly options: ModelTurnOptions) {}
+
+  /** 本 turn 是否有模型尝试由供应商换成了其他实际模型；严格实验据此把探针判为无效。 */
+  get substituted(): boolean {
+    return this.substitutedAttempt;
+  }
 
   async decide(input: {
     readonly attemptId: string;
@@ -151,6 +158,7 @@ export class ModelTurn {
         const result = await pool.call(scope, purpose, profile.budgets.reserveOutputTokens[purpose], request);
         assertCurrent(status);
         const substituted = result.attempts.some((attempt) => attempt.substituted === true);
+        if (substituted) this.substitutedAttempt = true;
         evidence.record("turn.model", started, {
           status: "applied", reason: substituted ? "model-substituted" : null,
           effective: { purpose, round: request.round, attempts: [...result.attempts] },

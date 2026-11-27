@@ -18,11 +18,12 @@ import { DialogueFlow, messageIntentFromArguments, type SpeechApprovalIndex, typ
 import type { MemoryHost } from "./memory-host";
 import { ModelTurn, type ModelTurnPorts } from "./model-turn";
 import { decisionSubmitTool } from "./model-turn-materials";
+import { insertProbeResult, type ProbeResultInput } from "./probe-results";
 import type { AgentRuntimeOptions } from "./runtime";
 import { asRecord, errorNameToken } from "./runtime-records";
 import { ToolGateway, type ToolCallOutcome, type ToolCatalogPort } from "./tool-gateway";
 import { TurnEvidence, type StageSelection, type TurnSpan } from "./turn-evidence";
-import { freezeTurnInput, type ReadTurnWorld } from "./turn-input";
+import { freezeTurnInput, type FrozenTurnInput, type ReadTurnWorld } from "./turn-input";
 import { TurnLeases, TurnStopped, failClaim, type ClaimedTurn } from "./turn-lease";
 import { TurnSlotAssembly, deterministicDecisionPort } from "./turn-worker-assembly";
 import { checkedDecision, probeQuestion, prospectiveInputs, speechInput, turnMemoryQuery } from "./turn-materials";
@@ -346,6 +347,8 @@ export class TurnWorker {
         evidence.record("turn.speech", evidence.start(), {
           status: "skipped", reason: intent.kind === "none" ? "no-dialogue-intent" : "message-already-committed", effective: null,
         });
+        // 探针没有对白也是一次结果：如实归档为 no-dialogue，而不是留空让读取方猜测。
+        if (turn.probe) this.recordProbe(turn, frozen, "deciding", { answerText: null, decision: decision.value, invalidReason: "no-dialogue" });
         this.leases.move(turn, "deciding", "settling");
       } else {
         this.leases.move(turn, "deciding", "speaking");
@@ -356,17 +359,11 @@ export class TurnWorker {
           const source = model === null || approved.artifact.fallback ? "safe-template" : "model";
           try {
             if (turn.probe) {
-              const probe = probeQuestion(frozen);
-              const scriptId = this.execution.probeScriptId;
-              if (probe === null || scriptId === undefined) throw new TurnStopped("failed", "invalid-probe");
-              storage.transact((tx) => {
-                this.leases.require(tx, turn, "speaking");
-                tx.rows("probe_results").put({
-                  probe_result_id: host.ids("prb"), run_id: turn.runId, script_id: scriptId,
-                  probe_id: probe.probeId, agent_id: agentId, asked_at_tick: probe.askedAtTick,
-                  answer_text: approved.artifact.text, decision_json: decision.value, score_json: null,
-                  valid: 1, invalid_reason: null, created_at: host.nowIso(),
-                });
+              // 模型路径退回安全模板、或严格实验中发生模型替换时，回答照常归档但不进入正确率分母。
+              const substituted = model?.substituted === true && profile.failurePolicy === "strict";
+              this.recordProbe(turn, frozen, "speaking", {
+                answerText: approved.artifact.text, decision: decision.value,
+                invalidReason: approved.artifact.fallback ? "speech-fallback" : substituted ? "model-substituted" : null,
               });
               return { artifactId: approved.artifact.artifactId, receiptId: null, source, fallback: approved.artifact.fallback };
             }
@@ -437,6 +434,26 @@ export class TurnWorker {
         });
       }
     }
+  }
+
+  /** 在当前阶段租约下归档探针结果；脚本标识缺失或找不到提问观察时该探针 turn 失败。 */
+  private recordProbe(
+    turn: ClaimedTurn,
+    frozen: FrozenTurnInput,
+    status: AgentTurnStatus,
+    outcome: Pick<ProbeResultInput, "answerText" | "decision" | "invalidReason">,
+  ): void {
+    const probe = probeQuestion(frozen);
+    const scriptId = this.execution.probeScriptId;
+    if (probe === null || scriptId === undefined) throw new TurnStopped("failed", "invalid-probe");
+    const { host, storage } = this.runtime;
+    storage.transact((tx) => {
+      this.leases.require(tx, turn, status);
+      insertProbeResult(tx, {
+        probeResultId: host.ids("prb"), runId: turn.runId, scriptId, probeId: probe.probeId,
+        agentId: turn.auth.principalId, askedAtTick: probe.askedAtTick, createdAt: host.nowIso(), ...outcome,
+      });
+    });
   }
 
   private assertCurrent(turn: ClaimedTurn, status: AgentTurnStatus): void {

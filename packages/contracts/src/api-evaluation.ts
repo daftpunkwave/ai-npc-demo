@@ -111,6 +111,8 @@ export const reportProbeInvalidReasonSchema = z.enum([
   "evidence-incomplete",
 ]);
 
+export type ReportProbeInvalidReason = z.infer<typeof reportProbeInvalidReasonSchema>;
+
 export const reportProbeSchema = z
   .object({
     probeId: probeIdSchema,

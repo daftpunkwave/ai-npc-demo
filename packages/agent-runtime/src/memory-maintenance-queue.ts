@@ -10,6 +10,7 @@ import type {
   MaintenanceTask,
   StoragePort,
   StorageRow,
+  StorageTransaction,
 } from "@world-prism/contracts";
 
 const maxMaintenanceAttempts = 3;
@@ -56,6 +57,51 @@ function stringColumn(row: Readonly<Record<string, unknown>>, key: string): stri
   const value = row[key];
   if (typeof value !== "string") throw new Error(`maintenance column ${key} is not a string`);
   return value;
+}
+
+/**
+ * 分支内此刻可被认领的到期整理任务，按认领顺序排列。
+ * 认领与受控推进的收敛判定共用这一份判据：两处各写一份时，「还有任务可领」与「本 tick 已收敛」
+ * 会对同一行给出相反结论，执行器就可能在整理未完成时推进下一 tick。
+ */
+export function claimableMaintenanceRows(
+  tx: StorageTransaction,
+  branchId: string,
+  worldTick: number,
+  nowMs: number,
+): readonly StorageRow[] {
+  const table = tx.rows("maintenance_runs");
+  const usedCalls = new Map<string, number>();
+  for (const row of table.list({ branch_id: branchId })) {
+    const task = maintenanceTaskSchema.parse(row["task_json"]);
+    const used = (task.modelCallDays ?? []).filter((day) => day === Math.floor(worldTick / 24)).length;
+    usedCalls.set(task.moduleId, (usedCalls.get(task.moduleId) ?? 0) + used);
+  }
+  return table
+    .list({ branch_id: branchId }, {
+      orderBy: [
+        { column: "due_tick" },
+        { column: "created_at" },
+        { column: "maintenance_id" },
+      ],
+    })
+    .filter((row) => {
+      const dueTick = numberColumn(row, "due_tick");
+      if (dueTick > worldTick) return false;
+      const task = maintenanceTaskSchema.parse(row["task_json"]);
+      // 重排点未到：说明上一轮判过「水位未追平」，此时不重复认领，
+      // 否则同一个未就绪任务会在每个轮询周期被重新拾起。
+      // 只有当世界时钟确实越过重排点时才会重新尝试，重排点本身按 tick 推进而非按尝试次数累加，
+      // 因此后来已追平水位的任务不会被长期推迟。
+      if ((task.retryAfterTick ?? 0) > worldTick) return false;
+      if (task.needsModel && task.modelQuota !== undefined && (usedCalls.get(task.moduleId) ?? 0) >= task.modelQuota) return false;
+      if (row["status"] === "queued") return !attemptsExhausted(row, task);
+      if (row["status"] === "failed") return !attemptsExhausted(row, task);
+      return row["status"] === "leased" &&
+        typeof row["lease_expires_at"] === "string" &&
+        new Date(row["lease_expires_at"]).getTime() <= nowMs &&
+        !attemptsExhausted(row, task);
+    });
 }
 
 export class MemoryMaintenanceQueue {
@@ -218,38 +264,7 @@ export class MemoryMaintenanceQueue {
     const claimed: ClaimedMaintenance[] = [];
     this.storage.transact((tx) => {
       const table = tx.rows("maintenance_runs");
-      const usedCalls = new Map<string, number>();
-      for (const row of table.list({ branch_id: this.branchId })) {
-        const task = maintenanceTaskSchema.parse(row["task_json"]);
-        const used = (task.modelCallDays ?? []).filter((day) => day === Math.floor(worldTick / 24)).length;
-        usedCalls.set(task.moduleId, (usedCalls.get(task.moduleId) ?? 0) + used);
-      }
-      const candidates = table
-        .list({ branch_id: this.branchId }, {
-          orderBy: [
-            { column: "due_tick" },
-            { column: "created_at" },
-            { column: "maintenance_id" },
-          ],
-        })
-        .filter((row) => {
-          const dueTick = numberColumn(row, "due_tick");
-          if (dueTick > worldTick) return false;
-          const task = maintenanceTaskSchema.parse(row["task_json"]);
-          // 重排点未到：说明上一轮判过「水位未追平」，此时不重复认领，
-          // 否则同一个未就绪任务会在每个轮询周期被重新拾起。
-          // 只有当世界时钟确实越过重排点时才会重新尝试，重排点本身按 tick 推进而非按尝试次数累加，
-          // 因此后来已追平水位的任务不会被长期推迟。
-          if ((task.retryAfterTick ?? 0) > worldTick) return false;
-          if (task.needsModel && task.modelQuota !== undefined && (usedCalls.get(task.moduleId) ?? 0) >= task.modelQuota) return false;
-          if (row["status"] === "queued") return !attemptsExhausted(row, task);
-          if (row["status"] === "failed") return !attemptsExhausted(row, task);
-          return row["status"] === "leased" &&
-            typeof row["lease_expires_at"] === "string" &&
-            new Date(row["lease_expires_at"]).getTime() <= nowMs &&
-            !attemptsExhausted(row, task);
-        })
-        .slice(0, Math.max(0, limit));
+      const candidates = claimableMaintenanceRows(tx, this.branchId, worldTick, nowMs).slice(0, Math.max(0, limit));
       for (const row of candidates) {
         const leaseEpoch = numberColumn(row, "lease_epoch") + 1;
         const task = maintenanceTaskSchema.parse(row["task_json"]);

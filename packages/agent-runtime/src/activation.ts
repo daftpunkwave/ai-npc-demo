@@ -1,5 +1,5 @@
 /**
- * 核心职责：在单个存储事务内激活分支名册并执行部署级 15 身份配额。
+ * 核心职责：在单个存储事务内激活分支名册并执行部署级 15 身份配额，或把分支身份置为休眠以释放配额。
  * 交互契约：依赖 agent_activations、controller_leases、branch 状态与调用方给出的确定性时间；
  *   事务内入口返回明确结果，供命令钩子据此拒绝整条命令，直接入口按 budget-exhausted 抛出领域错误。
  * 约束与禁忌：禁止跨事务预占、把冻结分支计入配额或静默允许第 16 个身份。
@@ -84,4 +84,23 @@ export function activateAgentRosterInTransaction(input: RosterActivationInput): 
     }
   }
   return { kind: "activated", activated: missing, totalActive: requested };
+}
+
+/**
+ * 在调用方事务内把分支上的活动身份全部置为 dormant，释放它们占用的部署级配额。
+ * 休眠不删除激活行与控制租约：重新激活时沿用同一控制代次，不改变 Agent 的身份连续性。
+ * 返回被休眠的身份，按 agentId 升序。
+ */
+export function deactivateBranchAgentsInTransaction(
+  tx: StorageTransaction,
+  branchId: string,
+  nowIso: string,
+): readonly string[] {
+  const activations = tx.branch(branchId).table("agent_activations");
+  const released: string[] = [];
+  for (const row of activations.list({ status: "active" }, { orderBy: [{ column: "agent_id" }] })) {
+    activations.put({ ...row, status: "dormant", updated_at: nowIso });
+    released.push(String(row["agent_id"]));
+  }
+  return released;
 }
