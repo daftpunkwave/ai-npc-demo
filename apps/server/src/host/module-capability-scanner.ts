@@ -358,9 +358,12 @@ export function capabilityAccesses(text: string): readonly CapabilityAccess[] {
         continue;
       }
       // hook 的首个实参只能是写死的端口键：任何字符串都按端口键判定语法，非字符串实参无法静态对账。
+      // 字符串之后必须紧跟实参结束（`)` 或 `,`）：`"client.camera" + suffix` 这类表达式运行时取的是拼接结果，
+      // 若只看开头的字面量就会把动态键当成静态访问，绕过对账。
       line += argument.newlines;
       const literal = readQuotedString(text, argument.index);
-      if (literal === null) {
+      const afterLiteral = literal === null ? null : skipTrivia(text, literal.end);
+      if (literal === null || afterLiteral === null || (text[afterLiteral.index] !== ")" && text[afterLiteral.index] !== ",")) {
         accesses.push({ kind: "dynamic-key", receiver: hookName, line });
         index = argument.index;
         continue;

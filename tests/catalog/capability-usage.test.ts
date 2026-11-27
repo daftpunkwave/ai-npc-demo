@@ -566,4 +566,24 @@ describe("浏览器模块的端口取用对账", () => {
     expect(violations[1]?.message).toContain("plugin.tsx:3");
     expect(violations[1]?.message).toContain("camera");
   });
+
+  it("hook 实参以字符串开头但拼接或运算的表达式报动态能力键，不当作静态访问", () => {
+    const root = fixture({
+      ...providers,
+      ...browserModule(
+        "client.settings.standard",
+        "plugin.tsx",
+        [
+          "const camera = usePort(\"client.camera\");",
+          "const joined = usePort(\"client.camera\" + suffix);",
+          "const chosen = usePort<unknown>(\"client.camera\" || fallback);",
+          "const listener = usePortSubscription(\"client.camera\", onChange);",
+        ].join("\n"),
+      ),
+    });
+    const violations = checkModuleCapabilityUsage({ root, definitions: [camera, worldView, settings(["client.camera"])] });
+    expect(violations.map((violation) => violation.code)).toEqual(["capability-dynamic-key", "capability-dynamic-key"]);
+    expect(violations[0]?.message).toContain("plugin.tsx:2");
+    expect(violations[1]?.message).toContain("plugin.tsx:3");
+  });
 });
