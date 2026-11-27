@@ -1,6 +1,6 @@
 /**
  * 核心职责：把一次 run 的输入与产出打包为可下载的导出 artifact，供事后复核与归档。
- * 交互契约：依赖存储读取 manifest、turn 与 artifact 索引，经 authority 的事件查询读取事件，经 artifact 存储落盘；
+ * 交互契约：依赖存储读取 manifest、turn、artifact 索引、探针结果与实验汇总，经 authority 的事件查询读取事件，经 artifact 存储落盘；
  * `redaction` 决定是否剔除正文与凭据引用，`raw` 仅限研究员且仍不含密钥解析值。
  * 约束与禁忌：不修改 run 与事件、不推进时钟；导出失败时不写入半个 artifact。
  */
@@ -31,7 +31,7 @@ export interface ExportRunInput {
   readonly worldId: string;
 }
 
-/** 导出包结构：清单、事件、turn 与 artifact 索引。 */
+/** 导出包结构：清单、事件、turn、artifact 索引，以及实验执行器写入的探针结果与指标汇总。 */
 interface ExportBundle {
   readonly runId: string;
   readonly redaction: "redacted" | "raw";
@@ -40,6 +40,8 @@ interface ExportBundle {
   readonly events: readonly Json[];
   readonly turns: readonly Json[];
   readonly artifacts: readonly Json[];
+  readonly probeResults: readonly Json[];
+  readonly experimentResults: readonly Json[];
 }
 
 /** 读取 JSON 列；字符串按 JSON 解析，解析失败时返回 null 而不是抛出。 */
@@ -75,7 +77,9 @@ function redactJson(value: Json, redaction: "redacted" | "raw"): Json {
       continue;
     }
     // raw 保留正文；redacted 把正文类字段清空，只留字段名与计数。
-    if (redaction === "redacted" && (key === "body" || key === "answer" || key === "text" || key === "content")) {
+    // decisionNote 是决策阶段的自由文本理由，可能复述该 Agent 持有的秘密，与对白正文同等处理。
+    if (redaction === "redacted" &&
+      (key === "body" || key === "answer" || key === "text" || key === "content" || key === "decisionNote")) {
       result[key] = null;
       continue;
     }
@@ -140,6 +144,9 @@ export async function exportRun(
     const events = listBranchEventRows(tx, branchId);
     const turns = tx.rows("turn_runs").list({ run_id: runId });
     const artifacts = tx.rows("artifacts").list({ run_id: runId });
+    // 探针回答与汇总指标是实验的结论数据：回答正文按同一脱敏口径处理（answer_text 属于正文列）。
+    const probeResults = tx.rows("probe_results").list({ run_id: runId }, { orderBy: [{ column: "created_at" }] });
+    const experimentResults = tx.rows("experiment_results").list({ run_id: runId }, { orderBy: [{ column: "metric" }] });
     const manifest = jsonCell(run, "manifest_json");
     const manifestHash = typeof run["manifest_hash"] === "string" ? run["manifest_hash"] : null;
     if (manifest === null || manifestHash === null) {
@@ -166,6 +173,8 @@ export async function exportRun(
         }
         return index;
       }),
+      probeResults: redactRows(probeResults, request.redaction),
+      experimentResults: redactRows(experimentResults, request.redaction),
     };
     return exported;
   });

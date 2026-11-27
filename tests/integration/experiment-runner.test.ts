@@ -1,12 +1,13 @@
 /**
  * 核心职责：验证实验执行器按脚本检查点驱动受控时钟、在沙盒分支执行探针、写入 probe_results 与 experiment_results，
- * 实验分支之间与在线分支之间互不读写，并经进度接口如实对外呈现。
+ * 实验分支之间与在线分支之间互不读写，并经进度与导出接口如实对外呈现。
  * 交互契约：使用真实测试装配、SQLite 与控制台接口，决策走确定性模块，不调用模型。
  * 约束与禁忌：断言必须读执行器写入的真实存储行或公开接口；禁止替换执行器内部实现。
  */
 import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { runProgressResponseSchema, runReportResponseSchema, type Json } from "@world-prism/contracts";
+import { runProgressResponseSchema, runReportResponseSchema, exportResponseSchema, type Json } from "@world-prism/contracts";
+import { artifactBodyText } from "@world-prism/module-sdk";
 import type { RunningHost } from "@world-prism/app-server";
 import {
   activeAgentsOn,
@@ -208,5 +209,33 @@ describe("实验执行器", () => {
       method: "GET", url: `/api/v1/console/runs/${runId}/progress`, headers: { Authorization: `Bearer ${playerSession}` },
     });
     expect(forbidden.statusCode).toBe(403);
+  }, 120_000);
+
+  it("导出包按同一脱敏口径带出探针结果与实验汇总", async () => {
+    const host = await experimentHost(resources);
+    const headers = await researcherHeaders(host);
+    const [runId] = await createExperimentRuns(host, headers, experimentSpec({ experimentId: "exp-runner-export-v1" }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    await startRun(host, headers, runId, "op-000000000311");
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"])).toBe("completed");
+
+    const answer = String(probeResults(host, runId)[0]?.["answer_text"]);
+    const exported = async (redaction: "redacted" | "raw") => {
+      const { artifactId } = exportResponseSchema.parse((await host.app.inject({
+        method: "POST", url: "/api/v1/console/exports", headers, payload: { runId, redaction },
+      })).json());
+      const row = host.storage.transact((tx) => tx.rows("artifacts").get({ artifact_id: artifactId }));
+      if (row === null) throw new Error("导出 artifact 不存在");
+      return JSON.parse(artifactBodyText(host.storage, row)) as {
+        readonly probeResults: readonly Record<string, Json>[];
+        readonly experimentResults: readonly Record<string, Json>[];
+      };
+    };
+    const raw = await exported("raw");
+    const redacted = await exported("redacted");
+    expect(raw.probeResults.map((row) => row["answer_text"])).toEqual([answer]);
+    expect(redacted.probeResults.map((row) => [row["probe_id"], row["answer_text"]])).toEqual([["p-recall-promise", null]]);
+    expect((redacted.probeResults[0]?.["decision_json"] as Record<string, Json>)["decisionNote"]).toBeNull();
+    expect(redacted.experimentResults.map((row) => row["metric"])).toEqual(experimentResults(host, runId).map((row) => row["metric"]));
   }, 120_000);
 });
