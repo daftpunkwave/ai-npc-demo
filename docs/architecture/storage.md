@@ -674,6 +674,18 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 
 `agent-runtime` 读取 revision 视图（含公共编年史）时直接执行上面这条可见性查询，提交记忆计划时只按 `retired_revision IS NULL` 取当前行版本，两者都由 `memory_visible` 索引在 SQLite 内过滤，不把某个主体的全部历史行版本读进内存。历史行版本按设计只追加不清理，旧 revision 的重建依赖它们。
 
+观测 provider `platform.observability.sqlite` 只直接读写自己拥有的 `trace_spans`，生命周期审计经 module-sdk 的 `insertLifecycleAuditEvent` 写入。控制台时间线、Agent 列表、检查器、turn、记忆、观察、分支对比与调试队列需要的其他数据，经 module-sdk 声明的数据源端口 `ObservabilitySources` 读取，由各表的所有者在自己一侧把列与 JSON 路径解码为端口声明的类型化记录：
+
+| 数据 | 提供方 | 查询 |
+|---|---|---|
+| `domain_events`、`command_receipts`、`branches` 的世界与 run 归属 | authority | `listTimelineEvents`、`listEventsAfter`、`latestEventSeq`、`readCommandReceipt`、`readBranch` |
+| `turn_runs`、`triggers`、`tool_calls`，以及模型池按 turn 证据写入的 `model_attempts` | agent-runtime | `listTurnRuns`、`readTurnRun`、`listTurnTriggerKinds`、`countTurnToolCalls`、`listTurnModelUsages`、`listTurnModelAttempts`、`listTurnToolCalls`、`readSchedulerQueue`、`listStartedModelAttemptTimes` |
+| `agent_activations`、`controller_leases`、`perception_state`、`memory_watermarks`、`memory_records`、`observations`、`maintenance_runs` | agent-runtime | `listAgentRuntimeStates`、`readPerceptionRevision`、`readMemoryWatermark`、`listMemoryRecordVersions`、`listObservationPage`、`listPendingMaintenance` |
+| `lifecycle_events`、`artifacts` | module-sdk | `listLifecycleTimeline`、`latestLifecycleEventByOperation`、`readArtifactBody`（端口顶层的 `artifactBody`，不在 `read` 的存储快照内：超过内联上限的正文存放在文件中，须在事务外读取） |
+| `runs.manifest_json` 中冻结的名册 | 宿主 | `rosterAgentKindsOf` |
+
+角色位置经世界模块只读端口取得，调试触发的创建 tick 取自时钟 provider。宿主在 `apps/server/src/host/observability-sources.ts` 组合上述查询并绑定到观测 provider；调试唤醒是端口上唯一的写入，由宿主在一个事务内经 agent-runtime 登记调试触发、标记 run 受污染并写审计。时间线的类型、主体与节点筛选以及 limit 都在所有者的 SQL 内完成，按 operationId 查找调试审计的表达式与 0013 的 `lifecycle_debug_operation` 索引一致。表结构或 JSON 嵌套调整只需改所有者一侧的解码与测试：`tests/integration/observability-source-events.test.ts` 与 `observability-source-runtime.test.ts` 锁定列到字段的映射，其中 `turn_runs` 的列清单与观测记录字段逐一对照，名册读取以 `buildRunManifest` 冻结的 manifest 为准；替换观测实现不需要了解这些表的物理结构。
+
 ## 5. 存储验收
 
 - 写入事务中途抛错，状态、事件、job 与 receipt 都不落库。

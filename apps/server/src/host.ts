@@ -1,6 +1,6 @@
 /**
  * 打开服务端宿主：依次完成核心启动（内容/装配/存储/在线 run/模块）、权威网关装配、
- * 只读端口、客户端内容视图、运营编排、生命周期与传输应用，并返回可监听、可关闭的运行实例。
+ * 只读端口与观测数据源绑定、客户端内容视图、运营编排、生命周期与传输应用，并返回可监听、可关闭的运行实例。
  * 依赖 host 子模块与 authority；不启动浏览器端，也不直接引用模块实现。
  * 禁止绕过解析计划引用模块实现、按当前入参重建已冻结的在线 run，或重复实现时钟状态与路由。
  */
@@ -19,6 +19,7 @@ import type { HostOptions } from "./host/options";
 import { OperationJournal } from "./host/operation-journal";
 import { OnlineAgentHost } from "./host/online-agents";
 import { createOperationsHost } from "./host/operations";
+import { createObservabilitySources } from "./host/observability-sources";
 import { createReadPorts } from "./host/reads";
 import { createTransportApp } from "./host/transport-app";
 import { ModelLayoutAdminPort } from "./host/model-layout-admin";
@@ -117,6 +118,14 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
     gameContent: core.gameContent,
     active,
   });
+  // 观测 provider 只经数据源端口读取他人数据：事件、turn 证据与 Agent 状态由各自所有者的查询提供，
+  // 角色位置经世界模块只读端口，tick 经时钟 provider。
+  core.runtime.observability.bind(createObservabilitySources({
+    storage: core.storage,
+    host: core.host,
+    worldTick: (tx, branchId) => core.runtime.clock.readInTransaction(tx, branchId).worldTick,
+    worldIn: (tx, scope) => reads.portsIn(tx, scope)["game.world"],
+  }));
   if (core.active.agents !== null) {
     agents = new OnlineAgentHost({ core, active, reads, authority, approvals, onStateChange: () => app?.notifyWorldChanged() });
   }

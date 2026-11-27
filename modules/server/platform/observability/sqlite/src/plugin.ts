@@ -1,12 +1,12 @@
 /**
- * 使用固定 trace_spans、domain_events 与生命周期表提供观测写入和只读查询。
- * 依赖注入的 StoragePort、模块生命周期与公共 DTO；不改变世界事实或 Agent 记忆。
- * 禁止在模块内执行模型调用、删除审计记录或返回未授权原文。
+ * 核心职责：写入本模块拥有的 trace_spans 跨度，并基于宿主绑定的数据源端口提供时间线、Agent 列表、检查器与研究查询。
+ * 交互契约：StoragePort 只用于自有的 trace_spans 与生命周期审计写入；领域事件、审计时间线、Agent 状态、turn 证据等
+ *   他人拥有的数据只经 bind 注入的 ObservabilitySources 读取，不感知其表结构；未绑定时这些查询返回 not-ready。
+ * 约束与禁忌：禁止在模块内执行模型调用、删除审计记录或返回未授权原文；不改变世界事实或 Agent 记忆。
  */
 import {
   DomainError,
   agentInspectorResponseSchema,
-  jsonValueSchema,
   type AgentInspectorResponse,
   type AgentWorldView,
   type ArtifactResponse,
@@ -22,7 +22,6 @@ import {
   type ModuleCreateInput,
   type ModuleInstance,
   type ObservationsResponse,
-  type StorageValue,
   type StoragePort,
   type TimelineItem,
   type TimelineResponse,
@@ -30,7 +29,11 @@ import {
   type TurnDetail,
   type TurnsResponse,
 } from "@world-prism/contracts";
-import { createStatelessModule } from "@world-prism/module-sdk";
+import {
+  createStatelessModule,
+  type ObservabilitySources,
+  type TimelineFilter,
+} from "@world-prism/module-sdk";
 import { z } from "zod";
 import { ResearchQueries } from "./research-queries";
 
@@ -70,6 +73,7 @@ export class ObservabilityPort {
   private readonly storage: StoragePort;
   private readonly maxTimelineLimit: number;
   private readonly host: HostServices | undefined;
+  private sources: ObservabilitySources | null = null;
 
   constructor(
     storage: StoragePort,
@@ -79,6 +83,16 @@ export class ObservabilityPort {
     this.storage = storage;
     this.maxTimelineLimit = config.timelineLimit;
     this.host = host;
+  }
+
+  /** 绑定宿主用各数据所有者的查询组合出的数据源端口；跨度写入不依赖它。 */
+  bind(sources: ObservabilitySources): void {
+    this.sources = sources;
+  }
+
+  private requireSources(): ObservabilitySources {
+    if (this.sources === null) throw new DomainError("not-ready", "观测数据源尚未绑定");
+    return this.sources;
   }
 
   recordSpan(span: SpanRecord): void {
@@ -115,103 +129,44 @@ export class ObservabilityPort {
 
   timeline(query: TimelineQuery): TimelineResponse {
     const limit = Math.min(query.limit, this.maxTimelineLimit);
-    const direction = query.order === "desc" ? "DESC" : "ASC";
-    const domainConditions = ["branch_id = ?", "world_seq > ?"];
-    const domainParameters: StorageValue[] = [query.branchId, query.fromSeq];
-    const lifecycleConditions = ["branch_id = ?"];
-    const lifecycleParameters: StorageValue[] = [query.branchId];
-    if (query.types !== undefined && query.types.length > 0) {
-      const placeholders = query.types.map(() => "?").join(", ");
-      domainConditions.push(`type IN (${placeholders})`);
-      lifecycleConditions.push(`type IN (${placeholders})`);
-      domainParameters.push(...query.types);
-      lifecycleParameters.push(...query.types);
-    }
-    if (query.agentId !== undefined) {
-      domainConditions.push(
-        `(principal_id = ? OR EXISTS (
-          SELECT 1 FROM json_tree(payload_json) AS payload_value
-          WHERE payload_value.type = 'text'
-             AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
-        ))`,
-      );
-      domainParameters.push(query.agentId, query.agentId);
-      lifecycleConditions.push(
-        `(subject_id = ? OR EXISTS (
-          SELECT 1 FROM json_tree(payload_json) AS payload_value
-           WHERE payload_value.type = 'text'
-             AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
-        ))`,
-      );
-      lifecycleParameters.push(query.agentId, query.agentId);
-    }
-    if (query.nodeId !== undefined) {
-      const nodeFilter = `EXISTS (
-        SELECT 1 FROM json_tree(payload_json) AS payload_value
-         WHERE payload_value.type = 'text'
-           AND INSTR(CAST(payload_value.value AS TEXT), ?) > 0
-      )`;
-      domainConditions.push(nodeFilter);
-      lifecycleConditions.push(nodeFilter);
-      domainParameters.push(query.nodeId);
-      lifecycleParameters.push(query.nodeId);
-    }
-    domainParameters.push(limit);
-    lifecycleParameters.push(limit);
-    const rows = this.storage.transact((tx) =>
-      tx.all(
-        `SELECT world_seq, world_tick, event_id, type, principal_id, audience_json,
-                payload_json, correlation_id, committed_at
-           FROM domain_events
-          WHERE ${domainConditions.join(" AND ")}
-          ORDER BY world_seq ${direction}
-          LIMIT ?`,
-        domainParameters,
-      ),
-    );
-    const domainEvents: TimelineItem[] = rows.map((row) => {
-      const type = String(row["type"]);
-      const payload = parseJson(row["payload_json"]);
-      return {
-        kind: "domain",
-        worldSeq: Number(row["world_seq"]),
-        worldTick: Number(row["world_tick"]),
-        eventId: String(row["event_id"]) as TimelineItem["eventId"],
-        type,
-        principalId: String(row["principal_id"]) as TimelineItem["principalId"],
-        audience: parseJson(row["audience_json"]) as TimelineItem["audience"],
-        summaryZh: `${type} · ${String(row["principal_id"])}`,
-        payload,
-        correlationId: String(row["correlation_id"]),
-        createdAt: String(row["committed_at"]),
-      };
-    });
-    const lifecycleRows = this.storage.transact((tx) =>
-      tx.all(
-        `SELECT seq, type, subject_id, payload_json, created_at
-           FROM lifecycle_events
-          WHERE ${lifecycleConditions.join(" AND ")}
-          ORDER BY created_at ${direction}, seq ${direction}
-          LIMIT ?`,
-        lifecycleParameters,
-      ),
-    );
-    const lifecycleEvents: TimelineItem[] = lifecycleRows.map((row) => {
-      const type = String(row["type"]);
-      return {
-        kind: "lifecycle",
-        worldSeq: null,
-        worldTick: null,
-        eventId: null,
-        type,
-        principalId: row["subject_id"] === null ? null : String(row["subject_id"]) as TimelineItem["principalId"],
-        audience: null,
-        summaryZh: `${type} · ${row["subject_id"] === null ? "系统" : String(row["subject_id"])}`,
-        payload: parseJson(row["payload_json"]),
-        correlationId: null,
-        createdAt: String(row["created_at"]),
-      };
-    });
+    const filter: TimelineFilter = {
+      branchId: query.branchId,
+      limit,
+      order: query.order === "desc" ? "desc" : "asc",
+      types: query.types,
+      involving: query.agentId,
+      mentioning: query.nodeId,
+    };
+    const sourced = this.requireSources().read((reader) => ({
+      domain: reader.domainEventTimeline({ ...filter, afterSeq: query.fromSeq }),
+      lifecycle: reader.lifecycleTimeline(filter),
+    }));
+    const domainEvents: TimelineItem[] = sourced.domain.map((event) => ({
+      kind: "domain",
+      worldSeq: event.worldSeq,
+      worldTick: event.worldTick,
+      eventId: event.eventId as TimelineItem["eventId"],
+      type: event.type,
+      principalId: event.principalId as TimelineItem["principalId"],
+      audience: event.audience as TimelineItem["audience"],
+      summaryZh: `${event.type} · ${event.principalId}`,
+      payload: event.payload,
+      correlationId: event.correlationId,
+      createdAt: event.committedAt,
+    }));
+    const lifecycleEvents: TimelineItem[] = sourced.lifecycle.map((event) => ({
+      kind: "lifecycle",
+      worldSeq: null,
+      worldTick: null,
+      eventId: null,
+      type: event.type,
+      principalId: event.subjectId as TimelineItem["principalId"],
+      audience: null,
+      summaryZh: `${event.type} · ${event.subjectId ?? "系统"}`,
+      payload: event.payload,
+      correlationId: null,
+      createdAt: event.createdAt,
+    }));
     const directionFactor = query.order === "desc" ? -1 : 1;
     const events = [...domainEvents, ...lifecycleEvents]
       .sort((left, right) => {
@@ -228,51 +183,25 @@ export class ObservabilityPort {
   }
 
   agents(branchId: string): AgentsResponse {
-    // 位置取自世界模块拥有的 character 聚合，水位滞后取该 Agent 已感知世界序号与全局最新序号之差：
+    // 位置取自世界模块拥有的角色状态，水位滞后取该 Agent 已感知世界序号与全局最新序号之差：
     // 两者都是已持久化的事实，不再用固定的 null / 0 冒充，避免控制台永远显示「零滞后、位置未知」。
-    // 最新序号与逐 Agent 查询放在同一事务里，保证同一响应内的 lag 以同一快照为基准。
-    const snapshot = this.storage.transact((tx) => ({
-      latestWorldSeq: tx.branch(branchId).table("domain_events").max("world_seq"),
-      rows: tx.all(
-        `SELECT a.agent_id, a.status, l.controller_kind, json_extract(roster.value, '$.kind') AS agent_kind,
-                json_extract(character.state_json, '$.nodeId') AS node_id,
-                (SELECT t.status FROM turn_runs t
-                  WHERE t.branch_id = a.branch_id AND t.agent_id = a.agent_id
-                  ORDER BY t.agent_turn_index DESC LIMIT 1) AS turn_status,
-                (SELECT p.scanned_through_seq FROM perception_state p
-                  WHERE p.branch_id = a.branch_id AND p.agent_id = a.agent_id) AS scanned_through_seq
-           FROM agent_activations a
-           JOIN branches b ON b.branch_id = a.branch_id
-           JOIN runs r ON r.run_id = b.run_id
-           JOIN json_each(r.manifest_json, '$.roster.agents') roster
-             ON json_extract(roster.value, '$.agentId') = a.agent_id
-           LEFT JOIN controller_leases l
-             ON l.branch_id = a.branch_id AND l.agent_id = a.agent_id
-           LEFT JOIN aggregate_state character
-             ON character.branch_id = a.branch_id
-            AND character.aggregate_type = 'character'
-            AND character.aggregate_id = a.agent_id
-          WHERE a.branch_id = ?
-          ORDER BY a.agent_id`,
-        [branchId],
-      ),
+    // 最新序号与 Agent 状态在同一次数据源读取里取得，保证同一响应内的 lag 以同一快照为基准。
+    const snapshot = this.requireSources().read((reader) => ({
+      latestWorldSeq: reader.latestWorldSeq(branchId),
+      agents: reader.agentStates(branchId),
     }));
-    const latest = Number(snapshot.latestWorldSeq ?? 0);
+    const latest = snapshot.latestWorldSeq ?? 0;
     return {
-      agents: snapshot.rows.map((row) => {
-        const nodeId = row["node_id"];
-        const scanned = row["scanned_through_seq"];
-        return {
-          agentId: String(row["agent_id"]) as AgentsResponse["agents"][number]["agentId"],
-          kind: row["agent_kind"] === "character" ? "character" : "strategic",
-          active: row["status"] === "active",
-          controllerKind: row["controller_kind"] === "human" ? "human" : "agent",
-          location: typeof nodeId === "string" && nodeId.length > 0 ? nodeId : null,
-          turnStatus: row["turn_status"] === null ? "idle" : String(row["turn_status"]),
-          // 尚未建立感知水位的 Agent 视为滞后整条事件流，而不是滞后 0。
-          watermarkLag: Math.max(0, latest - (typeof scanned === "number" ? scanned : 0)),
-        };
-      }),
+      agents: snapshot.agents.map((agent) => ({
+        agentId: agent.agentId as AgentsResponse["agents"][number]["agentId"],
+        kind: agent.rosterKind === "character" ? "character" : "strategic",
+        active: agent.activationStatus === "active",
+        controllerKind: agent.controllerKind === "human" ? "human" : "agent",
+        location: agent.nodeId !== null && agent.nodeId.length > 0 ? agent.nodeId : null,
+        turnStatus: agent.latestTurnStatus ?? "idle",
+        // 尚未建立感知水位的 Agent 视为滞后整条事件流，而不是滞后 0。
+        watermarkLag: Math.max(0, latest - (agent.scannedThroughSeq ?? 0)),
+      })),
     };
   }
 
@@ -330,16 +259,11 @@ export class ObservabilityPort {
     readonly location: string | null;
     readonly worldView: AgentWorldView;
   }): AgentInspectorResponse {
-    const state = this.storage.transact((tx) => {
-      const branch = tx.branch(input.branchId);
-      return {
-        watermark: branch.table("memory_watermarks").get({ agent_id: input.agentId }),
-        perception: branch.table("perception_state").get({ agent_id: input.agentId }),
-      };
-    });
-    const revision = typeof state.watermark?.["revision"] === "number"
-      ? state.watermark["revision"]
-      : 0;
+    const state = this.requireSources().read((reader) => ({
+      watermark: reader.memoryWatermark(input.branchId, input.agentId),
+      perceptionRevision: reader.perceptionRevision(input.branchId, input.agentId),
+    }));
+    const revision = state.watermark?.revision ?? 0;
     const records = this.memory(input.branchId, input.agentId, revision).records;
     const relations = records.flatMap((record) => {
       if (record.kind !== "relation" || Array.isArray(record.content) ||
@@ -375,12 +299,9 @@ export class ObservabilityPort {
         state: record.status,
       }];
     });
-    const observationSeq = typeof state.watermark?.["observation_seq_consumed"] === "number"
-      ? state.watermark["observation_seq_consumed"] : 0;
-    const derivedThroughTick = typeof state.watermark?.["derived_through_tick"] === "number"
-      ? state.watermark["derived_through_tick"] : 0;
-    const perceptionRevision = typeof state.perception?.["revision"] === "number"
-      ? state.perception["revision"] : 0;
+    const observationSeq = state.watermark?.observationSeqConsumed ?? 0;
+    const derivedThroughTick = state.watermark?.derivedThroughTick ?? 0;
+    const perceptionRevision = state.perceptionRevision ?? 0;
     return agentInspectorResponseSchema.parse({
       agentId: input.agentId,
       persona: input.persona,
@@ -402,15 +323,8 @@ export class ObservabilityPort {
 
   private research(): ResearchQueries {
     if (this.host === undefined) throw new DomainError("not-ready", "观测研究查询缺少宿主依赖");
-    return new ResearchQueries(this.storage, this.host);
+    return new ResearchQueries(this.storage, this.host, this.requireSources());
   }
-}
-
-function parseJson(value: unknown): Json {
-  if (typeof value !== "string") {
-    throw new DomainError("invalid-state", "观测记录的 JSON 列不是文本");
-  }
-  return jsonValueSchema.parse(JSON.parse(value));
 }
 
 export async function createObservabilityModule(input: ModuleCreateInput): Promise<ModuleInstance> {

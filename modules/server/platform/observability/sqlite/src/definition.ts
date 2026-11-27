@@ -1,6 +1,6 @@
 /**
  * 声明基于 SQLite 的观测模块，提供跨度归档与控制台时间线查询。
- * 依赖平台存储能力；具体 SQL 与 JSON 解码由动态实现负责。
+ * 依赖平台存储能力保存自有跨度；他人拥有的数据由宿主启动后绑定的数据源端口提供，查询组装由动态实现负责。
  * 禁止在此读取环境变量、直接打开数据库或向玩家域暴露真值。
  */
 import { capabilityIdSchema, type ModuleDefinition } from "@world-prism/contracts";

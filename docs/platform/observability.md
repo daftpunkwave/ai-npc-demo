@@ -91,7 +91,7 @@
 
 ## 4. 服务端控制台的观测页
 
-观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
+观测页运行在 `console` realm，由 `console.observability.standard` 模块贡献到服务端 `:3000/console/*` 的路由和 panel slot。页面通过授权控制台 API 读取 `platform.observability.sqlite` 模块归档的数据。该模块只直接读写自己拥有的 `trace_spans`；领域事件、turn 证据、Agent 状态、记忆与审计等他人数据经宿主绑定的数据源端口读取，由各表所有者解码为类型化记录，替换观测实现不需要了解这些表的物理结构（提供方与查询清单见 [存储第 4 节](../architecture/storage.md#4-常用查询)）。页面模块可替换，证据生成与查询语义不变；隐藏页面不等于数据不可见，玩家会话访问控制台 API 必须 forbidden。入口与角色规则见 [两个本地端口](../architecture/two-endpoints.md)。
 
 1. 运行总览：分支、模式、配置 hash、15 个 Agent 状态、controller、当前水位、失败与预算。
 2. 世界事件时间线：按玩家/Agent/地点筛选，区分公开事实、观察投影和研究员真值。
