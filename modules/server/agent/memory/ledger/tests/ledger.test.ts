@@ -264,6 +264,51 @@ describe("structured ledger", () => {
     expect(bundle.items.map((item) => item.memoryId)).toEqual(["mem-000000000207"]);
   });
 
+  it("lets a same-source mandatory record yield without a drop reason, then ranks it outside the candidate window", () => {
+    const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
+    config.recall.candidateLimit = 1;
+    config.recall.mustIncludeAboutCounterpart = 1;
+    const memory = createLedgerPort(config, ids);
+    const records = [
+      memoryRow({
+        memoryId: "mem-000000000214",
+        kind: "prospective",
+        tier: "long",
+        validFromTick: 19,
+        salience: 0.6,
+        data: { sourceKind: "agreement", obligorId: "human-independent", dueTick: 30, state: "open" },
+        tags: ["agreement", "breach"],
+        sourceObservationIds: ["obs-000000000214"],
+      }),
+      // 显著度更高、因此在「与对方相关」必带阶段排在前面，但与已挑的承诺同来源。
+      memoryRow({
+        memoryId: "mem-000000000215",
+        kind: "episodic",
+        tier: "long",
+        validFromTick: 1,
+        salience: 0.9,
+        data: { eventType: "AgreementActivated" },
+        tags: [],
+        sourceObservationIds: ["obs-000000000214"],
+      }),
+      // 分数最高的短期记录独占只有一条的候选窗口，使上面让位的记录不再经过候选阶段。
+      memoryRow({
+        memoryId: "mem-000000000216",
+        kind: "episodic",
+        tier: "short",
+        validFromTick: 20,
+        salience: 1,
+        data: { eventType: "AgreementBreached" },
+        tags: ["agreement", "breach"],
+        sourceObservationIds: ["obs-000000000216"],
+      }),
+    ];
+    const bundle = memory.retrieve(query({ maxItems: 2 }), view(records, 1));
+    expect(bundle.items.map((item) => item.memoryId)).toEqual(["mem-000000000214", "mem-000000000216"]);
+    // 必带阶段让位不记原因；它又不在候选窗口内，最终按 rank 落选，而不是 dedupe。
+    expect(bundle.dropped).toEqual([{ memoryId: "mem-000000000215", reason: "rank" }]);
+  });
+
   it("chooses about-counterpart mandatory records by salience", () => {
     const config = ledgerConfigSchema.parse(memoryLedgerModuleDefinition.defaults);
     config.recall.mustIncludeProspective = 0;
