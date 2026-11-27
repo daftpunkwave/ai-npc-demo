@@ -107,7 +107,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 
 `platform.model-transport` 的基数是 `many`：模型布局里每个 connection 用 `adapterId` 指定一个已装配的传输适配器。标准装配同时装 `openai-compatible` 与 `anthropic`；`deterministic` 只出现在测试装配，预检拒绝它与真实适配器出现在同一装配里，以免测试响应混进真实实验。
 
-`run`/`branch`/`manifest` 生命周期由宿主 `packages/experiment` 机制协调，不属于可替换能力；评估协议、runner 与报告由 `platform.evaluation.standard` 模块提供。适配器只做技术转换；语义失败（未知 schema、不支持的输出协议、缺 usage）必须显式返回，不能吞掉或伪造成功。
+`run`/`branch`/`manifest` 生命周期由服务端宿主（`apps/server/src/host`）协调，不属于可替换能力；`packages/experiment` 只加载并交叉检查内容包、配置与实验规格；评估协议、runner 与报告由 `platform.evaluation.standard` 模块提供。适配器只做技术转换；语义失败（未知 schema、不支持的输出协议、缺 usage）必须显式返回，不能吞掉或伪造成功。
 
 ## 5. 客户端模块
 

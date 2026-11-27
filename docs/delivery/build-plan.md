@@ -137,7 +137,7 @@ S17 的共享 baseline 使用 model decision；标准在线 RunSpec（`online-de
 ### S05 内容与配置加载
 
 - **先读**：[内容包](../game/content-pack.md) 全文、[领域模型](../architecture/domain-model.md) 第 10 节、[配置](../platform/configuration.md) 第 3、10 节、[运营](../platform/operations.md) 第 10 节。
-- **产出**：把内容包第 1–9、11、12 节的 YAML 照抄到 `content/world-packs/earth-2964-v1/`（`prompts/zh-CN.yaml` 与 `locale/zh-CN.yaml` 按第 12 节的键结构填写，文本来源见该节的表）；内容包第 10 节的两个名册与 `config/runs/online-default.yaml`；在 `packages/experiment` 实现内容加载器与配置加载器（YAML 读取、Zod 校验、`*Ref` 引用解析（仓库文件优先，其次数据库草稿）、`env:` 解析、交叉检查）。其余配置文件在 0.2 节指定的步骤创建。
+- **产出**：把内容包第 1–9、11、12 节的 YAML 照抄到 `content/world-packs/earth-2964-v1/`（`prompts/zh-CN.yaml` 与 `locale/zh-CN.yaml` 按第 12 节的键结构填写，文本来源见该节的表）；内容包第 10 节的两个名册与 `config/runs/online-default.yaml`；内容文件的 Zod schema 与内容包、名册类型放在 `packages/contracts`，在 `packages/experiment` 实现内容加载器与配置加载器（YAML 读取、按 schema 校验、`*Ref` 引用解析（仓库文件优先，其次数据库草稿）、`env:` 解析、交叉检查）；运行时包只依赖 contracts 中的类型，不依赖加载器。其余配置文件在 0.2 节指定的步骤创建。
 - **迁移**：见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 - **测试**：完整内容包与正式名册加载成功。不存在的节点、重复 ID、正式名册超过 15 个身份、缺事件模板或缺词表键时加载失败并给出可定位的错误。四个禁用开局不进入可选列表，公社开局有闻昭入口和三条消息。配置加载测试覆盖引用解析、`env:` 解析与未知键拒绝。
 - **完成判据**：`pnpm check` 通过。
@@ -264,7 +264,7 @@ S13–S15 的模块用集成测试直接构造（用 kernel 解析测试内定�
 ### S21 实验、探针与评估页面
 
 - **先读**：[评估](../platform/evaluation.md) 全文、[配置](../platform/configuration.md) 第 3、10.3 节、[内容包](../game/content-pack.md) 第 11 节、[存储](../architecture/storage.md) 第 3 节、本文 0.3 节 S21 行。
-- **产出**：`packages/experiment` 与 `platform.evaluation.standard`（RunSpec 预检、manifest 冻结、冷启动与快照两种建分支方式、受控时钟驱动脚本、实验展开与顺序执行、探针沙盒（只激活被提问的 Agent）、计分、报告）；`console.evaluation.standard`；`config/experiments/exp-memory-promise-v1.yaml`、`exp-memory-rumor-v1.yaml`、`exp-memory-secret-v1.yaml`（格式见配置第 10.3 节）。
+- **产出**：`packages/experiment` 的实验规格加载与展开；服务端宿主（`apps/server/src/host`）的 run 生命周期（RunSpec 预检、manifest 冻结、冷启动与快照两种建分支方式、受控时钟驱动脚本、实验 run 的顺序执行、探针沙盒（只激活被提问的 Agent））；`platform.evaluation.standard`（计分、报告）；`console.evaluation.standard`；`config/experiments/exp-memory-promise-v1.yaml`、`exp-memory-rumor-v1.yaml`、`exp-memory-secret-v1.yaml`（格式见配置第 10.3 节）。
 - **测试**：同一 RunSpec 两次预检得到相同 manifest hash；两个 run 的分支互不串读；探针在沙盒中运行且不改变实验分支；四种探针 kind 的计分用例；没有对白的探针记为无效；`exp-memory-promise-v1` 换成测试装配、确定性模型布局与 `commonPatchRefs: [decision-deterministic]` 运行，tick 60 岑雁的立场必须是：
 
 | 记忆组 | break 分支 | keep 分支 |

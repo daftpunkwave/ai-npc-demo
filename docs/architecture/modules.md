@@ -51,7 +51,7 @@ kernel 中不得出现角色姓名、派系 ID、SLG 资源、memory 类型、�
 | console/features | 模型挂载、三势力剧情运营、观测、评估、调试、模块装配页面 | 凭隐藏按钮提供安全保证 |
 | adapters | HTTP/WS、SQLite/artifact、模型传输、图形后端 | 向业务 port 泄露第三方内部类型 |
 
-表中是职责族，不要求每行或每个函数成为独立 npm package。独立替换或有独立状态/配置价值的能力才形成模块；最小版本可让一个模块提供一组高度相关的 ports，但绑定和所有权必须可检查。run/branch/manifest 的持久化与冻结由宿主 `packages/experiment` 协调，评估协议与报告由 `platform.evaluation` 模块提供；两者不是同一层。
+表中是职责族，不要求每行或每个函数成为独立 npm package。独立替换或有独立状态/配置价值的能力才形成模块；最小版本可让一个模块提供一组高度相关的 ports，但绑定和所有权必须可检查。run/branch/manifest 的创建、持久化与冻结由服务端宿主（`apps/server/src/host`）协调，评估协议与报告由 `platform.evaluation` 模块提供；两者不是同一层。`packages/experiment` 只负责准备实验环境：加载并交叉检查内容包、名册、RunSpec、profile、toolset、模型布局与实验规格，不创建 run、分支或 manifest。
 
 ## 4. 静态依赖方向
 
@@ -61,7 +61,8 @@ kernel 中不得出现角色姓名、派系 ID、SLG 资源、memory 类型、�
 | packages/kernel | contracts 和通用运行机制，不依赖 modules 或游戏内容 |
 | packages/module-sdk | contracts、kernel 的受控公共接口，不反向加载实现 |
 | packages/client-sdk / client-protocol | 浏览器宿主辅助与网络适配接口，不含世界规则 |
-| packages/authority / agent-runtime / experiment / observability | 服务端固定机制，不 import 具体模块实现；observability 目前是只导出包名的保留包，trace、span 与证据协议在 contracts 的 `api-observe.ts` |
+| packages/authority / agent-runtime / observability | 服务端固定机制，不 import 具体模块实现，也不依赖 `packages/experiment` 的加载实现；observability 目前是只导出包名的保留包，trace、span 与证据协议在 contracts 的 `api-observe.ts` |
+| packages/experiment | contracts 与文件/YAML 读取；只做加载与交叉检查，不 import kernel、运行时或具体模块实现 |
 | 一个职能模块 | 按 realm/kind 使用 [技术栈](../delivery/tech-stack.md) 第 2 节的源码与包依赖白名单 |
 | apps/client 的组合根 | 客户端 module 的公开定义、client-sdk 与通用宿主 |
 | apps/server 的组合根 | 服务端 module 的公开定义、authority/agent-runtime 与通用宿主 |
@@ -69,7 +70,7 @@ kernel 中不得出现角色姓名、派系 ID、SLG 资源、memory 类型、�
 
 模块只能通过 requires 声明的 typed port 获得依赖；直接 import 另一个模块的实现、跨目录 deep import、通过全局 service locator 取依赖都不允许。requires 可以依赖 port，不能指定“调用某文件里的私有函数”。服务端规则处理器拿到的端口视图只包含该模块自身的 provides 与 requires；访问未声明的游戏能力立即失败，源码访问与 requires 的差异由 `pnpm check:catalog` 对账。
 
-公共 DTO、port 和协议 schema 归 contracts；模块私有 configSchema 和内部类型归模块自身。新增参数不应迫使修改 kernel；新增公共语义才升级对应契约。避免把所有业务类型塞进一个巨型公共对象。
+公共 DTO、port 和协议 schema 归 contracts；内容包各文件的 schema、内容索引、名册与已解析 profile 的形状同样归 contracts，加载与交叉检查的实现归 `packages/experiment`。模块私有 configSchema 和内部类型归模块自身。新增参数不应迫使修改 kernel；新增公共语义才升级对应契约。避免把所有业务类型塞进一个巨型公共对象。
 
 SDK/数据库/PixiJS 类型停在适配器内部，不能进入世界领域接口。纯算法优先复用现有无状态公共接口；新增公共库须先更新依赖白名单，不借“共享库”绕过状态和权限边界。
 

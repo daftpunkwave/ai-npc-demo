@@ -20,7 +20,7 @@ world-prism/
         main.ts                  # load env -> open storage -> load content/config -> startHost -> listen
         host.ts  startup.ts  projection.ts  tick.ts  shutdown.ts  host-services.ts  config.ts  process-faults.ts
         projection/              # pure read-side projection builders (campaign, comms, meters, resources, tasks, agreements, notifications)
-        host/                    # host orchestration: assembly, catalog-check, dispose, operations, console-research, evaluation-read, experiment/run writes, online-agents
+        host/                    # host orchestration: assembly, catalog-check, dispose, operations, console-research, evaluation-read, run/branch/manifest lifecycle (experiment/run writes, manifest freezing, run control), online-agents
       console-static/            # built console assets served at /console/* (generated, git-ignored)
     client/                      # client host (browser, :5173)
       index.html
@@ -39,14 +39,14 @@ world-prism/
           bootstrap.tsx          # login, active role switch, handshake, route/panel slots
           module-catalog.ts      # explicit imports of every console page module
   packages/
-    contracts/                   # zod schemas + types: envelopes, commands, events, DTOs, ports, descriptors, API
+    contracts/                   # zod schemas + types: envelopes, commands, events, DTOs, ports, descriptors, API, content-pack/roster/resolved-profile shapes
     kernel/                      # realm-agnostic host mechanics: registry, capability graph, lifecycle, slots, hook order, config resolution, hashing
     module-sdk/                  # server module authoring helpers: defineModule, scoped ports, disposers
     client-sdk/                  # browser module helpers: slot components, preference port, projection hooks
     client-protocol/             # typed HTTP/WS client and projection reducer protocol
     authority/                   # command gateway, transactions, idempotency, fencing, job runner, consumers
     agent-runtime/               # trigger store, scheduler host, turn state machine, tool gateway, speech pipeline
-    experiment/                  # run lifecycle, snapshot coordination and frozen manifests; no scoring policy
+    experiment/                  # experiment environment loading: content packs, rosters, RunSpecs, profiles, toolsets, model layouts, experiment specs (YAML + cross-checks); no run lifecycle or scoring
     observability/               # reserved package, exports only its name; trace/span schemas live in contracts
   modules/
     server/
