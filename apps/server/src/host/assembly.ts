@@ -31,6 +31,7 @@ import {
   type CanonicalHasher,
   type ResolvedRealmPlan,
 } from "@world-prism/kernel";
+import { deploymentDefaults } from "../deployment-defaults";
 import { canonicalHasher } from "../host-services";
 import { clientRequiredCapabilities, serverAgentRequiredCapabilities, serverRequiredCapabilities } from "./module-catalog";
 
@@ -213,14 +214,20 @@ export interface ResolveServerAssemblyOptions {
   readonly content?: ContentPack;
 }
 
+/** 接收内容包工具描述的能力；宿主按能力而不是具体模块 ID 选择注入对象。 */
+const toolDescriptionsCapability = "agent.tools";
+
+/** 装配中绑定到 `agent.tools` 的服务端绑定；未绑定时为 undefined。 */
+function toolsBinding(assembly: AssemblyDescriptor): AssemblyDescriptor["realms"]["server"]["bindings"][number] | undefined {
+  return assembly.realms.server.bindings.find((binding) => binding.capability === toolDescriptionsCapability);
+}
+
 /**
- * 装配是否把内容包的工具描述注入 `agent.tools` 配置。
+ * 装配是否需要把内容包的工具描述注入 `agent.tools` 的 provider 配置。
  * 预检只对这类装配读取内容包；其余装配（含测试用的自定义目录）不需要内容包就能完成解析。
  */
 export function needsContentPack(assembly: AssemblyDescriptor): boolean {
-  return assembly.realms.server.bindings.some(
-    (binding) => binding.capability === "agent.tools" && binding.moduleId === "agent.tools.game-tools",
-  );
+  return toolsBinding(assembly) !== undefined;
 }
 
 /** 服务端启动与目录检查使用同一组内容注入和条件能力要求。 */
@@ -231,11 +238,17 @@ export function serverAssemblyInputs(
   root = process.cwd(),
 ): { readonly requiredCapabilities: readonly CapabilityRef[]; readonly configOverrides: Readonly<Record<string, Json>> } {
   const server = assembly.realms.server;
-  const toolBinding = server.bindings.find((binding) => binding.capability === "agent.tools");
+  const toolBinding = toolsBinding(assembly);
   const configOverrides = { ...options.configOverrides };
-  if (toolBinding?.moduleId === "agent.tools.game-tools") {
-    const content = options.content ?? loadContentPack(resolve(root, "content"), "earth-2964-v1");
-    configOverrides[toolBinding.moduleId] = { toolDescriptions: content.prompts.toolDescriptions };
+  if (toolBinding !== undefined) {
+    // 工具说明文案属于内容包：装配把哪个模块绑定到 agent.tools，就把它作为该模块配置的 toolDescriptions 传入，
+    // 换用其他工具 provider 只改装配；provider 的配置 schema 必须接受该字段。
+    const content = options.content ?? loadContentPack(resolve(root, "content"), deploymentDefaults.contentPackId);
+    const existing = configOverrides[toolBinding.moduleId];
+    // 调用方对该模块的其他覆盖字段保留并与工具描述合并；非对象的覆盖原样交给 kernel 按非法覆盖拒绝，不在这里吞掉。
+    if (existing === undefined || (typeof existing === "object" && existing !== null && !Array.isArray(existing))) {
+      configOverrides[toolBinding.moduleId] = { ...existing, toolDescriptions: content.prompts.toolDescriptions };
+    }
   }
   return {
     requiredCapabilities: Object.keys(server.agentSlots ?? {}).length > 0

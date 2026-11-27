@@ -249,6 +249,8 @@ const ToolTerm = z.object({                   // Term 联合类型的平铺版�
 
 envelope 指 `executionStatus`、`commandStatus`、`reasonCode`、`receiptId`、`operationId`、`resultRef`（以及有任务时的 `taskStatus`）。
 
+「给模型的说明」一列取自内容包的 `prompts.toolDescriptions`。宿主按能力注入：装配把哪个模块绑定到 `agent.tools`，就把这份映射作为该模块配置的 `toolDescriptions` 字段传入，不按具体模块 ID 区分实现。因此换用其他工具 provider 只改装配绑定，该 provider 的配置 schema 必须接受 `toolDescriptions`。
+
 请求构建时按 binding 收窄 schema：`asset.dispatch.teamId` 写成该 Agent 可派遣队伍的 `enum`，`policy.set.key` 写成该 Agent 拥有的政策键的 `enum`（当前由运行器从该 Agent 掌管的 `road.status:${roadId}` 构造），`information.share.evidenceId` 写成持有证据的 `enum`，`task.respond.taskId` 写成待回复邀请的 `enum`。**收窄后 enum 为空时，本 turn 不提供该工具**（例如没有任何证据的角色不会看到 `information_share`）。收窄结果在 turn 冻结时确定，同一工具循环内不变。当前 `ToolGateway` 运行时主要校验上述 4 类收窄字段与 `message.send` 的收件主体（`messagePrincipalIds` 与 `"public"`），诸如 `agreement-personal`、`agreement-faction`、`cancel-own` 等 `permissionProfile` 规则由对应的 authority 命令处理器最终裁决。
 
 ### 13.2 binding 模板与工具集

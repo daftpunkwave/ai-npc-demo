@@ -1,9 +1,10 @@
 /**
  * 核心职责：把一次 run 的输入与产出打包为可下载的导出 artifact，供事后复核与归档。
- * 交互契约：依赖存储读取 manifest、事件、turn 与 artifact 索引，经 artifact 存储落盘；
+ * 交互契约：依赖存储读取 manifest、turn 与 artifact 索引，经 authority 的事件查询读取事件，经 artifact 存储落盘；
  * `redaction` 决定是否剔除正文与凭据引用，`raw` 仅限研究员且仍不含密钥解析值。
  * 约束与禁忌：不修改 run 与事件、不推进时钟；导出失败时不写入半个 artifact。
  */
+import { listBranchEventRows } from "@world-prism/authority";
 import {
   DomainError,
   isSensitiveKey,
@@ -134,9 +135,9 @@ export async function exportRun(
     if (run === null || String(run["world_id"]) !== input.worldId) return null;
     const runId = request.runId;
     // 事件与 turn 是复核 run 行为的主要证据；artifact 索引用于定位大对象。
-    // domain_events 是分支级表，必须经 branch(branchId) 访问。
+    // 事件存储归 authority，按 run 绑定的分支经其查询读取。
     const branchId = String(run["branch_id"]);
-    const events = tx.branch(branchId).table("domain_events").list();
+    const events = listBranchEventRows(tx, branchId);
     const turns = tx.rows("turn_runs").list({ run_id: runId });
     const artifacts = tx.rows("artifacts").list({ run_id: runId });
     const manifest = jsonCell(run, "manifest_json");

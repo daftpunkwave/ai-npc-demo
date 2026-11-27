@@ -9,8 +9,8 @@ import {
 } from "@world-prism/contracts";
 import type { ResolvedAgentProfile } from "@world-prism/experiment";
 import type {
-  AgentDecisionPort,
   DeterministicDecisionInput,
+  DeterministicDecisionPort,
   RunModelPort,
 } from "@world-prism/module-sdk";
 import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
@@ -401,9 +401,12 @@ export class TurnWorker {
    * 在截止时间前完成决策：超时、运行时停止与正常完成三者竞争。
    * 截止时把取消传给端口，让在途网络调用随之结束；端口不响应取消时，
    * 迟到的决策仍会被租约与 fencing 拒绝，但会继续占用并发与预算，因此事实要记进证据。
+   * 截止由两个计时器同时表达（turn 信号与等待截止的 sleep），二者先后不定；
+   * 信号先到时 sleep 以中止错误结束，端口也可能因响应取消而抛错。终态因此按信号的成因裁决：
+   * 运行时停止记 cancelled / runtime-stopped，到达截止记 budget-exhausted / turn-deadline，不随计时器先后翻转。
    */
   private async decideBeforeDeadline(
-    port: AgentDecisionPort<DeterministicDecisionInput>,
+    port: DeterministicDecisionPort,
     input: Omit<DeterministicDecisionInput, "signal">,
     evidence: TurnEvidence,
     turn: ClaimedTurn,
@@ -419,11 +422,13 @@ export class TurnWorker {
       const remaining = Math.max(0, input.deadlineMs - started);
       const deadline = this.runtime.host.sleep(remaining, signal).then(() => {
         throw new TurnStopped("budget-exhausted", "turn-deadline");
-      }, (error: unknown) => {
-        if (this.signal.aborted) throw new TurnStopped("cancelled", "runtime-stopped");
-        throw error;
       });
       return await Promise.race([deciding, deadline]);
+    } catch (error) {
+      // turn 信号只由运行时停止或到达截止触发；信号已中止时，无论先结束的是 sleep 还是端口，都按成因收尾。
+      if (this.signal.aborted) throw new TurnStopped("cancelled", "runtime-stopped");
+      if (signal.aborted) throw new TurnStopped("budget-exhausted", "turn-deadline");
+      throw error;
     } finally {
       // 放弃等待时端口仍未结束：说明取消没有被响应，事实记进证据而不是假装已停止。
       if (!settled) {

@@ -525,10 +525,22 @@ describe("断线自动暂停的计时边界", () => {
     }
   });
 
-  it("自动暂停只写一条审计记录", async () => {
+  it("自动暂停只写一条审计记录，并归属分支绑定的 run", async () => {
     vi.useFakeTimers();
     const harness = await createAuthorityHarness();
     harnesses.push(harness);
+    // 审计的 run 归属取自分支注册行；先为测试分支绑定一个 run。
+    const runId = "run-000000000001";
+    harness.storage.transact((tx) => {
+      tx.rows("runs").put({
+        run_id: runId, world_id: harness.worldId, branch_id: harness.branchId, mode: "live", status: "running",
+        run_spec_json: {}, manifest_json: null, manifest_hash: null, contaminated: 0, evidence_complete: 1,
+        created_at: "2026-01-01T00:00:00.000Z", started_at: null, ended_at: null,
+      });
+      const branch = tx.rows("branches").get({ branch_id: harness.branchId });
+      if (branch === null) throw new Error("测试分支缺失");
+      tx.rows("branches").put({ ...branch, run_id: runId });
+    });
     const { lifecycle } = setupFor(harness, 600);
     try {
       lifecycle.handlePlayerConnections(1);
@@ -538,11 +550,12 @@ describe("断线自动暂停的计时边界", () => {
       vi.advanceTimersByTime(60_000);
       const audit = harness.storage.transact((tx) =>
         tx.all(
-          "SELECT type, payload_json FROM lifecycle_events WHERE branch_id = ? AND type = 'ClockAutoPaused'",
+          "SELECT run_id, type, payload_json FROM lifecycle_events WHERE branch_id = ? AND type = 'ClockAutoPaused'",
           [harness.branchId],
         ),
       );
       expect(audit).toHaveLength(1);
+      expect(audit[0]?.["run_id"]).toBe(runId);
       expect(JSON.parse(String(audit[0]?.["payload_json"]))).toMatchObject({
         reason: "players-disconnected",
         afterMs: 600,

@@ -41,7 +41,7 @@ PRAGMA busy_timeout = 5000;
 
 0018 为 `tool_calls` 新增覆盖索引 `tool_calls_turn_tool (run_id, turn_id, tool_id)` 与 `tool_calls_attempt_call (run_id, turn_id, attempt_id, provider_call_id, created_at)`，让配额计数与按调用 ID 查找首行不再仅靠 `(run_id, turn_id)` 前缀扫表回表。
 
-0019 为 `domain_events` 增加表达式索引 `domain_events_dialogue (branch_id, type, CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.dialogueId') END, world_seq)`。会话读取要按一批对白 ID 找回各自的提交事件序号，原查询只能靠 `domain_events_type` 收窄到 `(branch_id, type)`，再把该分支全部 `DialogueSubmitted` 逐行解析 `payload_json` 比对 `dialogueId`，成本随对白事件数线性增长；把 `dialogueId` 提升为索引列后，按对白查找与取最大 `world_seq` 都在索引内完成。索引列先做 `json_valid` 守卫再取值：表达式索引对每一行求值，缺少守卫时非法 JSON 文本会让写入与建索引失败。表达式必须与查询写法逐字一致，`tests/integration/dialogue-event-index.test.ts` 按生产查询形状断言查询计划命中该索引。
+0019 为 `domain_events` 增加表达式索引 `domain_events_dialogue (branch_id, type, CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.dialogueId') END, world_seq)`。会话读取要按一批对白 ID 找回各自的提交事件序号，原查询只能靠 `domain_events_type` 收窄到 `(branch_id, type)`，再把该分支全部 `DialogueSubmitted` 逐行解析 `payload_json` 比对 `dialogueId`，成本随对白事件数线性增长；把 `dialogueId` 提升为索引列后，按对白查找与取最大 `world_seq` 都在索引内完成。索引列先做 `json_valid` 守卫再取值：表达式索引对每一行求值，缺少守卫时非法 JSON 文本会让写入与建索引失败。表达式必须与查询写法逐字一致，`tests/integration/dialogue-event-index.test.ts` 按生产查询形状断言查询计划命中该索引。这条查询由 authority 的 `latestEventSeqsByPayload` 提供，宿主不拼接事件 SQL；可按取值查找的（事件类型，载荷字段）登记在 `indexedEventPayloadKeys`，字段名受契约载荷类型约束，新增登记必须配套表达式相同的索引。
 
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 

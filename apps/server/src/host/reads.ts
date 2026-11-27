@@ -1,10 +1,15 @@
 /**
  * 宿主只读端口：投影、命令回执、会话对白与按模块作用域绑定的只读事务。
- * 依赖 authority 的作用域规则、已启动模块的公开端口、存储事务与内容索引；不写入世界状态。
+ * 依赖 authority 的作用域规则与事件查询、已启动模块的公开端口、存储事务与内容索引；不写入世界状态。
  * 禁止绕过已绑定的模块端口读取领域聚合；回执查询只访问命令网关写入的回执表。
  */
 /* eslint-disable no-unused-vars, @typescript-eslint/no-unused-vars -- 接口与回调类型签名中的参数名用于表达调用契约。 */
-import { createScopedWorldTxFactory, systemPrincipalId, type Authority } from "@world-prism/authority";
+import {
+  createScopedWorldTxFactory,
+  latestEventSeqsByPayload,
+  systemPrincipalId,
+  type Authority,
+} from "@world-prism/authority";
 import {
   DomainError,
   commandReceiptSchema,
@@ -41,30 +46,6 @@ export interface HostReadPorts {
   /** 会话读取端口；分页与送达过滤在传输层完成。 */
   readonly conversation: ConversationReadPort;
 }
-
-/**
- * 按对白 ID 批量取各自提交事件最大 world_seq 的查询。
- * json_extract(payload_json, '$.dialogueId') 必须与迁移 0019 里 domain_events_dialogue 的索引列逐字一致，
- * 否则 SQLite 只能靠 (branch_id, type) 收窄后逐行解析 JSON；导出给集成测试，
- * 让查询计划断言直接跑生产语句而不是另写一份等价副本。
- */
-export function dialogueWorldSeqSql(dialogueCount: number): string {
-  const placeholders = Array.from({ length: dialogueCount }, () => "?").join(", ");
-  return `SELECT ${dialogueIdExpression} AS dialogue_id,
-                 MAX(world_seq) AS world_seq
-            FROM domain_events
-           WHERE branch_id = ?
-             AND type = 'DialogueSubmitted'
-             AND ${dialogueIdExpression} IN (${placeholders})
-           GROUP BY dialogue_id`;
-}
-
-/**
- * 从事件载荷取出对白 ID 的表达式，与迁移 0019 的索引列逐字一致。
- * 先做 json_valid 守卫再取值：表达式索引对每一行求值，历史上的非法 JSON 文本
- * 会让裸 json_extract 在写入与建索引时失败；JSON 合法时守卫不改变取值的类型。
- */
-const dialogueIdExpression = "CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.dialogueId') END";
 
 /** 构造宿主只读端口；每个方法自行开启只读事务绑定已授权的模块端口。 */
 export function createReadPorts(input: ReadPortsInput): HostReadPorts {
@@ -140,17 +121,9 @@ export function createReadPorts(input: ReadPortsInput): HostReadPorts {
         if (lines.length === 0) {
           return [];
         }
+        // 对白的世界序号来自其提交事件；事件存储归 authority，宿主只经其查询能力按 dialogueId 关联。
         const dialogueIds = [...new Set(lines.map((line) => line.dialogueId))];
-        const events = tx.all(dialogueWorldSeqSql(dialogueIds.length), [
-          active.branchId,
-          ...dialogueIds,
-        ]);
-        const worldSeqByDialogueId = new Map(
-          events.map((event) => [
-            String(event["dialogue_id"]),
-            Number(event["world_seq"]),
-          ]),
-        );
+        const worldSeqByDialogueId = latestEventSeqsByPayload(tx, active.branchId, "DialogueSubmitted", dialogueIds);
         return lines.map((line) => {
           const worldSeq = worldSeqByDialogueId.get(line.dialogueId);
           if (worldSeq === undefined) {

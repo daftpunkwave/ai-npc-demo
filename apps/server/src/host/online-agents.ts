@@ -4,7 +4,7 @@
  * 分支切换后，旧实例及其租约不得继续提交世界动作或对白。
  */
 import { AgentRuntime, type SpeechApprovalIndex } from "@world-prism/agent-runtime";
-import type { Authority } from "@world-prism/authority";
+import { readBranch, type Authority } from "@world-prism/authority";
 import type { StartedInstances } from "@world-prism/kernel";
 import { startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import { agentWorldReaders } from "./agent-world-read";
@@ -147,8 +147,8 @@ export class OnlineAgentHost {
     const { host, storage, content, gameContent, activeStartup } = core;
     const agents = core.active.agents;
     if (agents === null) throw new Error("Agent run is not configured");
-    const runId = storage.transact((tx) => tx.rows("branches").get({ branch_id: scope.branchId })?.["run_id"]);
-    if (typeof runId !== "string") throw new Error("Agent branch has no run ID");
+    const runId = storage.transact((tx) => readBranch(tx, scope.branchId)?.runId ?? null);
+    if (runId === null) throw new Error("Agent branch has no run ID");
     const running = [...core.storageStarted.instances, ...core.startedModules.instances];
     const prepared = scope.branchId === core.active.branchId ? this.initialModules : null;
     if (prepared !== null) this.initialModules = null;

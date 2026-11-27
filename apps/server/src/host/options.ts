@@ -25,7 +25,7 @@ export interface HostOptions {
    */
   readonly moduleDefinitions?: readonly ModuleDefinition[];
   readonly runSpecRef?: string;
-  /** 在线世界首次启动时写入 RunSpec 的名册引用；缺省用 standard-15。 */
+  /** 在线世界首次启动时写入 RunSpec 的名册引用；缺省取部署默认名册。 */
   readonly rosterRef?: string;
   /** 在线世界首次启动时写入 RunSpec 的模型布局引用；缺省沿用 RunSpec 模板。 */
   readonly modelLayoutRef?: string;

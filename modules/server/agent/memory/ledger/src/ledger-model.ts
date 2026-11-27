@@ -209,41 +209,44 @@ export function personalityFactor(
   return 1.5;
 }
 
+/**
+ * 各事件类型的基础显著度；未登记的类型取 defaultSalience。
+ * 用 Map 而不是对象字面量：与对象原型同名的事件类型（如 toString）不能取到原型属性。
+ */
+const salienceByEventType: ReadonlyMap<string, number> = new Map([
+  ["GroupRescued", 0.9],
+  ["AgreementBreached", 0.8],
+  ["CharacterInjured", 0.8],
+  ["AgreementTermFulfilled", 0.7],
+  ["AgreementFulfilled", 0.7],
+  ["AgreementActivated", 0.6],
+  ["TaskFailed", 0.6],
+  ["RelayDown", 0.6],
+  ["OrchardCrisis", 0.6],
+  ["MigrationCrisis", 0.6],
+  ["TaskCompleted", 0.5],
+  ["InformationShared", 0.5],
+  ["WorldFactRecorded", 0.5],
+  ["PolicyChanged", 0.5],
+  ["PassageGranted", 0.5],
+  ["TaskInvitationIssued", 0.4],
+  ["TaskInvitationAnswered", 0.4],
+  ["RumorSpread", 0.4],
+  ["DialogueSubmitted", 0.3],
+  ["MessageSent", 0.3],
+  ["ProbeAsked", 0.3],
+  ["MetersChanged", 0.1],
+  ["DayPassed", 0.1],
+]);
+
+const defaultSalience = 0.2;
+
+/** 完成的救援任务与群体获救同档；其余任务完成按 TaskCompleted 的登记值计。 */
+const rescueSalience = 0.9;
+
 export function baseSalience(event: LedgerEvent): number {
-  const taskType = typeof event.facts["taskType"] === "string" ? event.facts["taskType"] : null;
-  if (event.eventType === "GroupRescued" || (event.eventType === "TaskCompleted" && taskType === "rescue")) {
-    return 0.9;
-  }
-  if (event.eventType === "AgreementBreached" || event.eventType === "CharacterInjured") return 0.8;
-  if (event.eventType === "AgreementTermFulfilled" || event.eventType === "AgreementFulfilled") return 0.7;
-  if (
-    event.eventType === "AgreementActivated" ||
-    event.eventType === "TaskFailed" ||
-    event.eventType === "RelayDown" ||
-    event.eventType === "OrchardCrisis" ||
-    event.eventType === "MigrationCrisis"
-  ) {
-    return 0.6;
-  }
-  if (
-    event.eventType === "TaskCompleted" ||
-    event.eventType === "InformationShared" ||
-    event.eventType === "WorldFactRecorded"
-  ) {
-    return 0.5;
-  }
-  if (event.eventType === "PolicyChanged" || event.eventType === "PassageGranted") return 0.5;
-  if (event.eventType === "TaskInvitationIssued" || event.eventType === "TaskInvitationAnswered") return 0.4;
-  if (event.eventType === "RumorSpread") return 0.4;
-  if (
-    event.eventType === "DialogueSubmitted" ||
-    event.eventType === "MessageSent" ||
-    event.eventType === "ProbeAsked"
-  ) {
-    return 0.3;
-  }
-  if (event.eventType === "MetersChanged" || event.eventType === "DayPassed") return 0.1;
-  return 0.2;
+  if (event.eventType === "TaskCompleted" && event.facts["taskType"] === "rescue") return rescueSalience;
+  return salienceByEventType.get(event.eventType) ?? defaultSalience;
 }
 
 export function involvementOf(channel: string): number {
@@ -252,36 +255,49 @@ export function involvementOf(channel: string): number {
   return 0.3;
 }
 
+/** 只由事件类型决定的标签：类型满足条件即加上对应标签。 */
+const eventTypeTags: readonly { readonly tag: string; readonly matches: (type: string) => boolean }[] = [
+  { tag: "agreement", matches: (type) => type.startsWith("Agreement") },
+  { tag: "breach", matches: (type) => type === "AgreementBreached" },
+  { tag: "fulfilled", matches: (type) => type === "AgreementTermFulfilled" || type === "AgreementFulfilled" },
+  { tag: "task", matches: (type) => type.includes("Task") },
+  { tag: "resource", matches: (type) => type.includes("Resource") || type === "StockpileAdjusted" || type === "SupplyShortage" },
+  { tag: "relay", matches: (type) => type.includes("Relay") },
+  { tag: "migration", matches: (type) => type.includes("Migration") },
+  { tag: "water", matches: (type) => type.includes("Orchard") },
+  { tag: "road", matches: (type) => type === "PassageGranted" || type.includes("Road") },
+  { tag: "rumor", matches: (type) => type === "RumorSpread" },
+  { tag: "evidence", matches: (type) => type.includes("Evidence") || type === "InformationShared" },
+  { tag: "dialogue", matches: (type) => type === "DialogueSubmitted" || type === "MessageSent" },
+  { tag: "policy", matches: (type) => type === "PolicyChanged" },
+  { tag: "crisis", matches: (type) => type.includes("Crisis") || type === "RelayDown" },
+];
+
+/** 与交换方案相关的证据；共享或揭示它们的事件额外带 exchange 标签。 */
+const exchangeEvidenceIds: ReadonlySet<Json | undefined> = new Set(["ev-exchange-draft", "ev-star-charts"]);
+
+/** 由事件事实派生的标签：任务类型、政策键涉及的领域、节点、事实自带标签与交换相关证据。 */
+function factTags(event: LedgerEvent): readonly string[] {
+  const { facts, eventType: type } = event;
+  const tags: string[] = [...stringArray(facts["tags"])];
+  if (type.includes("Task") && typeof facts["taskType"] === "string") tags.push(facts["taskType"]);
+  if (type === "PolicyChanged") {
+    const key = `${String(facts["key"] ?? "")} ${String(facts["policyKey"] ?? "")}`;
+    if (key.includes("water")) tags.push("water");
+    if (key.includes("road")) tags.push("road");
+  }
+  if (event.nodeId !== null) tags.push(event.nodeId);
+  if (exchangeEvidenceIds.has(facts["evidenceId"])) tags.push("exchange");
+  return tags;
+}
+
+/** 合并主体、事件类型与事实派生的标签，去重、去空后按字符串排序。 */
 export function tagsFor(event: LedgerEvent): readonly string[] {
   const tags = new Set<string>(event.subjectIds);
-  const type = event.eventType;
-  if (type.startsWith("Agreement")) tags.add("agreement");
-  if (type === "AgreementBreached") tags.add("breach");
-  if (type === "AgreementTermFulfilled" || type === "AgreementFulfilled") tags.add("fulfilled");
-  if (type.includes("Task")) {
-    tags.add("task");
-    const taskType = event.facts["taskType"];
-    if (typeof taskType === "string") tags.add(taskType);
+  for (const { tag, matches } of eventTypeTags) {
+    if (matches(event.eventType)) tags.add(tag);
   }
-  if (type.includes("Resource") || type === "StockpileAdjusted" || type === "SupplyShortage") tags.add("resource");
-  if (type.includes("Relay")) tags.add("relay");
-  if (type.includes("Migration")) tags.add("migration");
-  if (type.includes("Orchard")) tags.add("water");
-  if (type === "PassageGranted" || type.includes("Road")) tags.add("road");
-  if (type === "RumorSpread") tags.add("rumor");
-  if (type.includes("Evidence") || type === "InformationShared") tags.add("evidence");
-  if (type === "DialogueSubmitted" || type === "MessageSent") tags.add("dialogue");
-  if (type === "PolicyChanged") {
-    tags.add("policy");
-    const key = `${String(event.facts["key"] ?? "")} ${String(event.facts["policyKey"] ?? "")}`;
-    if (key.includes("water")) tags.add("water");
-    if (key.includes("road")) tags.add("road");
-  }
-  if (type.includes("Crisis") || type === "RelayDown") tags.add("crisis");
-  if (event.nodeId !== null) tags.add(event.nodeId);
-  for (const tag of stringArray(event.facts["tags"])) tags.add(tag);
-  const evidenceId = event.facts["evidenceId"];
-  if (evidenceId === "ev-exchange-draft" || evidenceId === "ev-star-charts") tags.add("exchange");
+  for (const tag of factTags(event)) tags.add(tag);
   return [...tags]
     .filter((tag) => tag.length > 0)
     .sort(compareStrings);

@@ -1,6 +1,6 @@
 /**
  * 核心职责：用宿主会话读取的真实查询形状对真实 SQLite 断言查询计划，确认按对白取提交序号命中 0019 的表达式索引。
- * 交互契约：依赖存储模块启动真实 SQLite、迁移建出的 domain_events_dialogue 索引与宿主在 reads 中使用的同一段查询。
+ * 交互契约：依赖存储模块启动真实 SQLite、迁移建出的 domain_events_dialogue 索引与宿主会话读取调用的 authority 事件查询。
  * 约束与禁忌：禁止另写一份字面量 SQL 副本代替生产查询——表达式与索引定义必须逐字一致才可能命中，
  *   副本的查询计划说明不了生产行为；也不得在查询退化成扫描全部 DialogueSubmitted 时仍判为通过。
  */
@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dialogueWorldSeqSql } from "@world-prism/app-server";
+import { latestEventSeqsByPayload, latestEventSeqsSql } from "@world-prism/authority";
 import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
 import { storageModuleDefinition } from "@world-prism/mod-platform-storage-sqlite";
 import { createFakeHost } from "./authority-support";
@@ -68,7 +68,12 @@ function putEvent(
 describe("对白提交事件的查询计划", () => {
   it("按对白 ID 取最大 world_seq 命中 domain_events_dialogue 表达式索引", async () => {
     const storage = await openStorage();
-    const plan = planOf(storage, dialogueWorldSeqSql(2), [branchId, "dlg-000000000001", "dlg-000000000002"]);
+    const plan = planOf(storage, latestEventSeqsSql("DialogueSubmitted", 2), [
+      branchId,
+      "DialogueSubmitted",
+      "dlg-000000000001",
+      "dlg-000000000002",
+    ]);
 
     expect(plan).toContain("domain_events_dialogue");
     // 命中表达式索引后，dialogueId 的比对与 MAX(world_seq) 都在索引内完成，不需要临时 B 树分组。
@@ -87,10 +92,9 @@ describe("对白提交事件的查询计划", () => {
       ]);
       putEvent(tx, 2, "DialogueSubmitted", { dialogueId: "dlg-000000000002" });
     });
-    const rows = storage.transact((tx) => tx.all(dialogueWorldSeqSql(1), [branchId, "dlg-000000000002"]));
-    expect(rows.map((row) => [String(row["dialogue_id"]), Number(row["world_seq"])])).toEqual([
-      ["dlg-000000000002", 2],
-    ]);
+    const seqs = storage.transact((tx) =>
+      latestEventSeqsByPayload(tx, branchId, "DialogueSubmitted", ["dlg-000000000002"]));
+    expect([...seqs]).toEqual([["dlg-000000000002", 2]]);
   });
 
   it("同一分支的对白事件与其他事件并存时只返回命中对白的最新序号", async () => {
@@ -104,16 +108,18 @@ describe("对白提交事件的查询计划", () => {
       putEvent(tx, 5, "DialogueSubmitted", { dialogueId: "dlg-000000000001", conversationId: "cnv-000000000001" });
     });
 
-    const rows = storage.transact((tx) =>
-      tx.all(dialogueWorldSeqSql(2), [branchId, "dlg-000000000001", "dlg-000000000009"]),
+    const seqs = storage.transact((tx) =>
+      latestEventSeqsByPayload(tx, branchId, "DialogueSubmitted", ["dlg-000000000001", "dlg-000000000009", "dlg-00000000000z"]),
     );
-    expect(
-      rows
-        .map((row) => [String(row["dialogue_id"]), Number(row["world_seq"])])
-        .sort((left, right) => String(left[0]).localeCompare(String(right[0]))),
-    ).toEqual([
+    // 没有提交事件的取值不出现在结果中，由调用方决定如何处理缺失。
+    expect([...seqs].sort((left, right) => left[0].localeCompare(right[0]))).toEqual([
       ["dlg-000000000001", 5],
       ["dlg-000000000009", 3],
     ]);
+  });
+
+  it("取值为空时不发起查询，直接返回空结果", async () => {
+    const storage = await openStorage();
+    expect(storage.transact((tx) => latestEventSeqsByPayload(tx, branchId, "DialogueSubmitted", [])).size).toBe(0);
   });
 });

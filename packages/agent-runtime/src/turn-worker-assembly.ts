@@ -9,9 +9,8 @@ import {
   bindAgentModelRoutes,
   type AgentCompressionPort,
   type AgentContextPort,
-  type AgentDecisionPort,
   type AgentToolViewPort,
-  type DeterministicDecisionInput,
+  type DeterministicDecisionPort,
   type ModelDecisionPort,
 } from "@world-prism/module-sdk";
 import type { ResolvedAgentProfile } from "@world-prism/experiment";
@@ -23,11 +22,11 @@ import type { TurnExecutionOptions } from "./turn-worker";
 /** 每 Agent 已装配的 turn 模块端口：model 为模型路径端口组，deterministicDecision 为未挂模型池时的确定性决策端口，二者互斥。 */
 export type TurnPorts = { readonly toolView: AgentToolViewPort } & (
   { readonly model: ModelTurnPorts; readonly deterministicDecision: null } |
-  { readonly model: null; readonly deterministicDecision: AgentDecisionPort<DeterministicDecisionInput> }
+  { readonly model: null; readonly deterministicDecision: DeterministicDecisionPort }
 );
 
 /** 确定性决策端口仅在未挂模型路径的装配下存在；越界访问说明装配与运行时模型配置不一致，显式失败并给出主体上下文。 */
-export function deterministicDecisionPort(ports: TurnPorts, agentId: string): AgentDecisionPort<DeterministicDecisionInput> {
+export function deterministicDecisionPort(ports: TurnPorts, agentId: string): DeterministicDecisionPort {
   if (ports.model !== null || ports.deterministicDecision === null) {
     throw new Error(`Deterministic decision port missing for ${agentId}`);
   }
@@ -65,7 +64,7 @@ export class TurnSlotAssembly {
         const compression = (await this.createSlot<AgentCompressionPort>(agentId, slots.compression)).port;
         this.ports.set(agentId, { deterministicDecision: null, toolView, model: { decision, context, compression } });
       } else {
-        const decision = (await this.createSlot<AgentDecisionPort<DeterministicDecisionInput>>(agentId, slots.decision)).port;
+        const decision = (await this.createSlot<DeterministicDecisionPort>(agentId, slots.decision)).port;
         this.ports.set(agentId, { deterministicDecision: decision, toolView, model: null });
       }
     }

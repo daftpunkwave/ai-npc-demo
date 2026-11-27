@@ -3,13 +3,12 @@
  * 只依赖确定性账本规则与宿主注入的 ID 服务。
  * 禁止读取存储、调用模型，或信任未校验的自报引用。
  */
-import {
-  estimateTokens,
-  type AgentMemoryQuery,
-  type AgentObservation,
-  type IdPrefix,
-  type MemoryBundle,
-  type MemoryChangePlan,
+import type {
+  AgentMemoryQuery,
+  AgentObservation,
+  IdPrefix,
+  MemoryBundle,
+  MemoryChangePlan,
 } from "@world-prism/contracts";
 import type {
   MemoryPort,
@@ -24,6 +23,7 @@ import {
   capacityRetirements,
 } from "./ledger-rules";
 import { buildMaintenance } from "./ledger-maintenance";
+import { RecallSelection, type ScoredRecord } from "./ledger-recall";
 import {
   type LedgerRow,
   clamp01,
@@ -67,111 +67,35 @@ export class LedgerMemoryPort implements MemoryPort {
     if (query.revision !== view.revision) {
       return emptyBundle("not-ready", query.revision);
     }
-    const candidates = view.records
-      .filter((record) =>
-        record.status === "active" &&
-        record.kind !== "relation" &&
-        (this.config.prospectiveInput === "enabled" || record.kind !== "prospective") &&
-        record.validFromTick <= query.frontier.worldTick,
-      );
-    type ScoredItem = {
-      readonly record: MemoryRecordView;
-      readonly score: number;
-      /** 去重键缓存：惰性计算一次，未进入必选与候选窗口的记录不承担 slice/sort/join 开销。 */
-      sourceKey: string | null;
-    };
-    const scored: readonly ScoredItem[] = candidates.map((record) => ({
-      record,
-      score: this.score(record, query),
-      sourceKey: null,
-    })).sort((left, right) =>
-      right.score - left.score ||
-      right.record.validFromTick - left.record.validFromTick ||
-      left.record.memoryId.localeCompare(right.record.memoryId),
-    );
-    const sourceKeyOf = (item: ScoredItem): string => {
-      item.sourceKey ??= recordSourceKey(item.record);
-      return item.sourceKey;
-    };
-    const picked = new Map<string, ScoredItem & { mustInclude: boolean }>();
-    const dropped: MemoryBundle["dropped"] = [];
-    const droppedIds = new Set<string>();
-    // dropped 是解释性明细而非完整清单：上限取候选窗口容量，使对象分配不随历史记忆总量增长。
-    // 总数由 candidates 给出，超出上限的落选只保留在计数里。
-    const droppedLimit = this.config.recall.candidateLimit;
-    // 同一记忆可能先在必选阶段因预算落选、又在候选池里被判一次落选，按 memoryId 幂等只记首次原因。
-    const markDropped = (memoryId: string, reason: MemoryBundle["dropped"][number]["reason"]): void => {
-      if (droppedIds.has(memoryId)) return;
-      droppedIds.add(memoryId);
-      if (dropped.length < droppedLimit) dropped.push({ memoryId, reason });
-    };
-    const seenSources = new Set<string>();
-    let tokenEstimate = 0;
-    const pickMandatory = (item: ScoredItem): boolean => {
-      if (picked.has(item.record.memoryId) || picked.size >= query.maxItems) return false;
-      const sourceKey = sourceKeyOf(item);
-      if (sourceKey.length > 0 && seenSources.has(sourceKey)) return false;
-      const itemTokens = estimateTokens(item.record.content.summaryZh);
-      if (tokenEstimate + itemTokens > query.maxTokens) {
-        markDropped(item.record.memoryId, "budget");
-        return false;
-      }
-      if (sourceKey.length > 0) seenSources.add(sourceKey);
-      tokenEstimate += itemTokens;
-      picked.set(item.record.memoryId, { ...item, mustInclude: true });
-      return true;
-    };
+    const { recall } = this.config;
+    const scored = this.scoredCandidates(query, view);
+    const concernsCounterpart = (record: MemoryRecordView): boolean =>
+      record.content.counterpartIds.some((id) => query.counterpartIds.includes(id));
+    const selection = new RecallSelection({
+      maxItems: query.maxItems,
+      maxTokens: query.maxTokens,
+      droppedLimit: recall.candidateLimit,
+    });
+    // 必带项先于按分数入选：先是与对方相关的承诺，再是与对方相关的长期记忆（按显著度排序）。
     if (this.config.prospectiveInput === "enabled") {
-      const promises = scored.filter(({ record }) =>
-        record.kind === "prospective" &&
-        record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
+      selection.pickMandatory(
+        scored.filter(({ record }) => record.kind === "prospective" && concernsCounterpart(record)),
+        Math.min(recall.mustIncludeProspective, query.maxItems),
       );
-      let selected = 0;
-      for (const item of promises) {
-        if (selected >= Math.min(this.config.recall.mustIncludeProspective, query.maxItems)) break;
-        if (pickMandatory(item)) selected += 1;
-      }
     }
-    const about = scored
-      .filter(({ record }) =>
-        record.tier === "long" &&
-        record.content.counterpartIds.some((id) => query.counterpartIds.includes(id)),
-      )
-      .sort((left, right) =>
-        right.record.salience - left.record.salience ||
-        right.record.validFromTick - left.record.validFromTick ||
-        left.record.memoryId.localeCompare(right.record.memoryId),
-      );
-    let aboutSelected = 0;
-    for (const item of about) {
-      if (aboutSelected >= this.config.recall.mustIncludeAboutCounterpart) break;
-      if (query.maxItems - picked.size <= 0) break;
-      if (pickMandatory(item)) aboutSelected += 1;
-    }
-    const candidatePool = scored.slice(0, this.config.recall.candidateLimit);
-    for (const item of candidatePool) {
-      if (picked.size >= Math.min(this.config.recall.topK, query.maxItems)) break;
-      if (picked.has(item.record.memoryId)) continue;
-      const sourceKey = sourceKeyOf(item);
-      if (sourceKey.length > 0 && seenSources.has(sourceKey)) {
-        markDropped(item.record.memoryId, "dedupe");
-        continue;
-      }
-      const itemTokens = estimateTokens(item.record.content.summaryZh);
-      if (tokenEstimate + itemTokens > query.maxTokens) {
-        markDropped(item.record.memoryId, "budget");
-        continue;
-      }
-      seenSources.add(sourceKey);
-      tokenEstimate += itemTokens;
-      picked.set(item.record.memoryId, { ...item, mustInclude: false });
-    }
-    for (const item of scored) {
-      if (!picked.has(item.record.memoryId) && !droppedIds.has(item.record.memoryId)) {
-        markDropped(item.record.memoryId, "rank");
-      }
-    }
-    const items = [...picked.values()].map(({ record, score, mustInclude }) => ({
+    selection.pickMandatory(
+      scored
+        .filter(({ record }) => record.tier === "long" && concernsCounterpart(record))
+        .sort((left, right) =>
+          right.record.salience - left.record.salience ||
+          right.record.validFromTick - left.record.validFromTick ||
+          left.record.memoryId.localeCompare(right.record.memoryId),
+        ),
+      recall.mustIncludeAboutCounterpart,
+    );
+    selection.fillFrom(scored.slice(0, recall.candidateLimit), Math.min(recall.topK, query.maxItems));
+    selection.markUnpickedAsRank(scored);
+    const items = selection.pickedRecords().map(({ record, score, mustInclude }) => ({
       memoryId: record.memoryId,
       kind: record.kind,
       epistemic: record.epistemic,
@@ -189,8 +113,25 @@ export class LedgerMemoryPort implements MemoryPort {
       relationSummary: this.config.relationInput === "enabled" ? relationSummary(query, view) : [],
       items,
       candidates: scored.length,
-      dropped,
+      dropped: selection.dropped(),
     };
+  }
+
+  /** 可检索的记录按分数、生效时间与记忆 ID 排序；关系行与未生效的记录不参与，承诺按配置决定。 */
+  private scoredCandidates(query: AgentMemoryQuery, view: RevisionView): readonly ScoredRecord[] {
+    return view.records
+      .filter((record) =>
+        record.status === "active" &&
+        record.kind !== "relation" &&
+        (this.config.prospectiveInput === "enabled" || record.kind !== "prospective") &&
+        record.validFromTick <= query.frontier.worldTick,
+      )
+      .map((record) => ({ record, score: this.score(record, query) }))
+      .sort((left, right) =>
+        right.score - left.score ||
+        right.record.validFromTick - left.record.validFromTick ||
+        left.record.memoryId.localeCompare(right.record.memoryId),
+      );
   }
 
   planMaintenance(input: Parameters<MemoryPort["planMaintenance"]>[0], _view?: RevisionView) {
@@ -420,10 +361,6 @@ function emptyBundle(status: MemoryBundle["status"], revision: number): MemoryBu
  * 去重键：同一批来源观察的排序拼接。
  * 由检索流程在记录首次参与必选或候选选择时调用并缓存，避免同一条记录两处重复排序拼接。
  */
-function recordSourceKey(record: MemoryRecordView): string {
-  return record.sourceObservationIds.slice().sort(compareStrings).join(",");
-}
-
 function speakerIds(observation: AgentObservation): readonly string[] {
   const content = objectRecord(observation);
   const facts = objectValue(content["facts"]);

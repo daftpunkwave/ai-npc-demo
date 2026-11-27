@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@world-prism/app-server";
 import type { AuthContext, CommandType, Json, StorageRow } from "@world-prism/contracts";
-import type { AgentDecisionPort, DeterministicDecisionInput } from "@world-prism/module-sdk";
+import type { DeterministicDecisionInput, DeterministicDecisionPort } from "@world-prism/module-sdk";
 import { gameCommandEnvelope } from "./game-support";
 
 const target = "human-independent";
@@ -72,7 +72,7 @@ function gatedDecision(): { readonly definitions: NonNullable<HostOptions["modul
       ...definition,
       create: async (input: Parameters<typeof definition.create>[0]) => {
         const instance = await definition.create(input);
-        const base = instance.port as AgentDecisionPort<DeterministicDecisionInput>;
+        const base = instance.port as DeterministicDecisionPort;
         return {
           ...instance,
           port: {
@@ -86,7 +86,7 @@ function gatedDecision(): { readonly definitions: NonNullable<HostOptions["modul
               }
               return base.decide(turn);
             },
-          } satisfies AgentDecisionPort<DeterministicDecisionInput>,
+          } satisfies DeterministicDecisionPort,
         };
       },
     });
