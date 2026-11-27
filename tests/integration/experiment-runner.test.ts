@@ -1,11 +1,12 @@
 /**
- * 核心职责：验证实验执行器按脚本检查点驱动受控时钟、在沙盒分支执行探针、写入 probe_results 与 experiment_results，
+ * 核心职责：验证实验执行器提交脚本预置知识、按检查点驱动受控时钟、在沙盒分支执行探针、写入 probe_results 与 experiment_results，
  * 实验分支之间与在线分支之间互不读写，并经进度与导出接口如实对外呈现。
  * 交互契约：使用真实测试装配、SQLite 与控制台接口，决策走确定性模块，不调用模型。
  * 约束与禁忌：断言必须读执行器写入的真实存储行或公开接口；禁止替换执行器内部实现。
  */
 import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { createSystemAuth } from "@world-prism/authority";
 import { runProgressResponseSchema, runReportResponseSchema, exportResponseSchema, type Json } from "@world-prism/contracts";
 import { artifactBodyText } from "@world-prism/module-sdk";
 import type { RunningHost } from "@world-prism/app-server";
@@ -146,6 +147,54 @@ describe("实验执行器", () => {
       "memory-m0-window/break": "accept/none",
       "memory-m1-structured-ledger/break": "decline/past-breach",
     });
+  }, 180_000);
+
+  it("含预置知识的 s-rumor 在开局后、首个 tick 前完成预置，跑完全部检查点；预置重放取回原回执", async () => {
+    const host = await experimentHost(resources);
+    const headers = await researcherHeaders(host);
+    const [runId] = await createExperimentRuns(host, headers, experimentSpec({
+      experimentId: "exp-runner-rumor-v1", scriptRef: "s-rumor", scriptBranches: [],
+    }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    await startRun(host, headers, runId, "op-000000000121");
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
+    const branchId = branchOf(host, runId);
+    expect(worldTickOf(host, branchId)).toBe(70);
+
+    // 预置只产生一条 setup 途径的授权，且发生在开局之后的 tick 0、任何脚本步骤之前。
+    const events = host.storage.transact((tx) => tx.all(
+      "SELECT type, world_tick, payload_json FROM domain_events WHERE branch_id = ? ORDER BY world_seq ASC", [branchId],
+    ).map((row) => ({ type: String(row["type"]), worldTick: Number(row["world_tick"]), payload: JSON.parse(String(row["payload_json"])) as Record<string, Json> })));
+    const setupGrants = events.filter(({ type, payload }) => type === "KnowledgeGranted" && payload["via"] === "setup");
+    expect(setupGrants.map(({ worldTick, payload }) => [worldTick, payload["principalId"], payload["itemId"]])).toEqual([[0, "player-1", "ev-flood-log"]]);
+    expect(events.findIndex(({ type }) => type === "CampaignStarted")).toBeLessThan(events.indexOf(setupGrants[0] as (typeof events)[number]));
+    // 预置让玩家持有证据，tick 66 的分享才被受理（未持有时规则以 evidence-not-held 拒绝）。
+    const steps = experimentAudit(host, branchId).filter(({ type }) => type === "ExperimentStepSubmitted").map(({ payload }) => payload as Record<string, Json>);
+    expect(steps.map((step) => [step["atTick"], step["commandType"], step["commandStatus"]])).toEqual([[66, "information.share", "accepted"]]);
+
+    // 两个检查点各一条有效探针结果，汇总与报告同一口径。
+    expect(probeResults(host, runId).map((row) => [row["probe_id"], row["agent_id"], row["asked_at_tick"], row["valid"]])).toEqual([
+      ["p-belief-before", "human-earth-alliance", 56, 1],
+      ["p-belief-after", "human-earth-alliance", 70, 1],
+    ]);
+    const parsed = await report(host, headers, runId);
+    expect(parsed.probes.map(({ probeId }) => probeId).sort()).toEqual(["p-belief-after", "p-belief-before"]);
+    expect(experimentResults(host, runId).length).toBeGreaterThan(0);
+
+    // 预置是实验分支上唯一的系统世界命令。停止后恢复会以同一命令 ID 重放：即使时钟已越过 tick 0，
+    // 也取回原受理回执且不再授权；换命令 ID 的新预置被拒绝（完成后时钟已暂停，tick 推进后的拒绝由网关测试覆盖）。
+    const receipts = host.storage.transact((tx) => tx.branch(branchId).table("command_receipts").list({ principal_id: "system:world" }))
+      .map((row) => ({ commandId: String(row["command_id"]), type: row["command_type"], receipt: row["receipt_json"] as { readonly receiptId: string; readonly commandStatus: string } }));
+    expect(receipts.map(({ type, receipt }) => [type, receipt.commandStatus])).toEqual([["knowledge.seed", "accepted"]]);
+    const system = createSystemAuth(host.worldId, branchId);
+    const payload = { evidenceId: "ev-flood-log", principalId: "player-1" };
+    const eventCount = (): number => host.storage.transact((tx) => tx.branch(branchId).table("domain_events").count());
+    const eventsBefore = eventCount();
+    const replay = host.authority.commands.execute(system, { commandId: receipts[0]?.commandId ?? "", type: "knowledge.seed", schemaVersion: 1, payload });
+    expect(replay).toMatchObject({ commandStatus: "accepted", receiptId: receipts[0]?.receipt.receiptId });
+    const late = host.authority.commands.execute(system, { commandId: "cmd-000000000999", type: "knowledge.seed", schemaVersion: 1, payload });
+    expect(late).toMatchObject({ commandStatus: "rejected", reasonCode: "paused" });
+    expect(eventCount()).toBe(eventsBefore);
   }, 180_000);
 
   it("实验执行不改写在线分支，实验分支之间互不串读", async () => {

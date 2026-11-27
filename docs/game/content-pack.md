@@ -711,7 +711,7 @@ schemaVersion: 1
 scriptId: <id>
 rosterRef: core-3
 start: { factionId: <human faction> }
-setup: []          # optional knowledge grants applied identically to every variant before tick 0
+setup: []          # optional knowledge grants { grantEvidence, to }, applied identically to every variant after campaign start, before the first tick
 steps:             # external commands, executed when the controlled clock reaches atTick
   - { atTick: 1, as: player-1, command: { type: <commandType>, payload: { } } }
 checkpoints:
@@ -725,6 +725,10 @@ checkpoints:
         answerKey: { mustMention: [], mustNotMention: [] }
 branches: []       # optional named alternatives that replace some steps, e.g. fulfill vs breach
 ```
+
+`setup` 的每一条由实验执行器在开局之后、世界时钟仍为 tick 0 时，以 `system:world` 提交一条 `knowledge.seed`（见 [领域模型](../architecture/domain-model.md) 第 5 节），按声明顺序先于 tick 0 的脚本步骤，授权途径记为 `setup`。预置与其他输入一样经命令网关留下回执与 `KnowledgeGranted` 事件；任何一条被拒绝，run 以 `script-setup-rejected` 失败。
+
+步骤的 `as` 必须是内容包登记的主体，但执行器目前只执行以玩家主体（`player-1`）声明的步骤，其他主体的步骤在执行前以 `script-principal-unsupported` 拒绝。原因是 Agent 身份的命令必须通过 fencing：要么来自该 Agent 自己的 turn（控制代次与 turn 租约），要么来自真人席位接管后的控制代次（`actingAsAgentId`）。执行器两者都没有，而真人席位接管只覆盖三个外域席位，接管服务也尚未实现（见 [实现状态](../IMPLEMENTATION-STATUS.md)）。
 
 首版必须提供的三个脚本：
 

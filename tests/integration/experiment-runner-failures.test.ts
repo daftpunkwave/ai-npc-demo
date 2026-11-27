@@ -4,7 +4,7 @@
  * 交互契约：使用真实测试装配、SQLite 与控制台接口；模型路径只用确定性传输与测试自带夹具，不访问网络。
  * 约束与禁忌：配额前置状态只按部署级统计口径构造；断言读真实存储与公开接口，不替换执行器内部实现。
  */
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { experimentDetailResponseSchema, runReportResponseSchema, type AuthContext, type Json } from "@world-prism/contracts";
@@ -100,6 +100,18 @@ function fixtureConfig(lines: readonly Json[]): string {
   mkdirSync(fixtures, { recursive: true });
   writeFileSync(join(fixtures, "default.jsonl"), [...lines, autonomousNoDialogue].map((line) => JSON.stringify(line)).join("\n"), "utf8");
   return config;
+}
+
+/** 复制内容包并把 s-secret 唯一的步骤改为以派系领袖 Agent 身份提交：内容校验放行，执行器展开计划时拒绝。 */
+function actingAgentContent(): string {
+  const root = join(tempRoot(resources, "world-prism-experiment-content-"), "content");
+  cpSync("content", root, { recursive: true });
+  const scriptFile = join(root, "world-packs", "earth-2964-v1", "scripts", "s-secret.yaml");
+  const original = readFileSync(scriptFile, "utf8");
+  const rewritten = original.replace("as: player-1, command: { type: dialogue.say", "as: human-earth-alliance, command: { type: dialogue.say");
+  if (rewritten === original) throw new Error("s-secret 的脚本步骤格式已变化，无法改写执行主体");
+  writeFileSync(scriptFile, rewritten, "utf8");
+  return root;
 }
 
 describe("实验执行器的配额与失败路径", () => {
@@ -374,24 +386,24 @@ describe("实验执行器的配额与失败路径", () => {
     expect(failureCode(strict, timedOut)).toBe("settle-timeout");
     expect(activeAgentsOn(strict, branchOf(strict, timedOut))).toEqual([]);
 
-    const host = await experimentHost(resources);
+    const host = await experimentHost(resources, { contentRoot: actingAgentContent() });
     const headers = await researcherHeaders(host);
-    const [rumor] = await createExperimentRuns(host, headers, experimentSpec({
-      experimentId: "exp-runner-setup-v1", scriptRef: "s-rumor", scriptBranches: [],
+    const [actingAgent] = await createExperimentRuns(host, headers, experimentSpec({
+      experimentId: "exp-runner-principal-v1", scriptRef: "s-secret", scriptBranches: [],
     }));
     const escalating = experimentSpec({ experimentId: "exp-runner-assembly-v1" });
     const [mismatched] = await createExperimentRuns(host, headers, {
       ...escalating, base: { ...(escalating["base"] as Record<string, Json>), moduleAssemblyRef: "local-slg-escalating-v1" },
     });
-    if (rumor === undefined || mismatched === undefined) throw new Error("实验没有展开出 run");
-    await startRun(host, headers, rumor, "op-000000000802");
+    if (actingAgent === undefined || mismatched === undefined) throw new Error("实验没有展开出 run");
+    await startRun(host, headers, actingAgent, "op-000000000802");
     await startRun(host, headers, mismatched, "op-000000000803");
-    expect(await waitForRunStatus(host, rumor, ["completed", "failed"])).toBe("failed");
+    expect(await waitForRunStatus(host, actingAgent, ["completed", "failed"])).toBe("failed");
     expect(await waitForRunStatus(host, mismatched, ["completed", "failed"])).toBe("failed");
-    expect(failureCode(host, rumor)).toBe("script-setup-unsupported");
+    expect(failureCode(host, actingAgent)).toBe("script-principal-unsupported");
     expect(failureCode(host, mismatched)).toBe("assembly-mismatch");
     // 预检阶段失败时实验分支没有开局：没有任何领域事件。
-    expect(eventTypes(host, branchOf(host, rumor))).toEqual([]);
+    expect(eventTypes(host, branchOf(host, actingAgent))).toEqual([]);
   }, 120_000);
 
   it("宿主重启把遗留的 running 实验 run 归位为 paused 并归档未关闭的沙盒", async () => {

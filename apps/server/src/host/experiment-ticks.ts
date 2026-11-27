@@ -1,10 +1,11 @@
 /**
- * 核心职责：在实验分支上执行受控时钟的单 tick 处理：开局与名册激活、推进或补完 tick、按声明顺序注入脚本命令，
+ * 核心职责：在实验分支上执行受控时钟的单 tick 处理：开局与名册激活、tick 0 提交预置知识、推进或补完 tick、按声明顺序注入脚本命令，
  * 并等待本 tick 收敛（规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、无进行中 turn、无可调度 trigger）。
  * 交互契约：依赖 run 级命令网关、时钟端口、分支 Agent 运行时与 agent-runtime 的收敛读数；
  * 每次注入与时钟操作前按执行围栏（run 状态与实验分支时钟版本）检查，被停止、被停止后再次启动所取代
  * 或宿主关闭时抛出 `RunHalted`，失败与积压抛出 `ExperimentFailure`。
- * 约束与禁忌：脚本命令以玩家身份走正常命令网关，不授予系统权限或暂停豁免；收敛前不推进下一 tick；
+ * 约束与禁忌：脚本命令以玩家身份走正常命令网关，不授予系统权限或暂停豁免；只有预置知识以系统世界身份提交，
+ * 且只在开局后的 tick 0；收敛前不推进下一 tick；
  * 事务内不等待，状态检查与命令注入之间不让出事件循环，避免停止请求插入其间。
  */
 import {
@@ -12,7 +13,7 @@ import {
   readBranchSettlement,
   type AgentRuntime,
 } from "@world-prism/agent-runtime";
-import { latestEventSeq, listRuleFailures } from "@world-prism/authority";
+import { createSystemAuth, latestEventSeq, listRuleFailures } from "@world-prism/authority";
 import type { AuthContext, StorageTransaction } from "@world-prism/contracts";
 import { advanceWorldTick, catchUpWorldTick } from "../tick";
 import { recordExperimentAudit } from "./experiment-audit";
@@ -142,6 +143,29 @@ export function activateExperimentRoster(exec: ExperimentExecution): void {
 }
 
 /**
+ * 以系统世界身份提交脚本预置知识，只在开局后的 tick 0 调用，网关与处理器再按实验分支与首个 tick 前裁决。
+ * 停止后恢复时每条预置以原命令 ID 重放，取回原回执而不重复授权；被拒绝的预置重放仍是拒绝，
+ * 因此不能像脚本步骤那样按「已有回执」跳过，否则恢复后的 run 会带着缺失的初始条件继续。
+ * 预置是每个变体共同的起点，任何一条被拒绝都按失败处理。
+ */
+function injectSetup(exec: ExperimentExecution): void {
+  const { ctx } = exec;
+  if (ctx.plan.setup.length === 0) return;
+  assertRunActive(exec);
+  const auth = createSystemAuth(ctx.worldId, ctx.branchId);
+  for (const entry of ctx.plan.setup) {
+    const receipt = ctx.authority.commands.execute(auth, {
+      commandId: entry.commandId, type: "knowledge.seed", schemaVersion: 1,
+      payload: { evidenceId: entry.evidenceId, principalId: entry.principalId },
+    });
+    if (receipt.commandStatus !== "accepted") {
+      throw new ExperimentFailure("script-setup-rejected", `脚本预置 ${entry.declarationIndex} 被拒绝：${String(receipt.reasonCode)}`);
+    }
+  }
+  exec.runtime?.notifyWorldChanged();
+}
+
+/**
  * 注入 tick 的脚本命令。已有回执的步骤（停止后恢复时重放的同一 tick）跳过，不重复下令也不重复记审计。
  * 因暂停被拒说明执行器在时钟未处于单步时注入，属于执行器缺陷而非实验结果，按失败处理。
  */
@@ -180,7 +204,10 @@ function tickContext(exec: ExperimentExecution) {
   return { storage: exec.deps.core.storage, clock: exec.deps.core.runtime.clock, authority: exec.ctx.authority, branchId: exec.ctx.branchId };
 }
 
-/** 补完当前 tick：幂等重跑到期 job、时钟步骤与消费者，注入未提交的脚本命令并等待收敛。 */
+/**
+ * 补完当前 tick：幂等重跑到期 job、时钟步骤与消费者，注入未提交的脚本命令并等待收敛。
+ * tick 0 先提交预置知识再注入脚本步骤，Agent 在首次感知之前就已持有预置条目。
+ */
 export async function settleCurrentTick(exec: ExperimentExecution, runtime: AgentRuntime, tick: number): Promise<void> {
   assertRunActive(exec);
   try {
@@ -189,6 +216,7 @@ export async function settleCurrentTick(exec: ExperimentExecution, runtime: Agen
     adoptClockVersion(exec);
   }
   assertNoChapterStop(exec);
+  if (tick === 0) injectSetup(exec);
   injectSteps(exec, tick);
   await settleBranch(exec, { branchId: exec.ctx.branchId, runtime }, tick);
 }
