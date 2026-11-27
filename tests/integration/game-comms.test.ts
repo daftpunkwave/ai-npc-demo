@@ -39,6 +39,12 @@ function start(value: GameHarness): ReturnType<GameHarness["authority"]["command
   );
 }
 
+/** 当前分支上的知识送达任务行，用来直接断言拒绝的分享没有排任务、遗留任务已被处理。 */
+function deliveryJobs(value: GameHarness): readonly Readonly<Record<string, unknown>>[] {
+  return value.storage.transact((tx) =>
+    tx.branch(value.branchId).table("jobs").list().filter((job) => job["kind"] === "comms.knowledge-delivery"));
+}
+
 function setRelay(value: GameHarness, relay: number): void {
   value.storage.transact((tx) => {
     const table = tx.branch(value.branchId).table("aggregate_state");
@@ -361,6 +367,76 @@ describe("通信", () => {
     const events = readGameEvents(value);
     expect(events.filter((event) => event.type === "InformationShared")).toHaveLength(1);
     expect(events.filter((event) => event.type === "KnowledgeGranted").length).toBeGreaterThan(1);
+  });
+
+  it("受众含不存在的主体时整条拒绝，不排送达任务，送达 tick 也不会出错", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    setRelay(value, 25);
+    // 真实模型曾把角色显示名当作主体 ID 提交；旧实现受理后在送达 tick 建索引键时抛错。
+    const rejected = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["species-fauna", "洛"] }, value.host.ids("cmd")),
+    );
+    expect(rejected).toMatchObject({ commandStatus: "rejected", reasonCode: "unknown-target" });
+    const events = readGameEvents(value);
+    expect(events.filter((event) => event.type === "InformationShared")).toHaveLength(0);
+    setGameClock(value, { worldTick: 3, mode: "running" });
+    expect(() => value.authority.jobs.runDue(value.branchId, 3)).not.toThrow();
+    expect(readGameEvents(value).filter((event) =>
+      event.type === "KnowledgeGranted" && (event.payload as { readonly via?: string }).via === "share")).toHaveLength(0);
+    expect(deliveryJobs(value)).toEqual([]);
+  });
+
+  it("受众校验先于中继检查：中继中断时含不存在主体的分享仍报 unknown-target", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    setRelay(value, 0);
+    const rejected = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["species-fauna", "洛"] }, value.host.ids("cmd")),
+    );
+    expect(rejected).toMatchObject({ commandStatus: "rejected", reasonCode: "unknown-target" });
+    const valid = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["species-fauna"] }, value.host.ids("cmd")),
+    );
+    expect(valid).toMatchObject({ commandStatus: "rejected", reasonCode: "relay-down" });
+  });
+
+  it("角色与派系组成的合法受众照常受理", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    const accepted = value.authority.commands.execute(
+      playerAuth(value),
+      gameCommandEnvelope("information.share", { evidenceId: "ev-water-ledger", audience: ["npc-wenyuan", "human-independent"] }, value.host.ids("cmd")),
+    );
+    expect(accepted.commandStatus).toBe("accepted");
+    expect(readGameEvents(value).filter((event) => event.type === "InformationShared")).toHaveLength(1);
+  });
+
+  it("存档里遗留的指向不存在主体的送达任务被跳过，推进不抛错也不授予知识", async () => {
+    const value = await harness();
+    expect(start(value).commandStatus).toBe("accepted");
+    value.storage.transact((tx) => {
+      tx.branch(value.branchId).table("jobs").put({
+        job_id: "job-legacy-share-01",
+        // 开局已排出序号靠前的任务；取一个不会与之冲突的大序号。
+        seq: 900_001,
+        kind: "comms.knowledge-delivery",
+        due_tick: 3,
+        status: "scheduled",
+        idempotency_key: "knowledge-delivery:evt-legacy:洛",
+        payload_json: { principalId: "洛", itemId: "ev-water-ledger" },
+        attempts: 0,
+        last_error: null,
+      });
+    });
+    const grantsBefore = readGameEvents(value).filter((event) => event.type === "KnowledgeGranted").length;
+    setGameClock(value, { worldTick: 3, mode: "running" });
+    expect(() => value.authority.jobs.runDue(value.branchId, 3)).not.toThrow();
+    expect(readGameEvents(value).filter((event) => event.type === "KnowledgeGranted")).toHaveLength(grantsBefore);
+    expect(deliveryJobs(value).map((job) => job["status"])).not.toContain("scheduled");
   });
 
   it("异地证据分享的授权在送达 tick 才生效", async () => {
