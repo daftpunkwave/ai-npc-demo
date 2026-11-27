@@ -251,7 +251,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `GET /turns`（已实现） | `runId`、`branchId`、`agentId`、`status`、`limit`（缺省 50，范围 1–200） | turn 列表 |
 | `GET /turns/{turnId}`（已实现） | — | turn 详情：frontier、各阶段 requested/resolved/effective、span、context artifact 引用、全部 model attempt、tool call（原始与视图 artifact 引用）、receipt、对白 |
 | `GET /artifacts/{artifactId}`（已实现） | `view=redacted\|raw` | 当前世界所属 run 的 artifact 正文。缺少可访问 run 时返回 `forbidden`。读取原文记一条审计生命周期事件 |
-| `GET /traces/{traceId}`（已实现） | — | span 树 |
+| `GET /traces/{traceId}`（已实现） | — | span 树；跨度已按保留期全部删除的 trace 返回 `not-found`（[存储 — 数据保留与轮转](storage.md#6-数据保留与轮转)） |
 | `GET /branches/compare`（事件差异已实现） | `left`、`right`、`atSeq` | 两个分支在相同检查点后的事件差异摘要；指标与协议差异仍待补齐 |
 | `GET /debug/queues`（已实现） | — | 调度队列、模型池队列、维护队列。模型池的排队数 `modelPool.queued` 为 `null` 表示存储无法提供该计数 |
 | `POST /debug/turns/{turnId}/replay`（hash 校验已实现） | — | 校验已归档 artifact 的规范 JSON hash；不调用模型，返回 `{ requestHashMatch, differences }` |
@@ -324,7 +324,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 `traceId` 的取值分两种情况，客户端不能假定它一定对应本次请求的 span：
 
 1. `DomainError` 显式携带 `traceId` 或 `detailsArtifactRef` 时优先返回错误自身的值。这类错误可能由其他请求、后台 worker 或延迟提交产生，其 trace 指向产生错误的那个上下文，不一定能在本次 `http.request` span 下查到。
-2. 未显式携带时回落到本次请求的 trace。`onRequest` 为每个请求生成 trace，并在注入了 `recordSpan` 时登记，错误出口在构造响应时取回；该值对应本次请求写入 `trace_spans` 的 `http.request` span。
+2. 未显式携带时回落到本次请求的 trace。`onRequest` 为每个请求生成 trace，并在注入了 `recordSpan` 时登记，错误出口在构造响应时取回；该值对应本次请求写入 `trace_spans` 的 `http.request` span。部署配置了 `trace_spans` 保留期时，该 span 超过保留期后被删除，之后按该 `traceId` 查不到 span。
 
 两者都没有时字段为 `null`，不用空串冒充。传输层未注入 `recordSpan` 时请求 span 不会落库，此时不登记 trace，错误响应的 `traceId` 保持 `null`，避免给出查不到的伪标识。
 
@@ -334,7 +334,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 - 同一 `commandId` 重放得到同一 receipt；换 payload 返回 409 `idempotency-conflict`。
 - 断线后带 `fromStreamSeq` 重连，客户端投影与 `GET /world/view` 一致；缺口超过 200 时收到新快照。
 - 来自其他 Origin 的请求与 WS 握手被拒绝。
-- 任一非 2xx 响应的 `traceId` 要么能在 `trace_spans` 中查到对应的 `http.request` span（回落情形），要么是该错误自身携带的 trace（显式情形）；未注入 `recordSpan` 时为 `null`。
+- 任一非 2xx 响应的 `traceId` 要么能在 `trace_spans` 中查到对应的 `http.request` span（回落情形；配置了保留期时限于保留期内），要么是该错误自身携带的 trace（显式情形）；未注入 `recordSpan` 时为 `null`。
 - `GET /console/timeline` 的查询边界与 `timelineQuerySchema` 一致：缺省 `fromSeq`/`limit` 使用默认值，`types` 超过 20 个返回 400。
 - `GET /console/agents` 对已开局角色返回真实 `location` 与 `watermarkLag`，不用固定 `null` 与 `0` 冒充。
 - 所有接口的响应里都找不到 API 密钥、`credentialRef` 的解析值或任何 Agent 的私密记忆（玩家接口）。
@@ -423,7 +423,7 @@ interface TurnDetail extends TurnSummary {
                rawArtifactId: string | null; viewArtifactId: string | null; operationId: string | null }[];
   decision: Json | null;          // 通过校验的 decision_submit 参数
   speech: { speechArtifactId: string; text: string; fallback: boolean } | null;
-  traceId: string | null; // queued turn 尚未产生 span 时为 null
+  traceId: string | null; // queued turn 尚未产生 span，或其 span 已按保留期删除时为 null
 }
 ```
 

@@ -14,7 +14,11 @@
 ```yaml
 dataDir: ./data                          # 宿主从部署环境并入
 inlineArtifactMaxBytes: 65536            # 装配配置块提供
+retentionDays:                           # 可选；缺省表示永久保留全部数据
+  trace_spans: 30                        # 只接受可轮转的观测表，1–36500 的整数天
 ```
+
+`retentionDays` 没有默认值，未配置时解析结果不含该键，不改变已冻结 manifest 中的模块配置摘要。
 
 数据库文件为 `dataDir/world-prism.db`，备份写入 `dataDir/backups`，超过 `inlineArtifactMaxBytes` 的 artifact 正文写入 `dataDir/artifacts`。打开时应用 `journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`。
 
@@ -30,6 +34,7 @@ inlineArtifactMaxBytes: 65536            # 装配配置块提供
 - 事务回调必须同步；返回 Promise 会回滚并抛错。嵌套事务被拒绝，事务内部分写入使用 `savepoint`。
 - 预编译语句在连接级缓存：原始查询与表级 scope 读写共用同一份缓存，同一 SQL 跨事务只预编译一次；条目上限 256，达到上限时整体清空后重新装入，不做逐条淘汰；连接关闭时缓存随之清空。
 - `backup()` 使用 `VACUUM INTO` 生成一致副本，不能在事务内执行。
+- 配置了保留天数时，`start` 后立即排入一轮清理，此后每轮结束隔 1 小时再排下一轮；每批最多删除 500 行过期跨度，每批是独立的短事务，删除与 `lifecycle_events` 中的 `StorageRetentionPruned` 记录同事务提交。`dispose` 先停止调度再关闭连接。表的保留分类与读取方分析见 [存储 — 数据保留与轮转](../../../../../docs/architecture/storage.md#6-数据保留与轮转)。
 - `forkBranch()` 只写入新 `branches` 行并复制分支级数据；`online`/`experiment` 的 `runs` 行、`online` 别名切换与 Agent 配额激活由存档或宿主编排完成。
 - 原始查询通道（`get`/`all`/`run`）只面向宿主固定机制的跨分支与范围查询；模块状态读写使用分支 scope 表接口，不持有连接。
 - 模块不持有按主体隔离的 JSON 状态，`stateSchemaVersion` 为 `null`；数据库 schema 版本由 `schema_migrations` 管理。

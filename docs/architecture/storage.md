@@ -23,7 +23,7 @@ PRAGMA busy_timeout = 5000;
 
 分为三类：部署级（不随分支复制）、分支级（`branch_id` 为主键第一列，分支复制时整体拷贝）、运行级（按 `run_id` 归档，不复制）。
 
-本节展示经后续迁移演进后的核心表结构（其中 `rule_failures`、`clock_stop_requests`、`trace_spans.started_at` 分别由 0006、0007、0013 追加，初始迁移 `0001_init.sql` 原建的 `conversation_lines` 已由 0010 移除）。完整迁移链为 0001–0019：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 指纹，0005 为 `turn_runs` 增加 `created_tick`，0006 新增 `rule_failures`，0007 新增 `clock_stop_requests`，0008 重建 `operation_idempotency` 加入 `'step'` 种类，0009–0013 补充预算日界、移除 `conversation_lines`、物化通信索引聚合（`conversation-line`、`conversation-membership`、`message-delivery` 并重写 `knowledge-grant` 键格式）、新增 `budget_ledger_unsettled` 部分索引及 `trace_spans.started_at` 与调试审计索引，0014–0019 见下文。0002 与 0003 的语句见 §2.1。
+本节展示经后续迁移演进后的核心表结构（其中 `rule_failures`、`clock_stop_requests`、`trace_spans.started_at` 分别由 0006、0007、0013 追加，初始迁移 `0001_init.sql` 原建的 `conversation_lines` 已由 0010 移除）。完整迁移链为 0001–0020：0002 增加部署级 `operation_idempotency`，0003 把 `jobs_due` 换成只收录 `scheduled` 行的部分索引 `jobs_status_due_seq`，0004 为 `schema_migrations` 增加 `checksum` 并回填 0001–0003 指纹，0005 为 `turn_runs` 增加 `created_tick`，0006 新增 `rule_failures`，0007 新增 `clock_stop_requests`，0008 重建 `operation_idempotency` 加入 `'step'` 种类，0009–0013 补充预算日界、移除 `conversation_lines`、物化通信索引聚合（`conversation-line`、`conversation-membership`、`message-delivery` 并重写 `knowledge-grant` 键格式）、新增 `budget_ledger_unsettled` 部分索引及 `trace_spans.started_at` 与调试审计索引，0014–0020 见下文。0002 与 0003 的语句见 §2.1。
 
 0016 为 Agent 热路径补索引，只新增索引、不改表结构：
 
@@ -42,6 +42,8 @@ PRAGMA busy_timeout = 5000;
 0018 为 `tool_calls` 新增覆盖索引 `tool_calls_turn_tool (run_id, turn_id, tool_id)` 与 `tool_calls_attempt_call (run_id, turn_id, attempt_id, provider_call_id, created_at)`，让配额计数与按调用 ID 查找首行不再仅靠 `(run_id, turn_id)` 前缀扫表回表。
 
 0019 为 `domain_events` 增加表达式索引 `domain_events_dialogue (branch_id, type, CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.dialogueId') END, world_seq)`。会话读取要按一批对白 ID 找回各自的提交事件序号，原查询只能靠 `domain_events_type` 收窄到 `(branch_id, type)`，再把该分支全部 `DialogueSubmitted` 逐行解析 `payload_json` 比对 `dialogueId`，成本随对白事件数线性增长；把 `dialogueId` 提升为索引列后，按对白查找与取最大 `world_seq` 都在索引内完成。索引列先做 `json_valid` 守卫再取值：表达式索引对每一行求值，缺少守卫时非法 JSON 文本会让写入与建索引失败。表达式必须与查询写法逐字一致，`tests/integration/dialogue-event-index.test.ts` 按生产查询形状断言查询计划命中该索引。这条查询由 authority 的 `latestEventSeqsByPayload` 提供，宿主不拼接事件 SQL；可按取值查找的（事件类型，载荷字段）登记在 `indexedEventPayloadKeys`，字段名受契约载荷类型约束，新增登记必须配套表达式相同的索引。
+
+0020 为 `trace_spans` 增加索引 `trace_spans_started_at (started_at)`，供保留期清理按截止时间分批定位过期跨度，见[第 6 节](#6-数据保留与轮转)。
 
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
@@ -481,7 +483,7 @@ CREATE TABLE artifacts (
   created_at TEXT NOT NULL
 );
 
-CREATE TABLE trace_spans (
+CREATE TABLE trace_spans (              -- 观测跨度；唯一可按保留期裁剪的表，见第 6 节
   span_id TEXT PRIMARY KEY,
   trace_id TEXT NOT NULL,
   parent_span_id TEXT,
@@ -500,6 +502,8 @@ CREATE TABLE trace_spans (
 );
 CREATE INDEX trace_spans_trace ON trace_spans (trace_id);
 CREATE INDEX trace_spans_turn ON trace_spans (turn_id);
+-- 0020 为保留期清理按截止时间定位过期跨度补索引。
+CREATE INDEX trace_spans_started_at ON trace_spans (started_at);
 
 CREATE TABLE lifecycle_events (         -- run/control log; never mixed with domain_events
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -695,5 +699,63 @@ WHERE a.status = 'active' AND b.status IN ('active', 'paused');
 - 按 revision 重建记忆：在 revision 5 和 revision 9 各查询一次，结果与当时记录的 `plan_hash` 链一致。
 - 备份先写入 `0700` 暂存目录并执行完整性校验，通过后以硬链接独占发布为最终 `.db`；`VACUUM INTO` 失败或校验失败时不残留可被当作有效备份的文件。- 成功发布后只保留最近 20 份备份，旧备份按文件名时间戳删除。
 - `VACUUM INTO` 生成的备份可以被重新打开，`PRAGMA integrity_check` 返回 `ok`。
+- 未配置保留天数时不创建清理定时器、不删除任何行；配置后只删除可轮转表中早于截止时间的行，每批删除与清理记录在同一事务提交（第 6 节）。
 
 对白消费：authority 在 `speech.commit` 的 command savepoint 内检查并插入 `speech_commits`，与事件、receipt 一起提交；已有同分支 artifact 消费记录时返回 `speech-not-approved`。相同 commandId 先按 receipt 幂等返回。handler 或 afterCommand 拒绝时回滚消费记录；复制分支时保留记录，防止历史对白重复发布。只读 `approvedSpeech.read` 从持久化批准结果的内存索引同步读取。`speech` artifact 始终内联存储：turn 取消在命令事务内用 SQL 读取其正文判断回复是否已发布，事务内不做文件 I/O。
+
+## 6. 数据保留与轮转
+
+默认永久保留全部数据：没有配置保留天数时，存储适配器不创建清理定时器，任何表都不会被删除行。只有观测数据允许配置轮转；事实、审计与实验证据不在可轮转清单内，配置 schema 直接拒绝这些表名。
+
+### 6.1 保留分类
+
+| 类别 | 表 | 依据 |
+|---|---|---|
+| 可轮转 | `trace_spans` | 观测跨度，只承载耗时、阶段属性与 trace 关联。turn 阶段跨度的属性与 `turn_runs.effective_json` 中的阶段记录是同一份内容；模型尝试跨度的用量、耗时与 artifact 引用同样记在 `model_attempts`；HTTP 跨度只有路由与状态码 |
+| 世界事实与分支状态 | `worlds`、`branches`、`world_aliases`、`clock`、`aggregate_state`、`domain_events`、`speech_commits`、`jobs`、`rule_failures`、`clock_stop_requests`、`consumer_offsets`、`consumer_inbox`、`agent_activations`、`controller_leases`、`observations`、`perception_state`、`triggers`、`operations`、`snapshots` | 世界权威记录，以及恢复、分支复制与消费幂等所需的状态；`domain_events` 是事件的事实来源，`consumer_inbox` 是消费者幂等的依据 |
+| 记忆 | `memory_records`、`memory_revisions`、`memory_watermarks` | 旧 revision 的重建依赖全部历史行版本（第 4 节） |
+| 审计与幂等 | `command_receipts`、`lifecycle_events`、`operation_idempotency`、`run_control_idempotency`、`schema_migrations` | 命令与运营操作的幂等重放、访问与脱敏审计、迁移校验 |
+| 实验证据档案 | `runs`、`turn_runs`、`maintenance_runs`、`model_attempts`、`tool_calls`、`artifacts`、`budget_ledger`、`experiment_results`、`probe_results` | 冻结 manifest、决策与调用证据、费用与评估结果；评估报告、run 导出与 turn 重放 hash 校验直接读取 |
+| 会话、草稿与申请 | `sessions`、`stream_tickets`、`scenario_drafts`、`run_requests`、`config_drafts` | 控制状态，过期与撤销由各自所有者处理，不属于观测数据 |
+
+`modules/server/platform/storage/sqlite/tests/retention.test.ts` 断言每张迁移表恰好属于上表一类，且可轮转清单不含事实、审计与证据表；新增迁移表时必须同时登记分类。
+
+`trace_spans` 的全部读取方及跨度被裁剪后的行为：
+
+| 读取方 | 裁剪后的行为 |
+|---|---|
+| 观测 provider 的 turn 详情（`GET /console/turns/{turnId}`） | 阶段、决定、对白、模型尝试与工具调用分别来自 `turn_runs`、`artifacts`、`model_attempts`、`tool_calls`，保持不变；`traceId` 由跨度反查，跨度被裁剪后为 `null` |
+| 观测 provider 的 trace 树与宿主的分支归属检查（`GET /console/traces/{traceId}`） | 跨度已全部裁剪的 trace 返回 `not-found`；跨越截止时间的 trace 只剩截止之后的跨度 |
+| HTTP 错误响应的 `traceId` 回落 | 响应仍按请求生成 `traceId`；超过保留期后，对应的 `http.request` 跨度不再可查 |
+
+评估报告、run 导出、turn 重放 hash 校验、运营幂等日志、证据完整性标记 `runs.evidence_complete` 与分支复制都不读取 `trace_spans`；它是运行级表，不随分支复制。`tests/integration/storage-retention-readers.test.ts` 在裁剪后核对 turn 详情、trace 树与调试唤醒重放。
+
+`lifecycle_events` 不可轮转。`DebugWakeRequested` 是调试唤醒幂等重放的依据：同一 operationId 重放时，宿主经 `latestLifecycleEventByOperation` 取回首次请求核对原因与发起人，记录缺失会以 `invalid-state` 拒绝重放。`ArtifactViewed`、`ModelCredentialRedacted` 与 `OperationAttemptFailed` 分别是原文访问、凭据脱敏与可重试失败的审计。这张表只在控制、失败与审计事件发生时写入，不随 turn 数增长，轮转收益有限。
+
+### 6.2 配置
+
+保留天数是存储适配器配置的可选键 `retentionDays`，键只能是可轮转表：
+
+```yaml
+retentionDays:
+  trace_spans: 30     # 1–36500 的整数天；省略表示永久保留
+```
+
+`retentionDays` 没有默认值，模块描述符的 `defaults` 也不含它。未配置时解析出的模块配置不含该键，仓库内三个装配的模块配置摘要、装配摘要与模块目录摘要都与引入该键之前一致，已冻结 manifest 的在线 run 照常恢复。
+
+### 6.3 执行
+
+- 存储模块在 `start` 打开数据库后，若任一表配置了保留天数，立即排入第一轮清理，此后每轮结束再隔 1 小时排下一轮，轮次不会重叠。第一轮异步执行，积压的过期行不阻塞宿主继续启动。`dispose` 先停止调度再关闭连接，进行中的一轮在下一批之前停止。
+- 截止时间为本轮开始时刻减去保留天数，`started_at` 早于截止时间的跨度视为过期。`started_at` 为 `NULL` 的早期跨度（0013 之前写入，或写入时没有宿主时钟）没有可判定的年龄，一律保留。
+- 每批最多删除 500 行，每批是一个独立的 `BEGIN IMMEDIATE` 短事务，批与批之间让出事件循环，排队的请求与其他写事务在两批之间执行。清理只经存储端口的 `transact` 发起，不会出现在其他组件的事务内。0020 的 `trace_spans_started_at` 索引让每批按截止时间直接定位，不重复扫描未过期的行。
+- 单轮失败只记错误日志，已提交的批次保留，下一轮照常执行。
+
+### 6.4 清理记录
+
+一张表在一轮中只要删除了行，就留下一条 `lifecycle_events` 记录：`type = 'StorageRetentionPruned'`，`subject_id` 为表名，`run_id` 与 `branch_id` 为 `NULL`，`created_at` 为本轮开始时刻，载荷为 `{ retentionDays, cutoff, deletedRows }`。第一批删除与插入记录同事务提交，后续每批删除与改写累计行数同事务提交，因此进程在两批之间退出时，记录的行数仍与已提交的删除一致，不会出现没有记录的删除。记录所在的 `lifecycle_events` 不可轮转，清理历史不会被后续清理删除。每轮同时输出一条 `存储保留期清理完成` 信息日志。
+
+清理记录属于部署级，不出现在按分支读取的控制台时间线中；按 `type` 查询 `lifecycle_events` 可列出全部清理历史。
+
+### 6.5 文件体积
+
+SQLite 删除行后不缩小数据库文件：被释放的页进入空闲列表，供之后的写入复用。启用轮转后主库文件在一个保留周期后趋于稳定，而不是立即变小。`VACUUM INTO` 生成的备份（第 3 节）只写入在用页，不含空闲页。需要缩小主库文件时，停服后手动执行 `VACUUM`；适配器不会自动执行，因为它会重写整个文件，并在执行期间独占写锁。
