@@ -81,7 +81,7 @@ export class TurnEvidence {
       this.record(name, start, {
         status: "failed",
         reason: error instanceof TurnStopped ? error.reason : "stage-error",
-        effective: null,
+        effective: error instanceof TurnStopped ? error.effective : null,
       }, selection);
       throw error;
     }

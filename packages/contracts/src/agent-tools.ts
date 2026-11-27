@@ -95,7 +95,10 @@ export const dialogueIntentSchema = z
       "report-result",
       "remind",
     ]),
-    audience: z.array(principalIdSchema).max(4),
+    audience: z.array(principalIdSchema).max(4).describe(
+      "Up to 4 principal IDs (never names) you speak to: participants of the input you are handling, members of the "
+      + "current conversation, or principals you may message. Not yourself. Empty only when kind is none.",
+    ),
     tone: z.enum(["warm", "neutral", "cold", "urgent"]),
     reasonCode: z.enum([
       "none",
@@ -109,20 +112,29 @@ export const dialogueIntentSchema = z
       "injured",
       "busy",
     ]),
-    subjectRef: z.string().min(1).nullable(),
-    factRefs: z.array(z.string().min(1)).max(6),
+    subjectRef: z.string().min(1).nullable().describe(
+      "null, or the ID of one agreement (agr-), task (task-), invitation (inv-) or evidence (ev-) shown to you. "
+      + "Observation (obs-) and memory (mem-) IDs are not allowed here.",
+    ),
+    factRefs: z.array(z.string().min(1)).max(6).describe(
+      "Up to 6 IDs shown in this request or returned by tools in this turn that support what you will say.",
+    ),
   })
-  .strict();
+  .strict()
+  .describe("What you want to say, as an intent only; the wording is written later. Use kind none to stay silent.");
 
 export type DialogueIntent = z.infer<typeof dialogueIntentSchema>;
 
 export const noteworthySchema = z
   .object({
     kind: z.enum(["promise-by-other", "promise-by-me", "claim", "request"]),
-    aboutId: principalIdSchema,
-    summary: z.string().min(1).max(60),
-    dueTick: z.number().int().nonnegative().nullable(),
-    sourceRefs: z.array(z.string().min(1)).min(1).max(3),
+    aboutId: principalIdSchema.describe("Principal ID (not a name) the point is about."),
+    summary: z.string().min(1).max(60).describe("1 to 60 characters."),
+    dueTick: z.number().int().nonnegative().nullable().describe("World tick by which it is due, or null."),
+    sourceRefs: z.array(z.string().min(1)).min(1).max(3).describe(
+      "1 to 3 observation IDs (obs-) from the input you are handling in this turn. "
+      + "Memory, evidence and tool result IDs are not allowed here.",
+    ),
   })
   .strict();
 
@@ -130,9 +142,9 @@ export const decisionSubmissionSchema = z
   .object({
     stance: z.enum(["accept", "decline", "negotiate", "defer", "inform", "none"]),
     dialogueIntent: dialogueIntentSchema,
-    noteworthy: z.array(noteworthySchema).max(3),
-    citedMemoryIds: z.array(idSchemas.mem).max(8),
-    decisionNote: z.string().max(120),
+    noteworthy: z.array(noteworthySchema).max(3).describe("Up to 3 points worth remembering, such as promises made to or by you."),
+    citedMemoryIds: z.array(idSchemas.mem).max(8).describe("Up to 8 memory IDs (mem-) shown among your memories."),
+    decisionNote: z.string().max(120).describe("One sentence of at most 120 characters stating the factual basis with IDs."),
   })
   .strict();
 

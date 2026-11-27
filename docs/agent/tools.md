@@ -234,7 +234,7 @@ const ToolTerm = z.object({                   // Term 联合类型的平铺版�
 |---|---|---|---|---|
 | `world.inspect` | `{ nodeId: string \| null }` | 从本 turn 冻结的 `observations` 还原最后已知概况：`nodeId` 为 null 时返回概况，否则返回该节点情况（`stockpileLevels` 当前返回 `[]`） | `asOfTick`、`meters`、`allocation`、`roads`（列表）、`characters`（列表）、`stockpileLevels` | 查看你所知道的局势；可指定一个地点。只返回你已知的信息，可能已经过时。 |
 | `route.inspect` | `{ fromNodeId, toNodeId, teamId: string \| null }` | 用该 Agent **已知**的道路状态与本派系通行许可求路径，不读实时真值 | `path`、`travelTicks`、`risks`、`blockedRoads` | 按你所知的道路情况查询两地之间的路线与风险。 |
-| `task.inspect` | `{ taskId: string \| null }` | 从冻结观察读取指定 `taskId` 的可见任务摘要（当前传入 `null` 会返回 `not-found`，且 `commandStatus` 为 `null`、`participants` 省略） | `taskId`、`taskType`、`commandStatus`、`taskStatus`、`departTick`、`nominalCompletionTick`、`participants` | 查看你派遣、参与或受邀的任务状态。 |
+| `task.inspect` | `{ taskId: string \| null }` | 从冻结观察读取指定 `taskId` 的可见任务摘要；传入 `null` 时以 `tasks` 列出本轮材料里出现过的全部任务（每个任务取最新一条观察，最近有变化的在前，没有任务时为空列表）。`commandStatus` 为 `null`、`participants` 省略 | `taskId`、`taskType`、`commandStatus`、`taskStatus`、`departTick`、`nominalCompletionTick`、`participants`、`tasks` | 查看你派遣、参与或受邀的任务状态。 |
 | `conversation.inspect` | `{ conversationId: string \| null, limit: number }` | 受众包含自己的发言，条数不超过 profile 的 `historyTurns`（因此 M0 的 `baseline-current` 返回空列表） | `lines`（列表） | 查看你参与的对话里最近的发言。 |
 | `operation.inspect` | `{ operationId }` | 查询本身份操作的 receipt | `receipt`、`taskStatus` | 查询你本轮发出的某个操作是否已被受理。 |
 | `message.send` | `{ to: string[], intent: { kind, tone, reasonCode, subjectRef: string \| null, factRefs: string[] } }` | 先走对白流程生成并校验正文，再提交 `speech.commit`（channel message；`to` 为 `["public"]` 时为 broadcast，需要 broadcast 权限） | envelope + `messageId`、`deliverAtTick` | 给某人发一条消息。只描述想表达的意图和依据，正文由系统生成。 |

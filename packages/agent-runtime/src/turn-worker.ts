@@ -324,7 +324,10 @@ export class TurnWorker {
           // over-budget 表示决策循环已进入预算停止收尾，终态原因直接取该状态，
           // 避免被轮内细分原因（call-budget/context-window）覆盖成另一类停止。
           const reason = result.status === "over-budget" ? "over-budget" : (result.reason ?? result.status);
-          throw new TurnStopped(result.status === "budget-exhausted" ? "budget-exhausted" : "failed", reason);
+          // 被驳回的决定把最后一次校验明细记入 turn.decision 阶段，便于区分模型具体违反了哪条规则。
+          const rejection = "rejection" in result && result.rejection !== undefined
+            ? { rejection: result.rejection as unknown as Json } : null;
+          throw new TurnStopped(result.status === "budget-exhausted" ? "budget-exhausted" : "failed", reason, rejection);
         }
         const value = model !== null ? result.decision :
           checkedDecision(result.decision, frozen, memory, prospective, toolCalls.map(({ result }) => result));

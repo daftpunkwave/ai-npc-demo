@@ -137,7 +137,7 @@ request/response 保存模型真实返回内容，不声称拥有隐藏的 chain
 |---|---|---|
 | `http.request` | 传输层 `onResponse` | `route`、`status` |
 | `ws.frame.over-limit` | WebSocket 接收上限守卫 | `maxBytes`、`closeCode` |
-| `turn.claim` / `turn.readiness` / `turn.perception` / `turn.memory.retrieve` / `turn.context` / `turn.compression` / `turn.decision` / `turn.model` / `turn.tool` / `turn.tool-view` / `turn.speech` / `turn.settle` | turn 各阶段 | `turnId`、`agentId`、阶段 requested/resolved/effective 与终态（如适用） |
+| `turn.claim` / `turn.readiness` / `turn.perception` / `turn.memory.retrieve` / `turn.context` / `turn.compression` / `turn.decision` / `turn.model` / `turn.tool` / `turn.tool-view` / `turn.speech` / `turn.settle` | turn 各阶段 | `turnId`、`agentId`、阶段 requested/resolved/effective 与终态（如适用）；以 `invalid-decision` 失败的 `turn.decision` 在 `effective.rejection` 记最后一次驳回的规则说明与逐字段违规（[提示词](../agent/prompts.md) 第 2.3 节） |
 | `model.attempt` | 模型池 | `attemptId`、`purpose`、`modelId`、`adapterId`、usage、各段耗时、错误 |
 
 宿主热路径另走 `HostServices.tracer`，不写 `trace_spans`：

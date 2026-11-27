@@ -68,10 +68,10 @@
 | 段 | 每行格式（含当前实现说明） | 例子 |
 |---|---|---|
 | 局势 | 持有证据 `- [<evidenceId>] 证据《标题》：正文` 与秘密 `- [<secretId>] 只有你知道（不可外传）：正文`（指标/道路/水闸行待后续扩展） | `- [ev-…] 证据《…》：…` |
-| 事务 | 待回复任务邀请 `- [<ID>] <类型>：<摘要>；状态：<状态>`（委托、进行中任务与协议行待后续扩展） | `- [inv-…] …` |
+| 事务 | 待回复任务邀请 `- [<taskId>] <派遣者名>[<派遣者 ID>] 邀请你参与任务，待答复。`（委托、进行中任务与协议行待后续扩展） | `- [task-…] 岑雁[human-independent] 邀请你参与任务，待答复。` |
 | 记忆 | `- [<memoryId>] <摘要>（<epistemic>, tick <validFromTick>）`（关系行按 `- <targetId>: trust=..., affinity=..., wariness=...` 格式输出） | `- [mem-…] 党魁答应在第 2 天结束前送 8 点供给。（verified-event, tick 24）` |
 | 对话 | `- [<dialogueId>] <说话人>：<原文>` | `- [dlg-…] 党魁：我需要你派人护送隘口那条路。` |
-| 本次输入 | `- [<observationId>] <内容>` | `- [obs-…] 党魁说：“我需要你派人护送隘口那条路，能帮忙吗？”` |
+| 本次输入 | `- [<observationId>] <内容>`，其后附观察的引用 ID；观察里有可作为受众的其他主体（发言者、来信人、提案人、派遣者、提问者，口径同受众校验）时另起一行 `  涉及：<名字>[<主体 ID>]、…` | `- [obs-…] 党魁说：“我需要你派人护送隘口那条路，能帮忙吗？” [conv-…] [dlg-…]`<br>`  涉及：党魁[player-1]` |
 
 证据地位标签：`verified-event` 为“确有其事”，`reported-claim` 为“有人声称”，`inference` 为“我的看法”。观察的获知方式标签：`witnessed` 为“亲眼所见”，`reported` 为“听说（来源：X）”，`inferred` 为“推断”。
 
@@ -104,16 +104,28 @@ const DecisionSubmit = z.object({
 });
 ```
 
-工具描述取 `toolDescriptions.decision.submit`（“结束本轮并提交你的决定。对外说话只填意图，不写台词。”）。`decisionNote` 在运行时以 `z.string().max(120)` 校验，当前 schema 未附加额外 `.describe()` 文案；不要要求模型复述思考过程。
+工具描述取 `toolDescriptions.decision.submit`（“结束本轮并提交你的决定。对外说话只填意图，不写台词。”）。清洗会删除 `maxLength`、`minItems`、`pattern` 等约束（[模型传输](model-transport.md) 第 7 节），模型只能从 `description` 得知字段语义与上限，因此契约在 `audience`、`subjectRef`、`factRefs`、`noteworthy` 各字段、`citedMemoryIds` 与 `decisionNote` 上附了英文 `.describe()` 说明：只写与语言无关的取值规则（只填 ID 不填名字、各字段接受哪类 ID、条数与字数上限），人设与叙述文字仍全部来自内容包。`decisionNote` 在运行时以 `z.string().max(120)` 校验；不要要求模型复述思考过程。
 
 宿主校验（全部通过才算有效决定）：
 
 1. JSON 合法且通过原始 Zod schema。
 2. `dialogueIntent.kind != none` 时 `audience` 非空，且每个受众都是本次触发的参与者、当前会话成员，或该 Agent 可以发消息的主体。
 3. `subjectRef` 为 null，或是本 Agent 视图中的协议、任务、邀请、证据 ID。
-4. `factRefs`、`citedMemoryIds`、`noteworthy.sourceRefs` 中的每个 ID 都出现在本次请求的上下文 artifact 里，或出现在本 turn 已执行的工具结果中；`citedMemoryIds` 还必须属于本次记忆包；`noteworthy.sourceRefs` 必须是本次输入段里的观察。
+4. `factRefs`、`citedMemoryIds`、`noteworthy.sourceRefs` 中的每个 ID 都出现在本次请求的上下文 artifact 里，或出现在本 turn 已执行的工具结果中；`citedMemoryIds` 还必须属于本次记忆包；`noteworthy.sourceRefs` 只认本次输入段里列出的观察 ID（记忆、证据与工具结果里的 ID 都不算）。
 
-不合法时，宿主以 tool 结果回复 `{"error":"invalid_decision","details":[<decision.invalidReasons.* 的文本>]}` 并允许模型再提交一次（计入调用次数）；仍不合法则 turn 以 `invalid-decision` 结束，不生成对白，玩家界面显示 `ui.noReply`。模型以纯文本结束而没有调用 `decision_submit` 时，宿主追加一条 user 消息（`decision.nudgeSubmit`）再请求一次，仍未调用按同样方式结束。一轮里多个工具调用的处理顺序见 [运行时](runtime.md) 第 13.3 节。
+不合法时，宿主检查完全部规则再以 tool 结果回复：
+
+```json
+{"error":"invalid_decision",
+ "details":["<按违反的规则去重的 decision.invalidReasons.* 文本>"],
+ "violations":[{"rule":"subject","path":"dialogueIntent.subjectRef","value":"obs-…","issue":"…","allowed":["agr-…"]},
+               {"rule":"unknown-ref","path":"noteworthy[0].sourceRefs","value":["mem-…"],"issue":"…","allowed":["obs-…"]},
+               {"rule":"schema","path":"decisionNote","issue":"Too big: expected string to have <=120 characters"}]}
+```
+
+`violations` 逐字段给出违规：`rule` 与 `invalidReasons` 的键一致；`path` 为字段路径（整个提交为 `$`）；数组字段合并为一条，`value` 只列不被接受的条目；`allowed` 为该位置可填写的 ID，按在请求中出现的先后排列、最多 16 个，其余计入 `allowedOmitted`；schema 违规只给 `issue`（最多 8 条），不回显取值。
+
+被驳回后允许模型再提交一次（计入调用次数）。这次提交若已经发生在最后一轮（`maxDecisionRounds`）或预算停止后的收尾轮，宿主额外给一轮只接受 `decision_submit` 的改正轮：该轮不计入 `maxDecisionRounds`，但计入 `maxModelCallsPerTurn`，其中的其他工具调用一律按 `budget-exhausted` 拒绝且不执行。仍不合法则 turn 以 `invalid-decision` 结束，不生成对白，玩家界面显示 `ui.noReply`；最后一次驳回的 `reasons` 与 `violations` 记入该 turn `turn.decision` 阶段的 `effective.rejection`。模型以纯文本结束而没有调用 `decision_submit` 时，宿主追加一条 user 消息（`decision.nudgeSubmit`）再请求一次，仍未调用按同样方式结束；纯文本提醒与驳回后重交共用同一次纠偏机会。一轮里多个工具调用的处理顺序见 [运行时](runtime.md) 第 13.3 节。
 
 ### 2.4 占位符的数据来源
 
@@ -122,11 +134,11 @@ const DecisionSubmit = z.object({
 | `kindLabel` | `labels.kinds.character`（“人物”）或 `labels.kinds.strategic`（“派系代表”） |
 | `name`、`role`、`values`、`speechStyle`、`bottomLines`、`goals` | 人格（[内容包](../game/content-pack.md) 第 4、5 节）；列表用“、”连接 |
 | `factionName` | 派系 `name` |
-| `initialRelations` | 人格的 `initialRelations`：`<对方 name>（<label>，<labels.trust 按 4×trust 取等级>）`，用“；”连接 |
+| `initialRelations` | 人格的 `initialRelations`：`<对方 name>[<对方 ID>]（<label>，<labels.trust 按 4×trust 取等级>）`，用“；”连接；名字本身就是 ID 时只写 `[<ID>]` |
 | `loreSummary` | `lore.yaml` 的 `summary` |
 | `maxToolCallsPerRound` | profile `budgets.maxToolCallsPerRound` |
 | `day`、`hour`、`worldTick` | 冻结 frontier 的 worldTick |
-| `locationLine` | 角色：“你在{节点名}。”（受伤时再加“你有伤在身。”）；战略 Agent：“你在派系驻地处理事务，不在地图上。” |
+| `locationLine` | 角色：“你在{节点名}[{节点 ID}]。”（受伤时再加“你有伤在身。”）；战略 Agent：“你在派系驻地处理事务，不在地图上。” |
 | `worldViewLines`、`affairsLines`、`memoryLines`、`historyLines`、`inputLines` | 各段按上表渲染；`labels.epistemic`、`labels.channels` 提供“确有其事/有人声称/我的看法”“亲眼所见/听说”等标签 |
 | `audienceNames`、`audienceLines` | 受众主体的 `name`（玩家为“党魁”）；当前实现每行格式为 `- <name>（<principalId>）` |
 | `intentLabel`、`toneLabel`、`reasonLabel` | `labels.intents.<kind>`、`labels.tones.<tone>`、`labels.reasons.<reasonCode>` |

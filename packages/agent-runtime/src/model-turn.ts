@@ -120,7 +120,7 @@ export class ModelTurn {
     const checked = validate(result.decision);
     return "decision" in checked
       ? { ...result, decision: checked.decision }
-      : { ...result, status: "invalid-decision" as const, decision: null };
+      : { ...result, status: "invalid-decision" as const, decision: null, rejection: checked };
   }
 
   speech(status: "executing" | "speaking"): SpeechGenerator {
