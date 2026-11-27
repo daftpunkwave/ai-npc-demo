@@ -192,6 +192,67 @@ describe("只读轮询调度", () => {
     polling.stop();
   });
 
+  it("恢复可见时隐藏前发出的读取仍在途，结束后立即补读一次，此后回到正常间隔", async () => {
+    const { read, calls } = controlledReads();
+    const visibility = fakeVisibility("visible");
+    const polling = startPolling({ read, intervalMs: 2_000, maxBackoffMs: 30_000, visibility: visibility.source });
+
+    visibility.set("hidden");
+    visibility.set("visible");
+    expect(calls).toHaveLength(1);
+    calls[0]?.resolve();
+    await flush();
+    expect(calls).toHaveLength(2);
+
+    calls[1]?.resolve();
+    await flush();
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(calls).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls).toHaveLength(3);
+    polling.stop();
+  });
+
+  it("在途时多次恢复可见与补读请求合并为结束后的一次读取", async () => {
+    const { read, calls } = controlledReads();
+    const visibility = fakeVisibility("visible");
+    const polling = startPolling({ read, intervalMs: 5_000, maxBackoffMs: 30_000, visibility: visibility.source });
+
+    visibility.set("hidden");
+    visibility.set("visible");
+    visibility.set("hidden");
+    visibility.set("visible");
+    polling.refresh();
+    calls[0]?.reject(new Error("隐藏前的读取失败"));
+    await flush();
+    expect(calls).toHaveLength(2);
+    calls[1]?.resolve();
+    await flush();
+    expect(calls).toHaveLength(2);
+    polling.stop();
+  });
+
+  it("排队的补读在页面再次隐藏时推迟到恢复可见，不重复读取", async () => {
+    const { read, calls } = controlledReads();
+    const visibility = fakeVisibility("visible");
+    const polling = startPolling({ read, intervalMs: 2_000, maxBackoffMs: 30_000, visibility: visibility.source });
+
+    visibility.set("hidden");
+    visibility.set("visible");
+    visibility.set("hidden");
+    calls[0]?.resolve();
+    await flush();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls).toHaveLength(1);
+
+    visibility.set("visible");
+    expect(calls).toHaveLength(2);
+    calls[1]?.resolve();
+    await flush();
+    expect(calls).toHaveLength(2);
+    polling.stop();
+  });
+
   it("停止时中止在途读取，此后不再回调、不再读取，并清理计时器与订阅", async () => {
     const { read, calls } = controlledReads();
     const onError = vi.fn();

@@ -1,5 +1,5 @@
 /**
- * 核心职责：调度浏览器只读轮询：上一次读取结束后才排下一次，连续失败按指数退避，页面不可见时暂停、恢复可见时立即补读。
+ * 核心职责：调度浏览器只读轮询：上一次读取结束后才排下一次，连续失败按指数退避，页面不可见时暂停、恢复可见时立即补读（有在途读取时在它结束后补读）。
  * 交互契约：调用方提供接收 AbortSignal 的读取函数、成功间隔与退避上限；页面可见性默认取浏览器 document，可注入替身；计时使用全局 setTimeout。
  * 约束与禁忌：同一轮询任何时刻最多一个在途读取；停止后中止在途读取且不再回调；只用于可重复的读取，不得用来重放写请求。
  */
@@ -143,20 +143,24 @@ export function startPolling(options: PollingOptions): PollingHandle {
     inFlight = null;
   }
 
+  /** 尽快再读一次：空闲时立即读取，有在途读取时排一次补读，多次请求合并。 */
+  function requestRead(): void {
+    if (stopped) return;
+    if (inFlight !== null) {
+      rereadQueued = true;
+      return;
+    }
+    readNow();
+  }
+
+  // 恢复可见时在途的读取发出于隐藏之前，结束后也要立即补读，而不是等到下一个间隔或退避结束。
   const unsubscribeVisibility = visibility.subscribe(() => {
-    if (isPageVisible(visibility.current())) readNow();
+    if (isPageVisible(visibility.current())) requestRead();
   });
   readNow();
 
   return {
-    refresh(): void {
-      if (stopped) return;
-      if (inFlight !== null) {
-        rereadQueued = true;
-        return;
-      }
-      readNow();
-    },
+    refresh: requestRead,
     stop,
   };
 }
