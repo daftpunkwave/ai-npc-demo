@@ -1,7 +1,8 @@
 /**
  * 核心职责：呈现世界时间线、Agent 检查器、turn 证据与 trace 树。
  * 交互契约：依赖 console API、当前会话与 React；所有数据经服务端授权查询。
- * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据。
+ * 约束与禁忌：不直接访问数据库，不把空数据或未归档 artifact 伪装成证据；离开页面或切换分支、Agent、turn 时中止对应的在途读取；
+ * 在线身份（世界与分支）变化时丢弃旧身份的全部数据与选择。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePort, type BrowserViewPort } from "@world-prism/client-sdk";
@@ -22,16 +23,18 @@ import { StreamClient, type ApiClient } from "@world-prism/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
+  /** 当前世界 ID；与在线分支一起由宿主维护。 */
+  readonly worldId: string;
   /**
    * 当前在线分支 ID。
    * 恢复或重开会切换在线分支，控制台查询必须跟随新分支，否则会静默读到已归档分支的数据。
-   * 该值由宿主在收到带分支身份的快照后更新。
+   * 该值只由宿主按服务端会话描述更新。
    */
   readonly branchId: string;
-  /** 订阅在线分支变化；返回取消订阅函数。 */
+  /** 订阅在线分支变化（世界或分支任一变化）；返回取消订阅函数。 */
   readonly subscribeBranch: (listener: () => void) => () => void;
-  /** 按快照帧内的身份校对在线分支；身份未变时不做任何事。 */
-  applyBranchIdentity(worldId: string, branchId: string): void;
+  /** 请宿主立即向服务端核对在线分支；页面不能直接改写宿主身份。 */
+  refreshBranchIdentity(): void;
 }
 
 function TraceNode({ node }: { readonly node: TraceResponse["root"] }): ReactNode {
@@ -50,7 +53,37 @@ function TraceNode({ node }: { readonly node: TraceResponse["root"] }): ReactNod
   );
 }
 
+interface OnlineIdentity {
+  readonly worldId: string;
+  readonly branchId: string;
+}
+
 function ObservabilityPage(): ReactNode {
+  const host = usePort<ConsoleHostPort>("host.console");
+  // 在线身份以宿主端口为准：恢复/重开后会变，查询必须跟随。
+  const [identity, setIdentity] = useState<OnlineIdentity>(() => ({ worldId: host.worldId, branchId: host.branchId }));
+  useEffect(() => {
+    const sync = (): void => {
+      setIdentity((current) =>
+        current.worldId === host.worldId && current.branchId === host.branchId
+          ? current
+          : { worldId: host.worldId, branchId: host.branchId });
+    };
+    sync();
+    return host.subscribeBranch(sync);
+  }, [host]);
+  // 以 (worldId, branchId) 复合身份为重启键：任一变化都重新挂载视图，旧身份的数据、选择、错误、
+  // 在途读取与流连接随卸载一并丢弃，查询与订阅按新身份从头开始。
+  return (
+    <ObservabilityView
+      key={JSON.stringify([identity.worldId, identity.branchId])}
+      worldId={identity.worldId}
+      branchId={identity.branchId}
+    />
+  );
+}
+
+function ObservabilityView({ worldId, branchId }: OnlineIdentity): ReactNode {
   const host = usePort<ConsoleHostPort>("host.console");
   const [events, setEvents] = useState<readonly TimelineItem[]>([]);
   const [agents, setAgents] = useState<readonly AgentStatusView[]>([]);
@@ -63,18 +96,13 @@ function ObservabilityPage(): ReactNode {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [artifactBody, setArtifactBody] = useState<string | null>(null);
   const [artifactView, setArtifactView] = useState<"redacted" | "raw">("redacted");
-  const artifactRequestSeq = useRef(0);
+  // 当前 artifact 读取；新读取、改选 turn 或离开页面时中止，迟到的旧结果不再写入。
+  const artifactRequest = useRef<AbortController | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
-  // 在线分支以宿主端口为准：恢复/重开后会变，查询必须跟随。
-  const [branchId, setBranchId] = useState(host.branchId);
-  useEffect(() => {
-    setBranchId(host.branchId);
-    return host.subscribeBranch(() => setBranchId(host.branchId));
-  }, [host]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +110,12 @@ function ObservabilityPage(): ReactNode {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackRequested = false;
     let connectionGeneration = 0;
+    // 卸载或切换分支时中止回退读取，不让离开的页面继续占用请求配额。
+    const fallbackRequests = new AbortController();
     const requestFallback = (): void => {
       if (fallbackRequested || cancelled) return;
       fallbackRequested = true;
-      void host.api.consoleTimeline({ branchId, fromSeq: 0, limit: 100, order: "desc" })
+      void host.api.consoleTimeline({ branchId, fromSeq: 0, limit: 100, order: "desc" }, fallbackRequests.signal)
         .then((timeline) => {
           if (cancelled) return;
           setEvents(timeline.events);
@@ -123,11 +153,15 @@ function ObservabilityPage(): ReactNode {
           fromStreamSeq: null,
           onMessage: (message) => {
             if (message.type !== "snapshot") return;
-            // 旧连接的迟到快照不能改写当前身份：先确认未取消且连接代次仍然有效。
+            // 旧连接的迟到快照不触发任何动作：先确认未取消且连接代次仍然有效。
             if (cancelled || generation !== connectionGeneration) return;
-            // 快照携带服务端权威的在线分支：恢复/重开切换分支后，控制台查询必须跟随，
-            // 否则会继续用旧 branchId 命中已归档分支并静默展示过期数据。
-            host.applyBranchIdentity(message.worldId, message.branchId);
+            // 帧内身份与本页查询的身份不一致，说明在线分支可能已切换。在线分支只由宿主按服务端会话描述写入，
+            // 这里只请宿主立即核对，不直接采用帧内身份，也不展示该帧：宿主更新身份后本页按新身份重新订阅，
+            // 服务端随订阅重发新分支的快照。
+            if (message.worldId !== worldId || message.branchId !== branchId) {
+              host.refreshBranchIdentity();
+              return;
+            }
             if (message.channel !== "console.timeline") return;
             try {
               const timeline = timelineResponseSchema.parse(message.data);
@@ -163,37 +197,38 @@ function ObservabilityPage(): ReactNode {
     return () => {
       cancelled = true;
       connectionGeneration += 1;
+      fallbackRequests.abort();
       clearReconnect();
       stream?.close();
     };
-  }, [host.api, branchId]);
+  }, [host.api, worldId, branchId]);
 
   useEffect(() => {
-    let cancelled = false;
-    void host.api.consoleAgents(branchId).then((response) => {
-      if (cancelled) return;
+    const request = new AbortController();
+    void host.api.consoleAgents(branchId, request.signal).then((response) => {
+      if (request.signal.aborted) return;
       setAgents(response.agents);
       setSelectedAgent((current) => current ?? response.agents[0]?.agentId ?? null);
       setAgentError(null);
     }).catch((cause: unknown) => {
-      if (!cancelled) setAgentError(String(cause));
+      if (!request.signal.aborted) setAgentError(String(cause));
     });
-    return () => { cancelled = true; };
-  }, [host.api, branchId]);
+    return () => { request.abort(); };
+  }, [host.api, worldId, branchId]);
 
   useEffect(() => {
     if (selectedAgent === null) return;
-    let cancelled = false;
+    const request = new AbortController();
     setInspector(null);
     setTurns([]);
     setSelectedTurn(null);
     setTurnDetail(null);
     setTrace(null);
     void Promise.all([
-      host.api.consoleInspector(selectedAgent, branchId),
-      host.api.consoleTurns({ agentId: selectedAgent, branchId, limit: 20 }),
+      host.api.consoleInspector(selectedAgent, branchId, request.signal),
+      host.api.consoleTurns({ agentId: selectedAgent, branchId, limit: 20 }, request.signal),
     ]).then(([nextInspector, nextTurns]) => {
-      if (cancelled) return;
+      if (request.signal.aborted) return;
       setInspector(nextInspector);
       const branchTurns = nextTurns.turns.filter((turn) => turn.branchId === branchId);
       setTurns(branchTurns);
@@ -203,13 +238,18 @@ function ObservabilityPage(): ReactNode {
           : branchTurns[0]?.turnId ?? null);
       setDetailError(null);
     }).catch((cause: unknown) => {
-      if (!cancelled) setDetailError(String(cause));
+      if (!request.signal.aborted) setDetailError(String(cause));
     });
-    return () => { cancelled = true; };
-  }, [host.api, branchId, selectedAgent, refreshVersion]);
+    return () => { request.abort(); };
+  }, [host.api, worldId, branchId, selectedAgent, refreshVersion]);
+
+  useEffect(() => () => {
+    artifactRequest.current?.abort();
+  }, []);
 
   useEffect(() => {
-    artifactRequestSeq.current += 1;
+    artifactRequest.current?.abort();
+    artifactRequest.current = null;
     setSelectedArtifactId(null);
     setArtifactBody(null);
     setArtifactView("redacted");
@@ -220,9 +260,9 @@ function ObservabilityPage(): ReactNode {
     }
     setTurnDetail(null);
     setTrace(null);
-    let cancelled = false;
-    void host.api.consoleTurn(selectedTurn).then(async (detail) => {
-      if (cancelled) return;
+    const request = new AbortController();
+    void host.api.consoleTurn(selectedTurn, request.signal).then(async (detail) => {
+      if (request.signal.aborted) return;
       setTurnDetail(detail);
       setDetailError(null);
       if (detail.traceId === null) {
@@ -230,15 +270,15 @@ function ObservabilityPage(): ReactNode {
         return;
       }
       try {
-        const nextTrace = await host.api.consoleTrace(detail.traceId);
-        if (!cancelled) setTrace(nextTrace);
+        const nextTrace = await host.api.consoleTrace(detail.traceId, request.signal);
+        if (!request.signal.aborted) setTrace(nextTrace);
       } catch (cause) {
-        if (!cancelled) setDetailError(String(cause));
+        if (!request.signal.aborted) setDetailError(String(cause));
       }
     }).catch((cause: unknown) => {
-      if (!cancelled) setDetailError(String(cause));
+      if (!request.signal.aborted) setDetailError(String(cause));
     });
-    return () => { cancelled = true; };
+    return () => { request.abort(); };
   }, [host.api, selectedTurn]);
 
   const selectedAgentView = useMemo(
@@ -247,18 +287,21 @@ function ObservabilityPage(): ReactNode {
   );
 
   const readArtifact = async (artifactId: string, view: "redacted" | "raw"): Promise<void> => {
-    const request = artifactRequestSeq.current + 1;
-    artifactRequestSeq.current = request;
+    artifactRequest.current?.abort();
+    const request = new AbortController();
+    artifactRequest.current = request;
     try {
-      const artifact = await host.api.consoleArtifact(artifactId, view);
-      if (request !== artifactRequestSeq.current) return;
+      const artifact = await host.api.consoleArtifact(artifactId, view, request.signal);
+      if (request.signal.aborted) return;
       setArtifactBody(artifact.body);
       setSelectedArtifactId(artifactId);
       setArtifactView(view);
       setDetailError(null);
     } catch (cause) {
-      if (request !== artifactRequestSeq.current) return;
+      if (request.signal.aborted) return;
       setDetailError(String(cause));
+    } finally {
+      if (artifactRequest.current === request) artifactRequest.current = null;
     }
   };
 

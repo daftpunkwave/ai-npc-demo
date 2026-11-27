@@ -1026,6 +1026,13 @@ describe("服务端宿主", () => {
     expect(host.storage.transact((tx) => tx.rows("world_aliases").get({ alias: "online" }))).toMatchObject({
       branch_id: restoredBody.branchId,
     });
+    // 控制台宿主据此跟踪在线分支：未参与恢复、也没有任何流连接的其他会话，读取会话描述即得到新的在线分支。
+    const otherSessionView = await host.app.inject({ method: "GET", url: "/api/v1/session", headers: researcherHeaders });
+    expect(otherSessionView.statusCode).toBe(200);
+    expect(sessionDescriptorSchema.parse(otherSessionView.json())).toMatchObject({
+      worldId: host.worldId,
+      branchId: restoredBody.branchId,
+    });
 
     // 恢复切换在线分支后，同一请求上下文继续按“当前”在线分支创建快照，不沿用启动时的旧分支。
     const postRestore = await host.app.inject({

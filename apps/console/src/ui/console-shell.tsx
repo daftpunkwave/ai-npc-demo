@@ -42,8 +42,8 @@ export function ConsoleShell(input: {
   const [role, setRole] = useState<ConsoleActiveRole>(input.initialRole);
   const [active, setActive] = useState<string | null>(null);
   const host = input.runtime.ports["host.console"] as ConsoleHostPort;
-  // 外壳自己订阅在线分支：恢复/重开切换分支后，标题栏的分支标识与页面树都要跟着更新，
-  // 不能只依赖观测页那条 WS 连接——只有 operator 权限的会话收不到 console.timeline。
+  // 外壳订阅宿主维护的在线分支：宿主独立于页面向服务端核对，其他会话恢复/重开切换分支后，
+  // 无论当前打开哪个页面，侧栏的分支标识都随之更新。
   const [branchId, setBranchId] = useState(host.branchId);
   useEffect(() => {
     setBranchId(host.branchId);
@@ -65,7 +65,7 @@ export function ConsoleShell(input: {
         <div className="console-brand">
           <span>GRAY HARBOR</span>
           <strong>研究控制台</strong>
-          <small>{branchId}</small>
+          <small data-testid="console-branch">{branchId}</small>
         </div>
         <nav aria-label="控制台页面">
           {pages.map(({ page, allowed }) => {
