@@ -179,11 +179,11 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 ### 5.1 运行总览与模块装配
 
-`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；`queues` 给出 `turnsQueued` 与记忆维护的 `maintenanceQueued`、`maintenanceExhausted`；尚无数据来源的 `turnsRunning`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`recentFailures` 最多 10 条。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
+`GET /api/v1/console/health` 已按运营/研究角色鉴权，返回整体健康状态、现行网页部署的端口配置、三个 realm、服务端装配 hash、各模块状态、当前时钟和有数据来源的队列摘要。原生部署切换后，v1 的 `ports.client` 保留为网页版本兼容元数据。实际监听按 [部署规格](two-endpoints.md#原生-demo-部署目标) 验收，原生模式的控制台只展示服务端监听。整体 `status` 与 `/api/v1/health` 使用同一 `lifecycle.healthStatus()` 来源；`queues` 给出 `turnsQueued` 与记忆维护的 `maintenanceQueued`、`maintenanceExhausted`；尚无数据来源的 `turnsRunning`、`modelQueue` 与 `laggingAgents` 省略，不用固定 0 冒充。`recentFailures` 最多 10 条。`budgets` 按用途聚合在线分支所属 run 的 `budget_ledger`，已结算条目取实际用量、未结算条目取预留量，与预算裁决口径一致；没有任何账本记录时才是空数组。`hotPaths` 给出宿主在进程内按 span 名称汇总的热路径耗时，目前包括玩家投影构建 `player-projection.build` 与投影发布 `player-stream.publish`（发布包含其中的投影构建、增量比对与推送）。`count`、`errors` 自进程启动累计；`lastMs`、`p50Ms`、`p95Ms`、`maxMs` 只统计最近 `samples` 个样本（每个名称最多 256 个），单位毫秒。这些数据不写库，进程重启后清零；宿主未接入耗时汇总时省略该字段。传输层没有注入控制台端口时返回 503 `not-ready`，不返回伪造的 ready 摘要。
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, maintenanceExhausted?, modelQueue? }, laggingAgents?, budgets, recentFailures }` |
+| `GET /health`（已实现） | operator、researcher | — | `{ status: "ready"\|"degraded", ports: { client: 5173, server: 3000 }, realms, assemblyHash, modules: { moduleId, version, status }[], clock, queues: { turnsQueued, turnsRunning?, maintenanceQueued?, maintenanceExhausted?, modelQueue? }, laggingAgents?, budgets, recentFailures, hotPaths?: { name, count, errors, samples, lastMs, p50Ms, p95Ms, maxMs }[] }` |
 | `GET /modules?realm=`（已实现） | operator、researcher | — | `{ catalogHash, modules: ModuleDescriptorView[] }`（id、realm、kind、version、apiVersion、provides、requires、`configJsonSchema`、experimentAxes；不含工厂） |
 | `GET /assemblies`（已实现） | operator、researcher | — | `{ assemblies: { assemblyId, source: "repo"\|"draft" }[] }` |
 | `GET /assemblies/{assemblyId}`（已实现） | operator、researcher | — | `{ descriptor, resolved: Record<Realm, ResolvedModuleSet> }` |

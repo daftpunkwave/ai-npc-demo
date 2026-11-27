@@ -1942,6 +1942,55 @@ describe("服务端宿主", () => {
     );
   }, 20_000);
 
+  it("控制台健康响应给出玩家投影构建与发布的热路径耗时", async () => {
+    const host = await startHost({
+      dataDir: tempDataDir(),
+      playerToken: "player-token",
+      consoleToken: "console-token",
+      assemblyRef: "local-slg-test-v1",
+    });
+    hosts.push(host);
+    const consoleSession = await loginSession(host, "console-token");
+    const hotPaths = async () => {
+      const response = await host.app.inject({
+        method: "GET",
+        url: "/api/v1/console/health",
+        headers: { authorization: `Bearer ${consoleSession}`, "x-active-role": "operator" },
+      });
+      expect(response.statusCode).toBe(200);
+      const entries = consoleHealthResponseSchema.parse(response.json()).hotPaths;
+      expect(entries).toBeDefined();
+      return new Map((entries ?? []).map((entry) => [entry.name, entry]));
+    };
+    const before = await hotPaths();
+    const playerSession = await loginSession(host, "player-token");
+    const started = await host.app.inject({
+      method: "POST",
+      url: "/api/v1/commands",
+      headers: { authorization: `Bearer ${playerSession}` },
+      payload: gameCommandEnvelope("campaign.start", { factionId: "human-neutral" }, "cmd-000000000501"),
+    });
+    expect(started.statusCode).toBe(200);
+    const view = await host.app.inject({
+      method: "GET",
+      url: "/api/v1/world/view",
+      headers: { authorization: `Bearer ${playerSession}` },
+    });
+    expect(view.statusCode).toBe(200);
+    const after = await hotPaths();
+    const delta = (name: string): number => (after.get(name)?.count ?? 0) - (before.get(name)?.count ?? 0);
+    // 开局命令至少触发一次发布；每次发布内部构建一次投影，玩家读取视图再构建一次。
+    // Agent turn 完成也会触发发布，次数不固定，因此断言两者的关系而不是精确次数。
+    const publishes = delta("player-stream.publish");
+    expect(publishes).toBeGreaterThanOrEqual(1);
+    expect(delta("player-projection.build")).toBeGreaterThanOrEqual(publishes + 1);
+    for (const entry of after.values()) {
+      expect(entry.errors).toBe(0);
+      expect(entry.p50Ms).toBeLessThanOrEqual(entry.p95Ms);
+      expect(entry.p95Ms).toBeLessThanOrEqual(entry.maxMs);
+    }
+  }, 30_000);
+
   it("按解析计划应用时钟秒数与资源阈值配置", async () => {
     const host = await startHost({
       dataDir: tempDataDir(),

@@ -308,6 +308,7 @@ export async function createServerApp(options: ServerAppOptions): Promise<Server
     ids: (prefix) => options.ids(prefix),
     tokens: (kind) => options.tokens(kind),
     now,
+    ...(options.tracer === undefined ? {} : { tracer: options.tracer }),
     ...(options.onPlayerConnectionsChanged === undefined
       ? {}
       : { onPlayerConnectionsChanged: options.onPlayerConnectionsChanged }),

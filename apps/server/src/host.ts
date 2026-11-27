@@ -292,6 +292,7 @@ export async function startHost(options: HostOptions): Promise<RunningHost> {
 
   const transportApp = await createTransportApp({
     host: core.host,
+    hotPathTimings: () => core.spanTimings.summaries(),
     options,
     runtime: core.runtime,
     active,

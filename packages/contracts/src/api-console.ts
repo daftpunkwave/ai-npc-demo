@@ -70,6 +70,25 @@ export const consoleFailureSummarySchema = z
   })
   .strict();
 
+/**
+ * 热路径耗时：宿主 tracer 在进程内按 span 名称汇总，只在内存中保存，进程重启后清零。
+ * count 与 errors 自进程启动累计；百分位与最大值只统计最近 samples 个样本，单位毫秒。
+ */
+export const consoleHotPathTimingSchema = z
+  .object({
+    name: z.string().min(1),
+    count: z.number().int().positive(),
+    errors: z.number().int().nonnegative(),
+    samples: z.number().int().positive(),
+    lastMs: z.number().nonnegative(),
+    p50Ms: z.number().nonnegative(),
+    p95Ms: z.number().nonnegative(),
+    maxMs: z.number().nonnegative(),
+  })
+  .strict();
+
+export type ConsoleHotPathTiming = z.infer<typeof consoleHotPathTimingSchema>;
+
 /** 控制台运行总览；与 console.health 频道推送的内容同构。 */
 export const consoleHealthResponseSchema = z
   .object({
@@ -88,6 +107,8 @@ export const consoleHealthResponseSchema = z
     laggingAgents: z.number().int().nonnegative().optional(),
     budgets: z.array(consoleBudgetSummarySchema),
     recentFailures: z.array(consoleFailureSummarySchema),
+    /** 宿主未接入耗时汇总时省略，不用空数组冒充「没有热路径」。 */
+    hotPaths: z.array(consoleHotPathTimingSchema).optional(),
   })
   .strict();
 

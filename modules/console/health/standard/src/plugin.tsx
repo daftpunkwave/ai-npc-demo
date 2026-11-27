@@ -1,5 +1,5 @@
 /**
- * 读取控制台健康摘要与客户端内容视图，呈现端口、装配、时钟、队列、模块与失败计数。
+ * 读取控制台健康摘要与客户端内容视图，呈现端口、装配、时钟、队列、模块、失败计数与热路径耗时。
  * 依赖注入的 console API、当前角色、页面可见性与 React；页面标题取自内容视图，不伪造 Agent 或预算数据。
  * 禁止在服务失败时保留过期页面并声称运行正常，也禁止在页面不可见时继续按固定间隔请求。
  */
@@ -166,6 +166,23 @@ function HealthPage(): ReactNode {
           </dl>
         </section>
       </div>
+      {summary.hotPaths === null || summary.hotPaths.length === 0 ? null : (
+        <section className="console-panel" data-testid="console-health-hot-paths">
+          <header>
+            <h2>热路径耗时</h2>
+            <span>进程内统计</span>
+          </header>
+          <div className="console-table">
+            {summary.hotPaths.map((row) => (
+              <div className="console-table-row" key={row.name}>
+                <code>{row.name}</code>
+                <span>{row.countText}</span>
+                <b>{row.latencyText}</b>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </section>
   );
 }

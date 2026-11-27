@@ -1,10 +1,11 @@
 /**
- * 提供宿主时间、随机、ID、哈希、日志与 tracer 的最小实现，供 kernel 与模块在注入边界内使用。
+ * 提供宿主时间、随机、ID、哈希、日志与 tracer 的最小实现，供 kernel 与模块在注入边界内使用；
+ * tracer 可由调用方注入（生产宿主注入进程内耗时汇总），未注入时 span 只执行回调。
  * 依赖 Node 标准库、公共契约的规范 JSON 与规则随机源；不读取配置、不打开存储、不启动监听。
  * 禁止把 Math.random 用于规则随机或安全凭据，也禁止用原始 JSON.stringify 计算摘要。
  */
 import { createHash, randomBytes } from "node:crypto";
-import { canonicalJson, type HostServices, type Json } from "@world-prism/contracts";
+import { canonicalJson, type HostServices, type HostTracer, type Json } from "@world-prism/contracts";
 import { rngFromHostParts } from "./host/random";
 
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -39,12 +40,17 @@ const logger = {
   error: (message: string, data?: Json): void => { console.error(message, data ?? ""); },
 };
 
-const tracer = {
+const passThroughTracer: HostTracer = {
   span: <T>(_name: string, _attrs: Json, fn: () => T): T => fn(),
 };
 
+export interface HostServicesOptions {
+  /** span 的实际实现；缺省时只执行回调、不记录。 */
+  readonly tracer?: HostTracer;
+}
+
 /** 创建生产宿主服务；ID 主体为 12 位小写 base32，哈希统一走规范 JSON。 */
-export function createHostServices(): HostServices {
+export function createHostServices(options: HostServicesOptions = {}): HostServices {
   return {
     ids: (prefix) => `${prefix}-${runtimeIdBody()}`,
     nowIso: () => new Date().toISOString(),
@@ -69,6 +75,6 @@ export function createHostServices(): HostServices {
     hash: (value) => canonicalHasher(canonicalJson(value)),
     hashText: canonicalHasher,
     logger,
-    tracer,
+    tracer: options.tracer ?? passThroughTracer,
   };
 }

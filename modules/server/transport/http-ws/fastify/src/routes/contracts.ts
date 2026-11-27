@@ -33,6 +33,7 @@ import type {
   ClientContentView,
   CommandEnvelope,
   CommandReceipt,
+  HostTracer,
   IdPrefix,
   Json,
   PlayerProjection,
@@ -384,6 +385,8 @@ export interface ServerAppOptions {
   readonly healthStatus?: () => "starting" | "ready" | "degraded";
   /** 认证、票据与过期判断使用的当前毫秒时间；默认 Date.now，测试可注入。 */
   readonly now?: () => number;
+  /** 宿主 tracer；注入后为每次玩家投影发布计时，缺省不计时。 */
+  readonly tracer?: HostTracer;
   /** 会话数量上限；缺省沿用流中心默认值。容量满时只淘汰无活动连接的会话。 */
   readonly maxSessions?: number;
   /**

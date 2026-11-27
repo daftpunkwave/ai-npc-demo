@@ -1,6 +1,7 @@
 /**
  * 传输应用装配：把权威网关、只读端口、运营服务、生命周期与身份令牌接到传输 provider 的公开端口。
  * 依赖传输模块的 createApp、权限/存档/会话端口与宿主配置；不实现路由、不接触 Fastify 类型。
+ * 玩家投影构建在这里经 host.tracer 计时，投影发布由传输层用同一 tracer 计时，汇总结果随控制台健康响应输出。
  * 禁止在传输层内重算授权、把内部错误细节交给客户端，或在创建失败后留下已启动资源。
  */
 import { randomUUID } from "node:crypto";
@@ -9,7 +10,15 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Authority } from "@world-prism/authority";
 import { listRuleFailures, readBranch, type RuleFailureRecord } from "@world-prism/authority";
-import type { AuthContext, ClientContentView, HostServices, ResolvedModuleSet, StartOption, StoragePort } from "@world-prism/contracts";
+import type {
+  AuthContext,
+  ClientContentView,
+  ConsoleHotPathTiming,
+  HostServices,
+  ResolvedModuleSet,
+  StartOption,
+  StoragePort,
+} from "@world-prism/contracts";
 import type { GameContent } from "@world-prism/module-sdk";
 import { consoleStaticDirRelativeToRoot } from "../config";
 import { clockView } from "./clock-view";
@@ -53,6 +62,8 @@ export interface TransportAppInput {
   readonly maintenanceQueue?: () => { readonly queued: number; readonly exhausted: number };
   /** 测试或嵌入式宿主可覆盖控制台静态目录；生产默认使用仓库内生成目录。 */
   readonly consoleStaticDir?: string;
+  /** 进程内热路径耗时汇总；未注入时健康响应省略 hotPaths。 */
+  readonly hotPathTimings?: () => readonly ConsoleHotPathTiming[];
   /**
    * 世界可能已变化时回调；宿主用它把「有新提交」的信号转给 Agent 运行时。
    * 与时间段推送解耦：推送失败不影响该信号，信号也不会因无人订阅而丢。
@@ -155,6 +166,9 @@ function startOptions(content: GameContent): StartOption[] {
       }),
     }));
 }
+
+/** 玩家投影构建的 span 名称；控制台健康页按名称展示耗时。 */
+export const playerProjectionSpan = "player-projection.build";
 
 /** 按启动令牌构造传输层身份；主体和角色只来自宿主配置。 */
 function createIdentity(
@@ -271,6 +285,7 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
             },
             budgets: summary.budgets,
             recentFailures: recentFailures(runtime.storage, active.branchId),
+            ...(input.hotPathTimings === undefined ? {} : { hotPaths: [...input.hotPathTimings()] }),
           };
         },
         modules: (realm) => runtime.moduleAdmin.modules(realm),
@@ -312,7 +327,9 @@ export async function createTransportApp(input: TransportAppInput): Promise<Serv
         // 写入与读取分开装配：评估模块未绑定时写接口仍然可用。
         ...(writes === undefined ? {} : { evaluationWrites: writes }),
       },
-      projection: () => reads.projection(),
+      // 每次世界变化都会重建玩家投影（tick、玩家命令、Agent turn 完成），单独计时才能看出它在发布里的占比。
+      projection: () => host.tracer.span(playerProjectionSpan, {}, () => reads.projection()),
+      tracer: host.tracer,
       campaign: () => reads.campaign(),
       clock: () => clockView(lifecycle.clockState()),
       pause: (operationId, expected, principalId) =>

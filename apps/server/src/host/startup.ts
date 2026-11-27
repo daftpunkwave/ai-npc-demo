@@ -22,6 +22,7 @@ import { startInstances } from "@world-prism/kernel";
 import { assertDistinctTokens } from "../config";
 import { deploymentDefaults } from "../deployment-defaults";
 import { createHostServices } from "../host-services";
+import { createSpanTimings } from "./span-timings";
 import { agentRunModuleIds, startAgentRunModules, type AgentRunModules } from "./agent-run-modules";
 import {
   filterPlan,
@@ -78,7 +79,9 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   if (options.assembly !== undefined && options.assemblyRef !== undefined) {
     throw new Error("不能同时指定装配对象与装配引用");
   }
-  const host = createHostServices();
+  // 热路径耗时只在进程内汇总；控制台健康页经宿主读取，模块经 host.tracer 记录。
+  const spanTimings = createSpanTimings({ now: () => performance.now() });
+  const host = createHostServices({ tracer: spanTimings });
   const signal = new AbortController().signal;
   const definitions: readonly ModuleDefinition[] = options.moduleDefinitions ?? serverModuleDefinitions;
   const packId = options.packId ?? deploymentDefaults.contentPackId;
@@ -240,6 +243,7 @@ export async function createHostStartup(options: HostOptions): Promise<HostStart
   }
   return {
     host,
+    spanTimings,
     storage,
     storageStarted,
     startedModules: activeStarted,
