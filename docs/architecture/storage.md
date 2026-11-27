@@ -651,6 +651,8 @@ function forkBranch(tx: Tx, src: string, dst: string, kind: BranchKind, runId: s
 | 开环探针沙盒 | `forkBranch(checkpointSnap, sandbox, 'sandbox')`，只激活被提问的 Agent（计入配额）；探针结束后释放配额、分支设为 archived，不再写入 |
 | 灾备备份 | 在 `data/backups/` 下创建权限 `0700` 的 `world-prism-<UTC时间>[-<label>].<唯一后缀>.partial` 暂存目录并 `VACUUM INTO` 其中；确认非空且 `PRAGMA integrity_check` 返回 `ok` 后把文件权限收紧为 `0600`，再用硬链接独占发布为 `world-prism-<UTC时间>.db`（同名已存在时追加序号）；发布后按数量保留最近 20 份并清理更旧备份；失败时删除暂存目录；不复制正在写入的数据库文件 |
 
+快照行的 `world_tick` 与 `world_seq` 是源分支在复制时刻的检查点，恢复预检再用同样的来源核对冻结分支是否仍与快照行一致。存档模块不直接读取这两类事实所在的表，两项查询都由宿主组合根在绑定存档端口时注入：`world_tick` 取宿主以时钟端口 `GameClockPort.readInTransaction` 提供的分支 tick 查询，`world_seq` 取 authority 的分支事件前沿查询 `branchEventFrontier`（该分支 `domain_events` 的最大 `world_seq`，没有事件时为 0）。两者都在存档操作所在的同一存储事务内读取。它们不经存档模块的 `requires` 解析，存档模块描述符只依赖 `platform.storage`，模块目录摘要与已冻结 run 的 manifest 不因此变化。
+
 ## 4. 常用查询
 
 ```sql

@@ -1,12 +1,14 @@
 /**
  * 核心职责：从存储只读地取出快照与源 run 的冻结事实，并校验恢复前提。
- * 交互契约：输入存储事务与快照标识，返回强类型视图；数据不一致时抛出 invalid-state 并给出字段。
- * 约束与禁忌：不写存储、不做业务裁决，也不在字段缺失时用默认值兜底。
+ * 交互契约：输入存储事务、快照标识与宿主注入的检查点查询，返回强类型视图；数据不一致时抛出 invalid-state 并给出字段。
+ *   分支 tick 与事件前沿都经宿主绑定时注入的查询读取，与其余读取共用同一事务。
+ * 约束与禁忌：不写存储、不做业务裁决，也不在字段缺失时用默认值兜底；不直接读取 clock 或 domain_events 表。
  */
 import { DomainError, canonicalJson, type Json, type StorageCell, type StorageTransaction, type StorageRow } from "@world-prism/contracts";
 import type {
   RestoreExpectation,
   RestoreInspection,
+  SaveHostQueries,
   SnapshotRecord,
   SnapshotSourceRun,
 } from "@world-prism/module-sdk";
@@ -44,23 +46,36 @@ export function objectValue(value: StorageCell | undefined, column: string): Jso
   return value as Json;
 }
 
-/** 分支事件前沿：domain_events 主键为 (branch_id, world_seq)，MAX 走主键索引而非全表遍历。 */
-export function maxWorldSeq(tx: StorageTransaction, branchId: string): number {
-  const value = tx.branch(branchId).table("domain_events").max("world_seq");
-  if (value === null) {
-    return 0;
+/**
+ * 经宿主注入的世界 tick 查询在调用方事务内读取分支 tick。查询以 not-found 表示分支没有时钟行；
+ * 对存档而言这是源分支或快照数据不完整，改按 invalid-state 报告，与其他快照完整性错误同一错误码，
+ * 恢复预检据此把它归入完整性检查失败，而不是当作快照不存在。
+ */
+export function branchWorldTick(
+  queries: SaveHostQueries,
+  tx: StorageTransaction,
+  branchId: string,
+  missing: { readonly message: string; readonly details: Json },
+): number {
+  try {
+    return queries.worldTick(tx, branchId);
+  } catch (error) {
+    if (error instanceof DomainError && error.code === "not-found") {
+      throw new DomainError("invalid-state", missing.message, { details: missing.details, cause: error });
+    }
+    throw error;
   }
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    throw new DomainError("invalid-state", "分支事件前沿不是非负安全整数", { details: { branchId } });
-  }
-  return value;
 }
 
 /**
  * 校验快照行、冻结分支与源分支属于同一份一致复制：冻结分支必须仍处于 frozen 且无 run，
  * 时钟 tick 与快照记录一致，事件前沿等于快照的 world_seq；任何缺失都视为快照不完整。
  */
-export function readFrozenSnapshot(tx: StorageTransaction, snapshotId: string): FrozenSnapshot {
+export function readFrozenSnapshot(
+  tx: StorageTransaction,
+  snapshotId: string,
+  queries: SaveHostQueries,
+): FrozenSnapshot {
   const row = tx.rows("snapshots").get({ snapshot_id: snapshotId });
   if (row === null) {
     throw new DomainError("not-found", `快照 ${snapshotId} 不存在`, { details: { snapshotId } });
@@ -110,18 +125,16 @@ export function readFrozenSnapshot(tx: StorageTransaction, snapshotId: string): 
     });
   }
 
-  const clock = tx.branch(frozenBranchId).table("clock").get({});
-  if (clock === null) {
-    throw new DomainError("invalid-state", `快照冻结分支 ${frozenBranchId} 缺少时钟记录`, {
-      details: { snapshotId, frozenBranchId },
-    });
-  }
-  if (numberValue(clock["world_tick"], "clock.world_tick") !== worldTick) {
+  const frozenTick = branchWorldTick(queries, tx, frozenBranchId, {
+    message: `快照冻结分支 ${frozenBranchId} 缺少时钟记录`,
+    details: { snapshotId, frozenBranchId },
+  });
+  if (frozenTick !== worldTick) {
     throw new DomainError("invalid-state", `快照 ${snapshotId} 的 worldTick 与冻结分支时钟不一致`, {
       details: { snapshotId, frozenBranchId, worldTick },
     });
   }
-  if (maxWorldSeq(tx, frozenBranchId) !== worldSeq) {
+  if (queries.eventFrontier(tx, frozenBranchId) !== worldSeq) {
     throw new DomainError("invalid-state", `快照 ${snapshotId} 的 worldSeq 与冻结分支事件前沿不一致`, {
       details: { snapshotId, frozenBranchId, worldSeq },
     });
@@ -169,8 +182,12 @@ export function readSourceRun(tx: StorageTransaction, frozen: FrozenSnapshot): S
 }
 
 /** 从快照行一路读出完整恢复信息；快照与源 run 任一不完整都抛错，不产生写入。 */
-export function inspectSnapshot(tx: StorageTransaction, snapshotId: string): RestoreInspection {
-  const frozen = readFrozenSnapshot(tx, snapshotId);
+export function inspectSnapshot(
+  tx: StorageTransaction,
+  snapshotId: string,
+  queries: SaveHostQueries,
+): RestoreInspection {
+  const frozen = readFrozenSnapshot(tx, snapshotId, queries);
   return {
     snapshotId: frozen.snapshotId,
     sourceBranchId: frozen.sourceBranchId,

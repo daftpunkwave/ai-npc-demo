@@ -20,7 +20,7 @@ export interface GameClockPort {
   read(branchId: string): ClockState;
   /**
    * 在调用方已打开的事务内读取时钟；宿主投影与规则事务用同一快照，避免嵌套事务。
-   * 端口只读该事务，不提交、不回滚，也不缓存结果。
+   * 端口只读该事务，不提交、不回滚，也不缓存结果；分支没有时钟行时抛 not-found。
    */
   readInTransaction(tx: StorageTransaction, branchId: string): ClockState;
   /**

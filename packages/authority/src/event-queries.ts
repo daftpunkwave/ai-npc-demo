@@ -1,21 +1,43 @@
 /**
- * 核心职责：领域事件存储的只读查询：按事件类型与载荷字段批量查找最新事件序号、按分支列出完整事件行，
- *   以及为观测数据源提供解码后的时间线、分支事件与最新序号。
+ * 核心职责：领域事件存储的只读查询：分支最新事件序号与事件前沿、按事件类型与载荷字段批量查找最新事件序号、
+ *   按分支列出完整事件行，以及为观测数据源提供解码后的时间线与分支事件。
  * 交互契约：只接受建有表达式索引的（事件类型，载荷字段）组合；字段名受契约载荷类型约束，
- *   查询中的取值表达式与迁移建立的索引列逐字一致；观测记录的列到字段映射只在本文件维护。
+ *   查询中的取值表达式与迁移建立的索引列逐字一致；观测记录的列到字段映射只在本文件维护；全部查询只读调用方传入的事务。
  * 约束与禁忌：只读；按载荷字段取值查找时不解析载荷的其他字段；禁止为未建索引的字段拼接查询，
  *   否则会退化为逐行解析 JSON；时间线的筛选与 limit 必须在 SQL 内完成，不得取回后在内存截取。
  */
-import type {
-  DomainEventPayload,
-  DomainEventType,
-  StorageRawRow,
-  StorageRow,
-  StorageTransaction,
-  StorageValue,
+import {
+  DomainError,
+  type DomainEventPayload,
+  type DomainEventType,
+  type StorageRawRow,
+  type StorageRow,
+  type StorageTransaction,
+  type StorageValue,
 } from "@world-prism/contracts";
 import type { DomainEventTimelineQuery, ObservedDomainEvent } from "@world-prism/module-sdk";
 import { readJsonTextCell, requireStorageNumber, requireStorageString } from "./storage-values";
+
+/**
+ * 分支已提交领域事件的最大 world_seq；尚无事件时为 null。
+ * domain_events 主键为 (branch_id, world_seq)，MAX 走主键索引而非全表遍历。
+ * 读出非负安全整数以外的值说明事件表已损坏，按 invalid-state 拒绝并带出分支，不用默认值兜底。
+ */
+export function latestEventSeq(tx: StorageTransaction, branchId: string): number | null {
+  const value = tx.branch(branchId).table("domain_events").max("world_seq");
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new DomainError("invalid-state", "分支事件前沿不是非负安全整数", { details: { branchId } });
+  }
+  return value;
+}
+
+/** 分支事件前沿：存档检查点冻结的事件位置，没有事件时为 0。 */
+export function branchEventFrontier(tx: StorageTransaction, branchId: string): number {
+  return latestEventSeq(tx, branchId) ?? 0;
+}
 
 /**
  * 建有表达式索引、可按取值查找的事件载荷字段。字段名必须是该事件契约载荷的键：
@@ -154,8 +176,3 @@ export function listEventsAfter(
   ).map(decodeObservedEvent);
 }
 
-/** 分支最新领域事件序号；尚无事件时为 null。 */
-export function latestEventSeq(tx: StorageTransaction, branchId: string): number | null {
-  const value = tx.branch(branchId).table("domain_events").max("world_seq");
-  return value === null ? null : requireStorageNumber({ world_seq: value }, "domain_events", "world_seq");
-}

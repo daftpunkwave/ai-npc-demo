@@ -62,7 +62,7 @@ catalog 是货架，assembly 是本次装机清单，profile 是 Agent 的策略
 | `game.comms.standard` | service | run | `game.comms` | 会话、消息投递、知识授权 | 对话、消息、广播、证据分享与 `speech.commit` |
 | `game.scenario.watergate` | service | run | `game.scenario` | 剧情卡状态 | 序章卡片按内容包的 `atTick` 触发；草稿不可感知，发布后走标准命令 |
 | `game.scenario.watergate-escalating` | service | run | `game.scenario` | 同上 | 模块替换演示用的第二实现：同一份卡片，节奏加快并带额外压力（[内容包](../game/content-pack.md) 第 9 节） |
-| `game.save.sqlite` | service | run | `game.save` | 快照记录 | 静默、分支复制与恢复预检（[存储](storage.md) 第 3 节）；通过 `platform.storage` 读写 |
+| `game.save.sqlite` | service | run | `game.save` | 快照记录 | 静默、分支复制与恢复预检（[存储](storage.md) 第 3 节）；通过 `platform.storage` 读写；检查点 tick 与事件前沿取宿主绑定时注入的查询（时钟端口与 authority），不进 `requires`；宿主只经 module-sdk 的 `SavePort` 使用 |
 
 `game.scenario.*` 两个实现对同一 capability 只能选一个；替换它们只改装配绑定，客户端、Agent 与其他游戏模块的代码都不改。
 

@@ -37,6 +37,7 @@ export type {
 export { readBranch } from "./branch-state";
 export type { BranchRecord } from "./branch-state";
 export {
+  branchEventFrontier,
   indexedEventPayloadKeys,
   latestEventSeq,
   latestEventSeqsByPayload,
