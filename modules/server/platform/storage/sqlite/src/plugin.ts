@@ -6,14 +6,15 @@
  */
 import { DomainError, type ModuleCreateInput, type ModuleInstance } from "@world-prism/contracts";
 import { storageConfigSchema } from "./definition";
-import { startRetentionSchedule, type RetentionSchedule } from "./sqlite/retention";
+import type { BackgroundPassSchedule } from "./sqlite/background-pass";
+import { startRetentionSchedule } from "./sqlite/retention";
 import { SqliteStorage } from "./sqlite/storage";
 
 /** 模块工厂：配置已由宿主按 schema 校验，这里再解析一次以获得默认值后的强类型配置。 */
 export function createSqliteStorageModule(input: ModuleCreateInput): Promise<ModuleInstance> {
   const config = storageConfigSchema.parse(input.config);
   const storage = new SqliteStorage(config, input.host);
-  let retention: RetentionSchedule | null = null;
+  let retention: BackgroundPassSchedule | null = null;
   return Promise.resolve({
     moduleId: input.moduleId,
     start: async (signal) => {
