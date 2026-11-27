@@ -1,6 +1,6 @@
 /**
  * 定义控制台总览、模块装配、模型池、三势力席位与剧情卡接口的 DTO。
- * 依赖装配与模型契约、投影类型、命令回执与事件预览；不包含可观测与评估接口。
+ * 依赖装配与模型契约、投影类型、存储占用测量、命令回执与事件预览；不包含可观测与评估接口。
  * 禁止在此实现鉴权、装配解析或剧情效果，只在契约层描述请求与响应形状。
  */
 import { z } from "zod";
@@ -18,6 +18,7 @@ import {
   resolvedModuleSetSchema,
 } from "./modules";
 import { clockViewSchema } from "./projection";
+import { storageFootprintSchema } from "./storage";
 
 /** 装配来源：仓库文件或控制台草稿。 */
 export const assemblySourceSchema = z.enum(["repo", "draft"]);
@@ -104,6 +105,8 @@ export const consoleHealthResponseSchema = z
     modules: z.array(consoleModuleStatusSchema),
     clock: clockViewSchema,
     queues: consoleQueueSummarySchema,
+    /** 存储占用测量：null 表示首轮后台测量尚未完成；存储实现不提供测量时省略。 */
+    storage: storageFootprintSchema.nullable().optional(),
     laggingAgents: z.number().int().nonnegative().optional(),
     budgets: z.array(consoleBudgetSummarySchema),
     recentFailures: z.array(consoleFailureSummarySchema),

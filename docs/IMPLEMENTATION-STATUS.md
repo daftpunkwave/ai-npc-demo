@@ -76,6 +76,7 @@ Godot C# 原生玩家端及正式 3D 美术处于规划状态。当前玩家端�
 19. **评估写入接口（创建 run 与导出）**：研究者可 `POST /api/v1/console/runs` 创建 run，预检覆盖规格交叉校验、装配可加载性与 manifest 冻结，失败返回 `preflight-failed` 与逐条原因且不落库；`POST /api/v1/console/exports` 导出 run 的 manifest、事件与 turn 的 artifact，`redacted` 清空正文、`raw` 保留正文，两者都不输出凭据解析值。评估员对这两个接口返回 403。`POST /experiments` 已实现：按实验规格展开「变体 × 脚本分支 × 重复次数」并逐个创建 run，实验标识写入每个 RunSpec，评估读取据此归组而不依赖 `seed` 文本。`POST /runs/{runId}/start|stop` 已实现：启动把 run 置为 `running` 并初始化该分支时钟，停止置为 `paused` 并同步时钟，状态不符返回 409。实验 run 的执行器（按脚本检查点驱动受控时钟、发起探针、写 `probe_results` 与 `experiment_results`）尚未实现，因此 run 启动后不会自行推进到脚本检查点。
 20. **t168 城市资源交接**：`world-init.yaml` 新增 `cityResources`，按数值基线写入能源 140、材料 160、食物 120、供给 60、医疗 40、水 72。t168 章节评估在同一事务把该快照写入 `ChapterStageEvaluated` 与 campaign 聚合；评估后的玩家投影给出 `cityResources`，序章库存与已发生的消耗保持不变。该字段在内容 schema 中为可选：旧内容包缺少它时仍可加载，评估写入 `null` 交接；旧事件、旧 campaign 状态与旧投影缺少该字段时同样按 `null` 读取。内容版本提升到 `0.3.0`，资产清单版本随之更新。
 21. **玩家公开广播**：`broadcast.say` 只允许已开局 campaign 的玩家主体发行。通信模块按 campaign 的玩家与派系公社席裁决权限，发布位置取玩家所在节点，按公开广播规则冻结投递并提交 `MessageSent`；中继中断时只保留同节点收件者。角色与传闻路径不变。
+22. **存储保留策略与占用测量**：默认永久保留全部数据。只有观测跨度 `trace_spans` 可经 `WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS` 配置保留天数，该值作为部署参数并入存储适配器配置，不进入冻结 manifest。配置后存储适配器在启动时与之后每小时分批删除过期跨度，每批删除与 `lifecycle_events` 中的 `StorageRetentionPruned` 记录同事务提交；领域事件、命令回执、记忆、artifact、工具调用、模型尝试与生命周期审计等表不可轮转。控制台运行总览展示存储占用：主库与空闲页字节、artifact 正文字节、只追加表行数与保留策略，由存储适配器在后台每 5 分钟按 rowid 分块测量，健康接口只返回最近一次完成的结果。分类、读取方分析与测量口径见 [storage.md — 数据保留与轮转](architecture/storage.md#6-数据保留与轮转)。
 
 ## 3. 剩余迁移项
 
