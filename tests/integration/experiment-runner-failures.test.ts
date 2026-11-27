@@ -1,12 +1,14 @@
 /**
  * 核心职责：验证实验执行器的配额与失败路径：探针期间名册休眠并在结束后重新预留、配额不足时开局失败、
- * 探针 turn 失败记为无效样本、运行中停止与恢复、收敛超时与不支持的脚本或装配显式失败、宿主重启归位遗留执行。
+ * 探针 turn 失败记为无效样本、运行中停止与恢复、脚本控制窗口被打断后的交还、收敛超时与不支持的脚本或装配显式失败、
+ * 宿主重启归位遗留执行。
  * 交互契约：使用真实测试装配、SQLite 与控制台接口；模型路径只用确定性传输与测试自带夹具，不访问网络。
  * 约束与禁忌：配额前置状态只按部署级统计口径构造；断言读真实存储与公开接口，不替换执行器内部实现。
  */
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { acquireScriptControl } from "@world-prism/agent-runtime";
 import { experimentDetailResponseSchema, runReportResponseSchema, type AuthContext, type Json } from "@world-prism/contracts";
 import type { RunningHost } from "@world-prism/app-server";
 import { gameCommandEnvelope } from "./game-support";
@@ -14,6 +16,8 @@ import {
   activeAgentsOn,
   activeIdentityCount,
   branchOf,
+  controllerChanges,
+  controllerLease,
   createExperimentRuns,
   eventTypes,
   experimentAudit,
@@ -23,6 +27,7 @@ import {
   researcherHeaders,
   runRow,
   sandboxesOf,
+  secretScriptWithSteps,
   startRun,
   stopRun,
   tempRoot,
@@ -275,6 +280,57 @@ describe("实验执行器的配额与失败路径", () => {
     expect(probeResults(host, runId)).toHaveLength(1);
   }, 120_000);
 
+  it("进程在脚本控制窗口内退出时，恢复执行先把控制交还 Agent，已受理的步骤不重复提交", async () => {
+    const alliance = "human-earth-alliance";
+    const host = await experimentHost(resources, {
+      contentRoot: secretScriptWithSteps(resources, [
+        `{ atTick: 2, as: ${alliance}, command: { type: information.share, payload: { evidenceId: ev-water-ledger, audience: [human-alien-accord] } } }`,
+        "{ atTick: 40, as: player-1, command: { type: dialogue.say, payload: { targetAgentId: human-independent, text: 隘口那边还好吗？ } } }",
+      ]),
+    });
+    const headers = await researcherHeaders(host);
+    const [runId] = await createExperimentRuns(host, headers, experimentSpec({
+      experimentId: "exp-runner-script-window-v1", scriptRef: "s-secret", scriptBranches: [],
+    }));
+    if (runId === undefined) throw new Error("实验没有展开出 run");
+    const branchId = branchOf(host, runId);
+    await startRun(host, headers, runId, "op-000000000751");
+    await vi.waitFor(() => expect(worldTickOf(host, branchId)).toBeGreaterThanOrEqual(3), { timeout: 30_000, interval: 5 });
+    await stopRun(host, headers, runId, "op-000000000752");
+    await vi.waitFor(() => expect(experimentAudit(host, branchId).at(-1)?.type).toBe("ExperimentRunStopped"), { timeout: 30_000, interval: 20 });
+    expect(worldTickOf(host, branchId)).toBeLessThan(40);
+    const step = experimentAudit(host, branchId).filter(({ type }) => type === "ExperimentStepSubmitted")
+      .map(({ payload }) => payload as Record<string, Json>).find((payload) => payload["declarationIndex"] === 1);
+    expect(step).toMatchObject({ atTick: 2, commandStatus: "accepted" });
+    expect(controllerLease(host, branchId, alliance)).toEqual(["agent", null, 3]);
+
+    // 还原进程在提交之后、交还之前退出的现场：该步骤已有受理回执，但联盟的控制仍停在脚本窗口里。
+    const context = { declarationIndex: 1, atTick: 2, commandId: String(step?.["commandId"]) };
+    host.storage.transact((tx) => acquireScriptControl(tx, { branchId, agentId: alliance, runId, nowIso: new Date().toISOString(), context }));
+    expect(controllerLease(host, branchId, alliance)).toEqual(["script", runId, 4]);
+
+    await startRun(host, headers, runId, "op-000000000753");
+    expect(await waitForRunStatus(host, runId, ["completed", "failed"], 120_000)).toBe("completed");
+    // 恢复执行先交还控制并标记 recovered，之后不再为这一步开窗口，也不重复提交或记审计。
+    expect(controllerChanges(host, branchId).slice(-1)).toEqual([{
+      subjectId: alliance, runId,
+      payload: { fromKind: "script", toKind: "agent", fromEpoch: 4, toEpoch: 5, controllerPrincipalId: runId, context: { ...context, recovered: true } },
+    }]);
+    expect(controllerLease(host, branchId, alliance)).toEqual(["agent", null, 5]);
+    expect(experimentAudit(host, branchId).filter(({ type, payload }) =>
+      type === "ExperimentStepSubmitted" && (payload as Record<string, Json>)["declarationIndex"] === 1)).toHaveLength(1);
+    expect(host.storage.transact((tx) => tx.branch(branchId).table("command_receipts").list({ principal_id: alliance, command_id: context.commandId }))).toHaveLength(1);
+    expect(eventTypes(host, branchId).filter((type) => type === "InformationShared")).toHaveLength(1);
+    // 探针沙盒复制的是已交还的 Agent 控制（复制时代次再 +1），联盟在沙盒里照常被调度作答，探针有效。
+    const probed = experimentAudit(host, branchId).find(({ type, payload }) =>
+      type === "ExperimentProbeCompleted" && (payload as Record<string, Json>)["probeId"] === "p-unknown")?.payload as Record<string, Json>;
+    const sandboxId = String(probed["sandboxBranchId"]);
+    expect(controllerLease(host, sandboxId, alliance)).toEqual(["agent", null, 6]);
+    expect(host.storage.transact((tx) => tx.rows("turn_runs").get({ turn_id: String(probed["turnId"]) })))
+      .toMatchObject({ branch_id: sandboxId, agent_id: alliance, controller_epoch: 6, status: "completed" });
+    expect(probeResults(host, runId).map((row) => [row["probe_id"], row["valid"]]).sort()).toEqual([["p-no-leak", 1], ["p-unknown", 1]]);
+  }, 120_000);
+
   it("探针进行中停止后立即再次启动：旧执行被取代且不写终态，新执行接手完成", async () => {
     const host = await experimentHost(resources);
     const headers = await researcherHeaders(host);
@@ -374,24 +430,29 @@ describe("实验执行器的配额与失败路径", () => {
     expect(failureCode(strict, timedOut)).toBe("settle-timeout");
     expect(activeAgentsOn(strict, branchOf(strict, timedOut))).toEqual([]);
 
-    const host = await experimentHost(resources);
+    // 闻远持有分水账、是内容包登记的主体，但不在 core-3 名册里：实验分支上没有它的控制租约，执行器在准备阶段拒绝。
+    const host = await experimentHost(resources, {
+      contentRoot: secretScriptWithSteps(resources, [
+        "{ atTick: 2, as: npc-wenyuan, command: { type: information.share, payload: { evidenceId: ev-water-ledger, audience: [player-1] } } }",
+      ]),
+    });
     const headers = await researcherHeaders(host);
-    const [rumor] = await createExperimentRuns(host, headers, experimentSpec({
-      experimentId: "exp-runner-setup-v1", scriptRef: "s-rumor", scriptBranches: [],
+    const [outsideRoster] = await createExperimentRuns(host, headers, experimentSpec({
+      experimentId: "exp-runner-principal-v1", scriptRef: "s-secret", scriptBranches: [],
     }));
     const escalating = experimentSpec({ experimentId: "exp-runner-assembly-v1" });
     const [mismatched] = await createExperimentRuns(host, headers, {
       ...escalating, base: { ...(escalating["base"] as Record<string, Json>), moduleAssemblyRef: "local-slg-escalating-v1" },
     });
-    if (rumor === undefined || mismatched === undefined) throw new Error("实验没有展开出 run");
-    await startRun(host, headers, rumor, "op-000000000802");
+    if (outsideRoster === undefined || mismatched === undefined) throw new Error("实验没有展开出 run");
+    await startRun(host, headers, outsideRoster, "op-000000000802");
     await startRun(host, headers, mismatched, "op-000000000803");
-    expect(await waitForRunStatus(host, rumor, ["completed", "failed"])).toBe("failed");
+    expect(await waitForRunStatus(host, outsideRoster, ["completed", "failed"])).toBe("failed");
     expect(await waitForRunStatus(host, mismatched, ["completed", "failed"])).toBe("failed");
-    expect(failureCode(host, rumor)).toBe("script-setup-unsupported");
+    expect(failureCode(host, outsideRoster)).toBe("script-principal-not-in-roster");
     expect(failureCode(host, mismatched)).toBe("assembly-mismatch");
     // 预检阶段失败时实验分支没有开局：没有任何领域事件。
-    expect(eventTypes(host, branchOf(host, rumor))).toEqual([]);
+    expect(eventTypes(host, branchOf(host, outsideRoster))).toEqual([]);
   }, 120_000);
 
   it("宿主重启把遗留的 running 实验 run 归位为 paused 并归档未关闭的沙盒", async () => {

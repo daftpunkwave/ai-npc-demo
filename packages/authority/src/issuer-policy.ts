@@ -30,6 +30,7 @@ export const commandIssuerKinds = {
   "scenario.compensate": ["operator"],
   "scenario.override": ["operator", "researcher"],
   "probe.ask": ["system"],
+  "knowledge.seed": ["system"],
 } as const satisfies Readonly<Record<CommandType, readonly PrincipalKind[]>>;
 
 const issuerKindsByCommand = new Map<CommandType, readonly PrincipalKind[]>(

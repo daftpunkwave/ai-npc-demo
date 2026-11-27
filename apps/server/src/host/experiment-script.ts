@@ -1,19 +1,31 @@
 /**
- * 核心职责：把实验脚本与 RunSpec 的分支选择展开为执行计划：按 tick 排好的外部命令、检查点探针、终点 tick，
- * 以及受控单步每一段的目标 tick。
- * 交互契约：输入内容包脚本、冻结 RunSpec 与 run 标识；命令 ID 由 run 与步骤序号确定性派生，
- * 停止后恢复时同一步骤重放得到原回执，不会重复下令。
+ * 核心职责：把实验脚本与 RunSpec 的分支选择展开为执行计划：开局后的预置知识、按 tick 排好的外部命令、
+ * 检查点探针、终点 tick，以及受控单步每一段的目标 tick。
+ * 交互契约：输入内容包脚本、冻结 RunSpec 与 run 标识；命令 ID 由 run 与预置或步骤序号确定性派生，
+ * 停止后恢复时同一条预置或步骤重放得到原回执，不会重复下令。
  * 约束与禁忌：不执行命令、不读存储；执行器不支持的脚本形态直接报出，不静默跳过或改写。
  */
 import type { CommandRequest, ContentScript, HostServices } from "@world-prism/contracts";
 import type { RunSpec } from "@world-prism/experiment";
 
-/** 一条外部命令：脚本声明顺序决定同一 tick 内的注入顺序。 */
+/**
+ * 一条外部命令：脚本声明顺序决定同一 tick 内的注入顺序。
+ * `controller` 为 `player` 时以玩家身份提交；为 `script` 时 `as` 是 Agent，执行器取得它的脚本控制后代为提交。
+ */
 export interface ScriptStepPlan {
   readonly declarationIndex: number;
   readonly atTick: number;
   readonly as: string;
+  readonly controller: "player" | "script";
   readonly command: CommandRequest;
+  readonly commandId: string;
+}
+
+/** 一条预置知识：开局后、首个 tick 推进前以 `knowledge.seed` 提交，脚本声明顺序即提交顺序。 */
+export interface ScriptSetupPlan {
+  readonly declarationIndex: number;
+  readonly evidenceId: string;
+  readonly principalId: string;
   readonly commandId: string;
 }
 
@@ -31,6 +43,7 @@ export interface ExperimentScriptPlan {
   readonly scriptId: string;
   readonly branch: string | null;
   readonly startFactionId: string;
+  readonly setup: readonly ScriptSetupPlan[];
   readonly steps: readonly ScriptStepPlan[];
   readonly checkpoints: ReadonlyMap<number, readonly ScriptProbePlan[]>;
   /** 最后一个外部命令或检查点所在 tick；处理完该 tick 即完成脚本。 */
@@ -49,9 +62,10 @@ export class UnsupportedScriptError extends Error {
 /**
  * 展开脚本。
  *
- * - `setup` 预置知识授权目前没有经命令网关的提交入口：宿主直接改写知识聚合会绕过命令与事件管线，
- *   因此含 `setup` 的脚本整体拒绝，而不是跳过预置后得到与设计不符的输入。
- * - 外部命令只以玩家身份注入：脚本冒充玩家时走正常认证与权限校验；其他主体的冒充身份尚无约定的认证上下文。
+ * - `setup` 每一条展开为一条 `knowledge.seed`，由执行器在开局后、首个 tick 推进前经命令网关提交，
+ *   不由宿主直接改写知识聚合，预置与其他输入一样留下回执与事件。
+ * - 以玩家声明的步骤以玩家身份注入，走正常认证与权限校验；以其他主体声明的步骤由执行器取得该 Agent 的
+ *   脚本控制后代为提交，按该 Agent 的权限裁决。该主体是否在 run 的名册里由准备阶段核对。
  * - RunSpec 已指定玩家派系时必须与脚本开局一致，否则两份冻结输入互相矛盾。
  */
 export async function planExperimentScript(input: {
@@ -62,9 +76,6 @@ export async function planExperimentScript(input: {
   readonly hash: HostServices["hash"];
 }): Promise<ExperimentScriptPlan> {
   const { script, runSpec } = input;
-  if ((script.setup ?? []).length > 0) {
-    throw new UnsupportedScriptError("script-setup-unsupported", `脚本 ${script.scriptId} 声明了 setup 预置知识，执行器尚无经命令网关的预置入口`);
-  }
   if (runSpec.player.factionId !== null && runSpec.player.factionId !== script.start.factionId) {
     throw new UnsupportedScriptError(
       "script-start-mismatch",
@@ -76,14 +87,19 @@ export async function planExperimentScript(input: {
   if (branchSteps === undefined) {
     throw new UnsupportedScriptError("script-branch-missing", `脚本 ${script.scriptId} 没有分支 ${String(branchName)}`);
   }
+  const setup: ScriptSetupPlan[] = [];
+  for (const [declarationIndex, entry] of (script.setup ?? []).entries()) {
+    const digest = await input.hash([input.runId, "script-setup", declarationIndex]);
+    setup.push({ declarationIndex, evidenceId: entry.grantEvidence, principalId: entry.to, commandId: `cmd-${digest.slice(0, 12)}` });
+  }
   const declared = [...script.steps, ...branchSteps];
   const steps: ScriptStepPlan[] = [];
   for (const [declarationIndex, step] of declared.entries()) {
-    if (step.as !== input.playerPrincipalId) {
-      throw new UnsupportedScriptError("script-principal-unsupported", `脚本步骤 ${declarationIndex} 以 ${step.as} 身份提交，执行器只支持玩家身份`);
-    }
     const digest = await input.hash([input.runId, "script-step", declarationIndex]);
-    steps.push({ declarationIndex, atTick: step.atTick, as: step.as, command: step.command, commandId: `cmd-${digest.slice(0, 12)}` });
+    steps.push({
+      declarationIndex, atTick: step.atTick, as: step.as, controller: step.as === input.playerPrincipalId ? "player" : "script",
+      command: step.command, commandId: `cmd-${digest.slice(0, 12)}`,
+    });
   }
   // 同一 tick 内保持声明顺序（主线步骤在前、分支追加在后），稳定排序只按 tick 重排。
   steps.sort((left, right) => left.atTick - right.atTick || left.declarationIndex - right.declarationIndex);
@@ -96,7 +112,7 @@ export async function planExperimentScript(input: {
     checkpoints.set(checkpoint.atTick, probes);
   }
   const { endTick, probeCount } = scriptExtent(script, branchName);
-  return { scriptId: script.scriptId, branch: branchName, startFactionId: script.start.factionId, steps, checkpoints, endTick, probeCount };
+  return { scriptId: script.scriptId, branch: branchName, startFactionId: script.start.factionId, setup, steps, checkpoints, endTick, probeCount };
 }
 
 /** 脚本在某个分支下的终点 tick 与探针总数；执行计划与进度读取共用，二者不会对终点给出不同结论。 */

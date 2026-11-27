@@ -43,7 +43,7 @@ interface AuthContext {            // 始终由宿主构建，绝不从 payload 
   readonly roles: readonly string[];
   readonly worldId: string;
   readonly branchId: string;
-  readonly actingAsAgentId: string | null; // 真人席位代理非人类派系 Agent 时设置
+  readonly actingAsAgentId: string | null; // 真人席位代理非人类派系 Agent，或实验执行器以脚本控制代某个 Agent 时设置
   readonly controllerEpoch: number | null; // kind === "agent" 或 actingAsAgentId != null 时必填
   readonly turnLeaseEpoch: number | null;  // 从 Agent turn 发出的命令必填
   readonly turnId: string | null;
@@ -53,7 +53,8 @@ interface AuthContext {            // 始终由宿主构建，绝不从 payload 
 - 玩家命令：`principalId = player-1`。
 - Agent 命令：只能在 turn 内由工具网关或宿主发出，`principalId = agentId`，并带 `controllerEpoch` 与 `turnLeaseEpoch`。
 - 真人席位：运营账号经控制台以 `actingAsAgentId` 代某个非人类势力战略 Agent 发命令，按该 Agent 的权限裁决，`principalId` 记为该 agentId，审计里另记运营账号。
-- 规则 job、时钟步骤与实验运行器：`principalId = system:world`，不受玩家/Agent 权限约束，但只能执行各自定义的处理逻辑。
+- 实验脚本代发：闭环实验分支上，脚本步骤的 `as` 不是玩家时，实验执行器先取得该 Agent 的脚本控制（控制租约种类 `script`，控制代次 +1，控制者记为该 run），以 `kind = "system"`、`principalId = actingAsAgentId = agentId`、`controllerEpoch = 脚本控制代次` 提交，再立即交还 Agent（代次再 +1）。命令按该 Agent 的权限裁决，与 Agent 自己提交的命令一样记在该 agentId 名下；两次控制变更写入 `ControllerChanged` 生命周期审计。脚本控制只能由执行器在实验分支上取得，不经任何 HTTP 或控制台入口。
+- 规则 job、时钟步骤与实验运行器：`principalId = system:world`，不受玩家/Agent 权限约束，但只能执行各自定义的处理逻辑。实验执行器只有在上一条的脚本代发中才代某个 Agent，此时按该 Agent 裁决，不再享有系统身份的发行资格。
 - **测试约定**：命令网关的构造参数 `allowDirectAgentCommands`（只在测试代码中为 true）允许 `kind = "agent"`、`turnId = null` 的上下文直接提交命令，此时跳过 controllerEpoch 与 turnLeaseEpoch 检查。生产装配不开启。
 
 ## 3. 状态与所有权
@@ -165,8 +166,9 @@ BEGIN IMMEDIATE
        same payloadHash -> COMMIT, return the stored receipt; different -> return idempotency-conflict
   2. branch check: branch exists, worldId matches auth, status in (active, paused)
   3. type & auth checks: registered commandType -> else rejected "invalid-params";
-       issuer allowed & branch kind allowed (probe.ask only in sandbox) -> else rejected "no-authority";
-       fencing (controllerEpoch, turnLeaseEpoch) unless allowDirectAgentCommands
+       issuer allowed & branch kind allowed (probe.ask only in sandbox, knowledge.seed only in experiment) -> else rejected "no-authority";
+       fencing (controllerEpoch, turnLeaseEpoch) unless allowDirectAgentCommands;
+       actingAsAgentId needs a lease of kind human (seat) or, for kind system, script on an experiment branch
   4. pause check: clock.mode != running/stepping -> rejected "paused" (campaign.start and system:world probe.ask in an active sandbox are exempt)
   5. payload schema (zod, strict) & envelope schemaVersion -> rejected "invalid-params"
   6. expectedVersions: every listed aggregate has that version -> else rejected "version-conflict"
@@ -184,7 +186,7 @@ COMMIT
 
 ## 5. 命令目录
 
-`issuer` 列使用契约主体类型：`player` 为玩家；`agent` 为 Agent（含真人席位代发，按该 Agent 权限裁决）；`operator` 为运营控制台；`researcher` 为研究角色；`system` 为宿主内部与实验运行器。`seat.say` 由运营直接代发席位消息；`probe.ask` 只在 sandbox 分支由 `system` 发行。
+`issuer` 列使用契约主体类型：`player` 为玩家；`agent` 为 Agent（含真人席位代发与实验脚本代发，均按该 Agent 权限裁决）；`operator` 为运营控制台；`researcher` 为研究角色；`system` 为宿主内部与实验运行器。`seat.say` 由运营直接代发席位消息；`probe.ask` 只在 sandbox 分支由 `system` 发行；`knowledge.seed` 只在 experiment 分支由 `system` 发行。
 
 | type | issuer | payload | 处理模块 | 成功时的事件 | 常见拒绝原因码 |
 |---|---|---|---|---|---|
@@ -206,6 +208,7 @@ COMMIT
 | `scenario.compensate` | operator | `{ cardId, effects: CardEffect[], note }` | scenario | `ScenarioCompensationApplied` + 效果事件 | `card-not-found`、`card-not-triggered`、`invalid-effect` |
 | `scenario.override` | operator、researcher | `{ effects: OverrideEffect[], note }` | scenario | `ScenarioOverrideApplied` + 效果事件；run 标记 `contaminated` | `invalid-effect` |
 | `probe.ask` | system | `{ probeId, agentId, askedBy, question }`（只允许在 `sandbox` 分支） | comms | `ProbeAsked` | `invalid-params` |
+| `knowledge.seed` | system | `{ evidenceId, principalId }`（只允许在 `experiment` 分支，开局后、世界时钟仍为 tick 0 时） | comms | `KnowledgeGranted`（`via: "setup"`，受众只有接收方；同一主体与证据已预置过时不再产生） | `no-authority`、`not-ready`（尚未开局）、`world-tick-not-zero`、`invalid-params`（证据不存在）、`unknown-target`（接收方不存在） |
 
 `Term` 即 [规则](../game/rules.md) 第 7 节的八种条款，统一为 `{ kind, obligorId, ...params }` 的判别联合。`CardEffect` 见 [内容包](../game/content-pack.md) 第 9 节；`OverrideEffect` 在 `CardEffect` 之外额外允许 `meter-set { meter, value }` 与 `road-status-set { roadId, status }`，只供调试，使用即污染。
 

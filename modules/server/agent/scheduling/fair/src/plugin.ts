@@ -1,7 +1,7 @@
 /**
  * 按优先级、等待老化、冷却与单身份互斥生成有界 turn 计划。
  * 依赖调用方提供的已筛选 trigger 与 Agent 状态。
- * 禁止在暂停态调度普通 trigger，或为 human 控制的身份创建 turn。
+ * 禁止在暂停态调度普通 trigger，或为非 Agent 控制（human 接管、script 窗口）的身份创建 turn。
  */
 import type { AgentTrigger, ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import {

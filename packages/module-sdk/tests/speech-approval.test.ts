@@ -86,6 +86,12 @@ describe("speech.commit 批准结果判定", () => {
     ).toBe(false);
   });
 
+  it("system 以脚本控制代某个 Agent 发行时按被代发 Agent 比对，不沿用宿主代发的豁免", () => {
+    const scripted = auth({ principalId: "npc-wenyuan", kind: "system", roles: [], actingAsAgentId: "npc-wenyuan", controllerEpoch: 2 });
+    expect(isApprovedSpeechUsable(approvedSpeech(), scripted, speechPayload)).toBe(true);
+    expect(isApprovedSpeechUsable(approvedSpeech({ agentId: "npc-yinuo" }), scripted, speechPayload)).toBe(false);
+  });
+
   it("未批准、channel、受众与分支不匹配时一律拒绝", () => {
     const system = auth({ principalId: "system:world", kind: "system", roles: [] });
     expect(isApprovedSpeechUsable(null, system, speechPayload)).toBe(false);

@@ -24,7 +24,7 @@ import { isApprovedSpeechUsable, type HandlerResult } from "@world-prism/module-
 import { readBranch, readClock, type ClockRecord } from "./branch-state";
 import {
   checkExpectedVersions,
-  isCommandBranchAllowed,
+  commandBranchViolation,
   isPauseExempt,
   issuesOf,
   parseCommandType,
@@ -162,11 +162,12 @@ export class CommandGateway {
     if (!isCommandIssuerAllowed(type, auth)) {
       return this.rejectionReceipt(scope, clock, "no-authority", "当前主体不能发行该命令");
     }
-    // 分支种类限制独立于暂停状态：运行中的正式世界也不能接受沙盒专用命令。
-    if (!isCommandBranchAllowed(type, branch)) {
-      return this.rejectionReceipt(scope, clock, "no-authority", "该命令只能在沙盒分支发行");
+    // 分支种类限制独立于暂停状态：运行中的正式世界也不能接受沙盒或实验专用命令。
+    const branchViolation = commandBranchViolation(type, branch);
+    if (branchViolation !== null) {
+      return this.rejectionReceipt(scope, clock, "no-authority", branchViolation);
     }
-    const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso());
+    const fencing = verifyFencing(tx, auth, this.allowDirectAgentCommands, this.host.nowIso(), branch.kind);
     if (!fencing.ok) {
       const safeMessage = fencing.reasonCode === "stale-controller" ? "控制权已变更，请刷新后再试" : "turn 租约已失效";
       return this.rejectionReceipt(scope, clock, fencing.reasonCode, safeMessage);

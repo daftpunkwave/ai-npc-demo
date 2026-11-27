@@ -50,6 +50,7 @@ const expectedCommandTypes = [
   "scenario.compensate",
   "scenario.override",
   "probe.ask",
+  "knowledge.seed",
 ] as const;
 
 const agentId = "npc-cenyan";
@@ -72,7 +73,7 @@ const broadcastEffect = {
   text: "中继读数持续下降。",
 };
 
-/** 17 种命令的合法 payload，键必须与目录一一对应。 */
+/** 每种命令的合法 payload，键必须与目录一一对应。 */
 const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
   "campaign.start": { factionId: "human-neutral" },
   "dialogue.say": { targetAgentId: agentId, text: "你好" },
@@ -138,6 +139,7 @@ const validPayloads: Record<(typeof expectedCommandTypes)[number], unknown> = {
     askedBy: "system:world",
     question: "你还记得上次的承诺吗？",
   },
+  "knowledge.seed": { evidenceId: "ev-flood-log", principalId: agentId },
 };
 
 describe("命令目录", () => {

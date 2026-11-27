@@ -15,7 +15,10 @@ import {
   invitationViewSchema,
 } from "./projection";
 import { scenarioCardStatusSchema } from "./scenario";
-/** 席位控制者类型：Agent 或真人。 */
+/**
+ * 席位控制者类型：Agent 或真人。席位只在在线世界上接管，交接请求也只能在二者之间切换；
+ * 实验执行器的脚本控制（`controllerKindSchema` 的 `script`）只属于闭环实验分支，不经席位接口取得或呈现。
+ */
 export const seatControllerKindSchema = z.enum(["agent", "human"]);
 
 export type SeatControllerKind = z.infer<typeof seatControllerKindSchema>;

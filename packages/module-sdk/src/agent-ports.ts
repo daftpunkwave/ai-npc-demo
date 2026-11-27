@@ -9,6 +9,7 @@ import type {
   AgentTrigger,
   ContextArtifact,
   ContextBuildRequest,
+  ControllerKind,
   DecisionSubmission,
   Json,
   MaintenanceTask,
@@ -247,7 +248,8 @@ export interface SchedulingInput {
   readonly agents: readonly {
     readonly agentId: string;
     readonly active: boolean;
-    readonly controllerKind: "agent" | "human";
+    /** 只有 `agent` 可以排 turn；`human` 接管与 `script` 窗口期间该身份的 trigger 保持待处理。 */
+    readonly controllerKind: ControllerKind;
     readonly strategic: boolean;
   }[];
   readonly triggers: readonly AgentTrigger[];

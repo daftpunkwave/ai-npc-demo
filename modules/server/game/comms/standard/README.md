@@ -7,7 +7,7 @@
 - 提供能力：`game.comms`（`exactly-one`，run 作用域）。
 - 拥有聚合：`conversation`、`conversation-line`、`conversation-membership`、`message`、`message-delivery`、`knowledge-grant`、`share`、`probe-request`。
 - 依赖：`game.world`，只读指标与角色位置。
-- 命令：`dialogue.say`、`speech.commit`、`seat.say`、`broadcast.say`、`information.share`、`probe.ask`；job：`comms.knowledge-delivery`。
+- 命令：`dialogue.say`、`speech.commit`、`seat.say`、`broadcast.say`、`information.share`、`probe.ask`、`knowledge.seed`；job：`comms.knowledge-delivery`。
 - `campaign.start` 后续钩子提交开局消息与内容包 `heldBy` 知识授权。
 - 事件消费者 `comms-rumor-log` 把公开传闻 `RumorSpread` 物化为 `reported` 渠道的通信日志。
 
@@ -17,6 +17,7 @@
 - 对话在中继正常时立即、降级时 +2，中断时拒绝。
 - 广播在中断时只保留同节点收件者；开局消息固定 tick 0。
 - 投递名单按 principalId 排序去重并随事件冻结；`speech.commit` 只接受已批准且主体/分支/受众完全匹配的对白。
+- 实验脚本的预置知识经 `knowledge.seed` 授予，途径记为 `setup`：只接受 `system:world`、实验分支、开局后且世界时钟仍为 tick 0，同一主体与证据重复预置不产生第二条授权。
 - 证据分享在同一事务内写入 `share` 聚合（分享者、证据、受众、提交 tick），协议期限 job 与章节统计据此复核已提交的分享事实。
 - 已提交的消息与对白在同一事务内写入 `message` 与 `conversation` 聚合：正文、渠道与冻结投递名单都按提交 tick 固化，供投影与读接口按送达 tick 过滤。
 

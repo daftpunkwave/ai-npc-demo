@@ -1,5 +1,5 @@
 /**
- * 注册通信命令与 campaign.start 后续钩子，实现对话、发言、公开广播、证据分享、探针提问与开局消息。
+ * 注册通信命令与 campaign.start 后续钩子，实现对话、发言、公开广播、证据分享、探针提问、实验预置知识与开局消息。
  * 依赖通信/世界端口、内容索引、已批准对白读取器与 authority 事务上下文，以及 module-sdk 的共享批准判定。
  * 禁止在这里直接写世界状态、绕过已批准对白或把秘密当作可分享证据；批准结果须经共享判定校验后才能消费。
  */
@@ -17,6 +17,7 @@ import {
   type HandlerContext,
   type HandlerResult,
 } from "@world-prism/module-sdk";
+import { knowledgeSeed } from "./knowledge-seed";
 import { messageDeliveryKey, type MessageState } from "./state";
 import { probeAsk } from "./probe";
 import { commsModuleDefinition, commsOwnedAggregates } from "./definition";
@@ -299,6 +300,8 @@ export function createCommsContributor(): GameRuleContributor<GameModulePorts, u
       { type: "information.share", handler: (context, payload) => informationShare(context as CommsContext, payload) },
       // 探针由实验运行器在沙盒分支以 system:world 发行；按规范归属通信模块，但不产生对白或投递。
       { type: "probe.ask", handler: (context, payload) => probeAsk(context as CommsContext, payload) },
+      // 脚本预置知识由实验执行器在实验分支以 system:world 发行，复用本模块的知识授权语义。
+      { type: "knowledge.seed", handler: (context, payload) => knowledgeSeed(context as CommsContext, payload) },
     ],
     afterCommands: [
       {

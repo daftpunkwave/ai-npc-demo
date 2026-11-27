@@ -20,6 +20,7 @@ import {
   openStorageHarness,
   removeTempDataDir,
   startStorage,
+  type StorageHandle,
 } from "./support";
 
 /** 迁移中的表总数：部署级 11 + 分支级 19 + 运行级 12（含运营操作幂等表）。 */
@@ -87,7 +88,7 @@ describe("初始迁移", () => {
       const versions = harness.port.transact((tx) =>
         tx.all("SELECT version, applied_at, checksum FROM schema_migrations ORDER BY version"),
       );
-      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+      expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
       for (const version of versions) {
         expect(typeof version["applied_at"]).toBe("string");
         expect(version["checksum"]).toMatch(/^[a-f0-9]{64}$/);
@@ -106,7 +107,7 @@ describe("初始迁移", () => {
       const second = await startStorage(dataDir);
       try {
         const versions = second.port.transact((tx) => tx.all("SELECT version FROM schema_migrations ORDER BY version"));
-        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+        expect(versions.map((row) => row["version"])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
         expect(second.host.logs.some((log) => log.message === "已应用存储迁移")).toBe(false);
       } finally {
         await second.dispose();
@@ -384,7 +385,7 @@ describe("迁移校验和", () => {
       const rows = upgraded
         .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")
         .all();
-      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+      expect(rows.map((row) => Number(row["version"]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
       expect(rows.every((row) => /^[a-f0-9]{64}$/.test(String(row["checksum"])))).toBe(true);
       closeDatabase(upgraded);
       upgraded = null;
@@ -544,6 +545,71 @@ describe("迁移校验和", () => {
         closeDatabase(upgraded);
       }
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("升级重建控制租约表：既有快照与在线分支的租约保留、可继续复制，script 种类可写入", async () => {
+    const dataDir = createTempDataDir();
+    const migrationsDirectory = join(dataDir, "legacy-migrations");
+    mkdirSync(migrationsDirectory);
+    const host = createFakeHost();
+    let legacy: ReturnType<typeof openDatabase> | null = null;
+    let upgraded: StorageHandle | null = null;
+    try {
+      // 旧库停留在 script 种类加入之前的版本：一个在线分支与一个冻结快照，各有 Agent 与真人控制的租约。
+      await copyMigrations(migrationsDirectory, host, 20);
+      legacy = openDatabase(join(dataDir, "world-prism.db"));
+      await applyMigrations(legacy, host.nowIso(), host.logger, host.hash, migrationsDirectory);
+      legacy
+        .prepare("INSERT INTO worlds (world_id, pack_id, content_version, created_at) VALUES (?, ?, ?, ?)")
+        .run("wld-upgrade", "earth-2964-v1", "v1", host.nowIso());
+      const insertBranch = legacy.prepare(
+        "INSERT INTO branches (branch_id, world_id, kind, status, parent_branch_id, forked_at_world_seq, run_id, profile_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      insertBranch.run("br-online", "wld-upgrade", "online", "active", null, null, "run-online", null, host.nowIso());
+      insertBranch.run("br-snapshot", "wld-upgrade", "snapshot", "frozen", "br-online", 0, null, null, host.nowIso());
+      const insertLease = legacy.prepare(
+        "INSERT INTO controller_leases (branch_id, agent_id, controller_kind, controller_principal_id, controller_epoch, lease_expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+      );
+      for (const branchId of ["br-online", "br-snapshot"]) {
+        insertLease.run(branchId, "human-independent", "agent", null, 3, null);
+        insertLease.run(branchId, "species-fauna", "human", "operator-1", 2, "2026-01-01T00:10:00.000Z");
+      }
+      expect(() => insertLease.run("br-online", "human-pacifist", "script", "run-online", 1, null)).toThrow();
+      closeDatabase(legacy);
+      legacy = null;
+
+      upgraded = await startStorage(dataDir, host);
+      const port = upgraded.port;
+      const leases = (branchId: string) => port.transact((tx) => tx.branch(branchId).table("controller_leases")
+        .list({}, { orderBy: [{ column: "agent_id" }] })
+        .map((row) => [row["agent_id"], row["controller_kind"], row["controller_principal_id"], row["controller_epoch"], row["lease_expires_at"]]));
+      const legacyRows = [
+        ["human-independent", "agent", null, 3, null],
+        ["species-fauna", "human", "operator-1", 2, "2026-01-01T00:10:00.000Z"],
+      ];
+      expect(leases("br-online")).toEqual(legacyRows);
+      expect(leases("br-snapshot")).toEqual(legacyRows);
+      // 既有快照仍可复制出新分支：列清单不变，代次照常递增。
+      port.transact((tx) => port.forkBranch(tx, { srcBranchId: "br-snapshot", dstBranchId: "br-restored", kind: "sandbox" }));
+      expect(leases("br-restored")).toEqual(legacyRows.map(([agentId, kind, principal, epoch, expires]) =>
+        [agentId, kind, principal, Number(epoch) + 1, expires]));
+      // 扩展后的 CHECK 接受 script，仍拒绝其他取值。
+      port.transact((tx) => tx.branch("br-online").table("controller_leases").put({
+        agent_id: "human-pacifist", controller_kind: "script", controller_principal_id: "run-online",
+        controller_epoch: 1, lease_expires_at: null,
+      }));
+      expect(leases("br-online")).toContainEqual(["human-pacifist", "script", "run-online", 1, null]);
+      expect(() => port.transact((tx) => tx.branch("br-online").table("controller_leases").put({
+        agent_id: "human-earth-alliance", controller_kind: "robot", controller_principal_id: null,
+        controller_epoch: 1, lease_expires_at: null,
+      }))).toThrow();
+    } finally {
+      if (legacy !== null) {
+        closeDatabase(legacy);
+      }
+      await upgraded?.dispose();
+      rmSync(dataDir, { recursive: true, force: true });
     }
   });
 

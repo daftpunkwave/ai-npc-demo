@@ -4,6 +4,7 @@
  * 禁止在此生成证据或评估结果，只描述已归档数据的查询与返回形状。
  */
 import { z } from "zod";
+import { controllerKindSchema } from "./agent-runtime";
 import { agentWorldViewSchema } from "./agent-world-view";
 import { timelineItemSchema } from "./api";
 import { commandStatusSchema, executionStatusSchema } from "./envelopes";
@@ -53,7 +54,7 @@ export const agentStatusViewSchema = z
     agentId: principalIdSchema,
     kind: z.enum(["character", "strategic"]),
     active: z.boolean(),
-    controllerKind: z.enum(["agent", "human"]),
+    controllerKind: controllerKindSchema,
     location: z.string().min(1).nullable(),
     turnStatus: z.string().min(1),
     watermarkLag: z.number().int().nonnegative(),

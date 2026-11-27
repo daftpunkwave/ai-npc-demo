@@ -47,6 +47,8 @@ PRAGMA busy_timeout = 5000;
 
 0021 按 0008 的方式重建 `operation_idempotency`，在 `operation_kind` 约束中加入在线名册休眠与唤醒的 `'hibernate'`、`'wake'`；主键、列集合与既有行不变，重建后恢复 `operation_idempotency_kind` 索引。
 
+0022 重建分支级 `controller_leases`，把 `controller_kind` 的 CHECK 扩展为 `'agent'`、`'human'`、`'script'`。`script` 是实验执行器在闭环实验分支上执行脚本步骤的短暂控制窗口，`controller_principal_id` 记持有窗口的 run（见[领域模型](domain-model.md)第 2 节）。SQLite 不能修改 CHECK 约束，迁移按同一列顺序与主键建新表、拷贝既有行后替换旧表；该表没有索引、视图、触发器或外键引用，分支复制按迁移推导的列清单拷贝，既有在线、快照与实验分支的租约原样保留并可继续复制。
+
 `agent_activations` 保存单个身份的激活状态，表迁移负责行级约束。开局、恢复、在线名册唤醒和独立名册激活均在各自事务内统计活动或暂停分支上的活动身份，并按 [部署级身份配额](../00-scope-and-invariants.md#5-验收与诚实性) 拒绝超额激活。配额不足时，本次已写入的激活行随事务或命令保存点回滚。经命令网关拒绝时，外层事务仍会提交拒绝回执。接入范围见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
 ```sql
@@ -255,11 +257,11 @@ CREATE TABLE agent_activations (
   PRIMARY KEY (branch_id, agent_id)
 );
 
-CREATE TABLE controller_leases (
+CREATE TABLE controller_leases (       -- 0021 rebuilt with the 'script' kind
   branch_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
-  controller_kind TEXT NOT NULL CHECK (controller_kind IN ('agent', 'human')),
-  controller_principal_id TEXT,         -- console account when human
+  controller_kind TEXT NOT NULL CHECK (controller_kind IN ('agent', 'human', 'script')),
+  controller_principal_id TEXT,         -- console account when human; experiment run when script
   controller_epoch INTEGER NOT NULL,
   lease_expires_at TEXT,
   PRIMARY KEY (branch_id, agent_id)

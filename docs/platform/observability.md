@@ -28,7 +28,7 @@
 | 层级 | 必须保留的关联字段 |
 |---|---|
 | 实验 | `experimentId`、`runId`、`worldId`、`branchId`、`scenarioId` |
-| 参与者 | `agentId`、`principalId`（如适用）、`controllerKind`（agent 或 human）、`controllerEpoch` |
+| 参与者 | `agentId`、`principalId`（如适用）、`controllerKind`（agent、human，或实验分支上脚本步骤窗口的 script）、`controllerEpoch` |
 | 因果与顺序 | `eventId`、`worldSeq`、`causationIds`、`correlationId`、`traceId`、`spanId` |
 | 决策 | `turnId`、`attemptId`、`commandId`、`idempotencyKey` |
 | 证据 | `observationIds`、`memoryIds`、`contextArtifactId`、`llmCallId`、`toolCallIds` |

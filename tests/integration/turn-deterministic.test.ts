@@ -7,6 +7,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { acquireScriptControl, releaseScriptControl } from "@world-prism/agent-runtime";
 import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost } from "@world-prism/app-server";
 import {
   conversationResponseSchema, decisionSubmissionSchema, type AuthContext, type CommandType, type Json, type StorageRow,
@@ -302,6 +303,63 @@ describe("确定性 Agent turn", () => {
     expect(turns(host)).toHaveLength(0);
     clock(host, 0, "running");
     expect(await terminalTurn(host, 0)).toMatchObject({ status: "completed" });
+  });
+
+  it("脚本控制窗口隔离在途 turn 且不排新 turn；被控 Agent 照常感知脚本动作，交还后以新代次处理待处理触发", async () => {
+    const gate = holdFirstDecision();
+    const host = await hostWithAgents({ moduleDefinitions: gate.definitions });
+    const submit = player();
+    submit(host, "campaign.start", { factionId: "human-neutral" });
+    // 脚本控制只属于实验分支：把宿主分支登记为实验分支，在同一 Agent 运行时里观察窗口前后。
+    const runId = host.storage.transact((tx) => {
+      const branch = tx.rows("branches").get({ branch_id: host.branchId });
+      if (branch === null) throw new Error("Test branch is missing");
+      tx.rows("branches").put({ ...branch, kind: "experiment" });
+      return String(branch["run_id"]);
+    });
+    clock(host, 0, "running");
+    submit(host, "dialogue.say", { targetAgentId: target, text: "你好。" });
+    await gate.entered;
+    const window = { branchId: host.branchId, agentId: target, runId, nowIso: new Date().toISOString(), context: { declarationIndex: 0 } };
+    const acquired = host.storage.transact((tx) => acquireScriptControl(tx, window));
+    gate.release();
+    expect(await terminalTurn(host, 0)).toMatchObject({ status: "cancelled", terminal_reason: "stale-controller" });
+    expect(events(host, "DialogueSubmitted", target)).toHaveLength(0);
+
+    // 窗口内以被控 Agent 身份设置它控制的隘口道路。感知与摄入不暂停：被控 Agent 与其他党魁都看到这次动作。
+    const scripted = (value: string, commandId: string): string => {
+      const receipt = host.authority.commands.execute({
+        principalId: target, kind: "system", roles: [], worldId: host.worldId, branchId: host.branchId,
+        actingAsAgentId: target, controllerEpoch: acquired.toEpoch, turnId: null, turnLeaseEpoch: null,
+      }, gameCommandEnvelope("policy.set", { key: "road.status:r-gh-ps", value }, commandId));
+      expect(receipt, JSON.stringify(receipt)).toMatchObject({ commandStatus: "accepted" });
+      return String(receipt.acceptedEventIds[0]);
+    };
+    const perceived = (agentId: string, eventId: string): boolean => host.storage.transact((tx) =>
+      tx.branch(host.branchId).table("observations").list({ agent_id: agentId })
+        .some((row) => (row["source_event_ids_json"] as readonly string[]).includes(eventId)));
+    // 两次动作先后被感知，说明第一次之后至少跑过一轮调度：窗口内该身份不排新 turn，玩家对白的触发保持待处理。
+    for (const [value, commandId] of [["restricted", "cmd-00000000sc01"], ["open", "cmd-00000000sc02"]] as const) {
+      const eventId = scripted(value, commandId);
+      await vi.waitFor(() => {
+        expect(perceived(target, eventId)).toBe(true);
+        expect(perceived("human-earth-alliance", eventId)).toBe(true);
+      }, { timeout: 8000, interval: 25 });
+    }
+    expect(turns(host)).toHaveLength(1);
+    const pending = () => host.storage.transact((tx) => tx.branch(host.branchId).table("triggers").list({ agent_id: target, kind: "player-dialogue" }));
+    expect(pending()).toEqual([expect.objectContaining({ consumed_by_turn_id: null })]);
+
+    host.storage.transact((tx) => releaseScriptControl(tx, window));
+    const resumed = await vi.waitFor(() => {
+      const turn = turns(host)[1];
+      expect(turn?.["ended_at"]).toEqual(expect.any(String));
+      if (turn === undefined) throw new Error("Expected a resumed turn");
+      return turn;
+    }, { timeout: 15_000, interval: 25 });
+    expect(resumed).toMatchObject({ status: "completed", controller_epoch: acquired.toEpoch + 1 });
+    expect(pending()).toEqual([expect.objectContaining({ consumed_by_turn_id: resumed["turn_id"] })]);
+    expect(events(host, "DialogueSubmitted", target)).toHaveLength(1);
   });
 
   it("重开后关闭旧分支的在途 turn，新分支可以开局并回复玩家", async () => {

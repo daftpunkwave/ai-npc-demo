@@ -210,7 +210,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
 | `GET /ops/seats` | operator | — | `{ seats: { agentId, controllerKind, controllerPrincipalId, controllerEpoch, leaseExpiresAt }[] }`，只包含 `species-fauna`、`species-flora`、`species-extraterrestrial` |
-| `POST /ops/controllers/{agentId}/handover` | operator | `{ operationId, mode: "human"\|"agent", expectedEpoch, reason }` | `{ controllerEpoch, controllerKind, leaseExpiresAt }` |
+| `POST /ops/controllers/{agentId}/handover` | operator | `{ operationId, mode: "human"\|"agent", expectedEpoch, reason }`；`mode` 不接受 `script`，脚本控制只由实验执行器在实验分支上取得 | `{ controllerEpoch, controllerKind, leaseExpiresAt }` |
 | `POST /ops/controllers/{agentId}/renew` | operator | `{ controllerEpoch }` | `{ leaseExpiresAt }`（续期 10 分钟） |
 | `GET /ops/seats/{agentId}/view` | operator（须持有该席位租约） | — | `{ worldView: AgentWorldView, inbox, agreements, invitations }`：只有该身份合法获知的内容 |
 | `POST /ops/seats/{agentId}/commands` | operator（须持有该席位租约） | `CommandEnvelope` | `CommandReceipt`；以该 agentId 身份、当前 epoch 提交 |
@@ -248,7 +248,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 方法与路径 | 请求参数 | 响应 |
 |---|---|---|
 | `GET /timeline`（已实现） | `branchId`、`fromSeq`（缺省 0）、`limit`（缺省 100，≤ 200）、`order`（`asc`/`desc`）、`types`（≤ 20 个，每个 ≤ 64 字符）、`agentId`、`nodeId` | `{ events: TimelineItem[] }`：真值视角的领域事件，附生命周期事件；筛选在存储查询中执行，`desc` 用于读取最新事件。查询参数的取值范围以公共 `timelineQuerySchema` 为唯一基准，路由只做类型规范化 |
-| `GET /agents`（已实现） | `branchId`（必填） | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
+| `GET /agents`（已实现） | `branchId`（必填） | `{ agents: { agentId, kind, active, controllerKind, location, turnStatus, watermarkLag }[] }`。`controllerKind` 为 `agent`、`human` 或 `script`；`script` 只出现在实验分支上，表示实验执行器正处在某个脚本步骤的控制窗口；窗口在一次注入内开合，只有进程在窗口内退出时才会留到下一次执行开始时交还。`location` 取世界模块 `character` 聚合的 `nodeId`，没有该聚合时才是 `null`；`watermarkLag` 是该 Agent 已感知世界序号与分支最新世界序号之差，尚未建立感知水位时按最新序号计 |
 | `GET /agents/{agentId}/inspector`（已实现） | `branchId`（必填） | 人格、位置、`AgentWorldView`、当前 memory revision 的记录摘要、关系与承诺、水位、最近 20 个 turn。未知 Agent 返回 `not-found` |
 | `GET /agents/{agentId}/memory`（已实现） | `branchId`（必填）、`revision`（可选，缺省为当前最新） | `{ revision, records: MemoryRecord[] }` |
 | `GET /agents/{agentId}/memory/diff`（已实现） | `branchId`（必填）、`from`、`to` | `{ added, retired, changed }`，每项带来源观察 ID |
@@ -326,7 +326,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | `receipt.reasonCode` | 场景 |
 |---|---|
 | `paused` | 世界时钟不在 running 或 stepping，命令不豁免暂停 |
-| `stale-controller` | Agent 命令缺少或携带过期的控制权 epoch、控制租约已过期，或角色已由非 Agent 控制者接管 |
+| `stale-controller` | Agent 命令缺少或携带过期的控制权 epoch、控制租约已过期，或角色已由非 Agent 控制者接管；代发命令的控制种类与代发者不符（真人席位只能凭 `human`，实验执行器只能在实验分支上凭 `script`） |
 | `stale-turn` | Agent 命令缺少 turn 租约，或 turn 不存在、已结束、租约过期、租约代次与归属不符 |
 
 传输层的状态码映射覆盖登记表中的全部错误码，以保证任何 `DomainError` 都有确定的 HTTP 状态；其中 `cancelled` 只用于模型池工作租约失效与存储启动取消等进程内流程，`paused`、`stale-controller`、`stale-turn` 只作为上表的回执原因码出现，三者都没有 HTTP 接口的产生路径。

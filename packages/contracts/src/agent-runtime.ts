@@ -13,6 +13,15 @@ import { toolResultReasonCodeSchema } from "./reason-codes";
 import { dialogueIntentSchema } from "./agent-tools";
 export * from "./agent-tools";
 
+/**
+ * 分支上某个 Agent 身份当前的控制者种类，与 `controller_leases.controller_kind` 一一对应：
+ * `agent` 为 Agent 自己的 turn；`human` 为真人席位接管；`script` 为实验执行器在闭环实验分支上
+ * 执行脚本步骤的短暂窗口，只出现在实验分支上，不能经任何 HTTP 或控制台入口取得。
+ */
+export const controllerKindSchema = z.enum(["agent", "human", "script"]);
+
+export type ControllerKind = z.infer<typeof controllerKindSchema>;
+
 /** trigger 只表达唤醒原因；合并、公平与冷却由调度策略决定。 */
 export const agentTriggerKindSchema = z.enum([
   "player-dialogue",

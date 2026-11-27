@@ -1,10 +1,10 @@
 /**
  * 核心职责：实验执行器集成测试的共用夹具：启动测试装配宿主、登录研究员会话、按内联规格创建实验并启动 run、
- * 等待 run 到达终态，以及读取 run、分支、探针结果与实验汇总的存储事实。
+ * 等待 run 到达终态，读取 run、分支、探针结果、实验汇总与控制租约的存储事实，以及追加脚本步骤的内容包副本。
  * 交互契约：使用真实测试装配（确定性模型传输）、SQLite 临时目录与控制台 HTTP 接口；不访问网络与真实模型。
  * 约束与禁忌：只读断言所需的存储行，不改写执行器写入的数据；临时目录与宿主由调用方在 afterEach 中释放。
  */
-import { mkdtempSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, vi } from "vitest";
@@ -172,6 +172,40 @@ export function experimentAudit(host: RunningHost, branchId: string): readonly {
     "SELECT type, payload_json FROM lifecycle_events WHERE branch_id = ? AND type LIKE 'Experiment%' ORDER BY seq",
     [branchId],
   ).map((row) => ({ type: String(row["type"]), payload: JSON.parse(String(row["payload_json"])) as Json })));
+}
+
+/** 实验分支上的控制变更审计：主体、所属 run 与载荷，按写入顺序。 */
+export function controllerChanges(
+  host: RunningHost,
+  branchId: string,
+): readonly { readonly subjectId: unknown; readonly runId: unknown; readonly payload: Record<string, Json> }[] {
+  return host.storage.transact((tx) => tx.all(
+    "SELECT subject_id, run_id, payload_json FROM lifecycle_events WHERE branch_id = ? AND type = 'ControllerChanged' ORDER BY seq",
+    [branchId],
+  ).map((row) => ({ subjectId: row["subject_id"], runId: row["run_id"], payload: JSON.parse(String(row["payload_json"])) as Record<string, Json> })));
+}
+
+/** 某分支上某个身份的控制租约：种类、控制者与代次。 */
+export function controllerLease(host: RunningHost, branchId: string, agentId: string): readonly unknown[] {
+  return host.storage.transact((tx) => {
+    const row = tx.branch(branchId).table("controller_leases").get({ agent_id: agentId });
+    return [row?.["controller_kind"], row?.["controller_principal_id"], row?.["controller_epoch"]];
+  });
+}
+
+/**
+ * 复制内容包，在 s-secret 原有的玩家步骤之后追加步骤（每行一条 YAML 流式映射），返回新内容根目录。
+ * 用于以 Agent 身份声明脚本步骤：内容校验只要求 `as` 是内容包登记的主体，名册与权限由执行器与规则裁决。
+ */
+export function secretScriptWithSteps(resources: ExperimentTestResources, extraSteps: readonly string[]): string {
+  const root = join(tempRoot(resources, "world-prism-experiment-content-"), "content");
+  cpSync("content", root, { recursive: true });
+  const scriptFile = join(root, "world-packs", "earth-2964-v1", "scripts", "s-secret.yaml");
+  const original = readFileSync(scriptFile, "utf8").replaceAll("\r\n", "\n");
+  const rewritten = original.replace("\ncheckpoints:", `\n${extraSteps.map((step) => `  - ${step}\n`).join("")}checkpoints:`);
+  if (rewritten === original) throw new Error("s-secret 的脚本格式已变化，无法追加步骤");
+  writeFileSync(scriptFile, rewritten, "utf8");
+  return root;
 }
 
 /** 某分支上仍为 active 的身份。 */
