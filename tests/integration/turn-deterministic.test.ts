@@ -11,7 +11,7 @@ import { serverModuleDefinitions, startHost, type HostOptions, type RunningHost 
 import {
   conversationResponseSchema, decisionSubmissionSchema, type AuthContext, type CommandType, type Json, type StorageRow,
 } from "@world-prism/contracts";
-import type { AgentDecisionPort, DeterministicDecisionInput } from "@world-prism/module-sdk";
+import type { DeterministicDecisionPort } from "@world-prism/module-sdk";
 import { gameCommandEnvelope } from "./game-support";
 
 const target = "human-independent";
@@ -117,8 +117,8 @@ function holdFirstDecision(): { readonly definitions: NonNullable<HostOptions["m
       ...definition,
       create: async (input: Parameters<typeof definition.create>[0]) => {
         const instance = await definition.create(input);
-        const base = instance.port as AgentDecisionPort<DeterministicDecisionInput>;
-        const port: AgentDecisionPort<DeterministicDecisionInput> = {
+        const base = instance.port as DeterministicDecisionPort;
+        const port: DeterministicDecisionPort = {
           decide: async (turn) => {
             const result = await base.decide(turn);
             if (!held && turn.session.agentId === target && turn.triggers.some(({ kind }) => kind === "player-dialogue")) {

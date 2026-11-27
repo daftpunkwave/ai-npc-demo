@@ -17,7 +17,7 @@ import {
   type TaskType,
   type ToolExecutionResult,
 } from "@world-prism/contracts";
-import { createStatelessModule, type DeterministicDecisionInput, type AgentDecisionPort } from "@world-prism/module-sdk";
+import { createStatelessModule, type DeterministicDecisionInput, type DeterministicDecisionPort } from "@world-prism/module-sdk";
 import type { ModuleCreateInput, ModuleInstance } from "@world-prism/contracts";
 import { termsWithinDelegations } from "./term-capacity";
 
@@ -158,7 +158,7 @@ function answer(requesterId: string, input: DeterministicDecisionInput): Trigger
 }
 
 export function createDeterministicDecisionModule(input: ModuleCreateInput): Promise<ModuleInstance> {
-  const port: AgentDecisionPort<DeterministicDecisionInput> = {
+  const port: DeterministicDecisionPort = {
     async decide(turn) {
       const rng = input.host.rng(turn.runSeed, "jitter", turn.session.agentId,
         String(turn.frontier.worldTick), String(turn.agentTurnIndex));
@@ -206,10 +206,7 @@ export function createDeterministicDecisionModule(input: ModuleCreateInput): Pro
           citedMemoryIds,
           decisionNote: citedMemoryIds.join(" ").slice(0, 120),
         },
-        stages: [],
-        contextArtifacts: [],
         toolResults,
-        messages: [],
       };
     },
   };

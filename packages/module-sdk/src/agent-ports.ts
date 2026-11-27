@@ -6,7 +6,6 @@
 /* eslint-disable no-unused-vars -- 接口方法参数名用于表达调用契约。 */
 import type {
   AgentObservation,
-  AgentStageEffective,
   AgentTrigger,
   ContextArtifact,
   ContextBuildRequest,
@@ -16,7 +15,6 @@ import type {
   MemoryBundle,
   MemoryChangePlan,
   AgentMemoryQuery,
-  NormalizedMessage,
   ToolBinding,
   ToolDefinition,
   ToolExecutionResult,
@@ -265,43 +263,21 @@ export interface SchedulingPort {
   }[];
 }
 
-/** 决策只使用当前 turn 已授权、冻结的材料与宿主提供的工具执行入口。 */
-export interface AgentDecisionInput {
+/**
+ * 确定性决策槽的输入：只含当前 turn 已授权、冻结的材料与宿主提供的工具执行入口。
+ * 模型决策走 ModelDecisionPort，由宿主编排上下文、压缩与对白；本输入不携带模型、上下文或提示词材料。
+ */
+export interface DeterministicDecisionInput {
   readonly session: MemoryScope;
   readonly runId: string;
   readonly turnId: string;
   readonly attemptId: string;
   readonly frontier: import("@world-prism/contracts").InputFrontier;
   readonly profileHash: string;
-  readonly templateVersion: string;
   readonly agentTurnIndex: number;
   readonly triggers: readonly AgentTrigger[];
   readonly observations: readonly AgentObservation[];
   readonly memory: MemoryBundle;
-  readonly identity: {
-    readonly name: string;
-    readonly kind: "character" | "strategic";
-    readonly factionName: string;
-    readonly role: string;
-    readonly values: readonly string[];
-    readonly skills: readonly string[];
-    readonly speechStyle: string;
-    readonly bottomLines: readonly string[];
-    readonly goals: readonly string[];
-  };
-  readonly worldViewText: string;
-  readonly affairsText: string;
-  readonly historyText: string;
-  readonly inputText: string;
-  readonly system: string;
-  readonly loreSummary: string;
-  readonly modelWindowTokens: number;
-  readonly contextBudget: ContextBuildRequest["budget"];
-  readonly model: ScopedModelPort | null;
-  readonly context: AgentContextPort;
-  readonly compression: AgentCompressionPort;
-  readonly tools: AgentToolsPort;
-  readonly toolView: AgentToolViewPort;
   readonly executeTool: (input: {
     readonly toolId: string;
     readonly arguments: Json;
@@ -309,23 +285,13 @@ export interface AgentDecisionInput {
     readonly attemptId: string;
     readonly round: number;
   }) => Promise<{ readonly result: ToolExecutionResult; readonly modelText: string }>;
-  readonly maxDecisionRounds: number;
-  readonly maxToolCallsPerRound: number;
-  readonly maxToolCallsPerTurn: number;
-  readonly maxModelCallsPerTurn: number;
   readonly deadlineMs: number;
   /**
    * 本 turn 的取消信号：turn 截止或运行时停止时中止。
-   * 端口实现应把它传给在途网络调用，让宿主放弃等待后底层请求也随之结束；
+   * 端口实现应把它传给在途调用，让宿主放弃等待后底层工作也随之结束；
    * 不响应它不会改变权威结果（租约与 fencing 仍会拒绝迟到提交），但会在证据里记为未响应取消。
    */
   readonly signal: AbortSignal;
-}
-
-export interface DeterministicDecisionInput extends Pick<AgentDecisionInput,
-  "session" | "runId" | "turnId" | "attemptId" | "frontier" | "profileHash" | "agentTurnIndex" |
-  "triggers" | "observations" | "memory" | "executeTool" | "deadlineMs" | "signal"
-> {
   readonly runSeed: string;
   readonly self: {
     readonly injured: boolean;
@@ -350,28 +316,15 @@ export interface DeterministicDecisionInput extends Pick<AgentDecisionInput,
   };
 }
 
-export interface AgentDecisionResult {
+/** 确定性决策结果：宿主只按 status、reason 与 decision 收尾；toolResults 记录本轮经工具入口执行的结果。 */
+export interface DeterministicDecisionResult {
   readonly status: AgentDecisionStatus;
   readonly decision: DecisionSubmission | null;
-  readonly stages: readonly AgentStageEffective[];
   readonly reason: string | null;
-  readonly contextArtifacts: readonly ContextArtifact[];
   readonly toolResults: readonly ToolExecutionResult[];
-  readonly messages: readonly NormalizedMessage[];
 }
 
-export interface AgentSpeechInput extends AgentDecisionInput {
-  readonly decision: DecisionSubmission;
-  readonly decisionArtifacts: readonly ContextArtifact[];
-  readonly receiptsText: string;
-}
-
-export interface AgentDecisionPort<Input = AgentDecisionInput> {
-  decide(input: Input): Promise<AgentDecisionResult>;
-  speak?(input: AgentSpeechInput): Promise<{
-    readonly text: string;
-    readonly citedRefs: readonly string[];
-    readonly fallback: boolean;
-    readonly validation: Json;
-  }>;
+/** 确定性决策槽端口；与模型决策的 ModelDecisionPort 并列，由宿主按决策模块是否声明模型池能力选择。 */
+export interface DeterministicDecisionPort {
+  decide(input: DeterministicDecisionInput): Promise<DeterministicDecisionResult>;
 }

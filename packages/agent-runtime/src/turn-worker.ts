@@ -9,8 +9,8 @@ import {
 } from "@world-prism/contracts";
 import type { ResolvedAgentProfile } from "@world-prism/experiment";
 import type {
-  AgentDecisionPort,
   DeterministicDecisionInput,
+  DeterministicDecisionPort,
   RunModelPort,
 } from "@world-prism/module-sdk";
 import { StoredAgentArtifactStore } from "@world-prism/module-sdk";
@@ -406,7 +406,7 @@ export class TurnWorker {
    * 运行时停止记 cancelled / runtime-stopped，到达截止记 budget-exhausted / turn-deadline，不随计时器先后翻转。
    */
   private async decideBeforeDeadline(
-    port: AgentDecisionPort<DeterministicDecisionInput>,
+    port: DeterministicDecisionPort,
     input: Omit<DeterministicDecisionInput, "signal">,
     evidence: TurnEvidence,
     turn: ClaimedTurn,
