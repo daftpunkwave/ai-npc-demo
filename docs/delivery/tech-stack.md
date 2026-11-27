@@ -202,7 +202,7 @@ packages:
 
 服务端默认名册为 `standard-15`，序章开放公社开局。单份名册最多 15 个身份，开局和恢复事务校验部署级活动身份配额。参见 [IMPLEMENTATION-STATUS.md — 身份配额](../IMPLEMENTATION-STATUS.md#31-身份配额)。
 
-部署参数只有这一个来源：主机、两个端口、数据目录、控制台静态产物目录、日志级别只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `WORLD_PRISM_DATA_DIR`，控制台静态目录取自 `WORLD_PRISM_CONSOLE_STATIC_DIR`，缺省 `apps/server/console-static`），装配文件里不写这些值；两个 Vite 配置也从同一组环境变量读取端口。相对路径一律按仓库根解析，不按进程工作目录派生，因此从任意工作目录启动服务端都挂载到同一份构建产物。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/world-prism.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
+部署参数只有这一个来源：主机、两个端口、数据目录、控制台静态产物目录、日志级别与观测跨度保留天数只从这些环境变量读取，由宿主在启动时并入 `transport.http-ws.fastify` 与 `platform.storage.sqlite` 的配置（存储适配器的 `dataDir` 取自 `WORLD_PRISM_DATA_DIR`，`retentionDays.trace_spans` 取自 `WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS`，留空表示永久保留；控制台静态目录取自 `WORLD_PRISM_CONSOLE_STATIC_DIR`，缺省 `apps/server/console-static`），装配文件里不写这些值，它们也不进入冻结 manifest；两个 Vite 配置也从同一组环境变量读取端口。相对路径一律按仓库根解析，不按进程工作目录派生，因此从任意工作目录启动服务端都挂载到同一份构建产物。时钟速度等游戏参数只在装配的 `configs` 里配置。密钥只经 `platform.secrets.env` 按 `credentialRef` 解析，详见 [模型传输](../agent/model-transport.md)。数据目录结构：`data/world-prism.db`（主库）、`data/artifacts/`（大于 64 KB 的 artifact 正文）、`data/backups/`（`VACUUM INTO` 备份）、`data/dev-tokens.json`（自动生成的登录令牌）。
 
 开发数据的重置方式见 [operations.md — 重置开发数据](../platform/operations.md#101-重置开发数据)；旧在线 run 的能力闭包升级迁移开关 `WORLD_PRISM_MIGRATE_ONLINE_RUN` 见 [operations.md — 能力闭包升级迁移](../platform/operations.md#102-能力闭包升级迁移)。
 

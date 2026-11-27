@@ -187,6 +187,21 @@ describe("部署配置", () => {
       .toThrow("WORLD_PRISM_CLIENT_PORT 必须是 5173");
   });
 
+  it("trace_spans 保留天数缺省为永久保留，只接受正整数天", () => {
+    const root = tempRoot();
+    const parse = (value: string | undefined) => parseDeploymentConfig({
+      env: { WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS: value },
+      projectRoot: root,
+    }).traceSpansRetentionDays;
+    expect(parse(undefined)).toBeNull();
+    expect(parse("  ")).toBeNull();
+    expect(parse("30")).toBe(30);
+    expect(parse(" 365 ")).toBe(365);
+    for (const value of ["0", "-1", "1.5", "30d", "030", "abc"]) {
+      expect(() => parse(value)).toThrow(`WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS 必须是正整数天数，收到 "${value}"`);
+    }
+  });
+
   it("拒绝玩家、控制台与单角色令牌之间的重复", () => {
     const root = tempRoot();
     expect(() => parseDeploymentConfig({
@@ -371,6 +386,21 @@ describe("启动编排", () => {
     expect(provider.state.listenCalls).toBe(0);
     expect(readFileSync(filePath, "utf8")).toBe(previous);
     expect(readdirSync(config.dataDir)).toEqual([credentialsFileName]);
+  });
+
+  it("只在配置了 trace_spans 保留天数时把它传给宿主", async () => {
+    const root = tempRoot();
+    const provider = createFakeHostProvider();
+    for (const env of [{}, { WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS: "30" }]) {
+      await startServer({
+        config: parseDeploymentConfig({ env, projectRoot: root }),
+        startHost: provider.startHost,
+        logLine: () => {},
+        logError: () => {},
+      });
+    }
+    expect(provider.state.options.map((options) => options.traceSpansRetentionDays)).toEqual([undefined, 30]);
+    expect("traceSpansRetentionDays" in (provider.state.options[0] ?? {})).toBe(false);
   });
 
   it("宿主启动失败时丢弃暂存文件且不发布凭据文件", async () => {

@@ -51,6 +51,11 @@ export interface HostOptions {
    */
   readonly migrateOnlineRun?: boolean;
   /**
+   * 观测跨度 trace_spans 的保留天数；缺省永久保留。宿主把它作为部署期覆盖并入存储适配器配置，
+   * 不进入冻结摘要，调整保留期不改变实验组合，也不触发在线 run 迁移。
+   */
+  readonly traceSpansRetentionDays?: number;
+  /**
    * 关闭时每级资源排空的预算（毫秒）：先停止新任务并等待提交边界，超时记录后继续释放。
    * 缺省使用与租约期限解耦的默认值，避免单个卡住的 turn 无限拖住进程退出。
    */

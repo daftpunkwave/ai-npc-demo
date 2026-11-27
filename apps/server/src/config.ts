@@ -63,6 +63,8 @@ export interface DeploymentConfig {
   readonly rosterRef: string;
   /** 在线 run 能力闭包升级时的显式迁移开关；缺省关闭，拒绝启动并给出迁移指引。 */
   readonly migrateOnlineRun: boolean;
+  /** 观测跨度 trace_spans 的保留天数；未配置时为 null，表示永久保留。 */
+  readonly traceSpansRetentionDays: number | null;
   /** 只包含非空的已配置令牌；缺省令牌在解析凭据时生成。 */
   readonly configuredTokens: Partial<Record<TokenRole, string>>;
 }
@@ -147,6 +149,20 @@ function readBooleanFlag(env: DeploymentConfigInput["env"], name: string): boole
 }
 
 /**
+ * 解析正整数天数；未配置或空白时为 null。只校验格式，取值上限由存储适配器的配置 schema 统一校验。
+ */
+function readPositiveDays(env: DeploymentConfigInput["env"], name: string): number | null {
+  const raw = readText(env, name);
+  if (raw === undefined) {
+    return null;
+  }
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new Error(`${name} 必须是正整数天数，收到 "${raw}"；留空表示永久保留`);
+  }
+  return Number(raw);
+}
+
+/**
  * 校验任意两个非空令牌都不同。
  * 重复时指出具体来源，避免传输层按 Map 覆盖身份后静默降级为后一个角色。
  */
@@ -203,6 +219,7 @@ export function parseDeploymentConfig(input: DeploymentConfigInput): DeploymentC
     modelLayoutRef: readText(input.env, "WORLD_PRISM_MODEL_LAYOUT") ?? defaultModelLayoutRefFor(assemblyRef),
     rosterRef: readText(input.env, "WORLD_PRISM_ROSTER") ?? deploymentDefaults.rosterRef,
     migrateOnlineRun: readBooleanFlag(input.env, "WORLD_PRISM_MIGRATE_ONLINE_RUN"),
+    traceSpansRetentionDays: readPositiveDays(input.env, "WORLD_PRISM_TRACE_SPANS_RETENTION_DAYS"),
     configuredTokens,
   };
 }
