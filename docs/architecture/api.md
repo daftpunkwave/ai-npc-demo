@@ -261,15 +261,16 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 | 方法与路径 | 角色 | 请求 | 响应 |
 |---|---|---|---|
-| `POST /runs`（已实现） | researcher | `{ runSpec }`（[配置](../platform/configuration.md) 第 3 节） | `{ runId, status: "ready" \| "preflight-failed", errors }` |
+| `POST /runs`（已实现） | researcher | `{ runSpec }`（[配置](../platform/configuration.md) 第 3 节） | `{ runId, status: "ready" \| "preflight-failed", errors }`；manifest 冻结名册的 Agent profile 与模型挂载 |
 | `GET /runs`（已实现） | researcher、evaluator | `status`、`limit` | run 列表 |
 | `GET /runs/{runId}`（已实现） | researcher、evaluator | — | 状态、去密钥 manifest、manifest hash、contaminated、evidenceComplete |
-| `POST /runs/{runId}/start` / `stop`（已实现） | researcher | `{ operationId }` | `{ runId, status: "running" \| "paused" }` |
+| `POST /runs/{runId}/start` / `stop`（已实现） | researcher | `{ operationId }` | `{ runId, status: "running" \| "paused" }`；带脚本的闭环 run 启动后由实验执行器按启动先后逐个驱动，停止后执行器在下一次收敛检查前停下（[评估](../platform/evaluation.md) 第 8.1 节） |
+| `GET /runs/{runId}/progress`（已实现） | researcher、evaluator | — | `{ runId, status, branchId, executing, worldTick, endTick, probes: { recorded, total }, lastEvent }`：`executing` 为 false 且状态为 `running` 表示在队列中；`lastEvent` 是实验分支上最近一条执行器审计事件（类型、载荷与时间），失败时载荷带原因码；run 不存在返回 404 |
 | `GET /runs/{runId}/report`（已实现） | researcher、evaluator | — | 指标、分子分母、无效样本数与原因、探针结果（[评估](../platform/evaluation.md) 第 9 节） |
 | `GET /experiments`（已实现） | researcher、evaluator | — | `{ experiments: { experimentId, runCount }[] }` |
 | `POST /experiments`（已实现） | researcher | `{ experimentSpec }` 或 `{ experimentRef }`（格式见第 9 节末尾） | `{ experimentId, runIds, runs: { runId, status, errors }[], failedRunCount }` |
 | `GET /experiments/{experimentId}`（已实现） | researcher、evaluator | — | 各 run 状态与汇总报告 |
-| `POST /exports`（已实现） | researcher | `{ runId, redaction: "redacted"\|"raw" }` | `{ artifactId }`：导出包（manifest、事件、turn、artifact 索引） |
+| `POST /exports`（已实现） | researcher | `{ runId, redaction: "redacted"\|"raw" }` | `{ artifactId }`：导出包（manifest、事件、turn、artifact 索引、`probeResults`、`experimentResults`）；`redacted` 清空对白与回答正文及决策的 `decisionNote` |
 
 ## 6. 角色权限矩阵
 
@@ -285,7 +286,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 | 5.3 席位与运营 | ✗ | ✓（时钟、单步、存档、恢复） | 只读快照列表 | ✗ |
 | 5.4 剧情卡 | ✗ | ✓ | 只能 override | ✗ |
 | 5.5 可观测与调试 | ✗ | ✗ | ✓ | ✗ |
-| 5.6 评估与导出 | ✗ | ✗ | ✓ | 只读 run 与报告 |
+| 5.6 评估与导出 | ✗ | ✗ | ✓ | 只读 run、进度与报告 |
 
 服务端在路由层按本表鉴权，再在处理器里校验资源 scope（例如席位命令必须持有该席位的有效租约）。前端隐藏按钮只是体验，不是鉴权。
 

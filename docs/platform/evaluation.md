@@ -1,6 +1,6 @@
 # 评估、对比与实验有效性
 
-> 状态：接口、实验展开与探针计分已实现，自动化实验执行器（驱动受控时钟检查点、分叉沙盒并写入 `probe_results`）待接入。首版优先比较 memory；全模块架构允许把游戏规则、客户端 UI、控制台页面等也作为显式装配轴，但任何轴都必须固定其他条件并记录 resolved diff。原文档案字段由 [可观测性](observability.md) 维护；装配语义见 [积木组合](../architecture/composition.md)。
+> 状态：接口、实验展开、探针计分与闭环冷启动的实验执行器（驱动受控时钟到脚本检查点、分叉沙盒执行探针、写入 `probe_results` 与 `experiment_results`）已实现；审计重放、开环重决策、从快照起步与带 `setup` 预置知识的脚本尚未接入执行器（见第 8 节）。首版优先比较 memory；全模块架构允许把游戏规则、客户端 UI、控制台页面等也作为显式装配轴，但任何轴都必须固定其他条件并记录 resolved diff。原文档案字段由 [可观测性](observability.md) 维护；装配语义见 [积木组合](../architecture/composition.md)。
 
 ## 1. 三种运行模式及其结论边界
 
@@ -17,6 +17,8 @@
 真人自由试玩属于探索性运行；未脚本化的临场运营不能直接作为严格 A/B 证据。正式单玩家世界不得回滚来迁就实验，实验在独立 `branchId` 执行。
 
 Agent 上限按全平台同时激活的逻辑身份计，正式世界与实验合计不得超过 15。标准 15 个 Agent 正式运行时，完整闭环对比必须先暂停正式运行并释放名额，再逐分支执行。休眠快照不占激活名额，激活前必须预留名额；局部被试实验仅可使用实际空余名额。
+
+当前执行器在同一宿主进程内逐个执行实验 run，只使用实际空余名额：实验名册在开局事务内预留配额，名额不足时开局被拒、run 记为 `failed`（原因码 `quota-unavailable`），不会挤占在线世界。服务端尚无“保存并释放在线名额”的运营接口，暂停在线时钟不会释放名额；在线世界已开局且名册占满时，实验需要在在线世界未开局或名册较小（如 `core-3`）的独立数据目录上执行。
 
 ## 2. 启动预检与运行清单
 
@@ -131,12 +133,28 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 
 ## 8. 探针执行与计分（首版）
 
-探针脚本格式见 [内容包](../game/content-pack.md) 第 11 节，prompt 见 [prompts](../agent/prompts.md) 第 7 节。`platform.evaluation.standard` 计分与报告组装、`probe.ask` 沙盒命令及 `/api/v1/console/runs*`、`/experiments*` 接口已实现；下述受控时钟推进与自动化探针执行循环为实验执行器待接入部分：
+探针脚本格式见 [内容包](../game/content-pack.md) 第 11 节，prompt 见 [prompts](../agent/prompts.md) 第 7 节。`platform.evaluation.standard` 计分与报告组装、`probe.ask` 沙盒命令、`/api/v1/console/runs*`、`/experiments*` 接口与实验执行器均已实现。执行器在每个检查点执行以下循环（触发、顺序与终态见第 8.1 节）：
 
-1. 受控时钟推进到检查点 tick，并等本步结算完成（[运行时](../agent/runtime.md) 第 13.2 节）。
+1. 受控时钟推进到检查点 tick，并等本步结算完成（[运行时](../agent/runtime.md) 第 13.2 节；收敛条件见 [规则](../game/rules.md) 第 1 节第 6 步）。
 2. 静默实验分支，为每个探针各复制一个沙盒分支（[存储](../architecture/storage.md) 第 3 节），互不影响。先把实验分支激活状态置为 dormant 释放配额，再逐个创建沙盒；沙盒里只激活被提问的 Agent（占用配额，探针结束后释放）。全部探针结束后重新预留配额并激活实验名册。
 3. 运行器在沙盒里以 `system:world` 身份提交 `probe.ask`（[领域模型](../architecture/domain-model.md) 第 5 节），产生 `ProbeAsked` 事件；感知把它变成 `probe` 渠道的观察（来源就是这个事件，`releasePolicyId = parties:<askedBy,agentId>`），并生成 `probe` trigger。该命令仅在 active sandbox 中豁免 paused；沙盒不推进逻辑时间。只调度本次 probe trigger，decision 仅提供只读查询与 `decision.submit`，speech 照常校验但不调用 `speech.commit`，使用所属实验 run 冻结的 profile 与模型挂载；确定性决策按 [运行时](../agent/runtime.md) 第 13.7 节以 `answer` 意图作答。
-4. 把对白原文、decision JSON、引用的记忆 ID、turn 状态写入 `probe_results`；沙盒分支归档，实验分支继续推进。
+4. 把对白原文、decision JSON、引用的记忆 ID、turn 状态写入 `probe_results`；沙盒分支归档，实验分支继续推进。引用的记忆 ID 是 decision JSON 中的 `citedMemoryIds` 与 `dialogueIntent.factRefs`；turn 状态体现为 `valid` 与 `invalid_reason`，探针 turn 的 ID、终态、终止原因与沙盒分支 ID 另记在实验分支的 `ExperimentProbeCompleted` 审计事件里。
+
+### 8.1 执行器的触发、顺序与终态
+
+执行器运行在服务端宿主进程内，与在线世界共用存储写连接、游戏模块实例与部署级配额；每个实验 run 使用自己的命令网关（随机种子取该 run 的 `seed`，开局只激活该 run 的名册）、调度与工具模块和 Agent 运行时，不读写在线分支。
+
+- 触发：`POST /api/v1/console/runs/{runId}/start` 把 run 置为 `running` 后唤醒执行器。只驱动 `mode: closed-loop`、声明了 `script` 的实验 run；没有脚本的 run 启动后仍只改状态与时钟。
+- 顺序：同一宿主同一时刻只执行一个 run，其余按 `started_at` 先后排队；`GET /api/v1/console/runs/{runId}/progress` 的 `executing` 区分正在执行与排队。
+- 准备：用创建 run 时的同一实现复算冻结配置（装配、名册、Agent profile、工具集与模型挂载）并核对 `manifest_hash`，不一致记 `manifest-mismatch`；run 的服务端装配摘要必须与宿主当前装配一致，否则记 `assembly-mismatch`，需以同一装配启动宿主。
+- 开局：冷启动时以玩家身份提交 `campaign.start`，派系取脚本的 `start.factionId`；名册在开局事务内预留配额，名额不足时命令被整体拒绝，run 记 `quota-unavailable`。
+- 推进：每一段从 `paused` 进入 `stepping`，段终点不越过下一个检查点、脚本终点与时钟单步上限 `maxStepTicks`。每个 tick 先按规则第 1 节提交时钟、到期 job、时钟步骤与消费者，再按声明顺序以玩家身份注入该 tick 的脚本命令（主线步骤在前、所选分支的追加步骤在后；命令 ID 由 run 与步骤序号确定性派生，恢复执行时重放得到原回执），然后等待收敛：规则 job 与事件消费者追平、感知与记忆摄入追平、到期整理完成、没有未终结的 turn，且一轮内事件前沿与 turn 总数不再变化。只因冷却不能调度的 trigger 不产生 turn，不阻塞收敛。脚本命令被规则拒绝属于闭环结果，照常记入审计并继续推进。
+- 检查点：本 tick 收敛后暂停实验分支时钟，执行上面第 2–4 步；已写入结果的探针不重复提问。
+- 完成：处理完脚本终点（最后一个外部命令或检查点所在 tick）后，按与 `GET /runs/{runId}/report` 相同的口径把每项指标写入 `experiment_results`（`details_json` 带变体、脚本分支、有效性与无效样本计数），run 置为 `completed`，实验名册休眠并释放配额。
+- 失败：死信的规则失败（`rule-failure`）、Agent 运行时周期失败（`agent-runtime-failed`）、单个 tick 或探针超过收敛上限（`settle-timeout`，宿主默认 30 分钟）、配额不足（`quota-unavailable`）、到达章节终点（`chapter-ended`）等使 run 记为 `failed`，原因码与说明写入 `ExperimentRunFailed` 审计事件，名册休眠、时钟暂停。
+- 停止与恢复：`POST /runs/{runId}/stop` 把 run 与时钟置为暂停，执行器在下一次收敛检查或命令注入前停下：在途 turn 因时钟版本变化被取消，进行中的沙盒被归档，实验名册休眠。再次启动后先补完当前 tick，再从当前 tick 继续。宿主关闭时执行中的 run 改为 `paused`；进程中断遗留的 `running` 实验 run 在下次启动时同样归位为 `paused`，未关闭的沙盒被归档，由研究员显式继续。
+- 观察：执行器把 `ExperimentRunStarted`、`ExperimentStepSubmitted`、`ExperimentCheckpointReached`、`ExperimentProbeCompleted`、`ExperimentRunCompleted`、`ExperimentRunFailed`、`ExperimentRunStopped` 与 `ExperimentRunInterrupted` 写入实验分支的生命周期审计，可经 `GET /api/v1/console/timeline?branchId=` 查看；进度接口给出当前 tick、脚本终点、已写入结果的探针数与最近一条执行器事件。
+- 未接入：脚本 `setup` 预置知识目前没有经命令网关的提交入口，含 `setup` 的脚本（如 `s-rumor`）记 `script-setup-unsupported` 失败；脚本步骤只支持以玩家身份提交；`audit`、`open-loop` 模式与 `initialState: snapshot/rebuild` 仍由 RunSpec schema 拒绝。
 
 计分以脚本冻结的 `answerKey` 为准，匹配前去掉空白与标点。只有未知和遗忘标记来自内容包的 `lexicons.unknownMarkers` 与 `lexicons.forgetMarkers`。禁止提及的常见改述可逐条写入脚本的 `mustNotMention`。
 
@@ -149,7 +167,7 @@ M0 仍有权威权限、正式协议及履约事实；这些只保证世界规�
 
 报告注明这四项是词面计分。同义改述可能漏匹配，否定句也可能命中关键词，语义复核的结果单列。
 
-探针在以下情况记为无效，不进入正确率的分母，但在报告里单列数量与原因：turn 失败；没有产生对白（意图为 none）；对白来自安全模板但模型决策路径本应作答（`speech-fallback`）；严格实验中出现模型替换（`model-substituted`）；证据不完整。确定性决策的对白本来就是模板，不算 `speech-fallback`。LLM judge 默认关闭；开启时使用独立的 evaluator 挂载，结果与上述规则分数并列报告，不替代它。
+探针在以下情况记为无效，不进入正确率的分母，但在报告里单列数量与原因：turn 失败；没有产生对白（意图为 none）；对白来自安全模板但模型决策路径本应作答（`speech-fallback`）；严格实验中出现模型替换（`model-substituted`）；证据不完整。确定性决策的对白本来就是模板，不算 `speech-fallback`。探针 turn 自己写入有回答与 `no-dialogue` 的结果；turn 失败、预算耗尽或从未被调度时，执行器补写 `turn-failed`；对白写入后 turn 在结算阶段失败的，已写入的结果被改判为 `turn-failed`。LLM judge 默认关闭；开启时使用独立的 evaluator 挂载，结果与上述规则分数并列报告，不替代它。
 
 行为记录：脚本里每个触发 Agent 决策的外部输入（例如 `s-promise` 第 60 tick 的请求）都记录该 Agent 的 `stance`、意图、理由类别与提交的命令，用于比较各组的行为分布。
 

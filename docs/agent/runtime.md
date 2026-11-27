@@ -247,7 +247,7 @@ scheduling:
 4. 每个 Agent 同一时刻最多一个活动 turn；turn 运行中新到的 trigger 只排队，不改变已冻结的输入。
 5. turn 以 `cancelled` 结束（暂停、静默、接管、租约过期导致）时，它并入的 trigger 被释放（`consumed_by_turn_id` 置空），之后重新调度；以 `completed`、`failed`、`budget-exhausted` 结束时 trigger 视为已消费。
 
-`stepping` 模式下，宿主 `advanceSteppingTick` 每次时钟间隔推进 1 tick（`advanceWorldTick`）直到到达 `stepTargetTick` 后调用 `finishStep` 回到 `paused`；按规则第 1 节在单步循环内自动注入脚本命令并等待消费者、记忆摄入、整理任务与 turn 排空收敛属于实验执行器待接入部分。
+在线分支的 `stepping` 模式下，宿主 `advanceSteppingTick` 每次时钟间隔推进 1 tick（`advanceWorldTick`）直到到达 `stepTargetTick` 后调用 `finishStep` 回到 `paused`，不注入脚本、也不等待 Agent 收敛。实验分支由实验执行器按规则第 1 节驱动：每个 tick 提交后按声明顺序注入脚本命令，再反复执行规则 job 与事件消费者、调用该分支运行时的一轮周期（感知、摄入、到期整理、调度与派发 turn），直到没有未终结 turn、感知与记忆摄入追平、无到期整理，且一轮内事件前沿与 turn 总数不再变化，才推进下一 tick。收敛读数由 agent-runtime 的 `readBranchSettlement` 提供，整理任务的可认领判据与整理队列共用同一实现；触发、停止与失败语义见 [评估](../platform/evaluation.md) 第 8.1 节。
 
 ### 13.3 turn 主循环
 
@@ -270,7 +270,7 @@ async function runTurn(turnId: string): Promise<void> {
 }
 ```
 
-探针 turn 仅提供只读查询工具与 `decision.submit`；工具网关同样拒绝任何写工具，不能通过模型输出修改沙盒世界。仅 active sandbox 内由 `system:world` 提交的 `probe.ask` 豁免暂停检查；其他命令不豁免。探针只调度本次 `ProbeAsked` 的 trigger，不消费复制来的历史 trigger。
+探针 turn 仅提供只读查询工具与 `decision.submit`；工具网关同样拒绝任何写工具，不能通过模型输出修改沙盒世界。仅 active sandbox 内由 `system:world` 提交的 `probe.ask` 豁免暂停检查；其他命令不豁免。探针只调度本次 `ProbeAsked` 的 trigger，不消费复制来的历史 trigger。探针 turn 在 speaking 阶段把回答写入 `probe_results`：模型决策路径退回安全模板时记 `speech-fallback`，严格失败策略下任一模型尝试被供应商替换时记 `model-substituted`；决定没有对白意图时在 deciding 阶段写入 `no-dialogue`。turn 失败、预算耗尽或从未被调度时由实验执行器补写 `turn-failed`。
 
 一轮 decision 响应的处理规则：
 
