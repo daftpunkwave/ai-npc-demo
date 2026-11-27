@@ -158,8 +158,8 @@ export class ApiClient {
     this.clearSession();
   }
 
-  session(): Promise<SessionDescriptor> {
-    return this.request(sessionDescriptorSchema, "/api/v1/session");
+  session(signal?: AbortSignal): Promise<SessionDescriptor> {
+    return this.request(sessionDescriptorSchema, "/api/v1/session", { signal });
   }
 
   /** 读取静态内容视图：章节名、时钟刻度与界面文字；与授权投影分开。 */

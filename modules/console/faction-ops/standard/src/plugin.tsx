@@ -1,6 +1,6 @@
 /**
- * 核心职责：呈现当前时钟与快照，并通过控制台 API 执行暂停、继续、单步、存档和恢复。
- * 交互契约：依赖宿主生成 operationId、控制台会话与 React；不自行计算世界版本。
+ * 核心职责：呈现当前时钟、快照与在线分支，并通过控制台 API 执行暂停、继续、单步、存档和恢复。
+ * 交互契约：依赖宿主生成 operationId、宿主维护的在线分支订阅、控制台会话与 React；不自行计算世界版本或分支。
  * 约束与禁忌：禁止直接改世界状态、跳过服务端角色校验或假设请求成功。
  */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents -- Codacy 缺少 workspace 类型解析时会把 React/契约类型判成 any。 */
@@ -19,8 +19,10 @@ import type { ApiClient } from "@world-prism/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
-  /** 当前在线分支；恢复/重开后由宿主按快照身份更新。 */
+  /** 当前在线分支；宿主按服务端会话描述维护，其他会话恢复或重开后随之更新。 */
   readonly branchId: string;
+  /** 订阅在线分支变化；返回取消订阅函数。 */
+  subscribeBranch(listener: () => void): () => void;
   operationId(): string;
   reload(): void;
   confirm(message: string): boolean;
@@ -45,6 +47,12 @@ function FactionOpsPage(): ReactNode {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
+  // 本页自己订阅在线分支：其他会话恢复存档后，展示的在线分支必须跟随宿主更新，不依赖外壳恰好重渲染。
+  const [branchId, setBranchId] = useState(host.branchId);
+  useEffect(() => {
+    setBranchId(host.branchId);
+    return host.subscribeBranch(() => setBranchId(host.branchId));
+  }, [host]);
 
   const refresh = async (signal: AbortSignal): Promise<ClockView> => {
     const [health, nextSnapshots] = await Promise.all([
@@ -180,7 +188,7 @@ function FactionOpsPage(): ReactNode {
           <div className="console-kv">
             <div><dt>游戏日</dt><dd>{clock?.day ?? "-"}</dd></div>
             <div><dt>小时</dt><dd>{clock?.hour ?? "-"}</dd></div>
-            <div><dt>在线分支</dt><dd>{host.branchId}</dd></div>
+            <div><dt>在线分支</dt><dd data-testid="console-ops-branch">{branchId}</dd></div>
           </div>
         </section>
         <section className="console-panel">

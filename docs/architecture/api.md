@@ -44,7 +44,7 @@
 | `GET /api/v1/health` | — | `{ status: "starting"\|"ready"\|"degraded", protocolVersion: "1" }` | 不需要认证，不返回内部细节；e2e 用它等待就绪 |
 | `POST /api/v1/auth/login` | `{ token }` | `{ sessionToken, principalId, roles, expiresAt }` | 令牌错误返回 401。会话自登录起默认有效 12 小时 |
 | `POST /api/v1/auth/logout` | — | `{ ok: true }` | 吊销当前会话 |
-| `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集 |
+| `GET /api/v1/session` | — | `SessionDescriptor`（[公共契约](contracts.md) 第 4 节） | 当前会话、角色、分支、协议版本、server 端已解析模块集。`branchId` 取请求时的在线分支，不是登录时的快照；控制台宿主据此定期核对在线分支 |
 | `GET /api/v1/session/assembly?realm=client\|console` | — | `ResolvedModuleSet` | 浏览器宿主启动时取本 realm 的模块清单并校验（[积木组合](composition.md) 第 3 节）；玩家会话请求 `realm=console` 返回 403 `realm-violation` |
 | `POST /api/v1/streams/ticket` | — | `{ ticket, expiresAt }` | 一次性 WS 票据，30 秒内有效 |
 
@@ -167,7 +167,7 @@ interface ClockView { worldTick: number; day: number; hour: number; mode: "runni
 
 出现未应用的帧后，客户端必须进入「等待快照」状态：此后的增量既不应用也不确认，直到收到 `snapshot` 重建连续基线。只让被拒的那一帧不确认是不够的——后续帧一旦被确认，游标就跨过了缺口，服务端重连时从缺口之后续传，缺失的增量同样再也不会补发。玩家端在拒帧后先断开当前连接再重新取快照，避免旧连接继续推送与恢复并行。
 
-在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，客户端据此更新本地会话身份：玩家端 HUD 显示的分支、控制台观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随该值，不再沿用登录时写入的常量。跨分支快照用于切换身份与投影基线。序号和投影版本只用于同一分支内的快照顺序判定。世界 ID 不同的快照仍被拒绝。
+在线分支切换（恢复存档或重新开局）后，服务端向所有 `player` 频道重新发送一次 `snapshot`，客户端丢弃旧投影。重发的快照携带新分支的 `worldId` 与 `branchId`，玩家端据此更新本地会话身份，HUD 显示的分支跟随该值，不再沿用登录时写入的常量。控制台的在线分支只由宿主维护：页面可见时每 5 秒读取 `GET /api/v1/session` 核对一次，与打开哪个页面无关；侧栏与运营页展示的分支、观测页查询 `/console/timeline` 与 `/console/agents` 使用的 `branchId` 都跟随宿主身份。观测页收到身份与本页分支不一致的控制台快照时不采用帧内身份，只请求宿主立即核对，宿主更新后按新分支重新订阅。流帧与会话响应之间没有共同的先后序，两路各自写入身份时，较早发出的会话响应可能把较新的分支改回旧值。跨分支快照用于切换身份与投影基线。序号和投影版本只用于同一分支内的快照顺序判定。世界 ID 不同的快照仍被拒绝。
 
 `append` 可与对应 `delta` 共用同一 `streamSeq`。对白按 `dialogueId` 识别，派生提醒按 `playerNotificationKey` 的 `kind` 与 `text` 识别。`worldTick` 会随 tick 更新。
 

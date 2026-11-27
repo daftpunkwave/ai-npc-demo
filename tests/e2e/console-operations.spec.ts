@@ -1,10 +1,10 @@
 /**
- * 核心职责：验证控制台运营页的异步刷新、错误展示、读请求取消和单步恢复。
+ * 核心职责：验证控制台运营页的异步刷新、错误展示、读请求取消、单步恢复与在线分支标识跟随。
  * 交互契约：使用真实控制台登录和浏览器，对运营 API 施加可控的失败与响应顺序。
  * 约束与禁忌：不改变共享测试世界，不以固定延时制造竞态。
  */
 import { expect, test, type Page } from "@playwright/test";
-import { consoleHealthResponseSchema, type ErrorCode } from "@world-prism/contracts";
+import { consoleHealthResponseSchema, sessionDescriptorSchema, type ErrorCode } from "@world-prism/contracts";
 import { deferred } from "./deferred";
 
 const snapshotsApi = "**/api/v1/console/campaign/snapshots";
@@ -117,4 +117,29 @@ test("单步响应丢失后继续读取服务端时钟直到推进结束", async
   await expect(operations.getByText("paused · t1")).toBeVisible();
   await expect(operations.getByRole("alert")).toBeVisible();
   expect(readsAfterLoss).toBe(2);
+});
+
+test("其他会话切换在线分支后，只打开运营页的会话更新侧栏与运营页的分支标识", async ({ page }) => {
+  const restoredBranch = "br-e2e-restored";
+  let restoredElsewhere = false;
+  // 服务端在线分支被其他会话切换：会话描述从此返回新分支。用路由模拟，不改动共享测试世界。
+  await page.route("**/api/v1/session", async (route) => {
+    const response = await route.fetch();
+    const descriptor = sessionDescriptorSchema.parse(await response.json());
+    await route.fulfill({ response, json: restoredElsewhere ? { ...descriptor, branchId: restoredBranch } : descriptor });
+  });
+  const sockets: string[] = [];
+  page.on("websocket", (socket) => sockets.push(socket.url()));
+  const operations = await openOperations(page);
+  const sidebarBranch = page.getByTestId("console-branch");
+  const operationsBranch = operations.getByTestId("console-ops-branch");
+  await expect(operationsBranch).not.toHaveText("");
+  const loginBranch = await operationsBranch.textContent();
+  await expect(sidebarBranch).toHaveText(loginBranch ?? "");
+
+  restoredElsewhere = true;
+
+  await expect(sidebarBranch).toHaveText(restoredBranch);
+  await expect(operationsBranch).toHaveText(restoredBranch);
+  expect(sockets).toEqual([]);
 });

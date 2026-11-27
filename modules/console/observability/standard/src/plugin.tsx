@@ -22,16 +22,18 @@ import { StreamClient, type ApiClient } from "@world-prism/client-protocol";
 interface ConsoleHostPort {
   readonly api: ApiClient;
   readonly session: SessionDescriptor;
+  /** 当前世界 ID；与在线分支一起由宿主维护。 */
+  readonly worldId: string;
   /**
    * 当前在线分支 ID。
    * 恢复或重开会切换在线分支，控制台查询必须跟随新分支，否则会静默读到已归档分支的数据。
-   * 该值由宿主在收到带分支身份的快照后更新。
+   * 该值只由宿主按服务端会话描述更新。
    */
   readonly branchId: string;
   /** 订阅在线分支变化；返回取消订阅函数。 */
   readonly subscribeBranch: (listener: () => void) => () => void;
-  /** 按快照帧内的身份校对在线分支；身份未变时不做任何事。 */
-  applyBranchIdentity(worldId: string, branchId: string): void;
+  /** 请宿主立即向服务端核对在线分支；页面不能直接改写宿主身份。 */
+  refreshBranchIdentity(): void;
 }
 
 function TraceNode({ node }: { readonly node: TraceResponse["root"] }): ReactNode {
@@ -125,11 +127,15 @@ function ObservabilityPage(): ReactNode {
           fromStreamSeq: null,
           onMessage: (message) => {
             if (message.type !== "snapshot") return;
-            // 旧连接的迟到快照不能改写当前身份：先确认未取消且连接代次仍然有效。
+            // 旧连接的迟到快照不触发任何动作：先确认未取消且连接代次仍然有效。
             if (cancelled || generation !== connectionGeneration) return;
-            // 快照携带服务端权威的在线分支：恢复/重开切换分支后，控制台查询必须跟随，
-            // 否则会继续用旧 branchId 命中已归档分支并静默展示过期数据。
-            host.applyBranchIdentity(message.worldId, message.branchId);
+            // 帧内身份与本页查询的分支不一致，说明在线分支可能已切换。在线分支只由宿主按服务端会话描述写入，
+            // 这里只请宿主立即核对，不直接采用帧内身份，也不展示该帧：宿主更新分支后本页按新分支重新订阅，
+            // 服务端随订阅重发新分支的快照。
+            if (message.worldId !== host.worldId || message.branchId !== branchId) {
+              host.refreshBranchIdentity();
+              return;
+            }
             if (message.channel !== "console.timeline") return;
             try {
               const timeline = timelineResponseSchema.parse(message.data);
