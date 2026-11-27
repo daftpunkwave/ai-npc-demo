@@ -494,4 +494,7 @@ export function createCommsPort(
 }
 
 /** 通信拒绝原因码；保留类型收窄供处理器使用。 */
-export type CommsReasonCode = Extract<ReasonCode, "relay-down" | "evidence-not-held" | "secret-not-shareable" | "no-authority">;
+export type CommsReasonCode = Extract<
+  ReasonCode,
+  "relay-down" | "evidence-not-held" | "secret-not-shareable" | "no-authority" | "unknown-target"
+>;
