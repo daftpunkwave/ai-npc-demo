@@ -13,6 +13,13 @@ import type { z } from "zod";
  */
 export const defaultRequestTimeoutMs = 35_000;
 
+/**
+ * 请求期限的上限（毫秒），即 2^31 - 1，约 24.8 天。
+ * 期限由 setTimeout 计时，浏览器与 Node 把延时存为 32 位有符号整数，超过该值会溢出并几乎立即触发，
+ * 让每个请求一发出就超时。
+ */
+export const maxRequestTimeoutMs = 2_147_483_647;
+
 export interface RequestOptions {
   readonly method?: "GET" | "POST";
   readonly body?: unknown;

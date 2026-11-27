@@ -43,6 +43,7 @@ import { createOperationsHttp } from "./http/operations";
 import { createResearchHttp } from "./http/research";
 import {
   defaultRequestTimeoutMs,
+  maxRequestTimeoutMs,
   queryString,
   rejectWhenAborted,
   type ConsoleRequest,
@@ -59,7 +60,10 @@ export interface ApiClientOptions {
   readonly fetchImpl?: typeof fetch;
   readonly storage?: BrowserStorage | null;
   readonly activeRole?: ConsoleActiveRole;
-  /** 单个请求从发出到读完响应体的期限（毫秒），缺省为 `defaultRequestTimeoutMs`。 */
+  /**
+   * 单个请求从发出到读完响应体的期限（毫秒），缺省为 `defaultRequestTimeoutMs`。
+   * 必须是 1 到 `maxRequestTimeoutMs` 之间的整数，否则构造时抛出 validation 错误。
+   */
   readonly requestTimeoutMs?: number;
 }
 
@@ -117,8 +121,16 @@ export class ApiClient {
     this.fetchImpl = (options.fetchImpl ?? globalThis.fetch).bind(globalThis);
     this.storage = options.storage === undefined ? defaultStorage() : options.storage;
     this.requestTimeoutMs = options.requestTimeoutMs ?? defaultRequestTimeoutMs;
-    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
-      throw new DomainError("validation", "requestTimeoutMs 必须是正数");
+    // 只接受整数：小于 1 的小数会被 setTimeout 截成 0，让请求一发出就超时。
+    if (
+      !Number.isInteger(this.requestTimeoutMs)
+      || this.requestTimeoutMs < 1
+      || this.requestTimeoutMs > maxRequestTimeoutMs
+    ) {
+      throw new DomainError(
+        "validation",
+        `requestTimeoutMs 必须是 1 到 ${maxRequestTimeoutMs} 之间的整数（毫秒）`,
+      );
     }
     this.activeRole = options.activeRole;
     this.sessionToken = this.storage?.getItem(sessionStorageKey) ?? null;

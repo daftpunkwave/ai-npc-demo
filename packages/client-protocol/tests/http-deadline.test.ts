@@ -7,7 +7,7 @@
 import { DomainError } from "@world-prism/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "../src/index";
-import { defaultRequestTimeoutMs } from "../src/http/request";
+import { defaultRequestTimeoutMs, maxRequestTimeoutMs } from "../src/http/request";
 
 const baseUrl = "http://127.0.0.1:3000";
 
@@ -122,11 +122,31 @@ describe("请求期限", () => {
     }
   });
 
-  it("拒绝非正数期限", () => {
-    expect(() => new ApiClient({ baseUrl, storage: null, requestTimeoutMs: 0 }))
-      .toThrow(expect.objectContaining({ code: "validation" }));
-    expect(() => new ApiClient({ baseUrl, storage: null, requestTimeoutMs: Number.NaN }))
-      .toThrow(expect.objectContaining({ code: "validation" }));
+  it.each([1, 1_000, maxRequestTimeoutMs])("接受 1 到上限之间的整数期限：%s", (requestTimeoutMs) => {
+    expect(() => new ApiClient({ baseUrl, storage: null, requestTimeoutMs })).not.toThrow();
+  });
+
+  it.each([
+    0, -1, -1_000, 0.5, 1.5, maxRequestTimeoutMs + 1, Number.MAX_SAFE_INTEGER,
+    Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN,
+  ])("构造时拒绝超出范围或非整数的期限：%s", (requestTimeoutMs) => {
+    expect(() => new ApiClient({ baseUrl, storage: null, requestTimeoutMs })).toThrow(expect.objectContaining({
+      code: "validation",
+      safeMessage: `requestTimeoutMs 必须是 1 到 ${maxRequestTimeoutMs} 之间的整数（毫秒）`,
+    }));
+  });
+
+  it("上限期限按原值计时，不因 setTimeout 溢出而立即超时", async () => {
+    const api = new ApiClient({ baseUrl, fetchImpl: hangingFetch(), storage: null, requestTimeoutMs: maxRequestTimeoutMs });
+    const outcome = api.session().catch((cause: unknown) => cause);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(settledValue(outcome)).resolves.toBe(pending);
+    await vi.advanceTimersByTimeAsync(maxRequestTimeoutMs - 60_000);
+
+    await expect(settledValue(outcome)).resolves.toMatchObject({
+      code: "not-ready", details: { timeoutMs: maxRequestTimeoutMs },
+    });
   });
 });
 
