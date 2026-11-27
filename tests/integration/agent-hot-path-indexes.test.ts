@@ -1,10 +1,14 @@
 /**
  * 核心职责：用 agent-runtime 的生产 SQL 对真实 SQLite 断言查询计划，确认热路径确实命中 0016 的部分索引与记忆可见性索引。
- * 交互契约：依赖存储模块启动真实 SQLite、agent-runtime 导出的查询常量与迁移定义的索引。
+ * 交互契约：依赖存储模块启动真实 SQLite、agent-runtime 导出的查询常量与迁移定义的索引；数据目录建在系统临时目录，
+ *   每个用例结束后释放存储实例并删除目录。
  * 约束与禁忌：禁止另写一份字面量 SQL 副本代替生产查询——参数化会让部分索引失效，
  *   副本的查询计划说明不了生产行为；也不得把索引条件退化成全表扫描后仍判为通过。
  */
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   cancelActiveTurnsSql,
   currentMemoryRecordsSql,
@@ -18,10 +22,23 @@ import type { StoragePort, StorageTransaction } from "@world-prism/contracts";
 import { createFakeHost } from "./authority-support";
 
 const resources: { readonly dispose: () => Promise<void> }[] = [];
+const dataDirs: string[] = [];
+
+// 先释放存储实例关闭连接，再删除目录：Windows 上仍被打开的数据库文件无法删除。
+afterEach(async () => {
+  for (const resource of resources.splice(0)) {
+    await resource.dispose();
+  }
+  for (const dir of dataDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 async function openStorage(): Promise<StoragePort> {
   const host = createFakeHost();
-  const dataDir = `./data-agent-hot-path-${String(Date.now())}-${String(Math.floor(Math.random() * 1_000_000))}`;
+  // 建在系统临时目录：写在当前工作目录会在仓库根目录留下每次运行的数据库。
+  const dataDir = mkdtempSync(join(tmpdir(), "agent-hot-path-"));
+  dataDirs.push(dataDir);
   const instance = await storageModuleDefinition.create({
     moduleId: storageModuleDefinition.id,
     realm: "server",
